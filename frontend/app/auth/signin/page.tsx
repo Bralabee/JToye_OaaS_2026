@@ -11,6 +11,25 @@ import {
   CardHeader,
 } from "@/components/ui/card"
 import { CompanyLegalLine } from "@/components/platform/company-legal"
+import { safeReturnTo } from "@/lib/safe-return-to"
+
+/**
+ * 37-18 (D-14, UI-SPEC K2, T-37-46): where to land after signing in.
+ *
+ * The kitchen's board-stopped overlay sends the tablet here as
+ * `/auth/signin?callbackUrl=%2Fdashboard%2Fkitchen`, so signing back in returns it to the kitchen.
+ * The query string is attacker-controlled, so it goes through THE one same-origin sanitiser
+ * (`lib/safe-return-to.ts`, which already refuses `//host`, `/\host`, any backslash, any scheme and
+ * control characters) rather than a second, weaker copy. Anything refused, or absent, is
+ * `/dashboard`, which is what this page always used.
+ *
+ * Read at click time from `window.location`, not through `useSearchParams`: that hook would put
+ * this static page behind a Suspense boundary for a value only the click handler needs.
+ */
+function signInDestination(): string {
+  if (typeof window === "undefined") return "/dashboard"
+  return safeReturnTo(new URLSearchParams(window.location.search).get("callbackUrl"), "/dashboard")
+}
 
 /**
  * Operator sign-in. This page is a LANDING DESTINATION, not just transit:
@@ -101,7 +120,7 @@ export default function SignInPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <Button
-              onClick={() => signIn("keycloak", { callbackUrl: "/dashboard" })}
+              onClick={() => signIn("keycloak", { callbackUrl: signInDestination() })}
               className="w-full h-12 rounded-full bg-oxblood text-base font-semibold text-white hover:bg-oxblood-700"
               size="lg"
             >
