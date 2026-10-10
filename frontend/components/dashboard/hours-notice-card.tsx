@@ -30,14 +30,18 @@ function listOfDays(days: string[]): string {
   return `${days.slice(0, -1).join(", ")} and ${days[days.length - 1]}`
 }
 
-/** The needs-review sentence under the D-25 ruling (2026-10-10): the unreadable days stay OPEN. */
+/**
+ * The needs-review sentence under the D-25 ruling: the unreadable days stay OPEN. The wording is the
+ * owner's (ruling 2026-10-10, quick 261010-ppb, closes WINDOWS #36), singular for one day and plural
+ * for several. The zero-day fallback is unchanged by the ruling.
+ */
 export function needsReviewSentence(shop: Shop): string {
   const days = unreadableDays(shop).map((d) => d.label)
   if (days.length === 0) {
     return "We couldn't read some of the hours you entered. Check them, then save your hours."
   }
   const those = days.length === 1 ? "that day" : "those days"
-  return `We couldn't read the hours you entered for ${listOfDays(days)}. Customers can order on ${those} at any time until you save your hours.`
+  return `We could not read the hours you entered for ${listOfDays(days)}, so customers can order on ${those} at any time. Check and save your hours.`
 }
 
 export function HoursNoticeCard({ shops }: { shops: Shop[] | null }) {

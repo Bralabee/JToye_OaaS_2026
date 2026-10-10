@@ -10,6 +10,7 @@ import { DAY_LABELS, DAY_ORDER } from "@/lib/opening-hours"
 import {
   MAX_WINDOWS_PER_DAY,
   MINUTES_IN_DAY,
+  formatWindow,
   isOvernight,
   spansOverlap,
   unreadableDays,
@@ -40,13 +41,17 @@ export const HOURS_COPY = {
   legacy:
     "Customers can currently order from this shop at any time, because no opening hours were set. Add your hours to change that.",
   /**
-   * Owner ruling 2026-10-10 (D-25): the server keeps an unreadable NEEDS_REVIEW day OPEN all day until
-   * the vendor saves hours. The UI-SPEC's earlier "This day shows as closed." described the old client
-   * render, not what customers get. Orchestrator copy decision, pending the owner's own wording.
+   * Owner ruling 2026-10-10 (D-25, quick 261010-ppb, closes WINDOWS #36): the server keeps an
+   * unreadable NEEDS_REVIEW day OPEN all day until the vendor saves hours, so the editor pre-fills that
+   * day as one all-day window and says so in the owner's words. This supersedes the 37-21
+   * orchestrator wording and the UI-SPEC's earlier "This day shows as closed.".
    */
   unreadable: (text: string) =>
-    `We couldn't read "${text}". Customers can still order on this day at any time until you save your hours.`,
+    `We could not read "${text}", so this day is open all day. Set the real times, or tick Closed.`,
 }
+
+/** One window from midnight to midnight: what the server enforces for an unreadable day (D-25). */
+const ALL_DAY = { open: "00:00", close: "00:00" } as const
 
 const SHORT_DAY: Record<DayKey, string> = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun",
@@ -83,12 +88,24 @@ function inputLabel(day: DayKey, index: number, edge: "open" | "close"): string 
 
 type ScheduleShop = Pick<Shop, "hoursSource" | "openingSchedule" | "legacyOpeningHours">
 
-/** The editor's starting state: a legacy shop (and a new one) has no hours; others start from the schedule. */
+/**
+ * The editor's starting state: a legacy shop (and a new one) has no hours; others start from the
+ * schedule. An unreadable NEEDS_REVIEW day (the same `unreadableDays` predicate the amber line and the
+ * server's `ShopAvailabilityPolicy.withUnreadableDaysOpen` use) starts as ONE all-day window, because
+ * that is what customers get (owner ruling 2026-10-10, D-25). A day written closed, and a day the
+ * server read, start as they are. A partial save therefore keeps the unreadable day open until the
+ * vendor sets its real times or ticks Closed.
+ */
 function initialDays(shop: ScheduleShop | null, nextKey: () => number): EditorDays {
   const schedule =
     shop && shop.hoursSource !== "LEGACY_ALWAYS_OPEN" ? ((shop.openingSchedule ?? {}) as OpeningScheduleMap) : {}
+  const unreadable = new Set(unreadableDays(shop ?? {}).map((u) => u.day))
   const days = {} as EditorDays
   for (const day of DAY_ORDER) {
+    if (unreadable.has(day)) {
+      days[day] = { closed: false, windows: [{ key: nextKey(), ...ALL_DAY }] }
+      continue
+    }
     const windows = (schedule[day] ?? []).slice(0, MAX_WINDOWS_PER_DAY)
     days[day] = {
       closed: windows.length === 0,
@@ -324,7 +341,13 @@ export const OpeningScheduleEditor = forwardRef<OpeningScheduleEditorHandle, Ope
                                 }}
                               />
                             </div>
-                            {w.open && w.close && isOvernight(w) && (
+                            {/* Open equal to close is a whole day (the D-25 pre-fill reads 00:00-00:00),
+                                so it says "Open 24 hours" rather than an overnight hint beside a line
+                                saying the day is open all day (planner discretion, UI-SPEC row). */}
+                            {w.open && w.close && w.open === w.close && (
+                              <p className="text-sm text-slate-600">{formatWindow(w)}</p>
+                            )}
+                            {w.open && w.close && w.open !== w.close && isOvernight(w) && (
                               <p className="text-sm text-slate-600">{HOURS_COPY.overnight}</p>
                             )}
                           </div>
