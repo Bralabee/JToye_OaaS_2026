@@ -1,0 +1,266 @@
+# 37-21 break arms (clean -> arms -> clean; every arm on a committed state, restored by sha256)
+# Each arm: scratch arm.sh refuses to run unless the file equals its HEAD copy, edits one exact anchor, runs jest, restores, compares sha256.
+
+## arms-task1.txt
+Task 1 break arms on committed 6ddc6e9e (2026-10-10T15:26:51Z)
+CLEAN-BEFORE: Tests:       14 passed, 14 total
+=== ARM 1-A-client-timer: components/dashboard/kitchen/pause-orders-control.tsx (jest rc=1)
+Tests:       5 failed, 9 passed, 14 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › '20 minutes' sends PUT {minutes: 20}; the control and banner show the SERVER's pausedUntil in UK time, never a client timer
+    Expected element to have text content:
+    Received:
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › '40 minutes' sends PUT {minutes: 40}
+    Expected element to have text content:
+    Received:
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › 'Until I reopen' sends PUT {untilReopened: true}: the control reads 'Paused' and the banner the indefinite copy, with a primary 'Resume orders'
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "Paused"
+    Received: "Paused until 18:40"
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › while paused the menu adds 'Resume orders now'; 'Resume orders' sends DELETE and the banner is gone after the re-read
+    expected document not to contain element, found <div class="flex flex-wrap items-center gap-4 rounded-lg border-2 border-slate-900 bg-white p-4" data-testid="kds-paused-banner" role="status"><svg aria-hidden="true" class="lucide lucide-circle-pause lucide-pause-circle h-6 w-6 shrink-0 text-slate-900" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" /><line x1="10" x2="10" y1="15" y2="9" /><line x1="14" x2="14" y1="15" y2="9" /></svg><div class="min-w-0 flex-1 basis-56 [overflow-wrap:anywhere]"><p class="text-sm text-slate-600">Test Shop</p><p class="text-base font-semibold text-slate-900">Orders paused until 18:40. Customers can see your menu but can't order.</p></div><button class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 kds-press h-11">Resume orders</button></div> instead
+restore: before=300aa1355841f50b55392105b4c42b9c2b2c496861cb310e83477c2ee5854e1f after=300aa1355841f50b55392105b4c42b9c2b2c496861cb310e83477c2ee5854e1f RESTORED-BY-CONTENT
+=== ARM 1-B-utc-formatter: lib/shop-availability.ts (jest rc=1)
+Tests:       4 failed, 10 passed, 14 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › '20 minutes' sends PUT {minutes: 20}; the control and banner show the SERVER's pausedUntil in UK time, never a client timer
+    Expected element to have text content:
+    Received:
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › '40 minutes' sends PUT {minutes: 40}
+    Expected element to have text content:
+    Received:
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › a pause made on another device shows on the board's next 60 s re-read, with the server's time (no tap here)
+    Expected element to have text content:
+    Received:
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › at the stated time the board re-reads the shop: a pause extended elsewhere stays, an ended one clears
+    Expected element to have text content:
+    Received:
+restore: before=21d35f10aa0318db0cd2fba8ad89db9ffe8d5e4a80fd49504613b8ead9c6ed44 after=21d35f10aa0318db0cd2fba8ad89db9ffe8d5e4a80fd49504613b8ead9c6ed44 RESTORED-BY-CONTENT
+=== ARM 1-C-items-enabled-in-flight: components/dashboard/kitchen/pause-orders-control.tsx (jest rc=1)
+Tests:       1 failed, 13 passed, 14 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › while a pause or resume is in flight every menu item, the control and 'Resume orders' are disabled, so a second tap cannot send a conflicting request
+    Expected the element to have attribute:
+    Received:
+restore: before=300aa1355841f50b55392105b4c42b9c2b2c496861cb310e83477c2ee5854e1f after=300aa1355841f50b55392105b4c42b9c2b2c496861cb310e83477c2ee5854e1f RESTORED-BY-CONTENT
+=== ARM 1-D-stale-until-is-paused: components/dashboard/kitchen/pause-orders-control.tsx (jest rc=1)
+Tests:       2 failed, 12 passed, 14 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › an ended pause the shop read still carries (a past ordersPausedUntil) is no pause
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "Pause orders"
+    Received: "Paused until 18:00"
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › at the stated time the board re-reads the shop: a pause extended elsewhere stays, an ended one clears
+    expected document not to contain element, found <div class="flex flex-wrap items-center gap-4 rounded-lg border-2 border-slate-900 bg-white p-4" data-testid="kds-paused-banner" role="status"><svg aria-hidden="true" class="lucide lucide-circle-pause lucide-pause-circle h-6 w-6 shrink-0 text-slate-900" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" /><line x1="10" x2="10" y1="15" y2="9" /><line x1="14" x2="14" y1="15" y2="9" /></svg><div class="min-w-0 flex-1 basis-56 [overflow-wrap:anywhere]"><p class="text-sm text-slate-600">Test Shop</p><p class="text-base font-semibold text-slate-900">Orders paused until 18:50. Customers can see your menu but can't order.</p></div><button class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 kds-press h-11">Resume orders</button></div> instead
+restore: before=300aa1355841f50b55392105b4c42b9c2b2c496861cb310e83477c2ee5854e1f after=300aa1355841f50b55392105b4c42b9c2b2c496861cb310e83477c2ee5854e1f RESTORED-BY-CONTENT
+=== ARM 1-E-header-row-nowrap: app/dashboard/kitchen/page.tsx (jest rc=1)
+Tests:       1 failed, 13 passed, 14 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › the header has 'Pause orders' (outline, h-11, PauseCircle) after the shop selector, in the row that wraps
+    Received: null
+restore: before=790f2fc6d22089134aca83fee5d603f719e7e54239081c968ca7ea473742d845 after=790f2fc6d22089134aca83fee5d603f719e7e54239081c968ca7ea473742d845 RESTORED-BY-CONTENT
+=== ARM 1-F-banner-slate900-fill: components/dashboard/kitchen/paused-banner.tsx (jest rc=1)
+Tests:       1 failed, 13 passed, 14 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › the banner is white with a 2px slate-900 border, never slate-900-filled (L6: that fill is the allergy note's)
+    expect(received).toContain(expected) // indexOf
+    Expected value:  "bg-white"
+    Received object: {"0": "flex", "1": "flex-wrap", "2": "items-center", "3": "gap-4", "4": "rounded-lg", "5": "border-2", "6": "border-slate-900", "7": "bg-slate-900", "8": "p-4"}
+restore: before=2e25174d162c386a22c4441ded5adbdd90f0fbbd5fd7e5918c5daab80de7e51b after=2e25174d162c386a22c4441ded5adbdd90f0fbbd5fd7e5918c5daab80de7e51b RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       14 passed, 14 total
+git diff --quiet HEAD rc=0
+--- added arms on committed 7b80f302 (2026-10-10T15:53:10Z)
+=== ARM 1-G-no-60s-reread: components/dashboard/kitchen/pause-orders-control.tsx (jest rc=1)
+Tests:       1 failed, 14 passed, 15 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › a pause made on another device shows on the board's next 60 s re-read, with the server's time (no tap here)
+    Received has value: null
+restore: before=f620829f6950dca806fc2a1757525ec240a941029ea5a1a513777f607d9f0f6c after=f620829f6950dca806fc2a1757525ec240a941029ea5a1a513777f607d9f0f6c RESTORED-BY-CONTENT
+=== ARM 1-H-no-reread-at-stated-end: components/dashboard/kitchen/pause-orders-control.tsx (jest rc=0)
+Tests:       15 passed, 15 total
+restore: before=f620829f6950dca806fc2a1757525ec240a941029ea5a1a513777f607d9f0f6c after=f620829f6950dca806fc2a1757525ec240a941029ea5a1a513777f607d9f0f6c RESTORED-BY-CONTENT
+CLEAN-AFTER-2: Tests:       15 passed, 15 total
+git diff --quiet HEAD rc=0
+--- arm 1-H re-run against the strengthened test (2026-10-10T15:53:39Z), test file uncommitted: arm.sh checks only the broken file
+=== ARM 1-H2-no-reread-at-stated-end: components/dashboard/kitchen/pause-orders-control.tsx (jest rc=1)
+Tests:       1 failed, 15 passed, 16 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › hides the banner AT the stated end, before the next 60 s poll, once the re-read confirms the pause ended
+    expected document not to contain element, found <div class="flex flex-wrap items-center gap-4 rounded-lg border-2 border-slate-900 bg-white p-4" data-testid="kds-paused-banner" role="status"><svg aria-hidden="true" class="lucide lucide-circle-pause lucide-pause-circle h-6 w-6 shrink-0 text-slate-900" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" /><line x1="10" x2="10" y1="15" y2="9" /><line x1="14" x2="14" y1="15" y2="9" /></svg><div class="min-w-0 flex-1 basis-56 [overflow-wrap:anywhere]"><p class="text-sm text-slate-600">Test Shop</p><p class="text-base font-semibold text-slate-900">Orders paused until 18:30. Customers can see your menu but can't order.</p></div><button class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 kds-press h-11">Resume orders</button></div> instead
+restore: before=f620829f6950dca806fc2a1757525ec240a941029ea5a1a513777f607d9f0f6c after=f620829f6950dca806fc2a1757525ec240a941029ea5a1a513777f607d9f0f6c RESTORED-BY-CONTENT
+
+## arms-preread.txt
+Pre-read arm on committed 7b80f302
+=== ARM P-A-enabled-before-read: app/dashboard/kitchen/page.tsx (jest rc=1)
+Tests:       1 failed, 14 passed, 15 total
+  ● Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15) › until the server's shop read lands the control is disabled: it never claims 'not paused' before the server has said so
+    Received element is not disabled:
+restore: before=45ac828fb76de94790308810f9612ae317fc2996d20505d86f68e8be06aef6ef after=45ac828fb76de94790308810f9612ae317fc2996d20505d86f68e8be06aef6ef RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       15 passed, 15 total
+git diff --quiet HEAD rc=0
+
+## arms-task2.txt
+Task 2 break arms on committed 3b5bfa68 (2026-10-10T15:32:16Z)
+CLEAN-BEFORE: Tests:       19 passed, 19 total
+=== ARM 2-A-no-overlap-check: components/dashboard/shops/opening-schedule-editor.tsx (jest rc=1)
+Tests:       1 failed, 16 passed, 17 total
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › overlapping windows -> 'These times overlap. Change one of them.' in role=alert, aria-invalid on both windows' inputs, focus on the first, and no request
+    Expected number of calls: 0
+    Received number of calls: 1
+restore: before=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 after=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 RESTORED-BY-CONTENT
+=== ARM 2-B-no-next-day-spill-check: components/dashboard/shops/opening-schedule-editor.tsx (jest rc=1)
+Tests:       1 failed, 16 passed, 17 total
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › an overnight window that runs into the next day's hours is an overlap too (the server refuses it)
+    Expected number of calls: 0
+    Received number of calls: 1
+restore: before=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 after=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 RESTORED-BY-CONTENT
+=== ARM 2-C-no-missing-time-check: components/dashboard/shops/opening-schedule-editor.tsx (jest rc=1)
+Tests:       2 failed, 15 passed, 17 total
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › a window with no closing time -> 'Add a closing time, or tick Closed.' and no request
+    Expected number of calls: 0
+    Received number of calls: 1
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › validates on blur too, before any save
+restore: before=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 after=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 RESTORED-BY-CONTENT
+=== ARM 2-D-untouched-hours-sent-as-closed: app/dashboard/shops/page.tsx (jest rc=1)
+Tests:       2 failed, 15 passed, 17 total
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › a LEGACY_ALWAYS_OPEN shop opens with every day empty and the legacy info line; a save that leaves the hours alone omits openingSchedule (keeps the legacy state)
+    Expected path: not "openingSchedule"
+    Received value: {}
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › an edit to other fields only omits openingSchedule, so the stored hours are kept
+    Expected path: not "openingSchedule"
+    Received value: {}
+restore: before=f699852b6f9b46ce2eed46e732b6abba285743e229b3a17c7153a629a5168919 after=f699852b6f9b46ce2eed46e732b6abba285743e229b3a17c7153a629a5168919 RESTORED-BY-CONTENT
+=== ARM 2-E-old-needs-review-sentence: components/dashboard/shops/opening-schedule-editor.tsx (jest rc=1)
+Tests:       1 failed, 16 passed, 17 total
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › a NEEDS_REVIEW shop: an unreadable day opens Closed and quotes the original text with the D-25 ruling line; read days keep their windows; a day written 'closed' gets no quote
+restore: before=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 after=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 RESTORED-BY-CONTENT
+=== ARM 2-G-no-focus-on-error: components/dashboard/shops/opening-schedule-editor.tsx (jest rc=1)
+Tests:       2 failed, 15 passed, 17 total
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › overlapping windows -> 'These times overlap. Change one of them.' in role=alert, aria-invalid on both windows' inputs, focus on the first, and no request
+    expect(received).toBe(expected) // Object.is equality
+    - Expected  - 8
+    + Received  + 4
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › a window with no closing time -> 'Add a closing time, or tick Closed.' and no request
+    expect(received).toBe(expected) // Object.is equality
+    - Expected  - 8
+    + Received  + 4
+restore: before=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 after=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 RESTORED-BY-CONTENT
+=== ARM 2-H-fourth-window-offered: components/dashboard/shops/opening-schedule-editor.tsx (jest rc=1)
+Tests:       1 failed, 16 passed, 17 total
+  ● OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15) › zero-one-many: 0 windows is Closed, then 1, up to 3; 'Add another time' hides at 3 and removing the last window ticks Closed
+    expected document not to contain element, found <button class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-primary underline-offset-4 hover:underline py-2 h-11 px-0" type="button">Add another time</button> instead
+restore: before=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 after=bc16c6e394b95538b9739d7636771a04fec4db3764abea78592dc2bfb27cbe08 RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       19 passed, 19 total
+git diff --quiet HEAD rc=0
+
+## arms-task2-storefront.txt
+Storefront hours list break arms on committed f2557079 (2026-10-10T15:34:43Z)
+CLEAN-BEFORE: Tests:       8 passed, 8 total
+=== ARM 2S-A-list-from-free-text: app/shop/[slug]/shop-detail-client.tsx (jest rc=1)
+Tests:       4 failed, 4 passed, 8 total
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › a STRUCTURED shop lists its saved windows, Monday first, not the old free text left on the row
+    expect(received).toEqual(expected) // deep equality
+    - Expected  - 3
+    + Received  + 3
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › marks an overnight window and words the all-day window as open 24 hours
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "18:00–02:00 (next day)"
+    Received: undefined
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › a MIGRATED_FROM_TEXT shop lists its schedule too
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "10:00–16:00"
+    Received: "10:00 - 16:00"
+restore: before=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc after=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc RESTORED-BY-CONTENT
+=== ARM 2S-B-needs-review-from-schedule: app/shop/[slug]/shop-detail-client.tsx (jest rc=1)
+Tests:       1 failed, 7 passed, 8 total
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › a NEEDS_REVIEW shop keeps the vendor's text: its unreadable days are open on the server, so the schedule would print Closed for a day customers can order on
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "lunchtime till late"
+    Received: "Closed"
+restore: before=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc after=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc RESTORED-BY-CONTENT
+=== ARM 2S-C-both-sources-rendered: app/shop/[slug]/shop-detail-client.tsx (jest rc=1)
+Tests:       3 failed, 5 passed, 8 total
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › a STRUCTURED shop lists its saved windows, Monday first, not the old free text left on the row
+    expect(received).toEqual(expected) // deep equality
+    - Expected  -  0
+    + Received  + 28
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › a MIGRATED_FROM_TEXT shop lists its schedule too
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "10:00–16:00"
+    Received: "10:00 - 16:00"
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › never renders the list twice
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 2
+restore: before=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc after=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       8 passed, 8 total
+git diff --quiet HEAD rc=0
+=== ARM 2S-D-list-without-any-hours: app/shop/[slug]/shop-detail-client.tsx (jest rc=1)
+Tests:       1 failed, 7 passed, 8 total
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › no schedule and no text: no list at all
+    Received: [["Monday", "Closed"], ["Tuesday", "Closed"], ["Wednesday", "Closed"], ["Thursday", "Closed"], ["Friday", "Closed"], ["Saturday", "Closed"], ["Sunday", "Closed"]]
+restore: before=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc after=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc RESTORED-BY-CONTENT
+=== ARM 2S-E-legacy-text-dropped: app/shop/[slug]/shop-detail-client.tsx (jest rc=1)
+Tests:       1 failed, 7 passed, 8 total
+  ● storefront Opening hours list reads the structured schedule (37-21 deviation) › a legacy shop (legacyAlwaysOpen) with text shows the text; without text there is no list
+    expect(received).toBe(expected) // Object.is equality
+    Expected: "all day"
+    Received: undefined
+restore: before=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc after=8c3db89623fe1be446b53d96b0d82f3535506965e75aaac340232cf741ade7fc RESTORED-BY-CONTENT
+CLEAN-AFTER-2: Tests:       8 passed, 8 total
+git diff --quiet HEAD rc=0
+
+## arms-slug.txt
+Slug arms on committed d5e1490f
+=== ARM S-A-slug-sent-on-rename: app/dashboard/shops/page.tsx (jest rc=1)
+Tests:       1 failed, 22 passed, 23 total
+  ● saving hours keeps the shop's storefront address (37-21 Rule 1 deviation) › a rename leaves the slug out, so the server's rename behaviour is unchanged
+    Expected path: not "slug"
+    Received value: "s-structured"
+restore: before=a2c6124d6a8c14f98a0a9335ab2731fb38df79b0031924c75c6af6c1a658d2c8 after=a2c6124d6a8c14f98a0a9335ab2731fb38df79b0031924c75c6af6c1a658d2c8 RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       23 passed, 23 total
+git diff --quiet HEAD rc=0
+
+## arms-task3.txt
+Task 3 break arms on committed 013eb954 (2026-10-10T15:39:51Z)
+CLEAN-BEFORE: Tests:       501 passed, 501 total
+=== ARM 3-A-card-parses-text-ignoring-hoursSource: components/dashboard/hours-notice-card.tsx (jest rc=1)
+Tests:       3 failed, 4 passed, 7 total
+  ● HoursNoticeCard on the dashboard home (UI-SPEC K4 vendor notices) › STRUCTURED, MIGRATED_FROM_TEXT and unclassified shops: no card at all
+    expected document not to contain element, found <section aria-label="Opening hours to set" class="space-y-4 rounded-lg border border-amber-300 bg-white p-4" data-testid="hours-notice-card"><div class="space-y-3"><div class="flex items-start gap-3"><svg aria-hidden="true" class="lucide lucide-clock mt-0.5 h-5 w-5 shrink-0 text-amber-800" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg><div class="min-w-0 [overflow-wrap:anywhere]"><p class="text-base font-semibold text-slate-900">1 shop has no opening hours</p><p class="text-sm text-slate-700">Customers can order from it at any time, including when you're closed.</p></div></div><ul class="space-y-2"><li class="flex flex-wrap items-center justify-between gap-2 pl-8"><span class="min-w-0 text-sm font-medium text-slate-900 [overflow-wrap:anywhere]">Brand New</span><a aria-label="Set opening hours for Brand New" class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 h-11" href="/dashboard/shops?edit=s-new&focus=hours">Set opening hours</a></li></ul></div></section> instead
+  ● the notice reads hoursSource, never the text (fixtures where source and text disagree) › a STRUCTURED shop whose old unreadable text is still on the row gets no card
+    expected document not to contain element, found <section aria-label="Opening hours to set" class="space-y-4 rounded-lg border border-amber-300 bg-white p-4" data-testid="hours-notice-card"><div class="flex flex-wrap items-start justify-between gap-3"><div class="flex min-w-0 flex-1 items-start gap-3 basis-64"><svg aria-hidden="true" class="lucide lucide-clock mt-0.5 h-5 w-5 shrink-0 text-amber-800" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg><div class="min-w-0 [overflow-wrap:anywhere]"><p class="text-base font-semibold text-slate-900">Check the opening hours for Saved Since</p><p class="text-sm text-slate-700">We couldn't read some of the hours you entered. Check them, then save your hours.</p></div></div><a aria-label="Check hours for Saved Since" class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 ml-8 h-11 sm:ml-0" href="/dashboard/shops?edit=s-saved&focus=hours">Check hours</a></div></section> instead
+  ● the notice reads hoursSource, never the text (fixtures where source and text disagree) › a LEGACY shop is told it has no hours even when some text on the row reads cleanly
+    Received has value: null
+restore: before=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f after=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f RESTORED-BY-CONTENT
+=== ARM 3-B-card-while-list-pending-or-failed: components/dashboard/hours-notice-card.tsx (jest rc=1)
+Tests:       2 failed, 8 passed, 10 total
+  ● HoursNoticeCard on the dashboard home (UI-SPEC K4 vendor notices) › no list yet (pending) or a failed load (null): no card
+    expected document not to contain element, found <section data-testid="hours-notice-card">Checking opening hours</section> instead
+  ● Console
+  ● dashboard home hours notice (UI-SPEC K4 loading assumption) › renders no card when the shops list fails to load
+    expected document not to contain element, found <section data-testid="hours-notice-card">Checking opening hours</section> instead
+restore: before=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f after=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f RESTORED-BY-CONTENT
+=== ARM 3-C-badge-from-text: app/dashboard/shops/page.tsx (jest rc=1)
+Tests:       1 failed, 19 passed, 20 total
+  ● shops table notices and the deep link from the dashboard home (37-21 Task 3, UI-SPEC K3/K4) › badges read hoursSource and the pause: 'Hours not set' (LEGACY), 'Check hours' (NEEDS_REVIEW), 'Paused until 19:40' / 'Paused'; nothing for STRUCTURED
+    expected document not to contain element, found <div class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-amber-300 text-amber-800"><svg aria-hidden="true" class="lucide lucide-clock mr-1 h-3 w-3" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>Check hours</div> instead
+restore: before=178323658c776cb468246994ee11669e4920aae928db835cdd6c226491691989 after=178323658c776cb468246994ee11669e4920aae928db835cdd6c226491691989 RESTORED-BY-CONTENT
+=== ARM 3-D-ended-pause-badged: app/dashboard/shops/page.tsx (jest rc=1)
+Tests:       1 failed, 19 passed, 20 total
+  ● shops table notices and the deep link from the dashboard home (37-21 Task 3, UI-SPEC K3/K4) › badges read hoursSource and the pause: 'Hours not set' (LEGACY), 'Check hours' (NEEDS_REVIEW), 'Paused until 19:40' / 'Paused'; nothing for STRUCTURED
+    expected document not to contain element, found <div class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-slate-900"><svg aria-hidden="true" class="lucide lucide-circle-pause lucide-pause-circle mr-1 h-3 w-3" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" /><line x1="10" x2="10" y1="15" y2="9" /><line x1="14" x2="14" y1="15" y2="9" /></svg>Paused until 17:00</div> instead
+restore: before=178323658c776cb468246994ee11669e4920aae928db835cdd6c226491691989 after=178323658c776cb468246994ee11669e4920aae928db835cdd6c226491691989 RESTORED-BY-CONTENT
+=== ARM 3-E-deep-link-ignores-focus: app/dashboard/shops/page.tsx (jest rc=1)
+Tests:       1 failed, 19 passed, 20 total
+  ● shops table notices and the deep link from the dashboard home (37-21 Task 3, UI-SPEC K3/K4) › ?edit={id}&focus=hours opens that shop's dialog with focus on the Opening hours fieldset, and drops the parameter
+    expect(received).toBe(expected) // Object.is equality
+    - Expected  - 585
+    + Received  +   4
+restore: before=178323658c776cb468246994ee11669e4920aae928db835cdd6c226491691989 after=178323658c776cb468246994ee11669e4920aae928db835cdd6c226491691989 RESTORED-BY-CONTENT
+=== ARM 3-F-old-needs-review-card-sentence: components/dashboard/hours-notice-card.tsx (jest rc=1)
+Tests:       1 failed, 6 passed, 7 total
+  ● HoursNoticeCard on the dashboard home (UI-SPEC K4 vendor notices) › a NEEDS_REVIEW shop: 'Check the opening hours for Mama Put' names the unreadable days and says, per the D-25 ruling, that customers can still order on them
+restore: before=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f after=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       501 passed, 501 total
+git diff --quiet HEAD rc=0
+
+## Tallies
+jest arms restored by content: 29 of 29; the build arm B-T below: restored by content; restore failures: 0; VOID: 0
+=== ARM B-T build type error in components/dashboard/hours-notice-card.tsx (build rc=1)
+components/dashboard/hours-notice-card.tsx(101,14): error TS2322: Type 'string' is not assignable to type 'number'.
+restore: before=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f after=565778a2c969543f46e5c1f59478e96d4172029b840ae8e68504fc9cbbeba04f RESTORED-BY-CONTENT
+CLEAN-AFTER build rc=0
+git diff --quiet HEAD rc=0

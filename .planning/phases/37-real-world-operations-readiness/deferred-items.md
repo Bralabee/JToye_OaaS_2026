@@ -316,3 +316,39 @@ where it must be resolved.
   3-method IT `DemoDataSeederHoursIntegrationTest`. `count-test-blocks.mjs --per-file` counts every
   changed jest file equal to its executed count (116 = 116 over the 8 files). The 37-17
   `.each(TABLE.filter(...))` VOID is untouched; regenerate `docs/metrics.json` after it is fixed.
+
+## From 37-21 (kitchen pause, structured hours editor, hours notices)
+
+- **The server still regenerates a shop's slug on every update that carries none.** `ShopService.updateShop`
+  sets `generateSlug(name)` (name + a random 8-character suffix) whenever `request.getSlug()` is blank; its
+  own comment says the regeneration is meant for a name change, but the code does not check one. The shop
+  dialog never sent a slug, so every dialog save moved the shop to a new `/shop/{slug}`. 37-21 fixed the
+  DIALOG (it now sends the current slug unless the name changed; RED a834abcb, GREEN d5e1490f, live: the
+  hours save kept `mama-ades-kitchen`). Any other client that updates a shop without a slug (REST, an
+  agent) still renames it. Not fixed server-side: no Java in this plan, and whether a rename should move
+  the storefront address at all is an owner question (links and SEO break on every rename). Found by
+  reading the source before the live run; the pre-fix live fail direction was deliberately not run.
+- **A 403 on pause also stops the kitchen board.** The pause endpoint and the board's own read are both
+  gated at STAFF on the shop, so a `shop-access-denied` 403 from a pause means the grant is gone, and
+  37-18's D-08 listener shows the "access ended" overlay. The K3 refusal copy ("You can't pause orders
+  for this shop. Ask a manager.") renders under the control, behind the overlay. Proven in jest only
+  (WINDOWS #37); not provoked live.
+- **"Closes after midnight (next day)" under the all-day windows.** Every seeded demo shop holds
+  00:00-00:00 on all seven days, and the editor shows the overnight hint under each (close <= open is
+  overnight, the server's rule; the storefront list words the same window "Open 24 hours"). Correct, but
+  seven identical hints read oddly. A design look for the 37-23 UAT, not a defect.
+- **The kitchen reads the shop once a minute.** The pause state re-reads `GET /api/v1/shops/{id}` on the
+  board's existing 60 s poll (KITCHEN_POLL_INTERVAL_MS), after each pause or resume, and at a timed
+  pause's stated end. Measured live: a second device showed a pause, and cleared a resume, 60 s after the
+  first device acted. One extra request per board per minute against the tenant's 100/min budget.
+- **Partially read NEEDS_REVIEW days get no quote.** The editor quotes the original text only for days
+  the server keeps open all day under the D-25 ruling (schedule empty, text present and not "closed").
+  A day where V80 read the first window and ignored the rest ("09:00-17:00 (lunch 2-3)") opens with that
+  window and no quote. Not measured on real data: the dev DB has no NEEDS_REVIEW shop since 37-22.
+- **Docs metrics.** 37-21 adds 5 jest files: `pause-orders` 16, `opening-schedule-editor` 23,
+  `shop-hours-list` 8, `hours-notice-card` 7, `hours-notice-home` 3 (`count-test-blocks.mjs --per-file`
+  57 = 57 executed). jest 2607 tests / 220 suites against the re-measured 2550/215. No Java change. The
+  37-17 `.each(TABLE.filter(...))` VOID is untouched; regenerate `docs/metrics.json` after it is fixed.
+- **RWO-022 stays open.** 37-23 (the UAT) also declares it; `requirements.ready-ids` reports it blocked
+  for 37-21. Every implementation truth across 37-19..37-22 and 37-21 is met; the human-verified rows
+  (WINDOWS #35, #37) are 37-23's.

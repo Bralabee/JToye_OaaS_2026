@@ -455,7 +455,7 @@ Precedence, first match wins:
 | Shortcut | "Copy Monday to every day" `variant="link"` above the rows. |
 | Empty | A shop with every day ticked Closed or no windows saves as **closed every day** (D-15). The save button is not blocked, but a 14px amber-800 note above it reads the copy below. Customers cannot order from that shop. |
 | Legacy shop | For `hours_source = LEGACY_ALWAYS_OPEN`, the editor opens with every day empty and an info line: the copy below. Saving any hours ends the legacy state (D-25). |
-| Needs-review shop | For `NEEDS_REVIEW`, the days that could not be read open as **Closed** (what the storefront already showed), each with a 14px amber-800 line quoting the original text, so the vendor sees what they typed: `We couldn't read "{original text}". This day shows as closed.` |
+| Needs-review shop | For `NEEDS_REVIEW`, the days that could not be read open in the editor as **Closed** (a save makes them closed, D-15), each with a 14px amber-800 line quoting the original text, so the vendor sees what they typed: `We couldn't read "{original text}". Customers can still order on this day at any time until you save your hours.` (D-25 ruling 2026-10-10: the server keeps such a day open until the vendor saves hours; orchestrator copy decision in 37-21, pending the owner's wording.) |
 
 **Vendor notices** (`/dashboard` home and `/dashboard/shops`):
 
@@ -788,10 +788,10 @@ The copy below is the contract. Every claim in it must be backed by data the UI 
 | Hours: overnight hint | Closes after midnight (next day) |
 | Hours: all closed note | With no opening hours, customers can't order from this shop. |
 | Hours: legacy info | Customers can currently order from this shop at any time, because no opening hours were set. Add your hours to change that. |
-| Hours: unreadable day | We couldn't read "{original text}". This day shows as closed. |
+| Hours: unreadable day | We couldn't read "{original text}". Customers can still order on this day at any time until you save your hours. (D-25 ruling 2026-10-10) |
 | Notice badges | Hours not set · Check hours |
 | Dashboard card (legacy) | **{n} shop(s) have no opening hours** · Customers can order from {them/it} at any time, including when you're closed. · [Set opening hours] |
-| Dashboard card (needs review) | **Check the opening hours for {Shop}** · We couldn't read the hours you entered for {days}. Those days show as closed. · [Check hours] |
+| Dashboard card (needs review) | **Check the opening hours for {Shop}** · We couldn't read the hours you entered for {days}. Customers can order on those days at any time until you save your hours. · [Check hours] (D-25 ruling 2026-10-10) |
 
 ### B1-B3 — staff, invitations, no access
 
