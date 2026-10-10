@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 10
 waived_count: 0
 fixed_count: 23
-total_count: 31
-last_updated: 2026-10-09T13:23:23.843Z
+total_count: 33
+last_updated: 2026-10-10T13:14:21.570Z
 ---
 
 # Broken Windows Ledger
@@ -46,6 +46,8 @@ last_updated: 2026-10-09T13:23:23.843Z
 | 29 | 37 | unmet-truth | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | 37-15 live: D-06 'ungranted means no access' does not hold for /api/v1/customers. A tenant user with no shop_staff grant (fresh, or revoked) read all 8 tenant A customers (names, emails, phones) with GET 200 and created one with POST 201; Phase 23 left CustomerController tenant-scoped, not shop-scoped, by design, which strict OFF hid. Needs an owner ruling on the customer access rule before the 37-B PR merges RULED 2026-10-09 (owner, option B): every /api/v1/customers operation requires an honoured grant under D-06 (ShopAccessService.requireAnyAccess, the staff/me predicate), checked before the Idempotency-Key replay; proven in Testcontainers by CustomerAccessGateIntegrationTest; option C (per-shop narrowing) and option E (a SHOP_MANAGER floor on customer writes and staff DELETE) are separate future rulings. | fixed |  | 2026-10-09T09:35:11.795Z | 2026-10-09T11:24:15.166Z |
 | 30 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | WINDOWS #29 customer gate is proven in Testcontainers only; the compose runtime predates it, so check-runtime-freshness reports core-java and check-openapi-snapshot-fresh reports the five new 403s until the next rebuild; live proof owed at the 37-B ship: ungranted GET /api/v1/customers 403 shop-access-denied, STAFF 200, an ungranted dashboard login lands on the no-access page | open |  | 2026-10-09T11:24:20.204Z |  |
 | 31 | 37 | stub | frontend/app/dashboard/kitchen/page.tsx | 612 | 37-17 passes useKitchenAlert stopped:false and deriveFeedState no signedOut/noAccess: the K2 board-stopped state, the session-lapse and the access-ended inputs are 37-18's to wire (the hook and the pill already honour them, tested). Close when 37-18 wires all three. | open |  | 2026-10-09T13:23:23.843Z |  |
+| 32 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/storefront/ShopAvailabilityPolicy.java |  | D-25 owner ruling 2026-10-10 (accepted consumer-safety risk): a NEEDS_REVIEW shop's day whose free text V80 could not read keeps taking storefront orders all day (the pre-D-15 fail-open) until the vendor saves structured hours; read days and days written Closed are enforced as before deploy. Close when no shop is NEEDS_REVIEW, or by a new owner ruling. | open |  | 2026-10-10T13:14:21.463Z |  |
+| 33 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/shop/ShopController.java |  | 37-20 pause endpoints, the 409 shop-closed refusal and the new ShopDto/PublicShopDto fields are proven in Testcontainers only; the compose core-java predates them (and V80, WINDOWS #30). Owed at the next core-java rebuild: PUT /shops/{id}/pause then a storefront order 409 PAUSED, DELETE then 201, GET /public/shops/{slug} openNow, the V80 NOTICE counts, check-openapi-snapshot-fresh green. | open |  | 2026-10-10T13:14:21.570Z |  |
 
 ````json
 [
@@ -449,6 +451,32 @@ last_updated: 2026-10-09T13:23:23.843Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-09T13:23:23.843Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 32,
+    "kind": "deviation",
+    "phase": "37",
+    "file": "core-java/src/main/java/uk/jtoye/core/storefront/ShopAvailabilityPolicy.java",
+    "line": null,
+    "description": "D-25 owner ruling 2026-10-10 (accepted consumer-safety risk): a NEEDS_REVIEW shop's day whose free text V80 could not read keeps taking storefront orders all day (the pre-D-15 fail-open) until the vendor saves structured hours; read days and days written Closed are enforced as before deploy. Close when no shop is NEEDS_REVIEW, or by a new owner ruling.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-10T13:14:21.463Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 33,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "core-java/src/main/java/uk/jtoye/core/shop/ShopController.java",
+    "line": null,
+    "description": "37-20 pause endpoints, the 409 shop-closed refusal and the new ShopDto/PublicShopDto fields are proven in Testcontainers only; the compose core-java predates them (and V80, WINDOWS #30). Owed at the next core-java rebuild: PUT /shops/{id}/pause then a storefront order 409 PAUSED, DELETE then 201, GET /public/shops/{slug} openNow, the V80 NOTICE counts, check-openapi-snapshot-fresh green.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-10T13:14:21.570Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }

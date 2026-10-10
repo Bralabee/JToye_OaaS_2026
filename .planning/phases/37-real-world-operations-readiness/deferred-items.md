@@ -223,3 +223,30 @@ where it must be resolved.
   `allergen-surfacing` tests still install a per-beep `AudioContext` mock "so playBeep() does not
   explode". Nothing constructs one without a tap any more, so they are inert; harmless, left alone
   (not this plan's files).
+
+## From 37-20 (pause and structured-hours enforcement)
+
+- **The NEEDS_REVIEW copy in 37-21 and the UI-SPEC is now untrue.** Owner ruling 2026-10-10 (D-25
+  honoured literally): a day V80 could not read stays OPEN on the server until the vendor saves
+  structured hours, and `PublicShopDto.openNow` says so. The copy "We couldn't read "{original text}".
+  This day shows as closed." (37-21 must-have, UI-SPEC lines 458 and 791) describes the old client
+  render, not what customers get. 37-21 pre-filling such a day as Closed in the EDITOR is still right
+  (a save makes it closed, D-15); the explanatory line needs the owner's wording, along the lines of
+  "customers can still order on this day until you save your hours". 37-22 must render `openNow`, not
+  re-parse `openingHours`, or the storefront shows Closed while checkout accepts the order.
+- **The docs-metrics gate now VOIDs (rc 2), a new cause on top of item 1.** Measured 2026-10-10 on
+  `935bf0a6`: `scripts/docs-freshness.sh` stops at `count-test-blocks.mjs could not count family
+  'jest'`: `frontend/components/dashboard/kitchen/__tests__/kds-feed-status.test.tsx:244` (37-17)
+  has an `.each(TABLE.filter(...))` table the counter's POLICY cannot resolve. Extend the counter
+  (or rewrite the table as a literal) before the pre-PR regeneration. 37-20 adds 27 unit test methods
+  (`ShopAvailabilityPolicyTest` 25, `ShopDtoScheduleCacheRoundTripTest` 2) and one 14-method IT
+  file (`ShopPauseIntegrationTest`). Re-measure; do not copy.
+- **Interim, until 37-21 replaces the free-text editor:** a vendor saving free-text `openingHours`
+  through today's dashboard changes only the legacy text, not `hours_source`, so it no longer
+  affects whether the shop takes orders. A LEGACY shop stays open at any time; a STRUCTURED or new
+  shop follows its schedule (a new shop with none takes no orders, D-15). Both run on this phase
+  branch only.
+- **The runtime is not rebuilt.** core-java on the compose stack predates the customer gate, V80
+  and 37-20 (WINDOWS #30, and the WINDOWS entry 37-20 adds). The pause endpoints, the 409
+  shop-closed and the new DTO fields are proven in Testcontainers only; `check-openapi-snapshot-fresh.sh`
+  will report the 274 added snapshot lines until the next rebuild.
