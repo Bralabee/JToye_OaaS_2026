@@ -38,6 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
@@ -339,6 +340,188 @@ class ShopPauseIntegrationTest {
         assertThat(problem.path("reason").asString()).isEqualTo("CLOSED_TODAY");
         assertThat(problem.path("reopensAt").asString()).as("tomorrow's window opens at midnight").isNotBlank();
         assertThat(countOrdersByEmail(f, email)).isZero();
+    }
+
+    // ------------------------------------------------------------------
+    // Task 3: every surface reads the server's answer, and vendors save structured hours
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("theme 2: the public shop carries the policy's answer: paused -> openNow false with pausedUntil and nextOpenAt; resumed -> openNow true")
+    void publicShop_carriesPauseState() throws Exception {
+        Fixture f = Fixture.seed(jdbc, "LEGACY_ALWAYS_OPEN", null, null);
+        UUID staff = grant(f, "STAFF");
+        MvcResult paused = mockMvc.perform(withJson(put(pauseUrl(f)).with(vendor(f.tenant, staff)),
+                        Map.of("minutes", 20)))
+                .andReturn();
+        JsonNode pausedDto = json(paused);
+        assertThat(pausedDto.path("ordersPausedUntil").asString())
+                .as("the vendor's ShopDto carries the pause end: %s", text(paused)).isNotBlank();
+        assertThat(pausedDto.path("ordersPausedIndefinitely").asBoolean(true)).isFalse();
+
+        JsonNode shop = publicShop(f);
+        assertThat(shop.path("openNow").isBoolean()).as("openNow is always present: %s", shop).isTrue();
+        assertThat(shop.path("openNow").asBoolean()).as("a paused shop is not open: %s", shop).isFalse();
+        assertThat(OffsetDateTime.parse(shop.path("pausedUntil").asString()).toInstant())
+                .isEqualTo(OffsetDateTime.parse(pausedDto.path("ordersPausedUntil").asString()).toInstant());
+        assertThat(OffsetDateTime.parse(shop.path("nextOpenAt").asString()).toInstant())
+                .as("a legacy shop reopens when the pause ends")
+                .isEqualTo(OffsetDateTime.parse(shop.path("pausedUntil").asString()).toInstant());
+        assertThat(shop.path("pausedIndefinitely").asBoolean(true)).isFalse();
+
+        mockMvc.perform(delete(pauseUrl(f)).with(vendor(f.tenant, staff))).andReturn();
+        JsonNode resumed = publicShop(f);
+        assertThat(resumed.path("openNow").asBoolean()).as("%s", resumed).isTrue();
+        assertThat(resumed.path("pausedUntil").isNull() || resumed.path("pausedUntil").isMissingNode()).isTrue();
+    }
+
+    @Test
+    @DisplayName("D-25: the public shop says when hours are legacy (legacyAlwaysOpen, no schedule) or under review (hoursSource), and a closed STRUCTURED shop reads openNow false")
+    void publicShop_carriesHoursState() throws Exception {
+        JsonNode legacy = publicShop(Fixture.seed(jdbc, "LEGACY_ALWAYS_OPEN", null, null));
+        assertThat(legacy.path("legacyAlwaysOpen").asBoolean()).as("%s", legacy).isTrue();
+        assertThat(legacy.path("openingSchedule").isNull() || legacy.path("openingSchedule").isMissingNode())
+                .as("a legacy shop has no structured schedule: %s", legacy).isTrue();
+        assertThat(legacy.path("openNow").asBoolean()).isTrue();
+        assertThat(legacy.path("hoursSource").asString()).isEqualTo("LEGACY_ALWAYS_OPEN");
+
+        String today = todayKey();
+        JsonNode review = publicShop(Fixture.seed(jdbc, "NEEDS_REVIEW", legacyTextJson(today, "ask at the counter"),
+                scheduleJson(today, true)));
+        assertThat(review.path("hoursSource").asString()).as("%s", review).isEqualTo("NEEDS_REVIEW");
+        assertThat(review.path("legacyAlwaysOpen").asBoolean(true)).isFalse();
+        assertThat(review.path("openNow").asBoolean()).as("D-25: the unreadable day stays open").isTrue();
+        assertThat(review.path("openingSchedule").path("mon").isArray()).as("%s", review).isTrue();
+
+        JsonNode closed = publicShop(Fixture.seed(jdbc, "STRUCTURED", null, scheduleJson(null, false)));
+        assertThat(closed.path("openNow").asBoolean(true)).as("%s", closed).isFalse();
+        assertThat(closed.path("legacyAlwaysOpen").asBoolean(true)).isFalse();
+        assertThat(closed.path("openingSchedule").path("mon").size()).isZero();
+    }
+
+    @Test
+    @DisplayName("D-15: a vendor saving a schedule makes the shop STRUCTURED; {} saves closed every day; a save without the field keeps schedule and source")
+    void vendorSavesStructuredHours() throws Exception {
+        Fixture f = Fixture.seed(jdbc, "LEGACY_ALWAYS_OPEN", null, null);
+        Map<String, Object> monday = Map.of("mon", List.of(Map.of("open", "09:00", "close", "17:00")),
+                "fri", List.of(Map.of("open", "18:00", "close", "02:00")));
+
+        MvcResult saved = updateShop(f, monday);
+        assertThat(saved.getResponse().getStatus()).as(text(saved)).isEqualTo(200);
+        Map<String, Object> row = hoursColumns(f.shopId);
+        assertThat(row.get("hours_source")).isEqualTo("STRUCTURED");
+        JsonNode stored = jsonMapper.readTree(String.valueOf(row.get("opening_schedule")));
+        assertThat(stored.path("mon").get(0).path("open").asString()).isEqualTo("09:00");
+        assertThat(stored.path("fri").get(0).path("close").asString()).isEqualTo("02:00");
+        assertThat(stored.path("tue").size()).as("a day not sent is closed: %s", stored).isZero();
+        JsonNode dto = json(saved);
+        assertThat(dto.path("hoursSource").asString()).isEqualTo("STRUCTURED");
+        assertThat(dto.path("openingSchedule").path("mon").get(0).path("close").asString()).isEqualTo("17:00");
+
+        MvcResult kept = updateShop(f, null);
+        assertThat(kept.getResponse().getStatus()).as(text(kept)).isEqualTo(200);
+        Map<String, Object> afterKeep = hoursColumns(f.shopId);
+        assertThat(afterKeep.get("hours_source")).as("an absent schedule keeps the source").isEqualTo("STRUCTURED");
+        assertThat(jsonMapper.readTree(String.valueOf(afterKeep.get("opening_schedule"))))
+                .as("an absent schedule keeps the schedule").isEqualTo(stored);
+
+        MvcResult cleared = updateShop(f, Map.of());
+        assertThat(cleared.getResponse().getStatus()).as(text(cleared)).isEqualTo(200);
+        Map<String, Object> afterClear = hoursColumns(f.shopId);
+        assertThat(afterClear.get("hours_source")).isEqualTo("STRUCTURED");
+        JsonNode closedAll = jsonMapper.readTree(String.valueOf(afterClear.get("opening_schedule")));
+        for (String key : uk.jtoye.core.shop.OpeningSchedule.DAY_KEYS) {
+            assertThat(closedAll.path(key).isArray() && closedAll.path(key).isEmpty())
+                    .as("{} saves %s closed: %s", key, closedAll).isTrue();
+        }
+        MvcResult refused = guestOrder(f, null, "after-clear-" + UUID.randomUUID() + "@example.com");
+        assertThat(json(refused).path("reason").asString())
+                .as("D-15: the vendor saved no hours, so the shop takes no orders: %s", text(refused))
+                .isEqualTo("NO_HOURS");
+    }
+
+    @Test
+    @DisplayName("D-15: overlapping windows or more than 3 a day are a 400 naming the day, and nothing is saved")
+    void invalidSchedule_400NamesTheDay() throws Exception {
+        Fixture f = Fixture.seed(jdbc, "LEGACY_ALWAYS_OPEN", null, null);
+        MvcResult overlap = updateShop(f, Map.of("wed", List.of(Map.of("open", "09:00", "close", "13:00"),
+                Map.of("open", "12:00", "close", "15:00"))));
+        JsonNode problem = assertProblem(overlap, 400, VALIDATION, null);
+        assertThat(problem.path("errors").path("openingSchedule.wed").asString()).as(text(overlap)).contains("overlap");
+
+        MvcResult four = updateShop(f, Map.of("thu", List.of(Map.of("open", "06:00", "close", "07:00"),
+                Map.of("open", "08:00", "close", "09:00"), Map.of("open", "10:00", "close", "11:00"),
+                Map.of("open", "12:00", "close", "13:00"))));
+        JsonNode tooMany = assertProblem(four, 400, VALIDATION, null);
+        assertThat(tooMany.path("errors").path("openingSchedule.thu").asString()).as(text(four)).contains("at most 3");
+
+        MvcResult unknownDay = updateShop(f, Map.of("funday", List.of(Map.of("open", "09:00", "close", "17:00"))));
+        JsonNode unknown = assertProblem(unknownDay, 400, VALIDATION, null);
+        assertThat(unknown.path("errors").has("openingSchedule.funday")).as(text(unknownDay)).isTrue();
+
+        Map<String, Object> row = hoursColumns(f.shopId);
+        assertThat(row.get("hours_source")).as("nothing was saved").isEqualTo("LEGACY_ALWAYS_OPEN");
+        assertThat(row.get("opening_schedule")).isNull();
+    }
+
+    @Test
+    @DisplayName("ShopDto exposes hoursSource, the original text as legacyOpeningHours (for the NEEDS_REVIEW notice) and the pause fields; a new shop saved without hours is unclassified, never LEGACY_ALWAYS_OPEN")
+    void shopDto_exposesHoursAndPause_andCreateNeverWritesLegacy() throws Exception {
+        String today = todayKey();
+        Fixture f = Fixture.seed(jdbc, "NEEDS_REVIEW", legacyTextJson(today, "ask at the counter"), scheduleJson(today, true));
+        UUID staff = grant(f, "STAFF");
+        MvcResult read = mockMvc.perform(get("/api/v1/shops/" + f.shopId).with(vendor(f.tenant, staff))).andReturn();
+        JsonNode dto = json(read);
+        assertThat(dto.path("hoursSource").asString()).as(text(read)).isEqualTo("NEEDS_REVIEW");
+        assertThat(dto.path("legacyOpeningHours").path(today).asString()).isEqualTo("ask at the counter");
+        assertThat(dto.path("openingSchedule").path(today).isArray()).isTrue();
+        assertThat(dto.path("ordersPausedIndefinitely").isBoolean()).as("pause state is exposed: %s", dto).isTrue();
+
+        MvcResult created = mockMvc.perform(withJson(post("/api/v1/shops").with(admin(f.tenant)),
+                        Map.of("name", "Brand New Kitchen " + UUID.randomUUID().toString().substring(0, 8))))
+                .andReturn();
+        assertThat(created.getResponse().getStatus()).as(text(created)).isEqualTo(201);
+        UUID newShop = UUID.fromString(json(created).path("id").asString());
+        assertThat(hoursColumns(newShop).get("hours_source"))
+                .as("the application never writes LEGACY_ALWAYS_OPEN: a new shop without hours is unclassified").isNull();
+
+        MvcResult createdWithHours = mockMvc.perform(withJson(post("/api/v1/shops").with(admin(f.tenant)),
+                        Map.of("name", "Hours Kitchen " + UUID.randomUUID().toString().substring(0, 8),
+                                "openingSchedule", Map.of("sat", List.of(Map.of("open", "10:00", "close", "16:00"))))))
+                .andReturn();
+        assertThat(createdWithHours.getResponse().getStatus()).as(text(createdWithHours)).isEqualTo(201);
+        assertThat(json(createdWithHours).path("hoursSource").asString()).isEqualTo("STRUCTURED");
+    }
+
+    private JsonNode publicShop(Fixture f) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/public/shops/" + f.slug)).andReturn();
+        assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(200);
+        return json(result);
+    }
+
+    /** A vendor (realm admin) save of the shop; {@code schedule == null} omits openingSchedule. */
+    private MvcResult updateShop(Fixture f, Map<String, Object> schedule) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", f.shopName);
+        body.put("slug", f.slug);
+        if (schedule != null) {
+            body.put("openingSchedule", schedule);
+        }
+        return mockMvc.perform(withJson(put("/api/v1/shops/" + f.shopId).with(admin(f.tenant)), body)).andReturn();
+    }
+
+    private Map<String, Object> hoursColumns(UUID shopId) {
+        return jdbc.queryForMap("SELECT hours_source, opening_schedule::text AS opening_schedule FROM shops WHERE id = ?",
+                shopId);
+    }
+
+    private static RequestPostProcessor admin(UUID tenant) {
+        return jwt().jwt(j -> j.subject(UUID.randomUUID().toString()).claim("tenant_id", tenant.toString()))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"));
+    }
+
+    private JsonNode json(MvcResult result) throws Exception {
+        return jsonMapper.readTree(result.getResponse().getContentAsString());
     }
 
     /** Today's day key in UK time, from the application's own clock. */
