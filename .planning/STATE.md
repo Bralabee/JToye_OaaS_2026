@@ -5,15 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-17 and 37-19 complete (18/53). 37-17 closed 2026-10-09: D-12 repeating new-order chime (useKitchenAlert: ONE AudioContext created only in the 'Turn on sound' tap; 880 then 660 Hz, 150 ms, sine, 0.6, every NEW_ORDER_ALERT_INTERVAL_MS=5000 while this shop's New lane holds a PENDING order and sound is on, not muted, board not stopped; playBeep removed); sound state read from the context on statechange + getAutoplayPolicy feature-detected (absent in Chromium 153, measured); KdsSoundControl (h-11, words) + non-dismissible KdsSoundBar; tab title '(n) New orders · Kitchen Display — J'Toye'; D-14 pill precedence (deriveFeedState.pill: Signed out > No access > Offline > Not updating > Reconnecting > Out of date > Sound off > Muted > Live) with a 240 px constant width in all ten states (measured). Jest 2472/210, lint 0 errors/31 warnings, build green. Frontend REBUILT + recreated (image 7e5a7401); kitchen-flow e2e 18/18 live; core-java untouched (still pre-V80, WINDOWS #30). WINDOWS #31: stopped/signedOut/noAccess wired by 37-18. Next: 37-18 / 37-20 per wave order."
-last_updated: "2026-10-09T13:26:30.000Z"
-last_activity: 2026-10-09
-state_head: 29520bf2f6bcd6d15bcc9c86af1f6c84ddea194d
+stopped_at: "Phase 37 executing: 37-01..37-17, 37-19 and 37-20 complete (19/53). 37-20 closed 2026-10-10: ShopAvailabilityPolicy is the one open/paused/closed decision (UK wall-clock time, overnight carry, 7-day horizon, both clock changes): a pause wins; LEGACY_ALWAYS_OPEN open (D-25); NEEDS_REVIEW unreadable days open all day per the owner ruling 2026-10-10 (D-25 literally, applied per day; read days and closed days enforced as before deploy); STRUCTURED, MIGRATED_FROM_TEXT and unclassified shops open only inside a window, empty = NO_HOURS (D-15). createGuestOrder refuses 409 shop-closed (SHOP_CLOSED, reason, reopensAt) before the reservation; validateShopIsOpen deleted. PUT/DELETE /api/v1/shops/{id}/pause (20|40 min or untilReopened, STAFF, absolute). PublicShopDto openNow/nextOpenAt/pausedUntil/pausedIndefinitely/openingSchedule/legacyAlwaysOpen/hoursSource; ShopDto hoursSource/legacyOpeningHours/openingSchedule/pause (NON_NULL); CreateShopRequest.openingSchedule -> STRUCTURED. DemoDataSeeder: fresh-volume demo shops get all-day STRUCTURED hours. Unit 1682/0/0/1, integration 1068/0/0/1; OpenAPI +274/-0. core-java NOT rebuilt (WINDOWS #30, #33); WINDOWS #32 = the ruling risk. 37-21 NEEDS_REVIEW copy is untrue under the ruling (deferred-items). Next: 37-18 (wave 15)."
+last_updated: "2026-10-10T13:17:02.900Z"
+last_activity: 2026-10-10
+last_activity_desc: "Completed 37-20: pause endpoints, ShopAvailabilityPolicy and structured-hours enforcement (D-15, D-25 ruling 2026-10-10)"
+state_head: a575ef190a58636dc65932b96678fddee02966ad
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 203
+  completed_plans: 204
   percent: 65
 ---
 
@@ -919,6 +920,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P14 | 16 min | 2 tasks | 13 files |
 | Phase 37 P17 | 25 min | 3 tasks | 17 files |
 | Phase 37 P16 | 56 min | 3 tasks | 27 files |
+| Phase 37 P20 | 67 min | 3 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -1220,6 +1222,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-17: 'Unmute alerts' is itself the gesture (it unmutes and unlocks the context in one tap); the sound bar is non-dismissible, its one button is the fix
 - [Phase 37]: 37-17: the pill precedence is a NEW deriveFeedState field 'pill'; 'status', 'stale' and 'alerting' keep their meaning, so sound/mute raise no feed banner and the existing four-state assertions are untouched; the label slot stacks a pseudo-element sizer per label (constant 240 px measured; the old min-w-[5.5rem] let it vary 230-240)
 - [Phase 37]: WINDOWS #29 RULED 2026-10-09 (owner, option B): every customer endpoint requires an honoured grant under D-06 (requireAnyAccess, the staff/me predicate, before the idempotency replay); landed in the 37-B squash (tag cut/phase-37-b-staff-access-v2); options C and E are separate future rulings; live proof owed (WINDOWS #30)
+- [Phase 37]: D-25 clarified 2026-10-10: NEEDS_REVIEW days stay open until the vendor saves structured hours; 37-20 must-have line 75 rewritten from 409 to 201 (applied per day: an unreadable day stays open, a day written closed stays closed, as before deploy)
+- [Phase 37]: 37-20: an unclassified shop (no hours_source, no schedule) is CLOSED, NO_HOURS (D-15 for shops created after deploy); only V80 writes LEGACY_ALWAYS_OPEN; the pause is STAFF-gated, absolute, and blocks storefront orders only
 
 ### Pending Todos
 
@@ -1292,8 +1296,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-09T13:26:30.000Z
-Stopped at: Completed 37-17-PLAN.md (repeating new-order chime through one tap-unlocked AudioContext, sound bar + labelled control, tab title, ten-state truthful feed pill); next 37-18 / 37-20 per wave order
+Last session: 2026-10-10T13:20:00.000Z
+Stopped at: Completed 37-20-PLAN.md (ShopAvailabilityPolicy, the STAFF-gated pause endpoints, the typed 409 shop-closed before the reservation, structured-hours saves, the server answer on every shop read; D-25 ruling 2026-10-10 applied per day); next 37-18 (wave 15)
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
