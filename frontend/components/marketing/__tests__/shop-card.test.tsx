@@ -151,7 +151,7 @@ describe("ShopCard", () => {
  * 37-22 (UI-SPEC K3, D-15, theme 2): the landing row's card carries the SERVER's answer about
  * whether the shop is taking orders. It never had an open-state badge, deliberately (app/page.tsx:
  * the old client parser said "open" for every shop with no hours, a fiction for exactly the shops
- * #544 is about). With the server's field the claim is backed, so the card says it; with the field
+ * issue 544 is about). With the server's field the claim is backed, so the card says it; with the field
  * ABSENT it still says nothing. `openingHours: null` on every fixture is "always open" to the old
  * parser, so a badge derived from the hours would read "Open" on the paused and closed cases.
  */
