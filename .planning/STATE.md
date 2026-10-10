@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-20 and 37-22 complete (21/53). 37-22 closed 2026-10-10: every customer surface reads the server availability (openNow/pausedUntil/pausedIndefinitely/nextOpenAt) through lib/shop-availability.ts: the /shop/[slug] pill Open now/Paused/Closed, /shop and landing cards Open/Paused/Closed, no claim when openNow is absent; ShopAvailabilityNotice (K3) between header and menu and atop checkout step 1; checkout disables Place order with aria-describedby when not taking orders at load, refuses a forced submit, and turns the typed 409 shop-closed into the race copy with the basket kept by content; JSON-LD openingHoursSpecification from openingSchedule only (omitted for legacyAlwaysOpen; NEEDS_REVIEW publishes only declared windows; 00:00-00:00 -> 00:00-23:59); isOpenNow/parseHoursRange removed; SSR fetch measured no-store (UI-SPEC open item 5). DemoDataSeeder declares an all-day STRUCTURED week on every seeded shop and upgrades V80 LEGACY demo shops. Jest 2550/215, unit 1683/0/0/1, integration 1071/0/0/1, build green, lint 0 errors. frontend AND core-java REBUILT + recreated at cb8cf9d1 (V80 applied: LEGACY_ALWAYS_OPEN=5 -> seeder 5/5 STRUCTURED); runtime-freshness PASS 4/4, openapi-snapshot PASS 121 paths; WINDOWS #30 #33 fixed by live probes, #35 added. RWO-022 NOT marked (37-21 declares it too). Next: 37-21 (wave 16)."
-last_updated: "2026-10-10T15:12:51.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-22 complete (22/53). 37-21 closed 2026-10-10: the kitchen header has PauseOrdersControl (20 / 40 minutes / Until I reopen, 44px rows, no confirm; Resume orders now while paused) and PausedBanner (white, 2px slate-900 border, L6) reading the SERVER's ordersPausedUntil/ordersPausedIndefinitely in UK time, re-read on the 60 s poll, after each write and at the stated end, disabled until the first read and while a write is in flight; the shop dialog's free-text hours are replaced by OpeningScheduleEditor (K4: Closed checkbox, up to 3 native time windows, Copy Monday, overnight hint, overlap / spill / missing-time validation, all-closed note, legacy info line; the dialog sends openingSchedule only when touched); HoursNoticeCard on /dashboard and Hours not set / Check hours / Paused until badges on the shops table from hoursSource, deep link ?edit={id}&focus=hours. Owner D-25 ruling copy: an unreadable NEEDS_REVIEW day pre-fills Closed with 'Customers can still order on this day at any time until you save your hours.' (orchestrator decision pending owner wording, WINDOWS #36). Deviations: storefront Opening hours list from openingSchedule (Rule 2); dialog saves keep the slug (server regenerates on every slug-less update, Rule 1); the control makes no claim before the first read (Rule 1, found live). Jest 2607/220 (baseline 2550/215), build green, lint 0 errors; no Java. Frontend REBUILT + recreated (final 040c64a6), runtime-freshness PASS 4/4; live Playwright proof incl. 60 s cross-device; Mama Ade's Kitchen restored by md5. WINDOWS #36, #37 added. RWO-022 NOT marked (37-23 declares it; ready-ids blocked). Next: 37-23 (UAT, autonomous:false)."
+last_updated: "2026-10-10T15:59:45.000Z"
 last_activity: 2026-10-10
-last_activity_desc: "Completed 37-22: customer surfaces read the server availability; K3 notice; checkout gating and the shop-closed race; JSON-LD hours from the schedule; declared seed hours (D-15, D-25)"
-state_head: abeeda47a816abc04ad5835ad4f05702888b7b60
+last_activity_desc: "Completed 37-21: one-tap kitchen pause from the server's state, the structured hours editor, and hours notices read from hoursSource (D-15, D-25)"
+state_head: d2f7016a8fe5531facec4d4e71f86b22036ad877
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 206
+  completed_plans: 207
   percent: 65
 ---
 
@@ -923,6 +923,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P20 | 67 min | 3 tasks | 29 files |
 | Phase 37 P18 | 40 min | 3 tasks | 18 files |
 | Phase 37 P22 | 75 min | 3 tasks | 30 files |
+| Phase 37 P21 | 40 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -1233,6 +1234,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-22: JSON-LD openingHoursSpecification only from openingSchedule; omitted for legacyAlwaysOpen and without a schedule; NEEDS_REVIEW publishes only the windows V80 read (an unreadable day, open on the server, is not published, never as 24 h); a pause never appears
 - [Phase 37]: 37-22: the storefront SSR fetch stays cache no-store (measured), so UI-SPEC open item 5 has no revalidate window to tune; ShopDetail.isOpen removed
 - [Phase 37]: 37-22: the dev seeder declares an all-day STRUCTURED week on every seeded shop and upgrades demo shops V80 marked LEGACY_ALWAYS_OPEN; STRUCTURED, MIGRATED_FROM_TEXT and NEEDS_REVIEW are left alone
+- [Phase 37]: 37-21: the kitchen pause reads the server's shop (PUT/DELETE response, a re-read after each write, the 60 s poll, a re-read at the stated end); a past ordersPausedUntil is no pause (the server keeps the instant); the control is disabled until the first read and while a write is in flight
+- [Phase 37]: 37-21: D-25 ruling copy (orchestrator decision, pending the owner's wording, WINDOWS #36): an unreadable NEEDS_REVIEW day pre-fills Closed in the editor with 'We couldn't read "{text}". Customers can still order on this day at any time until you save your hours.'; the needs-review card says customers can order on those days until the hours are saved; UI-SPEC rows amended
+- [Phase 37]: 37-21: the shop dialog sends openingSchedule only when the editor was touched (key omitted otherwise), and sends the current slug unless the name changed, because ShopService.updateShop regenerates a random-suffix slug on every slug-less update (server unchanged; owner question in deferred-items)
+- [Phase 37]: 37-21: the storefront Opening hours list renders openingSchedule for STRUCTURED / MIGRATED_FROM_TEXT; NEEDS_REVIEW keeps the vendor's text (its unreadable days are open on the server); legacy or no schedule shows the text; never both
 
 ### Pending Todos
 
@@ -1305,8 +1310,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-10T15:12:51.000Z
-Stopped at: Completed 37-22-PLAN.md (server-driven pill, cards and K3 notice; checkout gating and the shop-closed race with the basket kept; JSON-LD hours from the schedule; no-store measured; declared seed hours; frontend + core-java rebuilt, V80 on the dev DB, WINDOWS #30/#33 fixed live); next 37-21 (wave 16)
+Last session: 2026-10-10T15:59:45.000Z
+Stopped at: Completed 37-21-PLAN.md (one-tap kitchen pause and paused banner from the server's state, the structured hours editor, hours notices and badges from hoursSource; storefront hours list from the schedule; dialog saves keep the slug; frontend rebuilt, live Playwright incl. 60 s cross-device; seeded schedule restored by md5); next 37-23 (UAT, autonomous:false)
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
