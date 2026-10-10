@@ -151,7 +151,7 @@ class VanishedRowStatusIntegrationTest {
     @DisplayName("DELETE /customers/{unknown id} is a 404")
     void deleteCustomer_unknownId_is404() throws Exception {
         UUID tenant = seedTenant();
-        mockMvc.perform(delete("/api/v1/customers/" + UUID.randomUUID()).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/customers/" + UUID.randomUUID()).with(customerGroupAdmin(tenant)))
                 .andExpect(status().isNotFound());
     }
 
@@ -160,7 +160,7 @@ class VanishedRowStatusIntegrationTest {
     void updateCustomer_unknownId_is404() throws Exception {
         UUID tenant = seedTenant();
         mockMvc.perform(put("/api/v1/customers/" + UUID.randomUUID())
-                        .with(vendor(tenant))
+                        .with(customerManager(tenant))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(customerJson()))
                 .andExpect(status().isNotFound());
@@ -190,7 +190,7 @@ class VanishedRowStatusIntegrationTest {
 
         MockHttpServletResponse response = performWhileRowVanishes(
                 "customers", customer,
-                delete("/api/v1/customers/" + customer).with(vendor(tenant)));
+                delete("/api/v1/customers/" + customer).with(customerGroupAdmin(tenant)));
 
         assertThat(response.getStatus())
                 .as("a customer that vanished mid-transaction is GONE, not a conflict to retry")
@@ -209,7 +209,7 @@ class VanishedRowStatusIntegrationTest {
         MockHttpServletResponse response = performWhileRowVanishes(
                 "customers", customer,
                 put("/api/v1/customers/" + customer)
-                        .with(vendor(tenant))
+                        .with(customerManager(tenant))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(customerJson()));
 
@@ -247,7 +247,7 @@ class VanishedRowStatusIntegrationTest {
         UUID tenant = seedTenant();
         UUID customer = seedCustomer(tenant);
 
-        mockMvc.perform(delete("/api/v1/customers/" + customer).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/customers/" + customer).with(customerGroupAdmin(tenant)))
                 .andExpect(status().isNoContent());
 
         assertThat(rowExists("customers", customer)).isFalse();
@@ -260,7 +260,7 @@ class VanishedRowStatusIntegrationTest {
         UUID customer = seedCustomer(tenant);
 
         mockMvc.perform(put("/api/v1/customers/" + customer)
-                        .with(vendor(tenant))
+                        .with(customerManager(tenant))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(customerJson()))
                 .andExpect(status().isOk());
@@ -364,14 +364,28 @@ class VanishedRowStatusIntegrationTest {
     // ------------------------------------------------------------------
 
     /**
-     * A vendor holding the customers write scope the Phase-25 CR-01 gate requires and, since
-     * WINDOWS #29 (ruling B, 2026-10-09), a tenant-wide STAFF grant: every customer endpoint requires
-     * an honoured grant under D-06. The grant is seeded here, before the request is built, so it is
-     * committed before any race arm takes its row lock.
+     * A vendor holding the customers write scope the Phase-25 CR-01 gate requires and, since option E
+     * (owner ruling 2026-10-10), a tenant-wide SHOP_MANAGER grant: customer update needs SHOP_MANAGER
+     * under D-06 (WINDOWS #29 had made it any grant). The grant is seeded here, before the request is
+     * built, so it is committed before any race arm takes its row lock.
      */
-    private RequestPostProcessor vendor(UUID tenant) {
+    private RequestPostProcessor customerManager(UUID tenant) {
+        return customersWriter(tenant, "SHOP_MANAGER");
+    }
+
+    /**
+     * The same, holding an operator tenant-wide GROUP_ADMIN grant: customer delete is Group-admin-only
+     * under option E (owner ruling 2026-10-10). Not {@link #groupAdmin(UUID)}: that realm-admin token
+     * carries no {@code customers:write} scope, which the DELETE {@code @PreAuthorize} still requires.
+     */
+    private RequestPostProcessor customerGroupAdmin(UUID tenant) {
+        return customersWriter(tenant, "GROUP_ADMIN");
+    }
+
+    private RequestPostProcessor customersWriter(UUID tenant, String role) {
         UUID subject = UUID.randomUUID();
-        ShopGrants.grantOperator(jdbc, tenant, subject, null, "STAFF", "customer-staff-" + subject + "@example.com");
+        ShopGrants.grantOperator(jdbc, tenant, subject, null, role,
+                "customer-" + role.toLowerCase() + "-" + subject + "@example.com");
         return jwt().jwt(j -> j.subject(subject.toString())
                         .claim("tenant_id", tenant.toString()))
                 .authorities(new SimpleGrantedAuthority("SCOPE_customers:write"));

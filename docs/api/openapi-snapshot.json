@@ -6466,7 +6466,7 @@
         ]
       },
       "post" : {
-        "description" : "Creates a new customer. Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.",
+        "description" : "Creates a customer. Requires SHOP_MANAGER on any shop, or Group admin (owner ruling 2026-10-10). Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.",
         "operationId" : "create_5",
         "parameters" : [
           {
@@ -6519,7 +6519,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: the caller holds no shop grant (D-06)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"
           },
           "409" : {
             "content" : {
@@ -6548,7 +6548,7 @@
     },
     "/api/v1/customers/{id}" : {
       "delete" : {
-        "description" : "Deletes a customer for the authenticated tenant",
+        "description" : "Deletes a customer. Group admin only.",
         "operationId" : "delete_3",
         "parameters" : [
           {
@@ -6574,7 +6574,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: the caller holds no shop grant (D-06)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole GROUP_ADMIN"
           },
           "404" : {
             "content" : {
@@ -6671,7 +6671,7 @@
         ]
       },
       "put" : {
-        "description" : "Updates an existing customer for the authenticated tenant",
+        "description" : "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin.",
         "operationId" : "update_3",
         "parameters" : [
           {
@@ -6724,7 +6724,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: the caller holds no shop grant (D-06)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"
           },
           "404" : {
             "content" : {

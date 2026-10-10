@@ -105,7 +105,7 @@ class TypedNotFoundBodyIntegrationTest {
     void updateCustomer_unknownId_isTypedProblem() throws Exception {
         UUID tenant = seedTenant();
         assertTypedNotFound(put(customerPath())
-                .with(customersWrite(tenant, customerStaff(tenant)))
+                .with(customersWrite(tenant, customerManager(tenant)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(customerJson()));
     }
@@ -114,7 +114,7 @@ class TypedNotFoundBodyIntegrationTest {
     @DisplayName("DELETE /customers/{unknown} carries a typed problem body")
     void deleteCustomer_unknownId_isTypedProblem() throws Exception {
         UUID tenant = seedTenant();
-        assertTypedNotFound(delete(customerPath()).with(customersWrite(tenant, customerStaff(tenant))));
+        assertTypedNotFound(delete(customerPath()).with(customersWrite(tenant, customerGroupAdmin(tenant))));
     }
 
     // ------------------------------------------------------------------
@@ -269,6 +269,28 @@ class TypedNotFoundBodyIntegrationTest {
     private UUID customerStaff(UUID tenant) {
         UUID subject = UUID.randomUUID();
         ShopGrants.grantOperator(jdbc, tenant, subject, null, "STAFF", "customer-staff-" + subject + "@example.com");
+        return subject;
+    }
+
+    /**
+     * Option E (owner ruling 2026-10-10): customer update needs SHOP_MANAGER, so the PUT arm's caller
+     * holds a tenant-wide SHOP_MANAGER grant. Returns the granted subject.
+     */
+    private UUID customerManager(UUID tenant) {
+        UUID subject = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, subject, null, "SHOP_MANAGER",
+                "customer-manager-" + subject + "@example.com");
+        return subject;
+    }
+
+    /**
+     * Option E (owner ruling 2026-10-10): customer delete is Group-admin-only, so the DELETE arm's
+     * caller holds an operator tenant-wide GROUP_ADMIN grant. Returns the granted subject.
+     */
+    private UUID customerGroupAdmin(UUID tenant) {
+        UUID subject = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, subject, null, "GROUP_ADMIN",
+                "customer-admin-" + subject + "@example.com");
         return subject;
     }
 

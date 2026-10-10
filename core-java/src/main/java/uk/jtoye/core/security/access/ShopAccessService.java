@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -332,8 +333,11 @@ public class ShopAccessService {
      *       nothing;</li>
      *   <li>read {@code shop_staff} rows directly: a de-honoured JIT row would then admit. The
      *       decision goes through the honour-aware ladder and the cached membership only;</li>
-     *   <li>narrow which customers a granted user sees (option C) or require a role floor such as
-     *       SHOP_MANAGER for writes (option E). Each is a separate future owner ruling.</li>
+     *   <li>narrow which customers a granted user sees (option C, a separate future owner ruling,
+     *       deferred to Phase 39) or impose a role floor. Option E (owner ruling 2026-10-10) is the
+     *       write floor: customer create and update call {@link #requireAnyRole(ShopRole)} with
+     *       SHOP_MANAGER and delete calls {@link #requireGroupAdmin()}; the reads stay on this
+     *       any-grant gate.</li>
      * </ul>
      *
      * @throws ShopAccessDeniedException if the caller holds no honoured grant in the tenant, or is
@@ -350,6 +354,56 @@ public class ShopAccessService {
             return;
         }
         throw new ShopAccessDeniedException(null, ShopRole.STAFF);
+    }
+
+    /**
+     * Require that the caller holds at least {@code floor} on ANY shop of the pinned tenant (or
+     * tenant-wide), or is a Group admin: the role floor on a tenant-level resource that belongs to
+     * no single shop. Owner ruling 2026-10-10 (option E, D-06): customer create and update need
+     * SHOP_MANAGER, so a STAFF grant reads customers but cannot write them.
+     *
+     * <p>It follows the house pattern for writes: vendor order create needs SHOP_MANAGER
+     * ({@code OrderService.java:141}), as do product and promotion writes
+     * ({@code ProductService.java:134}/{@code :365}, {@code PromotionService}), and a write to a
+     * null-shop (tenant-wide) resource is GROUP_ADMIN-only (the {@link #require} Javadoc). A
+     * customer is tenant-level but its writes are not group-wide administration, so the floor is
+     * "a shop manager somewhere", the rank those writes require on their own shop.
+     *
+     * <p>The decision: {@link #isGroupAdmin()} (the honour-aware ladder) passes; otherwise the cached
+     * membership passes when its tenant-wide role, or any per-shop role, satisfies {@code floor}.
+     * Three things it deliberately does NOT do, each pinned by a test:
+     * <ul>
+     *   <li>call {@link #onRequest()} or {@link #grantedShopIds()}: under the strict-OFF override
+     *       that would JIT-provision a grant from a gate (the strict-OFF arm asserts zero rows);</li>
+     *   <li>read {@link Membership#isGroupAdmin()}: a de-honoured JIT row still sets it, and honour
+     *       is the ladder's decision alone;</li>
+     *   <li>accept a GROUP_ADMIN floor: group-wide actions use {@link #requireGroupAdmin()}, and a
+     *       per-shop row can never satisfy a group floor, so it is an IllegalArgumentException.</li>
+     * </ul>
+     *
+     * @throws ShopAccessDeniedException with no shop and {@code requiredRole = floor} when the caller
+     *         holds no role at or above {@code floor} and is not a Group admin.
+     * @throws IllegalArgumentException when {@code floor} is GROUP_ADMIN.
+     */
+    public void requireAnyRole(ShopRole floor) {
+        Objects.requireNonNull(floor, "floor");
+        if (floor == ShopRole.GROUP_ADMIN) {
+            throw new IllegalArgumentException(
+                    "requireAnyRole cannot take GROUP_ADMIN; use requireGroupAdmin() for group-wide actions");
+        }
+        if (isGroupAdmin()) {
+            return;
+        }
+        Membership m = self().resolveMembership(requireVendorUserId());
+        if (m.tenantWideRole() != null && m.tenantWideRole().satisfies(floor)) {
+            return;
+        }
+        for (ShopRole role : m.perShopRole().values()) {
+            if (role.satisfies(floor)) {
+                return;
+            }
+        }
+        throw new ShopAccessDeniedException(null, floor);
     }
 
     /**
