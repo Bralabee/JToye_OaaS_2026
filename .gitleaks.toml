@@ -153,3 +153,12 @@ regexes = [
   '''^6f318039-1f48-40f2-b7a0-1132ce4bb369\.?$''',
   '''^PwMarker-7c1f-correct$''',
 ]
+
+[[allowlists]]
+description = "Phase 37-20 RED-arm evidence (37-20-red-dto-schedule.json, 37-20-red-hours-it.json): ShopPauseIntegrationTest shop SLUGS of the form indef-after-<uuid> / no-hours-<uuid>, captured inside the JUnit XML the arm recorded; a shop slug is not a credential. Exact values, not a pattern (gitleaks 8.30.1 generic-api-key)"
+regexTarget = "secret"
+regexes = [
+  '''^indef-after-8d132ce5-3179-41b2-88c3-cba8ed486a6d$''',
+  '''^indef-after-e58d290e-84a6-402a-9307-5efadbde1dd0$''',
+  '''^no-hours-b1aa2e13-1cde-4411-bd84-1f2625b453b8$''',
+]
