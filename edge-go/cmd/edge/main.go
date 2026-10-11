@@ -156,9 +156,17 @@ var rateLimiterExemptPaths = map[string]bool{
 
 // Defaults of the pre-auth valve, config-declared through RATE_LIMIT_RPS and
 // RATE_LIMIT_BURST.
+//
+// 37-25 (D-19): raised from 20 rps / 40 burst to 200 / 400. The valve was the
+// ONLY limit, so it had to be sized as a quota; now the per-tenant limiter
+// (ratelimit_tenant.go, 10 rps / 20 burst per tenant) is the quota and the
+// valve is only the per-replica flood guard. 400 is twenty tenants at their
+// full burst at once; 200 rps is twenty tenants at their full steady rate.
+// A smaller valve than that would let one tenant's refused burst — which
+// still spends valve tokens before auth — starve the others again.
 const (
-	defaultRateLimitRPS   = 20
-	defaultRateLimitBurst = 40
+	defaultRateLimitRPS   = 200
+	defaultRateLimitBurst = 400
 )
 
 // valveLimitsFromEnv reads the process-wide valve's rate and burst from the
@@ -284,9 +292,13 @@ func newRouter(d routerDeps) (*gin.Engine, bool) {
 	// outside the protected group so the real integration can actually call it.
 	r.POST("/api/v1/webhooks/whatsapp", d.handlers.WhatsAppWebhook)
 
-	// Protected routes (require JWT)
+	// Protected routes (require JWT). The per-tenant limiter runs AFTER the
+	// validator and keys on the tenant_id it wrote — never on a header the
+	// caller controls (D-19, T-37-64) — so one tenant's burst is refused
+	// with a typed 429 while every other tenant's sync continues (UXT-039).
 	protected := r.Group("/")
 	protected.Use(d.validate)
+	protected.Use(tenantRateLimiter(d.tenantLimits, d.clock))
 	protected.POST("/api/v1/sync/batch", d.handlers.SyncBatch)
 
 	return r, metricsOnAppPort
