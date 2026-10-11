@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 14
 waived_count: 0
-fixed_count: 27
+fixed_count: 28
 total_count: 42
-last_updated: 2026-10-10T18:48:49.557Z
+last_updated: 2026-10-11T18:37:35.663Z
 ---
 
 # Broken Windows Ledger
@@ -52,7 +52,7 @@ last_updated: 2026-10-10T18:48:49.557Z
 | 35 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-22 proven in jest only, not live: the checkout RACE UI (a shop pausing while its checkout page is open: the race copy in role=alert and the stored basket unchanged by content) - live covers the API 409 shop-closed PAUSED and the at-load disable; and the NEEDS_REVIEW JSON-LD rule (only declared windows, an unreadable day never published) - no NEEDS_REVIEW shop exists on the dev DB. 37-23 UAT: pause from the kitchen while a customer is on checkout. | open |  | 2026-10-10T15:10:21.406Z |  |
 | 36 | 37 | deviation | frontend/components/dashboard/shops/opening-schedule-editor.tsx |  | 37-21 orchestrator copy decision under the D-25 owner ruling (2026-10-10), pending the owner's own wording: the editor keeps pre-filling an unreadable NEEDS_REVIEW day as Closed (a save makes it closed, D-15) but its amber line reads 'We couldn't read "{original text}". Customers can still order on this day at any time until you save your hours.' instead of the UI-SPEC's 'This day shows as closed.' (untrue under the ruling); the dashboard needs-review card reads '...for {days}. Customers can order on those days at any time until you save your hours.'; UI-SPEC rows 458/791/794 amended to match. Close when the owner approves or replaces the wording. | fixed | closed by 261010-ppb at 2752ff50: owner ruling 2026-10-10 - an unreadable day pre-fills as one all-day window with the ruled editor line and card sentence; UI-SPEC 458/791/794 amended | 2026-10-10T15:54:22.775Z | 2026-10-10T18:36:24.564Z |
 | 37 | 37 | unrun-verify | frontend/components/dashboard/kitchen/pause-orders-control.tsx |  | 37-21 and 261010-ppb proven in jest only, not live: a pause refused with shop-access-denied now shows the K2 Access ended overlay and no inline copy (owner ruling 2026-10-10; live it is the same STAFF gate as the board read, not provoked live); the in-flight disabled state, the stated-end hide (fake timers), the editor overlap / missing-time / next-day-spill validation with role=alert, aria-invalid and focus, and the dashboard-home pending / failed-load states. A NEEDS_REVIEW and a LEGACY shop were shown live only through a browser-side rewrite of the shops LIST response (no such shop exists on the dev DB since 37-22 seeder). The slug fix fail direction (a save renaming /shop/{slug}) was deliberately not run live. 37-23 UAT: tap twice fast, provoke a validation error by hand, and read the pause 403 as a revoked STAFF user: expect the K2 Access ended overlay (Your access has ended) and no inline refusal copy. | open |  | 2026-10-10T15:54:22.887Z |  |
-| 38 | 37 | unrun-verify | frontend/components/dashboard/kitchen/kds-sound.tsx |  | 261010-ppb alarm cap (owner ruling 2026-10-10) proven in jest only: an unsilenced board-stopped alarm stops by itself after 120 s while the red overlay stays; 37-23 UAT by ear: a stopped board rings, then falls silent at about 2 minutes, red screen still up | open |  | 2026-10-10T18:36:59.063Z |  |
+| 38 | 37 | unrun-verify | frontend/components/dashboard/kitchen/kds-sound.tsx |  | 261010-ppb alarm cap (owner ruling 2026-10-10) proven in jest only: an unsilenced board-stopped alarm stops by itself after 120 s while the red overlay stays; 37-23 UAT by ear: a stopped board rings, then falls silent at about 2 minutes, red screen still up | fixed |  | 2026-10-10T18:36:59.063Z | 2026-10-11T18:37:35.663Z |
 | 39 | 37 | todo | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | DEFERRED to Phase 39 (owner ruling 2026-10-10): option C, per-shop customer narrowing. Shape: the next free Flyway version at Phase 39 plan time (the ruling named V81, which 37-27 reserves) adds nullable customers.origin_shop_id REFERENCES shops(id), plus the customers_aud mirror in the same migration (Customer is @Audited); a tenant-looped, GUC-pinned backfill from orders (idx_orders_customer exists); the non-Group-admin predicate origin_shop_id IN granted OR EXISTS an order of that customer in a granted shop, on list, by-id, PUT, DELETE and the OrderService.java:170 and :348 lookups (the tenant-wide findById bypass); a refused id answers 404, not 403; a NOSUPERUSER Testcontainers proof. Phase 39 is Platform runtime upgrades: /gsd-plan-phase 39 decides 39-F or a phase of its own. | open |  | 2026-10-10T18:48:49.187Z |  |
 | 40 | 37 | todo | core-java/src/main/java/uk/jtoye/core/shop/ShopService.java |  | DEFERRED to Phase 39 (owner ruling 2026-10-10): old-slug 301 aliases (a shop_slug_alias table, RLS-exempt by addition like V62/V75) so printed links and QR codes survive a deliberate slug change; the slug-keep fix itself is 37-48 | open |  | 2026-10-10T18:48:49.311Z |  |
 | 41 | 37 | todo | infra/keycloak/realm-export.template.json |  | staging and production vendor realms are not in this repo: an operator must set ssoSessionMaxLifespan 50400 (D-14 amended 2026-10-10); refresh-token rotation stays off there as here | open |  | 2026-10-10T18:48:49.440Z |  |
@@ -548,10 +548,10 @@ last_updated: 2026-10-10T18:48:49.557Z
     "file": "frontend/components/dashboard/kitchen/kds-sound.tsx",
     "line": null,
     "description": "261010-ppb alarm cap (owner ruling 2026-10-10) proven in jest only: an unsilenced board-stopped alarm stops by itself after 120 s while the red overlay stays; 37-23 UAT by ear: a stopped board rings, then falls silent at about 2 minutes, red screen still up",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-10T18:36:59.063Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-11T18:37:35.663Z",
     "milestone": "v2.3"
   },
   {
