@@ -39,6 +39,7 @@ import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
+import uk.jtoye.core.exception.OrderCapExceededException;
 import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
@@ -900,6 +901,27 @@ public class GlobalExceptionHandler {
         problem.setProperty("value", ex.getValue());
         problem.setProperty("limit", ex.getLimit());
         problem.setProperty("productName", ex.getProductName());
+        return problem;
+    }
+
+    /**
+     * Phase 37-27 (D-18, RWO-041 / UXT-041): one customer identity already holds the most OPEN cash
+     * orders this shop allows. 429 with its OWN type and code: {@code lib/api-client.ts} auto-retries a
+     * 429 of type {@code rate-limited}, and a cap is not time-based — the slot frees when an order
+     * completes — so this type must never be that one and NO {@code Retry-After} is sent (RESEARCH
+     * Pitfall 8). {@code axis} ({@code EMAIL | PHONE | IP}) and {@code cap} are typed properties: the
+     * checkout shows the copy for the axis (UI-SPEC D1) and an agent branches without parsing the
+     * sentence. Thrown by {@link uk.jtoye.core.storefront.CashOrderCaps} inside the reserved idempotency
+     * work, so the refusal leaves no order and no reservation.
+     */
+    @ExceptionHandler(OrderCapExceededException.class)
+    public ProblemDetail handleOrderCapExceeded(OrderCapExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problem.setTitle("Too many open cash orders");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-cap-exceeded"));
+        problem.setProperty("code", "ORDER_CAP_EXCEEDED");
+        problem.setProperty("axis", ex.getAxis().name());
+        problem.setProperty("cap", ex.getCap());
         return problem;
     }
 

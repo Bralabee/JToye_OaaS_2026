@@ -4,6 +4,7 @@ import jakarta.annotation.Nullable;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.finance.VatRate;
 
@@ -196,6 +197,36 @@ public class Order {
     /** Why, as the Group admin wrote it, trimmed (V78). */
     @Column(name = "void_reason", length = 500)
     private String voidReason;
+
+    /**
+     * Whether the storefront request that placed this order carried a verified customer token for its
+     * {@link #customerEmail} (V81, Phase 37-27 D-18). {@code true}: verified. {@code false}: a storefront
+     * order with no such token — the kitchen shows "Unverified contact". {@code null}: NOT RECORDED —
+     * the order predates V81, or was placed by the vendor / REST API / MCP (no customer contact to
+     * verify). Null is not false: the badge renders nothing for null (UI-SPEC D1). Never defaulted.
+     */
+    @Column(name = "contact_verified")
+    private Boolean contactVerified;
+
+    /**
+     * Why the vendor cancelled this order (V81; written by 37-29's bulk reject). Null means no reason
+     * was recorded. The database CHECK lists exactly the {@link CancelReason} values.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cancel_reason_code", length = 32)
+    private CancelReason cancelReasonCode;
+
+    /**
+     * HMAC-SHA256 (hex) of the resolved client address under a config key (V81, D-27) — never the
+     * address itself — for the per-IP open-cash-order cap written by 37-28. {@link NotAudited}
+     * DELIBERATELY: a pseudonymous identifier of a person's network address must not be copied into
+     * append-only history that Article 17 erasure then has to chase through every revision; it lives on
+     * the live row only, where one NULL ends it (T-37-70). There is no audit-table column for it, and an
+     * audited field without one would throw at runtime (V30/V38), so the annotation is load-bearing.
+     */
+    @NotAudited
+    @Column(name = "client_ip_digest", length = 64)
+    private String clientIpDigest;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 20)
@@ -475,6 +506,30 @@ public class Order {
     /** True once the order has been voided (Phase 37-10). */
     public boolean isVoided() {
         return voidedAt != null;
+    }
+
+    public Boolean getContactVerified() {
+        return contactVerified;
+    }
+
+    public void setContactVerified(Boolean contactVerified) {
+        this.contactVerified = contactVerified;
+    }
+
+    public CancelReason getCancelReasonCode() {
+        return cancelReasonCode;
+    }
+
+    public void setCancelReasonCode(CancelReason cancelReasonCode) {
+        this.cancelReasonCode = cancelReasonCode;
+    }
+
+    public String getClientIpDigest() {
+        return clientIpDigest;
+    }
+
+    public void setClientIpDigest(String clientIpDigest) {
+        this.clientIpDigest = clientIpDigest;
     }
 
     public void setItemCount(Integer itemCount) {

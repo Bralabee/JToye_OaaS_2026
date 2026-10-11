@@ -207,6 +207,17 @@ jtoye:
     max-lines: ${ORDER_LIMIT_MAX_LINES:50}
     # Highest basket total (the line totals, delivery excluded), in pennies: GBP 1,000.00.
     max-basket-total-pennies: ${ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES:100000}
+  storefront:
+    # Phase 37-27 (D-18, RWO-041 / UXT-041): the most OPEN cash orders (PENDING, CONFIRMED, PREPARING or
+    # READY, paid in cash, not voided) ONE customer identity may hold at ONE shop. Read by CashOrderCaps,
+    # which refuses the next one 429 order-cap-exceeded (its own type, never the auto-retried
+    # rate-limited one). A COUNT, not a rate: a slot frees when the kitchen completes or cancels an
+    # order. Card orders are outside the cap. Config KEYS, not secrets (D-18: never literals); a value
+    # below 1 refuses to start, naming the key. Compose keeps these defaults (RESEARCH Pitfall 9: an E2E
+    # spec that trips a cap uses unique contact details, never a raised default).
+    cash-caps:
+      # Per normalised (trimmed, lower-cased) email address.
+      per-email: 3
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:

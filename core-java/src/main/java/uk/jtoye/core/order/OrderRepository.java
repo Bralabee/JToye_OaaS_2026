@@ -139,6 +139,24 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
 
     /**
+     * How many OPEN cash orders one email address holds at a shop (Phase 37-27, D-18, UXT-041).
+     *
+     * <p>The predicates repeat V81's {@code idx_orders_open_cash_email} verbatim — open status, cash
+     * ({@code payment_status = 'NONE'}, the COD branch), not voided, {@code lower(customer_email)} — so
+     * the planner answers from the partial index. {@code tenant_id} is an explicit predicate beside RLS,
+     * as every native query here carries. The caller ({@code CashOrderCaps}) passes the address already
+     * trimmed and lower-cased.
+     */
+    @Query(value = "SELECT count(*) FROM orders WHERE tenant_id = :tenantId AND shop_id = :shopId "
+            + "AND lower(customer_email) = :email "
+            + "AND status IN ('PENDING', 'CONFIRMED', 'PREPARING', 'READY') "
+            + "AND payment_status = 'NONE' AND voided_at IS NULL",
+            nativeQuery = true)
+    long countOpenCashOrdersByEmail(@Param("tenantId") UUID tenantId,
+                                    @Param("shopId") UUID shopId,
+                                    @Param("email") String email);
+
+    /**
      * GDPR Article-17 scrub of pre-erasure PII from the append-only {@code orders_aud}
      * Envers history (Issue #84 [P1-2]). Redacts the subject's rows across BOTH the
      * customer-linked path (customer_id) AND the guest-order path (customer_email),

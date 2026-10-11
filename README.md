@@ -295,7 +295,7 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 - MCP server (vitest): 61 `it/test` blocks across 8 files ✅
 - **Total: 5476 logical test invocations** ✅
 
-Database schema version: **V80** (Flyway).
+Database schema version: **V81** (Flyway).
 
 > These numbers are guarded end-to-end by two CI gates in
 > `.github/workflows/docs-freshness.yml`: `scripts/docs-freshness.sh` asserts

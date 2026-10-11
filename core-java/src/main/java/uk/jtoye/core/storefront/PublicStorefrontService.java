@@ -141,6 +141,12 @@ public class PublicStorefrontService {
      * storefront, the vendor dashboard, the REST API and MCP refuse the same oversized orders.
      */
     private final OrderLimits orderLimits;
+
+    /**
+     * The per-identity caps on OPEN cash orders at a shop (37-27, D-18): how many one email or phone may
+     * hold, counted over V81's partial indexes. Checked on the cash branch only, before the save.
+     */
+    private final CashOrderCaps cashOrderCaps;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -155,6 +161,7 @@ public class PublicStorefrontService {
                                    TraderIdentityService traderIdentityService,
                                    ShopAvailabilityPolicy availabilityPolicy,
                                    OrderLimits orderLimits,
+                                   CashOrderCaps cashOrderCaps,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -174,6 +181,7 @@ public class PublicStorefrontService {
         this.traderIdentityService = traderIdentityService;
         this.availabilityPolicy = availabilityPolicy;
         this.orderLimits = orderLimits;
+        this.cashOrderCaps = cashOrderCaps;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -1200,6 +1208,12 @@ public class PublicStorefrontService {
                 throw new RuntimeException("Payment processing unavailable. Please try again later.");
             }
         } else {
+            // 37-27 (D-18, UXT-041): a CASH order is bounded per identity BEFORE it is saved — how many
+            // open cash orders this email (and phone, Task 2) already holds at this shop. Cash only:
+            // the card branch above is the customer's own commitment and is outside the cap. Thrown
+            // inside the reserved idempotency work, like every refusal in this method, so a capped
+            // request leaves no order and no reservation and the same key succeeds once a slot frees.
+            cashOrderCaps.checkEmailAndPhone(tenantId, shop.getId(), request.getCustomerEmail(), request.getCustomerPhone());
             // COD fallback — no online payment. UNCHANGED by #538: this
             // branch still mutates in place and is persisted by the single
             // save below, exactly as before.

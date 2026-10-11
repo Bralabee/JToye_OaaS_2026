@@ -96,7 +96,9 @@ class PublicStorefrontServiceTest {
         // this unit test exercises the same ceiling behaviour the running service has.
         // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
         // tiers return empty, so most arms in this file never touch it.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), 5.0, 50.0);
+        // 37-27: a real CashOrderCaps over the mocked OrderRepository, whose count queries return 0 unless an
+        // arm stubs them, so no cash order in this file is capped by accident.
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3), 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -1393,7 +1395,8 @@ class PublicStorefrontServiceTest {
                     announcementRepository, idempotencyService, postcodeGeocoder,
                     new OrderNumberGenerator(), traderIdentityService,
                     new ShopAvailabilityPolicy(java.time.Clock.systemUTC()),
-                    new OrderLimits(50, 200, 50, 100_000L), defaultRadiusKm, maxRadiusKm);
+                    new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3),
+                    defaultRadiusKm, maxRadiusKm);
         }
 
         @Test
