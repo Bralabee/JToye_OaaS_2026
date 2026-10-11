@@ -45,7 +45,7 @@ class MarketingControllerShopFilterTest {
     @Nested
     @WebMvcTest(PromotionController.class)
     @AutoConfigureMockMvc(addFilters = false)
-    @Import(GlobalExceptionHandler.class)
+    @Import({GlobalExceptionHandler.class, uk.jtoye.core.security.ClientIpResolver.class}) // 37-24: the slice includes RateLimitInterceptor (a HandlerInterceptor), which needs the ClientIpResolver bean
     class Promotions {
 
         @Autowired
@@ -104,7 +104,7 @@ class MarketingControllerShopFilterTest {
     @Nested
     @WebMvcTest(AnnouncementController.class)
     @AutoConfigureMockMvc(addFilters = false)
-    @Import(GlobalExceptionHandler.class)
+    @Import({GlobalExceptionHandler.class, uk.jtoye.core.security.ClientIpResolver.class}) // 37-24: the slice includes RateLimitInterceptor (a HandlerInterceptor), which needs the ClientIpResolver bean
     class Announcements {
 
         @Autowired

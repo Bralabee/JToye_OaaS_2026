@@ -26,8 +26,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /**
  * QA-council cluster S1 (SEC-1) — {@code DsarIntakeRateLimiter}'s ONLY bucket was keyed on
- * {@link uk.jtoye.core.security.ClientIpResolver#resolveClientIp(jakarta.servlet.http.HttpServletRequest)},
- * which trusts the FIRST, client-controllable {@code X-Forwarded-For} hop. Rotating that header on
+ * {@link uk.jtoye.core.security.ClientIpResolver#resolve(jakarta.servlet.http.HttpServletRequest)}, which until 37-24 (D-19)
+ * trusted the FIRST, client-controllable {@code X-Forwarded-For} hop from ANY peer. Rotating that header on
  * every request defeats the bucket entirely: each "new" IP gets its own fresh 5/hour allowance, so
  * an attacker can drive an unbounded number of real verification emails at any address it names —
  * an email-bombing amplifier hiding behind a rate limiter.

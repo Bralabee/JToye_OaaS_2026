@@ -54,13 +54,17 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h2>QA-council cluster S1 (SEC-1) — the IP bucket alone is not enough</h2>
  *
- * The bucket above keys on {@link ClientIpResolver#resolveClientIp}, which trusts the FIRST,
- * client-controllable {@code X-Forwarded-For} hop (an intentional, documented trade for the public
- * tier's rate limiter — see that class; it is NOT changed here). Rotating that header on every
- * request therefore defeats the IP bucket completely: each "new" IP gets its own fresh allowance, so
- * an attacker can drive an unbounded number of REAL verification emails at any address it names — an
- * email-bombing amplifier hiding behind a rate limiter, and a flood of {@code dsar_request} rows
- * alongside it.
+ * The bucket above keys on {@link ClientIpResolver#resolve}, which since 37-24 (D-19) reads
+ * {@code X-Forwarded-For} ONLY when the socket peer is inside a config-declared trusted-proxy range
+ * ({@code jtoye.security.trusted-proxies}, default empty = trust none), walking the hops from the
+ * right; from any other peer the header is inert and the socket address is the key. Until 37-24 the
+ * resolver trusted the FIRST hop from anyone, so rotating the header on every request defeated the
+ * IP bucket completely (UXT-006). That rotation no longer buys a fresh allowance. The IP axis is
+ * still not the only defence, because a bucket keyed on ANY per-client identity can be spread
+ * across many real source addresses: an attacker with a pool of hosts, or a trusted proxy whose
+ * range an operator declared too wide, can still drive many REAL verification emails at one address
+ * it names — an email-bombing amplifier hiding behind a rate limiter, with a flood of
+ * {@code dsar_request} rows alongside it.
  *
  * <p>Two further, independent gates close this, applied in sequence with an early exit (a request
  * refused by an earlier gate never debits a later one):
@@ -131,6 +135,13 @@ public class DsarIntakeRateLimiter {
     /** Lazily built on first use; ONE bucket shared by every caller (SEC-1's aggregate ceiling). */
     private volatile Bucket globalBucket;
 
+    /** 37-24 (D-19): the same client-identity rule the public tier keys on, never a second copy. */
+    private final ClientIpResolver clientIpResolver;
+
+    public DsarIntakeRateLimiter(ClientIpResolver clientIpResolver) {
+        this.clientIpResolver = clientIpResolver;
+    }
+
     /**
      * Consume one token on EACH of three independent axes for the request — client IP, target
      * subject digest, then the global ceiling — or refuse. Sequential with an early exit: a request
@@ -143,7 +154,7 @@ public class DsarIntakeRateLimiter {
      *                                        as an RFC 7807 429 by {@code GlobalExceptionHandler})
      */
     public void checkAllowed(HttpServletRequest request, String email) {
-        String clientIp = ClientIpResolver.resolveClientIp(request);
+        String clientIp = clientIpResolver.resolve(request);
         consumeOrThrow(bucketFor(clientIp), "ip", clientIp);
 
         String subjectDigest = DsarSubjectDigest.of(email);

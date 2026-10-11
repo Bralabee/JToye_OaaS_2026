@@ -1,5 +1,6 @@
 package uk.jtoye.core.payment;
 
+import org.springframework.context.annotation.Import;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -17,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(PaymentController.class)
+@Import(uk.jtoye.core.security.ClientIpResolver.class) // 37-24: the slice includes RateLimitInterceptor (a HandlerInterceptor), which needs the ClientIpResolver bean
 @AutoConfigureMockMvc(addFilters = false)
 class PaymentControllerTest {
 
