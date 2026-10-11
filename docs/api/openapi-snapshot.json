@@ -2461,6 +2461,10 @@
             "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name); null until acknowledged.",
             "type" : "string"
           },
+          "contactVerified" : {
+            "description" : "Whether the storefront request that placed this order carried a verified customer token for its customerEmail. true = verified; false = an unverified storefront contact; absent = not recorded (pre-V81, or a vendor / REST API / MCP order).",
+            "type" : "boolean"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2605,6 +2609,10 @@
           "allergyNoteAcknowledgedBy" : {
             "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name). Absent until acknowledged.",
             "type" : "string"
+          },
+          "contactVerified" : {
+            "description" : "Whether the storefront request that placed this order carried a verified customer token for its customerEmail. true = verified; false = a storefront order with no such token (an unverified contact); absent = not recorded (the order predates the fact, or was placed by the vendor, the REST API or MCP, where there is no customer contact to verify).",
+            "type" : "boolean"
           },
           "createdAt" : {
             "format" : "date-time",
@@ -11451,6 +11459,15 @@
             }
           },
           {
+            "description" : "Optional jtoye-customers realm access token for a signed-in customer (the same header /orders/mine reads). When it verifies and its email is the order's customerEmail, the order records contactVerified true; otherwise false. An invalid or expired token is ignored, never a 401: checkout stays a guest flow.",
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
             "description" : "Client-supplied key; same key replays the original response, never duplicates.",
             "in" : "header",
             "name" : "Idempotency-Key",
@@ -14040,6 +14057,15 @@
             "in" : "path",
             "name" : "slug",
             "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "Optional jtoye-customers realm access token for a signed-in customer (the same header /orders/mine reads). When it verifies and its email is the order's customerEmail, the order records contactVerified true; otherwise false. An invalid or expired token is ignored, never a 401: checkout stays a guest flow.",
+            "in" : "header",
+            "name" : "X-Customer-Token",
+            "required" : false,
             "schema" : {
               "type" : "string"
             }

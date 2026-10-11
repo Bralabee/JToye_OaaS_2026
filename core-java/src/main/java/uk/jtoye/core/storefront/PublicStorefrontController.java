@@ -218,9 +218,33 @@ public class PublicStorefrontController {
             // Idempotency-Key parameter off @Idempotent, so documenting the raw header
             // here too would double-list it (the OrderController / DsarIntakeController convention).
             @Parameter(hidden = true)
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        GuestOrderConfirmation confirmation = storefrontService.createGuestOrder(slug, request, idempotencyKey);
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Parameter(description = "Optional jtoye-customers realm access token for a signed-in customer (the same header "
+                    + "/orders/mine reads). When it verifies and its email is the order's customerEmail, the order records "
+                    + "contactVerified true; otherwise false. An invalid or expired token is ignored, never a 401: checkout "
+                    + "stays a guest flow.")
+            @RequestHeader(value = "X-Customer-Token", required = false) String customerToken) {
+        GuestOrderConfirmation confirmation = storefrontService.createGuestOrder(slug, request, idempotencyKey,
+                verifiedEmailOrNull(customerToken));
         return ResponseEntity.status(HttpStatus.CREATED).body(confirmation);
+    }
+
+    /**
+     * Phase 37-27 (D-18): the proven customer email behind an optional {@code X-Customer-Token}, or
+     * {@code null}. Unlike {@link #getMyOrders}, a failed verification is NOT a 401 here — checkout is a
+     * guest flow and a stale cookie must not refuse an order — it only means the contact is recorded as
+     * unverified. The verifier's uniform refusal carries no detail about why (no oracle), and none is
+     * needed: the fact recorded is "verified for this address" or not.
+     */
+    private String verifiedEmailOrNull(String customerToken) {
+        if (customerToken == null || customerToken.isBlank()) {
+            return null;
+        }
+        try {
+            return customerJwtVerifier.verifiedEmail(customerToken);
+        } catch (ResponseStatusException e) {
+            return null;
+        }
     }
 
     @GetMapping("/orders")

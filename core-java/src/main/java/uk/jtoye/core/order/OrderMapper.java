@@ -66,6 +66,9 @@ public interface OrderMapper {
     @Mapping(target = "voidedAt", source = "voidedAt")
     @Mapping(target = "voidedBy", source = "voidedBy")
     @Mapping(target = "voidReason", source = "voidReason")
+    // Phase 37-27 (D-18): the stored contact-verified fact, a scalar V81 column; explicit for the same
+    // reason as the void block (null = not recorded stays null, never defaulted).
+    @Mapping(target = "contactVerified", source = "contactVerified")
     OrderDto toDto(Order order);
 
     @Mapping(target = "items", source = "items")
@@ -106,6 +109,7 @@ public interface OrderMapper {
     @Mapping(target = "voidedAt", source = "voidedAt")
     @Mapping(target = "voidedBy", source = "voidedBy")
     @Mapping(target = "voidReason", source = "voidReason")
+    @Mapping(target = "contactVerified", source = "contactVerified")
     OrderDetailDto toDetailDto(Order order);
 
     /**

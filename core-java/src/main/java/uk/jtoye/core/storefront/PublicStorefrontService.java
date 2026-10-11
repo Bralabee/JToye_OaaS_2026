@@ -779,6 +779,20 @@ public class PublicStorefrontService {
     @Transactional
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
                                                    String headerIdempotencyKey) {
+        return createGuestOrder(slug, request, headerIdempotencyKey, null);
+    }
+
+    /**
+     * Four-argument form (Phase 37-27, D-18): {@code verifiedEmail} is the address a verified customer
+     * token proved, or {@code null} when the request carried none (or an invalid one). It decides ONLY the
+     * stored {@code contact_verified} fact: {@code true} when it equals the order's {@code customerEmail}
+     * ignoring case and surrounding space, {@code false} otherwise. It never changes who the order is
+     * for, never enters the idempotency fingerprint (a retry with or without the cookie replays the same
+     * order), and never refuses anything.
+     */
+    @Transactional
+    public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
+                                                   String headerIdempotencyKey, String verifiedEmail) {
         log.debug("Creating guest order for shop: {}", slug);
 
         // SEC-01 tenant-match gate BEFORE any write (Phase 13) — rejects
@@ -794,7 +808,7 @@ public class PublicStorefrontService {
             String idempotencyKey = resolveGuestIdempotencyKey(request.getIdempotencyKey(), headerIdempotencyKey);
             if (idempotencyKey == null) {
                 // No key from either source: the pre-existing, non-idempotent create (census).
-                return placeGuestOrder(shop, request, null);
+                return placeGuestOrder(shop, request, null, verifiedEmail);
             }
 
             // Cluster E (API-3 / API-4 / INT-15, adjudication A3): the keyed path goes through the
@@ -808,7 +822,7 @@ public class PublicStorefrontService {
             // back with the order and a genuine retry succeeds.
             return idempotencyService.executeWithoutStoringResponse(
                     GUEST_ORDER_ENDPOINT, idempotencyKey, new GuestCheckoutIdentity(shop.getId(), request), request,
-                    () -> placeGuestOrder(shop, request, idempotencyKey),
+                    () -> placeGuestOrder(shop, request, idempotencyKey, verifiedEmail),
                     () -> replayGuestOrder(shop, idempotencyKey)).value();
         } finally {
             // Owned HERE, at the outermost boundary, and deliberately NOT inside placeGuestOrder:
@@ -950,7 +964,8 @@ public class PublicStorefrontService {
      * transaction, as the reserved WORK when a key is present and directly when none is.
      * Does NOT touch {@code TenantContext}: the caller owns set and clear.
      */
-    private GuestOrderConfirmation placeGuestOrder(Shop shop, GuestOrderRequest request, String idempotencyKey) {
+    private GuestOrderConfirmation placeGuestOrder(Shop shop, GuestOrderRequest request, String idempotencyKey,
+                                                   String verifiedEmail) {
         UUID tenantId = shop.getTenantId();
         // Legacy lookup on orders.idempotency_key (V24), RETAINED inside the reserved work.
         // Two reasons: an order placed with a key BEFORE the V50 reservation existed has no
@@ -1114,6 +1129,13 @@ public class PublicStorefrontService {
         order.setAllergenAckMask(acknowledgedAllergenMask);
         order.setAllergenAckAt(OffsetDateTime.now());
         order.setPlacedVia(OrderChannel.STOREFRONT);
+        // 37-27 (D-18, UI-SPEC D1): a STORED fact about who placed the order, written on EVERY storefront
+        // order — true only when a verified customer token proved THIS address (case and surrounding space
+        // folded, the same normalisation the caps use), false otherwise. The vendor writer leaves it NULL
+        // ("not recorded"), which is a different fact from false and renders no badge (Pitfall 12).
+        String verifiedNormalised = CashOrderCaps.normaliseEmail(verifiedEmail);
+        order.setContactVerified(verifiedNormalised != null
+                && verifiedNormalised.equals(CashOrderCaps.normaliseEmail(request.getCustomerEmail())));
 
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows
