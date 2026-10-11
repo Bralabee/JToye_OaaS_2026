@@ -20,10 +20,25 @@ public class OrderNotDeletableException extends RuntimeException {
     private final OrderStatus status;
 
     public OrderNotDeletableException(String orderNumber, OrderStatus status) {
-        super("Order " + orderNumber + " is " + status.name() + ", so it can't be deleted. "
+        this(orderNumber, status, "Order " + orderNumber + " is " + status.name() + ", so it can't be deleted. "
                 + "Void it instead to keep your records.");
+    }
+
+    private OrderNotDeletableException(String orderNumber, OrderStatus status, String message) {
+        super(message);
         this.orderNumber = orderNumber;
         this.status = status;
+    }
+
+    /**
+     * The refusal for an order whose STATUS would allow a delete but whose payment has settled (a card payment
+     * captured while the order is still PENDING writes the SALE row at once): the detail names the payment, not
+     * the status, because the status is not the reason.
+     */
+    public static OrderNotDeletableException settled(String orderNumber, OrderStatus status) {
+        return new OrderNotDeletableException(orderNumber, status,
+                "Order " + orderNumber + " has been paid, so it can't be deleted while it is " + status.name() + ". "
+                        + "Void it instead to keep your records.");
     }
 
     public String getOrderNumber() {

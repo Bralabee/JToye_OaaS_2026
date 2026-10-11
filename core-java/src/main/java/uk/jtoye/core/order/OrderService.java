@@ -697,8 +697,10 @@ public class OrderService {
      * concurrent first voids are serialised by the order's {@code @Version}, and the reversal by the unique
      * index {@code uq_fin_tx_tenant_order}.
      *
-     * <p>A DRAFT or PENDING order is not voided: nothing was cooked or settled, so it is deleted instead
-     * (409 order-not-voidable). The reason's text is never logged.
+     * <p>A DRAFT or PENDING order that never settled is not voided: nothing was cooked or paid, so it is
+     * deleted instead (409 order-not-voidable). A PENDING order whose card payment was captured HAS settled
+     * (its SALE row exists), so it is voided like any later status ({@link #isSettled}). The reason's text is
+     * never logged.
      */
     public OrderDetailDto voidOrder(UUID orderId, String reason) {
         shopAccessService.requireGroupAdmin();
@@ -721,7 +723,7 @@ public class OrderService {
             log.debug("Order {} was already voided with the same reason; returning the existing void",
                     order.getOrderNumber());
         } else {
-            if (DELETABLE_STATUSES.contains(order.getStatus())) {
+            if (DELETABLE_STATUSES.contains(order.getStatus()) && !isSettled(order)) {
                 throw new OrderNotVoidableException(order.getOrderNumber(), order.getStatus());
             }
             order.setVoidedAt(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
@@ -750,8 +752,11 @@ public class OrderService {
      * <p>Only a DRAFT or PENDING order can be deleted (Phase 37-10, D-10, UXT-018). From CONFIRMED on
      * the order is part of the shop's records, and {@code financial_transactions.order_id} has no
      * foreign key, so deleting it would leave a ledger row pointing at an order that reads 404. Those
-     * orders get a typed 409 telling the caller to void instead. The shop check runs first, so a caller
-     * without SHOP_MANAGER on the shop learns nothing about the order's status.
+     * orders get a typed 409 telling the caller to void instead. So does a PENDING order that has already
+     * SETTLED: a card payment is captured, and its SALE written, in the payment_intent.succeeded handler while
+     * the order is still PENDING, so status alone cannot tell a paid PENDING order from an unpaid one
+     * ({@link #isSettled}; review #913 round 1). The shop check runs first, so a caller without SHOP_MANAGER
+     * on the shop learns nothing about the order's status.
      */
     public void deleteOrder(UUID orderId) {
         Order order = orderRepository.findById(orderId)
@@ -762,9 +767,24 @@ public class OrderService {
         if (!DELETABLE_STATUSES.contains(order.getStatus())) {
             throw new OrderNotDeletableException(order.getOrderNumber(), order.getStatus());
         }
+        if (isSettled(order)) {
+            throw OrderNotDeletableException.settled(order.getOrderNumber(), order.getStatus());
+        }
 
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);
+    }
+
+    /**
+     * Whether money has moved for this order: its card payment was captured, or a SALE row already sits in
+     * the ledger for it. Either one makes the order part of the shop's books, whatever its status, so it is
+     * voided (D-10) and never deleted. Both facts are checked because they are written by the same handler
+     * but are independently observable: the payment status survives a ledger row that was never written, and
+     * the ledger row is the thing a delete would orphan.
+     */
+    private boolean isSettled(Order order) {
+        return order.getPaymentStatus() == PaymentStatus.CAPTURED
+                || financialTransactionService.findSaleForOrder(order.getId()).isPresent();
     }
 
 }

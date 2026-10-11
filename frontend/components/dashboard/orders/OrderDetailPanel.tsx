@@ -166,7 +166,13 @@ export function OrderDetailPanel({ order, onRefundIssued, onVoided }: OrderDetai
   const switcher = useOptionalShopSwitcherData()
   const isGroupAdmin = !!switcher && !switcher.loading && switcher.access?.groupAdmin === true
   const viewerId = switcher?.userId ?? null
-  const canVoid = isGroupAdmin && isVoidable({ status: order.status, voidedAt: voided?.voidedAt })
+  const canVoid =
+    isGroupAdmin &&
+    isVoidable({
+      status: order.status,
+      voidedAt: voided?.voidedAt,
+      paymentStatus: order.paymentStatus,
+    })
 
   // The staff directory, read at most once and only by a Group admin (STAFF and managers
   // cannot read it), to say WHO voided an order instead of an account id.

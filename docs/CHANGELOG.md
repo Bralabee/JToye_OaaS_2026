@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37-B: Staff access and finance (#913) — 2026-10-11
+
+The first of Phase 37's sub-theme pull requests (plans 37-01 to 37-15 of 53, plus the WINDOWS #29
+customer gate): a vendor's people hold exactly the access they were given, an invitation is the only
+way into a tenant, an order the books depend on is voided rather than deleted, and each shop sees its
+own figures. Four migrations, V76 to V79; V78 and V79 backfill per tenant under a pinned GUC, proven
+on a two-tenant database under the RLS-bound migrator.
+
+- **Strict scoping is the shipped default (D-06).** `jtoye.access.strict-scoping` is true in
+  application.yml, compose, `.env.example`, the k8s app-config and the rendered goldens, with a CI
+  gate that fails any runtime overriding it back. Every `/api/v1/customers` operation requires an
+  honoured grant (typed `shop-access-denied` 403), the media review queue is shop-scoped, and the
+  suite proves which posture it ran under.
+- **The Staff page reports access as the server computes it.** `GET /api/v1/staff` carries
+  `people[]` with each person's effective access; a NULL-shop STAFF or SHOP_MANAGER grant covers
+  every shop; a realm admin reads `REALM_ADMIN` (V76) instead of "No access"; a session with no
+  grant sees one honest no-access page.
+- **Invitations (D-07, D-26).** A Group admin invites by email with the exact grant; the token is
+  stored only as its SHA-256 (`staff_invite`, V77, FORCE RLS) and travels in the URL fragment to
+  `/invite`, which POSTs it in a JSON body and writes nothing to web storage. Accepting claims the
+  link once, creates the vendor-realm Keycloak user with the admin-only `tenant_id` attribute, and
+  writes the directory row and the OPERATOR grant in one transaction. Every dead link answers one
+  byte-identical 404.
+- **Void, not delete (D-10).** DELETE past PENDING is a typed 409 `order-not-deletable`; a Group
+  admin voids with a reason, which keeps the order and writes one REVERSAL of its SALE (V78
+  `entry_kind`; revenue is SALE minus REVERSAL).
+- **Per-shop finance.** Every ledger row knows its shop (V79); a shop manager reads their own shop's
+  summary, list and CSV export, the tenant-wide view stays Group-admin only, every response echoes
+  the scope it filtered on, and the CSV neutralises spreadsheet formulas.
+- **VAT and menus.** No VAT line for a seller with no VAT number; a per-product VAT rate in the
+  form; a CSV import always lands in a named shop; a menu can be copied to another shop with its
+  allergen facts verbatim and photos shared copy-on-write.
+
+### Trivy gate green again: next 16.3.8 and golang.org/x/net 0.60.0 (#914) — 2026-10-11
+
+The required Security Scan had been red on `main` since 2026-10-08 with no code change behind it:
+the daily Trivy database began reporting CVE-2026-94483 (`next` 16.3.7, SSRF information disclosure
+in Image Optimization) and CVE-2026-78669 (`golang.org/x/net` 0.58.0, HTTP/2 SETTINGS denial of
+service) in `edge-go` and `infra/backups/blobctl`. Exact bumps only: `next` and `eslint-config-next`
+to 16.3.8, `golang.org/x/net` to 0.60.0 in both Go modules; `go mod tidy` also lifts the transitive
+`golang.org/x/text` (0.42.0), `x/crypto`, `x/sync` and `x/sys`, and in `edge-go` `x/mod`. Both Go modules build and test clean; the Next.js version lines in `CLAUDE.md`
+and `AGENTS.md` follow the lockfile.
+
 ### Phase 31.1: Persona gap closure (#901) — 2026-10-07
 
 Gap closure for the 17 persona-testing clusters of Phase 31 (epic #880), thirty plans on the
