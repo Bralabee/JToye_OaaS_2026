@@ -403,3 +403,18 @@ where it must be resolved.
   files (editor 23 -> 26, card 7 -> 8, pause 16 -> 17, board-stopped 27 -> 29): jest 2616 tests / 221
   suites against the re-measured 2607/220. Java: `CustomerAccessGateIntegrationTest` 12 -> 22. The
   37-17 `.each(TABLE.filter(...))` VOID is untouched; regenerate `docs/metrics.json` after it is fixed.
+- **`scripts/check-doc-citations.sh` reports a VOID on `docs/ops/terminal-states.yaml` on this machine (37-24, pre-existing, out of scope).**
+  status: open
+  **What:** the gate's YAML-citation extractor runs a bare `python3 -c` (around line 187); the
+  machine's python shim refuses that spelling outside a declared env, so the extractor prints the
+  shim's refusal and the gate records `citations=0` for that file as VOID. The gate still exits 0
+  when the other 29 citations verify (37-24 measured rc=0 with the VOID present), so it is not a
+  gate break here, and CI has no shim. The fix belongs to the gate (spell `/usr/bin/python3 -c`,
+  the sanctioned stdlib one-liner form, or declare an env), not to this plan.
+- **The local trusted-proxy range is the minikube default, not a measurement (37-24).**
+  status: open
+  **What:** `k8s/local/configmap-patch.yaml` declares `security.trusted-proxies: "10.244.0.0/16"`.
+  The `jtoye` minikube profile had no container on 2026-10-11 (`minikube profile list`: "No such
+  container: jtoye"; `kubectl --context jtoye`: context does not exist), so the ingress pod CIDR
+  could not be read. When the cluster is next up, confirm with
+  `kubectl --context jtoye get pods -n ingress-nginx -o wide` and narrow the range if it differs.
