@@ -418,3 +418,20 @@ where it must be resolved.
   container: jtoye"; `kubectl --context jtoye`: context does not exist), so the ingress pod CIDR
   could not be read. When the cluster is next up, confirm with
   `kubectl --context jtoye get pods -n ingress-nginx -o wide` and narrow the range if it differs.
+- **`edge-go/README.md` describes a rate limiter that never shipped (37-25, pre-existing, out of scope).**
+  status: open
+  **What:** the README's "Rate Limiting" and "Troubleshooting" sections say "100 requests/second",
+  list `uber-go/ratelimit` as a dependency and `MicahParks/keyfunc`, and document `JWKS_URL` /
+  `JWT_ISSUER` and `POST /api/sync/batch` — none of which is the code (hand-rolled buckets,
+  `KC_ISSUER_URI` / `JWT_EXPECTED_ISSUER`, `/api/v1/sync/batch`). 37-25 made its "Per-tenant rate
+  limiting support" line true and added the `RATE_LIMIT_*` keys to `edge-go/.env.example`, but the
+  README was not in the plan's file list and is not touched here. A rewrite belongs with the
+  sub-theme PR's docs pass; `docs/audit/**` and `docs/analysis/**` descriptions of the old single
+  bucket are dated records and stay as written.
+- **Docs metrics drift from 37-25 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-25: `go_test_funcs` 98 -> 103 and
+  `go_test_files` 13 -> 14 are this plan's (`ratelimit_tenant_test.go` x4, `openapi_test.go` +1);
+  `java_test_methods` 2534 -> 2558 and `java_test_files` 371 -> 372 were already drifted before it
+  (37-24). Regenerate `docs/metrics.json` with `--write` and re-point the prose counts in CLAUDE.md,
+  AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
