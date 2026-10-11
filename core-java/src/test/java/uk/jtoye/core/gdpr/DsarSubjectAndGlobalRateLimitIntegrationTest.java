@@ -162,7 +162,7 @@ class DsarSubjectAndGlobalRateLimitIntegrationTest {
     private org.springframework.test.web.servlet.ResultActions lodge(String email, String clientIp)
             throws Exception {
         return mockMvc.perform(post(INTAKE_PATH)
-                .header("X-Forwarded-For", clientIp)
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }) // 37-24 (D-19): identity is the socket peer; the header is inert
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
                         Map.of("email", email, "requestType", "ERASURE"))));

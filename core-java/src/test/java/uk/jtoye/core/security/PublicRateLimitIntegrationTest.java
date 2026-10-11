@@ -194,7 +194,7 @@ class PublicRateLimitIntegrationTest {
     private static MockHttpServletRequest publicRequest(String clientIp) {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/public/shops");
         request.setRequestURI("/public/shops");
-        request.addHeader("X-Forwarded-For", clientIp);
+        request.setRemoteAddr(clientIp); // 37-24 (D-19): identity is the socket peer; the header is inert
         return request;
     }
 }
