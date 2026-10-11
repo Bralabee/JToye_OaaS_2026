@@ -192,6 +192,21 @@ public class ClientIpResolver {
         }
     }
 
+    /**
+     * The one spelling of a client address this platform keys on (37-28, D-27): an IP literal in the
+     * canonical form {@link #resolve} answers with — dotted quad for IPv4, mapped IPv4 included; RFC 5952
+     * for IPv6 — and any other text (the {@link #UNKNOWN} sentinel, a non-literal peer name) trimmed, as
+     * written. {@code ClientIpDigester} digests THIS, so a client cannot hold two cash-order counts by
+     * respelling what the proxy wrote. Never a name lookup.
+     *
+     * @param text a client address in any spelling; non-null
+     * @return the canonical literal, or the trimmed text when it is not an IP literal
+     */
+    public static String canonicalLiteral(String text) {
+        String trimmed = text.trim();
+        return parseLiteral(trimmed).map(ClientIpResolver::canonical).orElse(trimmed);
+    }
+
     /** Dotted quad for IPv4 (mapped included); RFC 5952 (lower-case, longest zero run as ::) for IPv6. */
     static String canonical(InetAddress address) {
         if (address instanceof Inet4Address) {

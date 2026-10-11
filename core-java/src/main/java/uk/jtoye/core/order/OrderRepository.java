@@ -157,6 +157,23 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                                     @Param("email") String email);
 
     /**
+     * How many OPEN cash orders one client address holds at a shop (Phase 37-28, D-18 / D-27, UXT-041),
+     * counted on the keyed digest {@code orders.client_ip_digest} — never on an address, which is stored
+     * nowhere. The predicates repeat V81's {@code idx_orders_open_cash_ip} verbatim (open status, cash,
+     * not voided, the digest) so the planner answers from the partial index; {@code tenant_id} is an
+     * explicit predicate beside RLS. The caller ({@code CashOrderCaps}) passes the digest
+     * {@code ClientIpDigester} computed for the request.
+     */
+    @Query(value = "SELECT count(*) FROM orders WHERE tenant_id = :tenantId AND shop_id = :shopId "
+            + "AND client_ip_digest = :digest "
+            + "AND status IN ('PENDING', 'CONFIRMED', 'PREPARING', 'READY') "
+            + "AND payment_status = 'NONE' AND voided_at IS NULL",
+            nativeQuery = true)
+    long countOpenCashOrdersByClientIpDigest(@Param("tenantId") UUID tenantId,
+                                             @Param("shopId") UUID shopId,
+                                             @Param("digest") String digest);
+
+    /**
      * The customer phones of every OPEN cash order at a shop (Phase 37-27, D-18), one entry per order,
      * as stored. Phone normalisation (digits only, UK 0 -> 44) lives in {@code CashOrderCaps}, which
      * folds these and counts the matches: the stored spellings differ, so no SQL equality can count

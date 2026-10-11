@@ -147,6 +147,13 @@ public class PublicStorefrontService {
      * hold, counted over V81's partial indexes. Checked on the cash branch only, before the save.
      */
     private final CashOrderCaps cashOrderCaps;
+
+    /**
+     * The keyed digest of the customer's client address (37-28, D-27): written on every storefront order
+     * and counted by the IP axis of {@link #cashOrderCaps} on the cash branch. The address itself never
+     * reaches this class — the controller resolves it and this service digests it before any write.
+     */
+    private final ClientIpDigester clientIpDigester;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -162,6 +169,7 @@ public class PublicStorefrontService {
                                    ShopAvailabilityPolicy availabilityPolicy,
                                    OrderLimits orderLimits,
                                    CashOrderCaps cashOrderCaps,
+                                   ClientIpDigester clientIpDigester,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -182,6 +190,7 @@ public class PublicStorefrontService {
         this.availabilityPolicy = availabilityPolicy;
         this.orderLimits = orderLimits;
         this.cashOrderCaps = cashOrderCaps;
+        this.clientIpDigester = clientIpDigester;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -793,7 +802,24 @@ public class PublicStorefrontService {
     @Transactional
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
                                                    String headerIdempotencyKey, String verifiedEmail) {
+        return createGuestOrder(slug, request, headerIdempotencyKey, verifiedEmail, null);
+    }
+
+    /**
+     * Five-argument form (Phase 37-28, D-27): {@code clientIp} is the client address the controller
+     * resolved through {@code ClientIpResolver} (D-19), or {@code null} when the caller has none (the
+     * in-process callers). It is DIGESTED here, before any write, and only the digest is stored
+     * ({@code orders.client_ip_digest}); the address itself is never persisted, logged or returned. The
+     * digest keys the per-IP cash-order cap and, like {@code verifiedEmail}, never enters the idempotency
+     * fingerprint — a retry from another network path replays the same order.
+     */
+    @Transactional
+    public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
+                                                   String headerIdempotencyKey, String verifiedEmail,
+                                                   String clientIp) {
         log.debug("Creating guest order for shop: {}", slug);
+        // D-27: the only form of the address that survives this line. Null when the caller had none.
+        String clientIpDigest = clientIpDigester.digest(clientIp);
 
         // SEC-01 tenant-match gate BEFORE any write (Phase 13) — rejects
         // cross-tenant spoof with 403 before Order/OrderItem rows are minted.
@@ -808,7 +834,7 @@ public class PublicStorefrontService {
             String idempotencyKey = resolveGuestIdempotencyKey(request.getIdempotencyKey(), headerIdempotencyKey);
             if (idempotencyKey == null) {
                 // No key from either source: the pre-existing, non-idempotent create (census).
-                return placeGuestOrder(shop, request, null, verifiedEmail);
+                return placeGuestOrder(shop, request, null, verifiedEmail, clientIpDigest);
             }
 
             // Cluster E (API-3 / API-4 / INT-15, adjudication A3): the keyed path goes through the
@@ -822,7 +848,7 @@ public class PublicStorefrontService {
             // back with the order and a genuine retry succeeds.
             return idempotencyService.executeWithoutStoringResponse(
                     GUEST_ORDER_ENDPOINT, idempotencyKey, new GuestCheckoutIdentity(shop.getId(), request), request,
-                    () -> placeGuestOrder(shop, request, idempotencyKey, verifiedEmail),
+                    () -> placeGuestOrder(shop, request, idempotencyKey, verifiedEmail, clientIpDigest),
                     () -> replayGuestOrder(shop, idempotencyKey)).value();
         } finally {
             // Owned HERE, at the outermost boundary, and deliberately NOT inside placeGuestOrder:
@@ -965,7 +991,7 @@ public class PublicStorefrontService {
      * Does NOT touch {@code TenantContext}: the caller owns set and clear.
      */
     private GuestOrderConfirmation placeGuestOrder(Shop shop, GuestOrderRequest request, String idempotencyKey,
-                                                   String verifiedEmail) {
+                                                   String verifiedEmail, String clientIpDigest) {
         UUID tenantId = shop.getTenantId();
         // Legacy lookup on orders.idempotency_key (V24), RETAINED inside the reserved work.
         // Two reasons: an order placed with a key BEFORE the V50 reservation existed has no
@@ -1136,6 +1162,11 @@ public class PublicStorefrontService {
         String verifiedNormalised = CashOrderCaps.normaliseEmail(verifiedEmail);
         order.setContactVerified(verifiedNormalised != null
                 && verifiedNormalised.equals(CashOrderCaps.normaliseEmail(request.getCustomerEmail())));
+        // 37-28 (D-27): the keyed digest of the client address, on EVERY storefront order (card too — it
+        // is the record the per-IP cap counts once a card order's status opens, and the retention sweep,
+        // the terminal-state null and erasure all treat the two branches alike). Null when the caller had
+        // no address. The vendor writer (OrderService) leaves it NULL: no customer connection to record.
+        order.setClientIpDigest(clientIpDigest);
 
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows
@@ -1236,6 +1267,10 @@ public class PublicStorefrontService {
             // inside the reserved idempotency work, like every refusal in this method, so a capped
             // request leaves no order and no reservation and the same key succeeds once a slot frees.
             cashOrderCaps.checkEmailAndPhone(tenantId, shop.getId(), request.getCustomerEmail(), request.getCustomerPhone());
+            // 37-28 (D-27, the third axis): how many open cash orders this CONNECTION already holds at the
+            // shop, counted on the keyed digest — the axis that bounds a flood inventing a fresh email and
+            // phone per order. Same placement and the same rollback contract as the two above.
+            cashOrderCaps.checkIp(tenantId, shop.getId(), clientIpDigest);
             // COD fallback — no online payment. UNCHANGED by #538: this
             // branch still mutates in place and is persisted by the single
             // save below, exactly as before.

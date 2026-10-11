@@ -75,6 +75,9 @@ class PublicStorefrontServiceTest {
     // 31.1-24: the seller block's tenant-pinned read; returns null (no seller) unless an arm stubs it.
     @Mock private uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService;
 
+    /** 37-28: 64 hex characters for the ClientIpDigester under test — a fixture, not a credential. */
+    private static final String TEST_HMAC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     private PublicStorefrontService service;
 
     private Shop publishedShop;
@@ -98,7 +101,8 @@ class PublicStorefrontServiceTest {
         // tiers return empty, so most arms in this file never touch it.
         // 37-27: a real CashOrderCaps over the mocked OrderRepository, whose count queries return 0 unless an
         // arm stubs them, so no cash order in this file is capped by accident.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), 5.0, 50.0);
+        // 37-28: a real ClientIpDigester under a fixture key (not a credential); the arms pass no address.
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), new ClientIpDigester(TEST_HMAC_KEY), 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -1449,7 +1453,7 @@ class PublicStorefrontServiceTest {
                     new OrderNumberGenerator(), traderIdentityService,
                     new ShopAvailabilityPolicy(java.time.Clock.systemUTC()),
                     new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5),
-                    defaultRadiusKm, maxRadiusKm);
+                    new ClientIpDigester(TEST_HMAC_KEY), defaultRadiusKm, maxRadiusKm);
         }
 
         @Test

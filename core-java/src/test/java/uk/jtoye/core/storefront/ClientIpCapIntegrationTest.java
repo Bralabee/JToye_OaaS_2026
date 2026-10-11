@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
@@ -65,18 +64,24 @@ class ClientIpCapIntegrationTest {
             .withUsername("test")
             .withPassword("test");
 
+    /**
+     * The key the digests are computed under, FIXED for this class so the expected digest can be computed
+     * independently of the bean. The test profile's {@code ${random.value}${random.value}} is re-drawn on
+     * every resolution (measured: a second {@code @Value} read gave a different key from the bean's, so the
+     * digests disagreed), which is right for every other test and wrong for one that must predict the
+     * value. 64 hex characters; a fixture, not a credential.
+     */
+    private static final String HMAC_KEY = "37280000111122223333444455556666777788889999aaaabbbbccccddddeeee";
+
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
+        registry.add("jtoye.storefront.client-ip-hmac-key", () -> HMAC_KEY);
     }
 
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
-
-    /** The per-run random test key (application-test.yml), read so the expected digest is computed INDEPENDENTLY. */
-    @Value("${jtoye.storefront.client-ip-hmac-key}")
-    String hmacKey;
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000003728");
@@ -129,7 +134,7 @@ class ClientIpCapIntegrationTest {
 
         // What the rows record about the connection: the keyed digest, computed here independently of the
         // class under test, and nothing that equals or contains the address.
-        String expectedDigest = ClientIpDigesterTest.hmacSha256Hex(hmacKey, clientIp);
+        String expectedDigest = ClientIpDigesterTest.hmacSha256Hex(HMAC_KEY, clientIp);
         for (String email : emails) {
             UUID orderId = orderIdByEmail(email);
             assertThat(clientIpDigestOf(orderId)).as("orders.client_ip_digest for " + email).isEqualTo(expectedDigest);
@@ -160,7 +165,7 @@ class ClientIpCapIntegrationTest {
                 storefrontBody(otherEmail, uniquePhone(), List.of(line(jollof, 1))));
         assertThat(accepted.getResponse().getStatus()).as("another client, its own count: " + responseText(accepted)).isEqualTo(201);
         UUID otherOrderId = orderIdByEmail(otherEmail);
-        assertThat(clientIpDigestOf(otherOrderId)).isEqualTo(ClientIpDigesterTest.hmacSha256Hex(hmacKey, otherClientIp))
+        assertThat(clientIpDigestOf(otherOrderId)).isEqualTo(ClientIpDigesterTest.hmacSha256Hex(HMAC_KEY, otherClientIp))
                 .isNotEqualTo(expectedDigest);
         assertNoColumnHoldsTheAddress(otherOrderId, otherClientIp);
     }

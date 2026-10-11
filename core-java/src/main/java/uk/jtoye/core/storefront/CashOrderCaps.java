@@ -73,6 +73,26 @@ public class CashOrderCaps {
         }
     }
 
+    /**
+     * Refuse a cash order whose client address already holds the cap at this shop (37-28, D-27). The
+     * identity is the KEYED DIGEST {@code ClientIpDigester} computed for the request — this class never
+     * sees an address — counted over V81's {@code idx_orders_open_cash_ip}. A {@code null} digest (nothing
+     * to digest) is not an identity and is not counted.
+     *
+     * @param tenantId the shop's tenant (the explicit predicate beside RLS)
+     * @param shopId   the shop the order is for — the cap is per shop
+     * @param digest   the HMAC digest of the resolved client address, or {@code null}
+     * @throws OrderCapExceededException naming the {@code IP} axis
+     */
+    public void checkIp(UUID tenantId, UUID shopId, String digest) {
+        if (digest == null || digest.isBlank()) {
+            return;
+        }
+        if (orderRepository.countOpenCashOrdersByClientIpDigest(tenantId, shopId, digest) >= perIp) {
+            throw new OrderCapExceededException(OrderCapExceededException.Axis.IP, perIp);
+        }
+    }
+
     /** The configured per-email cap (for tests and the public shop payload, should one ever carry it). */
     public int perEmail() {
         return perEmail;
@@ -83,7 +103,7 @@ public class CashOrderCaps {
         return perPhone;
     }
 
-    /** The configured per-IP cap: read here so the key is bound and refused below 1 from day one; 37-28 counts on it. */
+    /** The configured per-IP cap (37-28 counts on it through {@link #checkIp}). */
     public int perIp() {
         return perIp;
     }

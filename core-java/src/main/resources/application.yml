@@ -224,6 +224,15 @@ jtoye:
       # Per client address, counted on the keyed digest orders.client_ip_digest (D-27) — the axis
       # 37-28 enforces. Higher than the identity caps: one household or office shares one address.
       per-ip: 5
+    # Phase 37-28 (D-27, RWO-041): the HMAC-SHA256 key under which ClientIpDigester turns the resolved
+    # client address (ClientIpResolver, D-19) into the pseudonym stored on orders.client_ip_digest for
+    # the per-ip cap above. A SECRET, unlike the caps: 64 hexadecimal characters (32 bytes), generated
+    # with `openssl rand -hex 32`, supplied only by the environment (the DSAR_ENCRYPTION_KEY shape). The
+    # default is deliberately EMPTY so an absent key fails fast at startup (ClientIpDigester refuses to
+    # construct, naming this property and never the value) instead of digesting under something
+    # guessable — a plain or weakly-keyed hash of the IPv4 space is reversible by enumeration. Never
+    # commit a value here. Rotating it only changes which open orders a client is counted against.
+    client-ip-hmac-key: ${CLIENT_IP_HMAC_KEY:}
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:
