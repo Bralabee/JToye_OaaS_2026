@@ -404,7 +404,7 @@ Precedence, first match wins:
 | ARIA | Container `role="alertdialog" aria-modal="true" aria-labelledby` = headline, `aria-describedby` = body. Focus moves to the primary button on mount and is trapped inside; the rest of the page is `inert`. |
 | Content | `OctagonAlert` icon (64px, white) → headline 36px/600 → body 16px/400 → buttons (copy below). |
 | Buttons | `h-14 w-full max-w-sm`. Primary: `bg-white text-red-800 font-semibold`, white 2px focus ring offset by 2px against red-700 (6.47:1). Secondary "Silence alarm": `border-2 border-white bg-transparent text-white`. Silencing stops the sound **only**. The red screen stays until sign-in succeeds. |
-| Alarm sound | It reuses the already-unlocked shared `AudioContext`. **A different pattern from the new-order chime (default):** three 440 Hz `square` tones, 120 ms each, 80 ms apart, repeated every **3 s**. The two must be distinguishable by ear. If sound was never enabled, the overlay still shows; it cannot ring, and its body says so (copy below). |
+| Alarm sound | It reuses the already-unlocked shared `AudioContext`. **A different pattern from the new-order chime (default):** three 440 Hz `square` tones, 120 ms each, 80 ms apart, repeated every **3 s**. The two must be distinguishable by ear. If sound was never enabled, the overlay still shows; it cannot ring, and its body says so (copy below). **It stops by itself 2 minutes after it starts** (owner ruling 2026-10-10, alarm fatigue: an abandoned tablet must not ring all night); the red screen stays, mute still never silences it, and "Silence alarm" still stops it at once. |
 | Sign-in return | "Sign in again" goes to `/auth/signin?callbackUrl=%2Fdashboard%2Fkitchen`. The sign-in page honours `callbackUrl` **only** if it starts with a single `/` (never `//`, never a scheme). Anything else falls back to `/dashboard`. |
 | Silent refresh | While the SSO session lasts, the board refreshes its token before `expiresAt`. The overlay is for a real lapse, not a 5-minute access-token expiry. |
 | Pill | It reads "Signed out" or "No access" behind the overlay (K1 table), so a screenshot of the header never says "Live". |
@@ -455,7 +455,7 @@ Precedence, first match wins:
 | Shortcut | "Copy Monday to every day" `variant="link"` above the rows. |
 | Empty | A shop with every day ticked Closed or no windows saves as **closed every day** (D-15). The save button is not blocked, but a 14px amber-800 note above it reads the copy below. Customers cannot order from that shop. |
 | Legacy shop | For `hours_source = LEGACY_ALWAYS_OPEN`, the editor opens with every day empty and an info line: the copy below. Saving any hours ends the legacy state (D-25). |
-| Needs-review shop | For `NEEDS_REVIEW`, the days that could not be read open as **Closed** (what the storefront already showed), each with a 14px amber-800 line quoting the original text, so the vendor sees what they typed: `We couldn't read "{original text}". This day shows as closed.` |
+| Needs-review shop | For `NEEDS_REVIEW`, each day that could not be read opens in the editor **unticked, with ONE all-day window 00:00-00:00** (hint "Open 24 hours"), because the server keeps such a day open all day (D-25). A day the vendor wrote closed stays Closed, and a day the server read keeps its windows. Each unreadable day carries a 14px amber-800 line quoting the original text: `We could not read "{original text}", so this day is open all day. Set the real times, or tick Closed.` (owner ruling 2026-10-10). **Save consequence:** a save that changes any other day sends the unreadable day as `[{open 00:00, close 00:00}]`, so a partial fix keeps it open; an untouched editor still sends no hours. A shop with an overnight Sunday window (e.g. 18:00-02:00) and an unreadable Monday cannot be saved until Monday's real times are set, because the all-day Monday overlaps Sunday's spill (editor and server agree). |
 
 **Vendor notices** (`/dashboard` home and `/dashboard/shops`):
 
@@ -777,7 +777,7 @@ The copy below is the contract. Every claim in it must be backed by data the UI 
 | Pause control | Pause orders · 20 minutes · 40 minutes · Until I reopen · Resume orders now |
 | Paused (timed) | Orders paused until {HH:MM}. Customers can see your menu but can't order. · [Resume orders] |
 | Paused (indefinite) | Orders paused until you reopen. Customers can see your menu but can't order. · [Resume orders] |
-| Pause refused (403) | You can't pause orders for this shop. Ask a manager. |
+| Pause refused (403) | No inline copy: answered by K2 Access ended (owner ruling 2026-10-10). STAFF is the pause floor, so a shop-access-denied refusal means the STAFF grant itself is gone; any other failure shows the generic error. |
 | Storefront: paused, timed | **{Shop} isn't taking orders right now** · Back at {HH:MM}. |
 | Storefront: paused, indefinite | **{Shop} isn't taking orders right now** · Check back later. |
 | Storefront: closed, next opening known | **Closed now** · Opens {weekday} at {HH:MM}. |
@@ -786,12 +786,13 @@ The copy below is the contract. Every claim in it must be backed by data the UI 
 | Hours: overlap | These times overlap. Change one of them. |
 | Hours: missing time | Add a closing time, or tick Closed. |
 | Hours: overnight hint | Closes after midnight (next day) |
+| Hours: all-day hint | Open 24 hours (a window whose open equals its close, e.g. the 00:00-00:00 pre-fill of an unreadable day; shown instead of the overnight hint; planner discretion, quick 261010-ppb) |
 | Hours: all closed note | With no opening hours, customers can't order from this shop. |
 | Hours: legacy info | Customers can currently order from this shop at any time, because no opening hours were set. Add your hours to change that. |
-| Hours: unreadable day | We couldn't read "{original text}". This day shows as closed. |
+| Hours: unreadable day | We could not read "{original text}", so this day is open all day. Set the real times, or tick Closed. (owner ruling 2026-10-10) |
 | Notice badges | Hours not set · Check hours |
 | Dashboard card (legacy) | **{n} shop(s) have no opening hours** · Customers can order from {them/it} at any time, including when you're closed. · [Set opening hours] |
-| Dashboard card (needs review) | **Check the opening hours for {Shop}** · We couldn't read the hours you entered for {days}. Those days show as closed. · [Check hours] |
+| Dashboard card (needs review) | **Check the opening hours for {Shop}** · We could not read the hours you entered for {days}, so customers can order on {that day/those days} at any time. Check and save your hours. · [Check hours] (owner ruling 2026-10-10) |
 
 ### B1-B3 — staff, invitations, no access
 

@@ -1,6 +1,5 @@
 import { cache } from "react"
 import { coreBaseUrl } from "@/lib/customer-orders-server"
-import { isOpenNow } from "@/lib/opening-hours"
 import type { PageResponse } from "@/types/api"
 import type {
   PublicAnnouncement,
@@ -75,6 +74,13 @@ export type StorefrontLoad<T> =
 /** The storefront index page's data. */
 export type ShopList = PageResponse<PublicShop>
 
+/**
+ * Every storefront read is uncached (37-22, UI-SPEC K3 "Caching", open item 5 — measured, not
+ * assumed: `lib/__tests__/storefront-server.test.ts` asserts `cache: "no-store"` on every call and
+ * no `next.revalidate` beside it). The shop payload carries the server's live answer about
+ * whether the shop is taking orders (`openNow`, `pausedUntil`), so a cached page could show
+ * "Open now" for a shop that paused a minute ago. There is no revalidate window to tune.
+ */
 const NO_STORE: RequestInit = { cache: "no-store" }
 
 /**
@@ -185,7 +191,6 @@ export const loadShopDetail = cache(async function loadShopDetail(
       avgRating,
       promotions: promotions ?? [],
       announcements: announcements ?? [],
-      isOpen: isOpenNow(shopRes.data.openingHours),
     },
   }
 })

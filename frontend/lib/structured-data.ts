@@ -1,4 +1,4 @@
-import { SCHEMA_DAYS, parseHoursRange } from "@/lib/opening-hours"
+import { DAY_ORDER, SCHEMA_DAYS } from "@/lib/opening-hours"
 import type { PublicProduct, PublicShop, ProductsByCategory } from "@/types/storefront"
 
 /**
@@ -62,21 +62,36 @@ function splitTags(tags: string | null | undefined): string[] {
   )
 }
 
-function openingHoursSpecification(hours: Record<string, string> | null | undefined) {
-  if (!hours) return undefined
-  const spec = Object.entries(hours).flatMap(([day, value]) => {
-    const dayOfWeek = SCHEMA_DAYS[day.toLowerCase().slice(0, 3)]
-    const range = parseHoursRange(value)
-    if (!dayOfWeek || !range) return []
-    return [
-      {
-        "@type": "OpeningHoursSpecification",
-        dayOfWeek,
-        opens: range.opens,
-        closes: range.closes,
-      },
-    ]
-  })
+/**
+ * `openingHoursSpecification` from the vendor's STRUCTURED schedule only (37-22; UI-SPEC K3
+ * "JSON-LD"; D-15, D-25; threat T-37-56).
+ *
+ *  - A legacy-always-open shop (`legacyAlwaysOpen`, D-25) publishes NOTHING: it takes orders at any
+ *    time only because it never set hours, and "open 24/7" would be a statement about a real
+ *    business that its vendor never made (the V63/V66 rule: an absent fact is omitted, not invented).
+ *  - No `openingSchedule` on the payload (an older backend) publishes nothing. The free-text
+ *    `openingHours` is never re-parsed here; that was a second reading of the hours beside the
+ *    server's, and the two disagreed.
+ *  - NEEDS_REVIEW (D-25, owner ruling 2026-10-10): the schedule holds the windows V80 could read
+ *    from the vendor's text; a day it could not read is `[]` here, although the server keeps it open
+ *    until the vendor saves hours. Only the declared windows are published. An unreadable day is
+ *    never published as 24 hours: the vendor did not say that either.
+ *  - A pause is operational state, not opening hours: it never reaches this function.
+ *  - An overnight window keeps `closes < opens` on the day it opens, which schema.org reads as
+ *    closing after midnight. A declared all-day window (`00:00`-`00:00`, the policy's 24 hours) is
+ *    `00:00`-`23:59`, schema.org's spelling of "open 24 hours".
+ */
+function openingHoursSpecification(shop: PublicShop) {
+  if (shop.legacyAlwaysOpen === true || !shop.openingSchedule) return undefined
+  const schedule = shop.openingSchedule
+  const spec = DAY_ORDER.flatMap((day) =>
+    (schedule[day] ?? []).map((window) => ({
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: SCHEMA_DAYS[day],
+      opens: window.open,
+      closes: window.open === "00:00" && window.close === "00:00" ? "23:59" : window.close,
+    }))
+  )
   return spec.length > 0 ? spec : undefined
 }
 
@@ -185,7 +200,7 @@ export function shopStructuredData({
       prices.length > 0
         ? `£${pounds(Math.min(...prices))}-£${pounds(Math.max(...prices))}`
         : undefined,
-    openingHoursSpecification: openingHoursSpecification(shop.openingHours),
+    openingHoursSpecification: openingHoursSpecification(shop),
     // DELIBERATE: `reviewCount` is the number of reviews the average was
     // actually computed from, NOT the shop's total. The page fetches a 5-review
     // sample and averages that; publishing the total against a 5-review mean

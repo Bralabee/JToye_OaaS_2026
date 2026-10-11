@@ -59,11 +59,7 @@ import uk.jtoye.core.storefront.dto.PublicProductDto;
 import uk.jtoye.core.storefront.dto.PublicShopDto;
 
 
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -71,8 +67,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -137,6 +131,9 @@ public class PublicStorefrontService {
 
     /** The seller block's tenant-pinned read (#789, 31.1-24); used by {@link #getShopBySlug} only. */
     private final TraderIdentityService traderIdentityService;
+
+    /** The one open/paused/closed decision (37-20, D-15): the checkout gate and every public shop read. */
+    private final ShopAvailabilityPolicy availabilityPolicy;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -149,6 +146,7 @@ public class PublicStorefrontService {
                                    PostcodeGeocoder postcodeGeocoder,
                                    OrderNumberGenerator orderNumberGenerator,
                                    TraderIdentityService traderIdentityService,
+                                   ShopAvailabilityPolicy availabilityPolicy,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -166,6 +164,7 @@ public class PublicStorefrontService {
         // and neither had a fault-injection seam.
         this.orderNumberGenerator = orderNumberGenerator;
         this.traderIdentityService = traderIdentityService;
+        this.availabilityPolicy = availabilityPolicy;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -769,8 +768,11 @@ public class PublicStorefrontService {
         // cross-tenant spoof with 403 before Order/OrderItem rows are minted.
         Shop shop = resolvePublicShopForSlug(slug);
         try {
-            // Enforce opening hours — reject orders when shop is closed
-            validateShopIsOpen(shop);
+            // 37-20 (D-15/D-25): the ONE open/paused/closed decision. A paused or closed shop refuses the
+            // order, typed 409 shop-closed, before the idempotency reservation below, so a refusal leaves no
+            // reservation and no order behind. It replaces validateShopIsOpen, which failed OPEN on hours it
+            // could not read and knew nothing of a pause.
+            availabilityPolicy.requireTakingOrders(shop);
 
             String idempotencyKey = resolveGuestIdempotencyKey(request.getIdempotencyKey(), headerIdempotencyKey);
             if (idempotencyKey == null) {
@@ -1339,6 +1341,16 @@ public class PublicStorefrontService {
         // commit. Mirrors the exact gate createGuestOrder uses to decide
         // card-intent vs COD (paymentService.isConfigured()).
         dto.setAcceptsCardPayments(paymentService.isConfigured());
+        // 37-20 (D-15/D-25, theme 2): the policy's answer, computed per request (never cached), so the
+        // storefront, the shop list and the checkout read one decision and no client re-derives it.
+        ShopAvailabilityPolicy.Availability availability = availabilityPolicy.evaluate(shop);
+        dto.setOpenNow(availability.openNow());
+        dto.setNextOpenAt(availability.nextOpenAt() == null ? null : availability.nextOpenAt().toOffsetDateTime());
+        dto.setPausedUntil(availability.pausedUntil());
+        dto.setPausedIndefinitely(availability.pausedIndefinitely());
+        dto.setOpeningSchedule(shop.getOpeningSchedule());
+        dto.setLegacyAlwaysOpen(shop.getHoursSource() == uk.jtoye.core.shop.HoursSource.LEGACY_ALWAYS_OPEN);
+        dto.setHoursSource(shop.getHoursSource());
         return dto;
     }
 
@@ -1346,54 +1358,6 @@ public class PublicStorefrontService {
     // mask they formatted — dead once the Art. 9 intake was withdrawn. The 14-allergen
     // name list still lives on the frontend (ALLERGENS in frontend/types/api.ts) for
     // PRODUCT allergen display, which is product data, not personal data.
-
-    private static final Pattern HOURS_PATTERN = Pattern.compile("(\\d{2}):(\\d{2})\\s*-\\s*(\\d{2}):(\\d{2})");
-    private static final Map<DayOfWeek, String> DAY_KEYS = Map.of(
-            DayOfWeek.MONDAY, "mon", DayOfWeek.TUESDAY, "tue", DayOfWeek.WEDNESDAY, "wed",
-            DayOfWeek.THURSDAY, "thu", DayOfWeek.FRIDAY, "fri", DayOfWeek.SATURDAY, "sat",
-            DayOfWeek.SUNDAY, "sun"
-    );
-
-    private static final ZoneId UK_ZONE = ZoneId.of("Europe/London");
-
-    private void validateShopIsOpen(Shop shop) {
-        Map<String, String> hours = shop.getOpeningHours();
-        if (hours == null || hours.isEmpty()) {
-            // No hours configured = always open
-            return;
-        }
-
-        // Use UK timezone explicitly — opening hours are UK local times
-        String dayKey = DAY_KEYS.get(LocalDate.now(UK_ZONE).getDayOfWeek());
-        String todayHours = hours.get(dayKey);
-        if (todayHours == null || todayHours.equalsIgnoreCase("closed")) {
-            throw new IllegalArgumentException(
-                    shop.getName() + " is closed today. Please check opening hours and try again later.");
-        }
-
-        Matcher m = HOURS_PATTERN.matcher(todayHours);
-        if (!m.find()) {
-            // Unparseable hours format — allow the order (fail open)
-            return;
-        }
-
-        LocalTime open = LocalTime.of(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
-        LocalTime close = LocalTime.of(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
-        LocalTime now = LocalTime.now(UK_ZONE);
-
-        // WR-06: an overnight window ("18:00 - 02:00", close < open — normal
-        // for a takeaway) wraps past midnight. The old predicate
-        // (now.isBefore(open) || !now.isBefore(close)) rejected EVERY time of
-        // day for such windows, refusing orders during real trading hours.
-        boolean overnight = close.isBefore(open);
-        boolean openNow = overnight
-                ? !now.isBefore(open) || now.isBefore(close)
-                : !now.isBefore(open) && now.isBefore(close);
-        if (!openNow) {
-            throw new IllegalArgumentException(
-                    shop.getName() + " is currently closed. Opening hours today: " + todayHours + ". Please try again later.");
-        }
-    }
 
     private PublicProductDto toPublicProductDto(Product product) {
         PublicProductDto dto = new PublicProductDto();

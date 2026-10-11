@@ -1,0 +1,38 @@
+37-18 break arms (jest). Each arm edited a COMMITTED file, ran the suite, restored from a scratch copy, verified by sha256, closed with a clean run.
+
+Task 1 break arms, on committed b98a6608, restores verified by sha256 (sha256sum -c: OK x3), clean before and after 16/16.
+[clean-before] rc=0 16 passed
+[armF6-claim-removed: page listener no longer calls preventDefault] rc=1, 2 failed: "claims the lapse event" (defaultPrevented false), "an unrefreshable 401 ... (UXT-021 repro)" (navigation attempted)
+[armF6b-claim-ignored: api-client always redirects] rc=1, 2 failed: the UXT-021 repro (navigationAttempts 1), api-client "does not navigate when a listener claims the lapse"
+[armI-no-inert] rc=1, 2 failed: the two inert tests
+[armT-no-trap: keydown + focusin listeners removed] rc=1, 2 failed: Tab wrap, focus return
+[armA-pulse: motion-safe:animate-pulse on the overlay] rc=1, 1 failed: "is static"
+[clean-after] rc=0 16 passed
+
+Task 2 break arms, on committed a67cf8f0, restores verified by sha256 (7 files OK), clean before and after 36/36.
+[D-claim-everything: lapse listener ignores the deliberate flag] 3 failed: the three P2-TUN-14 tests (the plan's "red against a claim-everything variant")
+[S-sidebar-no-mark] 1 failed: sidebar Sign out marks before vendorLogout
+[S2-mobile-no-mark] 1 failed: mobile sheet Sign out marks before vendorLogout
+[P-alarm-ignores-state] 1 failed: plays nothing on a context that cannot sound
+[Q-silence-ignored: alarm = stopped] 1 failed: Silence alarm stops the sound only
+[N-never-enabled-hidden] 1 failed: never-enabled sentence + no AudioContext
+[N2-never-enabled-always] 1 failed: a sound-on board does not claim it cannot ring
+[Z-no-403-listener] 4 failed: the four access-ended tests
+[X-socket-kept: topic not dropped] 1 failed: access-ended read test (lastStompTopic not null)
+[Y-poll-kept] 1 failed: a stopped board stops reading
+[K-no-lead: lead 0] 2 failed: keep-alive hook timing + page keep-alive
+[K2-ignores-enabled] 1 failed: asks nothing while stopped
+[K3-page-no-keepalive] 1 failed: page keep-alive
+[J-no-skew] 1 failed: refreshes inside the last minute
+[J2-always-refresh] 1 failed: keeps a token with more than a minute left
+[J3-unknown-expiry-kept] 1 failed: refreshes an expired token and one whose expiry is unknown
+[E-no-expiresAt] 1 failed: client session carries expiresAt
+
+Task 3 F7 break arms, on committed 8af7b688, restore verified by sha256, clean before and after 24/24.
+[F7a-starts-with-slash: v.startsWith("/") ? v : "/dashboard"] rc=1, 2 failed: //evil.example, /\evil
+[F7b-accept-anything: get("callbackUrl") ?? "/dashboard"] rc=1, 4 failed: all four hostile URLs
+[F7c-ignore-callback: always "/dashboard" (the pre-fix page)] rc=1, 1 failed: returns to the kitchen
+
+Build type gate: ALARM_SILENCED_LABEL typed as BoardStoppedReason -> npm run build rc=1, TS2322 at kds-board-stopped.tsx(56,14); restored by sha256; clean build rc=0 (Running TypeScript ... Finished TypeScript in 3.0s).
+Lint gate: a bare role=alertdialog div -> rc=0, 0 errors (jsx-a11y has no rule for it: that arm could not fail, recorded, replaced); <img> without alt in the overlay -> rc=1, 1 error jsx-a11y/alt-text; restored by sha256; clean lint rc=0, 0 errors / 31 warnings.
+Test-block counter: count-test-blocks --family jest --per-file on the 5 touched jest files = 5/27/2/7/24 (equal to the executed counts); control kds-feed-status.test.tsx (37-17) rc=2 VOID; playwright family on the new spec = 3.

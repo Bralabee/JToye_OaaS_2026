@@ -58,6 +58,30 @@ public class Shop {
     @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, String> openingHours;
 
+    /**
+     * Structured opening hours (V80, Phase 37-19 D-15): keys {@code mon}..{@code sun}, each a list of
+     * windows, where an empty list means closed that day. NULL when there is no structured schedule: always
+     * for a {@link HoursSource#LEGACY_ALWAYS_OPEN} shop (the database refuses one), and for a shop the
+     * application wrote before its vendor saved one. {@link #openingHours} is kept, unchanged, for one
+     * release (dual-read); it also holds the original text a {@link HoursSource#NEEDS_REVIEW} vendor is shown.
+     */
+    @Column(name = "opening_schedule", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private Map<String, List<OpeningSchedule.TimeWindow>> openingSchedule;
+
+    /** Where {@link #openingSchedule} came from. NULL = not classified (no default, deliberately). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "hours_source", length = 24)
+    private HoursSource hoursSource;
+
+    /** Storefront orders are paused until this instant (D-15). NULL = no timed pause. */
+    @Column(name = "orders_paused_until")
+    private OffsetDateTime ordersPausedUntil;
+
+    /** Storefront orders are paused until the vendor reopens (D-15). */
+    @Column(name = "orders_paused_indefinitely", nullable = false)
+    private Boolean ordersPausedIndefinitely = false;
+
     @Column(name = "delivery_info")
     private String deliveryInfo;
 
@@ -116,6 +140,14 @@ public class Shop {
     public void setLongitude(Double longitude) { this.longitude = longitude; }
     public Map<String, String> getOpeningHours() { return openingHours; }
     public void setOpeningHours(Map<String, String> openingHours) { this.openingHours = openingHours; }
+    public Map<String, List<OpeningSchedule.TimeWindow>> getOpeningSchedule() { return openingSchedule; }
+    public void setOpeningSchedule(Map<String, List<OpeningSchedule.TimeWindow>> openingSchedule) { this.openingSchedule = openingSchedule; }
+    public HoursSource getHoursSource() { return hoursSource; }
+    public void setHoursSource(HoursSource hoursSource) { this.hoursSource = hoursSource; }
+    public OffsetDateTime getOrdersPausedUntil() { return ordersPausedUntil; }
+    public void setOrdersPausedUntil(OffsetDateTime ordersPausedUntil) { this.ordersPausedUntil = ordersPausedUntil; }
+    public Boolean getOrdersPausedIndefinitely() { return ordersPausedIndefinitely; }
+    public void setOrdersPausedIndefinitely(Boolean ordersPausedIndefinitely) { this.ordersPausedIndefinitely = ordersPausedIndefinitely; }
     public String getDeliveryInfo() { return deliveryInfo; }
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }

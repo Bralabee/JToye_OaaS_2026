@@ -5,8 +5,11 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
+import uk.jtoye.core.shop.OpeningSchedule;
 
+import java.util.List;
 import java.util.Map;
 
 public class CreateShopRequest {
@@ -65,6 +68,19 @@ public class CreateShopRequest {
         return (latitude == null) == (longitude == null);
     }
     private Map<String, String> openingHours;
+
+    /**
+     * Structured opening hours (37-20, D-15): {@code mon}..{@code sun}, each a list of up to 3
+     * {@code {"open": "HH:MM", "close": "HH:MM"}} windows in UK time; a close at or before the open runs past
+     * midnight. ABSENT keeps the stored schedule; {@code {}} (or a day's {@code []}) saves closed. Any save
+     * makes the shop's hours STRUCTURED, so an empty schedule takes no storefront orders. Overlaps and more
+     * than 3 windows a day are a 400 naming the day.
+     */
+    @Schema(description = "Structured opening hours, mon..sun -> up to 3 {open, close} windows (HH:MM, UK time; "
+            + "close at or before open runs past midnight). Absent keeps the stored schedule; {} saves closed every day.",
+            nullable = true)
+    private Map<String, List<OpeningSchedule.TimeWindow>> openingSchedule;
+
     private String deliveryInfo;
     private Long minimumOrderPennies;
     private Boolean published;
@@ -92,6 +108,8 @@ public class CreateShopRequest {
     public void setLongitude(Double longitude) { this.longitude = longitude; }
     public Map<String, String> getOpeningHours() { return openingHours; }
     public void setOpeningHours(Map<String, String> openingHours) { this.openingHours = openingHours; }
+    public Map<String, List<OpeningSchedule.TimeWindow>> getOpeningSchedule() { return openingSchedule; }
+    public void setOpeningSchedule(Map<String, List<OpeningSchedule.TimeWindow>> openingSchedule) { this.openingSchedule = openingSchedule; }
     public String getDeliveryInfo() { return deliveryInfo; }
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }

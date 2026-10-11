@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { SafeImage } from "@/components/ui/safe-image"
 import { formatMiles } from "@/lib/distance"
+import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
 import type { PublicShop } from "@/types/storefront"
 
 /**
@@ -72,6 +73,12 @@ function firstTags(tags: string | null, limit = 3): string[] {
 
 export function ShopCard({ shop }: { shop: PublicShop }) {
   const tags = firstTags(shop.tags)
+  // 37-22 (UI-SPEC K3, theme 2): an open-state badge is printed ONLY when the server sent its
+  // answer (openNow and the pause). This card used to make no openness claim at all, because the
+  // only source was the client parser, which said "open" for every shop with no hours. The
+  // server's field is backed by the same decision checkout enforces; its absence still says nothing.
+  const availability = readShopAvailability(shop)
+  const badge = cardBadgeLabel(availability)
 
   return (
     <Link
@@ -108,6 +115,18 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
             miles changed the STRING only — the element, its positioning and its
             reserved space are untouched, so the post-grant vertical-shift budget
             in e2e/landing-webperf.spec.ts still holds for the same reason. */}
+        {/* Top-LEFT, out of flow, for the same CLS reason as the distance pill opposite: a card
+            with a badge and one without are the same height. */}
+        {badge && (
+          <span
+            data-testid="shop-availability-badge"
+            className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-xs font-bold shadow-sm ${
+              availability.kind === "open" ? "bg-emerald-700 text-white" : "bg-slate-900/80 text-white"
+            }`}
+          >
+            {badge}
+          </span>
+        )}
         {shop.distanceKm != null && (
           <span className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
             {formatMiles(shop.distanceKm)}

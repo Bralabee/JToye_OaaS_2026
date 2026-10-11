@@ -50,6 +50,8 @@ import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.exception.ShopClosedException;
+import uk.jtoye.core.exception.InvalidOpeningScheduleException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
@@ -263,12 +265,24 @@ public class GlobalExceptionHandler {
      * Map CQ-01 stock race exception to HTTP 409 Conflict (RFC 9110 §15.5.10).
      * Thrown by StockService.decrementForOrder on exhaustion (insufficient stock
      * OR @Recover after 3 optimistic-lock retries).
+     *
+     * <p>Phase 37-16: when the refusal names one product, {@code productName} and
+     * {@code available} are added as RFC 7807 extension members, so a client (the kitchen's
+     * Accept, an agent) reads the product and the count as data instead of parsing the
+     * detail. Additive: type, title, status and detail are unchanged, and the members are
+     * omitted, never invented, when the exception carries none (the retry-exhaustion path).
      */
     @ExceptionHandler(InsufficientStockException.class)
     public ProblemDetail handleInsufficientStock(InsufficientStockException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problem.setTitle("Insufficient Stock");
         problem.setType(URI.create("https://jtoye.uk/errors/insufficient-stock"));
+        if (ex.getProductName() != null) {
+            problem.setProperty("productName", ex.getProductName());
+        }
+        if (ex.getAvailable() != null) {
+            problem.setProperty("available", ex.getAvailable());
+        }
         return problem;
     }
 
@@ -827,6 +841,41 @@ public class GlobalExceptionHandler {
      * {@code currentAllergens} (AllergenCatalog bit order), {@code acknowledgedAllergenMask} and
      * {@code lines} (basket order: productId, productName, allergenMask, allergens).
      */
+    /**
+     * Phase 37-20 (D-15, RWO-022 / UXT-022): a storefront order reached a shop that is not taking orders
+     * now, because the vendor paused orders or its opening hours do not cover the current UK time. 409, a
+     * conflict with the shop's state, refused before any write (no order, no idempotency reservation).
+     *
+     * <p>{@code reason} ({@code PAUSED | CLOSED_NOW | CLOSED_TODAY | NO_HOURS}) and {@code reopensAt} (null
+     * when no reopening time is known) are typed properties, so a client or agent branches and shows the
+     * reopening time without parsing the sentence; the detail stays the human wording the customer reads
+     * (goods P2-CHA-14).
+     */
+    /**
+     * Phase 37-20 (D-15): a vendor's opening schedule is refused, per day. The same type, title and
+     * {@code errors} shape as {@link #handleValidationErrors}, keyed {@code openingSchedule.<day>}, so a
+     * client handles it exactly like a bean-validation failure and shows each message on its own day.
+     */
+    @ExceptionHandler(InvalidOpeningScheduleException.class)
+    public ProblemDetail handleInvalidOpeningSchedule(InvalidOpeningScheduleException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        problem.setTitle("Validation Error");
+        problem.setType(URI.create("https://jtoye.uk/errors/validation"));
+        problem.setProperty("errors", new java.util.TreeMap<>(ex.getErrors()));
+        return problem;
+    }
+
+    @ExceptionHandler(ShopClosedException.class)
+    public ProblemDetail handleShopClosed(ShopClosedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Shop not taking orders");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-closed"));
+        problem.setProperty("code", "SHOP_CLOSED");
+        problem.setProperty("reason", ex.getReason());
+        problem.setProperty("reopensAt", ex.getReopensAt());
+        return problem;
+    }
+
     @ExceptionHandler(AllergenAcknowledgementStaleException.class)
     public ProblemDetail handleAllergenAcknowledgementStale(AllergenAcknowledgementStaleException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());

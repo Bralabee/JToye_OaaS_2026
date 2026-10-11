@@ -13,7 +13,9 @@ import {
   getRetryDelayMs,
   MAX_RETRY_ATTEMPTS,
 } from "@/lib/public-fetch-retry"
-import { DAY_LABELS, DAY_ORDER, isOpenNow } from "@/lib/opening-hours"
+import { DAY_LABELS, DAY_ORDER } from "@/lib/opening-hours"
+import { scheduleRows, type OpeningScheduleMap } from "@/lib/opening-schedule"
+import { headerPillLabel, readShopAvailability } from "@/lib/shop-availability"
 import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } from "@/types/storefront"
 import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
 import { productAllergenStatement } from "@/lib/product-allergens"
@@ -22,6 +24,31 @@ import { FloatingCartBar } from "@/components/storefront/floating-cart-bar"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
 import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
+import { ShopAvailabilityNotice } from "@/components/storefront/shop-availability-notice"
+
+/**
+ * The "Opening hours" rows (37-21; deferred-items "From 37-22"). A vendor's saved hours live in
+ * `openingSchedule`; saving them leaves the old free text on the row, so a list read from the text
+ * would print hours the server no longer enforces. Rules, one source, never both:
+ *  - STRUCTURED / MIGRATED_FROM_TEXT with a schedule: the schedule, Monday first;
+ *  - NEEDS_REVIEW: the vendor's text, because the days V80 could not read are `[]` in the schedule
+ *    yet OPEN on the server (D-25 ruling 2026-10-10), so the schedule would print "Closed" for a day
+ *    customers can order on;
+ *  - a legacy shop, or no schedule: the text when there is any;
+ *  - otherwise no list.
+ * Display only: the open/closed claim is the server's `openNow` (lib/shop-availability.ts).
+ */
+function hoursListRows(shop: PublicShop): { day: string; label: string; text: string }[] | null {
+  const schedule = shop.openingSchedule
+  if (schedule && !shop.legacyAlwaysOpen && shop.hoursSource !== "NEEDS_REVIEW") {
+    return scheduleRows(schedule as OpeningScheduleMap)
+  }
+  const text = shop.openingHours
+  if (text && Object.keys(text).length > 0) {
+    return DAY_ORDER.map((day) => ({ day, label: DAY_LABELS[day], text: text[day] || "Closed" }))
+  }
+  return null
+}
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -346,10 +373,6 @@ export function ShopDetailClient({
   const [activeCategory, setActiveCategory] = useState<string | null>(
     initial ? (Object.keys(initial.products)[0] ?? null) : null
   )
-  // Computed on the server for the first render (so it is in the crawled HTML
-  // and cannot mismatch during hydration); recomputed locally only after a
-  // client-side refetch, which is the only time the server value can be stale.
-  const [open, setOpen] = useState(initial?.isOpen ?? true)
   const categoryRefs = useRef<Record<string, HTMLElement | null>>({})
   // F-RATE (#88): a public 429 on the critical shop/products calls must surface
   // a transient "busy / retrying" state, never the authoritative "Shop not
@@ -378,7 +401,6 @@ export function ShopDetailClient({
         publicApiClient.get<PublicAnnouncement[]>(`/public/shops/${slug}/announcements`).catch(() => ({ data: [] as PublicAnnouncement[] })),
       ])
       setShop(shopRes.data)
-      setOpen(isOpenNow(shopRes.data.openingHours))
       setProducts(productsRes.data)
       setReviews(reviewsRes.data.content)
       setReviewCount(reviewsRes.data.totalElements)
@@ -539,6 +561,15 @@ export function ShopDetailClient({
     )
   }
 
+  // 37-22 (UI-SPEC K3, D-15, theme 2): the pill and the notice read the SERVER's answer
+  // (openNow / pausedUntil / pausedIndefinitely / nextOpenAt), on the server-rendered first
+  // paint and after a client refetch alike. Nothing here parses the free-text hours to decide
+  // it, and an absent openNow (older backend) renders no pill at all.
+  const availability = readShopAvailability(shop)
+  const pillLabel = headerPillLabel(availability)
+  const isOpen = availability.kind === "open"
+  const notTakingOrders = availability.kind === "paused" || availability.kind === "closed"
+
   return (
     <div>
       {/* Hero banner */}
@@ -589,10 +620,18 @@ export function ShopDetailClient({
                 {shop.name}
               </h1>
               <div className="mt-1 flex items-center gap-3 text-sm text-white/80">
-                <span className={`inline-flex items-center gap-1 text-xs font-medium ${open ? "text-emerald-300" : "text-slate-300"}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${open ? "bg-emerald-400 animate-pulse" : "bg-slate-400"}`} />
-                  {open ? "Open now" : "Closed"}
-                </span>
+                {pillLabel && (
+                  <span
+                    data-testid="shop-availability-pill"
+                    className={`inline-flex items-center gap-1 text-xs font-medium ${isOpen ? "text-emerald-300" : "text-slate-300"}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`h-1.5 w-1.5 rounded-full ${isOpen ? "bg-emerald-400 animate-pulse" : "bg-slate-400"}`}
+                    />
+                    {pillLabel}
+                  </span>
+                )}
                 {reviewCount > 0 && (
                   <span className="inline-flex items-center gap-1 text-xs text-amber-300">
                     <Star className="h-3 w-3 fill-amber-300" />
@@ -658,28 +697,39 @@ export function ShopDetailClient({
             </p>
           )}
 
-          {/* Opening hours (collapsible on mobile) */}
-          {shop.openingHours && Object.keys(shop.openingHours).length > 0 && (
-            <details className="mt-3 group">
-              <summary className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer hover:text-slate-700">
-                <Clock className="h-3.5 w-3.5" />
-                <span>Opening hours</span>
-                <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-              </summary>
-              <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
-                {DAY_ORDER.map((day) => (
-                  <div key={day} className="flex justify-between gap-2">
-                    <span className="text-slate-600">{DAY_LABELS[day]}</span>
-                    <span className="font-medium text-slate-700">
-                      {shop.openingHours?.[day] || "Closed"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
+          {/* Opening hours (collapsible on mobile). 37-21: the rows are the hours the server
+              enforces (openingSchedule) whenever that is the whole truth; see hoursListRows. */}
+          {(() => {
+            const rows = hoursListRows(shop)
+            if (!rows) return null
+            return (
+              <details className="mt-3 group">
+                <summary className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer hover:text-slate-700">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>Opening hours</span>
+                  <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+                </summary>
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                  {rows.map((row) => (
+                    <div key={row.day} className="flex justify-between gap-2">
+                      <span className="text-slate-600">{row.label}</span>
+                      <span className="font-medium text-slate-700">{row.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )
+          })()}
         </div>
       </div>
+
+      {/* K3: when the shop is not taking orders, say so between the header and the menu — a
+          full-width block in the content column, before anything the customer could add. */}
+      {notTakingOrders && (
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 pt-4">
+          <ShopAvailabilityNotice shop={shop} />
+        </div>
+      )}
 
       {/* Announcements & Promotions (dedicated public endpoints) */}
       {(announcements.length > 0 || promotions.length > 0) && (

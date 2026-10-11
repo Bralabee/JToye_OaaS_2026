@@ -356,7 +356,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
-| 37. Real-world operations readiness | v2.3 | 14/53 | In Progress | — |
+| 37. Real-world operations readiness | v2.3 | 22/53 | In Progress | — |
 | 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -995,7 +995,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
   7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end on the delivered runtime. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
   8. **Catalogue & shop admin (37-G).** Vendors can set a delivery fee, a free-delivery threshold and collection-only, enforced on every writer, and editing a shop keeps its public address.
 
-**Plans:** 14/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
+**Plans:** 22/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
 
 Plans:
 **Wave 1**
@@ -1035,22 +1035,22 @@ Plans:
 - [x] 37-14-PLAN.md — 37-B: product VAT rate select, import/copy UI, VAT line only for VAT-registered sellers
 
 **Wave 12** *(blocked on Wave 11 completion)*
-- [ ] 37-15-PLAN.md — 37-B gate: static gates, runtime RED/GREEN, live invite proof, goods, PR pointer
+- [x] 37-15-PLAN.md — 37-B gate: static gates, runtime RED/GREEN, live invite proof, goods, PR pointer
 
 **Wave 13** *(blocked on Wave 12 completion)*
-- [ ] 37-16-PLAN.md — 37-A: kitchen New lane, Accept/Reject, notes and fulfilment on every card
-- [ ] 37-19-PLAN.md — 37-A: structured hours migration with legacy-always-open (V80)
+- [x] 37-16-PLAN.md — 37-A: kitchen New lane, Accept/Reject, notes and fulfilment on every card
+- [x] 37-19-PLAN.md — 37-A: structured hours migration with legacy-always-open (V80)
 
 **Wave 14** *(blocked on Wave 13 completion)*
-- [ ] 37-17-PLAN.md — 37-A: repeating alert, honest sound state, "Live" only when true
-- [ ] 37-20-PLAN.md — 37-A: ShopAvailabilityPolicy, pause endpoints, structured-hours write path
+- [x] 37-17-PLAN.md — 37-A: repeating alert, honest sound state, "Live" only when true
+- [x] 37-20-PLAN.md — 37-A: ShopAvailabilityPolicy, pause endpoints, structured-hours write path
 
 **Wave 15** *(blocked on Wave 14 completion)*
-- [ ] 37-18-PLAN.md — 37-A: board-stopped overlay on session lapse or access end; safe sign-in return
-- [ ] 37-22-PLAN.md — 37-A: customer availability from the server, JSON-LD hours, explicit seed hours
+- [x] 37-18-PLAN.md — 37-A: board-stopped overlay on session lapse or access end; safe sign-in return
+- [x] 37-22-PLAN.md — 37-A: customer availability from the server, JSON-LD hours, explicit seed hours
 
 **Wave 16** *(blocked on Wave 15 completion)*
-- [ ] 37-21-PLAN.md — 37-A: kitchen pause control, hours editor, vendor hours notices
+- [x] 37-21-PLAN.md — 37-A: kitchen pause control, hours editor, vendor hours notices
 
 **Wave 17** *(blocked on Wave 16 completion)*
 - [ ] 37-23-PLAN.md — 37-A gate
@@ -1242,6 +1242,8 @@ Already current, out of scope:
 - **39-E Redis 8 and Tailwind 4:**
   - Redis 8 per the owner's licence ruling, keeping the Lettuce and Spring Cache behaviour.
   - Tailwind 4 with visual proof at 390/768/1280/1920 on the storefront, dashboard and marketing surfaces (Incremental Betterment Doctrine; Phase 35 layout contract).
+
+**Also deferred here by owner ruling 2026-10-10 (quick 261010-ppb), not runtime upgrades:** (1) option C, per-shop customer narrowing (a nullable `customers.origin_shop_id` plus its `customers_aud` mirror at the next free Flyway version, since V81 is reserved by 37-27; a tenant-looped backfill from orders; the non-Group-admin predicate on list, by-id, PUT, DELETE and the `OrderService` customer lookups; a refused id answers 404; a NOSUPERUSER proof); (2) old-slug 301 aliases, so printed links and QR codes survive a deliberate slug change (the slug-keep fix itself is 37-48). The shapes are in `phases/37-real-world-operations-readiness/deferred-items.md` ("From quick 261010-ppb") and the open WINDOWS todo entries. `/gsd-plan-phase 39` decides whether they become a 39-F or move to a phase of their own.
 
 **Depends on:** nothing hard. Only 39-C waits for Phase 38. **Blocks:** nothing structurally, but missing an expiry date reds every branch.
 

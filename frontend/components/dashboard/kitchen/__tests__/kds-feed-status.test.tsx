@@ -6,7 +6,7 @@
  * on that shape specifically: a label that is present at every viewport, and a state
  * word that is not carried by colour alone.
  */
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, within } from "@testing-library/react"
 import { KdsFeedBanner, KdsFeedPill } from "../kds-feed-status"
 import { deriveFeedState, STALE_AFTER_MS } from "../feed-state"
 
@@ -205,5 +205,107 @@ describe("KdsFeedBanner", () => {
       />
     )
     expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * 37-17 (D-14, roadmap SC-1, F3): the pill says "Live" only when it is true. The table is the
+ * UI-SPEC's, written out here rather than imported, so a reordered implementation cannot also
+ * reorder the expectation.
+ */
+describe("KdsFeedPill: the ten-row precedence table (F3)", () => {
+  type Over = Partial<Parameters<typeof state>[0]>
+  const TABLE: Array<{ n: number; name: string; over: Over; pending?: boolean; label: string; icon: string; tone: RegExp }> = [
+    { n: 1, name: "shop list in flight", over: { connected: false, lastSyncedAt: null }, pending: true, label: "Connecting…", icon: "lucide-refresh-cw", tone: /text-slate-700/ },
+    { n: 2, name: "session lapsed", over: { signedOut: true }, label: "Signed out", icon: "lucide-log-out", tone: /text-red-800/ },
+    { n: 3, name: "access ended", over: { noAccess: true }, label: "No access", icon: "lucide-shield-off", tone: /text-red-800/ },
+    { n: 4, name: "offline", over: { online: false }, label: "Offline", icon: "lucide-wifi-off", tone: /text-red-800/ },
+    { n: 5, name: "reads failing", over: { lastSyncFailed: true }, label: "Not updating", icon: "lucide-triangle-alert", tone: /text-red-800/ },
+    { n: 6, name: "reconnecting", over: { connected: false, reconnecting: true }, label: "Reconnecting", icon: "lucide-refresh-cw", tone: /text-amber-800/ },
+    { n: 7, name: "socket up, reads stale", over: { now: NOW + STALE_AFTER_MS + 1000 }, label: "Out of date", icon: "lucide-clock", tone: /text-amber-800/ },
+    { n: 8, name: "sound not enabled", over: { soundOff: true }, label: "Sound off", icon: "lucide-volume-x", tone: /text-amber-800/ },
+    { n: 9, name: "muted", over: { muted: true }, label: "Muted", icon: "lucide-bell-off", tone: /text-amber-800/ },
+    { n: 10, name: "everything above false", over: {}, label: "Live", icon: "lucide-wifi", tone: /text-emerald-800/ },
+  ]
+  const ALL_LABELS = TABLE.map((r) => r.label)
+  const pillOf = () => screen.queryByTestId("kds-feed-pill") ?? screen.getByTestId("kds-feed-pill-pending")
+
+  it.each(TABLE)("row $n ($name), alone, reads '$label' with its icon and tone", (row) => {
+    render(<KdsFeedPill state={state(row.over)} lastSyncedAt={NOW} pending={row.pending ?? false} />)
+    const pill = pillOf()
+    const label = within(pill).getByText(row.label)
+    expect(label.className).toMatch(row.tone)
+    expect(pill.querySelector(`svg.${row.icon}`)).not.toBeNull()
+    for (const other of ALL_LABELS.filter((l) => l !== row.label)) {
+      expect(within(pill).queryByText(other)).toBeNull()
+    }
+  })
+
+  // Rows 2..9 written out by reference: an array LITERAL, so scripts/count-test-blocks.mjs can
+  // count this table statically (a computed `.filter(...)` table VOIDs docs-freshness). The test
+  // below pins it to the filter it replaces, so the two cannot drift apart.
+  const NOT_LIVE_ROWS = [TABLE[1], TABLE[2], TABLE[3], TABLE[4], TABLE[5], TABLE[6], TABLE[7], TABLE[8]]
+
+  it("the not-Live rows are exactly rows 2..9 of the table", () => {
+    expect(NOT_LIVE_ROWS).toEqual(TABLE.filter((r) => r.n >= 2 && r.n <= 9))
+    expect(NOT_LIVE_ROWS.map((r) => r.n)).toEqual([2, 3, 4, 5, 6, 7, 8, 9])
+  })
+
+  it.each(NOT_LIVE_ROWS)(
+    "row $n ($name) never reads 'Live'",
+    (row) => {
+      render(<KdsFeedPill state={state(row.over)} lastSyncedAt={NOW} />)
+      expect(pillOf()).not.toHaveTextContent("Live")
+    }
+  )
+
+  it("combined conditions read the higher-precedence label", () => {
+    const rows = TABLE.filter((r) => r.n >= 2 && r.n <= 9)
+    for (let i = 0; i < rows.length; i++) {
+      for (let j = i + 1; j < rows.length; j++) {
+        const { unmount } = render(
+          <KdsFeedPill state={state({ ...rows[j].over, ...rows[i].over })} lastSyncedAt={NOW} />
+        )
+        expect([rows[i].n, rows[j].n, pillOf().textContent]).toEqual([
+          rows[i].n,
+          rows[j].n,
+          expect.stringContaining(rows[i].label),
+        ])
+        unmount()
+      }
+    }
+  })
+
+  it("'Connecting…' wins over every other row while pending", () => {
+    render(
+      <KdsFeedPill state={state({ signedOut: true, online: false, muted: true })} lastSyncedAt={NOW} pending />
+    )
+    expect(pillOf()).toHaveTextContent("Connecting…")
+    expect(pillOf()).not.toHaveTextContent("Signed out")
+  })
+
+  it("reserves the same width in every state: every label sizes the label slot, whatever it says", () => {
+    // jsdom has no layout, so the constant width is asserted as its cause: the slot stacks an
+    // invisible sizer for EVERY label in one grid cell, so its width is the widest label's in the
+    // real font, in every state. Sizers are pseudo-element content, so they add no text.
+    for (const row of TABLE) {
+      const { unmount } = render(
+        <KdsFeedPill state={state(row.over)} lastSyncedAt={NOW} pending={row.pending ?? false} />
+      )
+      const sizers = Array.from(pillOf().querySelectorAll("[data-pill-sizer]"))
+      expect(sizers.map((s) => s.getAttribute("data-pill-sizer")).sort()).toEqual([...ALL_LABELS].sort())
+      for (const s of sizers) {
+        expect(s.textContent).toBe("")
+        expect(s.getAttribute("aria-hidden")).toBe("true")
+        expect(s.className).toMatch(/\binvisible\b/)
+        expect(s.className).toMatch(/after:content-\[attr\(data-pill-sizer\)\]/)
+        expect(s.className).toMatch(/\bcol-start-1\b/)
+        expect(s.className).toMatch(/\brow-start-1\b/)
+      }
+      const visible = within(pillOf()).getByText(row.label)
+      expect(visible.className).toMatch(/\bcol-start-1\b/)
+      expect(visible.className).toMatch(/\brow-start-1\b/)
+      unmount()
+    }
   })
 })

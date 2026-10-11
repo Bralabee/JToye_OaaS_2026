@@ -88,7 +88,7 @@ afterEach(() => {
 })
 
 describe("loadShopDetail", () => {
-  it("returns ok with the shop, its menu and a server-computed open flag", async () => {
+  it("returns ok with the shop and its menu", async () => {
     global.fetch = mockFetch([
       [/\/public\/shops\/[^/?]+$/, 200, shop],
       [/\/products$/, 200, { Mains: [product] }],
@@ -100,9 +100,48 @@ describe("loadShopDetail", () => {
     if (r.state !== "ok") return
     expect(r.data.shop.name).toBe("Brixton Village Grill")
     expect(r.data.products.Mains).toHaveLength(1)
-    // Present at all — the pill has to be in the served HTML, and it is a
-    // boolean the client must not have to recompute.
-    expect(typeof r.data.isOpen).toBe("boolean")
+  })
+
+  it("carries the server's availability answer through untouched and computes none of its own (37-22, D-15)", async () => {
+    // `{}` hours are "always open" to the old client parser; the server says paused. The page
+    // must be handed the server's answer, and no second, client-computed open flag beside it.
+    const paused = {
+      ...shop,
+      openingHours: {},
+      openNow: false,
+      pausedUntil: "2026-10-13T17:40:00Z",
+      nextOpenAt: "2026-10-13T17:40:00Z",
+      pausedIndefinitely: false,
+    }
+    global.fetch = mockFetch([
+      [/\/public\/shops\/[^/?]+$/, 200, paused],
+      [/\/products$/, 200, { Mains: [product] }],
+    ]) as unknown as typeof fetch
+
+    const r = await loadShopDetail("brixton-village-grill")
+    if (r.state !== "ok") throw new Error("expected ok")
+    expect(r.data.shop.openNow).toBe(false)
+    expect(r.data.shop.pausedUntil).toBe("2026-10-13T17:40:00Z")
+    expect(r.data).not.toHaveProperty("isOpen")
+  })
+
+  it("fetches every storefront call with cache: no-store, so a cached page cannot say 'Open now' for a paused shop (UI-SPEC open item 5)", async () => {
+    const fetchMock = mockFetch([
+      [/\/public\/shops\/[^/?]+$/, 200, shop],
+      [/\/products$/, 200, { Mains: [product] }],
+    ]) as unknown as jest.Mock
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await loadShopDetail("brixton-village-grill")
+    await loadShopList()
+
+    // shop, products, reviews, promotions, announcements, and the directory.
+    expect(fetchMock.mock.calls).toHaveLength(6)
+    for (const [url, init] of fetchMock.mock.calls as Array<[string, RequestInit & { next?: unknown }]>) {
+      expect({ url, cache: init?.cache }).toEqual({ url, cache: "no-store" })
+      // A revalidate window beside no-store would be a second, contradicting caching rule.
+      expect(init?.next).toBeUndefined()
+    }
   })
 
   it("returns notfound ONLY for a real 404 on the shop itself", async () => {

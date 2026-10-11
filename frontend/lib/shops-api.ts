@@ -129,3 +129,34 @@ export async function fetchMyShops(): Promise<MyShops> {
   const [shops, access] = await Promise.all([fetchAllMyShops(), fetchMyAccess()])
   return { shops, isGroupAdmin: access.groupAdmin, userId: access.userId, access }
 }
+
+/**
+ * One shop as the server holds it now (GET /api/v1/shops/{id}, read-scoped to the caller's grants).
+ * The kitchen re-reads it for the pause state (37-21), because the banner must say what the SERVER
+ * holds, including a pause made or ended on another device.
+ */
+export async function fetchShop(shopId: string): Promise<Shop> {
+  const res = await apiClient.get<Shop>(`/api/v1/shops/${shopId}`)
+  return res.data
+}
+
+/**
+ * 37-20's pause choices, exactly: 20 or 40 minutes from now, or until the vendor resumes. Anything
+ * else is a typed 400 on the server, so the client cannot express it.
+ */
+export type PauseChoice = { minutes: 20 | 40 } | { untilReopened: true }
+
+/**
+ * PUT /api/v1/shops/{id}/pause (STAFF on the shop). Absolute on the server: it sets the pause, it never
+ * adds to it, so a retry cannot stack pauses. Resolves with the shop as the server now holds it.
+ */
+export async function pauseShopOrders(shopId: string, choice: PauseChoice): Promise<Shop> {
+  const res = await apiClient.put<Shop>(`/api/v1/shops/${shopId}/pause`, choice)
+  return res.data
+}
+
+/** DELETE /api/v1/shops/{id}/pause (STAFF on the shop): ends any pause. Resolves with the shop. */
+export async function resumeShopOrders(shopId: string): Promise<Shop> {
+  const res = await apiClient.delete<Shop>(`/api/v1/shops/${shopId}/pause`)
+  return res.data
+}

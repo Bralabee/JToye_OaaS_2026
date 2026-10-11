@@ -9,6 +9,7 @@ import { useShopContext } from "@/hooks/use-shop-context"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import {
   KITCHEN_STATUSES,
+  NEW_LANE_STATUS,
   fetchKitchenBoard,
 } from "@/lib/kitchen-orders-api"
 import {
@@ -27,11 +28,36 @@ import {
 } from "@/components/dashboard/kitchen/kds-board-scope"
 import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-print"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
-import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import {
   AllergyNoteBlock,
   type AllergyNoteAcknowledgement,
 } from "@/components/dashboard/kitchen/allergy-note-block"
+import { KdsNewLane } from "@/components/dashboard/kitchen/kds-new-lane"
+import { KdsItemList, elapsedText } from "@/components/dashboard/kitchen/kds-card-parts"
+import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
+import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
+import {
+  KdsSoundBar,
+  KdsSoundControl,
+  kitchenTabTitle,
+  useKitchenAlert,
+} from "@/components/dashboard/kitchen/kds-sound"
+import {
+  isDeliberateSignOut,
+  KdsBoardStopped,
+  markDeliberateSignOut,
+  STOPPED_TAB_TITLE,
+  type BoardStoppedReason,
+} from "@/components/dashboard/kitchen/kds-board-stopped"
+import { useSessionKeepAlive } from "@/components/dashboard/kitchen/use-session-keep-alive"
+import {
+  PauseOrdersControl,
+  useShopPause,
+} from "@/components/dashboard/kitchen/pause-orders-control"
+import { PausedBanner } from "@/components/dashboard/kitchen/paused-banner"
+import { SESSION_LAPSED_EVENT } from "@/lib/session-lapse"
+import { SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-events"
+import { vendorLogout } from "@/lib/vendor-logout"
 import {
   Card,
   CardContent,
@@ -49,8 +75,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   ChefHat,
-  Volume2,
-  VolumeX,
   Clock,
   ArrowRight,
   CheckCircle2,
@@ -99,41 +123,17 @@ function ageBorderClass(createdAt: string): string {
 }
 
 // --- Elapsed time display ---
+//
+// `elapsedText` (the #12 cap) moved to kds-card-parts.tsx in 37-16 so the New lane renders the
+// same age the grid does; a Next page module cannot export it.
 
-// Cap/format the elapsed time so a stale order never renders raw uncapped
-// minutes (the old "2245m ago" bug, backlog #12): <1m → "just now",
-// <60m → "Xm ago", <24h → "Xh ago", ≥24h → "Xd ago".
-function elapsedText(createdAt: string): string {
-  const totalMinutes = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
-  if (totalMinutes < 1) return "just now"
-  if (totalMinutes < 60) return `${totalMinutes}m ago`
-  const totalHours = Math.floor(totalMinutes / 60)
-  if (totalHours < 24) return `${totalHours}h ago`
-  const totalDays = Math.floor(totalHours / 24)
-  return `${totalDays}d ago`
-}
-
-// --- Audio beep ---
-
-function playBeep() {
-  try {
-    const ctx = new AudioContext()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = "sine"
-    osc.frequency.setValueAtTime(800, ctx.currentTime)
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2)
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.2)
-    // Clean up after playback
-    setTimeout(() => ctx.close(), 500)
-  } catch {
-    // AudioContext may fail without user gesture — ignore silently
-  }
-}
+// --- New-order sound ---
+//
+// 37-17 (D-12): the one-shot `playBeep` that lived here built a fresh AudioContext inside the
+// socket callback, outside any user gesture, so the browser suspended it and the error was
+// swallowed: a new order could arrive in silence. The alert is now `useKitchenAlert`
+// (components/dashboard/kitchen/kds-sound.tsx): one context, unlocked by the "Turn on sound" tap,
+// repeating while an order waits in the New lane.
 
 // --- Kitchen statuses we track ---
 //
@@ -247,6 +247,60 @@ export default function KitchenPage() {
   // Loading state
   const [loading, setLoading] = useState(true)
 
+  // --- 37-18 (D-14, UI-SPEC K2): the board has stopped ---
+  //
+  // `null` while the board works. "signedOut" when the session lapsed (a 401 the api-client's one
+  // silent refresh could not fix); "noAccess" when the server refused a kitchen read or bump with
+  // the typed shop-access-denied 403 (D-08). Once stopped, the board stays stopped until the page is
+  // left: the only ways out are signing in again or signing out, and both navigate away. A lapse
+  // outranks an access refusal (the pill's precedence): signing in again is the first thing to do.
+  const [stopped, setStopped] = useState<BoardStoppedReason | null>(null)
+  // "Silence alarm" stops the sound only; the red screen stays (UI-SPEC K2).
+  const [alarmSilenced, setAlarmSilenced] = useState(false)
+
+  // The api-client announces a lapse as a CANCELLABLE `jtoye:session-lapsed` event and redirects to
+  // /auth/signin only if nobody claims it. The kitchen claims it: a board that quietly becomes a
+  // sign-in page misses every order until someone walks up to it (UXT-021).
+  //
+  // Except after a DELIBERATE sign-out (goods P2-TUN-14): someone pressed Sign out, so the session
+  // ending is the point. The event is left unclaimed and the browser goes where it was going, with
+  // no red screen and no alarm.
+  useEffect(() => {
+    const onSessionLapsed = (event: Event) => {
+      if (isDeliberateSignOut()) return
+      event.preventDefault()
+      setStopped("signedOut")
+    }
+    window.addEventListener(SESSION_LAPSED_EVENT, onSessionLapsed)
+    return () => window.removeEventListener(SESSION_LAPSED_EVENT, onSessionLapsed)
+  }, [])
+
+  // D-08 on the kitchen route: any shop-access-denied 403 on this page stops the board with the
+  // access-ended variant. The api-client sends SHOP_ACCESS_DENIED_EVENT for every such refusal; on
+  // this route every API call is the board's own (its read, the per-order detail, a bump, Accept,
+  // Reject, the allergy acknowledgement), so listening here covers the New lane's card handlers
+  // too. The dashboard shell's no-access page deliberately leaves this route alone (37-06).
+  //
+  // Owner ruling 2026-10-10 (D-08): this holds only because every call on this route has the STAFF
+  // floor or none — the board read (OrderService.java:452), order detail (:324), the transitions
+  // (:560), the allergy acknowledgement (:648), the shop read (ShopService.java:171) and the pause
+  // (:459, :485). They are declared in components/dashboard/kitchen/kitchen-route-calls.ts, and its
+  // guard test fails if an undeclared call, or one with a higher floor, is added here. A call with a
+  // higher floor must be exempted from this listener first: its refusal would not mean access ended.
+  // The pause control therefore shows no inline copy for this 403; this overlay is the answer.
+  useEffect(() => {
+    const onAccessDenied = () => {
+      if (isDeliberateSignOut()) return
+      setStopped((current) => current ?? "noAccess")
+    }
+    window.addEventListener(SHOP_ACCESS_DENIED_EVENT, onAccessDenied)
+    return () => window.removeEventListener(SHOP_ACCESS_DENIED_EVENT, onAccessDenied)
+  }, [])
+
+  // While the SSO session lasts, refresh the token before it expires, so the overlay above means a
+  // real lapse and never a routine access-token expiry (D-14). Not on a stopped board.
+  useSessionKeepAlive(stopped === null)
+
   // --- #106: feed liveness ---
   //
   // `lastSyncedAt` advances on every SUCCESSFUL read, so it is positive evidence the
@@ -265,12 +319,6 @@ export default function KitchenPage() {
 
   // --- #485: the board is showing only part of this shop's orders ---
   const [ordersTruncated, setOrdersTruncated] = useState(false)
-
-  // Ref for mute to avoid stale closure in WS callback
-  const mutedRef = useRef(muted)
-  useEffect(() => {
-    mutedRef.current = muted
-  }, [muted])
 
   // #564: the ordersMap ref is gone. It existed so `fetchOrders` could re-use detail it
   // already held for tickets whose status had not changed — the optimisation that made a
@@ -432,13 +480,16 @@ export default function KitchenPage() {
   // fact it owns — either it lands (the stamp advances, the board is genuinely
   // current) or it does not (the banner appears). Cheap: one request plus one per
   // active ticket, once a minute.
+  //
+  // 37-18: a stopped board stops reading. A lapsed session would only 401 again, and a revoked
+  // grant 403 again; the overlay already says what is wrong and what to do.
   useEffect(() => {
-    if (!selectedShopId) return
+    if (!selectedShopId || stopped) return
     const interval = setInterval(() => {
       fetchOrders()
     }, KITCHEN_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [selectedShopId, fetchOrders])
+  }, [selectedShopId, fetchOrders, stopped])
 
   // --- Browser connectivity (#106) ---
   //
@@ -454,10 +505,11 @@ export default function KitchenPage() {
   // that keeps warning after the problem is fixed teaches the kitchen to
   // ignore the warning — so re-read IMMEDIATELY when connectivity returns.
   useEffect(() => {
+    if (stopped) return
     const goOnline = () => fetchOrders()
     window.addEventListener("online", goOnline)
     return () => window.removeEventListener("online", goOnline)
-  }, [fetchOrders])
+  }, [fetchOrders, stopped])
 
   // --- Derive WebSocket topic ---
 
@@ -474,7 +526,7 @@ export default function KitchenPage() {
 
   const handleWsMessage = useCallback(
     (event: OrderStateChangeEvent) => {
-      const { orderId, newStatus, previousStatus } = event
+      const { orderId, newStatus } = event
 
       // #106: a frame off the socket is proof the feed is alive right now — advance
       // the stamp so a busy kitchen never sees a stale warning over live tickets.
@@ -497,11 +549,8 @@ export default function KitchenPage() {
             // If fetch fails, ignore — will sync on next reconnect
           })
 
-        // Play audio if this is a genuinely NEW order entering kitchen view
-        const wasInKitchen = KITCHEN_STATUSES.includes(previousStatus)
-        if (!wasInKitchen && !mutedRef.current) {
-          playBeep()
-        }
+        // 37-17: no sound from here. A new order lands in the New lane through the read above,
+        // and the lane's count drives the repeating alert (useKitchenAlert below).
       } else if (newStatus === "COMPLETED" || newStatus === "CANCELLED") {
         // Remove from display
         setOrdersMap((prev) => {
@@ -516,12 +565,21 @@ export default function KitchenPage() {
 
   // --- WebSocket connection ---
 
-  const { connected, reconnecting } = useStomp(stompTopic, handleWsMessage, fetchOrders)
+  //
+  // 37-18 (D-08 on the kitchen route): a stopped board drops its topic, which deactivates the STOMP
+  // client. The server checks access only on SUBSCRIBE, so after a revoke an open socket would keep
+  // delivering OrderStateChangeEvent frames (order id, number, status) until it closed; the board
+  // closes it on the first 403 (residual recorded in 37-18-SUMMARY, T-37-47). On a lapse there is
+  // no token to reconnect with either.
+  const { connected, reconnecting } = useStomp(
+    stopped ? null : stompTopic,
+    handleWsMessage,
+    fetchOrders
+  )
 
-  // --- Mute toggle ---
+  // --- Mute (the `kds-muted` key and its lifetime are unchanged; UXT-050 is 37.x) ---
 
-  const toggleMute = () => {
-    const next = !muted
+  const setMutedPreference = (next: boolean) => {
     setMuted(next)
     localStorage.setItem("kds-muted", String(next))
   }
@@ -585,16 +643,102 @@ export default function KitchenPage() {
     []
   )
 
+  // --- 37-16 (D-11): the kitchen accepted a New-lane order ---
+  //
+  // Called only after the server's 200 on /confirm, so the move is a fact, not a guess. The order keeps
+  // its detail and becomes CONFIRMED, which puts it in the grid with "Start Preparing"; the STOMP frame
+  // and the next read replace the entry wholesale anyway.
+  const handleAccepted = useCallback((orderId: string) => {
+    setOrdersMap((prev) => {
+      const existing = prev.get(orderId)
+      if (!existing) return prev
+      const next = new Map(prev)
+      next.set(orderId, { ...existing, status: "CONFIRMED" })
+      return next
+    })
+  }, [])
+
+  // --- 37-16 (D-11): the kitchen rejected a New-lane order ---
+  //
+  // Called only after the server's 200 on /cancel. A cancelled order is not a ticket, so it leaves the
+  // board, exactly as a CANCELLED frame off the socket removes it.
+  const handleRejected = useCallback((orderId: string) => {
+    setOrdersMap((prev) => {
+      if (!prev.has(orderId)) return prev
+      const next = new Map(prev)
+      next.delete(orderId)
+      return next
+    })
+  }, [])
+
   // --- Sorted orders (newest first) ---
 
   const sortedOrders = Array.from(ordersMap.values()).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )
 
+  // 37-16 (D-11): PENDING orders wait in the New lane; the grid keeps CONFIRMED/PREPARING/READY exactly
+  // as before. Print all stays a print of the GRID: a batch print is for tickets the kitchen is cooking,
+  // and an order nobody has accepted yet must not reach the pass by the back door (each New card keeps
+  // its own per-ticket print).
+  const newOrders = sortedOrders.filter((o) => o.status === NEW_LANE_STATUS)
+  const boardOrders = sortedOrders.filter((o) => o.status !== NEW_LANE_STATUS)
+
+  // --- 37-17 (D-12): the repeating new-order alert ---
+  //
+  // The chime counts only THIS board's shop. After a shop switch the map still holds the previous
+  // shop's orders until the new read lands; they must not keep ringing for a board that no longer
+  // shows them. `stopped` is the K2 "board stopped" state (37-18): the chime gives way to the alarm.
+  const alertCount = newOrders.filter((o) => o.shopId === selectedShopId).length
+  const { soundState, enableSound, soundEnabled } = useKitchenAlert({
+    pendingCount: alertCount,
+    muted,
+    stopped: stopped !== null,
+    // 37-18 (K2): three 440 Hz square tones every 3 s through the same unlocked context, until
+    // "Silence alarm". A board whose sound was never turned on cannot ring, and the overlay says so.
+    alarm: stopped !== null && !alarmSilenced,
+  })
+
+  // The access-ended overlay's "Sign out" is a deliberate sign-out like the sidebar's: marked first,
+  // so the 401 it provokes cannot flip the overlay to "Signed out" and restart the alarm.
+  const handleStoppedSignOut = () => {
+    markDeliberateSignOut()
+    void vendorLogout()
+  }
+
+  // Unmuting is a tap, so it is also the gesture that unlocks audio: one press, and the board rings.
+  const handleUnmute = () => {
+    setMutedPreference(false)
+    enableSound()
+  }
+
+  // The tab title carries the New-lane count, so a backgrounded tab still says an order waits.
+  // The restore effect is declared first so it captures the title the route arrived with.
+  const newLaneCount = newOrders.length
+  useEffect(() => {
+    const previous = document.title
+    return () => {
+      document.title = previous
+    }
+  }, [])
+  useEffect(() => {
+    // 37-18 (K2): a stopped board says so first, so a backgrounded tab cannot read as working.
+    document.title = stopped ? STOPPED_TAB_TITLE : kitchenTabTitle(newLaneCount)
+  }, [newLaneCount, stopped])
+
   // --- #450 5d: whose board is this? ---
 
   const selectedShop = shops.find((s) => s.id === selectedShopId) ?? null
   const selectedShopName = selectedShop?.name ?? null
+
+  // --- 37-21 (D-15, UI-SPEC K3): pause storefront orders from the kitchen ---
+  //
+  // The pause state is the SERVER's shop, re-read on the board's own 60 s poll cadence
+  // (KITCHEN_POLL_INTERVAL_MS), after every pause or resume, and at a timed pause's stated end, so a
+  // pause made or ended on another device reaches this board within one poll. A stopped board reads
+  // nothing, like the rest of the board. The pause needs STAFF on the shop, the same grant the board's
+  // own read needs, so a 403 here means access ended and the D-08 listener above stops the board.
+  const shopPause = useShopPause(selectedShopId, { active: stopped === null })
 
   // The dashboard names a SPECIFIC shop and the board is showing a different one —
   // the D-13 degrade in the reconciliation effect above, which until now happened in
@@ -632,8 +776,16 @@ export default function KitchenPage() {
         // `tick` IS the clock reading (set from Date.now() on each 10s beat) —
         // pure w.r.t. render, same freshness as the old in-memo Date.now().
         now: tick,
+        // 37-17 (D-14): the pill says "Live" only when the board can also ring. Staleness is
+        // derived inside from `lastSyncedAt` against the existing STALE_AFTER_MS.
+        // 37-18 (K2): behind the overlay the pill reads "Signed out" or "No access", so a
+        // screenshot of the header never says "Live" on a stopped board.
+        signedOut: stopped === "signedOut",
+        noAccess: stopped === "noAccess",
+        soundOff: soundState === "off",
+        muted: soundState === "muted",
       }),
-    [online, connected, reconnecting, lastSyncedAt, syncFailed, tick]
+    [online, connected, reconnecting, lastSyncedAt, syncFailed, tick, soundState, stopped]
   )
 
   // #536: ONE tree, not a `loading` early-return that duplicated the header.
@@ -735,12 +887,24 @@ export default function KitchenPage() {
             </Select>
           )}
 
+          {/* 37-21 (D-15, UI-SPEC K3): one-tap pause, after the shop selector. The row wraps
+              (flex-wrap), so on a narrow screen the pause and sound controls take a new line
+              instead of overflowing. */}
+          <PauseOrdersControl
+            view={shopPause.view}
+            pending={shopPause.pending}
+            error={shopPause.error}
+            disabled={!selectedShopId || !shopPause.loaded}
+            onPause={shopPause.pause}
+            onResume={shopPause.resume}
+          />
+
           {/* #105: print every ticket on the board, one per page — the start-of-shift
               and printer-jam case. Per-ticket printing lives on each card. */}
           <Button
             variant="outline"
-            onClick={() => print(sortedOrders)}
-            disabled={sortedOrders.length === 0}
+            onClick={() => print(boardOrders)}
+            disabled={boardOrders.length === 0}
             title="Print all tickets on this board"
             className="kds-press"
           >
@@ -748,22 +912,24 @@ export default function KitchenPage() {
             Print all
           </Button>
 
-          {/* Mute toggle */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={toggleMute}
-            title={muted ? "Unmute alerts" : "Mute alerts"}
-            className="kds-press"
-          >
-            {muted ? (
-              <VolumeX className="h-5 w-5" />
-            ) : (
-              <Volume2 className="h-5 w-5" />
-            )}
-          </Button>
+          {/* 37-17 (D-12): the sound control says, in words, what the board can do. It replaces the
+              icon-only mute button; the `kds-muted` preference behind it is the same. */}
+          <KdsSoundControl
+            soundState={soundState}
+            onTurnOn={enableSound}
+            onMute={() => setMutedPreference(true)}
+            onUnmute={handleUnmute}
+          />
         </div>
       </div>
+
+      {/* 37-17 (D-12): the board says when it cannot ring, under the header and above every notice
+          that qualifies the tickets. Not dismissible; its only button is the fix. */}
+      <KdsSoundBar
+        soundState={soundState}
+        onTurnOn={enableSound}
+        onUnmute={handleUnmute}
+      />
 
       {/* #106: the stale/offline banner. Rendered above the tickets because it
           qualifies every ticket underneath it.
@@ -802,6 +968,15 @@ export default function KitchenPage() {
         )}
       </AnimatePresence>
 
+      {/* 37-21 (UI-SPEC K3): orders are paused. Below the feed banner (which qualifies every ticket),
+          above the board. Read from the server's shop, never a client timer. */}
+      <PausedBanner
+        shopName={selectedShopName}
+        view={shopPause.view}
+        pending={shopPause.pending}
+        onResume={() => void shopPause.resume()}
+      />
+
       {/* #450 5d: name the mismatch rather than letting the operator find it.
           Two mismatches, and they are mutually exclusive by construction — the
           dashboard is either on All shops or on one specific shop. */}
@@ -826,6 +1001,17 @@ export default function KitchenPage() {
           missing.
         </div>
       )}
+
+      {/* 37-16 (D-11): the New lane, above the grid and below every notice that qualifies the board.
+          Present from the first paint (a one-line row), so it never moves the grid when it fills. */}
+      <KdsNewLane
+        orders={newOrders}
+        loaded={!loading && lastSyncedAt !== null}
+        onAccepted={handleAccepted}
+        onRejected={handleRejected}
+        onPrint={(order) => print([order])}
+        onAllergyNoteAcknowledged={handleAllergyNoteAcknowledged}
+      />
 
       {/* The board itself, in exactly one of four states — shops loading, orders never
           read, read and empty, read and populated. All four occupy {@link BOARD_RESERVE},
@@ -855,7 +1041,7 @@ export default function KitchenPage() {
         >
           <KdsBoardSkeleton />
         </div>
-      ) : sortedOrders.length === 0 ? (
+      ) : boardOrders.length === 0 ? (
         <div
           key="kds-board-empty"
           className={`flex ${BOARD_RESERVE} flex-col items-center justify-center py-24 text-center`}
@@ -871,22 +1057,15 @@ export default function KitchenPage() {
       ) : (
         <div
           key="kds-board-grid"
+          data-testid="kds-board-grid"
           className={`grid ${BOARD_RESERVE} grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`}
         >
           <AnimatePresence mode="popLayout">
             {/* eslint-disable-next-line react-hooks/refs -- #709: the ember-glow check below deliberately reads the LAST COMMITTED seen-set (the effect at the seenIdsRef declaration commits it after paint, so the keyframe plays exactly once per new id). Converting to state would itself be a set-state-in-effect and add a render per batch; staleness here is the mechanism, and the stakes are one card animation. */}
-            {sortedOrders.map((order) => {
+            {boardOrders.map((order) => {
               const config = statusConfig[order.status]
               const action = bumpActions[order.status]
               const StatusIcon = config?.icon || Clock
-              const itemNames =
-                order.items
-                  ?.map((item) => item.productName)
-                  .join(", ") || "No items"
-              const itemSummary =
-                order.items && order.items.length > 0
-                  ? `${order.items.length} item${order.items.length !== 1 ? "s" : ""}`
-                  : "No items"
               const isNew =
                 seenIdsRef.current !== null && !seenIdsRef.current.has(order.id)
 
@@ -914,6 +1093,7 @@ export default function KitchenPage() {
                   className="rounded-lg"
                 >
                   <Card
+                    data-testid="kds-grid-card"
                     className={`border-2 ${ageBorderClass(order.createdAt)} transition-colors`}
                   >
                     {/* 31-15: `data-testid` is not decoration here. The allergen banner's
@@ -924,12 +1104,24 @@ export default function KitchenPage() {
                         hook that lets the position be asserted, so a future card
                         refactor learns what it must not break. */}
                     <CardHeader className="pb-3" data-testid="kds-card-header">
-                      <div className="flex items-start justify-between gap-2">
-                        <CardTitle className="min-w-0 truncate text-lg font-semibold">
+                      {/* 37-16 (UXT-011): the fulfilment badge sits beside the number. The number
+                          keeps #8's `min-w-0 truncate` (so it can never run under a badge) and
+                          gains `whitespace-normal break-words`, which win the cascade over
+                          truncate's nowrap: it wraps to a second line rather than losing its tail
+                          to an ellipsis, so the FULL number shows (roadmap SC-1).
+
+                          THE ROW WRAPS (`flex-wrap`). Measured on the live desktop run (1280px,
+                          four columns): in a non-wrapping row `min-w-0` let flex squeeze the number
+                          to ZERO width between DELIVERY and the status badge, and truncate's
+                          overflow:hidden then hid it. Wrapping makes a badge drop to the next line
+                          instead; the status badge keeps the right edge with `ml-auto`. */}
+                      <div className="flex flex-wrap items-start gap-2">
+                        <CardTitle className="min-w-0 truncate whitespace-normal break-words text-lg font-semibold">
                           {order.orderNumber || `#${order.id.substring(0, 6)}`}
                         </CardTitle>
+                        <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
                         {config && (
-                          <Badge className={`${config.bgColor} flex flex-shrink-0 items-center gap-1 text-white`}>
+                          <Badge className={`${config.bgColor} ml-auto flex flex-shrink-0 items-center gap-1 text-white`}>
                             <StatusIcon className="h-3 w-3" />
                             {config.label}
                           </Badge>
@@ -971,6 +1163,10 @@ export default function KitchenPage() {
                       <div className="text-sm font-medium text-slate-700">
                         {order.customerName || "Walk-in"}
                       </div>
+
+                      {/* 37-16 (UXT-011, P0): the customer's notes, after the name and before
+                          the items. Renders nothing for an order without notes. */}
+                      <KdsCustomerNote note={order.notes} />
     
                       {/* Items.
 
@@ -985,28 +1181,7 @@ export default function KitchenPage() {
                           summary is a preserved good (it is the one line that answers
                           "how big is this ticket" at a glance) and the list is new
                           capacity, not a replacement for it. */}
-                      <div className="text-sm text-slate-600">
-                        <span className="font-medium">{itemSummary}</span>
-                        {order.items && order.items.length > 0 && (
-                          <ul
-                            data-testid="kds-item-list"
-                            className="mt-1 space-y-1 text-sm text-slate-600"
-                          >
-                            {order.items.map((item, i) => (
-                              <li
-                                key={item.id || i}
-                                className="flex flex-wrap items-center gap-x-1.5 gap-y-1"
-                              >
-                                <span className="font-medium">{item.quantity}x</span>
-                                <span>{item.productName}</span>
-                                {/* Truncates at 3 names + "+N". Safe ONLY because the
-                                    banner in the header above carries the full set. */}
-                                <ItemAllergenBadge allergenNames={item.allergenNames} />
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
+                      <KdsItemList items={order.items} />
     
                       {/* Elapsed time */}
                       <div className="flex items-center gap-1 text-xs text-slate-500">
@@ -1059,6 +1234,18 @@ export default function KitchenPage() {
       {/* #105: the ticket sheet, portalled to <body> so one @media print rule in
           globals.css can hide the dashboard chrome without editing the shell. */}
       {printSheet}
+
+      {/* 37-18 (D-14, K2): the board has stopped. Portalled to <body> above everything; the rest
+          of the page is inert while it shows. */}
+      {stopped && (
+        <KdsBoardStopped
+          reason={stopped}
+          soundNeverEnabled={!soundEnabled}
+          alarmSilenced={alarmSilenced}
+          onSilence={() => setAlarmSilenced(true)}
+          onSignOut={handleStoppedSignOut}
+        />
+      )}
     </div>
   )
 }

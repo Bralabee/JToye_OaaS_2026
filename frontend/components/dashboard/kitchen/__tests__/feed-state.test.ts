@@ -142,3 +142,59 @@ describe("formatAge", () => {
     expect(formatAge(2245 * 60_000)).not.toMatch(/2245/)
   })
 })
+
+/**
+ * 37-17 (D-14, roadmap SC-1): "Live" only when it is true.
+ *
+ * UI-SPEC K1's precedence, first match wins: Signed out > No access > Offline > Not updating >
+ * Reconnecting > Out of date > Sound off > Muted > Live (row 1, "Connecting…", is the pill's
+ * presentation-only `pending` and is asserted in kds-feed-status.test.tsx). `pill` is a NEW field:
+ * `status` keeps its four values and every assertion above is unchanged.
+ */
+describe("deriveFeedState: the pill's precedence (D-14)", () => {
+  type Over = Partial<Parameters<typeof deriveFeedState>[0]>
+  const rows: Array<[string, Over, string]> = [
+    ["session lapsed", { signedOut: true }, "signedOut"],
+    ["access ended", { noAccess: true }, "noAccess"],
+    ["offline", { online: false }, "offline"],
+    ["reads failing", { lastSyncFailed: true }, "error"],
+    ["reconnecting", { connected: false, reconnecting: true }, "reconnecting"],
+    ["socket up but reads stale", { now: NOW + STALE_AFTER_MS + 1000 }, "stale"],
+    ["sound not enabled", { soundOff: true }, "soundOff"],
+    ["muted", { muted: true }, "muted"],
+  ]
+
+  it.each(rows)("%s, alone, yields its own pill state and never 'live'", (_name, over, pill) => {
+    const s = deriveFeedState({ ...base, ...over })
+    expect(s.pill).toBe(pill)
+    expect(s.pill).not.toBe("live")
+  })
+
+  it("is 'live' only when every condition above is false", () => {
+    expect(deriveFeedState(base).pill).toBe("live")
+    expect(
+      deriveFeedState({ ...base, signedOut: false, noAccess: false, soundOff: false, muted: false }).pill
+    ).toBe("live")
+  })
+
+  it("a combination yields the HIGHER-precedence state, for every pair", () => {
+    for (let i = 0; i < rows.length; i++) {
+      for (let j = i + 1; j < rows.length; j++) {
+        const s = deriveFeedState({ ...base, ...rows[j][1], ...rows[i][1] })
+        expect([rows[i][0], rows[j][0], s.pill]).toEqual([rows[i][0], rows[j][0], rows[i][2]])
+      }
+    }
+  })
+
+  it("leaves `status`, `stale` and the banner exactly as before: sound and mute raise no feed banner", () => {
+    const s = deriveFeedState({ ...base, soundOff: true, muted: true })
+    expect(s.status).toBe("live")
+    expect(s.stale).toBe(false)
+    expect(s.alerting).toBe(false)
+  })
+
+  it("'Out of date' uses the existing staleness threshold, boundary closed", () => {
+    expect(deriveFeedState({ ...base, now: NOW + STALE_AFTER_MS }).pill).toBe("live")
+    expect(deriveFeedState({ ...base, now: NOW + STALE_AFTER_MS + 1 }).pill).toBe("stale")
+  })
+})

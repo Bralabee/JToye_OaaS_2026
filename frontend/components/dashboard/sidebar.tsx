@@ -28,6 +28,7 @@ import { useSession } from "next-auth/react"
 // re-entered this dashboard as the departed user. `vendorLogout` fetches the
 // end-session URL first, then clears the app session, then navigates to the IdP.
 import { vendorLogout } from "@/lib/vendor-logout"
+import { markDeliberateSignOut } from "@/components/dashboard/kitchen/kds-board-stopped"
 import { Button } from "@/components/ui/button"
 import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
 import { useDashboardNoAccess } from "@/components/dashboard/dashboard-access"
@@ -78,6 +79,9 @@ export function Sidebar() {
   const [signingOut, setSigningOut] = useState(false)
   const handleSignOut = () => {
     setSigningOut(true)
+    // 37-18 (K2, P2-TUN-14): a deliberate sign-out must never turn the kitchen board red or sound
+    // its alarm. Marked BEFORE the sign-out starts, so a 401 it provokes is not claimed.
+    markDeliberateSignOut()
     void vendorLogout()
   }
   // Theme lives in ONE shared store (hooks/use-theme.ts), not in this

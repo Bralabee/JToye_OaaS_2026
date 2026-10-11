@@ -123,9 +123,11 @@ const heroTiles = [
  *   FIVE -> N  the row is however many shops are published, currently three
  *
  * The heading makes no claim about where the visitor is. It deliberately does not
- * say "Open now" either: `lib/opening-hours.ts:74` returns true when hours are
- * null or empty, so an openness claim would be a NEW fiction for every shop with
- * no hours data — exactly what #544 exists to stop.
+ * say "Open now" either. The old client parser returned true when hours were null
+ * or empty, so an openness claim was a fiction for every shop with no hours data —
+ * exactly what #544 exists to stop. Since 37-22 each CARD carries the server's own
+ * answer (Open / Paused / Closed from `openNow`, the decision checkout enforces),
+ * and prints nothing when the server sent none; the heading still claims nothing.
  *
  * ── DEVICE LOCATION (33-07) ───────────────────────────────────────────────────
  *

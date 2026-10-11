@@ -49,7 +49,36 @@ export interface PublicShop {
    * SELLER_DETAILS_MISSING_COPY — never an invented or blank field.
    */
   seller?: PublicSeller
+  /**
+   * 37-20/37-22 (D-15, D-25, theme 2): the SERVER's answer about whether this
+   * shop takes an order now (`ShopAvailabilityPolicy`, UK time). Every customer
+   * surface reads these and computes no open or closed state of its own
+   * (`lib/shop-availability.ts`). Optional for old-backend tolerance: an ABSENT
+   * `openNow` renders NO open-state claim, never "Open now" and never "Closed".
+   */
+  openNow?: boolean
+  /** When orders come back (ISO-8601 with offset), when not open now and a time is known. */
+  nextOpenAt?: string | null
+  /** The end of a timed pause still in force (ISO-8601 with offset). */
+  pausedUntil?: string | null
+  /** Paused until the vendor reopens. */
+  pausedIndefinitely?: boolean
+  /** Structured hours: mon..sun -> windows in UK time ("HH:MM"); [] = closed that day. Null when none. */
+  openingSchedule?: Record<string, OpeningWindow[]> | null
+  /** True for a shop that had no hours when structured hours arrived (D-25): it takes orders at any time. */
+  legacyAlwaysOpen?: boolean
+  /** Where the hours came from. NEEDS_REVIEW: some original text could not be read (D-25). */
+  hoursSource?: HoursSource | null
 }
+
+/** One structured opening window (backend `OpeningSchedule.TimeWindow`). `close <= open` = closes the next day. */
+export interface OpeningWindow {
+  open: string
+  close: string
+}
+
+/** Backend `uk.jtoye.core.shop.HoursSource`. */
+export type HoursSource = "STRUCTURED" | "MIGRATED_FROM_TEXT" | "NEEDS_REVIEW" | "LEGACY_ALWAYS_OPEN"
 
 /**
  * The public seller object (backend SellerIdentityDto). Only what the law
@@ -172,13 +201,9 @@ export interface ShopDetail {
   avgRating: number
   promotions: PublicPromotion[]
   announcements: PublicAnnouncement[]
-  /**
-   * Computed on the SERVER and passed down rather than recomputed during
-   * hydration: the open/closed pill is then present in the served HTML (it also
-   * feeds the JSON-LD), and the two renders cannot disagree if the clock crosses
-   * an opening boundary between them.
-   */
-  isOpen: boolean
+  // 37-22: no `isOpen` here any more. The loader used to compute one from the free-text
+  // hours; whether the shop takes orders is now the server's `shop.openNow` / `pausedUntil`
+  // (lib/shop-availability.ts), read the same way on the server render and after a refetch.
 }
 
 import type { OrderAllergenFlag } from "@/types/api"

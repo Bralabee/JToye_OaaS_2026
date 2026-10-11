@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-14 complete (14/53). 37-14 closed 2026-10-09: checkout step 1, the payment step and the cash confirmation show a VAT row only when shop.seller.vatNumber is present, otherwise the B7 note under Total (a failed shop fetch shows neither; the order page never prints VAT); product form VAT rate Select (Standard pre-selected, sent as vatRate; helper copy awaits owner sign-off in 37-15); import page imports into the switcher shop or a required chosen shop (no request without a target; WINDOWS #27 fixed); CopyToShopDialog (row + header whole-menu) reports the server counts with zeros omitted; jest 2382/0, lint 0 errors, build green. Live proof owed to 37-15 (WINDOWS #28). Next: /gsd-execute-phase 37 (37-15)."
-last_updated: "2026-10-09T01:45:18Z"
-last_activity: 2026-10-09
-state_head: 1c8ee4043d549a187ebc32f766ce69379684428e
+stopped_at: "Phase 37 executing: 37-01..37-22 complete (22/53). 37-21 closed 2026-10-10: the kitchen header has PauseOrdersControl (20 / 40 minutes / Until I reopen, 44px rows, no confirm; Resume orders now while paused) and PausedBanner (white, 2px slate-900 border, L6) reading the SERVER's ordersPausedUntil/ordersPausedIndefinitely in UK time, re-read on the 60 s poll, after each write and at the stated end, disabled until the first read and while a write is in flight; the shop dialog's free-text hours are replaced by OpeningScheduleEditor (K4: Closed checkbox, up to 3 native time windows, Copy Monday, overnight hint, overlap / spill / missing-time validation, all-closed note, legacy info line; the dialog sends openingSchedule only when touched); HoursNoticeCard on /dashboard and Hours not set / Check hours / Paused until badges on the shops table from hoursSource, deep link ?edit={id}&focus=hours. Owner D-25 ruling copy: an unreadable NEEDS_REVIEW day pre-fills Closed with 'Customers can still order on this day at any time until you save your hours.' (orchestrator decision pending owner wording, WINDOWS #36). Deviations: storefront Opening hours list from openingSchedule (Rule 2); dialog saves keep the slug (server regenerates on every slug-less update, Rule 1); the control makes no claim before the first read (Rule 1, found live). Jest 2607/220 (baseline 2550/215), build green, lint 0 errors; no Java. Frontend REBUILT + recreated (final 040c64a6), runtime-freshness PASS 4/4; live Playwright proof incl. 60 s cross-device; Mama Ade's Kitchen restored by md5. WINDOWS #36, #37 added. RWO-022 NOT marked (37-23 declares it; ready-ids blocked). Next: 37-23 (UAT, autonomous:false)."
+last_updated: "2026-10-11T13:59:23.791Z"
+last_activity: 2026-10-11
+state_head: 4f478bd86da2bade859420b990f212738962a0fd
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 199
+  completed_plans: 207
   percent: 65
 ---
 
@@ -772,7 +772,7 @@ Status: Executing Phase 37
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-08
+Last activity: 2026-10-11
 
 Progress: [███████░░░] 65%
 
@@ -917,6 +917,12 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P12 | 16 min | 2 tasks | 15 files |
 | Phase 37 P13 | 50 min | 2 tasks | 16 files |
 | Phase 37 P14 | 16 min | 2 tasks | 13 files |
+| Phase 37 P17 | 25 min | 3 tasks | 17 files |
+| Phase 37 P16 | 56 min | 3 tasks | 27 files |
+| Phase 37 P20 | 67 min | 3 tasks | 29 files |
+| Phase 37 P18 | 40 min | 3 tasks | 18 files |
+| Phase 37 P22 | 75 min | 3 tasks | 30 files |
+| Phase 37 P21 | 40 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -1204,6 +1210,41 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-14: the product form sends vatRate STANDARD on a new product and the stored rate on an edit; an edit whose response carried no rate sends none, so the PUT keeps the stored rate rather than a guess
 - [Phase 37]: 37-14: the CSV import target is the switcher's shop, or on All shops a required chosen shop; handleUpload refuses without a target (the disabled control is not the gate); importCsv takes shopId as a required argument
 - [Phase 37]: 37-14: 'Copy to another shop…' is a row action (that product) and, with a shop selected, a header action for that shop's whole menu (productIds omitted); offered only where a source shop and another shop exist; '1 product' / 'its' for a single copy
+- [Phase 37]: 37-15 Task 2: proceed — 37-B may drive the shared compose stack and deploy D-06; dev-stack access-loss query found nobody loses access, owner ruling 2026-10-09
+- [Phase 37]: 37-15: /api/v1/customers stays open to an ungranted tenant user (Phase 23 tenant-scoped CustomerController); Rule 4, owner ruling needed before the 37-B PR merges (WINDOWS #29)
+
+- [Phase 37]: 37-16: the New lane row reads "Checking for new orders…" until the first board read, then "No new orders waiting"; Print all stays a print of the grid; an absent fulfilment type renders no badge rather than a guess
+- [Phase 37]: 37-16: a refused Accept/Reject re-reads the order (CANCELLED = already rejected, CONFIRMED..COMPLETED = already accepted, else generic); the insufficient-stock problem carries productName/available members
+- [Phase 37]: 37-16: the kitchen card number row is flex-wrap (live desktop run measured the number squeezed to zero width); the beep now fires on DRAFT->PENDING, left for 37-17
+- [Phase 37]: 37-19: shops.hours_source is nullable with no default (NULL = not classified); LEGACY_ALWAYS_OPEN is written only by V80 and a legacy shop cannot carry a schedule (ck_shops_legacy_always_open_no_schedule)
+- [Phase 37]: 37-19: a day entry holding a window plus text not understood keeps the FIRST window (today's render) and marks the shop NEEDS_REVIEW; unknown day keys and array/object values also mark NEEDS_REVIEW; a 24:00 close is midnight; zero-length and out-of-range windows are not windows
+- [Phase 37]: 37-19: OpeningScheduleFixtures is the one fixture list both the Java parser and the V80 SQL are held to; change a rule in one and the parity IT reds
+- [Phase 37]: 37-17: the chime counts only the selected shop's PENDING orders (shopId match), so a shop switch silences the old board before the new read lands; the tab title counts the whole New lane, in the same render as the lane
+- [Phase 37]: 37-17: sound state = muted ? muted : context can sound ? on : off; a persisted mute wins over 'no context' so F4's muted bar and Muted pill show on load; getAutoplayPolicy(ctx) is asked first where present (anything but 'allowed' is off), AudioContext.state otherwise
+- [Phase 37]: 37-17: 'Unmute alerts' is itself the gesture (it unmutes and unlocks the context in one tap); the sound bar is non-dismissible, its one button is the fix
+- [Phase 37]: 37-17: the pill precedence is a NEW deriveFeedState field 'pill'; 'status', 'stale' and 'alerting' keep their meaning, so sound/mute raise no feed banner and the existing four-state assertions are untouched; the label slot stacks a pseudo-element sizer per label (constant 240 px measured; the old min-w-[5.5rem] let it vary 230-240)
+- [Phase 37]: WINDOWS #29 RULED 2026-10-09 (owner, option B): every customer endpoint requires an honoured grant under D-06 (requireAnyAccess, the staff/me predicate, before the idempotency replay); landed in the 37-B squash (tag cut/phase-37-b-staff-access-v2); options C and E are separate future rulings; live proof owed (WINDOWS #30)
+- [Phase 37]: D-25 clarified 2026-10-10: NEEDS_REVIEW days stay open until the vendor saves structured hours; 37-20 must-have line 75 rewritten from 409 to 201 (applied per day: an unreadable day stays open, a day written closed stays closed, as before deploy)
+- [Phase 37]: 37-20: an unclassified shop (no hours_source, no schedule) is CLOSED, NO_HOURS (D-15 for shops created after deploy); only V80 writes LEGACY_ALWAYS_OPEN; the pause is STAFF-gated, absolute, and blocks storefront orders only
+- [Phase 37]: 37-18: the lapse is a cancellable window event (lib/session-lapse.ts) the kitchen claims; access ended is the route-wide SHOP_ACCESS_DENIED_EVENT; any stopped board drops its STOMP topic and stops polling; a lapse outranks access ended
+- [Phase 37]: 37-18: the board-stopped alarm ignores kds-muted (mute silences the chime, 'Silence alarm' the alarm) - open to an owner ruling; the cannot-ring line shows only when no tap ever created the context
+- [Phase 37]: 37-18: the jwt callback refreshes inside the access token's last minute (accessTokenNeedsRefresh, 60 s skew, all routes) and keeps a still-valid token if the refresh fails; the client session carries expiresAt; the keep-alive never declares a lapse itself
+- [Phase 37]: 37-22: every customer surface reads the server availability through lib/shop-availability.ts; a reported pause reads Paused whatever openNow says; an absent openNow is no claim (no pill, badge or notice, nothing disabled)
+- [Phase 37]: 37-22: JSON-LD openingHoursSpecification only from openingSchedule; omitted for legacyAlwaysOpen and without a schedule; NEEDS_REVIEW publishes only the windows V80 read (an unreadable day, open on the server, is not published, never as 24 h); a pause never appears
+- [Phase 37]: 37-22: the storefront SSR fetch stays cache no-store (measured), so UI-SPEC open item 5 has no revalidate window to tune; ShopDetail.isOpen removed
+- [Phase 37]: 37-22: the dev seeder declares an all-day STRUCTURED week on every seeded shop and upgrades demo shops V80 marked LEGACY_ALWAYS_OPEN; STRUCTURED, MIGRATED_FROM_TEXT and NEEDS_REVIEW are left alone
+- [Phase 37]: 37-21: the kitchen pause reads the server's shop (PUT/DELETE response, a re-read after each write, the 60 s poll, a re-read at the stated end); a past ordersPausedUntil is no pause (the server keeps the instant); the control is disabled until the first read and while a write is in flight
+- [Phase 37]: 37-21: D-25 ruling copy (orchestrator decision, pending the owner's wording, WINDOWS #36): an unreadable NEEDS_REVIEW day pre-fills Closed in the editor with 'We couldn't read "{text}". Customers can still order on this day at any time until you save your hours.'; the needs-review card says customers can order on those days until the hours are saved; UI-SPEC rows amended
+- [Phase 37]: 37-21: the shop dialog sends openingSchedule only when the editor was touched (key omitted otherwise), and sends the current slug unless the name changed, because ShopService.updateShop regenerates a random-suffix slug on every slug-less update (server unchanged; owner question in deferred-items)
+- [Phase 37]: 37-21: the storefront Opening hours list renders openingSchedule for STRUCTURED / MIGRATED_FROM_TEXT; NEEDS_REVIEW keeps the vendor's text (its unreadable days are open on the server); legacy or no schedule shows the text; never both
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): option E floors on customers (D-06): reads keep the any-grant gate; create and update need SHOP_MANAGER on any shop or Group admin (ShopAccessService.requireAnyRole, before the Idempotency-Key branch); delete needs Group admin (requireGroupAdmin)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-25 hours: an unreadable NEEDS_REVIEW day pre-fills as one all-day 00:00-00:00 window with 'We could not read "{text}", so this day is open all day. Set the real times, or tick Closed.'; the card reads '...for {days}, so customers can order on that day/those days at any time. Check and save your hours.' (WINDOWS #36 closed)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-08 pause: a pause refused with shop-access-denied is answered by the K2 Access ended overlay only, no inline copy; KITCHEN_ROUTE_CALLS and its guard test keep every kitchen-route call at the STAFF floor (WINDOWS #37 restated)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): the board-stopped alarm stops by itself 2 minutes after it starts (alarm fatigue); the red screen stays, and mute still never silences it
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-14 amended: vendor-realm SSO max 14 h (ssoSessionMaxLifespan 50400), idle 30 min unchanged, refresh-token rotation NOT enabled; applied to the running jtoye-dev realm through the Admin API; 37-23's red screen appears after 14 h, not 2 h
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): option C (per-shop customer narrowing) and old-slug 301 aliases deferred to Phase 39 (V81 is reserved by 37-27, so option C takes the next free version; Phase 39 is Platform runtime upgrades, so /gsd-plan-phase 39 decides 39-F or its own phase); the slug-keep fix is specified in 37-48 items (a)-(e)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): facts: staff revoke was already Group-admin-only (StaffManagementService.java:308-322), and vendor POST /orders needs SHOP_MANAGER (OrderService.java:141; 37-20-SUMMARY corrected)
+- [Phase 37]: 261010-ppb (orchestrator revision 2026-10-10, recorded for the owner): refresh-token rotation deferred: per-process single-flight cannot protect 3 k8s replicas; needs a shared guard (Redis-backed single-flight keyed by refresh token, or sticky sessions proven) or Keycloak refreshTokenMaxReuse policy, then its own ruling
 
 ### Pending Todos
 
@@ -1272,11 +1313,13 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 260930-l63 | Fix #771: review photoUrls unvalidated, so GDPR erasure can delete vendor product images | 2026-09-30 | f93412d1 | [260930-l63-fix-771-review-photourls-unvalidated-so-](./quick/260930-l63-fix-771-review-photourls-unvalidated-so-/) |
 | 261004-hhy | Clear main's pg-backup image-gate red: name libpcre2-8-0 on the apt-get line so the image takes 10.42-1+deb12u2 (CVE-2026-103111, HIGH); Trivy 0.70.0 main rc=1 / branch rc=0 on one base digest; ca-certificates still installed, 303 certs | 2026-10-04 | 00a64aa4 | [261004-hhy-fix-pg-backup-pcre2-cve-2026-103111](./quick/261004-hhy-fix-pg-backup-pcre2-cve-2026-103111/) |
 | 261004-nsn | Fix #885: the issue de-dup in e2e-nightly and base-image-freshness (3 sites) searched only the 100 newest open issues; now `--search "in:title …"` with the exact-title jq filter kept. Rendered step scripts: main misses #683 at all 3 sites, branch finds it; substring-title control rejected | 2026-10-04 | (see PR) | [261004-nsn-fix-885-nightly-dedup-title-search](./quick/261004-nsn-fix-885-nightly-dedup-title-search/) |
+| 261009-g8m | WINDOWS #29 ruling B: gate customer endpoints on any honoured grant under D-06 strict scoping, with RED-first Testcontainers arms, and re-cut the 37-B PR branch (phase-37-b-staff-access) from origin/main as one squash commit carrying the gate | 2026-10-09 | 29520bf2 | [261009-g8m-windows-29-ruling-b-gate-customer-endpoi](./quick/261009-g8m-windows-29-ruling-b-gate-customer-endpoi/) |
+| 261010-ppb | Owner rulings 2026-10-10 package: option E customer write floors, hours editor all-day pre-fill and copy, pause-403 copy, alarm cap, vendor realm SSO max 14h with D-14 amendment, record option C and slug follow-ups | 2026-10-10 | fa3552fa | [261010-ppb-owner-rulings-2026-10-10-package-option-](./quick/261010-ppb-owner-rulings-2026-10-10-package-option-/) |
 
 ## Session Continuity
 
-Last session: 2026-10-09T01:45:18Z
-Stopped at: Completed 37-14-PLAN.md (VAT display for VAT-registered sellers, VAT rate select, import target, copy to shop); next 37-15
+Last session: 2026-10-10T15:59:45.000Z
+Stopped at: Completed 37-21-PLAN.md (one-tap kitchen pause and paused banner from the server's state, the structured hours editor, hours notices and badges from hoursSource; storefront hours list from the schedule; dialog saves keep the slug; frontend rebuilt, live Playwright incl. 60 s cross-device; seeded schedule restored by md5); next 37-23 (UAT, autonomous:false)
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.

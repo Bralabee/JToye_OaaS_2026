@@ -1,0 +1,189 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/kitchen-flow.spec.ts --reporter=line
+
+Running 18 tests using 1 worker
+
+[1/18] [mobile] › e2e/kitchen-flow.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time
+[2/18] [mobile] › e2e/kitchen-flow.spec.ts:364:7 › Kitchen display + order detail — product names & fixes (Surface F) › order-detail page shows real product names and the delivery address, no 'Unknown Product'
+[3/18] [mobile] › e2e/kitchen-flow.spec.ts:390:7 › Kitchen display + order detail — product names & fixes (Surface F) › clicking bump advances the ticket and posts the transition
+[4/18] [mobile] › e2e/kitchen-flow.spec.ts:426:7 › Kitchen display + order detail — product names & fixes (Surface F) › a storefront order appears in the New lane, and Accept moves it to the grid
+[5/18] [mobile] › e2e/kitchen-flow.spec.ts:470:7 › Kitchen display + order detail — product names & fixes (Surface F) › going offline raises a stale banner with a last-updated stamp, and coming back clears it
+[6/18] [mobile] › e2e/kitchen-flow.spec.ts:555:7 › Kitchen display + order detail — product names & fixes (Surface F) › reads the board at a cost that does not scale with ticket count
+[7/18] [mobile] › e2e/kitchen-flow.spec.ts:610:7 › Kitchen display + order detail — product names & fixes (Surface F) › a ticket can be printed, and the print stylesheet hides the dashboard chrome
+[8/18] [mobile] › e2e/kitchen-flow.spec.ts:670:7 › Kitchen display + order detail — product names & fixes (Surface F) › the board names its shop, and explains itself in the All-shops context
+[9/18] [mobile] › e2e/kitchen-flow.spec.ts:705:7 › Kitchen display + order detail — product names & fixes (Surface F) › a kitchen ticket that exists only on page 1 still reaches the board
+[10/18] [desktop] › e2e/kitchen-flow.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time
+  1) [desktop] › e2e/kitchen-flow.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator:  getByText('ORD-TEST-0001')
+    Expected: visible
+    Received: hidden
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toBeVisible" getByText('ORD-TEST-0001') with timeout 10000ms
+      - waiting for getByText('ORD-TEST-0001')
+        24 × locator resolved to <h3 class="tracking-tight min-w-0 truncate whitespace-normal break-words text-lg font-semibold">ORD-TEST-0001</h3>
+           - unexpected value "hidden"
+
+
+      340 |     // status badge stays visible beside it.
+      341 |     const orderNumber = page.getByText("ORD-TEST-0001")
+    > 342 |     await expect(orderNumber).toBeVisible()
+          |                               ^
+      343 |     await expect(orderNumber).toHaveClass(/truncate/)
+      344 |     await expect(page.getByText("Confirmed")).toBeVisible()
+      345 |
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/kitchen-flow.spec.ts:342:31
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-35edf-dge-and-capped-elapsed-time-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/kitchen-flow-Kitchen-displ-35edf-dge-and-capped-elapsed-time-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-35edf-dge-and-capped-elapsed-time-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/kitchen-flow-Kitchen-displ-35edf-dge-and-capped-elapsed-time-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[11/18] [desktop] › e2e/kitchen-flow.spec.ts:364:7 › Kitchen display + order detail — product names & fixes (Surface F) › order-detail page shows real product names and the delivery address, no 'Unknown Product'
+[12/18] [desktop] › e2e/kitchen-flow.spec.ts:390:7 › Kitchen display + order detail — product names & fixes (Surface F) › clicking bump advances the ticket and posts the transition
+[13/18] [desktop] › e2e/kitchen-flow.spec.ts:426:7 › Kitchen display + order detail — product names & fixes (Surface F) › a storefront order appears in the New lane, and Accept moves it to the grid
+  2) [desktop] › e2e/kitchen-flow.spec.ts:426:7 › Kitchen display + order detail — product names & fixes (Surface F) › a storefront order appears in the New lane, and Accept moves it to the grid 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('kds-board-grid').getByText('ORD-TEST-0002')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByTestId('kds-board-grid').getByText('ORD-TEST-0002') with timeout 10000ms
+      - waiting for getByTestId('kds-board-grid').getByText('ORD-TEST-0002')
+        14 × locator resolved to <h3 class="tracking-tight min-w-0 truncate whitespace-normal break-words text-lg font-semibold">ORD-TEST-0002</h3>
+           - unexpected value "hidden"
+
+
+      464 |     expect(confirmCalls[0]).toContain("/order-new/confirm")
+      465 |     const grid = page.getByTestId("kds-board-grid")
+    > 466 |     await expect(grid.getByText("ORD-TEST-0002")).toBeVisible()
+          |                                                   ^
+      467 |     await expect(lane.getByText("No new orders waiting")).toBeVisible()
+      468 |   })
+      469 |
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/kitchen-flow.spec.ts:466:51
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-3b902-Accept-moves-it-to-the-grid-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/kitchen-flow-Kitchen-displ-3b902-Accept-moves-it-to-the-grid-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-3b902-Accept-moves-it-to-the-grid-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/kitchen-flow-Kitchen-displ-3b902-Accept-moves-it-to-the-grid-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[14/18] [desktop] › e2e/kitchen-flow.spec.ts:470:7 › Kitchen display + order detail — product names & fixes (Surface F) › going offline raises a stale banner with a last-updated stamp, and coming back clears it
+[15/18] [desktop] › e2e/kitchen-flow.spec.ts:555:7 › Kitchen display + order detail — product names & fixes (Surface F) › reads the board at a cost that does not scale with ticket count
+  3) [desktop] › e2e/kitchen-flow.spec.ts:555:7 › Kitchen display + order detail — product names & fixes (Surface F) › reads the board at a cost that does not scale with ticket count 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator:  getByText('ORD-COUNT-0')
+    Expected: visible
+    Received: hidden
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toBeVisible" getByText('ORD-COUNT-0') with timeout 20000ms
+      - waiting for getByText('ORD-COUNT-0')
+        40 × locator resolved to <h3 class="tracking-tight min-w-0 truncate whitespace-normal break-words text-lg font-semibold">ORD-COUNT-0</h3>
+           - unexpected value "hidden"
+
+
+      595 |
+      596 |     await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    > 597 |     await expect(page.getByText("ORD-COUNT-0")).toBeVisible({ timeout: 20_000 })
+          |                                                 ^
+      598 |     const readsForOneTicket = requested.length
+      599 |
+      600 |     // Same journey, twenty tickets — past the eighteen that produced ten 429s in #561.
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/kitchen-flow.spec.ts:597:49
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-2d4a9-not-scale-with-ticket-count-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/kitchen-flow-Kitchen-displ-2d4a9-not-scale-with-ticket-count-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-2d4a9-not-scale-with-ticket-count-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/kitchen-flow-Kitchen-displ-2d4a9-not-scale-with-ticket-count-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[16/18] [desktop] › e2e/kitchen-flow.spec.ts:610:7 › Kitchen display + order detail — product names & fixes (Surface F) › a ticket can be printed, and the print stylesheet hides the dashboard chrome
+[17/18] [desktop] › e2e/kitchen-flow.spec.ts:670:7 › Kitchen display + order detail — product names & fixes (Surface F) › the board names its shop, and explains itself in the All-shops context
+[18/18] [desktop] › e2e/kitchen-flow.spec.ts:705:7 › Kitchen display + order detail — product names & fixes (Surface F) › a kitchen ticket that exists only on page 1 still reaches the board
+  4) [desktop] › e2e/kitchen-flow.spec.ts:705:7 › Kitchen display + order detail — product names & fixes (Surface F) › a kitchen ticket that exists only on page 1 still reaches the board 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator:  getByText('ORD-TEST-0001')
+    Expected: visible
+    Received: hidden
+    Timeout:  20000ms
+
+    Call log:
+      - Expect "toBeVisible" getByText('ORD-TEST-0001') with timeout 20000ms
+      - waiting for getByText('ORD-TEST-0001')
+        37 × locator resolved to <h3 class="tracking-tight min-w-0 truncate whitespace-normal break-words text-lg font-semibold">ORD-TEST-0001</h3>
+           - unexpected value "hidden"
+
+
+      731 |     await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+      732 |
+    > 733 |     await expect(page.getByText("ORD-TEST-0001")).toBeVisible({ timeout: 20_000 })
+          |                                                   ^
+      734 |     expect(requested.some((u) => /[?&]page=1\b/.test(u))).toBe(true)
+      735 |     // And it stops when the server says so — a fix that pages forever is another bug.
+      736 |     expect(requested.some((u) => /[?&]page=2\b/.test(u))).toBe(false)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/kitchen-flow.spec.ts:733:51
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-b7949-e-1-still-reaches-the-board-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/kitchen-flow-Kitchen-displ-b7949-e-1-still-reaches-the-board-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/kitchen-flow-Kitchen-displ-b7949-e-1-still-reaches-the-board-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/kitchen-flow-Kitchen-displ-b7949-e-1-still-reaches-the-board-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  4 failed
+    [desktop] › e2e/kitchen-flow.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time 
+    [desktop] › e2e/kitchen-flow.spec.ts:426:7 › Kitchen display + order detail — product names & fixes (Surface F) › a storefront order appears in the New lane, and Accept moves it to the grid 
+    [desktop] › e2e/kitchen-flow.spec.ts:555:7 › Kitchen display + order detail — product names & fixes (Surface F) › reads the board at a cost that does not scale with ticket count 
+    [desktop] › e2e/kitchen-flow.spec.ts:705:7 › Kitchen display + order detail — product names & fixes (Surface F) › a kitchen ticket that exists only on page 1 still reaches the board 
+  14 passed (1.8m)

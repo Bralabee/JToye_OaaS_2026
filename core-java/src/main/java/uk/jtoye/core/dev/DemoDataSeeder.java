@@ -15,6 +15,8 @@ import uk.jtoye.core.onboarding.OnboardingState;
 import uk.jtoye.core.onboarding.VendorOnboardingRepository;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.shop.HoursSource;
+import uk.jtoye.core.shop.OpeningSchedule;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.onboarding.TraderEntityType;
@@ -340,6 +342,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         shop.setMinimumOrderPennies(0L);
         shop.setDeliveryFeePennies(0L);
         shop.setPublished(false);
+        applySeededHours(shop);
         Shop savedShop = shopRepository.save(shop);
 
         Product product = productRepository.findBySku(TENANT_B_PRODUCT_SKU).orElseGet(() -> {
@@ -665,8 +668,41 @@ public class DemoDataSeeder implements ApplicationRunner {
         // about where they are. A miss leaves the coordinate untouched (never (0,0)); that
         // path is covered by upsertArchiveShop/seedTenantB, which are addressless on purpose.
         applySeededCoordinate(shop);
+        applySeededHours(shop);
 
         return shopRepository.save(shop);
+    }
+
+    /**
+     * 37-20 / 37-22 (D-15, D-25): every shop this seeder writes DECLARES its hours: an all-day window
+     * ({@code 00:00-00:00}, which {@code ShopAvailabilityPolicy} reads as open 24 hours) on every day, stored as
+     * STRUCTURED. The demo storefronts and the e2e journeys that run against them therefore take orders at any
+     * time of day by declaration, and their JSON-LD publishes those declared hours.
+     *
+     * <ul>
+     *   <li>A shop with no hours source (created here on a fresh volume, after V80 ran) would otherwise be
+     *       unclassified, so CLOSED (NO_HOURS), failing every order-placing journey (37-20).</li>
+     *   <li>A shop V80 marked LEGACY_ALWAYS_OPEN (an existing volume: the dev database's demo shops had no
+     *       hours at V79) is declared on the next run, so no demo storefront relies on the legacy rule
+     *       (37-22). This is a dev-profile fixture the seeder owns; LEGACY_ALWAYS_OPEN is still written only by
+     *       V80, and a vendor's shop is never touched by this bean.</li>
+     *   <li>Hours a developer saved through the shop editor (STRUCTURED), and text hours V80 classified
+     *       (MIGRATED_FROM_TEXT, NEEDS_REVIEW), are left as they are, so a restart never overwrites them.</li>
+     * </ul>
+     * Covers the curated storefronts, the archive and the tenant-B probe
+     * ({@code DemoDataSeederHoursIntegrationTest}).
+     */
+    private static void applySeededHours(Shop shop) {
+        if (shop.getHoursSource() != null && shop.getHoursSource() != HoursSource.LEGACY_ALWAYS_OPEN) {
+            return;
+        }
+        java.util.Map<java.time.DayOfWeek, List<OpeningSchedule.TimeWindow>> allDay =
+                new java.util.EnumMap<>(java.time.DayOfWeek.class);
+        for (java.time.DayOfWeek day : java.time.DayOfWeek.values()) {
+            allDay.put(day, List.of(new OpeningSchedule.TimeWindow(java.time.LocalTime.MIDNIGHT, java.time.LocalTime.MIDNIGHT)));
+        }
+        shop.setOpeningSchedule(OpeningSchedule.of(allDay).toJson());
+        shop.setHoursSource(HoursSource.STRUCTURED);
     }
 
     /**
@@ -842,6 +878,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             return s;
         });
         archive.setPublished(false);
+        applySeededHours(archive);
         return shopRepository.save(archive);
     }
 

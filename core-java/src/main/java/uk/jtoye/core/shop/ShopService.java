@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.InvalidOpeningScheduleException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -19,10 +20,15 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
+import uk.jtoye.core.shop.dto.PauseOrdersRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 import uk.jtoye.core.storage.StorageService;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -39,6 +45,7 @@ public class ShopService {
     private final ShopAccessService shopAccessService;
     private final ShopCacheLoader shopCacheLoader;
     private final PostcodeGeocoder postcodeGeocoder;
+    private final Clock clock;
 
     /**
      * Slugs that must never reach the {@code slug} column, because the storefront
@@ -79,7 +86,8 @@ public class ShopService {
                        TenantCacheEvictor cacheEvictor,
                        ShopAccessService shopAccessService,
                        ShopCacheLoader shopCacheLoader,
-                       PostcodeGeocoder postcodeGeocoder) {
+                       PostcodeGeocoder postcodeGeocoder,
+                       Clock clock) {
         this.shopRepository = shopRepository;
         this.shopMapper = shopMapper;
         this.storageService = storageService;
@@ -87,6 +95,7 @@ public class ShopService {
         this.shopAccessService = shopAccessService;
         this.shopCacheLoader = shopCacheLoader;
         this.postcodeGeocoder = postcodeGeocoder;
+        this.clock = clock;
     }
 
     // createShop inserts a brand-new entity; no existing cache key could match it,
@@ -101,9 +110,13 @@ public class ShopService {
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
         log.debug("Creating shop '{}' for tenant {}", request.getName(), tenantId);
+        OpeningSchedule schedule = validatedSchedule(request);
 
         Shop shop = shopMapper.toEntity(request);
         shop.setTenantId(tenantId);
+        // 37-20 (D-15/D-25): a new shop saved with hours is STRUCTURED; one saved without hours stays
+        // unclassified (NULL), which takes no storefront orders until hours are saved. Never LEGACY_ALWAYS_OPEN.
+        applySchedule(shop, schedule);
 
         // Auto-generate slug from name if not provided. A generated slug always carries
         // a random 8-char suffix, so it can never collide with a static storefront
@@ -220,6 +233,8 @@ public class ShopService {
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
         Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+        // 37-20: refuse a bad schedule before any field is copied, so a 400 changes nothing.
+        OpeningSchedule schedule = validatedSchedule(request);
 
         // Sole-writer invariant (threat T-18-05-T): updateShop must NOT let a request
         // change `published`. ShopMapper.updateEntity (IGNORE-null strategy) copies a
@@ -260,6 +275,10 @@ public class ShopService {
         }
 
         shopMapper.updateEntity(request, shop);
+        // 37-20 (D-15/D-25): a sent schedule replaces the stored one and makes the hours STRUCTURED (this ends
+        // the LEGACY_ALWAYS_OPEN and NEEDS_REVIEW states); an absent one keeps both. The mapper never copies
+        // the schedule, its source or the pause from a request.
+        applySchedule(shop, schedule);
         // Defence in depth: the guard above already refuses any state-changing value, so
         // this restore is now a no-op on every path that reaches it. It stays because it
         // is the invariant's last line — if the mapper strategy or the guard is ever
@@ -379,6 +398,99 @@ public class ShopService {
         shopRepository.saveAndFlush(shop);
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
         log.info("Shop {} published flag set to {}", shopId, published);
+    }
+
+    /**
+     * The request's opening schedule, validated (37-20, D-15), or {@code null} when the request carries none
+     * (absent = keep). Every problem is collected per day ({@code openingSchedule.<day>}) and refused together
+     * as a 400, before anything is written: an unknown day key, a window with no times, more than
+     * {@link OpeningSchedule#MAX_WINDOWS_PER_DAY} windows on a day, and overlapping windows (within a day, or
+     * an overnight window running into the next day's hours).
+     */
+    private static OpeningSchedule validatedSchedule(CreateShopRequest request) {
+        Map<String, List<OpeningSchedule.TimeWindow>> requested = request.getOpeningSchedule();
+        if (requested == null) {
+            return null;
+        }
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (Map.Entry<String, List<OpeningSchedule.TimeWindow>> day : requested.entrySet()) {
+            String key = day.getKey();
+            if (!OpeningSchedule.DAY_KEYS.contains(key)) {
+                errors.put("openingSchedule." + key, key + " is not a day: use mon, tue, wed, thu, fri, sat or sun");
+            } else if (day.getValue() != null && day.getValue().stream().anyMatch(java.util.Objects::isNull)) {
+                errors.put("openingSchedule." + key, key + ": a window needs an open and a close time");
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new InvalidOpeningScheduleException(errors);
+        }
+        OpeningSchedule schedule = OpeningSchedule.fromJson(requested);
+        for (String error : schedule.validationErrors()) {
+            // validationErrors() starts every message with the day key it is about ("wed: ...").
+            String key = error.substring(0, error.indexOf(':'));
+            errors.merge("openingSchedule." + key, error, (first, next) -> first + "; " + next);
+        }
+        if (!errors.isEmpty()) {
+            throw new InvalidOpeningScheduleException(errors);
+        }
+        return schedule;
+    }
+
+    /** Writes a validated schedule as the vendor's own (STRUCTURED); {@code null} keeps what is stored. */
+    private static void applySchedule(Shop shop, OpeningSchedule schedule) {
+        if (schedule == null) {
+            return;
+        }
+        shop.setOpeningSchedule(schedule.toJson());
+        shop.setHoursSource(HoursSource.STRUCTURED);
+    }
+
+    /**
+     * Pause storefront orders (Phase 37-20, D-15): for 20 or 40 minutes from now, or until the vendor
+     * reopens. Gated on STAFF of the shop, because the kitchen is who knows it is overwhelmed (T-37-51: an
+     * ungranted user, or staff of another shop, is refused 403).
+     *
+     * <p>ABSOLUTE, never cumulative: the two pause columns are set outright, so a repeat leaves the same state
+     * (a repeated timed pause re-arms from the repeat) and a retry cannot stack pauses. Only the storefront
+     * checkout reads the pause; vendor, REST and MCP orders are not blocked (a phone order taken by staff is
+     * legitimate), and MCP gets no pause tool (operational kitchen control stays human-in-the-loop).
+     */
+    public ShopDto pauseOrders(UUID shopId, PauseOrdersRequest request) {
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        if (request == null || !request.isOneValidChoice()) {
+            // The controller's @Valid refuses this first; this keeps a non-HTTP caller to the same contract.
+            throw new IllegalArgumentException("send minutes 20 or 40, or untilReopened true, and not both");
+        }
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+        if (request.isIndefinite()) {
+            shop.setOrdersPausedIndefinitely(true);
+            shop.setOrdersPausedUntil(null);
+        } else {
+            shop.setOrdersPausedIndefinitely(false);
+            // Whole seconds: PostgreSQL keeps microseconds, so an untruncated value would make the response
+            // (nanoseconds, from memory) differ from every later read of the stored pause end.
+            shop.setOrdersPausedUntil(OffsetDateTime.now(clock).plusMinutes(request.getMinutes())
+                    .truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
+        }
+        shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
+        log.info("Paused storefront orders for shop {}: {}", shopId,
+                request.isIndefinite() ? "until reopened" : "until " + shop.getOrdersPausedUntil());
+        return shopMapper.toDto(shop);
+    }
+
+    /** End any pause on the shop (D-15 "Resume orders"). Absolute: resuming an unpaused shop is a no-op. */
+    public ShopDto resumeOrders(UUID shopId) {
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+        shop.setOrdersPausedIndefinitely(false);
+        shop.setOrdersPausedUntil(null);
+        shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
+        log.info("Resumed storefront orders for shop {}", shopId);
+        return shopMapper.toDto(shop);
     }
 
     public void deleteShop(UUID shopId) {
