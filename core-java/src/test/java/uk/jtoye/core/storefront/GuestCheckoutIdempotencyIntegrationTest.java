@@ -431,8 +431,16 @@ class GuestCheckoutIdempotencyIntegrationTest {
         assertThat(reservationRow(key).get("response_body")).isNull();
     }
 
+    /**
+     * 37-26 (D-20, UXT-042): this arm used to drive two 2^30-unit lines at the V66 unit_count overflow
+     * guard (400) and then ASSERT that a 2^31-1-unit order was accepted with unit_count = MAX_VALUE.
+     * Under D-20 no such order can exist: OrderLimits refuses the first line above 50 before any sum
+     * can overflow, so the overflow guard sits behind the limit and the typed 422 is the contract.
+     * The idempotency half is unchanged: the refusal is inside the reserved work, the reservation
+     * rolls back, and a within-limit basket is accepted with its units counted.
+     */
     @Test
-    void guestQuantityOverflowIs400AndRollsBackReservation() throws Exception {
+    void guestQuantityOverflowIsRefusedByTheOrderLimit_andRollsBackReservation() throws Exception {
         UUID firstProduct = seedProduct("SKU-OVERFLOW-GUEST-A");
         UUID secondProduct = seedProduct("SKU-OVERFLOW-GUEST-B");
         jdbcTemplate.update("UPDATE products SET quantity_in_stock = ? WHERE id IN (?, ?)",
@@ -443,22 +451,28 @@ class GuestCheckoutIdempotencyIntegrationTest {
                 guestRequest(secondProduct, 1073741824, null).getItems().getFirst()));
         GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
 
-        mockMvc.perform(post("/api/v1/public/shops/" + SHOP_SLUG + "/orders")
+        String refused = mockMvc.perform(post("/api/v1/public/shops/" + SHOP_SLUG + "/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity())
+                .andReturn().getResponse().getContentAsString();
+        tools.jackson.databind.JsonNode problem = objectMapper.readTree(refused);
+        assertThat(problem.path("type").asString()).isEqualTo("https://jtoye.uk/errors/order-limit-exceeded");
+        assertThat(problem.path("field").asString()).isEqualTo("quantity");
         assertThat(countOrdersByKey(key)).isZero();
         assertThat(countReservationsForKey(key)).isZero();
 
-        request.getItems().getLast().setQuantity(1073741823);
+        request.getItems().getFirst().setQuantity(50);
+        request.getItems().getLast().setQuantity(50);
         GuestOrderConfirmation accepted = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
-        assertThat(accepted.getUnitCount()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(accepted.getUnitCount()).isEqualTo(100);
         assertThat(jdbcTemplate.queryForObject("SELECT unit_count FROM orders WHERE order_number = ?",
-                Integer.class, accepted.getOrderNumber())).isEqualTo(Integer.MAX_VALUE);
+                Integer.class, accepted.getOrderNumber())).isEqualTo(100);
     }
 
+    /** 37-26 (D-20): the vendor twin of the arm above — the same typed 422 before any persistence. */
     @Test
-    void vendorQuantityOverflowIs400BeforePersistence() throws Exception {
+    void vendorQuantityOverflowIsRefusedByTheOrderLimitBeforePersistence() throws Exception {
         UUID firstProduct = seedProduct("SKU-OVERFLOW-VENDOR-A");
         UUID secondProduct = seedProduct("SKU-OVERFLOW-VENDOR-B");
         jdbcTemplate.update("UPDATE products SET quantity_in_stock = ? WHERE id IN (?, ?)",
@@ -468,14 +482,17 @@ class GuestCheckoutIdempotencyIntegrationTest {
         Map<String, Object> request = Map.of("shopId", shopId, "customerEmail", email,
                 "items", List.of(Map.of("productId", firstProduct, "quantity", 1073741824),
                         Map.of("productId", secondProduct, "quantity", 1073741824)));
-        mockMvc.perform(post("/api/v1/orders").with(jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+        String refused = mockMvc.perform(post("/api/v1/orders").with(jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
                                 .claim("tenant_id", TENANT_ID.toString()))
                         .authorities(new SimpleGrantedAuthority("ROLE_admin"),
                                 new SimpleGrantedAuthority("SCOPE_orders:write")))
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnprocessableEntity())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(objectMapper.readTree(refused).path("type").asString())
+                .isEqualTo("https://jtoye.uk/errors/order-limit-exceeded");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM orders WHERE customer_email = ?",
                 Integer.class, email)).isZero();
         assertThat(countReservationsForKey(key)).isZero();
