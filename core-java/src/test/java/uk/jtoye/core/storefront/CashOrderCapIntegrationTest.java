@@ -107,9 +107,20 @@ class CashOrderCapIntegrationTest {
 
     private UUID shopId;
 
+    /**
+     * 37-28 (D-27): the socket peer every storefront request in an arm is sent from. MockMvc's default is
+     * 127.0.0.1 for every request, so across a class run that one "client" held more than per-ip (5)
+     * open cash orders and the IP axis refused the email and phone arms here (measured: 7 of 12 red
+     * the moment the axis existed). Each arm draws its own documentation-range address (RFC 5737), so
+     * only the axis an arm is about can be its refusal — Pitfall 9 for the third axis.
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger ARM_PEER = new java.util.concurrent.atomic.AtomicInteger();
+    private String armPeer;
+
     @BeforeEach
     void setUp() {
         TenantContext.clear();
+        armPeer = "203.0.113." + (1 + ARM_PEER.getAndIncrement() % 250);
         jdbcTemplate.update(
                 "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) ON CONFLICT (id) DO NOTHING",
                 TENANT_ID, "37-27 Cash Caps Tenant");
@@ -480,6 +491,7 @@ class CashOrderCapIntegrationTest {
 
     private MvcResult perform(MockHttpServletRequestBuilder request, Object body) throws Exception {
         return mockMvc.perform(request.contentType(MediaType.APPLICATION_JSON)
+                        .with(r -> { r.setRemoteAddr(armPeer); return r; })
                         .content(jsonMapper.writeValueAsString(body)))
                 .andReturn();
     }
