@@ -233,6 +233,18 @@ jtoye:
     # guessable — a plain or weakly-keyed hash of the IPv4 space is reversible by enumeration. Never
     # commit a value here. Rotating it only changes which open orders a client is counted against.
     client-ip-hmac-key: ${CLIENT_IP_HMAC_KEY:}
+    # Phase 37-28 (D-27): the DECLARED lifetime of that digest. OrderService nulls it the moment an
+    # order reaches COMPLETED, CANCELLED or REFUNDED (the cap counts open orders only), but an order is
+    # not guaranteed to reach one, so ClientIpDigestRetentionSweep also nulls, once a day, every digest
+    # older than retention-hours in every tenant (one pinned at a time: a bare UPDATE under FORCE RLS
+    # matches zero rows and reports success). 72 hours: longer than any open order should sit on a
+    # kitchen board, shorter than any retention a network address could justify. Published as the
+    # retention period for this data (the customer-facing register row lands with 37-30's copy).
+    # A value below 1 refuses to start, naming the key. The cron is the hour the sweep runs at, a
+    # config key rather than a tunable; the @Scheduled annotation carries the same inline default.
+    client-ip-digest:
+      retention-hours: ${CLIENT_IP_DIGEST_RETENTION_HOURS:72}
+      sweep-cron: "0 20 3 * * *"
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:

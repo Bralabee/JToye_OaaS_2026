@@ -599,6 +599,15 @@ public class OrderService {
         // stock failure rolls back the status change (CQ-01 — RESEARCH §11 Q7).
         order.setStatus(newStatus);
         order.setUpdatedAt(OffsetDateTime.now());
+        // Phase 37-28 (D-27): the keyed client-address digest exists only while the order is OPEN — it is
+        // what the per-IP cash-order cap counts. A terminal state ends that need, so the digest goes with
+        // it, in the same save; nothing else about the order changes. Written here, on the ONE transition
+        // path every KDS button and the API use, so no writer is the one that forgot (theme 6). The
+        // retention sweep (ClientIpDigestRetentionSweep) and Article 17 erasure are the other two ends.
+        if (newStatus == OrderStatus.COMPLETED || newStatus == OrderStatus.CANCELLED
+                || newStatus == OrderStatus.REFUNDED) {
+            order.setClientIpDigest(null);
+        }
 
         // Stock decrement (CQ-01): optimistic-lock gated, re-reads inside retry.
         // Throws InsufficientStockException on exhaustion — surrounding
