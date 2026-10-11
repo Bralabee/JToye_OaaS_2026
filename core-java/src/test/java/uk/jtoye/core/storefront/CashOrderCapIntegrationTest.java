@@ -74,11 +74,13 @@ class CashOrderCapIntegrationTest {
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000003727");
     private static final String SHOP_SLUG = "shop-37-27-cash-caps";
+    private static final String OTHER_SHOP_SLUG = "shop-37-27-other";
     private static final String STOREFRONT_ENDPOINT = "storefront.orders.create";
     private static final String PROBLEM_TYPE = "https://jtoye.uk/errors/order-cap-exceeded";
     private static final String PROBLEM_CODE = "ORDER_CAP_EXCEEDED";
     private static final String RATE_LIMITED_TYPE = "https://jtoye.uk/errors/rate-limited";
     private static final int PER_EMAIL_CAP = 3;
+    private static final int PER_PHONE_CAP = 3;
 
     private UUID shopId;
 
@@ -144,6 +146,157 @@ class CashOrderCapIntegrationTest {
         assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
         assertThat(countOrdersByFoldedEmail(foldedEmail)).isEqualTo(PER_EMAIL_CAP + 1);
         assertThat(countOpenOrdersByFoldedEmail(foldedEmail)).isEqualTo(PER_EMAIL_CAP);
+    }
+
+    // ------------------------------------------------------------------
+    // The per-phone cap, with the number normalised: "07700 900123" and "+44 7700 900123" are one phone.
+    // The email is fresh on every order, so only the phone axis can refuse the fourth.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("UXT-041: a fourth open cash order for the same phone spelled +44 instead of 0 at a shop is refused 429 order-cap-exceeded axis PHONE; the third (at the cap) is 201")
+    void fourthOpenCashOrderForTheSamePhone_normalised_isRefusedOnPhone() throws Exception {
+        UUID suya = seedProduct("SKU-3727-PHONE", "Suya", 900L);
+        String digits = threeRandomDigits();
+        String localSpelling = "07700 900" + digits;          // as a UK customer types it
+        String internationalSpelling = "+44 7700 900" + digits; // the same number, as a phone shows it
+        String tag = UUID.randomUUID().toString();
+
+        for (int i = 1; i <= PER_PHONE_CAP; i++) {
+            MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "phone-open-" + i + "-" + tag),
+                    storefrontBody("phone-" + i + "-" + tag + "@example.com", localSpelling, List.of(line(suya, 1))));
+            assertThat(created.getResponse().getStatus()).as("order " + i + " of " + PER_PHONE_CAP + " (the cap itself is allowed): "
+                    + responseText(created)).isEqualTo(201);
+        }
+
+        String fourthEmail = "phone-4-" + tag + "@example.com";
+        MvcResult refused = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "phone-fourth-" + tag),
+                storefrontBody(fourthEmail, internationalSpelling, List.of(line(suya, 1))));
+        JsonNode problem = assertProblem(refused, 429, PROBLEM_TYPE, PROBLEM_CODE);
+        assertThat(problem.path("axis").asString()).as(responseText(refused)).isEqualTo("PHONE");
+        assertThat(countOrdersByFoldedEmail(fourthEmail)).as("the refused order was not written").isZero();
+    }
+
+    // ------------------------------------------------------------------
+    // Normalisation is exact, not a prefix: a different number that shares eleven of twelve digits is a
+    // different customer. The false-positive side of the phone axis.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-18: a different phone number sharing a prefix with three open cash orders is not counted (201)")
+    void aDifferentPhoneSharingAPrefix_isNotCounted() throws Exception {
+        UUID suya = seedProduct("SKU-3727-PREFIX", "Suya", 900L);
+        String tag = UUID.randomUUID().toString();
+        int base = java.util.concurrent.ThreadLocalRandom.current().nextInt(100, 998);
+        String held = "07700 900" + base;
+        String neighbour = "07700 900" + (base + 1);
+
+        for (int i = 1; i <= PER_PHONE_CAP; i++) {
+            MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "prefix-" + i + "-" + tag),
+                    storefrontBody("prefix-" + i + "-" + tag + "@example.com", held, List.of(line(suya, 1))));
+            assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+        }
+        MvcResult accepted = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "prefix-4-" + tag),
+                storefrontBody("prefix-4-" + tag + "@example.com", neighbour, List.of(line(suya, 1))));
+        assertThat(accepted.getResponse().getStatus()).as("a neighbouring number is not this customer: " + responseText(accepted))
+                .isEqualTo(201);
+    }
+
+    // ------------------------------------------------------------------
+    // The cap is per SHOP: the same identity at another shop of the tenant is a different queue.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-18: an identity holding the cap at one shop can still place a cash order at another shop (201)")
+    void sameIdentityAtAnotherShop_isNotCapped() throws Exception {
+        UUID otherShopId = seedShopIdempotent(OTHER_SHOP_SLUG, "37-27 Other Shop");
+        UUID jollof = seedProduct("SKU-3727-SHOPA", "Jollof Rice", 1000L);
+        UUID moinMoin = seedProductAt(otherShopId, "SKU-3727-SHOPB", "Moin Moin", 700L);
+        String tag = UUID.randomUUID().toString();
+        String email = "shops-" + tag + "@example.com";
+        String phone = "07700 900" + threeRandomDigits();
+
+        for (int i = 1; i <= PER_EMAIL_CAP; i++) {
+            MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "shopa-" + i + "-" + tag),
+                    storefrontBody(email, phone, List.of(line(jollof, 1))));
+            assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+        }
+        MvcResult refusedHere = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "shopa-4-" + tag),
+                storefrontBody(email, phone, List.of(line(jollof, 1))));
+        assertProblem(refusedHere, 429, PROBLEM_TYPE, PROBLEM_CODE);
+
+        MvcResult acceptedThere = perform(post(ordersUrl(OTHER_SHOP_SLUG)).header("Idempotency-Key", "shopb-1-" + tag),
+                storefrontBody(email, phone, List.of(line(moinMoin, 1))));
+        assertThat(acceptedThere.getResponse().getStatus()).as("another shop, its own cap: " + responseText(acceptedThere)).isEqualTo(201);
+        assertThat(countOrdersByFoldedEmail(email)).isEqualTo(PER_EMAIL_CAP + 1);
+    }
+
+    // ------------------------------------------------------------------
+    // Card orders are outside the cap. The test profile has no Stripe key, so a card order cannot be
+    // PLACED here (the unit test covers that branch: PublicStorefrontServiceTest); what the IT can prove
+    // is the other half of the exemption — open CARD orders held by the identity do not COUNT, because
+    // the cash predicate (payment_status = 'NONE') excludes them, so a cash order beside three open card
+    // orders is 201 while a cash order beside three open cash orders is 429.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-18: three open CARD orders for an identity do not count towards its cash cap (a cash order is still 201); three open cash orders do (429)")
+    void openCardOrders_doNotCountTowardsTheCashCap() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CARD", "Jollof Rice", 1000L);
+        String tag = UUID.randomUUID().toString();
+        String email = "card-" + tag + "@example.com";
+        String phone = "07700 900" + threeRandomDigits();
+
+        for (int i = 1; i <= PER_EMAIL_CAP; i++) {
+            seedOpenCardOrder(email, phone);
+        }
+        assertThat(countOpenOrdersByFoldedEmail(email)).as("three open CARD orders are held").isEqualTo(PER_EMAIL_CAP);
+
+        MvcResult accepted = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "card-cash-1-" + tag),
+                storefrontBody(email, phone, List.of(line(jollof, 1))));
+        assertThat(accepted.getResponse().getStatus()).as("card orders are outside the cap: " + responseText(accepted)).isEqualTo(201);
+
+        // Control arm, same identity shape: three open CASH orders DO count.
+        String cashEmail = "cash-" + tag + "@example.com";
+        String cashPhone = "07700 900" + threeRandomDigits();
+        for (int i = 1; i <= PER_EMAIL_CAP; i++) {
+            MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "cash-" + i + "-" + tag),
+                    storefrontBody(cashEmail, cashPhone, List.of(line(jollof, 1))));
+            assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+        }
+        MvcResult refused = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "cash-4-" + tag),
+                storefrontBody(cashEmail, cashPhone, List.of(line(jollof, 1))));
+        assertProblem(refused, 429, PROBLEM_TYPE, PROBLEM_CODE);
+    }
+
+    // ------------------------------------------------------------------
+    // Completed, cancelled and voided orders are not open: an identity with three of each and no open
+    // order places a cash order (201). The boundary from the other side.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-18: COMPLETED, CANCELLED and VOIDED cash orders hold no slot (a cash order beside nine of them is 201)")
+    void closedOrders_holdNoSlot() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CLOSED", "Jollof Rice", 1000L);
+        String tag = UUID.randomUUID().toString();
+        String email = "closed-" + tag + "@example.com";
+        String phone = "07700 900" + threeRandomDigits();
+
+        for (int i = 1; i <= PER_EMAIL_CAP; i++) {
+            MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "closed-" + i + "-" + tag),
+                    storefrontBody(email, phone, List.of(line(jollof, 1))));
+            assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+        }
+        inTenant(() -> {
+            List<UUID> ids = jdbcTemplate.queryForList("SELECT id FROM orders WHERE tenant_id = ? AND customer_email = ? ORDER BY created_at",
+                    UUID.class, TENANT_ID, email);
+            assertThat(ids).hasSize(PER_EMAIL_CAP);
+            jdbcTemplate.update("UPDATE orders SET status = 'COMPLETED' WHERE tenant_id = ? AND id = ?", TENANT_ID, ids.get(0));
+            jdbcTemplate.update("UPDATE orders SET status = 'CANCELLED' WHERE tenant_id = ? AND id = ?", TENANT_ID, ids.get(1));
+            // A void keeps the status (D-10): CONFIRMED but voided must not hold a slot.
+            jdbcTemplate.update("UPDATE orders SET status = 'CONFIRMED', voided_at = now(), voided_by = 'test', void_reason = 'fake' "
+                    + "WHERE tenant_id = ? AND id = ?", TENANT_ID, ids.get(2));
+            return null;
+        });
+
+        MvcResult accepted = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "closed-4-" + tag),
+                storefrontBody(email, phone, List.of(line(jollof, 1))));
+        assertThat(accepted.getResponse().getStatus()).as("no open order, no slot held: " + responseText(accepted)).isEqualTo(201);
     }
 
     // ------------------------------------------------------------------
@@ -265,6 +418,26 @@ class CashOrderCapIntegrationTest {
                     UUID.class, TENANT_ID, foldedEmail);
             int updated = jdbcTemplate.update("UPDATE orders SET status = 'COMPLETED' WHERE tenant_id = ? AND id = ?", TENANT_ID, id);
             assertThat(updated).as("exactly one order completed").isEqualTo(1);
+            return null;
+        });
+    }
+
+    /**
+     * An open CARD order as the card branch leaves it before the webhook: DRAFT is not open, so the
+     * fixture is a CONFIRMED order with payment_status CAPTURED — the state a paid card order sits in
+     * on the kitchen board. Written by SQL because the test profile has no Stripe key.
+     */
+    private void seedOpenCardOrder(String email, String phone) {
+        inTenant(() -> {
+            jdbcTemplate.update(
+                    "INSERT INTO orders (id, tenant_id, shop_id, order_number, status, customer_name, customer_email, "
+                            + "customer_phone, subtotal_pennies, vat_rate, vat_amount_pennies, delivery_fee_pennies, "
+                            + "fulfilment_type, total_amount_pennies, item_count, payment_status, payment_method, "
+                            + "created_at, updated_at, version) "
+                            + "VALUES (?, ?, ?, ?, 'CONFIRMED', 'Card Buyer', ?, ?, 1000, 'STANDARD', 166, 0, "
+                            + "'COLLECTION', 1000, 1, 'CAPTURED', 'card', now(), now(), 0)",
+                    UUID.randomUUID(), TENANT_ID, shopId, "ORD-CARD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT),
+                    email, phone);
             return null;
         });
     }

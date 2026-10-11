@@ -28,11 +28,17 @@ public class CashOrderCaps {
 
     private final OrderRepository orderRepository;
     private final int perEmail;
+    private final int perPhone;
+    private final int perIp;
 
     public CashOrderCaps(OrderRepository orderRepository,
-                         @Value("${jtoye.storefront.cash-caps.per-email}") int perEmail) {
+                         @Value("${jtoye.storefront.cash-caps.per-email}") int perEmail,
+                         @Value("${jtoye.storefront.cash-caps.per-phone}") int perPhone,
+                         @Value("${jtoye.storefront.cash-caps.per-ip}") int perIp) {
         this.orderRepository = orderRepository;
         this.perEmail = requireAtLeastOne(perEmail, "jtoye.storefront.cash-caps.per-email");
+        this.perPhone = requireAtLeastOne(perPhone, "jtoye.storefront.cash-caps.per-phone");
+        this.perIp = requireAtLeastOne(perIp, "jtoye.storefront.cash-caps.per-ip");
     }
 
     /**
@@ -55,6 +61,21 @@ public class CashOrderCaps {
     /** The configured per-email cap (for tests and the public shop payload, should one ever carry it). */
     public int perEmail() {
         return perEmail;
+    }
+
+    /** The configured per-phone cap. */
+    public int perPhone() {
+        return perPhone;
+    }
+
+    /** The configured per-IP cap: read here so the key is bound and refused below 1 from day one; 37-28 counts on it. */
+    public int perIp() {
+        return perIp;
+    }
+
+    /** Phone normalisation — Task 2 implements it; this scaffold has no behaviour. */
+    static String normalisePhone(String phone) {
+        return phone;
     }
 
     /** Trimmed and lower-cased; {@code null} for a blank address. */

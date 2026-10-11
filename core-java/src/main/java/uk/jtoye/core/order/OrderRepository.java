@@ -157,6 +157,22 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                                     @Param("email") String email);
 
     /**
+     * The customer phones of every OPEN cash order at a shop (Phase 37-27, D-18), one entry per order,
+     * as stored. Phone normalisation (digits only, UK 0 -> 44) lives in {@code CashOrderCaps}, which
+     * folds these and counts the matches: the stored spellings differ, so no SQL equality can count
+     * them, and an expression index would be a second normaliser to hold equal to the Java one.
+     *
+     * <p>Same predicates as V81's {@code idx_orders_open_cash_phone}, so this is an index-only scan
+     * over what is ON the kitchen board for one shop — bounded by the board, not by the shop's history.
+     */
+    @Query(value = "SELECT customer_phone FROM orders WHERE tenant_id = :tenantId AND shop_id = :shopId "
+            + "AND customer_phone IS NOT NULL "
+            + "AND status IN ('PENDING', 'CONFIRMED', 'PREPARING', 'READY') "
+            + "AND payment_status = 'NONE' AND voided_at IS NULL",
+            nativeQuery = true)
+    List<String> findOpenCashOrderPhones(@Param("tenantId") UUID tenantId, @Param("shopId") UUID shopId);
+
+    /**
      * GDPR Article-17 scrub of pre-erasure PII from the append-only {@code orders_aud}
      * Envers history (Issue #84 [P1-2]). Redacts the subject's rows across BOTH the
      * customer-linked path (customer_id) AND the guest-order path (customer_email),

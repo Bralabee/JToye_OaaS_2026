@@ -218,6 +218,12 @@ jtoye:
     cash-caps:
       # Per normalised (trimmed, lower-cased) email address.
       per-email: 3
+      # Per normalised phone number (digits only; a UK leading 0 is read as +44, so "07700 900123" and
+      # "+44 7700 900123" are one number).
+      per-phone: 3
+      # Per client address, counted on the keyed digest orders.client_ip_digest (D-27) — the axis
+      # 37-28 enforces. Higher than the identity caps: one household or office shares one address.
+      per-ip: 5
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:
