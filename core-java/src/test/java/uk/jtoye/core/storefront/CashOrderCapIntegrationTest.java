@@ -22,6 +22,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.web.server.ResponseStatusException;
+import uk.jtoye.core.security.CustomerJwtVerifier;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
@@ -33,6 +38,11 @@ import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
@@ -71,6 +81,19 @@ class CashOrderCapIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
 
+    /**
+     * The customer-realm token verifier, stubbed: the IT has no Keycloak. The real bean verifies the
+     * signature, issuer, expiry and email_verified (CustomerJwtVerifierTest covers that); what is under
+     * test here is what the storefront RECORDS from its answer. {@code VERIFIED_TOKEN} proves
+     * {@code VERIFIED_EMAIL}; {@code OTHER_TOKEN} proves another address; any other token is refused
+     * with the verifier's uniform 401, exactly as the real bean refuses.
+     */
+    @MockitoBean CustomerJwtVerifier customerJwtVerifier;
+
+    private static final String VERIFIED_TOKEN = "verified-customer-token";
+    private static final String OTHER_TOKEN = "another-customers-token";
+    private static final String VERIFIED_EMAIL = "Verified.Buyer@Example.com";
+
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000003727");
     private static final String SHOP_SLUG = "shop-37-27-cash-caps";
@@ -91,6 +114,12 @@ class CashOrderCapIntegrationTest {
                 "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) ON CONFLICT (id) DO NOTHING",
                 TENANT_ID, "37-27 Cash Caps Tenant");
         shopId = seedShopIdempotent(SHOP_SLUG, "37-27 Cash Caps Shop");
+        // doThrow/doReturn, not when(): a when() on a specific token would INVOKE the mock while the
+        // anyString() throw-stub is live and throw during the stubbing itself (measured: 12 / 12 VOID).
+        doThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Customer authentication required"))
+                .when(customerJwtVerifier).verifiedEmail(anyString());
+        doReturn(VERIFIED_EMAIL).when(customerJwtVerifier).verifiedEmail(VERIFIED_TOKEN);
+        doReturn("someone.else@example.com").when(customerJwtVerifier).verifiedEmail(OTHER_TOKEN);
     }
 
     @AfterEach
@@ -300,6 +329,92 @@ class CashOrderCapIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // contact_verified (D-18, UI-SPEC D1 / F20): a STORED fact about who placed the order, written on
+    // every storefront order — true only when the request carried a verified customer token for the
+    // SAME email (case-insensitive), false otherwise — and left NULL ("not recorded") by the vendor
+    // writer. Read back by SQL and on both order DTOs, so the kitchen badge (37-30) derives nothing.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-18: a guest order with no X-Customer-Token records contact_verified = false, and both order DTOs carry contactVerified false")
+    void guestOrderWithoutToken_recordsContactVerifiedFalse() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CV-NONE", "Jollof Rice", 1000L);
+        String email = "cv-none-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult created = perform(post(ordersUrl(SHOP_SLUG)), storefrontBody(email, "07700 900111", List.of(line(jollof, 1))));
+        assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+
+        assertThat(contactVerifiedByEmail(email)).as("stored: a guest with no token is an unverified contact").isFalse();
+        UUID orderId = orderIdByEmail(email);
+        assertThat(readOrderDto(orderId).path("contactVerified").asBoolean(true)).as("OrderDto.contactVerified").isFalse();
+        assertThat(readOrderDetailDto(orderId).path("contactVerified").asBoolean(true)).as("OrderDetailDto.contactVerified").isFalse();
+    }
+
+    @Test
+    @DisplayName("D-18: a guest order with a verified customer token for the SAME email (case-insensitive) records contact_verified = true on both DTOs")
+    void guestOrderWithVerifiedTokenForTheSameEmail_recordsContactVerifiedTrue() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CV-TRUE", "Jollof Rice", 1000L);
+        // The token proves "Verified.Buyer@Example.com"; the customer typed it lower-case at checkout.
+        String email = VERIFIED_EMAIL.toLowerCase(java.util.Locale.ROOT);
+
+        MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("X-Customer-Token", VERIFIED_TOKEN),
+                storefrontBody(email, "07700 900222", List.of(line(jollof, 1))));
+        assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+
+        assertThat(contactVerifiedByEmail(email)).as("stored: the token proved this address").isTrue();
+        UUID orderId = orderIdByEmail(email);
+        assertThat(readOrderDto(orderId).path("contactVerified").asBoolean(false)).as("OrderDto.contactVerified").isTrue();
+        assertThat(readOrderDetailDto(orderId).path("contactVerified").asBoolean(false)).as("OrderDetailDto.contactVerified").isTrue();
+    }
+
+    @Test
+    @DisplayName("T-37-69: a verified token for ANOTHER email does not verify this order's contact (false), and it is still placed (201)")
+    void guestOrderWithATokenForAnotherEmail_recordsContactVerifiedFalse() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CV-OTHER", "Jollof Rice", 1000L);
+        String email = "cv-other-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("X-Customer-Token", OTHER_TOKEN),
+                storefrontBody(email, "07700 900333", List.of(line(jollof, 1))));
+        assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+
+        assertThat(contactVerifiedByEmail(email)).as("a token for someone else proves nothing about this contact").isFalse();
+    }
+
+    @Test
+    @DisplayName("D-18: an INVALID X-Customer-Token is ignored — the order is still a guest order (201, never 401) with contact_verified = false")
+    void guestOrderWithAnInvalidToken_isStillPlacedAsAGuest_andRecordsFalse() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CV-BAD", "Jollof Rice", 1000L);
+        String email = "cv-bad-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("X-Customer-Token", "expired-or-forged"),
+                storefrontBody(email, "07700 900444", List.of(line(jollof, 1))));
+        assertThat(created.getResponse().getStatus()).as("a bad token must not turn checkout into a 401: " + responseText(created))
+                .isEqualTo(201);
+
+        assertThat(contactVerifiedByEmail(email)).isFalse();
+    }
+
+    @Test
+    @DisplayName("D-18: a vendor order (POST /api/v1/orders) leaves contact_verified NULL — not recorded — and the DTOs omit contactVerified")
+    void vendorOrder_leavesContactVerifiedNull() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CV-VENDOR", "Jollof Rice", 1000L);
+        String email = "cv-vendor-" + UUID.randomUUID() + "@example.com";
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("shopId", shopId);
+        body.put("customerName", "Phone Order Customer");
+        body.put("customerEmail", email);
+        body.put("customerPhone", "07700 900555");
+        body.put("items", List.of(line(jollof, 1)));
+        MvcResult created = perform(post("/api/v1/orders").with(vendorJwt()).header("Idempotency-Key", "vendor-" + UUID.randomUUID()), body);
+        assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+
+        assertThat(contactVerifiedByEmail(email)).as("the vendor is the writer: nothing to verify, NULL not false").isNull();
+        UUID orderId = orderIdByEmail(email);
+        assertThat(readOrderDto(orderId).has("contactVerified")).as("absent (NON_NULL) when not recorded, so the badge renders nothing").isFalse();
+        assertThat(readOrderDetailDto(orderId).has("contactVerified")).isFalse();
+    }
+
+    // ------------------------------------------------------------------
     // V81 shape: the three D-18 columns, their audit mirrors, the CHECK, and the partial cap indexes. The
     // pseudonymous IP digest has NO audit mirror (D-27, T-37-70): a keyed digest of the client address
     // must never enter append-only history that erasure then has to chase.
@@ -338,6 +453,26 @@ class CashOrderCapIntegrationTest {
     }
 
     // ---- HTTP helpers ----
+
+    /** A realm-admin token for this tenant (an implicit GROUP_ADMIN, D-03) with both order scopes. */
+    private org.springframework.test.web.servlet.request.RequestPostProcessor vendorJwt() {
+        return jwt().jwt(j -> j.subject(UUID.randomUUID().toString()).claim("tenant_id", TENANT_ID.toString()))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"),
+                        new SimpleGrantedAuthority("SCOPE_orders:write"),
+                        new SimpleGrantedAuthority("SCOPE_orders:read"));
+    }
+
+    private JsonNode readOrderDto(UUID orderId) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/orders/" + orderId).with(vendorJwt())).andReturn();
+        assertThat(result.getResponse().getStatus()).as(responseText(result)).isEqualTo(200);
+        return jsonMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private JsonNode readOrderDetailDto(UUID orderId) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/orders/" + orderId + "/detail").with(vendorJwt())).andReturn();
+        assertThat(result.getResponse().getStatus()).as(responseText(result)).isEqualTo(200);
+        return jsonMapper.readTree(result.getResponse().getContentAsString());
+    }
 
     private String ordersUrl(String slug) {
         return "/api/v1/public/shops/" + slug + "/orders";
@@ -440,6 +575,17 @@ class CashOrderCapIntegrationTest {
                     email, phone);
             return null;
         });
+    }
+
+    /** The stored fact itself, read as a nullable Boolean: NULL and false are different answers. */
+    private Boolean contactVerifiedByEmail(String email) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT contact_verified FROM orders WHERE tenant_id = ? AND customer_email = ?", Boolean.class, TENANT_ID, email));
+    }
+
+    private UUID orderIdByEmail(String email) {
+        return inTenant(() -> Objects.requireNonNull(jdbcTemplate.queryForObject(
+                "SELECT id FROM orders WHERE tenant_id = ? AND customer_email = ?", UUID.class, TENANT_ID, email)));
     }
 
     private long countReservationsForKey(String key) {
