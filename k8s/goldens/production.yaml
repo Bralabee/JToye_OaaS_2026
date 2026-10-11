@@ -78,6 +78,10 @@ data:
   media.outbox.resurrect.interval.ms: "300000"
   notification.email.tracking-base-url: https://app.olajay.co.uk
   notification.unsubscribe.base-url: https://app.olajay.co.uk
+  order-limits.max-basket-total-pennies: "100000"
+  order-limits.max-basket-units: "200"
+  order-limits.max-line-quantity: "50"
+  order-limits.max-lines: "50"
   payment.outbox.backoff.base.ms: "5000"
   payment.outbox.backoff.cap.ms: "300000"
   payment.outbox.flush.interval.ms: "5000"
@@ -628,6 +632,26 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: security.trusted-proxies
+              name: app-config
+        - name: ORDER_LIMIT_MAX_LINE_QUANTITY
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-line-quantity
+              name: app-config
+        - name: ORDER_LIMIT_MAX_BASKET_UNITS
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-basket-units
+              name: app-config
+        - name: ORDER_LIMIT_MAX_LINES
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-lines
+              name: app-config
+        - name: ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-basket-total-pennies
               name: app-config
         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
         imagePullPolicy: IfNotPresent

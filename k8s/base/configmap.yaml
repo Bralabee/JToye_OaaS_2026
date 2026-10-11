@@ -415,6 +415,23 @@ data:
   # core refuses to start on 0.0.0.0/0 or ::/0.
   security.trusted-proxies: ""
 
+  # --- Order size limits (37-26, D-20 / RWO-042, UXT-042) ----------------------
+  # Consumed as core ORDER_LIMIT_MAX_LINE_QUANTITY, ORDER_LIMIT_MAX_BASKET_UNITS,
+  # ORDER_LIMIT_MAX_LINES and ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES ->
+  # application.yml jtoye.order-limits.*: how large ONE order may be, enforced
+  # by OrderLimits on every writer (storefront checkout, vendor dashboard, REST
+  # API, MCP create_order) as a typed 422 order-limit-exceeded. A 1,000,000-unit
+  # line was accepted as a GBP 19 billion order before it. The values are the
+  # application.yml defaults, declared here so every render states them (the
+  # DEF-6 shape: a default nobody declared is a default nobody reviewed); they
+  # clear a 20-line / 40-unit basket and a 35-item GBP 198.50 office lunch. A
+  # value below 1 refuses to start, naming the key. The storefront stepper reads
+  # the line limit from the public shop payload (maxLineQuantity).
+  order-limits.max-line-quantity: "50"
+  order-limits.max-basket-units: "200"
+  order-limits.max-lines: "50"
+  order-limits.max-basket-total-pennies: "100000"
+
   # --- Edge rate limits (37-25, D-19 / RWO-039) --------------------------------
   # Consumed by edge-go (k8s/base/edge-go-deployment.yaml) as RATE_LIMIT_RPS,
   # RATE_LIMIT_BURST, RATE_LIMIT_TENANT_RPS, RATE_LIMIT_TENANT_BURST and

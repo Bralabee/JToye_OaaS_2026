@@ -93,6 +93,13 @@ public class OrderService {
     private final ShopAccessService shopAccessService;
     private final OrderNumberGenerator orderNumberGenerator;
 
+    /**
+     * The one order-size rule (37-26, D-20): shared with {@code PublicStorefrontService}, so the
+     * vendor dashboard, the REST API and the MCP {@code create_order} tool refuse exactly the
+     * oversized orders the storefront refuses (theme 6).
+     */
+    private final OrderLimits orderLimits;
+
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
                        ShopRepository shopRepository,
@@ -104,7 +111,8 @@ public class OrderService {
                        StockService stockService,
                        RefundService refundService,
                        ShopAccessService shopAccessService,
-                       OrderNumberGenerator orderNumberGenerator) {
+                       OrderNumberGenerator orderNumberGenerator,
+                       OrderLimits orderLimits) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -117,6 +125,7 @@ public class OrderService {
         this.refundService = refundService;
         this.shopAccessService = shopAccessService;
         this.orderNumberGenerator = orderNumberGenerator;
+        this.orderLimits = orderLimits;
     }
 
     /**
@@ -267,6 +276,20 @@ public class OrderService {
             lineRates.add(new VatCalculator.LineRate(
                     item.getTotalPricePennies(), product.getVatRate()));
         }
+
+        // 37-26 (D-20, UXT-042): the order's SIZE is bounded here, on the lines as they will be
+        // persisted (server-side quantities and prices), before any save. Until this call existed
+        // only the storefront DTO's @Min(1) stood between this route and a 1,000,000-unit line:
+        // the persona placed one through the dashboard and was given a GBP 19 billion order. The
+        // same OrderLimits bean guards PublicStorefrontService.placeGuestOrder, so the dashboard,
+        // the REST API and the MCP create_order tool (all this method) refuse exactly what the
+        // storefront refuses (theme 6). updateOrder takes no items, so it cannot change an order's
+        // size and has nothing to check.
+        orderLimits.check(
+                order.getItems().stream()
+                        .map(item -> new OrderLimits.LineCheck(item.getProductName(), item.getQuantity()))
+                        .toList(),
+                order.getItems().stream().mapToLong(OrderItem::getTotalPricePennies).sum());
 
         // Resolve the order's single predominant VAT rate before totalling.
         order.setVatRate(VatCalculator.predominantRate(lineRates));

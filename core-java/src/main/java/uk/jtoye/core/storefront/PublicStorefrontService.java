@@ -1372,6 +1372,9 @@ public class PublicStorefrontService {
         dto.setOpeningSchedule(shop.getOpeningSchedule());
         dto.setLegacyAlwaysOpen(shop.getHoursSource() == uk.jtoye.core.shop.HoursSource.LEGACY_ALWAYS_OPEN);
         dto.setHoursSource(shop.getHoursSource());
+        // 37-26 (D-20, theme 6): the SAME configured ceiling placeGuestOrder refuses on, so the basket
+        // stepper stops exactly where checkout would say no, and never from a client-side constant.
+        dto.setMaxLineQuantity(orderLimits.maxLineQuantity());
         return dto;
     }
 

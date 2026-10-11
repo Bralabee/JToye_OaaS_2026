@@ -286,6 +286,15 @@ services:
       # which is why the public limit above is widened. Never set 0.0.0.0/0: core refuses to
       # start on it, and a wide range re-opens UXT-006 (a rotated header minting fresh buckets).
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      # 37-26 (D-20, RWO-042 / UXT-042): how large ONE order may be, enforced by OrderLimits on every
+      # writer (storefront checkout, vendor dashboard, REST API, MCP create_order) as a typed 422
+      # order-limit-exceeded. The values are the application.yml defaults, declared here so the
+      # posture is visible and tunable from .env; they clear a 20-line / 40-unit basket (P2-CHA-16)
+      # and the UXT-007 office lunch. Not secrets.
+      ORDER_LIMIT_MAX_LINE_QUANTITY: ${ORDER_LIMIT_MAX_LINE_QUANTITY:-50}
+      ORDER_LIMIT_MAX_BASKET_UNITS: ${ORDER_LIMIT_MAX_BASKET_UNITS:-200}
+      ORDER_LIMIT_MAX_LINES: ${ORDER_LIMIT_MAX_LINES:-50}
+      ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES: ${ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES:-100000}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}

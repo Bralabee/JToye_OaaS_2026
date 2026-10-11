@@ -3897,6 +3897,11 @@
             "format" : "double",
             "type" : "number"
           },
+          "maxLineQuantity" : {
+            "description" : "The most units of one product a single order line may carry (jtoye.order-limits.max-line-quantity). A line above it is refused 422 order-limit-exceeded on every order path; the storefront stepper stops here.",
+            "format" : "int32",
+            "type" : "integer"
+          },
           "minimumOrderPennies" : {
             "format" : "int64",
             "type" : "integer"
