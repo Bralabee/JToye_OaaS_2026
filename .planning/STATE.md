@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-26 complete (26/53); 37-A merged as PR 916 (14a2297b) and reconciled; sub-theme 37-D in progress. 37-26 closed 2026-10-11 (RWO-042 / UXT-042 and RWO-005 / UXT-005 P0, D-20, D-21): every order writer (storefront guest order, vendor/REST createOrder, MCP) refuses an oversized order with the same typed 422 from one injected OrderLimits (max line quantity, lines, total), configured in every runtime (ORDER_LIMIT_* x4 on core-java in compose, .env.example, k8s base + overlays, goldens +24 lines); the public shop payload carries maxLineQuantity so the client can say the limit before submit; a review is accepted only when its cited order was placed at the reviewed shop (cross-shop review was 201, now refused). RED: 51 units accepted 201; a 1,000,000-unit line persisted at 1,900,000,000p; cross-shop review 201. GREEN with break arms (8/4 and 7/2 red, md5 restores, clean 8/0 and 7/0). Full :core-java:test 1719/0 (1 skipped); ITs over order.*, storefront.*, review.*, OpenApiSnapshotTest 26 classes / 183 tests green after the two V66 overflow arms were re-pointed at the D-20 contract. Plan-wording record: OrderService.updateOrder takes no items (UpdateOrderRequest is customer fields + notes), so the plan's PUT-raising-a-line arm names a path that does not exist and no check was added there (Rule 4). Deferred: check-openapi-snapshot-fresh.sh measured FAIL on maxLineQuantity until the 37-D gate rebuilds the runtime (compose still 6a825865); the first Task 2 break arm was vacuous (grep -c rc 1 broke the chain before gradle) and only its redo is recorded. RWO-042 / RWO-005 NOT marked (37-30 / 37-31 declare them). Next: 37-27 (wave 21)."
-last_updated: "2026-10-11T22:11:10.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-27 complete (27/53); 37-A merged as PR 916 (14a2297b) and reconciled; sub-theme 37-D in progress. 37-27 closed 2026-10-11 (RWO-041 / UXT-041, D-18, D-27 reservation): V81 (orders.contact_verified; orders.cancel_reason_code + CHECK over the four CancelReason values, both mirrored on orders_aud; orders.client_ip_digest CHAR(64) @NotAudited with no audit mirror; three partial indexes over open cash non-voided orders per shop by email, phone and ip digest; no backfill, no tenant loop) reserved for all of 37-D so 37-28 and 37-29 add no migration. CashOrderCaps (per-email 3, per-phone 3, per-ip 5; refuses to start below 1) refuses the next cash order with a typed 429 order-cap-exceeded (axis + cap, no Retry-After, a type distinct from rate-limited) on the COD branch inside the reserved idempotency work, so a refusal leaves no order and no reservation; email trimmed and lower-cased, phone normalised in Java over the shop's open cash phones (one normaliser); card orders are never checked and never counted. Every storefront order records contact_verified (true only when an optional X-Customer-Token verifies to the same address; an invalid token is ignored, never 401; vendor/REST/MCP orders leave NULL), exposed NON_NULL as contactVerified on OrderDto and OrderDetailDto, snapshot +26. RED: a fourth cash order for the same email was 201; the +44 respelling was 201; contact_verified read NULL. Full :core-java:test 1741/0 (1 skipped); ITs over storefront.*, order.*, review.*, RlsContractTest, OpenApiSnapshotTest 28 classes / 202 tests green after five pre-existing ITs that reused one fixed identity (29 cap failures) were given unique identities (Pitfall 9, never a raised default). Plan-wording records: the leading-space email is refused 400 by @Email before any cap so the arm folds case; the card exemption is proven in two halves (IT: card orders do not count; unit: a card checkout is never checked); per-ip counts nothing until 37-28. Deferred: 37-28 must null client_ip_digest in GdprService and declare its retention in the same plan that writes it; the cash-caps keys live in application.yml only (37-28 wires the HMAC key and may carry the caps through compose/.env.example/k8s); check-openapi-snapshot-fresh.sh FAIL until the 37-D gate rebuilds (compose still 6a825865); docs-metrics drift owed to the PR docs step (schema_version 81 already moved). RWO-041 NOT marked (37-28..37-31 declare it). Next: 37-28 (wave 22)."
+last_updated: "2026-10-11T23:12:00.000Z"
 last_activity: 2026-10-11
-state_head: 8245d4c5
+state_head: 6fc3087c
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 211
+  completed_plans: 212
   percent: 65
 ---
 
@@ -927,6 +927,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P24 | 28 min | 3 tasks | 44 files |
 | Phase 37 P25 | 16 min | 3 tasks | 22 files |
 | Phase 37 P26 | 36 min | 3 tasks | 33 files |
+| Phase 37 P27 | 45 min | 3 tasks | 33 files |
 
 ## Accumulated Context
 
@@ -1253,6 +1254,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-26: one injected OrderLimits bean is the single source of the order-size bounds for every writer (storefront, vendor/REST, MCP), and the refusal is one typed 422; the public shop payload carries maxLineQuantity so a client can state the limit before submit
 - [Phase 37]: 37-26: OrderService.updateOrder edits customer fields and notes only, so the plan's "PUT raising a line to 51" arm has no path; no vacuous check was added and no item-editing capability invented (Rule 4)
 - [Phase 37]: 37-26: a review is accepted only when its cited order was placed at the reviewed shop (D-21); the two V66 unit_count overflow arms now assert the D-20 contract instead of accepting a 2^31-1-unit order
+- [Phase 37]: 37-27: an abuse bound is a COUNT of open cash work per identity, not a rate: the slot frees when the kitchen completes an order, so the 429 order-cap-exceeded carries no Retry-After and a type distinct from rate-limited; the refusal runs inside the reserved idempotency work so it leaves no order and no reservation
+- [Phase 37]: 37-27: V81 reserves every 37-D column at once (contact_verified, cancel_reason_code with its CHECK, client_ip_digest) so 37-28 and 37-29 add no migration; the IP digest is @NotAudited with no orders_aud column, because a pseudonymous identifier of a person's network address must never enter append-only history (T-37-70)
+- [Phase 37]: 37-27: one normaliser per identity axis lives in the bean that counts (phones folded in Java over the shop's open cash rows read through the partial index) rather than an expression index, so there are never two normalisers to hold equal; voided_at IS NULL joins the predicate so a voided order never holds a slot
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): option E floors on customers (D-06): reads keep the any-grant gate; create and update need SHOP_MANAGER on any shop or Group admin (ShopAccessService.requireAnyRole, before the Idempotency-Key branch); delete needs Group admin (requireGroupAdmin)
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-25 hours: an unreadable NEEDS_REVIEW day pre-fills as one all-day 00:00-00:00 window with 'We could not read "{text}", so this day is open all day. Set the real times, or tick Closed.'; the card reads '...for {days}, so customers can order on that day/those days at any time. Check and save your hours.' (WINDOWS #36 closed)
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-08 pause: a pause refused with shop-access-denied is answered by the K2 Access ended overlay only, no inline copy; KITCHEN_ROUTE_CALLS and its guard test keep every kitchen-route call at the STAFF floor (WINDOWS #37 restated)
@@ -1334,8 +1338,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-11T22:11:10.000Z
-Stopped at: Completed 37-26-PLAN.md (one OrderLimits for every order writer, typed 422, limits declared in every runtime, maxLineQuantity on the public shop payload, review must cite an order placed at the reviewed shop). Next: 37-27.
+Last session: 2026-10-11T23:12:00.000Z
+Stopped at: Completed 37-27-PLAN.md (V81 reserved for all of 37-D, CashOrderCaps by email and phone with a typed 429 inside the reserved idempotency work, contact_verified on every storefront order). Next: 37-28.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
