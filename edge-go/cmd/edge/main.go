@@ -154,6 +154,20 @@ var rateLimiterExemptPaths = map[string]bool{
 	"/ready":  true,
 }
 
+// Defaults of the pre-auth valve, config-declared through RATE_LIMIT_RPS and
+// RATE_LIMIT_BURST.
+const (
+	defaultRateLimitRPS   = 20
+	defaultRateLimitBurst = 40
+)
+
+// valveLimitsFromEnv reads the process-wide valve's rate and burst from the
+// environment, with the documented defaults (getEnvInt falls back on a
+// non-positive or non-numeric value).
+func valveLimitsFromEnv() (rps int, burst int) {
+	return getEnvInt("RATE_LIMIT_RPS", defaultRateLimitRPS), getEnvInt("RATE_LIMIT_BURST", defaultRateLimitBurst)
+}
+
 // rateLimiter is a single, process-wide token-bucket used purely as a coarse
 // DoS / overload guard for this edge replica — it is NOT a per-tenant quota.
 // The authoritative per-tenant rate limit (e.g. 100 req/min per tenant) lives
@@ -214,6 +228,12 @@ type routerDeps struct {
 	// valve is the process-wide pre-auth rateLimiter — the DoS guard that
 	// gates every non-exempt route before authentication.
 	valve gin.HandlerFunc
+	// tenantLimits is the per-tenant quota applied on the protected group,
+	// after validate has written tenant_id (ratelimit_tenant.go).
+	tenantLimits tenantRateLimitConfig
+	// clock is the per-tenant limiter's time source: realClock in
+	// production, a fake in tests.
+	clock clock
 	// managementPort, when non-empty, moves /metrics off the application
 	// router (issue #550); see registerAppMetricsRoute.
 	managementPort string
@@ -338,10 +358,12 @@ func main() {
 	// Process-wide DoS guard (configurable via env). This is a per-replica
 	// overload valve, not a per-tenant quota — see rateLimiter() and Core's
 	// Bucket4j for the authoritative per-tenant limit.
-	rps := getEnvInt("RATE_LIMIT_RPS", 20)
-	burst := getEnvInt("RATE_LIMIT_BURST", 40)
+	rps, burst := valveLimitsFromEnv()
 	logger.Info("Process-wide DoS-guard rate limiter configured (per-replica, not per-tenant)",
 		zap.Int("rps", rps), zap.Int("burst", burst))
+	tenantLimits := tenantLimitsFromEnv()
+	logger.Info("Per-tenant rate limiter configured (after JWT validation, keyed on tenant_id)",
+		zap.Int("rps", tenantLimits.RPS), zap.Int("burst", tenantLimits.Burst), zap.Int("max_tenants", tenantLimits.MaxTenants))
 
 	// Prometheus scrape endpoint topology (see newRouter for the route itself).
 	//
@@ -370,6 +392,8 @@ func main() {
 		handlers:       h,
 		validate:       jwtMiddleware.Validate(),
 		valve:          rateLimiter(ctx, rps, burst),
+		tenantLimits:   tenantLimits,
+		clock:          realClock{},
 		managementPort: managementPort,
 		accessLog:      true,
 	})
