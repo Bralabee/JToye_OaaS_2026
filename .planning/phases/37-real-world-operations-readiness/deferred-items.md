@@ -435,3 +435,27 @@ where it must be resolved.
   `java_test_methods` 2534 -> 2558 and `java_test_files` 371 -> 372 were already drifted before it
   (37-24). Regenerate `docs/metrics.json` with `--write` and re-point the prose counts in CLAUDE.md,
   AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **Docs metrics drift from 37-26 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-26 (`total_logical_invocations` 5526 at the
+  measurement): this plan adds 3 Java test files (`OrderLimitsTest` 13, `OrderLimitsIntegrationTest` 8,
+  `ReviewCrossShopIntegrationTest` 7) and 1 method to `ReviewServiceTest`, on top of the drift 37-24 and
+  37-25 recorded. Regenerate `docs/metrics.json` with `--write` and re-point the prose counts in CLAUDE.md,
+  AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-26 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 because the committed snapshot now
+  declares `PublicShopDto.maxLineQuantity` and the running core-java cannot emit it; the two typed
+  refusals (`order-limit-exceeded`, `review-order-shop-mismatch`) and the four `ORDER_LIMIT_*` env entries
+  likewise reach no running container until the rebuild. Live probes for the gate: a storefront line of 51
+  -> 422 `order-limit-exceeded` with `field`/`value`/`limit`; a dashboard order of 1,000,000 -> the same 422;
+  `GET /api/v1/public/shops/{slug}` -> `maxLineQuantity: 50`; a review of shop B citing a shop A order ->
+  400 `review-order-shop-mismatch`.
+- **The MCP `create_order` schema still says only `quantity >= 1` (37-26, recorded, out of scope).**
+  status: open
+  **What:** `mcp-server/src/tools/create-order.ts:86` validates `z.number().int().min(1)` with no maximum.
+  The tool calls `POST /api/v1/orders`, which now refuses an oversized order with the typed 422, so the
+  rule holds on the server (theme 6); the client schema could mirror the limit so an agent is told before
+  the round trip. A `.max()` there would be a second copy of a config value, which is why it is recorded
+  rather than added here.
