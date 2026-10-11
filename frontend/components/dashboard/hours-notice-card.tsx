@@ -10,6 +10,11 @@ import type { Shop } from "@/types/api"
  * 37-21 (UI-SPEC K4 "Vendor notices", D-25, RWO-022): the dashboard-home notice for shops whose hours
  * the vendor has not set or the platform could not read.
  *
+ * Three states, three truths (#916 round 1, finding 3 added the first): a shop with NO `hoursSource`
+ * was created after V80 and never given hours, so under D-15 the server answers NO_HOURS and refuses
+ * every storefront order — the vendor is told the shop is closed to orders; a LEGACY_ALWAYS_OPEN shop
+ * takes orders at any time; a NEEDS_REVIEW shop takes them at any time on its unreadable days.
+ *
  * It reads `hoursSource` from the shops list and NEVER re-parses the free text: after a vendor saves
  * structured hours the old text stays on the row and means nothing, and a legacy shop is legacy because
  * the server says so. (The days a NEEDS_REVIEW card names come from `unreadableDays`, the server's own
@@ -46,9 +51,10 @@ export function needsReviewSentence(shop: Shop): string {
 
 export function HoursNoticeCard({ shops }: { shops: Shop[] | null }) {
   if (!shops) return null
+  const unset = shops.filter((s) => !s.hoursSource)
   const legacy = shops.filter((s) => s.hoursSource === "LEGACY_ALWAYS_OPEN")
   const review = shops.filter((s) => s.hoursSource === "NEEDS_REVIEW")
-  if (legacy.length === 0 && review.length === 0) return null
+  if (unset.length === 0 && legacy.length === 0 && review.length === 0) return null
 
   return (
     <section
@@ -56,6 +62,37 @@ export function HoursNoticeCard({ shops }: { shops: Shop[] | null }) {
       aria-label="Opening hours to set"
       className="space-y-4 rounded-lg border border-amber-300 bg-white p-4"
     >
+      {unset.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-800" aria-hidden="true" />
+            <div className="min-w-0 [overflow-wrap:anywhere]">
+              <p className="text-base font-semibold text-slate-900">
+                {unset.length === 1
+                  ? "1 shop isn't taking orders: no opening hours set"
+                  : `${unset.length} shops aren't taking orders: no opening hours set`}
+              </p>
+              <p className="text-sm text-slate-700">
+                {unset.length === 1
+                  ? "Customers can't order from it until you set its hours."
+                  : "Customers can't order from them until you set their hours."}
+              </p>
+            </div>
+          </div>
+          <ul className="space-y-2">
+            {unset.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 pl-8">
+                <span className="min-w-0 text-sm font-medium text-slate-900 [overflow-wrap:anywhere]">{s.name}</span>
+                <Button asChild className="h-11">
+                  <Link href={shopHoursHref(s.id)} aria-label={`Set opening hours for ${s.name}`}>
+                    Set opening hours
+                  </Link>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {legacy.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-start gap-3">

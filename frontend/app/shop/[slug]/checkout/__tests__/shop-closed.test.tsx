@@ -241,6 +241,55 @@ describe("checkout when the server says the shop is not taking orders at page lo
   })
 })
 
+describe("the page re-reads the shop when the server's stated reopening time passes (#916 round 1, finding 1)", () => {
+  /**
+   * The snapshot fetched on mount is the only thing that disables Place order, so a customer who
+   * opened checkout during a 20-minute pause and waited it out must not be left with a dead button
+   * the server would now accept. The page asks the server again just after the stated end (the
+   * kitchen's PauseOrdersControl precedent) and renders THAT answer; no clock decides the state.
+   */
+  function serveSequence(first: unknown, second: unknown) {
+    let shopReads = 0
+    mockedGet.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.endsWith("/products")) return Promise.resolve({ data: CATALOGUE })
+      shopReads += 1
+      return Promise.resolve({ data: shopReads === 1 ? first : second })
+    })
+    return () => shopReads
+  }
+
+  it("paused until a moment from now: after that moment the shop is read again and an open answer enables Place order", async () => {
+    const soon = new Date(Date.now() + 1000).toISOString()
+    const reads = serveSequence({ ...PAUSED, nextOpenAt: soon, pausedUntil: soon }, OPEN)
+    renderCheckout()
+    await waitFor(() => expect(placeOrder()).toBeDisabled())
+    expect(reads()).toBe(1)
+    await waitFor(() => expect(reads()).toBe(2), { timeout: 4000 })
+    await waitFor(() => expect(placeOrder()).not.toBeDisabled())
+    expect(notice()).toBeNull()
+  })
+
+  it("closed with a next opening a moment from now: read again at that time; a still-closed answer keeps the button disabled", async () => {
+    const soon = new Date(Date.now() + 1000).toISOString()
+    const stillClosed = { ...CLOSED, nextOpenAt: "2026-10-14T08:00:00Z" }
+    const reads = serveSequence({ ...CLOSED, nextOpenAt: soon }, stillClosed)
+    renderCheckout()
+    await waitFor(() => expect(placeOrder()).toBeDisabled())
+    await waitFor(() => expect(reads()).toBe(2), { timeout: 4000 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(placeOrder()).toBeDisabled()
+    expect(notice()).toHaveTextContent(/Opens Wednesday at 09:00\./)
+  })
+
+  it("a reopening time already in the past (a stale snapshot) is re-read at once rather than trusted", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString()
+    const reads = serveSequence({ ...PAUSED, nextOpenAt: past, pausedUntil: past }, OPEN)
+    renderCheckout()
+    await waitFor(() => expect(reads()).toBe(2), { timeout: 4000 })
+    await waitFor(() => expect(placeOrder()).not.toBeDisabled())
+  })
+})
+
 describe("the checkout race: the shop stops while the customer is on the page (typed shop-closed)", () => {
   it("renders the race copy in the role=alert slot and keeps the stored basket, by content", async () => {
     freezeClockAt(TUESDAY_EVENING)

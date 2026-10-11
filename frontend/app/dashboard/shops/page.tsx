@@ -473,7 +473,13 @@ export default function ShopsPage() {
                           ) : (
                             <Badge variant="secondary" className="text-slate-600">Draft</Badge>
                           )}
-                          {/* 37-21 (UI-SPEC K4 notices): from hoursSource, never the text. */}
+                          {/* 37-21 (UI-SPEC K4 notices): from hoursSource, never the text. No source at all
+                              = created after V80 without hours = NO_HOURS, closed to orders (D-15; #916 r1 f3). */}
+                          {!shop.hoursSource && (
+                            <Badge variant="outline" className="border-amber-300 text-amber-800">
+                              <Clock className="mr-1 h-3 w-3" aria-hidden="true" />No hours: not taking orders
+                            </Badge>
+                          )}
                           {shop.hoursSource === "LEGACY_ALWAYS_OPEN" && (
                             <Badge variant="outline" className="border-amber-300 text-amber-800">
                               <Clock className="mr-1 h-3 w-3" aria-hidden="true" />Hours not set
