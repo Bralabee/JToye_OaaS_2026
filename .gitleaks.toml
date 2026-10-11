@@ -170,3 +170,13 @@ regexTarget = "secret"
 regexes = [
   '''^(cash|closed)-[0-9]-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
 ]
+
+[[allowlists]]
+description = "Phase 37-28 test fixtures: the four 64-hex HMAC keys ClientIpDigesterTest (KEY_A, KEY_B), PublicStorefrontServiceTest (TEST_HMAC_KEY) and ClientIpCapIntegrationTest (HMAC_KEY) construct ClientIpDigester with. Each is a recognisable pattern chosen so a leak is greppable (0123456789abcdef x4, its reverse, and a 3728-prefixed run), authenticates to nothing and is not the shape openssl rand -hex 32 produces. Exact values, matched on the secret (gitleaks 8.30.1 generic-api-key; 4 hits over the 37-28 range, 0 after; a value differing in one character still fires)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef$''',
+  '''^fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210$''',
+  '''^37280000111122223333444455556666777788889999aaaabbbbccccddddeeee$''',
+]
