@@ -118,9 +118,30 @@ describe("HoursNoticeCard on the dashboard home (UI-SPEC K4 vendor notices)", ()
     ).toBeInTheDocument()
   })
 
-  it("STRUCTURED, MIGRATED_FROM_TEXT and unclassified shops: no card at all", () => {
-    render(<HoursNoticeCard shops={[STRUCTURED, MIGRATED, UNCLASSIFIED]} />)
+  it("STRUCTURED and MIGRATED_FROM_TEXT shops: no card at all", () => {
+    render(<HoursNoticeCard shops={[STRUCTURED, MIGRATED]} />)
     expect(card()).not.toBeInTheDocument()
+  })
+
+  it("a shop with NO hoursSource (created after V80 without hours) is CLOSED to orders (D-15 NO_HOURS) and the card says so (#916 round 1, finding 3)", () => {
+    render(<HoursNoticeCard shops={[UNCLASSIFIED, STRUCTURED]} />)
+    expect(card()).toBeInTheDocument()
+    const c = card() as HTMLElement
+    expect(within(c).getByText("1 shop isn't taking orders: no opening hours set")).toBeInTheDocument()
+    expect(within(c).getByText("Customers can't order from it until you set its hours.")).toBeInTheDocument()
+    const link = within(c).getByRole("link", { name: "Set opening hours for Brand New" })
+    expect(link).toHaveAttribute("href", "/dashboard/shops?edit=s-new&focus=hours")
+    expect(link.className).toContain("h-11")
+  })
+
+  it("two shops with no hoursSource: plural, and one button per shop; a LEGACY shop beside them keeps its own block", () => {
+    const second = shop("s-new-2", "Also New")
+    render(<HoursNoticeCard shops={[UNCLASSIFIED, second, LEGACY]} />)
+    const c = card() as HTMLElement
+    expect(within(c).getByText("2 shops aren't taking orders: no opening hours set")).toBeInTheDocument()
+    expect(within(c).getByText("Customers can't order from them until you set their hours.")).toBeInTheDocument()
+    expect(within(c).getByRole("link", { name: "Set opening hours for Also New" })).toBeInTheDocument()
+    expect(within(c).getByText("1 shop has no opening hours")).toBeInTheDocument()
   })
 
   it("no list yet (pending) or a failed load (null): no card", () => {
