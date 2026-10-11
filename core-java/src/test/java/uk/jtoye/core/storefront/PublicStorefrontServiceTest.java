@@ -556,6 +556,59 @@ class PublicStorefrontServiceTest {
     }
 
     // ========================================================================
+    // Phase 37-27 (D-18, UXT-041) — the cash-order caps are judged on the CASH branch only. The IT
+    // (CashOrderCapIntegrationTest) proves the cap through the endpoint and that open CARD orders
+    // do not count; the test profile has no Stripe key, so the write-side half of the card exemption
+    // — a card checkout is never checked — can only be shown here, with the payment gate stubbed.
+    // ========================================================================
+
+    @Test
+    @DisplayName("createGuestOrder (card checkout) never consults the cash caps, even when the identity is at the cap")
+    void createGuestOrder_cardCheckout_isOutsideTheCashCap() throws Exception {
+        publishedShop.setDeliveryFeePennies(0L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(true);
+        stubCardCheckoutPersistThenPay();
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        // Were the card branch to consult the caps, this identity would be refused. lenient(): the
+        // assertion below is that this stub is never reached.
+        lenient().when(orderRepository.countOpenCashOrdersByEmail(any(), any(), any())).thenReturn(99L);
+        lenient().when(orderRepository.findOpenCashOrderPhones(any(), any()))
+                .thenReturn(List.of("07700900000", "07700900000", "07700900000"));
+
+        assertDoesNotThrow(() -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(product)),
+                "a card order is the customer's own commitment and is outside the cash cap");
+
+        verify(orderRepository, never()).countOpenCashOrdersByEmail(any(), any(), any());
+        verify(orderRepository, never()).findOpenCashOrderPhones(any(), any());
+    }
+
+    @Test
+    @DisplayName("createGuestOrder (cash checkout) is refused 429 order-cap-exceeded at the cap, before anything is saved")
+    void createGuestOrder_cashCheckout_isRefusedAtTheCapBeforeSave() {
+        publishedShop.setDeliveryFeePennies(0L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        // The repository answers "three open cash orders for ada@example.com" (the normalised spelling
+        // of the request's address) — the cap at the default of 3.
+        when(orderRepository.countOpenCashOrdersByEmail(any(), any(), eq("ada@example.com"))).thenReturn(3L);
+
+        var ex = assertThrows(uk.jtoye.core.exception.OrderCapExceededException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(product)));
+
+        assertEquals(uk.jtoye.core.exception.OrderCapExceededException.Axis.EMAIL, ex.getAxis());
+        assertEquals(3, ex.getCap());
+        verify(orderRepository, never()).save(any(Order.class));
+        verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+    }
+
+    // ========================================================================
     // Phase 19 UIX-03 / UIX-04 — guest order name snapshot + fulfilment/address
     // ========================================================================
 
