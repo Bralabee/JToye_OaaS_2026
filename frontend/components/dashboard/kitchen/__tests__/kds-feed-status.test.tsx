@@ -241,7 +241,17 @@ describe("KdsFeedPill: the ten-row precedence table (F3)", () => {
     }
   })
 
-  it.each(TABLE.filter((r) => r.n >= 2 && r.n <= 9))(
+  // Rows 2..9 written out by reference: an array LITERAL, so scripts/count-test-blocks.mjs can
+  // count this table statically (a computed `.filter(...)` table VOIDs docs-freshness). The test
+  // below pins it to the filter it replaces, so the two cannot drift apart.
+  const NOT_LIVE_ROWS = [TABLE[1], TABLE[2], TABLE[3], TABLE[4], TABLE[5], TABLE[6], TABLE[7], TABLE[8]]
+
+  it("the not-Live rows are exactly rows 2..9 of the table", () => {
+    expect(NOT_LIVE_ROWS).toEqual(TABLE.filter((r) => r.n >= 2 && r.n <= 9))
+    expect(NOT_LIVE_ROWS.map((r) => r.n)).toEqual([2, 3, 4, 5, 6, 7, 8, 9])
+  })
+
+  it.each(NOT_LIVE_ROWS)(
     "row $n ($name) never reads 'Live'",
     (row) => {
       render(<KdsFeedPill state={state(row.over)} lastSyncedAt={NOW} />)

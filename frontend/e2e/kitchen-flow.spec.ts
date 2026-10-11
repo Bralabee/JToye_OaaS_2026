@@ -471,6 +471,10 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     const lane = page.getByRole("region", { name: /New orders/ })
     const newCard = lane.getByTestId("kds-new-card").filter({ hasText: "ORD-TEST-0002" })
     await expect(newCard).toBeVisible()
+    // The card carries what the kitchen needs before accepting: the customer's note and the
+    // fulfilment type (37-16 / 37-17), read from the card itself, not from the order page.
+    await expect(newCard.getByTestId("kds-customer-note-text")).toHaveText(pendingOrder.notes)
+    await expect(newCard.getByTestId("kds-fulfilment-badge")).toHaveText(/DELIVERY/)
     // Nothing accepted it for the kitchen: it waits for a person.
     expect(confirmCalls).toHaveLength(0)
 
@@ -481,6 +485,64 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     const grid = page.getByTestId("kds-board-grid")
     await expect(grid.getByText("ORD-TEST-0002")).toBeVisible()
     await expect(lane.getByText("No new orders waiting")).toBeVisible()
+  })
+
+  // ---------------------------------------------------------------------------
+  // Plan 37-23, UI-SPEC F23 (WCAG 2.3.1): the New card's ring flashes at most once per second,
+  // and holds still under reduced motion. Read from the COMPUTED style of the rendered card, so
+  // it measures what the browser applies, not what a stylesheet says. Fail direction: set the
+  // animation to 200 ms in globals.css and the first assertion fails; drop the reduced-motion
+  // rule and the second does.
+  // ---------------------------------------------------------------------------
+
+  test("the New card's ring flashes no faster than once per second, and not at all under reduced motion", async ({
+    page,
+  }) => {
+    const pendingOrder = {
+      ...orderDetailResponse,
+      id: "order-flash",
+      orderNumber: "ORD-TEST-0003",
+      status: "PENDING",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    await page.route(`${API}/api/v1/orders/kitchen**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pageOf([pendingOrder], route.request().url())),
+      })
+    )
+
+    const ringOf = async () => {
+      const card = page
+        .getByRole("region", { name: /New orders/ })
+        .getByTestId("kds-new-card")
+        .filter({ hasText: "ORD-TEST-0003" })
+      await expect(card).toBeVisible()
+      return card.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        // animation-duration is reported in seconds ("1s") by every engine; accept ms too.
+        const first = cs.animationDuration.split(",")[0].trim()
+        const ms = first.endsWith("ms") ? parseFloat(first) : parseFloat(first) * 1000
+        return { name: cs.animationName, durationMs: ms, boxShadow: cs.boxShadow }
+      })
+    }
+
+    await page.emulateMedia({ reducedMotion: "no-preference" })
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    const moving = await ringOf()
+    expect(moving.name).toBe("kds-new-flash")
+    // One on/off cycle per period: a period of at least 1000 ms is at most one flash per second,
+    // under the three-per-second threshold.
+    expect(moving.durationMs).toBeGreaterThanOrEqual(1000)
+
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    const still = await ringOf()
+    expect(still.name).toBe("none")
+    // The ring is still there, static orange-700 (#c2410c): reduced motion removes the motion,
+    // not the signal.
+    expect(still.boxShadow).toContain("rgb(194, 65, 12)")
   })
 
   test("going offline raises a stale banner with a last-updated stamp, and coming back clears it", async ({
