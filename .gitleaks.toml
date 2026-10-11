@@ -162,3 +162,11 @@ regexes = [
   '''^indef-after-e58d290e-84a6-402a-9307-5efadbde1dd0$''',
   '''^no-hours-b1aa2e13-1cde-4411-bd84-1f2625b453b8$''',
 ]
+
+[[allowlists]]
+description = "Phase 37-27 RED-arm evidence (37-27-red-task2.json, 37-27-red-task3.json): CashOrderCapIntegrationTest Idempotency-Key values of the form cash-<n>-<uuid> / closed-<n>-<uuid> that the assertion message of the card-exemption and closed-orders arms carries as `key=…` inside the JUnit XML the arm recorded. A client-supplied order de-duplication key, the Phase 31.1 shape above: the prefix set is closed, the ordinal is one digit and the tail must be a well-formed lower-case UUID (gitleaks 8.30.1 generic-api-key; 14 hits over the 37-27 range, 0 after; cash-12-<uuid>, a non-UUID tail and an unlisted prefix still fire)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^(cash|closed)-[0-9]-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
+]
