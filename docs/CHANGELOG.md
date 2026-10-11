@@ -13,8 +13,8 @@ The required Security Scan had been red on `main` since 2026-10-08 with no code 
 the daily Trivy database began reporting CVE-2026-94483 (`next` 16.3.7, SSRF information disclosure
 in Image Optimization) and CVE-2026-78669 (`golang.org/x/net` 0.58.0, HTTP/2 SETTINGS denial of
 service) in `edge-go` and `infra/backups/blobctl`. Exact bumps only: `next` and `eslint-config-next`
-to 16.3.8, `golang.org/x/net` to 0.60.0 in both Go modules (the transitive `golang.org/x/text`
-follows to 0.42.0). Both Go modules build and test clean; the Next.js version lines in `CLAUDE.md`
+to 16.3.8, `golang.org/x/net` to 0.60.0 in both Go modules; `go mod tidy` also lifts the transitive
+`golang.org/x/text` (0.42.0), `x/crypto`, `x/sync` and `x/sys`, and in `edge-go` `x/mod`. Both Go modules build and test clean; the Next.js version lines in `CLAUDE.md`
 and `AGENTS.md` follow the lockfile.
 
 ### Phase 31.1: Persona gap closure (#901) — 2026-10-07
