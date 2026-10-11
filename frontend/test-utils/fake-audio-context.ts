@@ -157,9 +157,16 @@ export function onlyContext(): FakeAudioContext {
   return audioRecord.instances[0]
 }
 
-/** Install `navigator.getAutoplayPolicy` returning `policy` for every context. */
-export function installAutoplayPolicy(policy: "allowed" | "allowed-muted" | "disallowed") {
-  ;(navigator as unknown as { getAutoplayPolicy: unknown }).getAutoplayPolicy = jest.fn(() => policy)
+/**
+ * Install `navigator.getAutoplayPolicy` returning `policy` for every context, and hand back the mock
+ * so a test can assert on it: `Navigator` has no such member in lib.dom (the hook feature-detects
+ * it), so `navigator.getAutoplayPolicy` does not type-check and the full-program tsc gate in CI is
+ * the only gate that reads test files (#916 round 3).
+ */
+export function installAutoplayPolicy(policy: "allowed" | "allowed-muted" | "disallowed"): jest.Mock {
+  const mock = jest.fn(() => policy)
+  ;(navigator as unknown as { getAutoplayPolicy: unknown }).getAutoplayPolicy = mock
+  return mock
 }
 
 /** Two oscillator starts make one chime: the number of 880 Hz starts is the number of chimes. */

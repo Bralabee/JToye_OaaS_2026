@@ -193,11 +193,11 @@ describe("useKitchenAlert: the sound state is read, never assumed", () => {
     })
 
     it("present and 'allowed' with a running context: on", () => {
-      installAutoplayPolicy("allowed")
+      const getAutoplayPolicy = installAutoplayPolicy("allowed")
       render(<Harness pendingCount={0} muted={false} stopped={false} />)
       fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
       expect(screen.getByTestId("sound-state")).toHaveTextContent("on")
-      expect(navigator.getAutoplayPolicy).toHaveBeenCalledWith(onlyContext())
+      expect(getAutoplayPolicy).toHaveBeenCalledWith(onlyContext())
     })
 
     it("absent: AudioContext.state decides, running is on", () => {
