@@ -146,3 +146,41 @@ describe("ShopCard", () => {
     expect(screen.queryByText(/·/)).toBeTruthy() // the delivery line still has one
   })
 })
+
+/**
+ * 37-22 (UI-SPEC K3, D-15, theme 2): the landing row's card carries the SERVER's answer about
+ * whether the shop is taking orders. It never had an open-state badge, deliberately (app/page.tsx:
+ * the old client parser said "open" for every shop with no hours, a fiction for exactly the shops
+ * issue 544 is about). With the server's field the claim is backed, so the card says it; with the field
+ * ABSENT it still says nothing. `openingHours: null` on every fixture is "always open" to the old
+ * parser, so a badge derived from the hours would read "Open" on the paused and closed cases.
+ */
+describe("ShopCard availability badge (37-22)", () => {
+  const badge = () => screen.queryByTestId("shop-availability-badge")
+
+  it("openNow true -> 'Open'", () => {
+    render(<ShopCard shop={makeShop({ openNow: true })} />)
+    expect(badge()).toHaveTextContent(/^Open$/)
+  })
+
+  it("a reported pause -> 'Paused', never 'Open'", () => {
+    render(<ShopCard shop={makeShop({ openNow: false, pausedUntil: "2026-10-13T17:40:00Z" })} />)
+    expect(badge()).toHaveTextContent(/^Paused$/)
+  })
+
+  it("openNow false -> 'Closed'", () => {
+    render(<ShopCard shop={makeShop({ openNow: false, nextOpenAt: "2026-10-13T08:00:00Z" })} />)
+    expect(badge()).toHaveTextContent(/^Closed$/)
+  })
+
+  it("openNow absent -> no badge at all", () => {
+    render(<ShopCard shop={makeShop()} />)
+    expect(badge()).toBeNull()
+    expect(screen.queryByText(/^(Open|Closed|Paused)$/)).toBeNull()
+  })
+
+  it("sits out of flow, so a card with a badge is the same height as one without (CLS)", () => {
+    render(<ShopCard shop={makeShop({ openNow: true })} />)
+    expect(badge()!.className.split(/\s+/)).toContain("absolute")
+  })
+})

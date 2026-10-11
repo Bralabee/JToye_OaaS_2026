@@ -160,7 +160,7 @@ public class OrderController {
      */
     @GetMapping("/kitchen")
     @Operation(summary = "Kitchen board for one shop",
-            description = "Returns active (CONFIRMED/PREPARING/READY) orders WITH line items for one shop "
+            description = "Returns active (PENDING/CONFIRMED/PREPARING/READY) orders WITH line items for one shop "
                     + "of the authenticated tenant, newest first. Replaces the list-then-detail-per-ticket "
                     + "round trip the kitchen display used to make (#564). Requires STAFF on the shop.")
     public ResponseEntity<Page<OrderDetailDto>> getKitchenBoard(

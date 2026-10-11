@@ -327,11 +327,15 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // `.first()` the issue warned against, which would have gone green over a genuine
     // pair. Its fail direction is proven: rendering the control twice in page.tsx
     // takes this to `Expected: 1  Received: 2`.
-    const muteToggle = page.getByRole("button", {
-      name: /Mute alerts|Unmute alerts/,
-    })
+    //
+    // 37-17 (D-12): the icon-only mute button became a labelled sound control with three
+    // states. A fresh board cannot ring until a tap unlocks audio, so it reads "Turn on sound";
+    // the control is anchored to the LIVE tree (the #593 staging copy) by its testid, because
+    // the non-dismissible sound bar carries a second "Turn on sound" button by design.
+    const muteToggle = live(page).getByTestId("kds-sound-control")
     await expect(muteToggle).toHaveCount(1)
     await expect(muteToggle).toBeVisible()
+    await expect(muteToggle).toHaveText("Turn on sound")
 
     // The mocked order card shows customer name and order number
     await expect(page.getByText("Alice")).toBeVisible()
@@ -357,8 +361,12 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
 
     // Mute toggle click works. Same locator as the assertion above (#593) — a
     // `getByTitle` click here would be the same race, and clicking a control the
-    // page does not present is not a thing a vendor can do.
+    // page does not present is not a thing a vendor can do. 37-17: the first tap turns
+    // sound on (a real gesture, so the browser lets the context run), the second mutes.
     await muteToggle.click()
+    await expect(muteToggle).toHaveText("Mute alerts")
+    await muteToggle.click()
+    await expect(muteToggle).toHaveText("Unmute alerts")
   })
 
   test("order-detail page shows real product names and the delivery address, no 'Unknown Product'", async ({
@@ -414,6 +422,129 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     expect(bumpCalls[0]).toContain("/order-1/start-preparation")
   })
 
+  // ---------------------------------------------------------------------------
+  // Phase 37-16 (D-11, UXT-020): a storefront order reaches the kitchen.
+  //
+  // Before 37-16 the board read CONFIRMED/PREPARING/READY only, so a storefront order sat in
+  // PENDING, invisible here, until somebody confirmed it on the Orders page. It now waits in the
+  // "New orders" lane, and "Accept order" there is the existing /confirm. The live-stack run of
+  // this spec is plan 37-23's; this test pins the clicked path against the route stubs.
+  // ---------------------------------------------------------------------------
+
+  test("a storefront order appears in the New lane, and Accept moves it to the grid", async ({ page }) => {
+    const pendingOrder = {
+      ...orderDetailResponse,
+      id: "order-new",
+      orderNumber: "ORD-TEST-0002",
+      status: "PENDING",
+      customerName: "Bola",
+      notes: "Severe peanut allergy - please call on arrival",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    // STATEFUL, as the server is: once /confirm has answered 200 the board read returns the order
+    // as CONFIRMED. A stub that kept serving PENDING would put the card back in the lane on the
+    // board's next re-read (the socket's reconnect re-reads it) and fail a correct page.
+    const confirmCalls: string[] = []
+    await page.route(`${API}/api/v1/orders/kitchen**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          pageOf(
+            [{ ...pendingOrder, status: confirmCalls.length > 0 ? "CONFIRMED" : "PENDING" }, orderDetailResponse],
+            route.request().url()
+          )
+        ),
+      })
+    )
+    await page.route(`${API}/api/v1/orders/*/confirm`, (route) => {
+      confirmCalls.push(route.request().url())
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...pendingOrder, status: "CONFIRMED" }),
+      })
+    })
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    const lane = page.getByRole("region", { name: /New orders/ })
+    const newCard = lane.getByTestId("kds-new-card").filter({ hasText: "ORD-TEST-0002" })
+    await expect(newCard).toBeVisible()
+    // The card carries what the kitchen needs before accepting: the customer's note and the
+    // fulfilment type (37-16 / 37-17), read from the card itself, not from the order page.
+    await expect(newCard.getByTestId("kds-customer-note-text")).toHaveText(pendingOrder.notes)
+    await expect(newCard.getByTestId("kds-fulfilment-badge")).toHaveText(/DELIVERY/)
+    // Nothing accepted it for the kitchen: it waits for a person.
+    expect(confirmCalls).toHaveLength(0)
+
+    await newCard.getByRole("button", { name: /^Accept order/ }).click()
+
+    await expect.poll(() => confirmCalls.length, { timeout: 10_000 }).toBeGreaterThan(0)
+    expect(confirmCalls[0]).toContain("/order-new/confirm")
+    const grid = page.getByTestId("kds-board-grid")
+    await expect(grid.getByText("ORD-TEST-0002")).toBeVisible()
+    await expect(lane.getByText("No new orders waiting")).toBeVisible()
+  })
+
+  // ---------------------------------------------------------------------------
+  // Plan 37-23, UI-SPEC F23 (WCAG 2.3.1): the New card's ring flashes at most once per second,
+  // and holds still under reduced motion. Read from the COMPUTED style of the rendered card, so
+  // it measures what the browser applies, not what a stylesheet says. Fail direction: set the
+  // animation to 200 ms in globals.css and the first assertion fails; drop the reduced-motion
+  // rule and the second does.
+  // ---------------------------------------------------------------------------
+
+  test("the New card's ring flashes no faster than once per second, and not at all under reduced motion", async ({
+    page,
+  }) => {
+    const pendingOrder = {
+      ...orderDetailResponse,
+      id: "order-flash",
+      orderNumber: "ORD-TEST-0003",
+      status: "PENDING",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    await page.route(`${API}/api/v1/orders/kitchen**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pageOf([pendingOrder], route.request().url())),
+      })
+    )
+
+    const ringOf = async () => {
+      const card = page
+        .getByRole("region", { name: /New orders/ })
+        .getByTestId("kds-new-card")
+        .filter({ hasText: "ORD-TEST-0003" })
+      await expect(card).toBeVisible()
+      return card.evaluate((el) => {
+        const cs = getComputedStyle(el)
+        // animation-duration is reported in seconds ("1s") by every engine; accept ms too.
+        const first = cs.animationDuration.split(",")[0].trim()
+        const ms = first.endsWith("ms") ? parseFloat(first) : parseFloat(first) * 1000
+        return { name: cs.animationName, durationMs: ms, boxShadow: cs.boxShadow }
+      })
+    }
+
+    await page.emulateMedia({ reducedMotion: "no-preference" })
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    const moving = await ringOf()
+    expect(moving.name).toBe("kds-new-flash")
+    // One on/off cycle per period: a period of at least 1000 ms is at most one flash per second,
+    // under the three-per-second threshold.
+    expect(moving.durationMs).toBeGreaterThanOrEqual(1000)
+
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    const still = await ringOf()
+    expect(still.name).toBe("none")
+    // The ring is still there, static orange-700 (#c2410c): reduced motion removes the motion,
+    // not the signal.
+    expect(still.boxShadow).toContain("rgb(194, 65, 12)")
+  })
+
   test("going offline raises a stale banner with a last-updated stamp, and coming back clears it", async ({
     page,
     context,
@@ -437,9 +568,15 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
 
     // ONLINE: a pill reading Live, with a real wall clock, and no banner.
+    //
+    // 37-17 (D-14): a board that cannot ring is not "Live", so a fresh board reads "Sound off"
+    // until the operator taps "Turn on sound" (a real gesture, which the browser lets unlock
+    // the AudioContext). Tap first, then the feed assertions below are the #106 ones.
     const pill = live(page).getByTestId("kds-feed-pill")
     await expect(pill).toBeVisible()
     await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/)
+    await expect(pill).toContainText("Sound off", { timeout: 20_000 })
+    await live(page).getByTestId("kds-sound-control").click()
     await expect(pill).toContainText("Live", { timeout: 20_000 })
     await expect(live(page).getByTestId("kds-feed-banner")).toHaveCount(0)
 

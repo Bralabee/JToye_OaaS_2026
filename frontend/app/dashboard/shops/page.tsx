@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -37,10 +37,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe, ImageIcon } from "lucide-react"
+import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe, ImageIcon, Clock, PauseCircle } from "lucide-react"
+import { readPauseView } from "@/components/dashboard/kitchen/pause-orders-control"
+import { formatUkTime } from "@/lib/shop-availability"
 import { ImageUploader } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
+import {
+  OpeningScheduleEditor,
+  type OpeningScheduleEditorHandle,
+} from "@/components/dashboard/shops/opening-schedule-editor"
+import type { OpeningScheduleMap } from "@/lib/opening-schedule"
 import type { Shop, CreateShopRequest } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 
@@ -61,11 +68,6 @@ const shopSchema = z.object({
 
 type ShopFormData = z.infer<typeof shopSchema>
 
-const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const
-const DAY_LABELS: Record<string, string> = {
-  mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun",
-}
-
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
@@ -79,7 +81,20 @@ export default function ShopsPage() {
   const [deletingShop, setDeletingShop] = useState<Shop | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [published, setPublished] = useState(false)
-  const [openingHours, setOpeningHours] = useState<Record<string, string>>({})
+  // 37-21 (K4, D-15): the structured hours the dialog will send, or null while the editor is untouched
+  // (the request then omits openingSchedule and the server keeps the stored hours and their source).
+  // The seven free-text inputs that wrote `openingHours` are gone: that text decides nothing since
+  // 37-20, and the original stays readable as ShopDto.legacyOpeningHours for the needs-review notice.
+  const [scheduleDraft, setScheduleDraft] = useState<OpeningScheduleMap | null>(null)
+  // Re-mounts the editor on every open, so it always starts from the shop being edited.
+  const [editorSession, setEditorSession] = useState(0)
+  const scheduleEditorRef = useRef<OpeningScheduleEditorHandle>(null)
+  // 37-21: the dashboard home's notice links here as ?edit={id}&focus=hours; the dialog then opens
+  // with focus on the hours fieldset instead of the first field.
+  const [focusHoursOnOpen, setFocusHoursOnOpen] = useState(false)
+  const deepLinkHandled = useRef(false)
+  // When the list was read: a stored pause end is compared with this, never with a render-time clock.
+  const [listedAt, setListedAt] = useState(0)
   // F2 sweep: a 429/network failure must render an error panel, never the
   // "No shops yet" empty state — `fetchShops`'s catch deliberately does not
   // reset `shops` to `[]`.
@@ -102,6 +117,7 @@ export default function ShopsPage() {
       setLoading(true)
       const response = await apiClient.get(`/api/v1/shops?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
       setShops(response.data.content || [])
+      setListedAt(Date.now())
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
       setLoadFailed(false)
@@ -124,6 +140,7 @@ export default function ShopsPage() {
     try {
       const response = await apiClient.get(`/api/v1/shops/search?q=${encodeURIComponent(query)}`)
       setShops(response.data || [])
+      setListedAt(Date.now())
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
       setLoadFailed(false)
@@ -160,7 +177,8 @@ export default function ShopsPage() {
     setEditingShop(null)
     reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "" })
     setPublished(false)
-    setOpeningHours({})
+    setScheduleDraft(null)
+    setEditorSession((n) => n + 1)
     setDialogOpen(true)
   }
 
@@ -177,13 +195,66 @@ export default function ShopsPage() {
     setValue("tags", shop.tags || "")
     setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
     setPublished(shop.published || false)
-    setOpeningHours(shop.openingHours || {})
+    setScheduleDraft(null)
+    setEditorSession((n) => n + 1)
     setDialogOpen(true)
   }
+
+  // 37-21 (K4 notices): /dashboard/shops?edit={id}&focus=hours, from the dashboard home's hours
+  // notice. Handled once, after the first list load; the shop is read by id when it is not on the
+  // page that loaded. The parameters are dropped so a reload does not reopen the dialog.
+  useEffect(() => {
+    if (loading || deepLinkHandled.current) return
+    deepLinkHandled.current = true
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get("edit")
+    if (!id) return
+    const atHours = params.get("focus") === "hours"
+    params.delete("edit")
+    params.delete("focus")
+    const rest = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash
+    )
+    const open = (target: Shop) => {
+      setFocusHoursOnOpen(atHours)
+      openEditDialog(target)
+    }
+    const listed = shops.find((s) => s.id === id)
+    if (listed) {
+      open(listed)
+      return
+    }
+    apiClient
+      .get<Shop>(`/api/v1/shops/${id}`)
+      .then((res) => {
+        if (res?.data?.id) open(res.data)
+      })
+      .catch((error: unknown) => {
+        toast({
+          variant: "destructive",
+          title: "Error loading shop",
+          description: describeLoadError(error, "Could not open that shop").message,
+        })
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, shops])
 
   const openDeleteDialog = (shop: Shop) => {
     setDeletingShop(shop)
     setDeleteDialogOpen(true)
+  }
+
+  // K4: the hours are checked before anything is sent; the editor shows the error and takes focus.
+  // Only when they were touched: untouched hours are not sent, so there is nothing to refuse.
+  const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+    if (scheduleDraft !== null && scheduleEditorRef.current && !scheduleEditorRef.current.validate()) {
+      event.preventDefault()
+      return
+    }
+    return handleSubmit(onSubmit)(event)
   }
 
   const onSubmit = async (data: ShopFormData) => {
@@ -202,7 +273,14 @@ export default function ShopsPage() {
         tags: data.tags || undefined,
         minimumOrderPennies: data.minimumOrderPounds ? Math.round(parseFloat(data.minimumOrderPounds) * 100) : 0,
         published,
-        openingHours: Object.keys(openingHours).length > 0 ? openingHours : undefined,
+        // 37-21: ShopService.updateShop regenerates the slug (name + a random suffix) whenever a request
+        // carries none, so without this every save, an hours save included, moved the shop to a new
+        // storefront address. Kept unless the name changed: the server's regeneration is meant for a
+        // rename, and that behaviour stays as it was.
+        ...(editingShop && editingShop.slug && data.name === editingShop.name ? { slug: editingShop.slug } : {}),
+        // Absent keeps the stored hours; {} saves closed every day; any save makes them STRUCTURED.
+        // The key is left out entirely (not sent as undefined) while the editor is untouched.
+        ...(scheduleDraft !== null ? { openingSchedule: scheduleDraft } : {}),
       }
 
       if (editingShop) {
@@ -387,13 +465,43 @@ export default function ShopsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {shop.published ? (
-                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                            <Globe className="h-3 w-3 mr-1" />Published
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-slate-600">Draft</Badge>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {shop.published ? (
+                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                              <Globe className="h-3 w-3 mr-1" />Published
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-slate-600">Draft</Badge>
+                          )}
+                          {/* 37-21 (UI-SPEC K4 notices): from hoursSource, never the text. No source at all
+                              = created after V80 without hours = NO_HOURS, closed to orders (D-15; #916 r1 f3). */}
+                          {!shop.hoursSource && (
+                            <Badge variant="outline" className="border-amber-300 text-amber-800">
+                              <Clock className="mr-1 h-3 w-3" aria-hidden="true" />No hours: not taking orders
+                            </Badge>
+                          )}
+                          {shop.hoursSource === "LEGACY_ALWAYS_OPEN" && (
+                            <Badge variant="outline" className="border-amber-300 text-amber-800">
+                              <Clock className="mr-1 h-3 w-3" aria-hidden="true" />Hours not set
+                            </Badge>
+                          )}
+                          {shop.hoursSource === "NEEDS_REVIEW" && (
+                            <Badge variant="outline" className="border-amber-300 text-amber-800">
+                              <Clock className="mr-1 h-3 w-3" aria-hidden="true" />Check hours
+                            </Badge>
+                          )}
+                          {/* 37-21 (UI-SPEC K3 "Shops page"): the pause, from the same fields the kitchen reads. */}
+                          {(() => {
+                            const pause = readPauseView(shop, listedAt)
+                            if (pause.kind === "none") return null
+                            return (
+                              <Badge variant="outline" className="text-slate-900">
+                                <PauseCircle className="mr-1 h-3 w-3" aria-hidden="true" />
+                                {pause.kind === "timed" ? `Paused until ${formatUkTime(pause.until) ?? ""}` : "Paused"}
+                              </Badge>
+                            )
+                          })()}
+                        </div>
                       </TableCell>
                       <TableCell className="text-slate-600">
                         <div className="flex items-center gap-2">
@@ -436,7 +544,18 @@ export default function ShopsPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-2xl max-h-[85vh] overflow-y-auto"
+          onOpenAutoFocus={(event) => {
+            if (!focusHoursOnOpen) return
+            // Opened from an hours notice: start at the hours, not the first field.
+            event.preventDefault()
+            setFocusHoursOnOpen(false)
+            const fieldset = document.getElementById("opening-hours")
+            fieldset?.scrollIntoView({ block: "start" })
+            fieldset?.focus()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {editingShop ? "Edit Shop" : "Create New Shop"}
@@ -447,7 +566,7 @@ export default function ShopsPage() {
                 : "Add a new shop to your system."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={submitForm} className="space-y-6">
             {/* Basic Info */}
             <div className="space-y-3">
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Basic Info</h4>
@@ -572,23 +691,13 @@ export default function ShopsPage() {
               </div>
             </div>
 
-            {/* Opening Hours */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Opening Hours</h4>
-              <div className="grid grid-cols-1 gap-2">
-                {DAYS.map((day) => (
-                  <div key={day} className="flex items-center gap-3">
-                    <span className="w-10 text-xs font-medium text-slate-600">{DAY_LABELS[day]}</span>
-                    <Input
-                      className="flex-1"
-                      placeholder="09:00-17:00 or Closed"
-                      value={openingHours[day] || ""}
-                      onChange={(e) => setOpeningHours((prev) => ({ ...prev, [day]: e.target.value }))}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Opening hours (37-21, UI-SPEC K4): structured, what the server enforces. */}
+            <OpeningScheduleEditor
+              key={`${editingShop?.id ?? "new"}-${editorSession}`}
+              ref={scheduleEditorRef}
+              shop={editingShop}
+              onChange={setScheduleDraft}
+            />
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>

@@ -95,7 +95,7 @@ class PublicStorefrontServiceTest {
         // this unit test exercises the same ceiling behaviour the running service has.
         // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
         // tiers return empty, so most arms in this file never touch it.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -117,6 +117,34 @@ class PublicStorefrontServiceTest {
         publishedShop.setSlug("test-shop-abc12345");
         publishedShop.setPublished(true);
         publishedShop.setAddress("123 Test St");
+        // 37-20 (D-15/D-25): what V80 makes of a pre-existing shop with no hours, so it takes orders at any
+        // time as every arm here assumed before 37-20. The hours arms below set structured hours instead.
+        publishedShop.setHoursSource(uk.jtoye.core.shop.HoursSource.LEGACY_ALWAYS_OPEN);
+    }
+
+    /**
+     * 37-20: the availability policy runs on a FIXED clock, Monday 2026-10-12 12:00 BST (11:00 UTC), so the
+     * opening-hours arms are deterministic instead of depending on when the suite runs.
+     */
+    private static final java.time.Clock FIXED_CLOCK =
+            java.time.Clock.fixed(java.time.Instant.parse("2026-10-12T11:00:00Z"), java.time.ZoneOffset.UTC);
+
+    /** A STRUCTURED schedule (D-15): day key -> windows, every other day closed. */
+    private static Map<String, List<uk.jtoye.core.shop.OpeningSchedule.TimeWindow>> schedule(String... dayOpenClose) {
+        Map<String, List<uk.jtoye.core.shop.OpeningSchedule.TimeWindow>> json = new java.util.LinkedHashMap<>();
+        for (String key : uk.jtoye.core.shop.OpeningSchedule.DAY_KEYS) {
+            json.put(key, new java.util.ArrayList<>());
+        }
+        for (int i = 0; i < dayOpenClose.length; i += 3) {
+            json.get(dayOpenClose[i]).add(
+                    uk.jtoye.core.shop.OpeningSchedule.TimeWindow.fromJson(dayOpenClose[i + 1], dayOpenClose[i + 2]));
+        }
+        return json;
+    }
+
+    private void giveStructuredHours(Map<String, List<uk.jtoye.core.shop.OpeningSchedule.TimeWindow>> json) {
+        publishedShop.setHoursSource(uk.jtoye.core.shop.HoursSource.STRUCTURED);
+        publishedShop.setOpeningSchedule(json);
     }
 
     private void setField(Object target, String fieldName, Object value) {
@@ -439,12 +467,11 @@ class PublicStorefrontServiceTest {
     }
 
     @Test
-    @DisplayName("createGuestOrder rejects order when shop is explicitly closed today")
+    @DisplayName("createGuestOrder rejects order when shop is explicitly closed today (37-20: typed shop-closed CLOSED_TODAY)")
     void createGuestOrder_rejectsWhenClosed() {
-        // Set opening hours to "Closed" for today
-        String[] dayKeys = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
-        String todayKey = dayKeys[java.time.LocalDate.now().getDayOfWeek().getValue() % 7];
-        publishedShop.setOpeningHours(Map.of(todayKey, "Closed"));
+        // 37-20 (D-15): structured hours, Monday closed, Tuesday open; the fixed clock is Monday 12:00 BST.
+        // Was: legacy text "Closed" today and an IllegalArgumentException (400 invalid-argument).
+        giveStructuredHours(schedule("tue", "09:00", "17:00"));
 
         when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
                 .thenReturn(Optional.of(publishedShop));
@@ -455,18 +482,17 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700000000");
         request.setItems(List.of());
 
-        var ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
         assertTrue(ex.getMessage().contains("closed"));
+        assertEquals("CLOSED_TODAY", ex.getReason());
     }
 
     @Test
-    @DisplayName("createGuestOrder rejects order outside opening hours")
+    @DisplayName("createGuestOrder rejects order outside opening hours (37-20: typed shop-closed CLOSED_NOW)")
     void createGuestOrder_rejectsOutsideHours() {
-        // Set opening hours to a window that's definitely not now (00:01 - 00:02)
-        String[] dayKeys = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
-        String todayKey = dayKeys[java.time.LocalDate.now().getDayOfWeek().getValue() % 7];
-        publishedShop.setOpeningHours(Map.of(todayKey, "00:01 - 00:02"));
+        // 37-20: a window that is not now on the fixed Monday 12:00 BST clock. Was: legacy text, 400.
+        giveStructuredHours(schedule("mon", "00:01", "00:02"));
 
         when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
                 .thenReturn(Optional.of(publishedShop));
@@ -477,31 +503,19 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700000000");
         request.setItems(List.of());
 
-        var ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
         assertTrue(ex.getMessage().contains("closed"));
-    }
-
-    private static final java.time.ZoneId UK_ZONE = java.time.ZoneId.of("Europe/London");
-    private static final java.time.format.DateTimeFormatter HHMM =
-            java.time.format.DateTimeFormatter.ofPattern("HH:mm");
-
-    /** The opening-hours key for "today" in the UK zone the service evaluates. */
-    private static String todayKeyUk() {
-        String[] dayKeys = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
-        return dayKeys[LocalDate.now(UK_ZONE).getDayOfWeek().getValue() % 7];
+        assertEquals("CLOSED_NOW", ex.getReason());
     }
 
     @Test
     @DisplayName("createGuestOrder accepts an order inside a service window whose close time precedes its open time (WR-06 overnight)")
     void createGuestOrder_acceptsInsideOvernightWindow() throws Exception {
-        // Window opens 1h ago and "closes" 2h ago: whenever close < open this is
-        // an overnight window that CONTAINS now; when the subtraction wraps
-        // midnight it degenerates to a plain window that also contains now. The
-        // pre-fix predicate rejected the overnight shape at every time of day.
-        java.time.LocalTime nowUk = java.time.LocalTime.now(UK_ZONE);
-        String window = nowUk.minusHours(1).format(HHMM) + " - " + nowUk.minusHours(2).format(HHMM);
-        publishedShop.setOpeningHours(Map.of(todayKeyUk(), window));
+        // 37-20: on the fixed Monday 12:00 BST clock, Monday 11:00 - 10:00 is an overnight window
+        // (close before open) that CONTAINS now. The pre-WR-06 predicate rejected the overnight shape at
+        // every time of day. Was: a legacy text window computed from the wall clock.
+        giveStructuredHours(schedule("mon", "11:00", "10:00"));
         publishedShop.setDeliveryFeePennies(0L);
 
         when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
@@ -519,11 +533,9 @@ class PublicStorefrontServiceTest {
     @Test
     @DisplayName("createGuestOrder still rejects an order outside the window when close precedes open (WR-06 overnight)")
     void createGuestOrder_rejectsOutsideOvernightWindow() {
-        // Window opens in 1h and closed 1h ago: now sits OUTSIDE it under both
-        // the overnight and the plain (midnight-wrapped) interpretation.
-        java.time.LocalTime nowUk = java.time.LocalTime.now(UK_ZONE);
-        String window = nowUk.plusHours(1).format(HHMM) + " - " + nowUk.minusHours(1).format(HHMM);
-        publishedShop.setOpeningHours(Map.of(todayKeyUk(), window));
+        // 37-20: Monday 13:00 - 11:00 (overnight) opens in one hour on the fixed Monday 12:00 BST clock, and
+        // Sunday has no window to carry past midnight, so now sits OUTSIDE it. Was: a legacy text window.
+        giveStructuredHours(schedule("mon", "13:00", "11:00"));
 
         when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
                 .thenReturn(Optional.of(publishedShop));
@@ -534,9 +546,10 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700900005");
         request.setItems(List.of());
 
-        var ex = assertThrows(IllegalArgumentException.class,
+        var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
         assertTrue(ex.getMessage().contains("closed"));
+        assertEquals("CLOSED_NOW", ex.getReason());
     }
 
     // ========================================================================
@@ -1377,7 +1390,8 @@ class PublicStorefrontServiceTest {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
                     eventPublisher, entityManager, paymentService, promotionRepository,
                     announcementRepository, idempotencyService, postcodeGeocoder,
-                    new OrderNumberGenerator(), traderIdentityService, defaultRadiusKm, maxRadiusKm);
+                    new OrderNumberGenerator(), traderIdentityService,
+                    new ShopAvailabilityPolicy(java.time.Clock.systemUTC()), defaultRadiusKm, maxRadiusKm);
         }
 
         @Test

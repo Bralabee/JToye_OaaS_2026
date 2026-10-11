@@ -220,6 +220,33 @@ describe("ShopDiscoveryClient — the distance on a card", () => {
   })
 })
 
+/**
+ * 37-22 (UI-SPEC K3, D-15, theme 2): the /shop card badge reads the SERVER's answer. The fixtures'
+ * `openingHours: null` is "always open" to the old client parser (`isOpenNow`), so a badge still
+ * derived from the hours reads "Open" on the paused and closed cards and fails.
+ */
+describe("ShopDiscoveryClient — the open badge is the server's (37-22)", () => {
+  const badgeFor = (name: string) =>
+    within(screen.getByRole("link", { name: new RegExp(name) })).queryByTestId("shop-availability-badge")
+
+  it("reads Open / Paused / Closed from openNow and the pause, and shows no badge when openNow is absent", () => {
+    renderDiscovery({
+      shops: [
+        shop({ slug: "open-kitchen", name: "Open Kitchen", openNow: true }),
+        shop({ slug: "paused-kitchen", name: "Paused Kitchen", openNow: false, pausedIndefinitely: true }),
+        shop({ slug: "closed-kitchen", name: "Closed Kitchen", openNow: false, nextOpenAt: "2026-10-13T08:00:00Z" }),
+        shop({ slug: "silent-kitchen", name: "Silent Kitchen" }),
+      ],
+    })
+    // The failure this exists for: hours-derived, the paused card reads "Open".
+    expect(within(screen.getByRole("link", { name: /Paused Kitchen/ })).queryByText(/^Open$/)).toBeNull()
+    expect(badgeFor("Paused Kitchen")).toHaveTextContent(/^Paused$/)
+    expect(badgeFor("Closed Kitchen")).toHaveTextContent(/^Closed$/)
+    expect(badgeFor("Open Kitchen")).toHaveTextContent(/^Open$/)
+    expect(badgeFor("Silent Kitchen")).toBeNull()
+  })
+})
+
 describe("ShopDiscoveryClient — a non-answer never carries a proximity claim", () => {
   it("429 arm: the busy state replaces the claim that was on screen a moment before", async () => {
     renderDiscovery({ query: "SE22", interpretation: DISTRICT })

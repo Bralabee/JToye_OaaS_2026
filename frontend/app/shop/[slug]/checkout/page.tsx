@@ -23,9 +23,11 @@ import {
 } from "@/components/storefront/order-allergen-panel"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
 import { SellerBlock } from "@/components/storefront/seller-block"
+import { ShopAvailabilityNotice } from "@/components/storefront/shop-availability-notice"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
+import { readShopAvailability, readShopClosedProblem, shopClosedRaceCopy } from "@/lib/shop-availability"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
 // COR-2 / PR #726 low (b): the delivery-fee preview lives in the lib and ONLY there. This file
 // used to carry a byte-identical second body; the cart page already imported the lib.
@@ -171,6 +173,11 @@ function recordedAllergensOf(confirmation: GuestOrderConfirmation): RecordedAlle
  * Display only: the ledger still computes VAT as before (CONTEXT Q2, pending a legal ruling), and
  * nothing here says anything about it.
  */
+/** 37-22 (K3): the availability notice's id, Place order's permanent explanation while the shop is not taking orders. */
+const SHOP_AVAILABILITY_EXPLAINER_ID = "shop-availability-explainer"
+/** How long after the server's stated reopening time the shop is asked again (the kitchen uses the same grace). */
+const REOPEN_RECHECK_GRACE_MS = 500
+
 const NO_VAT_REGISTRATION_COPY = "This seller hasn't declared a VAT registration, so no VAT is shown."
 
 function NoVatRegistrationNote() {
@@ -473,7 +480,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
   // failure degrades gracefully to a £0 preview (server stays authoritative).
   const [shop, setShop] = useState<PublicShop | null>(null)
-  useEffect(() => {
+  const loadShop = useCallback(() => {
     let cancelled = false
     publicApiClient
       .get<PublicShop>(`/public/shops/${slug}`)
@@ -487,12 +494,51 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       cancelled = true
     }
   }, [slug])
+  useEffect(() => loadShop(), [loadShop])
 
   // UXT-047 (B7): a VAT row needs a DECLARED registration; the note needs a LOADED shop that
   // declares none. A shop that failed to load proves neither, so it gets neither (the SellerBlock
   // rule: a failed fetch is not "the seller has not provided their details").
   const sellerVatRegistered = Boolean(shop?.seller?.vatNumber)
   const sellerVatUndeclared = shop !== null && !sellerVatRegistered
+
+  // 37-22 (UI-SPEC K3 "Checkout", D-15): the shop's SERVER answer at page load. When it says the shop
+  // is not taking orders (paused, or openNow false), the K3 notice sits at the top of step 1 and
+  // Place order is disabled with that notice as its permanent explanation (aria-describedby) — the
+  // `belowMinimum` precedent: disabled only where the reason is on screen beside it. A shop that did
+  // not load, or a payload without openNow, disables nothing: the server still decides at submit,
+  // and its typed refusal is handled below (the checkout race).
+  const shopAvailability = shop ? readShopAvailability(shop) : null
+  const notTakingOrders = shopAvailability?.kind === "paused" || shopAvailability?.kind === "closed"
+
+  // The snapshot above is the ONLY thing that disables Place order, and it was read once, on mount.
+  // A customer who opened checkout during a 20-minute pause and waited it out would otherwise keep a
+  // dead button the server now accepts (#916 round 1, finding 1). So just after the server's own
+  // stated end — the pause end, or a closed shop's next opening — the shop is read AGAIN and that
+  // answer is rendered (the kitchen's PauseOrdersControl precedent, 37-21). No clock decides the
+  // state: the clock only schedules the question. A stated time already in the past (a stale
+  // snapshot) is asked at once. The effect keys on the time string, so an unchanged answer does
+  // not re-arm it and nothing can loop.
+  const reopensAt =
+    shopAvailability?.kind === "paused"
+      ? shopAvailability.reopensAt
+      : shopAvailability?.kind === "closed"
+        ? shopAvailability.nextOpenAt
+        : null
+  useEffect(() => {
+    if (!reopensAt) return
+    const at = Date.parse(reopensAt)
+    if (Number.isNaN(at)) return
+    const wait = Math.max(0, at - Date.now()) + REOPEN_RECHECK_GRACE_MS
+    let cancelRead: (() => void) | null = null
+    const timer = setTimeout(() => {
+      cancelRead = loadShop()
+    }, wait)
+    return () => {
+      clearTimeout(timer)
+      cancelRead?.()
+    }
+  }, [reopensAt, loadShop])
 
   // After order is created, holds the Stripe client secret + order details
   const [paymentState, setPaymentState] = useState<{
@@ -539,6 +585,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // Step 1: Collect customer details and create order
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
+    // K3: the disabled button already says why; an implicit or forced submit sends nothing either.
+    if (notTakingOrders) return
     setError(null)
 
     // Conditional UK-address validation (Surface E). Collection needs no address.
@@ -683,6 +731,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           const freshMask = basketAllergenMask(basketAtSubmit, fresh)
           setStaleOverride((prev) => (prev && freshMask === prev.mask ? null : prev))
         })
+        return
+      }
+      // 37-22 (UI-SPEC K3 "Checkout race"): the shop paused or closed while the customer was on the
+      // page. 37-20 refuses with a typed 409 shop-closed BEFORE any write or idempotency
+      // reservation, so no order exists, and nothing on this path touches the basket: it is saved,
+      // and the copy says so. Recognised by type before the generic path, like the stale-allergen 409.
+      const shopClosed = readShopClosedProblem(err)
+      if (shopClosed) {
+        setError(shopClosedRaceCopy(shop?.name ?? "This shop", shopClosed))
         return
       }
       // #409: this used to read ONLY `response.data.detail` (RFC 7807). The rate
@@ -965,6 +1022,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       </Link>
       <h1 className="text-xl font-bold text-slate-900">Checkout</h1>
       <p className="text-sm text-slate-600 mt-1">{itemCount} item{itemCount !== 1 ? "s" : ""} &middot; {formatPrice(totalPennies)}</p>
+
+      {/* K3: top of step 1, before anything the customer fills in. The id is Place order's
+          aria-describedby while the shop is not taking orders. */}
+      {notTakingOrders && shop && (
+        <ShopAvailabilityNotice shop={shop} id={SHOP_AVAILABILITY_EXPLAINER_ID} className="mt-6" />
+      )}
 
       <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
         {/* Fulfilment toggle — bespoke 2-button segmented control (no new dep) */}
@@ -1307,10 +1370,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             acknowledgement gate has no such hint, and a disabled button on a touch device gives NO
             feedback at all when pressed — the user learns nothing. The gate instead REFUSES in the
             submit handler and announces the refusal, which is both accessible and legally stronger:
-            the refusal is evidence the gate fired. */}
+            the refusal is evidence the gate fired.
+
+            `notTakingOrders` (37-22, K3) meets the same bar as `belowMinimum`: its permanent
+            explanation is the availability notice at the top of step 1, linked here by
+            aria-describedby so a screen reader hears why the button is unavailable. */}
         <button
           type="submit"
-          disabled={submitting || belowMinimum}
+          disabled={submitting || belowMinimum || notTakingOrders}
+          aria-describedby={notTakingOrders ? SHOP_AVAILABILITY_EXPLAINER_ID : undefined}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {submitting ? (

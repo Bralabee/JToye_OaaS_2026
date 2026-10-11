@@ -119,22 +119,141 @@ describe("shopStructuredData", () => {
     expect(types).toEqual(["Restaurant", "ItemList", "BreadcrumbList"])
   })
 
-  it("maps opening hours to day URLs, dropping 'closed' and unparseable rows", () => {
-    const [restaurant] = build() as [
-      { openingHoursSpecification: Array<{ dayOfWeek: string; opens: string; closes: string }> },
-    ]
-    const spec = restaurant.openingHoursSpecification
-    expect(spec.map((s) => s.dayOfWeek)).toEqual([
-      "https://schema.org/Monday",
-      // tue is "closed" and is omitted — publishing it as 00:00-00:00 would
-      // advertise the shop as open at midnight.
-      "https://schema.org/Wednesday",
-    ])
-    // The overnight window survives as-is; schema.org expresses it with
-    // closes < opens, exactly as the vendor entered it.
-    expect(spec[1]).toMatchObject({ opens: "18:00", closes: "02:00" })
+})
+
+/**
+ * 37-22 (UI-SPEC K3 "JSON-LD", D-15, D-25, T-37-56): `openingHoursSpecification` is built from the
+ * vendor's STRUCTURED schedule (`openingSchedule`), never from the free-text `openingHours`, and is
+ * OMITTED for a legacy-always-open shop: publishing "open 24/7" for a shop that never declared
+ * hours would be a statement about a real business the vendor never made (the V63/V66 rule). A
+ * pause is operational state, not opening hours, and never reaches the JSON-LD.
+ *
+ * The shared fixture's free text (`mon 09:00 - 17:00, tue closed, wed 18:00 - 02:00`) is left on
+ * every shop below, so any block that still reads the text produces a Monday/Wednesday spec and fails.
+ */
+type HoursSpec = Array<{ "@type": string; dayOfWeek: string; opens: string; closes: string }>
+
+function hoursOf(overrides: Partial<PublicShop>): HoursSpec | undefined {
+  const [restaurant] = build({ shop: { ...shop, ...overrides } }) as [{ openingHoursSpecification?: HoursSpec }]
+  return restaurant.openingHoursSpecification
+}
+
+const EMPTY_WEEK = { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] }
+
+describe("shopStructuredData: opening hours from the structured schedule (37-22)", () => {
+  it("F9: a legacy-always-open shop publishes NO openingHoursSpecification (no 24/7 claim it never made)", () => {
+    const spec = hoursOf({
+      legacyAlwaysOpen: true,
+      hoursSource: "LEGACY_ALWAYS_OPEN",
+      openingSchedule: null,
+      openNow: true,
+    })
+    expect(spec).toBeUndefined()
   })
 
+  it("a structured Monday 09:00-17:00 is ONE specification, whatever the free text says", () => {
+    const spec = hoursOf({
+      hoursSource: "STRUCTURED",
+      legacyAlwaysOpen: false,
+      openingSchedule: { ...EMPTY_WEEK, tue: [], mon: [{ open: "09:00", close: "17:00" }] },
+    })
+    expect(spec).toEqual([
+      {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: "https://schema.org/Monday",
+        opens: "09:00",
+        closes: "17:00",
+      },
+    ])
+  })
+
+  it("an overnight window closes at 02:00 as schema.org allows (closes < opens), on the day it opens", () => {
+    const spec = hoursOf({
+      hoursSource: "STRUCTURED",
+      legacyAlwaysOpen: false,
+      openingSchedule: { ...EMPTY_WEEK, fri: [{ open: "18:00", close: "02:00" }] },
+    })
+    expect(spec).toEqual([
+      { "@type": "OpeningHoursSpecification", dayOfWeek: "https://schema.org/Friday", opens: "18:00", closes: "02:00" },
+    ])
+  })
+
+  it("a declared all-day window is 00:00-23:59, schema.org's spelling of open 24 hours", () => {
+    const spec = hoursOf({
+      hoursSource: "STRUCTURED",
+      legacyAlwaysOpen: false,
+      openingSchedule: { ...EMPTY_WEEK, sat: [{ open: "00:00", close: "00:00" }] },
+    })
+    expect(spec).toEqual([
+      { "@type": "OpeningHoursSpecification", dayOfWeek: "https://schema.org/Saturday", opens: "00:00", closes: "23:59" },
+    ])
+  })
+
+  it("two windows on a day are two specifications, in day order", () => {
+    const spec = hoursOf({
+      hoursSource: "STRUCTURED",
+      legacyAlwaysOpen: false,
+      openingSchedule: {
+        ...EMPTY_WEEK,
+        sun: [{ open: "12:00", close: "15:00" }],
+        mon: [
+          { open: "11:00", close: "14:00" },
+          { open: "17:00", close: "22:00" },
+        ],
+      },
+    })
+    expect(spec?.map((s) => [s.dayOfWeek.replace("https://schema.org/", ""), s.opens, s.closes])).toEqual([
+      ["Monday", "11:00", "14:00"],
+      ["Monday", "17:00", "22:00"],
+      ["Sunday", "12:00", "15:00"],
+    ])
+  })
+
+  it("a pause never reaches the JSON-LD: a paused shop publishes its schedule unchanged", () => {
+    const schedule = { ...EMPTY_WEEK, mon: [{ open: "09:00", close: "17:00" }] }
+    const paused = build({
+      shop: {
+        ...shop,
+        hoursSource: "STRUCTURED",
+        legacyAlwaysOpen: false,
+        openingSchedule: schedule,
+        openNow: false,
+        pausedIndefinitely: true,
+        pausedUntil: null,
+      },
+    })
+    const open = build({
+      shop: { ...shop, hoursSource: "STRUCTURED", legacyAlwaysOpen: false, openingSchedule: schedule, openNow: true },
+    })
+    expect(paused).toEqual(open)
+    expect(serialiseJsonLd(paused)).not.toMatch(/paus/i)
+  })
+
+  it("no schedule on the payload (an older backend): omitted, never re-parsed from the free text", () => {
+    expect(hoursOf({})).toBeUndefined()
+  })
+
+  it("a STRUCTURED shop closed every day publishes no hours rather than an empty list", () => {
+    expect(hoursOf({ hoursSource: "STRUCTURED", legacyAlwaysOpen: false, openingSchedule: EMPTY_WEEK })).toBeUndefined()
+  })
+
+  it("NEEDS_REVIEW (D-25): only the windows the vendor's text declared; an unreadable day is not published as 24 hours", () => {
+    // V80 read Monday; Tuesday's text was unreadable, so it is [] here and OPEN on the server.
+    const spec = hoursOf({
+      hoursSource: "NEEDS_REVIEW",
+      legacyAlwaysOpen: false,
+      openingSchedule: { ...EMPTY_WEEK, mon: [{ open: "09:00", close: "17:00" }] },
+      openingHours: { mon: "09:00 - 17:00", tue: "9ish till late" },
+      openNow: true,
+    })
+    expect(spec).toEqual([
+      { "@type": "OpeningHoursSpecification", dayOfWeek: "https://schema.org/Monday", opens: "09:00", closes: "17:00" },
+    ])
+  })
+
+})
+
+describe("shopStructuredData (continued)", () => {
   it("omits aggregateRating entirely when nothing has been rated", () => {
     const [restaurant] = build() as [Record<string, unknown>]
     expect(restaurant.aggregateRating).toBeUndefined()

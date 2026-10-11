@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37-A: Kitchen and order operations (#916) — 2026-10-11
+
+The second of Phase 37's sub-theme pull requests (plans 37-16 to 37-23 of 53): a storefront order
+reaches the kitchen and keeps calling until a cook accepts it, the board says loudly when it has
+stopped, and a shop takes orders only when its structured hours or a one-tap pause say so, with every
+customer surface reading the server's answer. One migration, V80, whose per-tenant backfill classifies
+every shop's free-text hours under a pinned GUC, proven on a two-tenant database under the RLS-bound
+migrator.
+
+- **Storefront orders reach the kitchen (D-11).** PENDING is a kitchen status on both sides, held
+  equal by a parity test; a new order lands in a "New orders" lane, oldest first, and a cook accepts
+  it (`/confirm`) or rejects it (`/cancel`, behind a confirm step). Every card shows the customer's
+  note, unclamped and text-only, and DELIVERY or COLLECTION; a failed accept says why. Only the
+  New card's ring flashes, at 1 Hz, and it holds still under reduced motion.
+- **A new order keeps calling (D-12, D-14).** One `AudioContext`, created only by a "Turn on
+  sound" tap, rings a two-tone chime every 5 s while an order waits and stops on accept, reject,
+  mute, a shop switch or a stopped board. The board says in words when it cannot ring, the tab
+  title carries the count, and the feed pill reads "Live" only when nothing louder applies.
+- **The board stops loudly (D-08).** A lapsed session turns the board solid red, "Signed out: new
+  orders are NOT showing", with a 3 s alarm capped at two minutes, and stays on the kitchen route;
+  a revoked grant has its own variant and closes the socket; a deliberate Sign out does neither;
+  the token is refreshed a minute before expiry so red means a real lapse.
+- **Structured hours and a one-tap pause (V80, D-15, D-25).** `shops.opening_schedule`,
+  `hours_source`, `orders_paused_until` and `orders_paused_indefinitely`, mirrored on `shops_aud`;
+  free text kept for one release. `ShopAvailabilityPolicy` decides in UK time; the checkout refuses
+  a paused or closed shop with a typed 409 `shop-closed` before any write; `PUT`/`DELETE
+  /api/v1/shops/{id}/pause` (20 min, 40 min, until reopened) at the STAFF gate; every public shop
+  read carries `openNow`, `nextOpenAt`, `pausedUntil`, `pausedIndefinitely`, `openingSchedule`
+  and `hoursSource`, computed per request. An unreadable legacy day stays open until its vendor
+  saves hours (owner ruling 2026-10-10).
+- **Kitchen pause, hours editor, customer surfaces.** A pause control and banner in the kitchen
+  header; the shop dialog's free-text hours replaced by a structured editor that validates what the
+  server enforces; dashboard notices and shops-table badges for legacy and needs-review shops. The
+  storefront pill, the shop cards, the shop-page notice and checkout read one availability reader;
+  checkout disables Place order and turns the typed refusal into "Your basket is saved"; JSON-LD
+  hours come only from the structured schedule; every seeded shop declares an all-day week.
+- **Gate (37-23).** Static gates and full suites green on the reconciled tree; the compose runtime
+  rebuilt and proven fresh (0 unverified, V80 read from the running database); kitchen specs green
+  on the rebuilt images; live proofs of lane arrival, the repeating chime, pause and resume, the
+  alarm cadence and a 38-minute stay-live; the chime and alarm timings are the owner's end-of-phase
+  sign-off.
+
 ### Phase 37-B: Staff access and finance (#913) — 2026-10-11
 
 The first of Phase 37's sub-theme pull requests (plans 37-01 to 37-15 of 53, plus the WINDOWS #29

@@ -13,7 +13,7 @@ import {
   getRetryDelayMs,
   MAX_RETRY_ATTEMPTS,
 } from "@/lib/public-fetch-retry"
-import { isOpenNow } from "@/lib/opening-hours"
+import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
 import { formatMiles } from "@/lib/distance"
 import {
   PROXIMITY_EXCLUSION_NOTE,
@@ -34,7 +34,11 @@ function formatPennies(pennies: number): string {
 }
 
 function ShopCard({ shop }: { shop: PublicShop }) {
-  const open = isOpenNow(shop.openingHours)
+  // 37-22 (UI-SPEC K3, theme 2): the badge is the SERVER's answer (openNow and the pause), never a
+  // re-parse of the free-text hours; no badge at all when the server sent no openNow.
+  const availability = readShopAvailability(shop)
+  const badge = cardBadgeLabel(availability)
+  const open = availability.kind === "open"
   const tags = shop.tags?.split(",").map((t) => t.trim()).filter(Boolean) || []
 
   return (
@@ -52,19 +56,25 @@ function ShopCard({ shop }: { shop: PublicShop }) {
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
 
-          {/* Open/Closed badge */}
-          <div className="absolute top-3 right-3">
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${
-                open
-                  ? "bg-emerald-500/90 text-white"
-                  : "bg-slate-800/70 text-slate-300"
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${open ? "bg-white animate-pulse" : "bg-slate-400"}`} />
-              {open ? "Open" : "Closed"}
-            </span>
-          </div>
+          {/* Open / Paused / Closed badge (server-driven) */}
+          {badge && (
+            <div className="absolute top-3 right-3">
+              <span
+                data-testid="shop-availability-badge"
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${
+                  open
+                    ? "bg-emerald-500/90 text-white"
+                    : "bg-slate-800/70 text-slate-300"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 rounded-full ${open ? "bg-white animate-pulse" : "bg-slate-400"}`}
+                />
+                {badge}
+              </span>
+            </div>
+          )}
 
           {/* The distance pill is ABSOLUTELY POSITIONED, and that is a CLS
               decision rather than a styling one — the same rule the landing

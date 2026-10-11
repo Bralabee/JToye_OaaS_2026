@@ -60,8 +60,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * posture explicitly and runs in its own random tenant; the booted posture is captured and restored
  * through {@link StrictScopingGuard}, never reset to a literal.
  *
- * <p>Options C (per-shop narrowing of which customers a granted user sees) and E (a SHOP_MANAGER
- * floor on customer writes) are separate future rulings and are deliberately NOT asserted here.
+ * <p><strong>Option E is asserted here (owner ruling 2026-10-10, quick 261010-ppb):</strong> reads
+ * keep the any-grant gate, create and update need SHOP_MANAGER on any shop (or Group admin), and
+ * delete needs Group admin. The "option E:" arms assert the typed refusal's {@code requiredRole} as
+ * well as its type, and re-read the table by SQL after every refused write. The floor runs before
+ * the Idempotency-Key branch, so a STAFF caller replaying a manager's key is refused, never served
+ * the stored 201.
+ *
+ * <p>Option C (per-shop narrowing of which customers a granted user sees) remains a separate future
+ * ruling (deferred to Phase 39) and is deliberately NOT asserted here.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -255,7 +262,10 @@ class CustomerAccessGateIntegrationTest {
         StrictScopingGuard.set(shopAccessService, true);
         Fixture f = Fixture.seed(jdbc, true);
         UUID granted = UUID.randomUUID();
-        ShopGrants.grantOperator(jdbc, f.tenant, granted, f.shopId, "STAFF", "staff-" + granted + "@example.com");
+        // Option E (2026-10-10): the creator must be a shop manager to create at all; the arm's
+        // intent (an ungranted replay is refused) is unchanged.
+        ShopGrants.grantOperator(jdbc, f.tenant, granted, f.shopId, "SHOP_MANAGER",
+                "manager-" + granted + "@example.com");
         String key = "windows29-" + UUID.randomUUID();
         String email = "replayed-" + UUID.randomUUID() + "@example.com";
         String body = customerJson("Replay Target", email);
@@ -289,12 +299,13 @@ class CustomerAccessGateIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // Controls: the gate admits exactly who staff/me says has access
+    // Option E (owner ruling 2026-10-10): reads any grant, create/update SHOP_MANAGER, delete Group
+    // admin; then the controls that the gate admits exactly who staff/me says has access
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("WINDOWS #29: STAFF of one shop keeps all five customer operations (positive control)")
-    void staffOfOneShop_allFiveOperationsSucceed() throws Exception {
+    @DisplayName("option E: STAFF of one shop still reads the customer list and a customer by id")
+    void staffOfOneShop_readsSucceed() throws Exception {
         StrictScopingGuard.set(shopAccessService, true);
         Fixture f = Fixture.seed(jdbc, true);
         UUID staff = UUID.randomUUID();
@@ -308,26 +319,220 @@ class CustomerAccessGateIntegrationTest {
                 .andReturn();
         assertThat(one.getResponse().getStatus()).as(body(one)).isEqualTo(200);
         assertThat(one.getResponse().getContentAsString()).contains(f.customerEmail);
+    }
 
-        String newEmail = "staff-created-" + UUID.randomUUID() + "@example.com";
+    @Test
+    @DisplayName("option E: STAFF of one shop cannot create a customer, unkeyed or with a fresh key, and nothing is written")
+    void staffOfOneShop_create_403_writesNothing() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID staff = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, staff, f.shopId, "STAFF", "staff-" + staff + "@example.com");
+
+        String email = "staff-create-" + UUID.randomUUID() + "@example.com";
         MvcResult create = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, staff))
-                        .contentType(MediaType.APPLICATION_JSON).content(customerJson("Staff Created", newEmail)))
+                        .contentType(MediaType.APPLICATION_JSON).content(customerJson("Staff Create", email)))
                 .andReturn();
-        assertThat(create.getResponse().getStatus()).as(body(create)).isEqualTo(201);
-        assertThat(countCustomersWithEmail(f.tenant, newEmail)).isEqualTo(1L);
+        assertShopAccessDenied(create, email, "SHOP_MANAGER");
+        assertThat(countCustomersWithEmail(f.tenant, email)).as("the refused unkeyed create wrote no row").isZero();
+
+        // The keyed path: with a FRESH key the create would run inside IdempotencyService.execute,
+        // which commits on its own, so a floor placed after execute would still answer 403 but leave
+        // the row written. The row count is the instrument.
+        String keyedEmail = "staff-keyed-create-" + UUID.randomUUID() + "@example.com";
+        MvcResult keyed = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, staff))
+                        .header("Idempotency-Key", "optionE-fresh-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON).content(customerJson("Staff Keyed", keyedEmail)))
+                .andReturn();
+        assertShopAccessDenied(keyed, keyedEmail, "SHOP_MANAGER");
+        assertThat(countCustomersWithEmail(f.tenant, keyedEmail))
+                .as("the refused keyed create wrote no row (the floor runs before idempotencyService.execute)")
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("option E: STAFF of one shop cannot update a customer, and the row is unchanged")
+    void staffOfOneShop_update_403_changesNothing() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID staff = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, staff, f.shopId, "STAFF", "staff-" + staff + "@example.com");
 
         MvcResult update = mockMvc.perform(put("/api/v1/customers/" + f.customerId).with(vendor(f.tenant, staff))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(customerJson("Renamed By Staff", f.customerEmail)))
                 .andReturn();
-        assertThat(update.getResponse().getStatus()).as(body(update)).isEqualTo(200);
-        assertThat(customerName(f.customerId)).isEqualTo("Renamed By Staff");
+        assertShopAccessDenied(update, "Renamed By Staff", "SHOP_MANAGER");
+        assertThat(customerName(f.customerId)).as("the refused update changed nothing").isEqualTo(f.customerName);
+    }
 
-        UUID doomed = seedCustomer(f.tenant, "Doomed", "doomed-" + UUID.randomUUID() + "@example.com");
-        MvcResult del = mockMvc.perform(delete("/api/v1/customers/" + doomed).with(vendor(f.tenant, staff)))
+    @Test
+    @DisplayName("option E: STAFF of one shop cannot delete a customer, and the row survives")
+    void staffOfOneShop_delete_403_rowSurvives() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID staff = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, staff, f.shopId, "STAFF", "staff-" + staff + "@example.com");
+
+        MvcResult del = mockMvc.perform(delete("/api/v1/customers/" + f.customerId).with(vendor(f.tenant, staff)))
+                .andReturn();
+        assertShopAccessDenied(del, f.customerEmail, "GROUP_ADMIN");
+        assertThat(customerExists(f.customerId)).as("the refused delete removed nothing").isTrue();
+    }
+
+    @Test
+    @DisplayName("option E: a tenant-wide STAFF grant cannot create a customer")
+    void tenantWideStaff_create_403() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID staff = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, staff, null, "STAFF", "tw-staff-" + staff + "@example.com");
+
+        String email = "tw-staff-create-" + UUID.randomUUID() + "@example.com";
+        MvcResult create = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, staff))
+                        .contentType(MediaType.APPLICATION_JSON).content(customerJson("TW Staff Create", email)))
+                .andReturn();
+        assertShopAccessDenied(create, email, "SHOP_MANAGER");
+        assertThat(countCustomersWithEmail(f.tenant, email)).as("the refused create wrote no row").isZero();
+    }
+
+    @Test
+    @DisplayName("option E: a SHOP_MANAGER of one shop creates and updates a customer")
+    void shopManagerOfOneShop_createAndUpdate_succeed() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID manager = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, manager, f.shopId, "SHOP_MANAGER",
+                "manager-" + manager + "@example.com");
+
+        String email = "manager-create-" + UUID.randomUUID() + "@example.com";
+        MvcResult create = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, manager))
+                        .contentType(MediaType.APPLICATION_JSON).content(customerJson("Manager Created", email)))
+                .andReturn();
+        assertThat(create.getResponse().getStatus()).as(body(create)).isEqualTo(201);
+        assertThat(countCustomersWithEmail(f.tenant, email)).isEqualTo(1L);
+
+        MvcResult update = mockMvc.perform(put("/api/v1/customers/" + f.customerId).with(vendor(f.tenant, manager))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(customerJson("Renamed By Manager", f.customerEmail)))
+                .andReturn();
+        assertThat(update.getResponse().getStatus()).as(body(update)).isEqualTo(200);
+        assertThat(customerName(f.customerId)).as("the update reached the row").isEqualTo("Renamed By Manager");
+    }
+
+    @Test
+    @DisplayName("option E: a SHOP_MANAGER of one shop cannot delete a customer, and the row survives")
+    void shopManagerOfOneShop_delete_403_rowSurvives() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID manager = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, manager, f.shopId, "SHOP_MANAGER",
+                "manager-" + manager + "@example.com");
+
+        MvcResult del = mockMvc.perform(delete("/api/v1/customers/" + f.customerId).with(vendor(f.tenant, manager)))
+                .andReturn();
+        assertShopAccessDenied(del, f.customerEmail, "GROUP_ADMIN");
+        assertThat(customerExists(f.customerId)).as("the refused delete removed nothing").isTrue();
+    }
+
+    @Test
+    @DisplayName("option E: an operator tenant-wide Group admin deletes a customer")
+    void operatorGroupAdmin_delete_204() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID admin = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, admin, null, "GROUP_ADMIN", "admin-" + admin + "@example.com");
+
+        MvcResult del = mockMvc.perform(delete("/api/v1/customers/" + f.customerId).with(vendor(f.tenant, admin)))
                 .andReturn();
         assertThat(del.getResponse().getStatus()).as(body(del)).isEqualTo(204);
-        assertThat(customerExists(doomed)).as("the delete removed the row").isFalse();
+        assertThat(customerExists(f.customerId)).as("the delete removed the row").isFalse();
+    }
+
+    @Test
+    @DisplayName("option E: a tenant-wide SHOP_MANAGER in a tenant with no shops creates a customer")
+    void tenantWideShopManagerWithNoShops_create_201() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, false);
+        UUID manager = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, manager, null, "SHOP_MANAGER",
+                "tw-manager-" + manager + "@example.com");
+
+        String email = "tw-manager-create-" + UUID.randomUUID() + "@example.com";
+        MvcResult create = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, manager))
+                        .contentType(MediaType.APPLICATION_JSON).content(customerJson("TW Manager Created", email)))
+                .andReturn();
+        assertThat(create.getResponse().getStatus()).as(body(create)).isEqualTo(201);
+        assertThat(countCustomersWithEmail(f.tenant, email)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("option E: a de-honoured JIT Group admin whose row still exists cannot create or delete a customer")
+    void deHonouredJitGroupAdmin_createAndDelete_403() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID operatorAdmin = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, operatorAdmin, null, "GROUP_ADMIN",
+                "admin-" + operatorAdmin + "@example.com");
+        UUID jitUser = UUID.randomUUID();
+        jdbc.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, grant_source, created_at) "
+                        + "VALUES (?, ?, ?, NULL, 'GROUP_ADMIN', 'JIT', ?)",
+                UUID.randomUUID(), f.tenant, jitUser, java.time.OffsetDateTime.now().minusDays(1));
+        assertThat(shopStaffRows(f.tenant, jitUser))
+                .as("instrument: the JIT row exists, so a refusal is the honour ladder, not a missing row")
+                .isEqualTo(1L);
+
+        String email = "jit-create-" + UUID.randomUUID() + "@example.com";
+        MvcResult create = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, jitUser))
+                        .contentType(MediaType.APPLICATION_JSON).content(customerJson("JIT Create", email)))
+                .andReturn();
+        assertShopAccessDenied(create, email, "SHOP_MANAGER");
+        assertThat(countCustomersWithEmail(f.tenant, email)).as("the refused create wrote no row").isZero();
+
+        MvcResult del = mockMvc.perform(delete("/api/v1/customers/" + f.customerId).with(vendor(f.tenant, jitUser)))
+                .andReturn();
+        assertShopAccessDenied(del, f.customerEmail, "GROUP_ADMIN");
+        assertThat(customerExists(f.customerId)).as("the refused delete removed nothing").isTrue();
+    }
+
+    @Test
+    @DisplayName("option E: STAFF replaying a shop manager's Idempotency-Key is refused, never served the stored 201")
+    void staffReplayOfShopManagerKey_403_notStored201() throws Exception {
+        StrictScopingGuard.set(shopAccessService, true);
+        Fixture f = Fixture.seed(jdbc, true);
+        UUID manager = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, manager, f.shopId, "SHOP_MANAGER",
+                "manager-" + manager + "@example.com");
+        UUID staff = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, f.tenant, staff, f.shopId, "STAFF", "staff-" + staff + "@example.com");
+        String key = "optionE-replay-" + UUID.randomUUID();
+        String email = "manager-keyed-" + UUID.randomUUID() + "@example.com";
+        String body = customerJson("Manager Keyed", email);
+
+        MvcResult first = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, manager))
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andReturn();
+        assertThat(first.getResponse().getStatus()).as("manager create: %s", body(first)).isEqualTo(201);
+        String createdId = jsonMapper.readTree(first.getResponse().getContentAsString()).path("id").asString();
+        assertThat(createdId).isNotBlank();
+
+        MvcResult replay = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, manager))
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andReturn();
+        assertThat(replay.getResponse().getStatus()).as("the manager's own replay: %s", body(replay)).isEqualTo(201);
+        assertThat(jsonMapper.readTree(replay.getResponse().getContentAsString()).path("id").asString())
+                .as("the manager's replay returns the same customer").isEqualTo(createdId);
+
+        MvcResult stolen = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, staff))
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andReturn();
+        assertShopAccessDenied(stolen, email, "SHOP_MANAGER");
+        assertThat(stolen.getResponse().getContentAsString())
+                .as("the refused replay must not carry the stored customer id")
+                .doesNotContain(createdId);
     }
 
     @Test
@@ -466,6 +671,15 @@ class CustomerAccessGateIntegrationTest {
         assertThat(result.getResponse().getStatus()).as("status, body: %s", content).isEqualTo(403);
         assertThat(type(result)).as("problem type, body: %s", content).isEqualTo(SHOP_ACCESS_DENIED);
         assertThat(content).as("a refusal leaks no customer data").doesNotContain(mustNotContain);
+    }
+
+    /** The typed refusal plus its machine-readable floor: the instrument for every option E arm. */
+    private void assertShopAccessDenied(MvcResult result, String mustNotContain, String requiredRole)
+            throws Exception {
+        assertShopAccessDenied(result, mustNotContain);
+        String content = result.getResponse().getContentAsString();
+        assertThat(jsonMapper.readTree(content).path("requiredRole").asString())
+                .as("requiredRole, body: %s", content).isEqualTo(requiredRole);
     }
 
     private String type(MvcResult result) throws Exception {

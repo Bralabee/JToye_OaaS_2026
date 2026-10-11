@@ -39,6 +39,27 @@ export const KITCHEN_CLOCK_TICK_MS = 10_000
 
 export type FeedStatus = "live" | "reconnecting" | "offline" | "error"
 
+/**
+ * What the header pill says (37-17, D-14, roadmap SC-1): "Live" only when it is true.
+ *
+ * `status` above is the FEED's state and keeps its four values (the banner reads it). The pill
+ * answers a wider question — can this board be trusted to bring the next order to someone's
+ * attention? — so it also folds in the session, the access grant, staleness, and whether the
+ * board can ring. UI-SPEC K1's precedence, first match wins: signedOut > noAccess > offline >
+ * error > reconnecting > stale > soundOff > muted > live. ("Connecting…" is row 1 and stays the
+ * pill's presentation-only `pending`; see kds-feed-status.tsx.)
+ */
+export type FeedPillStatus =
+  | "signedOut"
+  | "noAccess"
+  | "offline"
+  | "error"
+  | "reconnecting"
+  | "stale"
+  | "soundOff"
+  | "muted"
+  | "live"
+
 export interface FeedInputs {
   /** `navigator.onLine`. */
   online: boolean
@@ -52,6 +73,14 @@ export interface FeedInputs {
   lastSyncFailed: boolean
   /** Epoch ms "now" — passed in so the derivation stays pure and testable. */
   now: number
+  /** The session has lapsed (K2; wired by 37-18). */
+  signedOut?: boolean
+  /** Access to this kitchen has ended (K2; wired by 37-18). */
+  noAccess?: boolean
+  /** The board cannot ring: no unlocked AudioContext, or the browser holds it suspended. */
+  soundOff?: boolean
+  /** The operator's `kds-muted` preference is on. */
+  muted?: boolean
 }
 
 export interface FeedState {
@@ -67,6 +96,8 @@ export interface FeedState {
    * still shows the honest status; only the space-taking banner is withheld.
    */
   alerting: boolean
+  /** What the header pill says. Never "live" while any other condition holds. */
+  pill: FeedPillStatus
 }
 
 export function deriveFeedState(input: FeedInputs): FeedState {
@@ -117,7 +148,24 @@ export function deriveFeedState(input: FeedInputs): FeedState {
   // be similar lengths.
   const settled = lastSyncedAt !== null || lastSyncFailed
 
-  return { status, stale, ageMs, alerting: settled && (status !== "live" || stale) }
+  // The pill's precedence. `stale` is the existing STALE_AFTER_MS reading, so "Out of date" and
+  // the stale banner can never disagree about whether the board is old. Sound and mute change
+  // only the pill: they raise no FEED banner, because the sound bar under the header says them.
+  const pill: FeedPillStatus = input.signedOut
+    ? "signedOut"
+    : input.noAccess
+      ? "noAccess"
+      : status !== "live"
+        ? status
+        : stale
+          ? "stale"
+          : input.soundOff
+            ? "soundOff"
+            : input.muted
+              ? "muted"
+              : "live"
+
+  return { status, stale, ageMs, alerting: settled && (status !== "live" || stale), pill }
 }
 
 /** Absolute wall-clock stamp — the thing a cook glances at. Locale-pinned so the

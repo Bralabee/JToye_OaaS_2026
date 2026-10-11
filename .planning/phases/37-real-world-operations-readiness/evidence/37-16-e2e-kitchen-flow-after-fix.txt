@@ -1,0 +1,24 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/kitchen-flow.spec.ts --reporter=line
+
+Running 18 tests using 1 worker
+
+[1/18] [mobile] › e2e/kitchen-flow.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time
+[2/18] [mobile] › e2e/kitchen-flow.spec.ts:364:7 › Kitchen display + order detail — product names & fixes (Surface F) › order-detail page shows real product names and the delivery address, no 'Unknown Product'
+[3/18] [mobile] › e2e/kitchen-flow.spec.ts:390:7 › Kitchen display + order detail — product names & fixes (Surface F) › clicking bump advances the ticket and posts the transition
+[4/18] [mobile] › e2e/kitchen-flow.spec.ts:426:7 › Kitchen display + order detail — product names & fixes (Surface F) › a storefront order appears in the New lane, and Accept moves it to the grid
+[5/18] [mobile] › e2e/kitchen-flow.spec.ts:478:7 › Kitchen display + order detail — product names & fixes (Surface F) › going offline raises a stale banner with a last-updated stamp, and coming back clears it
+[6/18] [mobile] › e2e/kitchen-flow.spec.ts:563:7 › Kitchen display + order detail — product names & fixes (Surface F) › reads the board at a cost that does not scale with ticket count
+[7/18] [mobile] › e2e/kitchen-flow.spec.ts:618:7 › Kitchen display + order detail — product names & fixes (Surface F) › a ticket can be printed, and the print stylesheet hides the dashboard chrome
+[8/18] [mobile] › e2e/kitchen-flow.spec.ts:678:7 › Kitchen display + order detail — product names & fixes (Surface F) › the board names its shop, and explains itself in the All-shops context
+[9/18] [mobile] › e2e/kitchen-flow.spec.ts:713:7 › Kitchen display + order detail — product names & fixes (Surface F) › a kitchen ticket that exists only on page 1 still reaches the board
+[10/18] [desktop] › e2e/kitchen-flow.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time
+[11/18] [desktop] › e2e/kitchen-flow.spec.ts:364:7 › Kitchen display + order detail — product names & fixes (Surface F) › order-detail page shows real product names and the delivery address, no 'Unknown Product'
+[12/18] [desktop] › e2e/kitchen-flow.spec.ts:390:7 › Kitchen display + order detail — product names & fixes (Surface F) › clicking bump advances the ticket and posts the transition
+[13/18] [desktop] › e2e/kitchen-flow.spec.ts:426:7 › Kitchen display + order detail — product names & fixes (Surface F) › a storefront order appears in the New lane, and Accept moves it to the grid
+[14/18] [desktop] › e2e/kitchen-flow.spec.ts:478:7 › Kitchen display + order detail — product names & fixes (Surface F) › going offline raises a stale banner with a last-updated stamp, and coming back clears it
+[15/18] [desktop] › e2e/kitchen-flow.spec.ts:563:7 › Kitchen display + order detail — product names & fixes (Surface F) › reads the board at a cost that does not scale with ticket count
+[16/18] [desktop] › e2e/kitchen-flow.spec.ts:618:7 › Kitchen display + order detail — product names & fixes (Surface F) › a ticket can be printed, and the print stylesheet hides the dashboard chrome
+[17/18] [desktop] › e2e/kitchen-flow.spec.ts:678:7 › Kitchen display + order detail — product names & fixes (Surface F) › the board names its shop, and explains itself in the All-shops context
+[18/18] [desktop] › e2e/kitchen-flow.spec.ts:713:7 › Kitchen display + order detail — product names & fixes (Surface F) › a kitchen ticket that exists only on page 1 still reaches the board
+  18 passed (43.1s)

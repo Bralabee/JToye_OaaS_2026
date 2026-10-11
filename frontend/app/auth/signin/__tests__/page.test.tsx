@@ -216,3 +216,77 @@ describe('SignIn Page metadata (own title, not the root default)', () => {
     expect(description).not.toMatch(/jtoye-dev|jtoye-customers|keycloak|realm/i)
   })
 })
+
+/**
+ * 37-18 (D-14, UI-SPEC K2, threat T-37-46): the kitchen's "Sign in again" comes here as
+ * /auth/signin?callbackUrl=%2Fdashboard%2Fkitchen, so signing back in returns the tablet to the
+ * kitchen. The query string is attacker-controlled, so only a same-origin path is honoured: one
+ * leading "/" (never "//" or "/\"), no scheme. Anything else signs in to /dashboard, as before.
+ *
+ * The page reads the URL at click time, so each test sets it with history.pushState first.
+ */
+describe('SignIn Page callbackUrl (37-18)', () => {
+  const clickSignIn = () =>
+    fireEvent.click(screen.getByRole('button', { name: /sign in with keycloak/i }))
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+  afterEach(() => {
+    window.history.pushState({}, '', '/')
+  })
+
+  it('returns to the kitchen when the board-stopped overlay sent the tablet here', () => {
+    window.history.pushState({}, '', '/auth/signin?callbackUrl=%2Fdashboard%2Fkitchen')
+    render(<SignInPage />)
+
+    clickSignIn()
+
+    expect(signIn).toHaveBeenCalledWith('keycloak', { callbackUrl: '/dashboard/kitchen' })
+  })
+
+  it('keeps /dashboard when there is no callbackUrl', () => {
+    window.history.pushState({}, '', '/auth/signin')
+    render(<SignInPage />)
+
+    clickSignIn()
+
+    expect(signIn).toHaveBeenCalledWith('keycloak', { callbackUrl: '/dashboard' })
+  })
+
+  it('refuses a protocol-relative //evil.example and signs in to /dashboard', () => {
+    window.history.pushState({}, '', '/auth/signin?callbackUrl=%2F%2Fevil.example')
+    render(<SignInPage />)
+
+    clickSignIn()
+
+    expect(signIn).toHaveBeenCalledWith('keycloak', { callbackUrl: '/dashboard' })
+  })
+
+  it('refuses an absolute https://evil.example and signs in to /dashboard', () => {
+    window.history.pushState({}, '', '/auth/signin?callbackUrl=https%3A%2F%2Fevil.example')
+    render(<SignInPage />)
+
+    clickSignIn()
+
+    expect(signIn).toHaveBeenCalledWith('keycloak', { callbackUrl: '/dashboard' })
+  })
+
+  it('refuses a javascript: URL and signs in to /dashboard', () => {
+    window.history.pushState({}, '', '/auth/signin?callbackUrl=javascript%3Aalert(1)')
+    render(<SignInPage />)
+
+    clickSignIn()
+
+    expect(signIn).toHaveBeenCalledWith('keycloak', { callbackUrl: '/dashboard' })
+  })
+
+  it('refuses a backslash /\\evil and signs in to /dashboard', () => {
+    window.history.pushState({}, '', '/auth/signin?callbackUrl=%2F%5Cevil')
+    render(<SignInPage />)
+
+    clickSignIn()
+
+    expect(signIn).toHaveBeenCalledWith('keycloak', { callbackUrl: '/dashboard' })
+  })
+})

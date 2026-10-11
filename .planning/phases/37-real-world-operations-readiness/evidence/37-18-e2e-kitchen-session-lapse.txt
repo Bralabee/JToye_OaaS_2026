@@ -1,0 +1,44 @@
+37-18 live run of e2e/kitchen-session-lapse.spec.ts against the compose stack, frontend image 809cf75c (rebuilt at 8af7b688, container c5e633c4), core-java 94e8e7b2 (known stale, untouched).
+
+RUN 1 (spec as committed in 8af7b688): rc=1, 2 passed, 4 failed.
+  1) [mobile] › e2e/kitchen-session-lapse.spec.ts:103:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › lapse: overlay, unchanged URL, 'Signed out' pill, STOPPED title; Sign in again returns to the kitchen 
+    Error: locator.click: Error: strict mode violation: getByTestId('kds-sound-control').getByText('Turn on sound') resolved to 2 elements:
+  2) [mobile] › e2e/kitchen-session-lapse.spec.ts:170:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › INSTRUMENT: on a page that cannot claim the lapse, the overlay is absent and the browser goes to sign-in 
+    TimeoutError: page.waitForURL: Timeout 20000ms exceeded.
+  3) [desktop] › e2e/kitchen-session-lapse.spec.ts:103:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › lapse: overlay, unchanged URL, 'Signed out' pill, STOPPED title; Sign in again returns to the kitchen 
+  4) [desktop] › e2e/kitchen-session-lapse.spec.ts:170:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › INSTRUMENT: on a page that cannot claim the lapse, the overlay is absent and the browser goes to sign-in 
+    TimeoutError: page.waitForURL: Timeout 20000ms exceeded.
+
+DIAGNOSIS (throwaway spec, deleted, never committed):
+  a) with a 3 s settle before dropping the cookie: /api/auth/session -> null, kitchen read -> 401, lapse event claimed (defaultPrevented true), 1 alertdialog, URL /dashboard/kitchen. The product path works.
+  b) replaying INSTRUMENT timing: the cookie was cleared while a /api/auth/session request was in flight; its response re-issued the session cookie, so the next kitchen reads returned 200 (twice) and nothing lapsed. A spec race, not a product defect.
+  c) the strict-mode failure is #593: React's streaming buffer holds a second copy of the board; kitchen-flow.spec.ts scopes to body > div:not([hidden]) for the same reason.
+FIX (spec only): drop the cookie until /api/auth/session reads null twice, 1.5 s apart; scope test ids to the live tree.
+
+RUN 2: rc=0
+  6 passed (31.6s)
+RUN 3 (--repeat-each=2): rc=0
+  12 passed (1.1m)
+
+INSTRUMENT arm (in-spec fail direction): with the lapse event swallowed before the kitchen's listener, the browser navigates to /auth/signin and no overlay is seen, in every run of runs 2 and 3.
+
+K2 BACKSTOP (UI-SPEC long-text; plan's overflow assumption), added after run 3:
+RUN 4 (first version: each text element's own scrollWidth vs clientWidth): rc=1, 6 passed, 4 failed, every failure the INSTRUMENT step:
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 930
+  Received:   930
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 1200
+  Received:   1200
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 930
+  Received:   930
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 1200
+  Received:   1200
+  -> the measurement was vacuous: the centred flex-item headline grows to fit its text, so a one-line headline read 930/930 (1200/1200) while running off a 375 px screen. Replaced with bounding-box containment in the viewport plus the overlay's own sideways overflow.
+RUN 5 (containment measurement): rc=0
+  10 passed (41.7s)
+  both variants at 375x667, root 130%: headline and body inside the viewport, no sideways overflow, both buttons >= 56 px and fully on screen after scrollIntoViewIfNeeded, Tab reaches Silence alarm; INSTRUMENT (white-space:nowrap on the headline) reads clipped=true in all four runs.
+
+Screens: evidence/37-18-screens/k2-{signed-out,access-ended}-{375x667-root130,1280x800}.png (desktop project, live dev tenant, sound never turned on so the cannot-ring line shows). At 375x667/130% the overlay opens scrolled to the focused primary, so the icon and the first headline line sit above the fold, reachable by scrolling.

@@ -1119,6 +1119,22 @@
             },
             "type" : "object"
           },
+          "openingSchedule" : {
+            "additionalProperties" : {
+              "items" : {
+                "additionalProperties" : {
+                  "type" : "string"
+                },
+                "type" : "object"
+              },
+              "type" : "array"
+            },
+            "description" : "Structured opening hours, mon..sun -> up to 3 {open, close} windows (HH:MM, UK time; close at or before open runs past midnight). Absent keeps the stored schedule; {} saves closed every day.",
+            "type" : [
+              "object",
+              "null"
+            ]
+          },
           "phone" : {
             "type" : "string"
           },
@@ -3382,6 +3398,26 @@
         },
         "type" : "object"
       },
+      "PauseOrdersRequest" : {
+        "properties" : {
+          "minutes" : {
+            "description" : "Pause storefront orders for this many minutes from now: 20 or 40 (any other value is a 400).",
+            "format" : "int32",
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "untilReopened" : {
+            "description" : "Pause storefront orders until the vendor resumes them (DELETE /shops/{id}/pause).",
+            "type" : [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type" : "object"
+      },
       "ProblemDetail" : {
         "additionalProperties" : true,
         "description" : "RFC 7807 problem detail. Every non-2xx response from this API uses this shape, produced centrally by GlobalExceptionHandler. Handlers may attach additional machine-readable members (e.g. shopId, requiredRole, errors).",
@@ -3833,9 +3869,26 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "hoursSource" : {
+            "description" : "Where the hours came from. NEEDS_REVIEW: some original text could not be read and those days stay open until the vendor saves hours (D-25); openNow already accounts for it.",
+            "enum" : [
+              "STRUCTURED",
+              "MIGRATED_FROM_TEXT",
+              "NEEDS_REVIEW",
+              "LEGACY_ALWAYS_OPEN"
+            ],
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
           "latitude" : {
             "format" : "double",
             "type" : "number"
+          },
+          "legacyAlwaysOpen" : {
+            "description" : "True for a shop that had no hours when structured hours arrived: it takes orders at any time until its vendor sets hours (D-25).",
+            "type" : "boolean"
           },
           "logoUrl" : {
             "type" : "string"
@@ -3851,11 +3904,51 @@
           "name" : {
             "type" : "string"
           },
+          "nextOpenAt" : {
+            "description" : "When the shop next takes orders, when it is not taking them now and a time is known.",
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "openNow" : {
+            "description" : "Whether the storefront takes an order now (ShopAvailabilityPolicy, UK time). False while paused or outside the opening hours; a checkout submitted anyway is refused 409 shop-closed.",
+            "type" : "boolean"
+          },
           "openingHours" : {
             "additionalProperties" : {
               "type" : "string"
             },
             "type" : "object"
+          },
+          "openingSchedule" : {
+            "additionalProperties" : {
+              "items" : {
+                "additionalProperties" : {
+                  "type" : "string"
+                },
+                "type" : "object"
+              },
+              "type" : "array"
+            },
+            "description" : "Structured opening hours: mon..sun -> {open, close} windows (HH:MM, UK time); [] = closed. Null when the shop has none (legacyAlwaysOpen).",
+            "type" : [
+              "object",
+              "null"
+            ]
+          },
+          "pausedIndefinitely" : {
+            "description" : "Storefront orders are paused until the vendor resumes them (D-15).",
+            "type" : "boolean"
+          },
+          "pausedUntil" : {
+            "description" : "The end of a timed pause still in force (D-15).",
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
           },
           "phone" : {
             "type" : "string"
@@ -4699,6 +4792,16 @@
           "email" : {
             "type" : "string"
           },
+          "hoursSource" : {
+            "description" : "Where the opening schedule came from: STRUCTURED (the vendor saved it), MIGRATED_FROM_TEXT, NEEDS_REVIEW (some free-text hours could not be read; those days stay open until the vendor saves hours, D-25) or LEGACY_ALWAYS_OPEN (no hours were ever set; open at any time). Absent: no hours yet.",
+            "enum" : [
+              "STRUCTURED",
+              "MIGRATED_FROM_TEXT",
+              "NEEDS_REVIEW",
+              "LEGACY_ALWAYS_OPEN"
+            ],
+            "type" : "string"
+          },
           "id" : {
             "format" : "uuid",
             "type" : "string"
@@ -4706,6 +4809,13 @@
           "latitude" : {
             "format" : "double",
             "type" : "number"
+          },
+          "legacyOpeningHours" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "description" : "The original free-text hours, mon..sun, for the NEEDS_REVIEW notice. Read-only.",
+            "type" : "object"
           },
           "logoUrl" : {
             "type" : "string"
@@ -4726,6 +4836,28 @@
               "type" : "string"
             },
             "type" : "object"
+          },
+          "openingSchedule" : {
+            "additionalProperties" : {
+              "items" : {
+                "additionalProperties" : {
+                  "type" : "string"
+                },
+                "type" : "object"
+              },
+              "type" : "array"
+            },
+            "description" : "Structured opening hours: mon..sun -> {open, close} windows (HH:MM, UK time); [] = closed.",
+            "type" : "object"
+          },
+          "ordersPausedIndefinitely" : {
+            "description" : "Storefront orders are paused until the vendor resumes them (D-15).",
+            "type" : "boolean"
+          },
+          "ordersPausedUntil" : {
+            "description" : "Storefront orders are paused until this instant (D-15). Absent: no timed pause.",
+            "format" : "date-time",
+            "type" : "string"
           },
           "phone" : {
             "type" : "string"
@@ -6334,7 +6466,7 @@
         ]
       },
       "post" : {
-        "description" : "Creates a new customer. Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.",
+        "description" : "Creates a customer. Requires SHOP_MANAGER on any shop, or Group admin (owner ruling 2026-10-10). Requires name and email (unique per tenant). Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original customer and never creates a duplicate.",
         "operationId" : "create_5",
         "parameters" : [
           {
@@ -6387,7 +6519,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: the caller holds no shop grant (D-06)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"
           },
           "409" : {
             "content" : {
@@ -6416,7 +6548,7 @@
     },
     "/api/v1/customers/{id}" : {
       "delete" : {
-        "description" : "Deletes a customer for the authenticated tenant",
+        "description" : "Deletes a customer. Group admin only.",
         "operationId" : "delete_3",
         "parameters" : [
           {
@@ -6442,7 +6574,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: the caller holds no shop grant (D-06)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole GROUP_ADMIN"
           },
           "404" : {
             "content" : {
@@ -6539,7 +6671,7 @@
         ]
       },
       "put" : {
-        "description" : "Updates an existing customer for the authenticated tenant",
+        "description" : "Updates a customer. Requires SHOP_MANAGER on any shop, or Group admin.",
         "operationId" : "update_3",
         "parameters" : [
           {
@@ -6592,7 +6724,7 @@
                 }
               }
             },
-            "description" : "Missing customers:write scope, or shop-access-denied: the caller holds no shop grant (D-06)"
+            "description" : "Missing customers:write scope, or shop-access-denied: requiredRole SHOP_MANAGER (the caller is not a shop manager or Group admin)"
           },
           "404" : {
             "content" : {
@@ -8236,7 +8368,7 @@
     },
     "/api/v1/orders/kitchen" : {
       "get" : {
-        "description" : "Returns active (CONFIRMED/PREPARING/READY) orders WITH line items for one shop of the authenticated tenant, newest first. Replaces the list-then-detail-per-ticket round trip the kitchen display used to make (#564). Requires STAFF on the shop.",
+        "description" : "Returns active (PENDING/CONFIRMED/PREPARING/READY) orders WITH line items for one shop of the authenticated tenant, newest first. Replaces the list-then-detail-per-ticket round trip the kitchen display used to make (#564). Requires STAFF on the shop.",
         "operationId" : "getKitchenBoard",
         "parameters" : [
           {
@@ -12353,6 +12485,148 @@
           }
         ],
         "summary" : "Upload shop logo",
+        "tags" : [
+          "Shops"
+        ]
+      }
+    },
+    "/api/v1/shops/{id}/pause" : {
+      "delete" : {
+        "description" : "Ends any pause on this shop. Absolute: resuming a shop that is not paused changes nothing. Requires STAFF on the shop.",
+        "operationId" : "resumeOrders",
+        "parameters" : [
+          {
+            "description" : "Shop ID",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShopDto"
+                }
+              }
+            },
+            "description" : "Resumed; the shop with its pause fields cleared"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No STAFF grant on this shop (shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Shop not found"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Resume storefront orders",
+        "tags" : [
+          "Shops"
+        ]
+      },
+      "put" : {
+        "description" : "Stops the storefront taking orders for this shop: `{\"minutes\": 20}` or `{\"minutes\": 40}` from now, or `{\"untilReopened\": true}` until DELETE /shops/{id}/pause. Any other value is a 400. The write is absolute (it sets the pause, it never adds to it), so a retry cannot stack pauses. While paused, a storefront order is refused 409 `shop-closed` with reason PAUSED. Vendor, REST and MCP orders are not blocked. Requires STAFF on the shop.",
+        "operationId" : "pauseOrders",
+        "parameters" : [
+          {
+            "description" : "Shop ID",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PauseOrdersRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ShopDto"
+                }
+              }
+            },
+            "description" : "Paused; the shop with its pause fields"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Not one of 20 minutes, 40 minutes or until reopened"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No STAFF grant on this shop (shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Shop not found"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Pause storefront orders",
         "tags" : [
           "Shops"
         ]

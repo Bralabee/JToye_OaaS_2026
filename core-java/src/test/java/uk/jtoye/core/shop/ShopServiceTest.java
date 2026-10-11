@@ -96,7 +96,7 @@ class ShopServiceTest {
         lenient().when(postcodeGeocoder.locate(any())).thenReturn(Optional.empty());
         shopService = new ShopService(shopRepository, shopMapper, storageService, cacheEvictor,
                 shopAccessService, new ShopService.ShopCacheLoader(shopRepository, shopMapper),
-                postcodeGeocoder);
+                postcodeGeocoder, java.time.Clock.systemUTC());
 
         // Set up tenant context
         TenantContext.set(tenantId);

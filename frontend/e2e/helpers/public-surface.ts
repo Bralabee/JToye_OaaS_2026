@@ -36,6 +36,14 @@ export const PORTRAIT = svg(900, 1200, "%23c2410c") // the shape that broke the 
 export const LANDSCAPE = svg(858, 645, "%230f766e")
 export const ULTRAWIDE = svg(1200, 400, "%237c2d12")
 
+/**
+ * The all-day week a STRUCTURED shop declares (37-22, D-15): `00:00-00:00` every day, which the server's
+ * `ShopAvailabilityPolicy` reads as open 24 hours. The dev seeder declares exactly this on every demo shop,
+ * so the stub and a live stack describe the same kind of shop.
+ */
+const ALL_DAY = [{ open: "00:00", close: "00:00" }]
+export const ALL_DAY_WEEK = { mon: ALL_DAY, tue: ALL_DAY, wed: ALL_DAY, thu: ALL_DAY, fri: ALL_DAY, sat: ALL_DAY, sun: ALL_DAY }
+
 export const SHOP = {
   id: "shop-1",
   slug: "test-kitchen",
@@ -45,7 +53,18 @@ export const SHOP = {
   tags: "Nigerian, Grill, Halal",
   logoUrl: LANDSCAPE,
   bannerUrl: ULTRAWIDE,
+  // 37-22: the fixture carries what the 37-20 server sends for a shop with DECLARED hours, rather than
+  // `openingHours: null` alone (which the server would now classify as a shop with no hours: CLOSED, or
+  // LEGACY_ALWAYS_OPEN only if it predates V80). The storefront reads `openNow`; nothing re-parses the text,
+  // so the stub stays time-independent by declaration, exactly like the seeded demo shops.
   openingHours: null,
+  openingSchedule: ALL_DAY_WEEK,
+  hoursSource: "STRUCTURED",
+  legacyAlwaysOpen: false,
+  openNow: true,
+  nextOpenAt: null,
+  pausedUntil: null,
+  pausedIndefinitely: false,
   minimumOrderPennies: 1000,
   deliveryFeePennies: 299,
   freeDeliveryThresholdPennies: 3000,

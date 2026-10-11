@@ -1,8 +1,23 @@
 "use client"
 
-import { RefreshCw, Wifi, WifiOff, TriangleAlert } from "lucide-react"
+import {
+  BellOff,
+  Clock,
+  LogOut,
+  RefreshCw,
+  ShieldOff,
+  TriangleAlert,
+  VolumeX,
+  Wifi,
+  WifiOff,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { formatAge, formatClock, type FeedState } from "./feed-state"
+import {
+  formatAge,
+  formatClock,
+  type FeedPillStatus,
+  type FeedState,
+} from "./feed-state"
 
 /**
  * KDS feed liveness, made legible from across a kitchen (#106).
@@ -20,10 +35,20 @@ import { formatAge, formatClock, type FeedState } from "./feed-state"
  * in twelve cannot separate the amber from the green.
  */
 
+const RED = { dot: "bg-red-600", text: "text-red-800" }
+const AMBER = { dot: "bg-amber-500", text: "text-amber-800" }
+
+// 37-17 (D-14): the existing four states keep their words, icons and tones; five are added, in the
+// UI-SPEC K1 precedence that `deriveFeedState` applies. "Live" is now only the last row.
 const PILL: Record<
-  FeedState["status"],
+  FeedPillStatus,
   { dot: string; text: string; label: string; Icon: typeof Wifi }
 > = {
+  signedOut: { ...RED, label: "Signed out", Icon: LogOut },
+  noAccess: { ...RED, label: "No access", Icon: ShieldOff },
+  stale: { ...AMBER, label: "Out of date", Icon: Clock },
+  soundOff: { ...AMBER, label: "Sound off", Icon: VolumeX },
+  muted: { ...AMBER, label: "Muted", Icon: BellOff },
   live: {
     dot: "bg-emerald-600",
     text: "text-emerald-800",
@@ -74,6 +99,9 @@ const PENDING = {
   Icon: RefreshCw,
 }
 
+/** Every word the pill can say. Each one sizes the label slot, whatever the pill currently says. */
+const PILL_LABELS = [PENDING.label, ...Object.values(PILL).map((t) => t.label)]
+
 export function KdsFeedPill({
   state,
   lastSyncedAt,
@@ -84,7 +112,7 @@ export function KdsFeedPill({
   /** The page has not started reading yet. See {@link PENDING}. */
   pending?: boolean
 }) {
-  const tone = pending ? PENDING : PILL[state.status]
+  const tone = pending ? PENDING : PILL[state.pill]
   const Icon = tone.Icon
   return (
     <div
@@ -116,8 +144,23 @@ export function KdsFeedPill({
           gains a third line. The board and everything under it then move 46px, which
           is a layout shift attributable to a status label. `min-w` (not a fixed `w`)
           so a longer localisation grows the pill rather than clipping it. */}
-      <span className={`min-w-[5.5rem] text-sm font-semibold ${tone.text}`}>
-        {tone.label}
+      {/* 37-17: ten states now, so the slot's width is no longer guessed as a `min-w`. Every label
+          is stacked in the same grid cell as an invisible pseudo-element sizer, so the slot is as
+          wide as the widest label IN THE REAL FONT, in every state: a change of state cannot
+          change the pill's width or re-wrap the header (#536). Pseudo-element content adds no
+          text, so the pill still reads only its one word. */}
+      <span className="grid text-sm font-semibold">
+        <span className={`col-start-1 row-start-1 min-w-[5.5rem] ${tone.text}`}>
+          {tone.label}
+        </span>
+        {PILL_LABELS.map((label) => (
+          <span
+            key={label}
+            aria-hidden="true"
+            data-pill-sizer={label}
+            className="invisible col-start-1 row-start-1 after:content-[attr(data-pill-sizer)]"
+          />
+        ))}
       </span>
       <span className="min-w-[4rem] text-sm tabular-nums text-slate-600">
         {pending || lastSyncedAt === null ? (

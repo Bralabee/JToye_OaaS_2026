@@ -88,10 +88,15 @@ class ScopedWriteAccessIntegrationTest {
     // the random shopId in VALID_ORDER_JSON.
     private static final UUID SHOP_A = UUID.fromString("00000000-0000-0000-0000-0000000037a3");
 
-    // WINDOWS #29 (ruling B, 2026-10-09): every customer endpoint requires an honoured grant under
-    // D-06, so the customers:write caller is a FIXED subject holding STAFF on SHOP_A. The scope gate
-    // under test is unchanged; the grant only lets a write-scoped token reach the controller.
+    // WINDOWS #29 (ruling B, 2026-10-09) and option E (owner ruling 2026-10-10): customer create and
+    // update need SHOP_MANAGER under D-06, so the customers:write caller is a FIXED subject holding
+    // SHOP_MANAGER on SHOP_A. The scope gate under test is unchanged; the grant only lets a
+    // write-scoped token reach the controller.
     private static final UUID CUSTOMERS_WRITER = UUID.fromString("00000000-0000-0000-0000-00000029c001");
+
+    // Option E (owner ruling 2026-10-10): customer delete is Group-admin-only, so the delete arm uses
+    // its own FIXED subject holding an operator tenant-wide GROUP_ADMIN grant, seeded the same way.
+    private static final UUID CUSTOMERS_ADMIN = UUID.fromString("00000000-0000-0000-0000-00000029c002");
 
     @BeforeEach
     void setUp() {
@@ -109,8 +114,15 @@ class ScopedWriteAccessIntegrationTest {
                 "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?",
                 Long.class, TENANT_A, CUSTOMERS_WRITER);
         if (writerGrants == null || writerGrants == 0) {
-            ShopGrants.grantOperator(jdbcTemplate, TENANT_A, CUSTOMERS_WRITER, SHOP_A, "STAFF",
+            ShopGrants.grantOperator(jdbcTemplate, TENANT_A, CUSTOMERS_WRITER, SHOP_A, "SHOP_MANAGER",
                     "customers-writer@example.com");
+        }
+        Long adminGrants = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?",
+                Long.class, TENANT_A, CUSTOMERS_ADMIN);
+        if (adminGrants == null || adminGrants == 0) {
+            ShopGrants.grantOperator(jdbcTemplate, TENANT_A, CUSTOMERS_ADMIN, null, "GROUP_ADMIN",
+                    "customers-admin@example.com");
         }
     }
 
@@ -143,10 +155,19 @@ class ScopedWriteAccessIntegrationTest {
                 .authorities(new JwtRolesAndScopesConverter());
     }
 
-    /** Customer-write token: scope=customers:write, for the STAFF-granted {@link #CUSTOMERS_WRITER}. */
+    /** Customer-write token: scope=customers:write, for the SHOP_MANAGER-granted {@link #CUSTOMERS_WRITER}. */
     private static RequestPostProcessor customersWriteJwt() {
+        return customersWriteJwt(CUSTOMERS_WRITER);
+    }
+
+    /** Customer-write token for the operator Group admin {@link #CUSTOMERS_ADMIN} (delete is Group-admin-only). */
+    private static RequestPostProcessor customersAdminWriteJwt() {
+        return customersWriteJwt(CUSTOMERS_ADMIN);
+    }
+
+    private static RequestPostProcessor customersWriteJwt(UUID sub) {
         return jwt()
-                .jwt(j -> j.subject(CUSTOMERS_WRITER.toString())
+                .jwt(j -> j.subject(sub.toString())
                         .claim("tenant_id", TENANT_A.toString())
                         .claim("scope", "customers:write"))
                 .authorities(new JwtRolesAndScopesConverter());
@@ -276,7 +297,7 @@ class ScopedWriteAccessIntegrationTest {
     @Test
     void writeScopedTokenReaches404OnCustomerDelete() throws Exception {
         mockMvc.perform(delete("/api/v1/customers/" + UUID.randomUUID())
-                        .with(customersWriteJwt()))
+                        .with(customersAdminWriteJwt()))
                 .andExpect(status().isNotFound());
     }
 }

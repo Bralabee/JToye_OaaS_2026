@@ -217,7 +217,6 @@ function okLoad(seller: PublicSeller | undefined) {
       avgRating: 0,
       promotions: [],
       announcements: [],
-      isOpen: true,
     },
   }
 }

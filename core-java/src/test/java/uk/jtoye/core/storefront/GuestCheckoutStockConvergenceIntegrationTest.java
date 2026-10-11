@@ -283,11 +283,13 @@ class GuestCheckoutStockConvergenceIntegrationTest {
                 return existing.get(0);
             }
             UUID id = UUID.randomUUID();
-            // No opening_hours -> shop is always open (validateShopIsOpen returns early).
+            // No opening hours: the shop is LEGACY_ALWAYS_OPEN below, so it takes orders at any time.
             jdbcTemplate.update(
+                    // 37-20 (D-15/D-25): what V80 makes of a pre-existing shop with no hours, so it takes
+                    // orders at any time; with no hours_source the shop would be closed (NO_HOURS).
                     "INSERT INTO shops (id, tenant_id, created_at, name, slug, published, "
-                            + "delivery_fee_pennies, minimum_order_pennies, version) "
-                            + "VALUES (?, ?, now(), ?, ?, true, 0, 0, 0)",
+                            + "delivery_fee_pennies, minimum_order_pennies, version, hours_source) "
+                            + "VALUES (?, ?, now(), ?, ?, true, 0, 0, 0, 'LEGACY_ALWAYS_OPEN')",
                     id, tenantId, "Issue 85 Shop", slug);
             return id;
         } finally {

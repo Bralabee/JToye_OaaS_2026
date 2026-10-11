@@ -1,0 +1,76 @@
+{
+ "plan": "37-17",
+ "measuredAt": "2026-10-09T13:19:13Z",
+ "head": "54af268d",
+ "method": "Playwright chromium 153.0.8010.12 headless, no stack. (1) The real KdsFeedPill markup for all ten states, rendered by jest from the committed components, served with the BUILT stylesheet from frontend/.next/static (npm run build at 54af268d) and the body Work Sans class; width = getBoundingClientRect of each pill at 390 and 1280 px, then again with every [data-pill-sizer] removed (the pre-change shape: a min-w-[5.5rem] label sized to its own word). (2) A blank page: navigator.getAutoplayPolicy presence, an AudioContext built with no gesture, and one built inside a click handler.",
+ "pillWidthPx": {
+  "withSizers390": {
+   "Connecting…": 240,
+   "Signed out": 240,
+   "No access": 240,
+   "Offline": 240,
+   "Not updating": 240,
+   "Reconnecting": 240,
+   "Out of date": 240,
+   "Sound off": 240,
+   "Muted": 240,
+   "Live": 240
+  },
+  "withoutSizers390": {
+   "Connecting…": 236,
+   "Signed out": 230,
+   "No access": 230,
+   "Offline": 230,
+   "Not updating": 234,
+   "Reconnecting": 240,
+   "Out of date": 230,
+   "Sound off": 230,
+   "Muted": 230,
+   "Live": 230
+  },
+  "withSizers1280": {
+   "Connecting…": 240,
+   "Signed out": 240,
+   "No access": 240,
+   "Offline": 240,
+   "Not updating": 240,
+   "Reconnecting": 240,
+   "Out of date": 240,
+   "Sound off": 240,
+   "Muted": 240,
+   "Live": 240
+  },
+  "withoutSizers1280": {
+   "Connecting…": 236,
+   "Signed out": 230,
+   "No access": 230,
+   "Offline": 230,
+   "Not updating": 234,
+   "Reconnecting": 240,
+   "Out of date": 230,
+   "Sound off": 230,
+   "Muted": 230,
+   "Live": 230
+  }
+ },
+ "fontsLoaded": [
+  "Work Sans",
+  "Work Sans"
+ ],
+ "audio": {
+  "policyType": "undefined",
+  "policyBefore": null,
+  "noGestureState": "suspended",
+  "noGesturePolicy": null,
+  "inGestureState": "running",
+  "inGesturePolicy": null,
+  "afterStatechange": "running",
+  "stateAfter300ms": "running"
+ },
+ "reading": [
+  "With the sizers the pill is 240 px in all ten states at both widths: a state change cannot change its width.",
+  "Without them (fail direction) it is 230 px for Live/Offline and the new short words, 234 for Not updating, 236 for Connecting, 240 for Reconnecting: the pre-change min-w-[5.5rem] did not cover the widest existing words either, so the old pill already moved by up to 10 px between Live and Reconnecting.",
+  "This Chromium has no navigator.getAutoplayPolicy (typeof undefined), so on it the AudioContext.state fallback is the branch that decides (RESEARCH A7).",
+  "A context built without a gesture is suspended; one built inside the click handler is running. That is the premise behind removing the socket-callback new AudioContext() and unlocking only from the tap, measured rather than cited."
+ ]
+}

@@ -10,8 +10,15 @@ import type { OrderDetail, OrderStatus } from "@/types/api"
  * This copy still earns its keep for the live socket: when a status change arrives over
  * STOMP the page has to decide whether that ticket belongs on the board without asking
  * the API again. The two must agree; the server is the authority.
+ *
+ * Phase 37-16 (D-11): PENDING is on the board, rendered in the "New orders" lane above the grid
+ * until the kitchen accepts it. `KitchenStatusesParityTest` (core-java) parses THIS literal and
+ * fails if it ever differs from the server's list, in content or in order.
  */
-export const KITCHEN_STATUSES: OrderStatus[] = ["CONFIRMED", "PREPARING", "READY"]
+export const KITCHEN_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PREPARING", "READY"]
+
+/** The status the New lane lists. Every other kitchen status renders in the board grid. */
+export const NEW_LANE_STATUS: OrderStatus = "PENDING"
 
 /**
  * A defensive bound on the paging loop — a code-level circuit breaker, not config,

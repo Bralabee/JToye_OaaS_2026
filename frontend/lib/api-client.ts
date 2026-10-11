@@ -2,6 +2,7 @@ import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } fro
 import { getSession } from "next-auth/react"
 import type { Session } from "next-auth"
 import { isShopAccessDenied, SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-events"
+import { announceSessionLapse, navigateToSignIn } from "@/lib/session-lapse"
 
 /**
  * Hardened axios instance for the vendor dashboard.
@@ -20,7 +21,9 @@ import { isShopAccessDenied, SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-event
  *   4. 401 handler that triggers a SINGLE concurrent session refresh via
  *      getSession(); parallel 401s wait on the same promise instead of
  *      stampeding to /api/auth/session. If the refreshed session is still
- *      unauthenticated, we redirect to /auth/signin.
+ *      unauthenticated, the lapse is announced as a cancellable
+ *      `jtoye:session-lapsed` event (lib/session-lapse.ts), and we redirect to
+ *      /auth/signin only if no listener claimed it (37-18, D-14).
  */
 
 const apiClient = axios.create({
@@ -155,9 +158,13 @@ apiClient.interceptors.response.use(
         )
         return apiClient.request(config)
       }
-      // Still no session — bounce to signin
-      if (typeof window !== "undefined") {
-        window.location.href = "/auth/signin"
+      // Still no session. 37-18 (D-14, UXT-021): ANNOUNCE the lapse before anything navigates.
+      // The event is cancellable; a route that claims it (the kitchen board, which must stop loudly
+      // rather than quietly become a sign-in page) keeps the browser where it is. Unclaimed, which
+      // is every other route, it is today's redirect to /auth/signin. The request still rejects
+      // either way, so the caller's own error handling is unchanged.
+      if (typeof window !== "undefined" && !announceSessionLapse()) {
+        navigateToSignIn()
       }
     }
 
