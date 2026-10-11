@@ -264,3 +264,86 @@ func TestTenantRateLimit_RefillsLazilyAfterRetryAfter(t *testing.T) {
 		t.Errorf("after Retry-After (%v) elapsed: got %d, want 202 — lazy refill must restore a token (body %s)", wait, w.Code, w.Body.String())
 	}
 }
+
+// TestTenantRateLimit_BoundedMapAndOverflowBucket is T-37-63: 10,000 distinct
+// tenant ids must never grow the bucket map past the configured cap. Tenants
+// beyond the cap share ONE overflow bucket, so across the flood exactly
+// cap x burst + burst requests are allowed. Once the held tenants have been
+// idle long enough to be full again they are evicted, so two fresh tenants
+// each get their own full bucket instead of the shared one.
+func TestTenantRateLimit_BoundedMapAndOverflowBucket(t *testing.T) {
+	cfg := tenantRateLimitConfig{RPS: 1, Burst: 2, MaxTenants: 100}
+	clk := newFakeClock()
+	limiter := newTenantLimiter(cfg, clk)
+
+	const flood = 10000
+	allowed := 0
+	for i := 0; i < flood; i++ {
+		if limiter.take("tenant-" + strconv.Itoa(i)).allowed {
+			allowed++
+		}
+	}
+	if got := len(limiter.buckets); got > cfg.MaxTenants {
+		t.Errorf("bucket map holds %d tenants after %d distinct ids, want at most the cap %d (memory must be bounded)", got, flood, cfg.MaxTenants)
+	}
+	wantAllowed := cfg.MaxTenants + cfg.Burst
+	if allowed != wantAllowed {
+		t.Errorf("%d of %d one-request tenants were allowed, want %d: one request each for the %d held tenants plus the overflow bucket's burst of %d shared by everyone else", allowed, flood, wantAllowed, cfg.MaxTenants, cfg.Burst)
+	}
+	if d := limiter.take("tenant-" + strconv.Itoa(flood+1)); d.allowed || d.limit != cfg.Burst || d.remaining != 0 {
+		t.Errorf("a further new tenant while the overflow bucket is spent: got allowed=%v limit=%d remaining=%d, want refused with limit %d remaining 0", d.allowed, d.limit, d.remaining, cfg.Burst)
+	}
+
+	// Idle eviction: after burst/RPS seconds every held bucket is full again,
+	// so it can be dropped without changing what its tenant would see.
+	clk.Advance(time.Duration(cfg.Burst/cfg.RPS) * time.Second)
+	fresh := 0
+	for _, tenant := range []string{"fresh-a", "fresh-b"} {
+		for i := 0; i < cfg.Burst; i++ {
+			if limiter.take(tenant).allowed {
+				fresh++
+			}
+		}
+	}
+	if fresh != 2*cfg.Burst {
+		t.Errorf("two fresh tenants after the held ones went idle: %d requests allowed, want %d (each must get its own full bucket, not the shared overflow one)", fresh, 2*cfg.Burst)
+	}
+	if got := len(limiter.buckets); got > cfg.MaxTenants {
+		t.Errorf("bucket map holds %d tenants after eviction, want at most %d", got, cfg.MaxTenants)
+	}
+}
+
+// TestTenantRateLimit_PublicRoutesAreNotTenantLimited: the tenant buckets
+// gate the protected group only. With a tenant bucket spent, the liveness
+// probe (exempt from the valve too) and the public webhook route still
+// answer — anonymous traffic never touches a tenant bucket and a tenant's
+// bucket never touches anonymous traffic.
+func TestTenantRateLimit_PublicRoutesAreNotTenantLimited(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	limits := tenantRateLimitConfig{RPS: 1, Burst: 1, MaxTenants: 1}
+	h := newTenantLimitHarness(t, rateLimiter(ctx, 1000, 1000), limits, newFakeClock())
+
+	if w := h.sync("tenant-a"); w.Code != http.StatusAccepted {
+		t.Fatalf("first sync: got %d, want 202", w.Code)
+	}
+	if w := h.sync("tenant-a"); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("second sync with burst 1: got %d, want 429", w.Code)
+	}
+
+	for i := 0; i < 50; i++ {
+		w := httptest.NewRecorder()
+		h.r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("/health request %d while a tenant bucket is spent: got %d, want 200", i+1, w.Code)
+		}
+	}
+	// The webhook is public and unconfigured here, so its own answer is the
+	// fail-closed 503 — what matters is that it is not a 429.
+	w := httptest.NewRecorder()
+	h.r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/whatsapp", strings.NewReader("{}")))
+	if w.Code == http.StatusTooManyRequests {
+		t.Errorf("public webhook route was rate-limited by a tenant bucket: got 429 (body %s)", w.Body.String())
+	}
+}
