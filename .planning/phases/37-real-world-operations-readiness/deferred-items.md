@@ -459,3 +459,38 @@ where it must be resolved.
   rule holds on the server (theme 6); the client schema could mirror the limit so an agent is told before
   the round trip. A `.max()` there would be a second copy of a config value, which is why it is recorded
   rather than added here.
+- **Docs metrics drift from 37-27 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-27 (`java_test_methods` 2534 -> 2613, `java_test_files`
+  371 -> 377, `total_logical_invocations` 5560 at the measurement): this plan adds `CashOrderCapIntegrationTest`
+  (12) and `CashOrderCapsTest` (20) and two methods to `PublicStorefrontServiceTest`, on top of the 37-24..37-26
+  drift. `schema_version` 80 -> 81 WAS moved by hand in `docs/metrics.json` (with CLAUDE.md, AGENTS.md and
+  README.md; `check-doc-metrics` PASS 37/37), because the dispatch requires the schema line to move with the
+  migration; the counts are regenerated with `--write` in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-27 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 because the committed snapshot now declares
+  `OrderDto.contactVerified` and `OrderDetailDto.contactVerified` (beside 37-26's `maxLineQuantity`) and the
+  running core-java cannot emit them; V81, the typed 429 `order-cap-exceeded` and the `X-Customer-Token` read on
+  the guest-order POST reach no running container until the rebuild. Live probes for the gate: three cash orders
+  for one email at one shop then a fourth spelled in another case -> 429 `order-cap-exceeded` axis `EMAIL`, no
+  `Retry-After`; three with `07700 ...` then `+44 7700 ...` -> axis `PHONE`; completing one -> the same
+  Idempotency-Key is 201; a signed-in customer's storefront order -> `GET /api/v1/orders/{id}/detail` carries
+  `contactVerified: true`, a guest's `false`, a dashboard order none; `SELECT version FROM flyway_schema_history
+  ORDER BY installed_rank DESC LIMIT 1` -> 81 inside the running Postgres.
+- **`orders.client_ip_digest` is reserved by V81 and written by nobody until 37-28 (recorded so the erasure path is not forgotten).**
+  status: open
+  **What:** V81's COMMENT and CLAUDE.md say the digest is "nulled by the retention purge and by Article 17
+  erasure". Today the column is NULL on every row, so no erasure gap exists; 37-28, which writes it, must in
+  the SAME plan null it in `GdprService.anonymiseSubjectInTenant` (the live-row anonymisation; the two
+  `orders_aud` scrubs need nothing, there is no audit mirror by design) and declare its retention window with a
+  purge. `CashOrderCaps.perIp()` is bound and refused below 1 from day one but counts nothing until then.
+- **The `jtoye.storefront.cash-caps.*` keys are declared in `application.yml` only (no env placeholders, no compose / `.env.example` / k8s wiring).**
+  status: open
+  **What:** deliberate for this plan (its file list names only `application.yml`, and the probe note says compose
+  keeps the defaults; Spring relaxed binding still lets an operator override them as
+  `JTOYE_STOREFRONT_CASHCAPS_PEREMAIL` etc.), and unlike 37-26's `ORDER_LIMIT_*` they are therefore not in
+  `k8s/base/configmap.yaml`. If a per-overlay tuning is wanted, 37-28 — which adds the HMAC key for the IP axis
+  and must wire THAT through compose, `.env.example` and k8s with the env-contract gate — is the plan to carry all
+  three caps across in one change.
