@@ -208,6 +208,10 @@ func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
 		}
 	}()
 
+	// One refill tick: the longest a refused caller has to wait for a token,
+	// and what Retry-After advertises (rounded up to whole seconds, min 1).
+	tick := time.Second / time.Duration(rps)
+
 	return func(c *gin.Context) {
 		if rateLimiterExemptPaths[c.Request.URL.Path] {
 			c.Next()
@@ -217,7 +221,18 @@ func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
 		case <-tokens:
 			c.Next()
 		default:
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+			// 37-25 (D-19): the same typed 429 as the per-tenant limiter, so
+			// an integrator backs off from either refusal the same way. The
+			// bucket is empty by construction here; Reset is when it would
+			// be full again at the configured rate.
+			now := time.Now()
+			writeRateLimited(c, rateDecision{
+				allowed:    false,
+				limit:      burst,
+				remaining:  0,
+				retryAfter: tick,
+				resetAt:    now.Add(time.Duration(burst) * tick),
+			})
 		}
 	}
 }

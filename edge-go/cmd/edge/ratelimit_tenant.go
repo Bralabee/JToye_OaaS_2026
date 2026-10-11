@@ -107,18 +107,66 @@ type rateDecision struct {
 
 // tenantLimiter holds the per-tenant buckets behind one mutex. A request
 // holds the lock only for the arithmetic below, never across I/O.
+//
+// Memory is bounded (T-37-63): at most cfg.MaxTenants buckets are held.
+// When the map is full and a new tenant arrives, buckets that have been idle
+// long enough to be full again are evicted first — dropping a full bucket
+// changes nothing its tenant would see, since a fresh bucket is also full —
+// and if there is still no room the newcomer shares the overflow bucket.
+// Forged or very numerous tenant ids therefore cost a bounded map plus one
+// bucket, never unbounded growth; and because the key is only ever written
+// by the JWT validator, minting a new id costs the caller a valid token.
 type tenantLimiter struct {
 	mu      sync.Mutex
 	cfg     tenantRateLimitConfig
 	clock   clock
 	buckets map[string]*tenantBucket
+	// overflow is the one bucket shared by every tenant that does not fit
+	// in buckets. It is never in the map and is never evicted.
+	overflow *tenantBucket
 }
 
 func newTenantLimiter(cfg tenantRateLimitConfig, clk clock) *tenantLimiter {
 	if clk == nil {
 		clk = realClock{}
 	}
-	return &tenantLimiter{cfg: cfg, clock: clk, buckets: make(map[string]*tenantBucket)}
+	now := clk.Now()
+	return &tenantLimiter{
+		cfg:      cfg,
+		clock:    clk,
+		buckets:  make(map[string]*tenantBucket),
+		overflow: &tenantBucket{tokens: float64(cfg.Burst), last: now},
+	}
+}
+
+// evictIdle drops every held bucket that has refilled to full by now. Called
+// with the lock held, and only when the map is at its cap, so its O(n) walk
+// is paid once per newcomer-at-capacity rather than per request.
+func (l *tenantLimiter) evictIdle(now time.Time) {
+	for key, b := range l.buckets {
+		l.refill(b, now)
+		if b.tokens >= float64(l.cfg.Burst) {
+			delete(l.buckets, key)
+		}
+	}
+}
+
+// bucketFor returns the bucket a key is charged to, creating one when there
+// is room (after an idle sweep if the map is full) and otherwise the shared
+// overflow bucket. Called with the lock held.
+func (l *tenantLimiter) bucketFor(key string, now time.Time) *tenantBucket {
+	if b := l.buckets[key]; b != nil {
+		return b
+	}
+	if len(l.buckets) >= l.cfg.MaxTenants {
+		l.evictIdle(now)
+	}
+	if len(l.buckets) >= l.cfg.MaxTenants {
+		return l.overflow
+	}
+	b := &tenantBucket{tokens: float64(l.cfg.Burst), last: now}
+	l.buckets[key] = b
+	return b
 }
 
 // refill brings b up to date at now: elapsed time adds RPS tokens per
@@ -140,18 +188,15 @@ func (l *tenantLimiter) timeToTokens(b *tenantBucket, n float64) time.Duration {
 	return time.Duration(math.Ceil(deficit / float64(l.cfg.RPS) * float64(time.Second)))
 }
 
-// take spends one token from the bucket keyed by key, creating a full bucket
-// on first sight, and reports the decision.
+// take spends one token from the bucket keyed by key — its own bucket, or the
+// shared overflow bucket when the map is at its cap — and reports the
+// decision.
 func (l *tenantLimiter) take(key string) rateDecision {
 	now := l.clock.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	b := l.buckets[key]
-	if b == nil {
-		b = &tenantBucket{tokens: float64(l.cfg.Burst), last: now}
-		l.buckets[key] = b
-	}
+	b := l.bucketFor(key, now)
 	l.refill(b, now)
 
 	if b.tokens >= 1 {
