@@ -172,7 +172,6 @@ export function OrderDetailPanel({ order, onRefundIssued, onVoided }: OrderDetai
       status: order.status,
       voidedAt: voided?.voidedAt,
       paymentStatus: order.paymentStatus,
-      paymentReference: order.paymentReference,
     })
 
   // The staff directory, read at most once and only by a Group admin (STAFF and managers

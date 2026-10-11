@@ -38,15 +38,24 @@ import type { OrderDetail, OrderStatus, PaymentStatus } from "@/types/api"
  */
 const NOT_VOIDABLE = new Set<OrderStatus>(["DRAFT", "PENDING"])
 
-/** CONFIRMED or later, or paid by card at any status; and not already voided. */
+/** The payment states in which money has moved, so the server's isSettled holds whatever the status. */
+const SETTLED_PAYMENT = new Set<PaymentStatus>(["CAPTURED", "REFUNDED"])
+
+/**
+ * CONFIRMED or later, or a captured (or since refunded) card payment at any status; and not
+ * already voided. Keyed on paymentStatus, never on paymentReference: the storefront writes the
+ * reference when the PaymentIntent is created (order DRAFT, payment PENDING) and again when it
+ * fails, so a reference alone is an abandoned or declined checkout the server refuses to void.
+ */
 export function isVoidable(order: {
   status: OrderStatus
   voidedAt?: string | null
   paymentStatus?: PaymentStatus
+  /** Accepted so a whole order can be passed; deliberately not consulted (see above). */
   paymentReference?: string | null
 }): boolean {
   if (order.voidedAt) return false
-  return !NOT_VOIDABLE.has(order.status) || isCardPaid(order)
+  return !NOT_VOIDABLE.has(order.status) || (!!order.paymentStatus && SETTLED_PAYMENT.has(order.paymentStatus))
 }
 
 /** A card payment the shop took: voiding does not give it back, so the dialog says so. */
