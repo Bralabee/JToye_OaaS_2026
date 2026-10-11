@@ -717,10 +717,12 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 47 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 48 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-11 (phase 37 plan 37-04, PR #913): 47 -> 48. scripts/check-strict-scoping-default.sh fails any
+# runtime that overrides jtoye.access.strict-scoping back to false (D-06).
 # 2026-10-05 (phase 38 plan 38-11): 46 -> 47. scripts/check-boot-config-keys.sh runs
 # ConfigKeyContractTest through Gradle (a JDK, ~1 min) and fails on any Boot-4-unbound key.
 # 2026-08-29 actual (phase 34 closeout, plan 34-10): all 40 rc=0 from the MAIN checkout,

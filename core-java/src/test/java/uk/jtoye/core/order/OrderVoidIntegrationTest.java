@@ -187,6 +187,54 @@ class OrderVoidIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // Review #913 round 1, finding 1 (D-10): a card payment SETTLES while the order is still PENDING.
+    // PaymentService writes the SALE in the payment_intent.succeeded handler, before the shop accepts, so
+    // status alone cannot tell a paid PENDING order from an unpaid one. Deleting it would leave the exact
+    // dangling ledger row the COMPLETED guard exists for.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-10: DELETE of a card-paid PENDING order with its SALE row is a typed 409 order-not-deletable; the order and the ledger row both stay")
+    void pendingCardPaidOrderWithSale_deleteIsRefused_andNothingDangles() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.PENDING);
+        String orderNumber = orderNumber(orderId);
+        markCardPaid(orderId);
+        seedSaleRow(orderId, orderNumber);
+
+        MvcResult refused = mockMvc.perform(delete(orderUrl(orderId)).with(adminJwt())).andReturn();
+        String text = responseText(refused);
+        int danglingAfterDelete = danglingLedgerRows();
+        assertThat(refused.getResponse().getStatus())
+                .as(text + " | ledger rows now pointing at a missing order: " + danglingAfterDelete)
+                .isEqualTo(409);
+        JsonNode problem = json(refused, 409);
+        assertThat(problem.path("type").asString()).as(text).isEqualTo(NOT_DELETABLE_TYPE);
+        assertThat(problem.path("code").asString()).as(text).isEqualTo("ORDER_NOT_DELETABLE");
+        assertThat(problem.path("orderStatus").asString()).as(text).isEqualTo("PENDING");
+        assertThat(problem.path("orderNumber").asString()).as(text).isEqualTo(orderNumber);
+        assertThat(problem.path("detail").asString()).as("the detail says why a PENDING order is refused: " + text)
+                .isEqualTo("Order " + orderNumber + " has been paid, so it can't be deleted while it is PENDING. "
+                        + "Void it instead to keep your records.");
+
+        assertThat(orderExists(orderId)).as("the order is kept").isTrue();
+        assertThat(danglingLedgerRows()).as("no ledger row points at a missing order").isZero();
+        assertThat(ledgerRowsFor(orderId)).as("the sale row is untouched").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("D-10: a PENDING order whose card payment was captured is refused deletion even before its SALE row exists")
+    void pendingCardPaidOrderWithoutSaleYet_deleteIsRefused() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.PENDING);
+        markCardPaid(orderId);
+
+        MvcResult refused = mockMvc.perform(delete(orderUrl(orderId)).with(adminJwt())).andReturn();
+        String text = responseText(refused);
+        JsonNode problem = json(refused, 409);
+        assertThat(problem.path("type").asString()).as(text).isEqualTo(NOT_DELETABLE_TYPE);
+        assertThat(problem.path("orderStatus").asString()).as(text).isEqualTo("PENDING");
+        assertThat(orderExists(orderId)).as("the order is kept").isTrue();
+    }
+
+    // ------------------------------------------------------------------
     // The shop gate runs BEFORE the status check: a caller without SHOP_MANAGER on the order's shop
     // learns nothing about the order's status from the refusal.
     // ------------------------------------------------------------------
@@ -379,6 +427,31 @@ class OrderVoidIntegrationTest {
         assertThat(orderVoidColumns(orderId).get("voided_at")).isNull();
     }
 
+    // Review #913 round 1, finding 1: the complement of the delete refusal above. A paid PENDING order is
+    // VOIDED (its SALE reversed), so no order is left that can be neither deleted nor voided.
+    @Test
+    @DisplayName("D-10: a card-paid PENDING order can be voided by a Group admin, and its SALE is reversed")
+    void pendingCardPaidOrder_voids_andReversesTheSale() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.PENDING);
+        String orderNumber = orderNumber(orderId);
+        markCardPaid(orderId);
+        UUID saleId = seedSaleRow(orderId, orderNumber);
+
+        MvcResult voided = voidOrder(orderId, "{\"reason\":\"Customer cancelled before we accepted\"}", adminJwt(ADMIN_SUB));
+        String text = responseText(voided);
+        JsonNode body = json(voided, 200);
+        assertThat(body.path("status").asString()).as("a void is not a status: " + text).isEqualTo("PENDING");
+        assertThat(body.path("voidedBy").asString()).as(text).isEqualTo(ADMIN_SUB);
+
+        List<Map<String, Object>> rows = ledgerRowsOf(orderId);
+        assertThat(rows).as("ledger rows of the order: " + rows).hasSize(2);
+        Map<String, Object> reversal = rows.stream().filter(r -> "REVERSAL".equals(r.get("entry_kind"))).findFirst()
+                .orElseThrow(() -> new AssertionError("no REVERSAL row: " + rows));
+        assertThat(reversal.get("reverses_transaction_id")).as("the reversal names its sale").isEqualTo(saleId);
+        assertThat(sumOfLedgerFor(orderId)).as("the order nets to zero in the ledger").isZero();
+        assertThat(orderVoidColumns(orderId).get("voided_at")).isNotNull();
+    }
+
     @Test
     @DisplayName("D-10: a voided order does not move again; completing a voided READY order is refused and writes no SALE that nothing would reverse")
     void voidedOrder_cannotBeCompleted() throws Exception {
@@ -466,6 +539,14 @@ class OrderVoidIntegrationTest {
                         + "VALUES (?, ?, 1200, 'STANDARD', ?, ?)",
                 id, TENANT_ID, "Order " + orderNumber, orderId));
         return id;
+    }
+
+    /** What PaymentService records on payment_intent.succeeded, while the order is still PENDING. */
+    private void markCardPaid(UUID orderId) {
+        inTenant(() -> jdbcTemplate.update(
+                "UPDATE orders SET payment_status = 'CAPTURED', payment_reference = ?, payment_method = 'Visa ending 4242' "
+                        + "WHERE id = ?",
+                "pi_3710_" + orderId.toString().substring(0, 8), orderId));
     }
 
     private String orderNumber(UUID orderId) {

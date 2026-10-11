@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import apiClient from "@/lib/api-client"
 import { formatUkDate } from "@/lib/uk-datetime"
-import type { OrderDetail, OrderStatus } from "@/types/api"
+import type { OrderDetail, OrderStatus, PaymentStatus } from "@/types/api"
 
 /**
  * VoidOrderDialog — 37-12, UI-SPEC § B4 (D-10, UXT-018).
@@ -30,12 +30,23 @@ import type { OrderDetail, OrderStatus } from "@/types/api"
  * for a second void with a different reason, T-37-34).
  */
 
-/** A DRAFT or PENDING order is deleted, never voided (the server's 409 order-not-voidable). */
+/**
+ * A DRAFT or PENDING order that was never paid is deleted, never voided (the server's 409
+ * order-not-voidable). A card payment settles while the order is still PENDING, so a paid
+ * PENDING order is the other way round: the server refuses to delete it and voids it instead
+ * (review #913 round 1, finding 1).
+ */
 const NOT_VOIDABLE = new Set<OrderStatus>(["DRAFT", "PENDING"])
 
-/** CONFIRMED or later, and not already voided. */
-export function isVoidable(order: { status: OrderStatus; voidedAt?: string | null }): boolean {
-  return !NOT_VOIDABLE.has(order.status) && !order.voidedAt
+/** CONFIRMED or later, or paid by card at any status; and not already voided. */
+export function isVoidable(order: {
+  status: OrderStatus
+  voidedAt?: string | null
+  paymentStatus?: PaymentStatus
+  paymentReference?: string | null
+}): boolean {
+  if (order.voidedAt) return false
+  return !NOT_VOIDABLE.has(order.status) || isCardPaid(order)
 }
 
 /** A card payment the shop took: voiding does not give it back, so the dialog says so. */
