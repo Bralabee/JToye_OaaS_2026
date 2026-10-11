@@ -151,8 +151,9 @@ playwright-report/
 # Local AI & storage data
 ollama_data/
 
-# Compiled Go binary
+# Compiled Go binaries (go build . in a main module writes the module name beside go.mod)
 edge-go/edge
+infra/backups/blobctl/blobctl
 
 # Rendered Alertmanager config (phase 9 — entrypoint renders this at container start)
 infra/monitoring/alertmanager/alertmanager.yml
