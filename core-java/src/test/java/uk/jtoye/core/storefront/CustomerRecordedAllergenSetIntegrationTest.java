@@ -319,7 +319,14 @@ class CustomerRecordedAllergenSetIntegrationTest {
         String email = "history-" + UUID.randomUUID() + "@example.com";
         List<String> storefrontOrders = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
-            storefrontOrders.add(placeStorefrontOrder(email, List.of(bread, cheese)));
+            String number = placeStorefrontOrder(email, List.of(bread, cheese));
+            storefrontOrders.add(number);
+            // 37-27 (D-18): three is the most OPEN cash orders one address may hold at a shop, and a
+            // customer with a seven-order history is one whose earlier orders were completed. Each
+            // order is completed as it is placed; the history, its columns and the N+1 probe are
+            // status-agnostic. (Left open, the fourth would be 429 order-cap-exceeded.)
+            jdbcTemplate.update("UPDATE orders SET status = 'COMPLETED' WHERE tenant_id = ? AND order_number = ?",
+                    TENANT_ID, number);
         }
         String vendorOrder = placeVendorOrder(email, cheese);
 
@@ -529,6 +536,17 @@ class CustomerRecordedAllergenSetIntegrationTest {
                 .andReturn();
     }
 
+    /**
+     * 37-27 (D-18): the cash-order caps count OPEN orders per email AND per phone at a shop (three each),
+     * and the shop and its orders persist across this class's arms, so every arm needs its own contact
+     * details (RESEARCH Pitfall 9: unique details, never a raised default). The phone is derived from the
+     * arm's address rather than drawn at random so an arm that resubmits an identical body (an
+     * idempotency replay) still sends the same body.
+     */
+    private static String phoneFor(String email) {
+        return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
+    }
+
     private static Map<String, Object> body(String email, List<UUID> productIds, Integer ack) {
         List<Map<String, Object>> items = new ArrayList<>();
         for (UUID productId : productIds) {
@@ -540,7 +558,7 @@ class CustomerRecordedAllergenSetIntegrationTest {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("customerName", "Recorded Allergens Buyer");
         body.put("customerEmail", email);
-        body.put("customerPhone", "+447700900319");
+        body.put("customerPhone", phoneFor(email));
         body.put("fulfilmentType", "COLLECTION");
         body.put("items", items);
         if (ack != null) {

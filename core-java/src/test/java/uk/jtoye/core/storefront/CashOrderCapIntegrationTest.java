@@ -138,7 +138,7 @@ class CashOrderCapIntegrationTest {
         UUID jollof = seedProduct("SKU-3727-EMAIL", "Jollof Rice", 1000L);
         String mixedCaseEmail = "Cap.Buyer." + UUID.randomUUID() + "@Example.com";
         String foldedEmail = mixedCaseEmail.toLowerCase(java.util.Locale.ROOT);
-        String phone = "+447700900" + threeRandomDigits();
+        String phone = uniquePhone();
 
         for (int i = 1; i <= PER_EMAIL_CAP; i++) {
             MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "email-open-" + i + "-" + UUID.randomUUID()),
@@ -185,9 +185,9 @@ class CashOrderCapIntegrationTest {
     @DisplayName("UXT-041: a fourth open cash order for the same phone spelled +44 instead of 0 at a shop is refused 429 order-cap-exceeded axis PHONE; the third (at the cap) is 201")
     void fourthOpenCashOrderForTheSamePhone_normalised_isRefusedOnPhone() throws Exception {
         UUID suya = seedProduct("SKU-3727-PHONE", "Suya", 900L);
-        String digits = threeRandomDigits();
-        String localSpelling = "07700 900" + digits;          // as a UK customer types it
-        String internationalSpelling = "+44 7700 900" + digits; // the same number, as a phone shows it
+        String digits = sixRandomDigits();
+        String localSpelling = "07700 " + digits;          // as a UK customer types it
+        String internationalSpelling = "+44 7700 " + digits; // the same number, as a phone shows it
         String tag = UUID.randomUUID().toString();
 
         for (int i = 1; i <= PER_PHONE_CAP; i++) {
@@ -214,9 +214,9 @@ class CashOrderCapIntegrationTest {
     void aDifferentPhoneSharingAPrefix_isNotCounted() throws Exception {
         UUID suya = seedProduct("SKU-3727-PREFIX", "Suya", 900L);
         String tag = UUID.randomUUID().toString();
-        int base = java.util.concurrent.ThreadLocalRandom.current().nextInt(100, 998);
-        String held = "07700 900" + base;
-        String neighbour = "07700 900" + (base + 1);
+        int base = java.util.concurrent.ThreadLocalRandom.current().nextInt(100_000, 999_998);
+        String held = "07700 " + base;
+        String neighbour = "07700 " + (base + 1);
 
         for (int i = 1; i <= PER_PHONE_CAP; i++) {
             MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "prefix-" + i + "-" + tag),
@@ -240,7 +240,7 @@ class CashOrderCapIntegrationTest {
         UUID moinMoin = seedProductAt(otherShopId, "SKU-3727-SHOPB", "Moin Moin", 700L);
         String tag = UUID.randomUUID().toString();
         String email = "shops-" + tag + "@example.com";
-        String phone = "07700 900" + threeRandomDigits();
+        String phone = uniquePhone();
 
         for (int i = 1; i <= PER_EMAIL_CAP; i++) {
             MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "shopa-" + i + "-" + tag),
@@ -270,7 +270,7 @@ class CashOrderCapIntegrationTest {
         UUID jollof = seedProduct("SKU-3727-CARD", "Jollof Rice", 1000L);
         String tag = UUID.randomUUID().toString();
         String email = "card-" + tag + "@example.com";
-        String phone = "07700 900" + threeRandomDigits();
+        String phone = uniquePhone();
 
         for (int i = 1; i <= PER_EMAIL_CAP; i++) {
             seedOpenCardOrder(email, phone);
@@ -283,7 +283,7 @@ class CashOrderCapIntegrationTest {
 
         // Control arm, same identity shape: three open CASH orders DO count.
         String cashEmail = "cash-" + tag + "@example.com";
-        String cashPhone = "07700 900" + threeRandomDigits();
+        String cashPhone = uniquePhone();
         for (int i = 1; i <= PER_EMAIL_CAP; i++) {
             MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "cash-" + i + "-" + tag),
                     storefrontBody(cashEmail, cashPhone, List.of(line(jollof, 1))));
@@ -304,7 +304,7 @@ class CashOrderCapIntegrationTest {
         UUID jollof = seedProduct("SKU-3727-CLOSED", "Jollof Rice", 1000L);
         String tag = UUID.randomUUID().toString();
         String email = "closed-" + tag + "@example.com";
-        String phone = "07700 900" + threeRandomDigits();
+        String phone = uniquePhone();
 
         for (int i = 1; i <= PER_EMAIL_CAP; i++) {
             MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("Idempotency-Key", "closed-" + i + "-" + tag),
@@ -340,7 +340,7 @@ class CashOrderCapIntegrationTest {
         UUID jollof = seedProduct("SKU-3727-CV-NONE", "Jollof Rice", 1000L);
         String email = "cv-none-" + UUID.randomUUID() + "@example.com";
 
-        MvcResult created = perform(post(ordersUrl(SHOP_SLUG)), storefrontBody(email, "07700 900111", List.of(line(jollof, 1))));
+        MvcResult created = perform(post(ordersUrl(SHOP_SLUG)), storefrontBody(email, uniquePhone(), List.of(line(jollof, 1))));
         assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
 
         assertThat(contactVerifiedByEmail(email)).as("stored: a guest with no token is an unverified contact").isFalse();
@@ -357,7 +357,7 @@ class CashOrderCapIntegrationTest {
         String email = VERIFIED_EMAIL.toLowerCase(java.util.Locale.ROOT);
 
         MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("X-Customer-Token", VERIFIED_TOKEN),
-                storefrontBody(email, "07700 900222", List.of(line(jollof, 1))));
+                storefrontBody(email, uniquePhone(), List.of(line(jollof, 1))));
         assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
 
         assertThat(contactVerifiedByEmail(email)).as("stored: the token proved this address").isTrue();
@@ -373,7 +373,7 @@ class CashOrderCapIntegrationTest {
         String email = "cv-other-" + UUID.randomUUID() + "@example.com";
 
         MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("X-Customer-Token", OTHER_TOKEN),
-                storefrontBody(email, "07700 900333", List.of(line(jollof, 1))));
+                storefrontBody(email, uniquePhone(), List.of(line(jollof, 1))));
         assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
 
         assertThat(contactVerifiedByEmail(email)).as("a token for someone else proves nothing about this contact").isFalse();
@@ -386,7 +386,7 @@ class CashOrderCapIntegrationTest {
         String email = "cv-bad-" + UUID.randomUUID() + "@example.com";
 
         MvcResult created = perform(post(ordersUrl(SHOP_SLUG)).header("X-Customer-Token", "expired-or-forged"),
-                storefrontBody(email, "07700 900444", List.of(line(jollof, 1))));
+                storefrontBody(email, uniquePhone(), List.of(line(jollof, 1))));
         assertThat(created.getResponse().getStatus()).as("a bad token must not turn checkout into a 401: " + responseText(created))
                 .isEqualTo(201);
 
@@ -403,7 +403,7 @@ class CashOrderCapIntegrationTest {
         body.put("shopId", shopId);
         body.put("customerName", "Phone Order Customer");
         body.put("customerEmail", email);
-        body.put("customerPhone", "07700 900555");
+        body.put("customerPhone", uniquePhone());
         body.put("items", List.of(line(jollof, 1)));
         MvcResult created = perform(post("/api/v1/orders").with(vendorJwt()).header("Idempotency-Key", "vendor-" + UUID.randomUUID()), body);
         assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
@@ -517,8 +517,18 @@ class CashOrderCapIntegrationTest {
         return "HTTP " + result.getResponse().getStatus() + " " + result.getResponse().getContentAsString();
     }
 
-    private static String threeRandomDigits() {
-        return String.format(java.util.Locale.ROOT, "%03d", java.util.concurrent.ThreadLocalRandom.current().nextInt(1000));
+    /**
+     * A phone no other arm is likely to draw: six random digits behind a UK mobile prefix (one in a
+     * million per pair). The caps count per identity across the whole class run — the shop and its
+     * open orders persist between arms — so every arm must mint its own contact details (RESEARCH
+     * Pitfall 9: unique details, never a raised default). A three-digit suffix collided in a group run.
+     */
+    private static String uniquePhone() {
+        return "07700 " + sixRandomDigits();
+    }
+
+    private static String sixRandomDigits() {
+        return String.format(java.util.Locale.ROOT, "%06d", java.util.concurrent.ThreadLocalRandom.current().nextInt(1_000_000));
     }
 
     // ---- SQL read helpers (superuser bootstrap role; tenant pinned for correctness) ----

@@ -357,6 +357,17 @@ class OrderAllergenSnapshotIntegrationTest {
     // ==================================================================
 
     /** Loads the DTO through the real service + MapStruct mapper, not by hand-building it. */
+    /**
+     * 37-27 (D-18): the cash-order caps count OPEN orders per email AND per phone at a shop (three each),
+     * and the shop and its orders persist across this class's arms, so every arm needs its own contact
+     * details (RESEARCH Pitfall 9: unique details, never a raised default). The phone is derived from the
+     * arm's address rather than drawn at random so an arm that resubmits an identical body (an
+     * idempotency replay) still sends the same body.
+     */
+    private static String phoneFor(String email) {
+        return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
+    }
+
     private OrderDetailDto loadDetail(UUID orderId) {
         TenantContext.set(TENANT_ID);
         try {
@@ -377,8 +388,11 @@ class OrderAllergenSnapshotIntegrationTest {
 
         GuestOrderRequest request = new GuestOrderRequest();
         request.setCustomerName("Guest Buyer");
-        request.setCustomerEmail("guest-3110@example.com");
-        request.setCustomerPhone("+447700900310");
+        // 37-27 (D-18): one address may hold three open cash orders at a shop and every order here stays
+        // PENDING, so each request is its own customer (unique email, phone derived from it).
+        String email = "guest-3110-" + UUID.randomUUID() + "@example.com";
+        request.setCustomerEmail(email);
+        request.setCustomerPhone(phoneFor(email));
         request.setIdempotencyKey("p3110-" + UUID.randomUUID());
         request.setItems(items);
         // COLLECTION: this class is fulfilment-agnostic and COLLECTION needs no UK address.

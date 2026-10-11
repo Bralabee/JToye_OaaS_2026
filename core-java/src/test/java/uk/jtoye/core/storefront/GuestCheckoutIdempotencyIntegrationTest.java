@@ -295,11 +295,12 @@ class GuestCheckoutIdempotencyIntegrationTest {
     void headerKeyAlone_isHonoured() {
         UUID productId = seedProduct("SKU-QA0902-HEADER");
         String headerKey = "qa0902-header-" + UUID.randomUUID();
+        // One body, sent twice: a retry resends what it sent. (37-27: a keyless build is a fresh
+        // customer identity, so two builds would be two bodies and a 422 payload mismatch.)
+        GuestOrderRequest request = guestRequest(productId, 2, null);
 
-        GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(
-                SHOP_SLUG, guestRequest(productId, 2, null), headerKey);
-        GuestOrderConfirmation second = publicStorefrontService.createGuestOrder(
-                SHOP_SLUG, guestRequest(productId, 2, null), headerKey);
+        GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(SHOP_SLUG, request, headerKey);
+        GuestOrderConfirmation second = publicStorefrontService.createGuestOrder(SHOP_SLUG, request, headerKey);
 
         assertThat(second.getOrderNumber()).as("the header-keyed repeat is a replay").isEqualTo(first.getOrderNumber());
         assertThat(countOrdersByKey(headerKey)).as("one order row under the header key").isEqualTo(1);
@@ -500,6 +501,17 @@ class GuestCheckoutIdempotencyIntegrationTest {
 
     // ---- Request builder ----
 
+    /**
+     * 37-27 (D-18): the cash-order caps count OPEN orders per email AND per phone at a shop (three each),
+     * and the shop and its orders persist across this class's arms, so every arm needs its own contact
+     * details (RESEARCH Pitfall 9: unique details, never a raised default). The phone is derived from the
+     * arm's address rather than drawn at random so an arm that resubmits an identical body (an
+     * idempotency replay) still sends the same body.
+     */
+    private static String phoneFor(String email) {
+        return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
+    }
+
     private GuestOrderRequest guestRequest(UUID productId, int qty, String idempotencyKey) {
         GuestOrderItemRequest item = new GuestOrderItemRequest();
         item.setProductId(productId);
@@ -507,8 +519,14 @@ class GuestCheckoutIdempotencyIntegrationTest {
 
         GuestOrderRequest request = new GuestOrderRequest();
         request.setCustomerName("Cluster E Buyer");
-        request.setCustomerEmail("cluster-e@example.com");
-        request.setCustomerPhone("+447700900902");
+        // 37-27 (D-18): one address may hold three open cash orders at a shop and every order here stays
+        // PENDING, so each KEY is its own customer: the identity is derived from the key, so a replay of
+        // the same key still sends the identical body the hash compares, and a keyless submit is a
+        // fresh customer. (Fixed details tripped the cap from the fourth arm on.)
+        String identity = idempotencyKey != null ? idempotencyKey : UUID.randomUUID().toString();
+        String email = "cluster-e-" + identity + "@example.com";
+        request.setCustomerEmail(email);
+        request.setCustomerPhone(phoneFor(email));
         request.setNotes("qa0902 cluster E");
         request.setIdempotencyKey(idempotencyKey);
         request.setItems(List.of(item));
