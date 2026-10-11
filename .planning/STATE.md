@@ -6,10 +6,9 @@ current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
 stopped_at: "Phase 37 executing: 37-01..37-22 complete (22/53). 37-21 closed 2026-10-10: the kitchen header has PauseOrdersControl (20 / 40 minutes / Until I reopen, 44px rows, no confirm; Resume orders now while paused) and PausedBanner (white, 2px slate-900 border, L6) reading the SERVER's ordersPausedUntil/ordersPausedIndefinitely in UK time, re-read on the 60 s poll, after each write and at the stated end, disabled until the first read and while a write is in flight; the shop dialog's free-text hours are replaced by OpeningScheduleEditor (K4: Closed checkbox, up to 3 native time windows, Copy Monday, overnight hint, overlap / spill / missing-time validation, all-closed note, legacy info line; the dialog sends openingSchedule only when touched); HoursNoticeCard on /dashboard and Hours not set / Check hours / Paused until badges on the shops table from hoursSource, deep link ?edit={id}&focus=hours. Owner D-25 ruling copy: an unreadable NEEDS_REVIEW day pre-fills Closed with 'Customers can still order on this day at any time until you save your hours.' (orchestrator decision pending owner wording, WINDOWS #36). Deviations: storefront Opening hours list from openingSchedule (Rule 2); dialog saves keep the slug (server regenerates on every slug-less update, Rule 1); the control makes no claim before the first read (Rule 1, found live). Jest 2607/220 (baseline 2550/215), build green, lint 0 errors; no Java. Frontend REBUILT + recreated (final 040c64a6), runtime-freshness PASS 4/4; live Playwright proof incl. 60 s cross-device; Mama Ade's Kitchen restored by md5. WINDOWS #36, #37 added. RWO-022 NOT marked (37-23 declares it; ready-ids blocked). Next: 37-23 (UAT, autonomous:false)."
-last_updated: "2026-10-10T19:05:50.430Z"
-last_activity: 2026-10-10
-last_activity_desc: "Completed 37-21: one-tap kitchen pause from the server's state, the structured hours editor, and hours notices read from hoursSource (D-15, D-25)"
-state_head: fa3552fadce213d8403243c1e407cc5b67c53122
+last_updated: "2026-10-11T13:59:23.791Z"
+last_activity: 2026-10-11
+state_head: 4f478bd86da2bade859420b990f212738962a0fd
 progress:
   total_phases: 20
   completed_phases: 13
@@ -773,7 +772,7 @@ Status: Executing Phase 37
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-10 - Completed quick task 261010-ppb: owner rulings package (option E customer floors, hours all-day pre-fill, pause-403 copy, alarm cap, vendor realm SSO max 14h, option C and slug follow-ups recorded)
+Last activity: 2026-10-11
 
 Progress: [███████░░░] 65%
 
