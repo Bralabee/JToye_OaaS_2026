@@ -61,6 +61,11 @@ public interface OrderMapper {
     @Mapping(target = "allergyNote", source = "allergyNote")
     @Mapping(target = "allergyNoteAcknowledgedAt", source = "allergyNoteAckAt")
     @Mapping(target = "allergyNoteAcknowledgedBy", source = "allergyNoteAckBy")
+    // Phase 37-10 (D-10): the void, scalar V78 columns. Same names on both sides; explicit so a rename
+    // fails the build rather than silently un-mapping.
+    @Mapping(target = "voidedAt", source = "voidedAt")
+    @Mapping(target = "voidedBy", source = "voidedBy")
+    @Mapping(target = "voidReason", source = "voidReason")
     OrderDto toDto(Order order);
 
     @Mapping(target = "items", source = "items")
@@ -98,6 +103,9 @@ public interface OrderMapper {
     @Mapping(target = "allergyNote", source = "allergyNote")
     @Mapping(target = "allergyNoteAcknowledgedAt", source = "allergyNoteAckAt")
     @Mapping(target = "allergyNoteAcknowledgedBy", source = "allergyNoteAckBy")
+    @Mapping(target = "voidedAt", source = "voidedAt")
+    @Mapping(target = "voidedBy", source = "voidedBy")
+    @Mapping(target = "voidReason", source = "voidReason")
     OrderDetailDto toDetailDto(Order order);
 
     /**

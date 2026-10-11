@@ -53,6 +53,14 @@ public class KeycloakAdminProperties {
      */
     private String customerRealm = "jtoye-customers";
 
+    /**
+     * 37-08 (D-07, D-26): the VENDOR realm a staff-invite accept creates the invitee in, and the only
+     * realm it looks an invited address up in. A separate key from {@link #realms} (the offboarding
+     * sweep, which may list more than one realm) because an account is created in exactly one realm.
+     * Default {@code jtoye-dev}, the vendor realm of every runtime in this repository.
+     */
+    private String vendorRealm = "jtoye-dev";
+
     /** master-realm admin username (admin-cli password grant). */
     private String username = "admin";
 
@@ -70,6 +78,9 @@ public class KeycloakAdminProperties {
 
     public String getCustomerRealm() { return customerRealm; }
     public void setCustomerRealm(String customerRealm) { this.customerRealm = customerRealm; }
+
+    public String getVendorRealm() { return vendorRealm; }
+    public void setVendorRealm(String vendorRealm) { this.vendorRealm = vendorRealm; }
 
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
@@ -97,6 +108,7 @@ public class KeycloakAdminProperties {
                 + ", baseUrl=" + baseUrl
                 + ", realms=" + realms
                 + ", customerRealm=" + customerRealm
+                + ", vendorRealm=" + vendorRealm
                 + ", username=" + username
                 + ", password=" + mask(password) + ")";
     }

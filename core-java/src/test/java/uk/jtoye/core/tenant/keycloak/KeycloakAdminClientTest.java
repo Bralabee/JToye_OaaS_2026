@@ -323,6 +323,167 @@ class KeycloakAdminClientTest {
         f.server().verify();
     }
 
+    // ---- 37-08 (D-07, D-26): the staff-invite accept path creates the vendor user ---------------
+
+    static final String VENDOR_REALM = "jtoye-dev";
+    static final String NEW_PASSWORD = "Correct-Horse-9-Battery";
+
+    /**
+     * The create is asserted BY CONTENT: the captured body is parsed and compared field by field AND
+     * as a whole, so a dropped {@code emailVerified} (the token mint then fails "Account is not fully
+     * set up"), a dropped {@code attributes.tenant_id} (the user gets no tenant), a temporary password
+     * or a Jackson-2 node written as a bean each fail here. The id comes from the Location header,
+     * and the caller's password array is zeroed once the call returns.
+     */
+    @Test
+    void createUser_postsTheFullRepresentation_byContent_andReturnsTheIdFromLocation() {
+        Fixture f = newFixture();
+        UUID tenantId = UUID.randomUUID();
+        String newId = UUID.randomUUID().toString();
+        AtomicReference<String> postBody = new AtomicReference<>();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/users"))
+                .andExpect(method(org.springframework.http.HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(request -> postBody.set(((MockClientHttpRequest) request).getBodyAsString()))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .location(java.net.URI.create(BASE + "/admin/realms/jtoye-dev/users/" + newId)));
+
+        char[] password = NEW_PASSWORD.toCharArray();
+        String id = f.client().createUser(VENDOR_REALM, "new.person@example.com", "Ada", "Lovelace",
+                password, tenantId, "tok");
+
+        f.server().verify();
+        assertThat(id).as("the id is the Location header's last segment").isEqualTo(newId);
+        assertCreateBodyByContent(postBody.get(), "new.person@example.com", "Ada", "Lovelace", tenantId);
+        assertThat(new String(password)).as("the caller's password array is zeroed after the call")
+                .isEqualTo("\0".repeat(NEW_PASSWORD.length()));
+    }
+
+    /** Shared so a break arm (attribute dropped) runs the very same assertion. */
+    static void assertCreateBodyByContent(String body, String email, String first, String last, UUID tenantId) {
+        assertThat(body).as("captured POST body").isNotBlank();
+        JsonNode node = J3.readTree(body);
+        assertThat(node.isObject()).as("POST body must be a JSON object: %s", "<redacted>").isTrue();
+        assertThat(node.propertyNames()).as("not a JsonNode serialized as a bean")
+                .doesNotContainAnyElementsOf(GARBAGE_KEYS);
+        assertThat(node.path("username").asString()).as("username = email").isEqualTo(email);
+        assertThat(node.path("email").asString()).isEqualTo(email);
+        assertThat(node.path("firstName").asString()).isEqualTo(first);
+        assertThat(node.path("lastName").asString()).isEqualTo(last);
+        assertThat(node.path("enabled").isBoolean() && node.path("enabled").booleanValue())
+                .as("enabled true").isTrue();
+        assertThat(node.path("emailVerified").isBoolean() && node.path("emailVerified").booleanValue())
+                .as("emailVerified true: the invite link proved the address; without it the token mint fails")
+                .isTrue();
+        assertThat(node.path("attributes").path("tenant_id").isArray())
+                .as("attributes.tenant_id must be a JSON array").isTrue();
+        assertThat(node.path("attributes").path("tenant_id").size()).isEqualTo(1);
+        assertThat(node.path("attributes").path("tenant_id").get(0).asString())
+                .as("attributes.tenant_id [tenant]").isEqualTo(tenantId.toString());
+        JsonNode creds = node.path("credentials");
+        assertThat(creds.isArray() && creds.size() == 1).as("exactly one credential").isTrue();
+        assertThat(creds.get(0).path("type").asString()).isEqualTo("password");
+        assertThat(creds.get(0).path("value").asString()).isEqualTo(NEW_PASSWORD);
+        assertThat(creds.get(0).path("temporary").isBoolean() && !creds.get(0).path("temporary").booleanValue())
+                .as("temporary false: the invitee chose it").isTrue();
+
+        ObjectNode expected = J3.createObjectNode();
+        expected.put("username", email);
+        expected.put("email", email);
+        expected.put("firstName", first);
+        expected.put("lastName", last);
+        expected.put("enabled", true);
+        expected.put("emailVerified", true);
+        expected.putObject("attributes").putArray("tenant_id").add(tenantId.toString());
+        ObjectNode cred = expected.putArray("credentials").addObject();
+        cred.put("type", "password");
+        cred.put("value", NEW_PASSWORD);
+        cred.put("temporary", false);
+        assertThat(node).as("the whole representation, nothing more").isEqualTo(expected);
+    }
+
+    /** Keycloak normally answers 201 + Location; without one the id is read back by exact email. */
+    @Test
+    void createUser_withoutLocation_readsTheIdBackByExactEmail() {
+        Fixture f = newFixture();
+        String newId = UUID.randomUUID().toString();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/users"))
+                .andExpect(method(org.springframework.http.HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CREATED));
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/users?email=new.person%40example.com&exact=true"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess("[{\"id\":\"" + newId + "\",\"email\":\"new.person@example.com\"}]",
+                        MediaType.APPLICATION_JSON));
+
+        String id = f.client().createUser(VENDOR_REALM, "new.person@example.com", "Ada", "Lovelace",
+                NEW_PASSWORD.toCharArray(), UUID.randomUUID(), "tok");
+
+        f.server().verify();
+        assertThat(id).isEqualTo(newId);
+    }
+
+    /**
+     * A 400 (the realm password policy) surfaces as a typed exception carrying Keycloak's
+     * {@code errorMessage} verbatim — the body measured from Keycloak 24.0.5 — and neither the
+     * message nor the exception text contains the password. The array is zeroed on failure too.
+     */
+    @Test
+    void createUser_400_isTyped_carryingKeycloaksMessage_neverThePassword() {
+        Fixture f = newFixture();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/users"))
+                .andExpect(method(org.springframework.http.HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"errorMessage\":\"Password policy not met\"}"));
+
+        char[] password = NEW_PASSWORD.toCharArray();
+        KeycloakUserRejectedException e = assertThrows(KeycloakUserRejectedException.class,
+                () -> f.client().createUser(VENDOR_REALM, "new.person@example.com", "Ada", "Lovelace",
+                        password, UUID.randomUUID(), "tok"));
+
+        f.server().verify();
+        assertThat(e.getKeycloakMessage()).isEqualTo("Password policy not met");
+        assertThat(e.getMessage()).contains("jtoye-dev").doesNotContain(NEW_PASSWORD).doesNotContain("new.person");
+        assertThat(String.valueOf(e.getKeycloakMessage())).doesNotContain(NEW_PASSWORD);
+        assertThat(new String(password)).isEqualTo("\0".repeat(NEW_PASSWORD.length()));
+    }
+
+    @Test
+    void createUser_409_isTypedUserExists() {
+        Fixture f = newFixture();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/users"))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"errorMessage\":\"User exists with same username\"}"));
+
+        assertThrows(KeycloakUserExistsException.class,
+                () -> f.client().createUser(VENDOR_REALM, "new.person@example.com", "Ada", "Lovelace",
+                        NEW_PASSWORD.toCharArray(), UUID.randomUUID(), "tok"));
+        f.server().verify();
+    }
+
+    /** The vendor lookup is the exact-email search, and it reads each user's tenant_id attribute. */
+    @Test
+    void findVendorUsersByEmail_readsIdAndTheTenantAttribute() {
+        Fixture f = newFixture();
+        String id1 = UUID.randomUUID().toString();
+        String id2 = UUID.randomUUID().toString();
+        UUID tenantId = UUID.randomUUID();
+        String body = "[{\"id\":\"" + id1 + "\",\"email\":\"staff@x.test\",\"attributes\":{\"tenant_id\":[\""
+                + tenantId + "\"]}},{\"id\":\"" + id2 + "\",\"email\":\"staff@x.test\"}]";
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/users?email=staff%40x.test&exact=true"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+
+        List<VendorRealmUser> users = f.client().findVendorUsersByEmail(VENDOR_REALM, "staff@x.test", "tok");
+
+        f.server().verify();
+        assertThat(users).containsExactly(
+                new VendorRealmUser(id1, "staff@x.test", tenantId.toString()),
+                new VendorRealmUser(id2, "staff@x.test", null));
+    }
+
     @Test
     void serverError_propagatesAsKeycloakAdminException() {
         Fixture f = newFixture();

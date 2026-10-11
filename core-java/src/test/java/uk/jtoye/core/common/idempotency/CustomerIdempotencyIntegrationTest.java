@@ -52,7 +52,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 // Phase 25 [CR-01]: POST /customers is now gated by @PreAuthorize("hasAuthority('SCOPE_customers:write')").
 // This test drives the proxied controller bean directly on the main thread, so @EnableMethodSecurity
 // requires a SecurityContext carrying that authority.
-@WithMockUser(authorities = "SCOPE_customers:write")
+// WINDOWS #29 (ruling B, 2026-10-09): customer endpoints require an honoured grant; a non-JWT mock
+// principal cannot hold one, so this caller is a realm admin (implicit Group admin) as well.
+@WithMockUser(authorities = {"SCOPE_customers:write", "ROLE_admin"})
 class CustomerIdempotencyIntegrationTest {
 
     @Container

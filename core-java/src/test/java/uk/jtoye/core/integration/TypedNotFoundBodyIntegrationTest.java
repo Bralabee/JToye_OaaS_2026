@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.util.UUID;
 
@@ -95,14 +96,16 @@ class TypedNotFoundBodyIntegrationTest {
     @Test
     @DisplayName("GET /customers/{unknown} carries a typed problem body")
     void getCustomer_unknownId_isTypedProblem() throws Exception {
-        assertTypedNotFound(get(customerPath()).with(vendor(seedTenant())));
+        UUID tenant = seedTenant();
+        assertTypedNotFound(get(customerPath()).with(vendor(tenant, customerStaff(tenant))));
     }
 
     @Test
     @DisplayName("PUT /customers/{unknown} carries a typed problem body")
     void updateCustomer_unknownId_isTypedProblem() throws Exception {
+        UUID tenant = seedTenant();
         assertTypedNotFound(put(customerPath())
-                .with(customersWrite(seedTenant()))
+                .with(customersWrite(tenant, customerStaff(tenant)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(customerJson()));
     }
@@ -110,7 +113,8 @@ class TypedNotFoundBodyIntegrationTest {
     @Test
     @DisplayName("DELETE /customers/{unknown} carries a typed problem body")
     void deleteCustomer_unknownId_isTypedProblem() throws Exception {
-        assertTypedNotFound(delete(customerPath()).with(customersWrite(seedTenant())));
+        UUID tenant = seedTenant();
+        assertTypedNotFound(delete(customerPath()).with(customersWrite(tenant, customerStaff(tenant))));
     }
 
     // ------------------------------------------------------------------
@@ -154,7 +158,17 @@ class TypedNotFoundBodyIntegrationTest {
     @Test
     @DisplayName("GET /shops/{unknown} carries a typed problem body")
     void getShop_unknownId_isTypedProblem() throws Exception {
-        assertTypedNotFound(get(path("shops")).with(vendor(seedTenant())));
+        // Phase 37-03 (D-06): GET /shops/{id} requires STAFF on that shop, so a SCOPED caller is
+        // refused (403) for any shop it holds no grant on, absent or not — only a tenant-wide
+        // GROUP_ADMIN reaches the shop lookup that answers 404 (ShopAccessService
+        // .requireShopInCallerTenant). The caller states that access with an explicit OPERATOR
+        // tenant-wide GROUP_ADMIN grant instead of the implicit one an ungranted user held under
+        // strict-scoping OFF.
+        UUID tenant = seedTenant();
+        UUID groupAdmin = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, groupAdmin, null, "GROUP_ADMIN",
+                "group-admin-" + groupAdmin + "@example.com");
+        assertTypedNotFound(get(path("shops")).with(vendor(tenant, groupAdmin)));
     }
 
     @Test
@@ -188,7 +202,7 @@ class TypedNotFoundBodyIntegrationTest {
         UUID tenant = seedTenant();
         UUID customer = seedCustomer(tenant);
 
-        mockMvc.perform(get("/api/v1/customers/" + customer).with(vendor(tenant)))
+        mockMvc.perform(get("/api/v1/customers/" + customer).with(vendor(tenant, customerStaff(tenant))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(customer.toString()))
                 .andExpect(jsonPath("$.type").doesNotExist());
@@ -223,20 +237,39 @@ class TypedNotFoundBodyIntegrationTest {
 
     /** A day-one vendor: UUID subject (the 23-08 fail-closed gate) + tenant claim, no realm role. */
     private static RequestPostProcessor vendor(UUID tenant) {
-        return jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+        return vendor(tenant, UUID.randomUUID());
+    }
+
+    private static RequestPostProcessor vendor(UUID tenant, UUID subject) {
+        return jwt().jwt(j -> j.subject(subject.toString())
                 .claim("tenant_id", tenant.toString()));
     }
 
     private static RequestPostProcessor scoped(UUID tenant, String scope) {
+        return scoped(tenant, UUID.randomUUID(), scope);
+    }
+
+    private static RequestPostProcessor scoped(UUID tenant, UUID subject, String scope) {
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(subject.toString())
                         .claim("tenant_id", tenant.toString())
                         .claim("scope", scope))
                 .authorities(new JwtRolesAndScopesConverter());
     }
 
-    private static RequestPostProcessor customersWrite(UUID tenant) {
-        return scoped(tenant, "customers:write");
+    private static RequestPostProcessor customersWrite(UUID tenant, UUID subject) {
+        return scoped(tenant, subject, "customers:write");
+    }
+
+    /**
+     * WINDOWS #29 (ruling B, 2026-10-09): every customer endpoint requires an honoured grant under
+     * D-06, so a customer arm's caller holds a tenant-wide STAFF grant (no shop needed). Returns the
+     * granted subject.
+     */
+    private UUID customerStaff(UUID tenant) {
+        UUID subject = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, subject, null, "STAFF", "customer-staff-" + subject + "@example.com");
+        return subject;
     }
 
     private static RequestPostProcessor catalogWrite(UUID tenant) {

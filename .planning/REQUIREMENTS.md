@@ -160,6 +160,78 @@ and PASS after, both directions recorded. The six P0s (PGC-777, -778, -784, -785
 - [x] **PGC-840**: #840 — Every localStorage/sessionStorage key the site writes is listed in the cookie policy, and personal keys (`jtoye-guest-orders`, `jtoye-checkout-email-*`, `jtoye-customer-last-signin`) are cleared on explicit sign-out, proven through the transition by stored content.
 - [x] **PGC-878**: #878 (UXT-114 only) — The accessibility statement targets WCAG 2.2 AA, lists no defect the site no longer has (the skip link), and its scope covers the basket, the order confirmation, `/shop/{slug}/orders` and `/track`. (UXT-119 stays with Phase 32; #878 is not closed by this phase.)
 
+### Real-world operations readiness (RWO) — Phase 37
+
+Added 2026-10-07 at plan time (`/gsd-plan-phase 37`). ROADMAP carried "derived at plan time"; this follows the Phase 31.1
+PGC precedent. One ID per in-scope persona-testing cluster (epic #880), keyed `RWO-<UXT number>`. Scope is D-01 (the 29
+P0/P1 clusters of sub-themes 37-A..37-E and 37-G, filtered from `ux-persona-test-20261003-pass2/consolidated/catalogue.json`)
+plus D-05 (the six 37-F accessibility clusters, all P2). Decisions they implement are `37-CONTEXT.md` D-01..D-27. Each must be
+shown to FAIL on the pre-fix tree and PASS after, both directions recorded. The nine P0s (RWO-003, -004, -018, -011, -007,
+-005, -006, -016, -017) gate Phase 32. Grouped by sub-theme in execution order B, A, D, C, E, G, F. Plan 37-01 (the baseline
+that mints these IDs) declares all 35 and is omitted from the traceability rows.
+
+**37-B Staff access & finance**
+
+- [ ] **RWO-003**: #779 (P0) — Revoking a user's last shop grant leaves that user with no access, never an implicit tenant-wide Group admin: the next API call with the user's own token returns a typed 403 and the dashboard shows "You no longer have access" (D-06, D-08), and the Staff page lists the user as "No access" with a Grant button, read from the same source `ShopAccessService` decides with (D-09).
+- [ ] **RWO-004**: #780 (P0) — `jtoye.access.strict-scoping` defaults to `true` in every profile and no compose or k8s overlay sets it back, so a staff login without a grant has no access (no JIT Group admin) while OPERATOR grants, realm admins and the WARN-logged bootstrap admin keep theirs (D-06); staff are onboarded by a tenant-scoped, single-use, expiring email invite that carries an OPERATOR grant, with the password collected on J'Toye's accept page and sign-in then started with the invited email pre-filled (D-07, D-26).
+- [ ] **RWO-018**: #791 (P0) — Only DRAFT and PENDING orders can be deleted; deleting a CONFIRMED-or-later order returns a typed 409, and a Group-admin-only void with a required reason keeps the order, writes a reversing ledger entry and an audit trail, so no ledger row ever references an order that returns 404 (D-10).
+- [ ] **RWO-026**: #799 — CSV product import files rows without a `shop_id` under the shop the vendor selected (gated SHOP_MANAGER on that shop), so imported items appear on that shop's storefront, and a "Copy to shop" action copies selected products, allergen data verbatim, through `ProductService` under an Idempotency-Key.
+- [ ] **RWO-027**: #800 — Ledger rows record the order's shop (tenant-loop backfill), and the per-shop dashboard and finance summary and CSV export show that shop's takings to its site manager, while the tenant-wide view stays Group-admin or realm-admin only.
+- [ ] **RWO-046**: #815 — The dashboard product form lets the vendor choose the VAT rate the API already accepts (Standard, Reduced, Zero, Exempt); ledger VAT computation is unchanged in this phase (open question Q2 needs legal confirmation).
+- [ ] **RWO-047**: #816 — Checkout and confirmation show a VAT line only when the seller declares a VAT number (V71 `trader_identity.vat_number`), never "VAT (incl. 20%)" for a vendor with no declared registration.
+
+**37-A Kitchen & order operations**
+
+- [ ] **RWO-011**: #786 (P0) — Every kitchen-board card shows the customer's notes and the fulfilment type (delivery or collection), as the printed ticket already does (D-12).
+- [ ] **RWO-020**: #795 — PENDING orders appear in a "New" lane on the kitchen board, where Accept moves them to CONFIRMED (D-11), and a new order raises a repeating alert (a looping sound after an explicit "Enable sound" tap, a flashing card, a "(N) New orders" tab title) until it is accepted, with a mute that is honoured and visibly shown (D-12).
+- [ ] **RWO-021**: #796 — When the session lapses the kitchen board shows a full-screen "Signed out: new orders are NOT showing" state with an alarm and returns to `/dashboard/kitchen` after sign-in; it refreshes its token silently while the SSO session lasts, and a lapsed session, a muted handover or an unreachable API is never shown as "Live" (D-14).
+- [ ] **RWO-022**: #797 — A vendor can pause ordering (20 min, 40 min, or until reopened) and set structured per-day opening hours, both enforced server-side by the storefront and checkout with a customer-facing message; empty or unparseable hours read as CLOSED for every shop created or edited after deploy, while shops whose hours were empty or unparseable at deploy are marked "legacy always open", behave exactly as before, and their vendors are told to set structured hours (D-15, D-25).
+
+**37-D Abuse resistance**
+
+- [ ] **RWO-005**: #781 (P0) — A review is accepted only when the cited order belongs to the reviewed shop (`order.shopId == shop.id` in `ReviewService`), so a buyer of shop A cannot review shop B of the same tenant (D-21).
+- [ ] **RWO-006**: #782 (P0) — The client IP comes from a config-declared trusted-proxy CIDR list whose default trusts none: `X-Forwarded-For` is read only when the immediate peer is a trusted proxy, taking the right-most untrusted hop, so rotating the header no longer defeats the public rate limiter (D-19; a regression of closed #88).
+- [ ] **RWO-039**: #808 — The edge gateway rate-limits per tenant after JWT validation (keeping a larger pre-auth process-wide valve), and its 429 is a typed `application/problem+json` with `Retry-After` and rate-limit headers, so anonymous traffic can no longer block every vendor's sync (D-19).
+- [ ] **RWO-041**: #810 — Cash checkout is bounded by config-declared caps on open cash orders per email, per phone and per client IP, the IP held only as an HMAC under a configured key (never raw), nulled by erasure and under declared retention, with a typed 429 over the cap; guest orders show an "unverified contact" badge on the kitchen board, and vendors can bulk-reject junk orders (D-18, D-27).
+- [ ] **RWO-042**: #811 — Item quantity has a config-declared per-line ceiling and the basket a config-declared total sanity cap, both enforced in the domain service every writer calls (storefront, vendor API, MCP), so a £19 billion order is refused with a typed error (D-20).
+
+**37-C Checkout integrity**
+
+- [ ] **RWO-007**: #783 (P0) — Checkout submit carries the unit prices and total the customer saw (required; a missing expectation is a typed 422), and on any price, availability, sold-out or minimum change the server refuses with a typed RFC 7807 409 listing each change (for example "Suya £9.00 → £14.00"), composed with 31.1's stale-acknowledgement 409; the UI shows every change and requires re-confirmation (D-16).
+- [ ] **RWO-008**: #792 — No storefront surface renders a promotion that the order path does not apply; the vendor's promotion records are kept, and the marketing page tells the vendor promotions are not shown to customers until checkout applies them (D-17).
+- [ ] **RWO-029**: #802 — A cash order's confirmation has its own route, as the card path already does: focus moves to its heading, it announces the order number, sets its own title, survives a refresh without re-POSTing, and carries the full breakdown (subtotal, delivery, VAT, total, recorded allergen set).
+- [ ] **RWO-044**: #813 — Public reviews show a derived display name (first name plus initial), never the reviewer's full checkout name, and the review form tells the reviewer what will be published; the stored value is kept for erasure.
+
+**37-E Integrator surface**
+
+- [ ] **RWO-016**: #790 (P0) — A product update that omits `quantityInStock` preserves both stock and tracking; tracking is turned off only by an explicit `trackInventory: false` (sent by the dashboard form in the same change), and a narrow PATCH for availability and stock cannot touch allergen or ingredients data.
+- [ ] **RWO-017**: #727 (comment, P0) — `/sync/batch` requires a `shopId` on product create (typed 400) and writes through `ProductService`, and orders refuse a product that belongs to no shop, so a synced product is orderable only at its own shop with its own allergen record.
+- [ ] **RWO-035**: #805 — A Group admin can issue, rotate and revoke a scoped API credential: a Keycloak service-account client per credential with #206 client scopes and a hard-coded `tenant_id` mapper, its secret shown once, its service-account user limited by an ordinary `shop_staff` grant no higher than the issuer's own, every action recorded with who and when, and the Developers page listing each credential's scopes, shops and last-used time (D-22, D-23, D-24).
+- [ ] **RWO-036**: #806 — An order created through the MCP `create_order` tool is PENDING, lands in the kitchen's New lane and emits the same events as a storefront order, and the tool description states the resulting status; the dashboard's draft capability is kept (D-13).
+- [ ] **RWO-037**: #807 — `/sync/batch` accepts availability and stock and returns a per-item outcome (CREATED, UPDATED, or REJECTED with a code), with a batch status that is never SUCCESS when an item was skipped; the edge passes core's typed responses through instead of an untyped 502.
+- [ ] **RWO-038**: #587 (comment) — Webhook auto-pause counts failed deliveries (exhausted attempts), not individual attempts; deliveries to a paused endpoint are held rather than terminally failed and are re-queued on resume, and the tenant is emailed once per auto-pause.
+- [ ] **RWO-040**: #809 — The MCP `list_products` tool honours `shopId` (and an available-only filter) and returns allergen names alongside the mask.
+
+**37-G Catalogue & shop admin**
+
+- [ ] **RWO-023**: #798 — The shop form sets the delivery fee, the free-delivery threshold and whether the shop offers delivery and/or collection (defaults preserve today's "both"), enforced for every writer through `FulfilmentPolicy`, and the storefront shows "Collection only" where it applies.
+- [ ] **RWO-028**: #801 — Updating a shop keeps its public slug unless a new slug is explicitly sent and validated, so shared links and QR codes keep working.
+
+**37-F Accessibility (P2, kept in by D-05)**
+
+- [ ] **RWO-080**: #849 — At 130% root text on a 360 px viewport the basket, tracker and shop header wrap rather than truncate or overflow.
+- [ ] **RWO-081**: #850 — Tracking pages announce each status change through a live region, mark the current step with `aria-current="step"`, and label the copy button and the lookup field.
+- [ ] **RWO-082**: #851 — Every shop card link on the kitchen list has an accessible name in Chrome's accessibility tree.
+- [ ] **RWO-083**: #852 — After Add or Remove, focus moves to the stepper (or back to Add), and the basket announcement names the item once with the correct count.
+- [ ] **RWO-084**: #853 — Basket, checkout, confirmation and tracking each have their own page title naming the step (and the shop).
+- [ ] **RWO-085**: #854 — On mobile the cookie banner never covers the focused element and is reachable early in the tab order, not as the 32nd tab stop.
+
+**Recorded, not planned (D-01):** UXT-049 (a double-tap skips a status; roadmap SC-1's clause moves with it), UXT-050 (mute
+survives sign-out), UXT-052 (unanswered orders pending forever) and every other P2/P3 37-x cluster go to a 37.x follow-up
+phase; UXT-120 and UXT-121 (#873, #874) are unassigned; Web Push and a real promotions engine are their own capabilities.
+**#452:** 37-B's D-07 invite (RWO-004) closes issue #452's gap 2 (UXT-025, homed to Phase 33 in the catalogue), so Phase 33
+does not rebuild it.
+
 ### Go to market (GTM) — Phase 32
 
 - [ ] **GTM-01**: Production tagged and deployed — a `v2.3` git tag exists (none does; latest is `v2.2` while `build.gradle.kts` reads `2.3.0`), `DEPLOY_ENABLED` true, `check-runtime-freshness.sh` green against production.
@@ -349,6 +421,41 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | PGC-793 | Phase 31.1 | 31.1-04, 31.1-30 | Planned |
 | PGC-840 | Phase 31.1 | 31.1-05, 31.1-30 | Planned |
 | PGC-878 | Phase 31.1 | 31.1-28, 31.1-30 | Planned — UXT-114 only; #878 stays open for UXT-119 (Phase 32) |
+| RWO-003 | Phase 37 | 37-02, 37-04, 37-05, 37-06, 37-07, 37-08, 37-09, 37-15, 37-18 | Planned (P0) |
+| RWO-004 | Phase 37 | 37-02, 37-03, 37-04, 37-05, 37-06, 37-07, 37-08, 37-09, 37-15 | Planned (P0) |
+| RWO-018 | Phase 37 | 37-10, 37-12, 37-15 | Planned (P0) |
+| RWO-026 | Phase 37 | 37-13, 37-14, 37-15 | Planned |
+| RWO-027 | Phase 37 | 37-11, 37-12, 37-15 | Planned |
+| RWO-046 | Phase 37 | 37-14, 37-15 | Planned |
+| RWO-047 | Phase 37 | 37-14, 37-15 | Planned |
+| RWO-011 | Phase 37 | 37-16, 37-23 | Planned (P0) |
+| RWO-020 | Phase 37 | 37-16, 37-17, 37-23 | Planned |
+| RWO-021 | Phase 37 | 37-17, 37-18, 37-23 | Planned |
+| RWO-022 | Phase 37 | 37-19, 37-20, 37-21, 37-22, 37-23 | Planned |
+| RWO-005 | Phase 37 | 37-26, 37-31 | Planned (P0) |
+| RWO-006 | Phase 37 | 37-24, 37-28, 37-31 | Planned (P0) |
+| RWO-039 | Phase 37 | 37-25, 37-31 | Planned |
+| RWO-041 | Phase 37 | 37-27, 37-28, 37-29, 37-30, 37-31 | Planned |
+| RWO-042 | Phase 37 | 37-26, 37-30, 37-31 | Planned |
+| RWO-007 | Phase 37 | 37-32, 37-33, 37-34, 37-38 | Planned (P0) |
+| RWO-008 | Phase 37 | 37-35, 37-36, 37-38 | Planned |
+| RWO-029 | Phase 37 | 37-37, 37-38 | Planned |
+| RWO-044 | Phase 37 | 37-35, 37-36, 37-38 | Planned |
+| RWO-016 | Phase 37 | 37-39, 37-47 | Planned (P0) |
+| RWO-017 | Phase 37 | 37-40, 37-41, 37-47 | Planned (P0) |
+| RWO-035 | Phase 37 | 37-44, 37-45, 37-46, 37-47 | Planned |
+| RWO-036 | Phase 37 | 37-42, 37-47 | Planned |
+| RWO-037 | Phase 37 | 37-40, 37-41, 37-47 | Planned |
+| RWO-038 | Phase 37 | 37-43, 37-47 | Planned |
+| RWO-040 | Phase 37 | 37-42, 37-47 | Planned |
+| RWO-023 | Phase 37 | 37-48, 37-49, 37-50 | Planned |
+| RWO-028 | Phase 37 | 37-48, 37-49, 37-50 | Planned |
+| RWO-080 | Phase 37 | 37-51, 37-52, 37-53 | Planned |
+| RWO-081 | Phase 37 | 37-51, 37-53 | Planned |
+| RWO-082 | Phase 37 | 37-52, 37-53 | Planned |
+| RWO-083 | Phase 37 | 37-52, 37-53 | Planned |
+| RWO-084 | Phase 37 | 37-51, 37-53 | Planned |
+| RWO-085 | Phase 37 | 37-52, 37-53 | Planned |
 | GTM-01 | Phase 32 | not yet planned | Not started |
 | GTM-02 | Phase 32 | not yet planned | Not started |
 | BLOB-01 | Phase 36 | 36-01, 36-06, 36-14 | Complete 2026-09-29 (36-01: Blob SDK behind the unchanged StorageService surface; 36-06: shape rules fail the Blob client bean at startup, one auth-mode switch, AWS SDK absent from the shipped runtimeClasspath; 36-14: no retired store named in core-java main code, comments included. The real-runtime boot (36-06 D6) is tracked under BLOB-02) |
@@ -376,6 +483,6 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | BOOT4-13 | Phase 38 | 38-02, 38-14 | Complete 2026-10-05 |
 | BOOT4-14 | Phase 38 | 38-16, 38-17, 38-18 | Complete 2026-10-05 |
 
-**Coverage:** **53 requirements across 15 categories** — the original 24 (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2), all Complete; the 2026-08-01 widening OPS×5 (Phase 27, Complete) and SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2 (Phases 28–32, Not started); and the 2026-08-07 triage widening PAY-04 (Phase 30) + CUST×4 (Phase 33) + TRUTH×2 (Phase 34), all Not started. Each maps to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted — which is why the traceability table has **54** rows against 53 requirements, and that one-row gap is deliberate rather than drift. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`; the 22 new requirements have no plans yet by design, because `/gsd-plan-phase` has not run for Phases 28–32.) **Addendum 2026-09-28:** BLOB-01..BLOB-10 (Phase 36) were added at plan time with 10 traceability rows; the totals in this paragraph predate them and were not re-derived here (UIX-07..09 from Phase 35 also postdate it). **Addendum 2026-10-04:** BOOT4-01..BOOT4-14 (Phase 38) were added at plan time with 14 traceability rows; same caveat on the totals. **Addendum 2026-10-05:** PGC-777..PGC-878 (17 IDs, Phase 31.1) were added at plan time with 17 traceability rows; as with BLOB, the totals above are not re-derived here.
+**Coverage:** **53 requirements across 15 categories** — the original 24 (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2), all Complete; the 2026-08-01 widening OPS×5 (Phase 27, Complete) and SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2 (Phases 28–32, Not started); and the 2026-08-07 triage widening PAY-04 (Phase 30) + CUST×4 (Phase 33) + TRUTH×2 (Phase 34), all Not started. Each maps to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted — which is why the traceability table has **54** rows against 53 requirements, and that one-row gap is deliberate rather than drift. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`; the 22 new requirements have no plans yet by design, because `/gsd-plan-phase` has not run for Phases 28–32.) **Addendum 2026-09-28:** BLOB-01..BLOB-10 (Phase 36) were added at plan time with 10 traceability rows; the totals in this paragraph predate them and were not re-derived here (UIX-07..09 from Phase 35 also postdate it). **Addendum 2026-10-04:** BOOT4-01..BOOT4-14 (Phase 38) were added at plan time with 14 traceability rows; same caveat on the totals. **Addendum 2026-10-05:** PGC-777..PGC-878 (17 IDs, Phase 31.1) were added at plan time with 17 traceability rows; as with BLOB, the totals above are not re-derived here. **Addendum 2026-10-07:** RWO-003..RWO-085 (35 IDs, Phase 37) added at plan time with 35 traceability rows; totals above not re-derived.
 
 **Not tracked as v2.3 requirements, deliberately:** **#427** (ADR-0004 Ingredient node / allergen evidence chain) beyond its Wave 1 slice at LGL-03, and **#428** (Cohort B catering, discovery-gated). Both are epics filed 2026-08-01 after the state review found they had no phase, no requirement ID and no issue and were therefore invisible to every roadmap- and tracker-driven review. They are the growth story and sit **after** go-to-market, not inside it.

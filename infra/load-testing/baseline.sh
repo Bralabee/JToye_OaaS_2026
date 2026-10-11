@@ -90,6 +90,9 @@ REALM="${REALM:-jtoye-dev}"
 # credentials are. Point 2 is the whole argument for arm A's status assertion: a token that
 # authenticates fine and authorizes nowhere produces a flawless-looking throughput number.
 CLIENT_ID="${CLIENT_ID:-core-api}"
+# D-06 (Phase 37-04): strict scoping is ON by default, so TEST_USER needs an explicit shop grant
+# (dashboard -> Staff page). The seeded tenant-a-user holds none; the run VOIDs (exit 2) before
+# measuring when GET /api/v1/staff/me says the user has no shop access.
 TEST_USER="${TEST_USER:-tenant-a-user}"
 # NOTE: the seed-user password is resolved AFTER the tool check, not here. See the ORDERING
 # note in the tooling section — a credential guard placed at this point makes the tool VOID
@@ -234,6 +237,23 @@ TOKEN=$(curl -s -X POST "$KEYCLOAK_URL/realms/$REALM/protocol/openid-connect/tok
   --data-urlencode "client_secret=$CLIENT_SECRET" \
   -d "username=$TEST_USER" --data-urlencode "password=$TEST_PASSWORD" | jq -r '.access_token')
 [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ] || void "could not obtain a JWT from $KEYCLOAK_URL (realm=$REALM user=$TEST_USER)"
+
+# D-06 (Phase 37-04): strict scoping is ON by default, so a user with no shop_staff grant has
+# NO shop access. The seeded tenant-a-user holds no grant, and under D-06 both arm-A endpoints
+# answer it 200 with an EMPTY body — a 2xx-only assertion would then score empty reads as a
+# latency baseline. So the minted token's effective access is checked first, through the
+# server's own answer (GET /api/v1/staff/me). Grant TEST_USER explicitly on the dashboard's
+# Staff page (or pass a TEST_USER that already holds a grant) before running. Skipped on the
+# caller-supplied TOKEN path above, which exists to show arm A failing on a bad token (AC-6.2).
+ME=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" "$API_BASE_URL/api/v1/staff/me")
+ME_CODE="${ME##*$'\n'}"; ME_BODY="${ME%$'\n'*}"
+[ "$ME_CODE" = "200" ] || void "GET /api/v1/staff/me returned $ME_CODE for TEST_USER=$TEST_USER — cannot tell what this user may read, so nothing would be measured"
+ME_ADMIN=$(jq -r '.groupAdmin' <<< "$ME_BODY")
+ME_SHOPS=$(jq -r '(.grantedShopIds // []) | length' <<< "$ME_BODY")
+if [ "$ME_ADMIN" != "true" ] && [ "${ME_SHOPS:-0}" = "0" ]; then
+  void "TEST_USER=$TEST_USER has no shop access: after D-06 (strict scoping ON) an ungranted user reads empty lists and is refused (403) on every write. Grant it explicitly on the Staff page, then re-run — refusing to report a baseline over empty reads"
+fi
+echo "note: TEST_USER=$TEST_USER effective access groupAdmin=$ME_ADMIN grantedShops=$ME_SHOPS (D-06)"
 fi
 
 # ---------------------------------------------------------------- arm A
@@ -272,6 +292,7 @@ for ep in "${ENDPOINTS[@]}"; do
     hint=""
     case "$dist" in
       *401=*) hint=" 401 means the token authenticated but did not authorize — check aud=core-api." ;;
+      *403=*) hint=" 403 is the shop-access gate: after D-06 (strict scoping ON) TEST_USER=$TEST_USER needs an explicit grant on the Staff page." ;;
       *429=*) hint=" 429 is THIS platform's rate limiter (100 req/min/tenant, burst 20), shared across endpoints. Lower TOTAL_REQUESTS, raise RATE_LIMIT_PAUSE, or measure with the limiter disabled and say so." ;;
     esac
     fail "arm A $ep: $nonhex non-2xx response(s) [$dist] — at ${rps:-0} req/s. Speed is not success.$hint"

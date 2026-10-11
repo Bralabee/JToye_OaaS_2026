@@ -131,8 +131,8 @@ class OrderSseGrantRecheckTest {
     @Test
     @DisplayName("group admin liveness — an admin NOT backed by shop_staff (realm admin) keeps receiving")
     void groupAdminLivenessArm_realmAdminIsNotDeniedByAShopStaffRecheck() throws Exception {
-        // The realm-admin bridge and the day-one implicit admin are unrestricted WITHOUT
-        // any shop_staff row — resolveMembership returns an empty membership for them even
+        // The realm-admin bridge (and, under strict-scoping OFF only, the day-one implicit admin)
+        // is unrestricted WITHOUT any shop_staff row — resolveMembership returns an empty membership for them even
         // when nothing has been revoked. A re-check that reads that emptiness as revocation
         // would kill the KDS for exactly the accounts that run it (T-28-14). This arm is the
         // one that fails if the re-check ever stops distinguishing "no row" from "row gone".

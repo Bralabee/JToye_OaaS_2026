@@ -20,6 +20,7 @@ import uk.jtoye.core.storage.StorageService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -349,11 +350,33 @@ public class MediaAssetService {
      * by the RLS wall (the request thread pins the tenant GUC), so another tenant's
      * assets are invisible. Replace is NOT an action here — it is a re-upload through
      * the 24-03 accept endpoint ({@code POST /api/v1/products/{id}/image}).
+     *
+     * <p><strong>Shop-scoped (Phase 37-04, D-06).</strong> RLS is only the tenant wall. Within
+     * the tenant the queue follows the same read rule as the product list
+     * ({@code ProductService.getAllProducts}): a GROUP_ADMIN (realm admin, honoured tenant-wide
+     * grant, declared system caller) sees the whole tenant's queue; any other caller sees only
+     * assets whose owning shop ({@link #resolveOwningShopId}) is in its grant set; a fully
+     * ungranted caller sees nothing. An asset with no resolvable shop is GROUP_ADMIN-only, because
+     * every action on it (Keep, re-process) is. Before this the queue made no shop check, which
+     * the old strict-scoping-OFF default hid (every ungranted user was an implicit admin).
      */
     @Transactional(readOnly = true)
     public List<MediaAssetDto> reviewQueue() {
         OffsetDateTime delayCutoff = delayCutoff();
-        return mediaAssetRepository.findReviewQueue(delayCutoff).stream()
+        List<MediaAsset> queue = mediaAssetRepository.findReviewQueue(delayCutoff);
+        if (!shopAccessService.isGroupAdmin()) {
+            Set<UUID> granted = shopAccessService.grantedShopIds();
+            if (granted.isEmpty()) {
+                return List.of();   // deny-by-default: no grant, no queue
+            }
+            queue = queue.stream()
+                    .filter(asset -> {
+                        UUID owningShop = resolveOwningShopId(asset);
+                        return owningShop != null && granted.contains(owningShop);
+                    })
+                    .toList();
+        }
+        return queue.stream()
                 .map(a -> toDto(a, delayCutoff))
                 .toList();
     }

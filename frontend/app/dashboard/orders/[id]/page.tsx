@@ -149,7 +149,14 @@ export default function OrderDetailPage() {
           Back to orders
         </Button>
       </div>
-      <OrderDetailPanel order={order} onRefundIssued={handleRefundIssued} />
+      <OrderDetailPanel
+        order={order}
+        onRefundIssued={handleRefundIssued}
+        // 37-12: the void's 200 IS the order detail (37-10), so the page keeps it as its own.
+        onVoided={(detail) => {
+          if (detail?.id === order.id) setOrder(detail)
+        }}
+      />
     </div>
   )
 }

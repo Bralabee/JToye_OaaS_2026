@@ -1,5 +1,11 @@
+import apiClient from "@/lib/api-client"
 import { fetchAllPages } from "@/lib/paged-fetch"
-import type { Product } from "@/types/api"
+import type {
+  BulkImportResult,
+  CopyProductsRequest,
+  CopyProductsResult,
+  Product,
+} from "@/types/api"
 
 /**
  * Products per request. A code-level constant, NOT a `NEXT_PUBLIC_*` knob — and the
@@ -71,4 +77,34 @@ export async function fetchAllProducts(shopId?: string): Promise<AllProducts> {
     label: "[products-api] /api/v1/products",
   })
   return { products: items, truncated }
+}
+
+/**
+ * Import a CSV menu INTO one shop (37-13/37-14, UXT-026): POST /api/v1/products/bulk/csv?shopId=.
+ *
+ * A row with its own shop_id cell goes there; every other row goes into `shopId`. The server
+ * requires SHOP_MANAGER on `shopId` before it reads a row, and a row naming a shop the caller does
+ * not manage comes back as a per-row error. The shop is a required argument, not an option: a
+ * file posted with no shop creates nothing ("shop required" on every row), which is the failure
+ * this signature makes impossible to write by accident (WINDOWS #27).
+ */
+export async function importCsv(file: File, shopId: string): Promise<BulkImportResult> {
+  const formData = new FormData()
+  formData.append("file", file)
+  const res = await apiClient.post<BulkImportResult>(
+    `/api/v1/products/bulk/csv?shopId=${encodeURIComponent(shopId)}`,
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  )
+  return res.data
+}
+
+/**
+ * Copy products to another shop of the tenant (37-13, UXT-026): POST /api/v1/products/copy.
+ * Allergens, ingredients, price, VAT rate and photos travel verbatim; a product the target already
+ * has is SKIPPED, so a repeat creates nothing. The counts are the server's and are shown as such.
+ */
+export async function copyProducts(req: CopyProductsRequest): Promise<CopyProductsResult> {
+  const res = await apiClient.post<CopyProductsResult>("/api/v1/products/copy", req)
+  return res.data
 }

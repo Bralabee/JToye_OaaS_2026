@@ -171,18 +171,22 @@ test.describe("Dashboard interface corrections (#450) @mobile-only", () => {
     await expect(page.locator(`${LIVE} [data-testid="shop-switcher"]`)).toHaveCount(2)
   })
 
-  test("2 — the staff page does not promise an invite it cannot send", async ({ page }) => {
+  test("2 — the staff page's invite copy matches what the page can do", async ({ page }) => {
     await page.goto("/dashboard/staff", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("heading", { name: "Staff & access" })).toBeVisible({
       timeout: 20_000,
     })
 
+    // The stale promise (#450 item 2) and the 37-06 denial both stay gone.
     await expect(page.getByText(/invite them to log in/i)).toHaveCount(0)
-    await expect(
-      page.getByRole("button", { name: /invite/i }).or(page.getByRole("link", { name: /invite/i }))
-    ).toHaveCount(0)
+    await expect(page.getByText(/cannot send.*invite/i)).toHaveCount(0)
     await expect(page.getByText(/signed in once with their own/i)).toBeVisible()
-    await expect(page.getByText(/cannot send them an invite/i)).toBeVisible()
+    // 37-09 (D-07): the page now DOES invite, so the control this test used to
+    // forbid is required — exactly one "Send invitation" button, in the
+    // "Invite someone" card. (Until 37-09 this asserted zero invite buttons.)
+    const inviteCard = page.getByRole("region", { name: "Invite someone" })
+    await expect(inviteCard).toBeVisible()
+    await expect(inviteCard.getByRole("button", { name: "Send invitation" })).toHaveCount(1)
   })
 })
 
@@ -239,7 +243,8 @@ test.describe("Throttled-mobile CLS — /dashboard/staff (#454) @mobile-only", (
     await expect(page.getByRole("heading", { name: "Staff & access" })).toBeVisible({
       timeout: 20_000,
     })
-    await expect(page.getByText("Team directory")).toBeVisible()
+    // 37-06 folded "Team directory" into the People card (two cards, not three).
+    await expect(page.getByRole("heading", { name: "People", exact: true })).toBeVisible()
 
     expect(cls, "/dashboard/staff CLS is within the repo's declared budget").toBeLessThan(
       CLS_BUDGET

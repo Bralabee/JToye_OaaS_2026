@@ -1,17 +1,24 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { staggerContainer, staggerItem } from "@/lib/motion"
 import { useCountUp } from "@/hooks/use-count-up"
 import { CHART_COLORS } from "@/lib/chart-colors"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
-import { fetchAllMyShops } from "@/lib/shops-api"
+import { fetchAllMyShops, fetchMyAccess } from "@/lib/shops-api"
+import { joinedToastTitle } from "@/lib/joined-toast"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
+import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import {
+  CHOOSE_SHOP_HEADING,
+  FinanceScopeText,
+} from "@/components/dashboard/finance-scope-text"
+import { fetchFinanceSummary, financeGate, type FinanceScope } from "@/lib/finance-api"
 import {
   Store,
   Package,
@@ -127,13 +134,20 @@ export default function DashboardPage() {
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [shopsList, setShopsList] = useState<{ id: string; name: string }[]>([])
+  // 37-12: the scope the finance summary was filtered on, as the SERVER echoed it.
+  const [financeScope, setFinanceScope] = useState<FinanceScope | null>(null)
   const { toast } = useToast()
 
   // 23-07's persisted shop-context switcher. When a shop is selected, the
   // order-derived views (Orders stat, status chart, recent-activity feed)
-  // narrow to that shop server-side via ?shopId=. Catalogue/CRM/finance totals
-  // stay group-wide (products has no server-side shop filter yet — WR-04).
+  // narrow to that shop server-side via ?shopId=, and (37-12, UI-SPEC § B5) so
+  // does the finance tile. Catalogue/CRM totals stay group-wide (products has no
+  // server-side shop filter yet — WR-04).
   const { contextShopId } = useShopContext()
+  // Same scope rule as /dashboard/finance: a non-admin on All shops is not sent
+  // tenant totals at all; it is asked to choose a shop instead.
+  const switcher = useOptionalShopSwitcherData()
+  const financeTileGate = financeGate(contextShopId, switcher)
 
   // Non-critical: a failed /me fetch must never break the dashboard render.
   async function fetchOnboardingStatus() {
@@ -154,7 +168,7 @@ export default function DashboardPage() {
       // (OrderController accepts ?shopId= and scopes to one shop of the tenant).
       const shopScope = contextShopId ? `&shopId=${contextShopId}` : ""
 
-      const [allShops, productsRes, ordersRes, customersRes, recentOrdersRes, allOrdersRes, finSummaryRes] =
+      const [allShops, productsRes, ordersRes, customersRes, recentOrdersRes, allOrdersRes] =
         await Promise.all([
           // #485 (call site :170): was a single `/api/v1/shops?size=100`, whose
           // first page was treated as the whole list. Past 100 shops the tail was
@@ -168,7 +182,6 @@ export default function DashboardPage() {
           // Server enforces a max page size of 100 (Issue #95) — the previous
           // size=200 was silently over-asking. Chart the 100 most recent orders.
           apiClient.get(`/api/v1/orders?size=100&sort=createdAt,desc${shopScope}`),
-          apiClient.get("/api/v1/financial-transactions/summary").catch(() => ({ data: null })),
         ])
 
       setShopsList(allShops.map((s) => ({ id: s.id, name: s.name })))
@@ -184,7 +197,6 @@ export default function DashboardPage() {
 
       setRecentOrders(recentOrdersRes.data.content || [])
       setAllOrders(allOrdersRes.data.content || [])
-      setFinancialSummary(finSummaryRes.data)
     } catch (error: unknown) {
       toast({
         variant: "destructive",
@@ -196,12 +208,68 @@ export default function DashboardPage() {
     }
   }
 
+  /*
+   * D-26 (37-09): the accept page sends a newly joined person here as
+   * /dashboard?joined=1, through the ordinary Keycloak sign-in. Once, and only then,
+   * say where they can now work — from the server's answer (staff/me + their shops),
+   * never from the URL, which anyone can write. The parameter is dropped first, so a
+   * reload or a shared link does not welcome them twice.
+   */
+  const joinedHandled = useRef(false)
+  useEffect(() => {
+    if (joinedHandled.current) return
+    joinedHandled.current = true
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("joined") !== "1") return
+    params.delete("joined")
+    const rest = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash
+    )
+    Promise.all([fetchMyAccess(), fetchAllMyShops()])
+      .then(([access, shops]) => {
+        const title = joinedToastTitle(access, shops)
+        if (title) toast({ title })
+      })
+      .catch(() => {
+        // A welcome is not worth an error: the dashboard itself reports load failures.
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Onboarding banner is shop-independent — fetch once on mount.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     fetchOnboardingStatus()
      
   }, [])
+
+  // 37-12: the finance tile loads on its own, keyed on the same scope rule as the
+  // finance page, so waiting for the caller's access never holds up the other tiles.
+  // A refusal or failure leaves the tile empty, as before ("No financial data yet").
+  const financeSeq = useRef(0)
+  useEffect(() => {
+    const seq = ++financeSeq.current
+    if (financeTileGate !== "fetch") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the tile's scope-change reset; nothing is fetched for this scope
+      setFinancialSummary(null)
+      setFinanceScope(null)
+      return
+    }
+    fetchFinanceSummary({ shopId: contextShopId })
+      .then(({ summary, scope }) => {
+        if (seq !== financeSeq.current) return
+        setFinancialSummary(summary)
+        setFinanceScope(scope)
+      })
+      .catch(() => {
+        if (seq !== financeSeq.current) return
+        setFinancialSummary(null)
+        setFinanceScope(null)
+      })
+  }, [contextShopId, financeTileGate])
 
   // Re-fetch dashboard data whenever the selected shop changes so the order
   // activity always reflects the switcher (VSA-03).
@@ -426,6 +494,20 @@ export default function DashboardPage() {
                     <Bar dataKey="vat" name="VAT" fill={CHART_COLORS.amber} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              )}
+              {/* UI-SPEC § B5 "Dashboard home tiles": the finance page's banner wording,
+                  from the scope the server echoed (or the choose-a-shop prompt). */}
+              {(financeScope || financeTileGate === "choose-shop") && (
+                <p
+                  data-testid="finance-tile-scope"
+                  className="mt-4 text-xs text-slate-500 [overflow-wrap:anywhere]"
+                >
+                  {financeTileGate === "choose-shop" ? (
+                    CHOOSE_SHOP_HEADING
+                  ) : (
+                    financeScope && <FinanceScopeText scope={financeScope} />
+                  )}
+                </p>
               )}
             </CardContent>
           </Card>

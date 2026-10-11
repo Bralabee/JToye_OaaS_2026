@@ -37,7 +37,7 @@ proceed with 2.3 until it's go-to-market ready."* 10 of 14 phases are complete.
 | Persona | Mechanism in code | Built state |
 |---|---|---|
 | **Vendor owner** (tenant admin) | `GROUP_ADMIN` role, tenant-wide; JIT auto-provisioned on first login | Full dashboard; the onboarding state machine is the sole writer of `Shop.published` |
-| **Shop manager / staff** | `shop_staff` (V52): `GROUP_ADMIN` / `SHOP_MANAGER` / `STAFF`; `ShopAccessService` is the single in-tenant authz funnel | Shipped Phase 23. Strict-scoping flag **defaults OFF** (an ungranted user is an implicit tenant-wide admin until the flag is flipped) |
+| **Shop manager / staff** | `shop_staff` (V52): `GROUP_ADMIN` / `SHOP_MANAGER` / `STAFF`; `ShopAccessService` is the single in-tenant authz funnel | Shipped Phase 23. Strict-scoping flag **defaults ON** since Phase 37 (D-06): an ungranted user has no access; access is exactly the user's `shop_staff` grants |
 | **Kitchen staff** | KDS (`/dashboard/kitchen`), STOMP realtime, allergen banner + monochrome print block | Shipped. A client receiving a *relayed* event on a real cluster (L6) has never been captured — needs 2+ replicas |
 | **Consumer (account)** | `jtoye-customers` Keycloak realm; email-verified; separate token plane (`CustomerJwtVerifier`) | No 2FA, **no verified phone**, no social login (ADR-0005: IdPs deliberately unpopulated; Google groundwork inert, blocked on an HTTPS domain) |
 | **Consumer (guest)** | Guest checkout by email; order tracking at `/track` (proof-of-ownership by order number) | Live. Orders can complete **with no payment** — see §6 (#461) |

@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,8 +22,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -36,6 +35,7 @@ import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.util.List;
 import java.util.Optional;
@@ -116,11 +116,17 @@ class ShopAccessCacheBypassIntegrationTest {
     @Autowired private CacheManager cacheManager;
     @Autowired private JdbcTemplate jdbc;
 
-    private ShopAccessService targetService;
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
 
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         cacheManager.getCache("shops").clear();
         cacheManager.getCache("products").clear();
         cacheManager.getCache("shopMembership").clear();
@@ -141,7 +147,7 @@ class ShopAccessCacheBypassIntegrationTest {
         grantShopStaff(tenant, userX, shopA, "SHOP_MANAGER");
         grantShopStaff(tenant, userY, shopB, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
 
         // userX reads shop A -> authorized, and POPULATES the read cache.
         authenticateAs(userX, tenant);
@@ -176,7 +182,7 @@ class ShopAccessCacheBypassIntegrationTest {
         grantShopStaff(tenant, userX, shopA, "SHOP_MANAGER");
         grantShopStaff(tenant, userY, shopB, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
 
         // userX reads product A -> authorized, populates the products cache.
         authenticateAs(userX, tenant);
@@ -204,7 +210,7 @@ class ShopAccessCacheBypassIntegrationTest {
         UUID userX = UUID.randomUUID();
         grantShopStaff(tenant, userX, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticateAs(userX, tenant);
 
         // First read: miss -> loads -> populates the cache.
@@ -249,7 +255,7 @@ class ShopAccessCacheBypassIntegrationTest {
         UUID userX = UUID.randomUUID();
         grantShopStaff(tenant, userX, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticateAs(userX, tenant);
 
         // (1) First gate call → internal resolveMembership reached THROUGH the proxy → cached.
@@ -304,7 +310,7 @@ class ShopAccessCacheBypassIntegrationTest {
     }
 
     private <T> T asRealmAdmin(UUID tenant, Supplier<T> action) {
-        boolean prevStrict = currentStrictScoping();
+        boolean prevStrict = StrictScopingGuard.current(shopAccessService);
         authenticate(UUID.randomUUID(), true);
         TenantContext.set(tenant);
         try {
@@ -312,7 +318,7 @@ class ShopAccessCacheBypassIntegrationTest {
         } finally {
             TenantContext.clear();
             SecurityContextHolder.clearContext();
-            setStrictScoping(prevStrict);
+            StrictScopingGuard.set(shopAccessService, prevStrict);
         }
     }
 
@@ -374,20 +380,5 @@ class ShopAccessCacheBypassIntegrationTest {
                 ? List.of(new SimpleGrantedAuthority("ROLE_admin"))
                 : List.of();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, authorities));
-    }
-
-    private ShopAccessService target() {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
-    }
-
-    private boolean currentStrictScoping() {
-        return Boolean.TRUE.equals(ReflectionTestUtils.getField(target(), "strictScoping"));
     }
 }

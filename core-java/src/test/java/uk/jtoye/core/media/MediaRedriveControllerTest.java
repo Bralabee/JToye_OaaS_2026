@@ -14,8 +14,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -26,6 +24,8 @@ import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -135,11 +135,17 @@ class MediaRedriveControllerTest {
     /** Superuser template — the app datasource is RLS-bound and cannot seed another tenant's row. */
     private JdbcTemplate su;
 
-    private ShopAccessService targetService;
     private UUID tenantA;
     private UUID tenantB;
     private UUID shopA;
     private UUID productA;
+    /**
+     * The vendor who re-drives shopA's uploads: an explicit OPERATOR SHOP_MANAGER on shopA (the
+     * role the re-drive gate requires), seeded per test. Phase 37-03 (D-06): before this the
+     * arms used a fresh random subject and relied on the implicit tenant-wide GROUP_ADMIN an
+     * ungranted user held under strict-scoping OFF.
+     */
+    private UUID managerA;
     private int seq;
 
     @BeforeEach
@@ -155,11 +161,22 @@ class MediaRedriveControllerTest {
         }
         shopA = seedShop(tenantA);
         productA = seedProduct(tenantA, shopA);
+        managerA = UUID.randomUUID();
+        ShopGrants.grantOperator(su, tenantA, managerA, shopA, "SHOP_MANAGER",
+                "vendor-" + managerA + "@example.com");
+    }
+
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
     }
 
     @AfterEach
     void cleanUp() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
     }
@@ -173,7 +190,7 @@ class MediaRedriveControllerTest {
         UUID asset = seedAsset(tenantA, productA, "FAILED", retained(), null, 0, "dispatch stalled");
 
         mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.assetId").value(asset.toString()))
                 .andExpect(jsonPath("$.status").value("PENDING"));
@@ -198,10 +215,10 @@ class MediaRedriveControllerTest {
         String key = key();
 
         MvcResult first = mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isAccepted()).andReturn();
         MvcResult second = mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isAccepted()).andReturn();
 
         assertThat(assetIdOf(second)).as("the replay echoes the ORIGINAL response body")
@@ -246,7 +263,7 @@ class MediaRedriveControllerTest {
 
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenantA, sm, otherShop);
-        setStrictScoping(true);   // without this a JIT tenant-wide GROUP_ADMIN would pass
+        StrictScopingGuard.set(shopAccessService, true);   // without this a JIT tenant-wide GROUP_ADMIN would pass
 
         mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
                         .header("Idempotency-Key", key()).with(vendorJwt(tenantA, sm)))
@@ -301,7 +318,7 @@ class MediaRedriveControllerTest {
 
     private MvcResult reprocess(UUID assetId) throws Exception {
         return mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", assetId)
-                .header("Idempotency-Key", key()).with(vendorJwt(tenantA))).andReturn();
+                .header("Idempotency-Key", key()).with(vendorJwt(tenantA, managerA))).andReturn();
     }
 
     // --- AC-4.6 -------------------------------------------------------------
@@ -313,7 +330,7 @@ class MediaRedriveControllerTest {
         UUID asset = seedAsset(tenantA, productA, "FAILED", retained(), null, MAX_ATTEMPTS, "still broken");
 
         mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/media-redrive-budget-exhausted"))
@@ -339,7 +356,10 @@ class MediaRedriveControllerTest {
         UUID stalledPending = seedAsset(tenantA, productA, "PENDING", retained(), null, 0, null);
         ageTo(stalledPending, OffsetDateTime.now().minusMinutes(30));
 
-        mockMvc.perform(get("/api/v1/media/review-queue").with(vendorJwt(tenantA)))
+        // 37-04: the queue is shop-scoped, so read it as shopA's manager (productA is on shopA). Until
+        // 37-04 this arm read it with a fresh, ungranted subject and still saw shopA's assets — the
+        // leak MediaReviewQueueShopScopeIntegrationTest now pins.
+        mockMvc.perform(get("/api/v1/media/review-queue").with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.assetId=='" + reaperFailed + "')].redrivable").value(true))
                 .andExpect(jsonPath("$[?(@.assetId=='" + reaperFailed + "')].delayed").value(false))
@@ -473,12 +493,5 @@ class MediaRedriveControllerTest {
                         .claim("email", "vendor-" + subject + "@example.com")
                         .claim("scope", "catalog:read catalog:write"))
                 .authorities(new JwtRolesAndScopesConverter());
-    }
-
-    private void setStrictScoping(boolean value) {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        ReflectionTestUtils.setField(targetService, "strictScoping", value);
     }
 }

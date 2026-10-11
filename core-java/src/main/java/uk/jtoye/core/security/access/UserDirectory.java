@@ -48,6 +48,14 @@ public class UserDirectory {
     @Column(name = "last_seen", nullable = false)
     private OffsetDateTime lastSeen;
 
+    /**
+     * V76 (37-05, Pitfall 13): first time this user signed in here with the realm {@code admin}
+     * role; null when never observed with it. Written only by the native upsert
+     * ({@code UserDirectoryRepository.recordSignIn}), first time only.
+     */
+    @Column(name = "realm_admin_seen_at")
+    private OffsetDateTime realmAdminSeenAt;
+
     public UUID getTenantId() { return tenantId; }
     public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
 
@@ -62,4 +70,7 @@ public class UserDirectory {
 
     public OffsetDateTime getLastSeen() { return lastSeen; }
     public void setLastSeen(OffsetDateTime lastSeen) { this.lastSeen = lastSeen; }
+
+    public OffsetDateTime getRealmAdminSeenAt() { return realmAdminSeenAt; }
+    public void setRealmAdminSeenAt(OffsetDateTime realmAdminSeenAt) { this.realmAdminSeenAt = realmAdminSeenAt; }
 }

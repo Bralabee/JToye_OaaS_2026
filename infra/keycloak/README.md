@@ -76,6 +76,55 @@ rendered into the import at container start, never committed).
 
 This mapper extracts the `tenant_id` attribute from the user's groups and injects it into the JWT token claims.
 
+### User profile: `tenant_id` is a managed, admin-only attribute (Phase 37-08, D-07 / D-26)
+
+Accepting a staff invitation creates the invited person's account in `jtoye-dev` **through the
+admin API** (`KeycloakAdminClient.createUser`, called by core-java). Keycloak 24 **strips an
+undeclared attribute on an admin-API create**, so until 37-08 such a user had no `tenant_id`, its
+token had no `tenant_id` claim, and every request saw zero rows (`docs/security-scopes.md` §5).
+
+The vendor realm template therefore declares a **user profile** (the component
+`org.keycloak.userprofile.UserProfileProvider`, provider `declarative-user-profile`, whose
+`kc.user.profile.config` is a JSON string):
+
+- the four default attributes `username`, `email`, `firstName`, `lastName`, copied verbatim from
+  `GET /admin/realms/jtoye-dev/users/profile` on Keycloak 24.0.5 (not written from memory);
+- `tenant_id`, with `permissions.view = ["admin"]` and `permissions.edit = ["admin"]`, and a
+  length validation of exactly 36 characters (a UUID);
+- **no `unmanagedAttributePolicy`** (absent means disabled). Do **not** set it to `ENABLED`: that
+  exposes unmanaged attributes in every context, including the user's own account console, and a
+  vendor user could then set their own `tenant_id` and cross the tenant wall (T-37-19).
+
+`tenant_id` is the only custom attribute any `jtoye-dev` user carries today. If you add another
+user attribute, declare it in the same profile, or Keycloak will hide and drop it on the next update.
+
+**Measured on a throwaway Keycloak 24.0.5 importing the rendered template (37-08):**
+
+| Step | Pre-37-08 template (control) | This template |
+|------|------------------------------|---------------|
+| Admin-API create with `attributes.tenant_id` | 201, attribute **stripped** (`attributes: null`) | 201, `tenant_id` kept |
+| Password-grant token for that user | no `tenant_id` claim | `tenant_id` claim present |
+| The user POSTs a new `tenant_id` to `/realms/jtoye-dev/account` | 204 (nothing to protect: no attribute) | **400** `error-user-attribute-read-only`; admin re-read unchanged |
+| `GET /realms/jtoye-dev/account` as the user | — | `attributes: null`: the user cannot even see it |
+
+#### Applying it
+
+- **Local (compose):** a template change reaches a running Keycloak only by re-import, because
+  `start-dev --import-realm` creates absent realms only, and with a Postgres-backed Keycloak a volume
+  drop is a no-op. Re-render the template (the `keycloak-realm-render` service), then run
+  `docker exec -it jtoye-keycloak /opt/keycloak/bin/kc.sh import --file /opt/keycloak/data/import/realm-export.json --override true`
+  and restart Keycloak (`docs/security-scopes.md` §4).
+- **Staging and production:** those realms are not in this repository. An operator must make the
+  same change before staff invitations are used there: Keycloak admin console → realm → *Realm
+  settings* → *User profile* → create attribute `tenant_id` (who can view: admin only; who can edit:
+  admin only; not required), and leave *Unmanaged attributes* at **Disabled** (or *Admin can edit*,
+  never *Enabled*). Alternatively `kc.sh import --override true` with this template. Recorded as
+  37-08's `user_setup`.
+- **The shared compose runtime is proven at the 37-15 gate**, after its rebuild and re-import:
+  `GET /admin/realms/jtoye-dev/users/profile` shows `tenant_id` admin-only; an invitation accepted
+  end to end creates a user whose admin representation holds `tenant_id`; that user's token carries
+  `tenant_id`; and that user's account-console attempt to change it is refused.
+
 ## Email (SMTP) and login-page branding
 
 Both realm templates carry an `smtpServer` block and three branding keys. They were added

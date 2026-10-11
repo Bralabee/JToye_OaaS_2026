@@ -36,7 +36,9 @@ import java.util.UUID;
  *       review: Keep or Replace), and (27-01 / D-10) a PENDING upload that has visibly
  *       stalled. Authenticated read surface, exactly mirroring the
  *       {@code ProductController} read endpoints (a scopeless/legacy vendor token still
- *       reads — see {@code ScopedCatalogAccessIntegrationTest}); tenant-isolated by RLS.</li>
+ *       reads — see {@code ScopedCatalogAccessIntegrationTest}); tenant-isolated by RLS and
+ *       shop-scoped like the product list (37-04): a non-GROUP_ADMIN caller sees only its
+ *       granted shops' assets, an ungranted caller an empty list.</li>
  *   <li>{@code POST /{assetId}/keep} dismisses a content flag (Keep, D-04), gated on
  *       {@code SCOPE_catalog:write} like every {@code ProductController} mutation.</li>
  *   <li>{@code POST /{assetId}/reprocess} re-drives a stalled/failed upload from its RETAINED
@@ -72,7 +74,10 @@ public class MediaController {
                     + "(each carries a vendor-visible failureReason; the vendor re-uploads) and "
                     + "flagged-ACTIVE assets (content-relevance review — the vendor Keeps or Replaces). "
                     + "Clean ACTIVE and in-flight PENDING assets are excluded. Authenticated read surface "
-                    + "(mirrors the ProductController read endpoints); tenant-isolated by RLS.")
+                    + "(mirrors the ProductController read endpoints); tenant-isolated by RLS and shop-scoped: "
+                    + "a GROUP_ADMIN sees the whole tenant's queue, any other caller only assets on the shops "
+                    + "it is granted (an ungranted caller gets an empty list), and an asset with no owning shop "
+                    + "is GROUP_ADMIN-only.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "The review queue (possibly empty)"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT")

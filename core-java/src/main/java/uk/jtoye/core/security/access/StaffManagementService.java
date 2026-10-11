@@ -17,10 +17,16 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.dto.DirectoryEntryDto;
 import uk.jtoye.core.security.access.dto.MyAccessDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
+import uk.jtoye.core.security.access.dto.StaffPersonDto;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.tenant.Tenant;
+import uk.jtoye.core.tenant.TenantRepository;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -80,6 +86,8 @@ public class StaffManagementService {
     private final UserDirectoryRepository userDirectoryRepository;
     private final ShopRepository shopRepository;
     private final ShopAccessService shopAccessService;
+    /** Reads the caller's own tenant name for {@link #myAccess()} (37-09); {@code tenants} has no RLS. */
+    private final TenantRepository tenantRepository;
     /**
      * Self-reference (lazy {@link ObjectProvider} to avoid a construction cycle) used to
      * invoke {@link #persistNewGrant} through the bean proxy so its
@@ -91,16 +99,23 @@ public class StaffManagementService {
                                   UserDirectoryRepository userDirectoryRepository,
                                   ShopRepository shopRepository,
                                   ShopAccessService shopAccessService,
+                                  TenantRepository tenantRepository,
                                   ObjectProvider<StaffManagementService> selfProvider) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.shopRepository = shopRepository;
         this.shopAccessService = shopAccessService;
+        this.tenantRepository = tenantRepository;
         this.selfProvider = selfProvider;
     }
 
-    /** The GET /api/v1/staff body: the grant-target picker + the current grants. */
-    public record StaffListResponse(List<DirectoryEntryDto> directory, List<StaffMemberDto> grants) {
+    /**
+     * The GET /api/v1/staff body: the grant-target picker + the current grants (both unchanged),
+     * plus (37-05, D-09) {@code people}: every person in the tenant with the access the server
+     * actually enforces for them.
+     */
+    public record StaffListResponse(List<DirectoryEntryDto> directory, List<StaffMemberDto> grants,
+                                    List<StaffPersonDto> people) {
     }
 
     /**
@@ -121,13 +136,35 @@ public class StaffManagementService {
     public StaffListResponse list() {
         shopAccessService.requireGroupAdmin();
         UUID tenantId = currentTenantId();
-        List<DirectoryEntryDto> directory = userDirectoryRepository.findByTenantId(tenantId).stream()
+        List<UserDirectory> directoryRows = userDirectoryRepository.findByTenantId(tenantId);
+        List<ShopStaff> grantRows = shopStaffRepository.findByTenantId(tenantId);
+        List<DirectoryEntryDto> directory = directoryRows.stream()
                 .map(DirectoryEntryDto::from)
                 .toList();
-        List<StaffMemberDto> grants = shopStaffRepository.findByTenantId(tenantId).stream()
+        List<StaffMemberDto> grants = grantRows.stream()
                 .map(StaffMemberDto::from)
                 .toList();
-        return new StaffListResponse(directory, grants);
+        return new StaffListResponse(directory, grants, people(directoryRows, grantRows));
+    }
+
+    /**
+     * D-09 (37-05): everyone who has signed in to the tenant, plus every grant holder who has no
+     * directory row (e.g. granted before they ever signed in, or erased from the directory), each
+     * mapped through {@link ShopAccessService#effectiveAccessFor(UUID)} — the decision path itself.
+     * The grant rows are used ONLY to find who to list, never to say what they may do (T-37-09).
+     */
+    private List<StaffPersonDto> people(List<UserDirectory> directoryRows, List<ShopStaff> grantRows) {
+        Map<UUID, StaffPersonDto> people = new LinkedHashMap<>();
+        for (UserDirectory entry : directoryRows) {
+            people.put(entry.getUserId(),
+                    StaffPersonDto.from(entry, shopAccessService.effectiveAccessFor(entry.getUserId(),
+                            entry.getRealmAdminSeenAt())));
+        }
+        for (ShopStaff row : grantRows) {
+            people.computeIfAbsent(row.getUserId(), userId ->
+                    StaffPersonDto.grantOnly(userId, shopAccessService.effectiveAccessFor(userId, null)));
+        }
+        return List.copyOf(people.values());
     }
 
     /**
@@ -150,10 +187,13 @@ public class StaffManagementService {
     @Transactional(readOnly = true)
     public MyAccessDto myAccess() {
         UUID userId = currentCallerSub();
+        String businessName = currentBusinessName();
         if (shopAccessService.isGroupAdmin()) {
-            return new MyAccessDto(userId, true, null);
+            return new MyAccessDto(userId, true, null, null, businessName);
         }
-        return new MyAccessDto(userId, false, shopAccessService.grantedShopIds());
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        return new MyAccessDto(userId, false, granted,
+                shopAccessService.resolveMembership(userId).tenantWideRole(), businessName);
     }
 
     /**
@@ -416,6 +456,18 @@ public class StaffManagementService {
     private UUID currentTenantId() {
         return TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+    }
+
+    /**
+     * The name of the caller's OWN business (37-09): the tenant the request is pinned to, read by
+     * id, so no other tenant's name can be returned. {@code null} when there is no tenant context
+     * or no row (a deleted tenant); {@code staff/me} still answers, it just cannot name it.
+     */
+    private String currentBusinessName() {
+        return TenantContext.get()
+                .flatMap(tenantRepository::findById)
+                .map(Tenant::getName)
+                .orElse(null);
     }
 
     /** The GROUP_ADMIN performing the write (created_by); {@code null} for a non-UUID/system principal. */

@@ -344,7 +344,8 @@ public class PaymentService {
                             order.getTotalAmountPennies(),
                             order.getVatRate(),
                             "Payment " + intent.getId() + " for Order " + order.getOrderNumber(),
-                            order.getId()
+                            order.getId(),
+                            order.getShopId()   // Phase 37-11: the SALE belongs to the order's shop
                     ));
 
             log.info("Payment succeeded for order {} — PI: {}, method: {}",

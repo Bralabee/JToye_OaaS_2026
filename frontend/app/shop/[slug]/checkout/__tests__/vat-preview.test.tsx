@@ -62,6 +62,18 @@ const SLUG = "jollof-express"
 const STORAGE_KEY = `jtoye-cart-${SLUG}`
 
 // COLLECTION keeps the delivery fee out of the arithmetic so each arm isolates the VAT rule.
+//
+// UXT-047 (37-14): a VAT row is shown only for a seller who declared a VAT registration, so this
+// shop's seller declares one. Without it every row asserted below is (correctly) omitted, and these
+// arms would stop testing the rate rule at all. The unregistered case is vat-registration.test.tsx.
+const VAT_REGISTERED_SELLER = {
+  legalName: "Jollof Express Ltd",
+  entityType: "COMPANY",
+  companyNumber: "01234567",
+  vatNumber: "GB123456789",
+  addressLines: ["1 High Street", "London", "E1 6AN"],
+  email: "orders@jollof.example.com",
+}
 const SHOP = {
   slug: SLUG,
   name: "Jollof Express",
@@ -79,6 +91,7 @@ const SHOP = {
   deliveryFeePennies: 0,
   freeDeliveryThresholdPennies: null,
   tags: null,
+  seller: VAT_REGISTERED_SELLER,
 }
 
 function resolvedThenable<T>(value: T): Promise<T> {

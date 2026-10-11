@@ -69,6 +69,7 @@ data:
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
   gdpr.dsar.verify-base-url: "https://app.olajay.co.uk/data-request/confirm"
   gdpr.dsar.export-download-base-url: "https://app.olajay.co.uk/data-request/download"
+  staff.invite.accept-base-url: "https://app.olajay.co.uk/invite"
 
   # D-19: a vendor finishing Stripe Connect onboarding was being returned to a
   # loopback dev origin, stranding MARKETPLACE payout setup at the last step.

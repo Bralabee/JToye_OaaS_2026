@@ -53,6 +53,18 @@ const nextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self), browsing-topics=()' },
         ],
       },
+      // The staff-invitation accept page (D-07, 37-09, T-37-24). Its link carries a
+      // bearer token in the URL fragment; no-referrer means not even the page's own
+      // address (path included) is handed to anything it links to or loads.
+      //
+      // ORDER IS LOAD-BEARING: when two entries set the same key for one path, Next
+      // applies the LAST one. This entry must stay after the '/:path*' default or
+      // /invite silently keeps strict-origin-when-cross-origin.
+      // __tests__/header-snapshot.test.ts asserts the order and the match.
+      {
+        source: '/invite/:path*',
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      },
     ]
   },
 };

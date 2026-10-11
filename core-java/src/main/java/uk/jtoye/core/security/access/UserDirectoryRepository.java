@@ -54,6 +54,32 @@ public interface UserDirectoryRepository extends JpaRepository<UserDirectory, Us
                    @Param("cutoff") OffsetDateTime cutoff);
 
     /**
+     * The request-path sign-in record (37-05, D-09 + Pitfall 13), used by
+     * {@link UserDirectoryToucher}: {@link #upsertSeen}'s throttled upsert, plus the V76
+     * {@code realm_admin_seen_at} stamp. When {@code realmAdmin} is true the column is set the FIRST
+     * time only ({@code COALESCE} keeps an existing stamp), and the throttle is bypassed for exactly
+     * that case — a row refreshed within the window but not yet stamped is still stamped — so an
+     * admin who first signed in without the role is not left reading "No access" for an hour.
+     * A false {@code realmAdmin} never clears a stamp.
+     */
+    @Modifying
+    @Query(value = "INSERT INTO user_directory (tenant_id, user_id, email, display_name, last_seen, realm_admin_seen_at) "
+            + "VALUES (:tenantId, :userId, :email, :displayName, now(), "
+            + "CASE WHEN CAST(:realmAdmin AS boolean) THEN now() ELSE NULL END) "
+            + "ON CONFLICT (tenant_id, user_id) DO UPDATE SET "
+            + "last_seen = now(), email = EXCLUDED.email, display_name = EXCLUDED.display_name, "
+            + "realm_admin_seen_at = COALESCE(user_directory.realm_admin_seen_at, EXCLUDED.realm_admin_seen_at) "
+            + "WHERE user_directory.last_seen < :cutoff "
+            + "OR (user_directory.realm_admin_seen_at IS NULL AND EXCLUDED.realm_admin_seen_at IS NOT NULL)",
+            nativeQuery = true)
+    int recordSignIn(@Param("tenantId") UUID tenantId,
+                     @Param("userId") UUID userId,
+                     @Param("email") String email,
+                     @Param("displayName") String displayName,
+                     @Param("realmAdmin") boolean realmAdmin,
+                     @Param("cutoff") OffsetDateTime cutoff);
+
+    /**
      * WR-10 / UK-GDPR Article-17: erase a subject's directory rows for a tenant by email.
      * {@code user_directory} is keyed {@code (tenant_id, user_id)} — a vendor-staff identity
      * space with NO natural {@code Customer} join — so erasure matches on

@@ -92,6 +92,16 @@ const SHOP = {
   deliveryFeePennies: 300,
   freeDeliveryThresholdPennies: 3000,
   tags: null,
+  // UXT-047 (37-14): the breakdown shows a VAT row only for a VAT-registered seller, and the fee
+  // breakdown arm below asserts that row, so this seller declares a registration.
+  seller: {
+    legalName: "Jollof Express Ltd",
+    entityType: "COMPANY",
+    companyNumber: "01234567",
+    vatNumber: "GB123456789",
+    addressLines: ["1 High Street", "London", "E1 6AN"],
+    email: "orders@jollof.example.com",
+  },
 }
 
 function resolvedThenable<T>(value: T): Promise<T> {

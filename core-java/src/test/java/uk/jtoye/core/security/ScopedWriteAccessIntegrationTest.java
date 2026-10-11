@@ -16,6 +16,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.util.UUID;
 
@@ -23,6 +24,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -81,6 +83,16 @@ class ScopedWriteAccessIntegrationTest {
     private static final String VALID_CUSTOMER_JSON =
             "{\"name\":\"Ada\",\"email\":\"ada@example.com\"}";
 
+    // Phase 37-03 (D-06): a real shop in TENANT_A, so an order-create can name a shop the caller is
+    // explicitly granted on. shop_staff.shop_id is a foreign key to shops, so a grant cannot name
+    // the random shopId in VALID_ORDER_JSON.
+    private static final UUID SHOP_A = UUID.fromString("00000000-0000-0000-0000-0000000037a3");
+
+    // WINDOWS #29 (ruling B, 2026-10-09): every customer endpoint requires an honoured grant under
+    // D-06, so the customers:write caller is a FIXED subject holding STAFF on SHOP_A. The scope gate
+    // under test is unchanged; the grant only lets a write-scoped token reach the controller.
+    private static final UUID CUSTOMERS_WRITER = UUID.fromString("00000000-0000-0000-0000-00000029c001");
+
     @BeforeEach
     void setUp() {
         // Seed one tenant row so tenant-scoped reads/writes have a valid TenantContext target,
@@ -88,12 +100,25 @@ class ScopedWriteAccessIntegrationTest {
         jdbcTemplate.update(
                 "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) ON CONFLICT (id) DO NOTHING",
                 TENANT_A, "Tenant A");
+        jdbcTemplate.update(
+                "INSERT INTO shops (id, tenant_id, created_at, name, slug, published, "
+                        + "delivery_fee_pennies, minimum_order_pennies, version) "
+                        + "VALUES (?, ?, now(), ?, ?, false, 0, 0, 0) ON CONFLICT DO NOTHING",
+                SHOP_A, TENANT_A, "Scoped Write Shop", "scoped-write-shop-37");
+        Long writerGrants = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?",
+                Long.class, TENANT_A, CUSTOMERS_WRITER);
+        if (writerGrants == null || writerGrants == 0) {
+            ShopGrants.grantOperator(jdbcTemplate, TENANT_A, CUSTOMERS_WRITER, SHOP_A, "STAFF",
+                    "customers-writer@example.com");
+        }
     }
 
     // Each token carries a UUID subject — the 23-08 fail-closed ShopAccessService gate denies any
-    // authenticated principal whose sub is not a UUID (parseSub -> null -> typed 403). Under
-    // strict-scoping OFF a UUID-subject caller is a day-one implicit GROUP_ADMIN, so the VSA-02 shop
-    // gate on create_order never masks the scope assertion.
+    // authenticated principal whose sub is not a UUID (parseSub -> null -> typed 403). A caller that
+    // must get PAST the VSA-02 shop gate (order create) is given that access explicitly with an
+    // OPERATOR SHOP_MANAGER grant on SHOP_A (Phase 37-03): under strict-scoping ON (D-06) an
+    // ungranted caller has no access, so the implicit day-one GROUP_ADMIN can no longer be relied on.
 
     /** No-write-scope token: scope=catalog:read only — lacks BOTH orders:write and customers:write. */
     private static RequestPostProcessor noWriteScopeJwt() {
@@ -106,17 +131,22 @@ class ScopedWriteAccessIntegrationTest {
 
     /** Order-write token: scope=orders:write (as the integration-orders-rw client carries). */
     private static RequestPostProcessor ordersWriteJwt() {
+        return ordersWriteJwt(UUID.randomUUID());
+    }
+
+    /** Order-write token for a FIXED subject, so a grant seeded for {@code sub} applies to it. */
+    private static RequestPostProcessor ordersWriteJwt(UUID sub) {
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(sub.toString())
                         .claim("tenant_id", TENANT_A.toString())
                         .claim("scope", "orders:write"))
                 .authorities(new JwtRolesAndScopesConverter());
     }
 
-    /** Customer-write token: scope=customers:write. */
+    /** Customer-write token: scope=customers:write, for the STAFF-granted {@link #CUSTOMERS_WRITER}. */
     private static RequestPostProcessor customersWriteJwt() {
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(CUSTOMERS_WRITER.toString())
                         .claim("tenant_id", TENANT_A.toString())
                         .claim("scope", "customers:write"))
                 .authorities(new JwtRolesAndScopesConverter());
@@ -149,23 +179,33 @@ class ScopedWriteAccessIntegrationTest {
     @Test
     void writeScopedTokenReaches404OnOrderCreate() throws Exception {
         // WR-02: assert the EXACT downstream status, not merely "!= 403". The write scope clears the
-        // @PreAuthorize gate; the random (non-existent) shopId then 404s in OrderService. Pinning 404
-        // means a broken scope→SCOPE_* mapping that 401s, or a 500 that never reaches the controller,
-        // can no longer false-green as "the write-scoped token passed".
+        // @PreAuthorize gate; the caller's explicit SHOP_MANAGER grant clears the VSA-02 shop gate
+        // (SHOP_MANAGER is what OrderService.createOrder requires); the random (non-existent)
+        // productId then 404s in OrderService. Pinning 404 AND the product-not-found detail means a
+        // broken scope→SCOPE_* mapping that 401s, a shop-gate 403, or a 500 that never reaches the
+        // service can no longer false-green as "the write-scoped token passed".
+        UUID sub = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbcTemplate, TENANT_A, sub, SHOP_A, "SHOP_MANAGER",
+                "orders-writer-" + sub + "@example.com");
+        UUID missingProduct = UUID.randomUUID();
+        String orderForGrantedShop = "{\"shopId\":\"" + SHOP_A + "\",\"items\":[{\"productId\":\""
+                + missingProduct + "\",\"quantity\":1}]}";
         mockMvc.perform(post("/api/v1/orders")
-                        .with(ordersWriteJwt())
+                        .with(ordersWriteJwt(sub))
                         .contentType("application/json")
-                        .content(VALID_ORDER_JSON))
-                .andExpect(status().isNotFound());
+                        .content(orderForGrantedShop))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Product not found: " + missingProduct));
     }
 
     // --- D-02 boundary: a customers:write token clears the gate AND creates the customer (201) ---
 
     @Test
     void writeScopedTokenCreates201OnCustomerCreate() throws Exception {
-        // WR-02: the customer create has no shop dependency, so a write-scoped token drives it all the
-        // way to a real 201 Created. Asserting the exact 201 proves the gate passed end-to-end, not
-        // merely that the request avoided a 403.
+        // WR-02: a write-scoped token whose subject holds a grant (WINDOWS #29: any honoured grant;
+        // the customer itself names no shop) drives the create all the way to a real 201 Created.
+        // Asserting the exact 201 proves the gate passed end-to-end, not merely that the request
+        // avoided a 403.
         mockMvc.perform(post("/api/v1/customers")
                         .with(customersWriteJwt())
                         .contentType("application/json")
