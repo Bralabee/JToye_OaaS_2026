@@ -137,6 +137,14 @@ func (h *edgeHandlers) Ready(c *gin.Context) {
 // @Description breaker so edge degrades gracefully when Core is down. The
 // @Description caller must present a Keycloak JWT — the tenant_id claim
 // @Description is extracted and used to scope the write.
+// @Description
+// @Description Rate-limited per tenant AFTER authentication, keyed on the
+// @Description token's tenant_id (RATE_LIMIT_TENANT_RPS / _BURST), beneath a
+// @Description per-replica pre-auth valve (RATE_LIMIT_RPS / _BURST) that only
+// @Description guards against floods. A 429 from either layer is
+// @Description application/problem+json with type
+// @Description https://jtoye.uk/errors/rate-limited and code RATE_LIMITED;
+// @Description wait Retry-After seconds, then retry the same request.
 // @Tags        sync
 // @Security    BearerAuth
 // @Accept      json
@@ -145,6 +153,11 @@ func (h *edgeHandlers) Ready(c *gin.Context) {
 // @Success     202     {object} SyncBatchResponse "Batch accepted by Core"
 // @Failure     400     {object} ErrorResponse     "Invalid body or missing tenant_id claim"
 // @Failure     401     {object} ErrorResponse     "Missing or malformed Bearer token"
+// @Failure     429     {object} ProblemDetail     "Rate limit exceeded: the caller's tenant bucket or this replica's pre-auth valve is empty. application/problem+json, type https://jtoye.uk/errors/rate-limited, code RATE_LIMITED. Wait Retry-After seconds."
+// @Header      429     {integer} Retry-After           "Whole seconds to wait before retrying (at least 1); equals retryAfterSeconds in the body"
+// @Header      429     {integer} X-RateLimit-Limit     "Capacity of the bucket that refused: the per-tenant burst, or the valve's burst"
+// @Header      429     {integer} X-RateLimit-Remaining "Tokens left in that bucket (always 0 on a 429)"
+// @Header      429     {integer} X-RateLimit-Reset     "Unix epoch second at which that bucket is full again"
 // @Failure     502     {object} ErrorResponse     "Core API unreachable or tripped the circuit breaker"
 // @Router      /api/v1/sync/batch [post]
 func (h *edgeHandlers) SyncBatch(c *gin.Context) {
@@ -217,6 +230,11 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 // @Param       payload             body     object      true  "WhatsApp message-event payload (shape defined by Meta)"
 // @Success     200 {object} WebhookAck    "Webhook received (processing outcome in logs)"
 // @Failure     401 {object} ErrorResponse "Missing or invalid HMAC signature"
+// @Failure     429 {object} ProblemDetail "This replica's pre-auth valve is empty (a per-replica flood guard, not a quota; the route is public, so no tenant bucket applies). application/problem+json, type https://jtoye.uk/errors/rate-limited, code RATE_LIMITED. Wait Retry-After seconds."
+// @Header      429 {integer} Retry-After           "Whole seconds to wait before retrying (at least 1); equals retryAfterSeconds in the body"
+// @Header      429 {integer} X-RateLimit-Limit     "Capacity of the valve (its burst)"
+// @Header      429 {integer} X-RateLimit-Remaining "Tokens left in the valve (always 0 on a 429)"
+// @Header      429 {integer} X-RateLimit-Reset     "Unix epoch second at which the valve is full again"
 // @Failure     503 {object} ErrorResponse "WHATSAPP_APP_SECRET not configured — the route is unavailable until an operator sets it (fails closed)"
 // @Header      503 {integer} Retry-After "Seconds to wait before retrying. This is an operator-fixable configuration state, not transient load."
 // @Router      /api/v1/webhooks/whatsapp [post]

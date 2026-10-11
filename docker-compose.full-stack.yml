@@ -459,6 +459,18 @@ services:
       # pins the expected aud (override per-env via EDGE_JWT_AUDIENCE).
       EDGE_JWT_AUDIENCE: ${EDGE_JWT_AUDIENCE:-core-api}
       PORT: 8080
+      # 37-25 (D-19 / RWO-039): the two rate-limit layers, from .env with the
+      # code defaults. The valve (RATE_LIMIT_RPS/BURST) is the per-replica flood
+      # guard; the per-tenant bucket (RATE_LIMIT_TENANT_*) is applied after JWT
+      # validation and keyed on the token's tenant_id, so one integrator's burst
+      # cannot exhaust another vendor's sync. Until 37-25 the two .env keys were
+      # documented but reached no container (the DEF-6 class); now they reach
+      # this one. Nothing else in this file reads these names.
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-200}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-400}
+      RATE_LIMIT_TENANT_RPS: ${RATE_LIMIT_TENANT_RPS:-10}
+      RATE_LIMIT_TENANT_BURST: ${RATE_LIMIT_TENANT_BURST:-20}
+      RATE_LIMIT_TENANT_MAX: ${RATE_LIMIT_TENANT_MAX:-10000}
       # issue #550 [SEC-02 / C4]: move the Prometheus scrape endpoint OFF the
       # published application port. Set here (not defaulted in Go) because this
       # is the runtime where the exposure is real: 8089 below is a named app-tier

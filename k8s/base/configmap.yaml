@@ -414,3 +414,22 @@ data:
   # render whose value carries /0, a prefix shorter than /8 or a public range, and
   # core refuses to start on 0.0.0.0/0 or ::/0.
   security.trusted-proxies: ""
+
+  # --- Edge rate limits (37-25, D-19 / RWO-039) --------------------------------
+  # Consumed by edge-go (k8s/base/edge-go-deployment.yaml) as RATE_LIMIT_RPS,
+  # RATE_LIMIT_BURST, RATE_LIMIT_TENANT_RPS, RATE_LIMIT_TENANT_BURST and
+  # RATE_LIMIT_TENANT_MAX. Two layers. The pre-auth, process-wide valve is a
+  # PER-REPLICA flood guard, not a quota: the effective ceiling is the value
+  # times the replica count. The per-tenant bucket is applied after JWT
+  # validation and keyed on the validated tenant_id, so one integrator's burst
+  # cannot exhaust another vendor's sync (UXT-039). Every 429 from either layer
+  # is application/problem+json (type https://jtoye.uk/errors/rate-limited)
+  # with Retry-After and the X-RateLimit-* headers. The values are the code
+  # defaults; core's Bucket4j per-tenant quota (100/min + burst 20) stays the
+  # authoritative limit beneath the edge's 10 rps / 20. The tenant max bounds
+  # the buckets held in memory; tenants beyond it share one overflow bucket.
+  edge.rate-limit.rps: "200"
+  edge.rate-limit.burst: "400"
+  edge.rate-limit.tenant.rps: "10"
+  edge.rate-limit.tenant.burst: "20"
+  edge.rate-limit.tenant.max: "10000"

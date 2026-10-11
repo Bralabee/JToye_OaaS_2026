@@ -53,6 +53,11 @@ data:
   backup.blob.prefix: backups
   cors.allowed-origins: https://app.olajay.co.uk
   db.port: "5432"
+  edge.rate-limit.burst: "400"
+  edge.rate-limit.rps: "200"
+  edge.rate-limit.tenant.burst: "20"
+  edge.rate-limit.tenant.max: "10000"
+  edge.rate-limit.tenant.rps: "10"
   frontend.url: https://app.olajay.co.uk
   gdpr.dsar.export-download-base-url: https://app.olajay.co.uk/data-request/download
   gdpr.dsar.verify-base-url: https://app.olajay.co.uk/data-request/confirm
@@ -762,6 +767,31 @@ spec:
               name: app-config
         - name: PORT
           value: "8080"
+        - name: RATE_LIMIT_RPS
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.rps
+              name: app-config
+        - name: RATE_LIMIT_BURST
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.burst
+              name: app-config
+        - name: RATE_LIMIT_TENANT_RPS
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.tenant.rps
+              name: app-config
+        - name: RATE_LIMIT_TENANT_BURST
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.tenant.burst
+              name: app-config
+        - name: RATE_LIMIT_TENANT_MAX
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.tenant.max
+              name: app-config
         image: ghcr.io/bralabee/jtoye-edge-go:2.1.0
         imagePullPolicy: IfNotPresent
         livenessProbe:
