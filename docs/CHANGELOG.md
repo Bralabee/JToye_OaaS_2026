@@ -40,6 +40,16 @@ on a two-tenant database under the RLS-bound migrator.
   form; a CSV import always lands in a named shop; a menu can be copied to another shop with its
   allergen facts verbatim and photos shared copy-on-write.
 
+### Trivy gate green again: next 16.3.8 and golang.org/x/net 0.60.0 (#914) — 2026-10-11
+
+The required Security Scan had been red on `main` since 2026-10-08 with no code change behind it:
+the daily Trivy database began reporting CVE-2026-94483 (`next` 16.3.7, SSRF information disclosure
+in Image Optimization) and CVE-2026-78669 (`golang.org/x/net` 0.58.0, HTTP/2 SETTINGS denial of
+service) in `edge-go` and `infra/backups/blobctl`. Exact bumps only: `next` and `eslint-config-next`
+to 16.3.8, `golang.org/x/net` to 0.60.0 in both Go modules; `go mod tidy` also lifts the transitive
+`golang.org/x/text` (0.42.0), `x/crypto`, `x/sync` and `x/sys`, and in `edge-go` `x/mod`. Both Go modules build and test clean; the Next.js version lines in `CLAUDE.md`
+and `AGENTS.md` follow the lockfile.
+
 ### Phase 31.1: Persona gap closure (#901) — 2026-10-07
 
 Gap closure for the 17 persona-testing clusters of Phase 31 (epic #880), thirty plans on the
