@@ -191,6 +191,14 @@ class ClientIpResolverTest {
         void ipv4TrustedRange_doesNotTrustAnIpv6Peer() {
             assertThat(TRUST_10_8.resolve(request("fd00::1", "198.51.100.7"))).isEqualTo("fd00::1");
         }
+
+        @Test
+        void anExpandedIpv6Spelling_keysTheSameAsTheCompactOne() {
+            // RFC 5952: one client, one bucket, however the proxy spelled the address.
+            assertThat(trustUla.resolve(request("fd00::1", "2001:0DB8:0000:0000:0000:0000:0000:0005")))
+                    .isEqualTo("2001:db8::5");
+            assertThat(trustUla.resolve(request("FD00:0:0:0:0:0:0:1", null))).isEqualTo("fd00::1");
+        }
     }
 
     // ------------------------------------------------------------------
