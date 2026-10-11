@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-24 complete (24/53); sub-theme 37-A merged as PR 916 (14a2297b), origin/main merged back (D-04). 37-24 closed 2026-10-11 (first 37-D plan, RWO-006 / UXT-006, D-19): ClientIpResolver is a bean bound to jtoye.security.trusted-proxies (default empty = trust none); X-Forwarded-For is read only when the socket peer is a declared proxy, hops walked from the RIGHT skipping trusted ones, literal-only parsing, IPv4-mapped folded, IPv6 canonicalised, anything malformed or an all-trusted chain falls back to the socket peer (never 'the last trusted hop'), /0 refused at startup; RateLimitInterceptor and DsarIntakeRateLimiter key on it. RED: 40 rotated headers from one untrusted peer = 40 buckets (7 expected); GREEN through the real interceptor 429. ClientIpResolverTest 29/29 (break arm left-to-right reds 5). Every runtime declares the value (application.yml, compose empty, .env.example, k8s base + overlays, deployment env wiring); INV-12 in check-render-invariants.sh fails /0, a prefix shorter than /8 or a public range (three arms rc 1) and WARNs while staging/production stay empty (operator step in 37-USER-SETUP.md). Full :core-java:test 1705/0 (1 skipped); gdpr + PublicRateLimit ITs 92/0. Deviations: twelve @WebMvcTest slices import the bean; nine ITs set the socket peer instead of the header; citations and residue pins re-pointed. Deferred: SSR does not forward the browser IP (shares the frontend container bucket, as before); k8s/local declares minikube 10.244.0.0/16 unmeasured; check-doc-citations.sh prints a VOID for terminal-states.yaml because its bare python3 -c is refused by the pyshim (gate still rc 0). RWO-006 NOT marked (37-28 and 37-31 declare it too). Compose runtime still 6a825865 (the 37-D gate rebuilds). Next: 37-25 (wave 19)."
-last_updated: "2026-10-11T20:59:53.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-25 complete (25/53); 37-A merged as PR 916 (14a2297b) and reconciled; sub-theme 37-D in progress. 37-25 closed 2026-10-11 (RWO-039 / UXT-039, D-19): the edge gateway rate-limits PER TENANT after JWT validation with lazy-refill buckets (defaults raised 20/40 -> 200/400 because the cross-tenant arm needed it), a bounded tenant map with idle eviction and one overflow bucket, and a TYPED 429 on both the per-tenant limiter and the anonymous valve; the 429 is in the published edge OpenAPI contract (incl. the public webhook route). RED: at production defaults 40 of 60 requests reached core with an untyped body and tenant B was refused (the UXT-039 shape); 10,000 tenants = 10,000 buckets. GREEN: 11/11 limiter tests, 5/5 OpenAPI tests (swag v1.16.3), go vet + gofmt clean, break arms (overflow return deleted; evictIdle commented) red and restored by md5. The five edge rate-limit keys are declared in every runtime (application defaults, compose now wires all five, .env.example, k8s base + overlays, goldens +30 lines each); env-contract, render invariants, residue, doc-citations rc 0. Deviations: refactor(37-25) newRouter seam precedes the first RED; two env-contract allowlist entries removed (stale once k8s supplies them); residue pin re-pointed. Deferred to the 37-D PR docs step: docs-metrics drift (Go 98 -> 103 funcs, 13 -> 14 files) and the stale edge-go/README.md rate-limit section. RWO-039 NOT marked (37-31 declares it too). Compose runtime still 6a825865 (the 37-D gate rebuilds and probes the live edge limiter). Next: 37-26 (wave 20)."
+last_updated: "2026-10-11T21:27:55.000Z"
 last_activity: 2026-10-11
-state_head: 7e8ddc87
+state_head: 670d0b20
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 209
+  completed_plans: 210
   percent: 65
 ---
 
@@ -925,6 +925,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P21 | 40 min | 3 tasks | 17 files |
 | Phase 37 P23 | 95 min | 3 tasks | 31 files |
 | Phase 37 P24 | 28 min | 3 tasks | 44 files |
+| Phase 37 P25 | 16 min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -1245,6 +1246,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-24: a malformed hop or an all-trusted X-Forwarded-For chain resolves to the SOCKET PEER, never "the last trusted hop" (a client behind the proxy can spell in-range addresses); the plan's wording is superseded, recorded in the SUMMARY
 - [Phase 37]: 37-24: the trusted-proxy list is one key (jtoye.security.trusted-proxies / TRUSTED_PROXY_CIDRS) declared in every runtime; server.forward-headers-strategy stays unset so there is no second, silent trust list; staging and production stay empty (INV-12 WARN) until the operator declares the ingress pod CIDR
 - [Phase 37]: 37-24 (orchestrator): after a sub-theme PR merges, origin/main is merged into the integration branch at once (D-04; the pre-push P-2 gate demands it), resolving the squash's add/add conflicts by taking main's version of every file the PR touched and ours for the planning files, proven by an empty diff against main outside .planning and HANDOFF.md
+- [Phase 37]: 37-25: the edge limits per TENANT after JWT validation (not per IP: the edge sits behind the same proxies 37-24 handles and a tenant is the unit that must not exhaust another); the anonymous valve stays in front and both refusals are the same typed 429
+- [Phase 37]: 37-25: the per-tenant map is bounded with idle eviction and ONE shared overflow bucket, so a flood of fresh tenant ids degrades to one shared limit instead of unbounded memory
+- [Phase 37]: 37-25: the valve defaults rose 20/40 -> 200/400 in Task 1 (the plan had it in Task 2) because the cross-tenant arm could not pass at the old defaults; recorded in the SUMMARY
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): option E floors on customers (D-06): reads keep the any-grant gate; create and update need SHOP_MANAGER on any shop or Group admin (ShopAccessService.requireAnyRole, before the Idempotency-Key branch); delete needs Group admin (requireGroupAdmin)
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-25 hours: an unreadable NEEDS_REVIEW day pre-fills as one all-day 00:00-00:00 window with 'We could not read "{text}", so this day is open all day. Set the real times, or tick Closed.'; the card reads '...for {days}, so customers can order on that day/those days at any time. Check and save your hours.' (WINDOWS #36 closed)
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-08 pause: a pause refused with shop-access-denied is answered by the K2 Access ended overlay only, no inline copy; KITCHEN_ROUTE_CALLS and its guard test keep every kitchen-route call at the STAFF floor (WINDOWS #37 restated)
@@ -1326,8 +1330,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-11T20:59:53.000Z
-Stopped at: Completed 37-24-PLAN.md (trusted-proxy ClientIpResolver bean, rightmost-untrusted X-Forwarded-For walk, /0 refusal, every runtime declares jtoye.security.trusted-proxies, INV-12 render invariant; 37-A merged as PR 916 and reconciled). Next: 37-25.
+Last session: 2026-10-11T21:27:55.000Z
+Stopped at: Completed 37-25-PLAN.md (per-tenant edge buckets after JWT validation, bounded map with overflow bucket, typed 429 on limiter and valve, limits declared in every runtime, 429 in the edge OpenAPI contract). Next: 37-26.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
