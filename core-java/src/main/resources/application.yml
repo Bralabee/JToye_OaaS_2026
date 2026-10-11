@@ -191,6 +191,22 @@ jtoye:
     # Only an EXPLICITLY supplied slug can collide: ShopService appends a random
     # 8-character suffix to any slug it generates itself.
     reserved-slugs: ${SHOP_RESERVED_SLUGS:account,auth,orders,signin}
+  # Phase 37-26 (D-20, RWO-042 / UXT-042): how large ONE order may be. Read by OrderLimits, the
+  # single validator every order writer calls (storefront checkout, vendor dashboard, REST API and
+  # the MCP create_order tool), so a 1,000,000-unit line is refused 422 order-limit-exceeded on every
+  # path instead of being persisted as a GBP 19 billion order. Config KEYS, not secrets; env-
+  # overridable per runtime (compose, .env.example, k8s app-config). The defaults clear every real
+  # basket the persona run produced: a 20-line, 40-unit basket (P2-CHA-16) and the UXT-007 office
+  # lunch (about 35 items, GBP 198.50) hit no limit. A value below 1 refuses to start, naming the key.
+  order-limits:
+    # Most units of one product on one line.
+    max-line-quantity: ${ORDER_LIMIT_MAX_LINE_QUANTITY:50}
+    # Most units across the whole basket.
+    max-basket-units: ${ORDER_LIMIT_MAX_BASKET_UNITS:200}
+    # Most distinct lines in one basket.
+    max-lines: ${ORDER_LIMIT_MAX_LINES:50}
+    # Highest basket total (the line totals, delivery excluded), in pennies: GBP 1,000.00.
+    max-basket-total-pennies: ${ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES:100000}
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:

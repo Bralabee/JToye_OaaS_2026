@@ -30,6 +30,7 @@ import uk.jtoye.core.order.OrderAllergenSnapshot;
 import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
+import uk.jtoye.core.order.OrderLimits;
 import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -134,6 +135,12 @@ public class PublicStorefrontService {
 
     /** The one open/paused/closed decision (37-20, D-15): the checkout gate and every public shop read. */
     private final ShopAvailabilityPolicy availabilityPolicy;
+
+    /**
+     * The one order-size rule (37-26, D-20): shared with {@code OrderService.createOrder}, so the
+     * storefront, the vendor dashboard, the REST API and MCP refuse the same oversized orders.
+     */
+    private final OrderLimits orderLimits;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -147,6 +154,7 @@ public class PublicStorefrontService {
                                    OrderNumberGenerator orderNumberGenerator,
                                    TraderIdentityService traderIdentityService,
                                    ShopAvailabilityPolicy availabilityPolicy,
+                                   OrderLimits orderLimits,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -165,6 +173,7 @@ public class PublicStorefrontService {
         this.orderNumberGenerator = orderNumberGenerator;
         this.traderIdentityService = traderIdentityService;
         this.availabilityPolicy = availabilityPolicy;
+        this.orderLimits = orderLimits;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -1065,6 +1074,18 @@ public class PublicStorefrontService {
             lineRates.add(new VatCalculator.LineRate(
                     item.getTotalPricePennies(), product.getVatRate()));
         }
+
+        // 37-26 (D-20, UXT-042): the order's SIZE is bounded here, after every line is resolved and
+        // before any save, on the lines as they will be persisted (server-side quantities and prices,
+        // never the client's arithmetic). The same OrderLimits bean guards OrderService.createOrder,
+        // so no writer is the one that forgot (theme 6). Thrown inside the reserved idempotency work
+        // for the same reason as the allergen refusals below: the reservation rolls back with this
+        // transaction and a corrected resubmit under the same key succeeds (T-37-67).
+        orderLimits.check(
+                order.getItems().stream()
+                        .map(item -> new OrderLimits.LineCheck(item.getProductName(), item.getQuantity()))
+                        .toList(),
+                order.getItems().stream().mapToLong(OrderItem::getTotalPricePennies).sum());
 
         // D-05: the acknowledgement is enforced HERE, on the server, before the first save. Both
         // refusals are thrown inside the reserved idempotency work, so the reservation rolls back

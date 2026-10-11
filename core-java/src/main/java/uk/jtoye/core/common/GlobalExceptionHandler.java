@@ -39,6 +39,7 @@ import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
+import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
 import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
@@ -873,6 +874,31 @@ public class GlobalExceptionHandler {
         problem.setProperty("code", "SHOP_CLOSED");
         problem.setProperty("reason", ex.getReason());
         problem.setProperty("reopensAt", ex.getReopensAt());
+        return problem;
+    }
+
+    /**
+     * Phase 37-26 (D-20, RWO-042 / UXT-042): an order is larger than the platform allows — a line
+     * quantity, the number of lines, the number of units or the basket total is above its configured
+     * limit ({@code jtoye.order-limits.*}). 422: every field is valid on its own, the order as a whole
+     * is refused. Thrown by {@link uk.jtoye.core.order.OrderLimits} on EVERY writer (storefront,
+     * vendor dashboard, REST API, MCP), so this is the one body all of them return.
+     *
+     * <p>{@code field} ({@code quantity | lines | units | total}), {@code value} and {@code limit}
+     * are typed properties so the storefront can point at the line and stop its stepper at the
+     * limit, and an agent can branch without parsing the sentence; {@code productName} names the
+     * line for a {@code quantity} refusal and is null for a basket-level one.
+     */
+    @ExceptionHandler(OrderLimitExceededException.class)
+    public ProblemDetail handleOrderLimitExceeded(OrderLimitExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Order too large");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-limit-exceeded"));
+        problem.setProperty("code", "ORDER_LIMIT_EXCEEDED");
+        problem.setProperty("field", ex.getField());
+        problem.setProperty("value", ex.getValue());
+        problem.setProperty("limit", ex.getLimit());
+        problem.setProperty("productName", ex.getProductName());
         return problem;
     }
 

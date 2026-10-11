@@ -2,6 +2,7 @@ package uk.jtoye.core.order;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import uk.jtoye.core.exception.OrderLimitExceededException;
 
 import java.util.List;
 
@@ -40,10 +41,20 @@ public class OrderLimits {
                        @Value("${jtoye.order-limits.max-basket-units:200}") int maxBasketUnits,
                        @Value("${jtoye.order-limits.max-lines:50}") int maxLines,
                        @Value("${jtoye.order-limits.max-basket-total-pennies:100000}") long maxBasketTotalPennies) {
-        this.maxLineQuantity = maxLineQuantity;
-        this.maxBasketUnits = maxBasketUnits;
-        this.maxLines = maxLines;
-        this.maxBasketTotalPennies = maxBasketTotalPennies;
+        // A limit below 1 would refuse EVERY order. That is an operator's mistake, so it fails the
+        // context at boot naming the key (the PublicStorefrontService.requireUsableRadius rule),
+        // rather than waiting for the first customer to find it.
+        this.maxLineQuantity = (int) requireAtLeastOne("jtoye.order-limits.max-line-quantity", maxLineQuantity);
+        this.maxBasketUnits = (int) requireAtLeastOne("jtoye.order-limits.max-basket-units", maxBasketUnits);
+        this.maxLines = (int) requireAtLeastOne("jtoye.order-limits.max-lines", maxLines);
+        this.maxBasketTotalPennies = requireAtLeastOne("jtoye.order-limits.max-basket-total-pennies", maxBasketTotalPennies);
+    }
+
+    private static long requireAtLeastOne(String key, long value) {
+        if (value < 1) {
+            throw new IllegalArgumentException(key + " must be at least 1, was: " + value);
+        }
+        return value;
     }
 
     /** The per-line ceiling, exposed so the storefront stepper can stop where the server refuses. */
@@ -71,6 +82,25 @@ public class OrderLimits {
      * @throws OrderLimitExceededException naming the field, the value and the limit
      */
     public void check(List<LineCheck> lines, long totalPennies) {
-        // RED (37-26 Task 1): no behaviour yet.
+        // Per line first, in basket order, so the refusal points at the line the customer can fix;
+        // then the basket as a whole. Each axis is independent: a basket of 51 single-unit lines is
+        // refused on lines, four lines of 50 plus one more unit on units, and a within-limits basket
+        // of expensive items on total. An empty basket is the DTO's @NotEmpty refusal, not this one.
+        long units = 0;
+        for (LineCheck line : lines) {
+            if (line.quantity() > maxLineQuantity) {
+                throw new OrderLimitExceededException("quantity", line.quantity(), maxLineQuantity, line.productName());
+            }
+            units += line.quantity();
+        }
+        if (lines.size() > maxLines) {
+            throw new OrderLimitExceededException("lines", lines.size(), maxLines, null);
+        }
+        if (units > maxBasketUnits) {
+            throw new OrderLimitExceededException("units", units, maxBasketUnits, null);
+        }
+        if (totalPennies > maxBasketTotalPennies) {
+            throw new OrderLimitExceededException("total", totalPennies, maxBasketTotalPennies, null);
+        }
     }
 }
