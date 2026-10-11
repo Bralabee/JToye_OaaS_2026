@@ -162,7 +162,127 @@ class OrderLimitsIntegrationTest {
         assertThat(totalPennies(email)).as("GBP 198.50").isEqualTo(19_850L);
     }
 
+    // ------------------------------------------------------------------
+    // Vendor / REST / MCP: POST /api/v1/orders is the one route the dashboard, an API client and the
+    // MCP create_order tool all use (OrderService.createOrder). Theme 6: the SAME validator, the SAME
+    // 422, or the £19 billion order comes back through the door the storefront fix did not close.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("UXT-042: a vendor POST /api/v1/orders with quantity 1,000,000 is refused 422 order-limit-exceeded on quantity and writes nothing; quantity 50 is 201")
+    void vendorLineAboveTheLimit_isRefusedTyped_andTheLimitItselfIsAccepted() throws Exception {
+        // Untracked stock (NULL), so the absurd quantity reaches the limit rule, not the stock rule.
+        UUID zobo = seedProduct("SKU-3726-VENDOR", "Zobo", 1900L, null);
+        String email = "vendor-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult refused = performVendor(vendorBody(email, List.of(line(zobo, 1_000_000))));
+        JsonNode problem = assertProblem(refused, 422, PROBLEM_TYPE, PROBLEM_CODE);
+        String text = responseText(refused);
+        assertThat(problem.path("field").asString()).as(text).isEqualTo("quantity");
+        assertThat(problem.path("value").asLong()).as(text).isEqualTo(1_000_000L);
+        assertThat(problem.path("limit").asLong()).as(text).isEqualTo(50L);
+        assertThat(problem.path("productName").asString()).as(text).isEqualTo("Zobo");
+        assertThat(countOrdersByEmail(email)).as("the refused order was not written").isZero();
+
+        MvcResult accepted = performVendor(vendorBody(email, List.of(line(zobo, 50))));
+        assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
+        assertThat(lineQuantities(email)).containsExactly(50);
+        assertThat(totalPennies(email)).isEqualTo(95_000L);
+    }
+
+    @Test
+    @DisplayName("D-20: a vendor order of 51 single-unit lines is refused 422 on lines (51 > 50)")
+    void vendorTooManyLines_isRefusedOnLines() throws Exception {
+        List<Map<String, Object>> basket = new ArrayList<>();
+        for (int i = 0; i < 51; i++) {
+            basket.add(line(seedProduct("SKU-3726-LINES-" + i, "Side " + i, 100L, null), 1));
+        }
+        String email = "lines-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult refused = performVendor(vendorBody(email, basket));
+        JsonNode problem = assertProblem(refused, 422, PROBLEM_TYPE, PROBLEM_CODE);
+        String text = responseText(refused);
+        assertThat(problem.path("field").asString()).as(text).isEqualTo("lines");
+        assertThat(problem.path("value").asLong()).as(text).isEqualTo(51L);
+        assertThat(problem.path("limit").asLong()).as(text).isEqualTo(50L);
+        assertThat(problem.path("productName").isNull()).as("a basket-level refusal names no line: " + text).isTrue();
+        assertThat(countOrdersByEmail(email)).isZero();
+    }
+
+    @Test
+    @DisplayName("D-20: a vendor order of 201 units over 5 lines (each within its own limit) is refused 422 on units (201 > 200)")
+    void vendorTooManyUnits_isRefusedOnUnits() throws Exception {
+        List<Map<String, Object>> basket = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            basket.add(line(seedProduct("SKU-3726-UNITS-" + i, "Tray " + i, 100L, null), 50));
+        }
+        basket.add(line(seedProduct("SKU-3726-UNITS-X", "Extra", 100L, null), 1));
+        String email = "units-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult refused = performVendor(vendorBody(email, basket));
+        JsonNode problem = assertProblem(refused, 422, PROBLEM_TYPE, PROBLEM_CODE);
+        String text = responseText(refused);
+        assertThat(problem.path("field").asString()).as(text).isEqualTo("units");
+        assertThat(problem.path("value").asLong()).as(text).isEqualTo(201L);
+        assertThat(problem.path("limit").asLong()).as(text).isEqualTo(200L);
+        assertThat(countOrdersByEmail(email)).isZero();
+    }
+
+    @Test
+    @DisplayName("D-20: a vendor order totalling GBP 1,000.01 over within-limit lines is refused 422 on total (100001 > 100000)")
+    void vendorBasketAboveTheTotalLimit_isRefusedOnTotal() throws Exception {
+        UUID platter = seedProduct("SKU-3726-TOTAL-A", "Platter", 50_000L, null);
+        UUID mint = seedProduct("SKU-3726-TOTAL-B", "Mint", 1L, null);
+        String email = "total-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult refused = performVendor(vendorBody(email, List.of(line(platter, 2), line(mint, 1))));
+        JsonNode problem = assertProblem(refused, 422, PROBLEM_TYPE, PROBLEM_CODE);
+        String text = responseText(refused);
+        assertThat(problem.path("field").asString()).as(text).isEqualTo("total");
+        assertThat(problem.path("value").asLong()).as(text).isEqualTo(100_001L);
+        assertThat(problem.path("limit").asLong()).as(text).isEqualTo(100_000L);
+        assertThat(countOrdersByEmail(email)).isZero();
+
+        // Exactly the limit passes: the boundary is inclusive.
+        MvcResult accepted = performVendor(vendorBody(email, List.of(line(platter, 2))));
+        assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
+        assertThat(totalPennies(email)).isEqualTo(100_000L);
+    }
+
+    // ------------------------------------------------------------------
+    // The storefront stepper stops where checkout refuses (UI-SPEC open item 4): the public shop
+    // payload carries the configured per-line ceiling.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-20: GET /api/v1/public/shops/{slug} exposes maxLineQuantity 50 from jtoye.order-limits.max-line-quantity")
+    void publicShopExposesTheLineLimit() throws Exception {
+        MvcResult shop = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("/api/v1/public/shops/" + SHOP_SLUG)).andReturn();
+        String text = responseText(shop);
+        assertThat(shop.getResponse().getStatus()).as(text).isEqualTo(200);
+        JsonNode body = jsonMapper.readTree(shop.getResponse().getContentAsString());
+        assertThat(body.path("maxLineQuantity").asInt()).as(text).isEqualTo(50);
+    }
+
     // ---- HTTP helpers ----
+
+    /** The vendor route with a realm-admin token for this tenant (an implicit GROUP_ADMIN, D-03) and a fresh key. */
+    private MvcResult performVendor(Map<String, Object> body) throws Exception {
+        return perform(post("/api/v1/orders")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
+                        .jwt(j -> j.subject(UUID.randomUUID().toString()).claim("tenant_id", TENANT_ID.toString()))
+                        .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_admin"),
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("SCOPE_orders:write")))
+                .header("Idempotency-Key", "vendor-" + UUID.randomUUID()), body);
+    }
+
+    private Map<String, Object> vendorBody(String email, List<Map<String, Object>> items) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("shopId", shopId);
+        body.put("customerName", "Order Limits Vendor Customer");
+        body.put("customerEmail", email);
+        body.put("items", items);
+        return body;
+    }
 
     private String ordersUrl() {
         return "/api/v1/public/shops/" + SHOP_SLUG + "/orders";
