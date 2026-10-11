@@ -175,6 +175,8 @@ function recordedAllergensOf(confirmation: GuestOrderConfirmation): RecordedAlle
  */
 /** 37-22 (K3): the availability notice's id, Place order's permanent explanation while the shop is not taking orders. */
 const SHOP_AVAILABILITY_EXPLAINER_ID = "shop-availability-explainer"
+/** How long after the server's stated reopening time the shop is asked again (the kitchen uses the same grace). */
+const REOPEN_RECHECK_GRACE_MS = 500
 
 const NO_VAT_REGISTRATION_COPY = "This seller hasn't declared a VAT registration, so no VAT is shown."
 
@@ -478,7 +480,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
   // failure degrades gracefully to a £0 preview (server stays authoritative).
   const [shop, setShop] = useState<PublicShop | null>(null)
-  useEffect(() => {
+  const loadShop = useCallback(() => {
     let cancelled = false
     publicApiClient
       .get<PublicShop>(`/public/shops/${slug}`)
@@ -492,6 +494,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       cancelled = true
     }
   }, [slug])
+  useEffect(() => loadShop(), [loadShop])
 
   // UXT-047 (B7): a VAT row needs a DECLARED registration; the note needs a LOADED shop that
   // declares none. A shop that failed to load proves neither, so it gets neither (the SellerBlock
@@ -507,6 +510,35 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // and its typed refusal is handled below (the checkout race).
   const shopAvailability = shop ? readShopAvailability(shop) : null
   const notTakingOrders = shopAvailability?.kind === "paused" || shopAvailability?.kind === "closed"
+
+  // The snapshot above is the ONLY thing that disables Place order, and it was read once, on mount.
+  // A customer who opened checkout during a 20-minute pause and waited it out would otherwise keep a
+  // dead button the server now accepts (#916 round 1, finding 1). So just after the server's own
+  // stated end — the pause end, or a closed shop's next opening — the shop is read AGAIN and that
+  // answer is rendered (the kitchen's PauseOrdersControl precedent, 37-21). No clock decides the
+  // state: the clock only schedules the question. A stated time already in the past (a stale
+  // snapshot) is asked at once. The effect keys on the time string, so an unchanged answer does
+  // not re-arm it and nothing can loop.
+  const reopensAt =
+    shopAvailability?.kind === "paused"
+      ? shopAvailability.reopensAt
+      : shopAvailability?.kind === "closed"
+        ? shopAvailability.nextOpenAt
+        : null
+  useEffect(() => {
+    if (!reopensAt) return
+    const at = Date.parse(reopensAt)
+    if (Number.isNaN(at)) return
+    const wait = Math.max(0, at - Date.now()) + REOPEN_RECHECK_GRACE_MS
+    let cancelRead: (() => void) | null = null
+    const timer = setTimeout(() => {
+      cancelRead = loadShop()
+    }, wait)
+    return () => {
+      clearTimeout(timer)
+      cancelRead?.()
+    }
+  }, [reopensAt, loadShop])
 
   // After order is created, holds the Stripe client secret + order details
   const [paymentState, setPaymentState] = useState<{
