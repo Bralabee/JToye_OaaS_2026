@@ -50,6 +50,7 @@ import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.ReviewOrderShopMismatchException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.exception.ShopClosedException;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
@@ -899,6 +900,22 @@ public class GlobalExceptionHandler {
         problem.setProperty("value", ex.getValue());
         problem.setProperty("limit", ex.getLimit());
         problem.setProperty("productName", ex.getProductName());
+        return problem;
+    }
+
+    /**
+     * Phase 37-26 (D-21, RWO-005 / UXT-005 P0): a review cited an order that was not placed at the
+     * shop being reviewed. 400 with its own stable type and code, distinct from the generic
+     * {@code invalid-argument} the other review gates still use, so the storefront can say exactly
+     * why and an agent can branch without parsing the sentence. The detail is a constant: it names
+     * neither the order's real shop nor anything else about it.
+     */
+    @ExceptionHandler(ReviewOrderShopMismatchException.class)
+    public ProblemDetail handleReviewOrderShopMismatch(ReviewOrderShopMismatchException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Order not from this shop");
+        problem.setType(URI.create("https://jtoye.uk/errors/review-order-shop-mismatch"));
+        problem.setProperty("code", "REVIEW_ORDER_SHOP_MISMATCH");
         return problem;
     }
 
