@@ -51,10 +51,25 @@ public class CashOrderCaps {
      * @throws OrderCapExceededException naming the axis that is full
      */
     public void checkEmailAndPhone(UUID tenantId, UUID shopId, String email, String phone) {
+        // Email first: it is the axis the customer is told about in the confirmation flow, and the
+        // cheaper query (one indexed count). The order is pinned by CashOrderCapsTest.
         String normalisedEmail = normaliseEmail(email);
         if (normalisedEmail != null
                 && orderRepository.countOpenCashOrdersByEmail(tenantId, shopId, normalisedEmail) >= perEmail) {
             throw new OrderCapExceededException(OrderCapExceededException.Axis.EMAIL, perEmail);
+        }
+        // Phone: the stored spellings differ ("07700 900123" on one order, "+44 7700 900123" on the
+        // next), so the shop's open cash phones are read through the partial index and folded here,
+        // where the one normaliser lives; the matches are counted in Java.
+        String normalisedPhone = normalisePhone(phone);
+        if (normalisedPhone != null) {
+            long held = orderRepository.findOpenCashOrderPhones(tenantId, shopId).stream()
+                    .map(CashOrderCaps::normalisePhone)
+                    .filter(normalisedPhone::equals)
+                    .count();
+            if (held >= perPhone) {
+                throw new OrderCapExceededException(OrderCapExceededException.Axis.PHONE, perPhone);
+            }
         }
     }
 
@@ -73,9 +88,32 @@ public class CashOrderCaps {
         return perIp;
     }
 
-    /** Phone normalisation — Task 2 implements it; this scaffold has no behaviour. */
+    /**
+     * Digits only, with a UK number's leading {@code 0} read as the country code {@code 44} and an
+     * international {@code 00} prefix dropped, so {@code "07700 900123"}, {@code "+44 7700 900123"},
+     * {@code "0044 7700 900123"} and {@code "(07700) 900-123"} are one key. A non-UK number keeps its
+     * digits as typed ({@code "+1 415 555 0100"} is {@code 14155550100}). {@code null} when there is no
+     * digit at all, so a blank or "n/a" never matches anything. Exact: a neighbouring number sharing a
+     * prefix is a different key. {@code GuestOrderRequest} enforces only {@code @NotBlank @Size(max = 50)}
+     * on the phone, so the spellings this folds are the ones customers actually submit.
+     */
     static String normalisePhone(String phone) {
-        return phone;
+        if (phone == null) {
+            return null;
+        }
+        String digits = phone.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) {
+            return null;
+        }
+        if (digits.startsWith("00") && digits.length() > 2) {
+            // International dialling prefix: "0044 7700 900123" -> "447700900123".
+            return digits.substring(2);
+        }
+        if (digits.startsWith("0") && digits.length() > 1) {
+            // UK trunk prefix: "07700 900123" -> "447700900123". A lone "0" is left alone.
+            return "44" + digits.substring(1);
+        }
+        return digits;
     }
 
     /** Trimmed and lower-cased; {@code null} for a blank address. */
