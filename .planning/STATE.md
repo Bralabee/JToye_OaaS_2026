@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-22 complete (22/53). 37-21 closed 2026-10-10: the kitchen header has PauseOrdersControl (20 / 40 minutes / Until I reopen, 44px rows, no confirm; Resume orders now while paused) and PausedBanner (white, 2px slate-900 border, L6) reading the SERVER's ordersPausedUntil/ordersPausedIndefinitely in UK time, re-read on the 60 s poll, after each write and at the stated end, disabled until the first read and while a write is in flight; the shop dialog's free-text hours are replaced by OpeningScheduleEditor (K4: Closed checkbox, up to 3 native time windows, Copy Monday, overnight hint, overlap / spill / missing-time validation, all-closed note, legacy info line; the dialog sends openingSchedule only when touched); HoursNoticeCard on /dashboard and Hours not set / Check hours / Paused until badges on the shops table from hoursSource, deep link ?edit={id}&focus=hours. Owner D-25 ruling copy: an unreadable NEEDS_REVIEW day pre-fills Closed with 'Customers can still order on this day at any time until you save your hours.' (orchestrator decision pending owner wording, WINDOWS #36). Deviations: storefront Opening hours list from openingSchedule (Rule 2); dialog saves keep the slug (server regenerates on every slug-less update, Rule 1); the control makes no claim before the first read (Rule 1, found live). Jest 2607/220 (baseline 2550/215), build green, lint 0 errors; no Java. Frontend REBUILT + recreated (final 040c64a6), runtime-freshness PASS 4/4; live Playwright proof incl. 60 s cross-device; Mama Ade's Kitchen restored by md5. WINDOWS #36, #37 added. RWO-022 NOT marked (37-23 declares it; ready-ids blocked). Next: 37-23 (UAT, autonomous:false)."
-last_updated: "2026-10-11T13:59:23.791Z"
+stopped_at: "Phase 37 executing: 37-01..37-23 complete (23/53); sub-theme 37-A gated and handed over as PR #916 (phase-37-a-kitchen, head 57defea5 with the changelog entry; cut 05b9ea01 = one squash on origin/main 7364b215, tree = cut/phase-37-a-kitchen = 6a825865). 37-23 closed 2026-10-11: Task 1 reconciled #913's final reviewed head (aec7e0a7) and origin/main into phase-37-ops-readiness by the post-cut delta (D-03/D-04), added the F23 flash-rate arm to kitchen-flow.spec.ts, refreshed metrics to V80 / 5471, every static gate rc 0, core-java 1683 unit + 1084 IT 0 failures, jest 2622, build clean. Task 2 (blocking-human: may 37-A take the shared compose stack?) answered proceed by the owner 2026-10-11. Task 3: the pre-rebuild runtime (261010-ppb at 75bb3211) already carried 37-A so the kitchen specs were 30 passed before the rebuild (recorded as found, not relabelled RED); RED was the freshness gate (3 of 4 image-not-rebuilt) and next 16.3.7 / x/net 0.58.0 in the images; after rebuilding ALL images: freshness PASS 4/4 (mcp-server mode-B retag force-recreated, order metric re-seeded), next 16.3.8, x/net 0.60.0, V80 head, OpenAPI PASS, strict scoping ON; five specs 98 passed 0 skipped, public-a11y 40; live: lane arrival 4.3 s, chime every 5000 ms until Accept, pause -> Paused / 409 shop-closed in words -> resume 201, 440 Hz alarm at 3000 ms capped 120 s with overlay kept, MCP create_order DRAFT (expected until 37-42), seeded schedule open, legacy Brixton fixture open with the vendor notice and restored by md5, 38-minute stay-live. 21 screens in evidence/37-23-screens/. Human rows H1-H3 (chime audible and repeating, alarm distinguishable, 5 s / 3 s / 120 s sign-off, screens) go to the phase UAT (end-of-phase mode). Peckham's 17 stale PENDING probe orders were cancelled (rows kept) so the chime could be shown to stop; two probe orders left PREPARING. RWO-011/020/021/022 marked. WINDOWS #38 fixed; #34/#35/#37 open. Next: D3 review series on #916 (round 1 running on 57defea5), merge, then 37-24 (37-D) resumes via /gsd-execute-phase 37."
+last_updated: "2026-10-11T18:45:07.000Z"
 last_activity: 2026-10-11
-state_head: 4f478bd86da2bade859420b990f212738962a0fd
+state_head: 2a0014838b91a1e5df37705eff4fb404f4ef3751
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 207
+  completed_plans: 208
   percent: 65
 ---
 
@@ -923,6 +923,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P18 | 40 min | 3 tasks | 18 files |
 | Phase 37 P22 | 75 min | 3 tasks | 30 files |
 | Phase 37 P21 | 40 min | 3 tasks | 17 files |
+| Phase 37 P23 | 95 min | 3 tasks | 31 files |
 
 ## Accumulated Context
 
@@ -1237,6 +1238,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-21: D-25 ruling copy (orchestrator decision, pending the owner's wording, WINDOWS #36): an unreadable NEEDS_REVIEW day pre-fills Closed in the editor with 'We couldn't read "{text}". Customers can still order on this day at any time until you save your hours.'; the needs-review card says customers can order on those days until the hours are saved; UI-SPEC rows amended
 - [Phase 37]: 37-21: the shop dialog sends openingSchedule only when the editor was touched (key omitted otherwise), and sends the current slug unless the name changed, because ShopService.updateShop regenerates a random-suffix slug on every slug-less update (server unchanged; owner question in deferred-items)
 - [Phase 37]: 37-21: the storefront Opening hours list renders openingSchedule for STRUCTURED / MIGRATED_FROM_TEXT; NEEDS_REVIEW keeps the vendor's text (its unreadable days are open on the server); legacy or no schedule shows the text; never both
+- [Phase 37]: 37-23: a sub-theme PR is opened by hand in the ship shape (push first, review second), not by /gsd-ship, which refuses mid-phase because verification.status reads "missing"; the plan's "/gsd-ship" sentence is superseded (recorded in evidence 2.12)
+- [Phase 37]: 37-23: a runtime that already carries the branch is recorded as found (specs green before the rebuild) rather than relabelled RED; the RED arm is the freshness gate and the image-level versions, both shown both directions
+- [Phase 37]: 37-23: Task 3's human-check (chime, alarm, 5 s / 3 s / 120 s timings, screens) is harvested into the phase UAT under human_verify_mode end-of-phase, as 37-15 did, not raised as a second checkpoint
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): option E floors on customers (D-06): reads keep the any-grant gate; create and update need SHOP_MANAGER on any shop or Group admin (ShopAccessService.requireAnyRole, before the Idempotency-Key branch); delete needs Group admin (requireGroupAdmin)
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-25 hours: an unreadable NEEDS_REVIEW day pre-fills as one all-day 00:00-00:00 window with 'We could not read "{text}", so this day is open all day. Set the real times, or tick Closed.'; the card reads '...for {days}, so customers can order on that day/those days at any time. Check and save your hours.' (WINDOWS #36 closed)
 - [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-08 pause: a pause refused with shop-access-denied is answered by the K2 Access ended overlay only, no inline copy; KITCHEN_ROUTE_CALLS and its guard test keep every kitchen-route call at the STAFF floor (WINDOWS #37 restated)
@@ -1318,8 +1322,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-10T15:59:45.000Z
-Stopped at: Completed 37-21-PLAN.md (one-tap kitchen pause and paused banner from the server's state, the structured hours editor, hours notices and badges from hoursSource; storefront hours list from the schedule; dialog saves keep the slug; frontend rebuilt, live Playwright incl. 60 s cross-device; seeded schedule restored by md5); next 37-23 (UAT, autonomous:false)
+Last session: 2026-10-11T18:45:07.000Z
+Stopped at: Completed 37-23-PLAN.md (the 37-A gate: D-03/D-04 reconciliation of #913, static gates and full suites, runtime rebuilt and proven fresh, kitchen specs green, live lane/chime/pause/alarm proofs, 21 screens, PR branch phase-37-a-kitchen cut as one squash and opened as #916). Next: the #916 review series, merge, then 37-24.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
