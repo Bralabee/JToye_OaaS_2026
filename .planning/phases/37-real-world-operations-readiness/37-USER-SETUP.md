@@ -17,6 +17,7 @@ place in staging and production before invitations are used there. Everything in
 | [ ] | `keycloak-credentials` Secret (`admin-password`) | sealed secret per environment | the master-realm admin password core-java uses for the admin API (already required by tenant offboarding and DSAR account deletion) |
 | [x] | `keycloak.admin.vendor-realm` (env `KC_VENDOR_REALM`) | k8s overlays | already set by 37-08: `jtoye-prod` (base/production), `jtoye-staging` (staging), `jtoye-dev` (local). Check it names the real vendor realm of each environment. |
 | [ ] | `security.trusted-proxies` (env `TRUSTED_PROXY_CIDRS`) | `k8s/staging/configmap-patch.yaml` and `k8s/production/configmap-patch.yaml` (both `""` = trust none; base is `""`) | the ingress-nginx controller's POD CIDR of each AKS cluster, as a comma-separated CIDR list: a PRIVATE range (RFC 1918 or fc00::/7), /8 or narrower, never `0.0.0.0/0`. 37-24 (D-19): core-java believes `X-Forwarded-For` only from these ranges; while empty, every client behind the ingress keys the public rate limit on the ingress pod and shares ONE bucket. `k8s/scripts/check-render-invariants.sh` INV-12 WARNs on the empty value and FAILS a `/0`, a prefix shorter than `/8` or a public range; core-java refuses `/0` at startup. |
+| [ ] | `client-ip-credentials` Secret (`hmac-key`, env `CLIENT_IP_HMAC_KEY`) | sealed secret per environment (staging and production); `k8s/base/core-java-deployment.yaml` refs it with NO optional flag | 37-28 (D-27): exactly 64 hexadecimal characters from `openssl rand -hex 32`, one fresh key PER ENVIRONMENT, never reused between staging and production and never committed. The HMAC-SHA256 key under which core-java stores the client address behind a storefront order as a pseudonym (`orders.client_ip_digest`) for the per-IP cash-order cap; the address itself is never stored. core-java refuses to start without a valid key, and an absent Secret holds the pod in `CreateContainerConfigError` naming it. Rotating it only changes which open orders a client is counted against. Compose and k8s/local take it from `.env` (`scripts/verify-env.sh` and `scripts/k8s-local-secrets.sh` check the shape). |
 
 ## Dashboard Configuration
 
@@ -51,6 +52,20 @@ Expected results:
 
 The same proof for the local compose runtime is owed to the 37-15 gate (after the rebuild and
 `kc.sh import --override true`).
+
+Client-IP digest key (37-28), against each environment once the Secret is sealed:
+
+```bash
+# 5. The Secret exists with the one key the manifest reads, and the pod is Running (not CreateContainerConfigError)
+kubectl --context <ctx> -n <namespace> get secret client-ip-credentials -o jsonpath='{.data.hmac-key}' | base64 -d | wc -c
+kubectl --context <ctx> -n <namespace> get pods -l app=core-java
+# 6. The cap holds without an address ever being stored: six cash orders from one connection with a fresh email and phone each
+for i in $(seq 1 6); do curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<api-host>/api/v1/public/shops/<slug>/orders -H 'Content-Type: application/json' -d "$(printf '{"customerName":"Probe","customerEmail":"probe-%s-%s@example.com","customerPhone":"07700 9%05d","fulfilmentType":"COLLECTION","items":[{"productId":"<product-id>","quantity":1}],"acknowledgedAllergenMask":<mask>}' "$i" "$RANDOM" "$RANDOM")"; done
+```
+
+Expected results:
+- (5) `64` (the key is 64 characters; the command prints a count, never the value) and every core-java pod `Running`
+- (6) five `201` then one `429` whose body is `type` `https://jtoye.uk/errors/order-cap-exceeded`, `axis` `IP`, no `Retry-After`; `SELECT count(*) FROM orders WHERE client_ip_digest IS NOT NULL` inside the database counts the five and no column of those rows contains the probe's address (the digest is 64 hex characters). Complete or cancel the probe orders afterwards: each completion nulls its digest, and the daily sweep nulls any left after 72 hours.
 
 Trusted proxies (37-24), against each environment once the range is declared:
 

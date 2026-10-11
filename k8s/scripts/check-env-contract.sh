@@ -186,6 +186,7 @@ ALLOW_CORE_B=(
 # no-default rule above already covers that case).
 # ===========================================================================
 MUST_SUPPLY_CORE=(
+  'CLIENT_IP_HMAC_KEY|Phase 37 D-27 (plan 37-28): the HMAC-SHA256 key for the client-IP digest behind the per-IP cash-order cap. application.yml reads ${CLIENT_IP_HMAC_KEY:} and ClientIpDigester refuses to construct on anything but 64 hex characters, so the empty default is a refusal to boot, not an inert feature. Supplied by k8s/base/core-java-deployment.yaml from Secret client-ip-credentials (key hmac-key, no optional flag). Same shape as DSAR_ENCRYPTION_KEY below, for the same reason.'
   'DSAR_ENCRYPTION_KEY|Phase 31.1 D-19 (plan 31.1-07): the AES-256-GCM key for the DSAR subject address. application.yml reads ${DSAR_ENCRYPTION_KEY:} and DsarCipher refuses to construct on anything but 64 hex characters, so the empty default is a refusal to boot, not an inert feature. Supplied by k8s/base/core-java-deployment.yaml from Secret dsar-credentials (key encryption-key, no optional flag). Before this list existed, deleting that env entry left this gate green: the empty default scored "pass by rule (safe non-local default)".'
 )
 

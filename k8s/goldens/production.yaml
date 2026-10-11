@@ -114,6 +114,10 @@ data:
   storage.blob.public-container: jtoye-images
   storage.blob.public-url: https://jtoyeprodmedia.blob.core.windows.net/jtoye-images
   storage.blob.quarantine-container: jtoye-quarantine
+  storefront.cash-caps.per-email: "3"
+  storefront.cash-caps.per-ip: "5"
+  storefront.cash-caps.per-phone: "3"
+  storefront.client-ip-digest.retention-hours: "72"
   stripe.connect.refresh-url: https://app.olajay.co.uk/dashboard/payments/connect/refresh
   stripe.connect.return-url: https://app.olajay.co.uk/dashboard/payments/connect/return
   vendor.logout-complete.enabled: "false"
@@ -580,6 +584,11 @@ spec:
             secretKeyRef:
               key: encryption-key
               name: dsar-credentials
+        - name: CLIENT_IP_HMAC_KEY
+          valueFrom:
+            secretKeyRef:
+              key: hmac-key
+              name: client-ip-credentials
         - name: NOTIFICATION_UNSUBSCRIBE_SECRET
           valueFrom:
             secretKeyRef:
@@ -652,6 +661,26 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: order-limits.max-basket-total-pennies
+              name: app-config
+        - name: CASH_CAP_PER_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.cash-caps.per-email
+              name: app-config
+        - name: CASH_CAP_PER_PHONE
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.cash-caps.per-phone
+              name: app-config
+        - name: CASH_CAP_PER_IP
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.cash-caps.per-ip
+              name: app-config
+        - name: CLIENT_IP_DIGEST_RETENTION_HOURS
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.client-ip-digest.retention-hours
               name: app-config
         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
         imagePullPolicy: IfNotPresent

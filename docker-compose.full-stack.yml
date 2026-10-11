@@ -312,6 +312,11 @@ services:
       # stops compose BEFORE a container is created rather than leaving a crash-looping one.
       # It comes from .env only, never a literal here; verify-env.sh checks its format.
       DSAR_ENCRYPTION_KEY: ${DSAR_ENCRYPTION_KEY:?DSAR_ENCRYPTION_KEY must be set in .env - generate one with openssl rand -hex 32}
+      # 37-28 / D-27: the HMAC-SHA256 key under which the client address behind a storefront order
+      # is stored as a pseudonym (orders.client_ip_digest) for the per-IP cash-order cap. Same shape
+      # and the same guard as the DSAR key above: 64 hex characters from .env, never a literal here,
+      # or compose stops before a container is created. verify-env.sh checks its format.
+      CLIENT_IP_HMAC_KEY: ${CLIENT_IP_HMAC_KEY:?CLIENT_IP_HMAC_KEY must be set in .env - generate one with openssl rand -hex 32}
       # JWKS is fetched from the INTERNAL Keycloak host (reachable in-network)…
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       # …but tokens are stamped with the PUBLIC issuer (KC_HOSTNAME=localhost:8085),

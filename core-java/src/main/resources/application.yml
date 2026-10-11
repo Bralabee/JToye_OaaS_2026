@@ -214,16 +214,17 @@ jtoye:
     # rate-limited one). A COUNT, not a rate: a slot frees when the kitchen completes or cancels an
     # order. Card orders are outside the cap. Config KEYS, not secrets (D-18: never literals); a value
     # below 1 refuses to start, naming the key. Compose keeps these defaults (RESEARCH Pitfall 9: an E2E
-    # spec that trips a cap uses unique contact details, never a raised default).
+    # spec that trips a cap uses unique contact details, never a raised default); k8s declares them in
+    # app-config (CASH_CAP_PER_EMAIL / _PHONE / _IP, 37-28) so every render states them.
     cash-caps:
       # Per normalised (trimmed, lower-cased) email address.
-      per-email: 3
+      per-email: ${CASH_CAP_PER_EMAIL:3}
       # Per normalised phone number (digits only; a UK leading 0 is read as +44, so "07700 900123" and
       # "+44 7700 900123" are one number).
-      per-phone: 3
+      per-phone: ${CASH_CAP_PER_PHONE:3}
       # Per client address, counted on the keyed digest orders.client_ip_digest (D-27) — the axis
       # 37-28 enforces. Higher than the identity caps: one household or office shares one address.
-      per-ip: 5
+      per-ip: ${CASH_CAP_PER_IP:5}
     # Phase 37-28 (D-27, RWO-041): the HMAC-SHA256 key under which ClientIpDigester turns the resolved
     # client address (ClientIpResolver, D-19) into the pseudonym stored on orders.client_ip_digest for
     # the per-ip cap above. A SECRET, unlike the caps: 64 hexadecimal characters (32 bytes), generated

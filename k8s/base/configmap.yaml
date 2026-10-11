@@ -432,6 +432,24 @@ data:
   order-limits.max-lines: "50"
   order-limits.max-basket-total-pennies: "100000"
 
+  # --- Cash-order caps and the client-IP digest window (37-27 / 37-28, D-18 / D-27) --
+  # Consumed as core CASH_CAP_PER_EMAIL, CASH_CAP_PER_PHONE, CASH_CAP_PER_IP ->
+  # application.yml jtoye.storefront.cash-caps.*: the most OPEN cash orders (PENDING,
+  # CONFIRMED, PREPARING or READY, paid in cash, not voided) one trimmed lower-cased
+  # email, one normalised phone and one client address may hold at ONE shop; the next is
+  # a typed 429 order-cap-exceeded (no Retry-After: a slot frees when an order completes).
+  # The IP axis counts on a keyed digest of the address (CLIENT_IP_HMAC_KEY, a Secret),
+  # never the address, and CLIENT_IP_DIGEST_RETENTION_HOURS ->
+  # jtoye.storefront.client-ip-digest.retention-hours is how long that digest is kept
+  # before a daily per-tenant sweep nulls it (it is also nulled when the order reaches a
+  # terminal state and by Article 17 erasure). The values are the application.yml
+  # defaults, declared here so every render states them (DEF-6). A value below 1 on any
+  # of the four refuses to start, naming the key.
+  storefront.cash-caps.per-email: "3"
+  storefront.cash-caps.per-phone: "3"
+  storefront.cash-caps.per-ip: "5"
+  storefront.client-ip-digest.retention-hours: "72"
+
   # --- Edge rate limits (37-25, D-19 / RWO-039) --------------------------------
   # Consumed by edge-go (k8s/base/edge-go-deployment.yaml) as RATE_LIMIT_RPS,
   # RATE_LIMIT_BURST, RATE_LIMIT_TENANT_RPS, RATE_LIMIT_TENANT_BURST and

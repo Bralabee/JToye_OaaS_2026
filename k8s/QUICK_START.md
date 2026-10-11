@@ -161,6 +161,15 @@ kubectl create secret generic dsar-credentials \
   --from-literal=encryption-key="$DSAR_ENCRYPTION_KEY" \
   -n jtoye-production
 
+# REQUIRED (phase 37 plan 28, D-27): the HMAC-SHA256 key for the client-IP
+# digest behind the per-IP cash-order cap (the address itself is never stored).
+# Exactly 64 hex characters; core-java refuses to start without it and the
+# manifest ref has no optional flag. One fresh key PER ENVIRONMENT.
+export CLIENT_IP_HMAC_KEY=$(openssl rand -hex 32)
+kubectl create secret generic client-ip-credentials \
+  --from-literal=hmac-key="$CLIENT_IP_HMAC_KEY" \
+  -n jtoye-production
+
 # ---------------------------------------------------------------------------
 # OPTIONAL secrets (Phase 26 / DEF-6 / D-15) — create ONLY the ones whose
 # feature you are activating in this environment.
