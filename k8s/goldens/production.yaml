@@ -88,6 +88,7 @@ data:
   rabbitmq.port: "5672"
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
   redis.port: "6379"
+  security.trusted-proxies: ""
   smtp.auth: "false"
   smtp.host: email-smtp.eu-west-2.amazonaws.com
   smtp.port: "587"
@@ -617,6 +618,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: access.strict-scoping
+              name: app-config
+        - name: TRUSTED_PROXY_CIDRS
+          valueFrom:
+            configMapKeyRef:
+              key: security.trusted-proxies
               name: app-config
         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
         imagePullPolicy: IfNotPresent

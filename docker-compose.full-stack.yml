@@ -279,6 +279,13 @@ services:
       # reachable on demand by exceeding the widened budget.
       RATE_LIMIT_PUBLIC_PER_MINUTE: ${RATE_LIMIT_PUBLIC_PER_MINUTE:-600}
       RATE_LIMIT_PUBLIC_BURST: ${RATE_LIMIT_PUBLIC_BURST:-120}
+      # 37-24 (D-19, RWO-006): the proxies whose X-Forwarded-For core believes, as a CIDR list.
+      # EMPTY HERE ON PURPOSE = trust none. In this stack the browser calls core directly
+      # (NEXT_PUBLIC_API_URL) and no proxy appends the header, so every client is its socket
+      # address: host clients appear as the docker bridge gateway and share ONE public bucket,
+      # which is why the public limit above is widened. Never set 0.0.0.0/0: core refuses to
+      # start on it, and a wide range re-opens UXT-006 (a rotated header minting fresh buckets).
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}

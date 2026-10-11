@@ -397,3 +397,20 @@ data:
   # config edit. scripts/check-strict-scoping-default.sh (CI) fails on a "false"
   # here, in any overlay or golden, in compose, .env.example or application*.yml.
   access.strict-scoping: "true"
+
+  # --- Trusted proxies (37-24, D-19 / RWO-006) ---------------------------------
+  # Consumed as core TRUSTED_PROXY_CIDRS -> application.yml
+  # jtoye.security.trusted-proxies: the CIDR ranges whose X-Forwarded-For core
+  # believes (comma-separated). The header is read only when the socket peer is
+  # inside one of them, walking the hops from the right; from anyone else it is
+  # ignored and the socket address is the client, so a header a client writes can
+  # never choose its rate-limit bucket (UXT-006, the #88 regression).
+  #
+  # "" = TRUST NONE, the safe default and the base value. Each overlay declares
+  # its ingress-nginx controller's POD CIDR (the ingress is the only thing that
+  # appends the header before core sees it): k8s/local the minikube default,
+  # staging/production an operator input left empty until measured (37-24
+  # user_setup). INV-12 in k8s/scripts/check-render-invariants.sh fails any
+  # render whose value carries /0, a prefix shorter than /8 or a public range, and
+  # core refuses to start on 0.0.0.0/0 or ::/0.
+  security.trusted-proxies: ""

@@ -255,6 +255,30 @@
 #          Test contexts keep their opt-out: they read core-java/src/test/resources,
 #          which no render contains.
 #
+#   INV-12 PHASE 37 D-19 / RWO-006 (plan 37-24, UXT-006), RENDER level, EVERY
+#          target. app-config security.trusted-proxies — the CIDR list whose
+#          X-Forwarded-For core-java believes — must be PRESENT in every render
+#          (absent is a PARSE ERROR: k8s/base declares "" so the posture is always
+#          stated), and every entry in it must be a CIDR that is
+#            a. not /0 (0.0.0.0/0 or ::/0 trusts every client);
+#            b. no shorter than /8;
+#            c. inside a PRIVATE range: RFC 1918 (10/8, 172.16/12, 192.168/16) or
+#               IPv6 unique-local fc00::/7 — the ingress controller's pod CIDR is
+#               always one of these; a public range means some internet address
+#               is believed when it writes the header.
+#          An EMPTY value is allowed (trust none): on staging and production it
+#          WARNS — every client behind the ingress then shares one public bucket
+#          until the operator declares the ingress-nginx pod CIDR (an input not
+#          in this repo, 37-24 user_setup) — and never fails, because a warning
+#          nobody can act on from the repo is not a gate. The persona run
+#          (UXT-006) showed that a resolver which believed the header from anyone
+#          let a rotated header mint a fresh public bucket per request; a trusted
+#          range that admits the internet re-opens exactly that, so this is
+#          refused at render time, and core-java refuses /0 again at startup.
+#          The judge has a SELF-TEST (inv12_selftest): dangerous shapes must be
+#          refused and legitimate private ranges accepted before any render is
+#          judged, so a blind judge is a PARSE ERROR, never a pass.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -526,6 +550,85 @@ inv11_selftest() {
     fi
 }
 inv11_selftest
+
+# INV-12 (37-24, D-19 / RWO-006): judge ONE trusted-proxy entry. Prints nothing
+# when the entry is an acceptable private CIDR, otherwise the reason it is
+# refused. Pure bash integer math on purpose: no external tool, no DNS, nothing
+# that could resolve a hostname an entry smuggles in.
+tp_entry_verdict() {
+    local e="$1" addr prefix o1 o2 o3 o4 ip mask net first g
+    if [[ "$e" == */* ]]; then addr="${e%%/*}"; prefix="${e#*/}"; else addr="$e"; prefix=""; fi
+    if [[ -n "$prefix" && ! "$prefix" =~ ^[0-9]+$ ]]; then
+        echo "has a prefix length that is not a number"; return 0
+    fi
+    if [[ "$addr" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+        o1=$((10#${BASH_REMATCH[1]})); o2=$((10#${BASH_REMATCH[2]})); o3=$((10#${BASH_REMATCH[3]})); o4=$((10#${BASH_REMATCH[4]}))
+        if (( o1 > 255 || o2 > 255 || o3 > 255 || o4 > 255 )); then
+            echo "is not a valid IPv4 address"; return 0
+        fi
+        [[ -n "$prefix" ]] || prefix=32
+        prefix=$((10#$prefix))
+        if (( prefix == 0 )); then
+            echo "is the whole IPv4 address space (/0): it trusts EVERY client and re-opens UXT-006"; return 0
+        fi
+        if (( prefix < 8 )); then
+            echo "has a prefix shorter than /8 (wider than any private block)"; return 0
+        fi
+        if (( prefix > 32 )); then
+            echo "has a prefix longer than /32"; return 0
+        fi
+        ip=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
+        mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
+        net=$(( ip & mask ))
+        if (( prefix >= 8  && (net & 0xFF000000) == 0x0A000000 )); then return 0; fi   # 10.0.0.0/8
+        if (( prefix >= 12 && (net & 0xFFF00000) == 0xAC100000 )); then return 0; fi   # 172.16.0.0/12
+        if (( prefix >= 16 && (net & 0xFFFF0000) == 0xC0A80000 )); then return 0; fi   # 192.168.0.0/16
+        echo "is not inside a private range (RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)"; return 0
+    fi
+    if [[ "$addr" == *:* ]]; then
+        [[ -n "$prefix" ]] || prefix=128
+        prefix=$((10#$prefix))
+        if (( prefix == 0 )); then
+            echo "is the whole IPv6 address space (::/0): it trusts EVERY client and re-opens UXT-006"; return 0
+        fi
+        if (( prefix < 8 )); then
+            echo "has a prefix shorter than /8"; return 0
+        fi
+        if (( prefix > 128 )); then
+            echo "has a prefix longer than /128"; return 0
+        fi
+        if [[ ! "$addr" =~ ^[0-9A-Fa-f:.]+$ ]]; then
+            echo "is not a valid IPv6 address"; return 0
+        fi
+        first="${addr%%:*}"
+        if [[ "$first" =~ ^[0-9A-Fa-f]{1,4}$ ]]; then
+            g=$((16#$first))
+            if (( (g & 0xFE00) == 0xFC00 )); then return 0; fi                        # fc00::/7
+        fi
+        echo "is not inside the IPv6 unique-local range fc00::/7"; return 0
+    fi
+    echo "is not an IPv4 or IPv6 CIDR"; return 0
+}
+
+# INV-12 self-test: the judge must REFUSE every dangerous shape and ACCEPT every
+# legitimate private range before a single render is judged. A judge that cannot
+# refuse makes INV-12 pass on anything; one that refuses private ranges fails
+# every correct overlay. Either is a PARSE ERROR, never a verdict.
+inv12_selftest() {
+    local e v
+    for e in '0.0.0.0/0' '::/0' '10.0.0.0/7' 'fc00::/7' '8.8.8.0/24' '203.0.113.0/24' '2001:db8::/32' \
+             '172.15.0.0/16' '172.32.0.0/12' '192.168.0.0/15' '10.0.0.0/33' 'fd00::/129' \
+             'ingress.example/8' '10.0.0.0/x' '10.0.0.256/8' '::ffff:8.8.8.8/104'; do
+        v="$(tp_entry_verdict "$e")"
+        [[ -n "$v" ]] || parse_fail "INV-12 self-test: '$e' was ACCEPTED — the range judge is blind to a dangerous entry. Fix the judge, do not delete the invariant."
+    done
+    for e in '10.244.0.0/16' '10.0.0.0/8' '172.16.0.0/12' '172.31.255.0/24' '192.168.1.0/24' \
+             'fd00::/8' 'fd12:3456::/32' 'FC00::/8' '10.1.2.3'; do
+        v="$(tp_entry_verdict "$e")"
+        [[ -z "$v" ]] || parse_fail "INV-12 self-test: '$e' was REFUSED ($v) — the judge would fire on a legitimate private range."
+    done
+}
+inv12_selftest
 [[ -f "$QUICK_START" ]]      || parse_fail "not found: $QUICK_START"
 [[ -f "$SECRETS_TEMPLATE" ]] || parse_fail "not found: $SECRETS_TEMPLATE"
 
@@ -1343,13 +1446,56 @@ for dir in "${TARGETS[@]}"; do
         inv11_msg="OK ($inv11_n core-java container(s); 0 probe-switch spellings in the render; no SPRING_APPLICATION_JSON, no Secret-sourced JVM options, no envFrom)"
     fi
 
+    # ---------------- INV-12 (37-24, D-19 / RWO-006) ----------------
+    # EVERY target: the trusted-proxy list is present, and every entry is a private
+    # CIDR no wider than /8 and never /0. Empty is trust none (WARN outside local).
+    inv12_bad=0
+    inv12_n=0
+    inv12_tp="$(cfg_get "$TMP/cfg.tsv" security.trusted-proxies)"
+    if [[ "$inv12_tp" == "(ABSENT)" ]]; then
+        parse_fail "[$rel] INV-12: app-config has no security.trusted-proxies key. k8s/base/configmap.yaml must declare it (\"\" = trust none) so every render states the posture; a missing key would let this invariant pass vacuously. Fix the manifest, do not delete the invariant."
+    fi
+    inv12_clean="${inv12_tp//[[:space:]]/}"
+    if [[ -z "$inv12_clean" ]]; then
+        if is_wi_target "$rel"; then
+            echo "  WARN [$rel] INV-12: security.trusted-proxies is EMPTY (trust none). Behind the ingress every client is the ingress pod, so ALL clients share ONE public rate-limit bucket until the operator declares the ingress-nginx controller's pod CIDR (37-24 user_setup; cluster-specific, not in this repo). Not a failure."
+            inv12_msg="OK (empty = trust none; WARN: operator input outstanding)"
+        else
+            inv12_msg="OK (empty = trust none)"
+        fi
+    else
+        IFS=',' read -ra inv12_entries <<< "$inv12_clean"
+        for inv12_e in "${inv12_entries[@]}"; do
+            [[ -n "$inv12_e" ]] || continue
+            inv12_n=$((inv12_n + 1))
+            inv12_v="$(tp_entry_verdict "$inv12_e")"
+            if [[ -n "$inv12_v" ]]; then
+                echo "  FAIL [$rel] INV-12: security.trusted-proxies entry '$inv12_e' $inv12_v." >&2
+                inv12_bad=1
+            fi
+        done
+        (( inv12_n > 0 )) || parse_fail "[$rel] INV-12: security.trusted-proxies is '$inv12_tp' but the splitter yielded 0 entries — it is blind. Fix it, do not delete the invariant."
+        if (( inv12_bad != 0 )); then
+            echo "        D-19: X-Forwarded-For is believed ONLY from these ranges, so a range that admits" >&2
+            echo "        the public internet (or everyone, /0) lets any client choose its own rate-limit" >&2
+            echo "        identity by writing the header — UXT-006 exactly, the #88 regression. Declare the" >&2
+            echo "        ingress-nginx controller's POD CIDR: a private range (RFC 1918 or fc00::/7)," >&2
+            echo "        /8 or narrower. core-java refuses /0 at startup as well; this gate refuses it" >&2
+            echo "        before a rollout ever reaches that." >&2
+            FAILED=1
+            inv12_msg="FAIL"
+        else
+            inv12_msg="OK ($inv12_n private range(s): $inv12_clean)"
+        fi
+    fi
+
     if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
-          || "$inv11_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg" >&2
+          || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg"
     fi
 done
 
@@ -1787,4 +1933,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7 and INV-11 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."
