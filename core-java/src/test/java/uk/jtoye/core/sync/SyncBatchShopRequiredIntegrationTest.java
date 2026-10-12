@@ -161,8 +161,9 @@ class SyncBatchShopRequiredIntegrationTest {
                 .andExpect(jsonPath("$.results[0].outcome").value("CREATED"));
 
         String dashboardSpans = spansOf(f.tenant, dashboardSku);
-        assertThat(dashboardSpans).as("control: the dashboard create parsed two emphasised allergens")
-                .isNotNull().contains("milk").contains("egg");
+        assertThat(dashboardSpans).as("control: the dashboard create parsed two emphasised allergens (two offset spans)")
+                .isNotNull();
+        assertThat(dashboardSpans.split("\"start\"", -1).length - 1).isEqualTo(2);
         assertThat(spansOf(f.tenant, syncSku))
                 .as("the synced product's spans are byte-identical to the dashboard create's")
                 .isEqualTo(dashboardSpans);

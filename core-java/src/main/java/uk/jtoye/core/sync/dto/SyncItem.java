@@ -10,6 +10,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 /**
  * One item of a {@link BatchSyncRequest} (QA-council 20260902 Cluster A, finding API-2).
  *
@@ -26,15 +28,16 @@ import lombok.NoArgsConstructor;
  * unchanged; unknown keys are ignored (the edge forwards {@code []map[string]interface{}}
  * verbatim — {@code edge-go/cmd/edge/handlers.go SyncBatch}); and every field stays OPTIONAL at
  * the binding layer, because which fields a given {@code type} needs is decided in
- * {@code SyncService} exactly as before (a product item without a SKU is skipped; a shop item
- * has no SKU at all) — a {@code @NotNull} here would reject one type's valid item on the other
+ * {@code SyncService} (a product item without a SKU or a shop is REJECTED for that item alone,
+ * Phase 37-40; a shop item has no SKU at all) — a {@code @NotNull} here would reject one type's valid item on the other
  * type's behalf. The constraints are therefore RANGE/SIZE bounds only, which Jakarta skips on
  * {@code null}. Presence rules are decided in {@code SyncService}, per branch: on an UPDATE of
  * an existing product every absent field means "unchanged" (PR #726 review M7 — title and
  * ingredientsText included, not only allergenMask and pricePennies); on a CREATE {@code title} is
- * REQUIRED and its absence is the typed {@code invalid-argument} 400, raised before anything is
- * written rather than left for {@code products.title NOT NULL} to surface after the batch has
- * half-run.
+ * REQUIRED, and so are the other fields {@code CreateProductRequest} requires (ingredientsText,
+ * allergenMask, pricePennies): a create missing one is REJECTED with code {@code INVALID_FIELDS} naming
+ * them, before anything is written (Phase 37-40; previously a missing title was a 400 for the whole
+ * batch and a missing ingredients text died on {@code products.ingredients_text NOT NULL}).
  */
 @Data
 @Builder
@@ -70,6 +73,29 @@ public class SyncItem {
     @Max(value = 1000000000L, message = "Price must not exceed £10,000,000")
     @Schema(description = "Product price in pennies", example = "999")
     private Long pricePennies;
+
+    // ---- Phase 37-40 (RWO-017 / UXT-017 P0): the shop a product belongs to, and its availability and stock ----
+
+    @Schema(description = "Shop the product belongs to. REQUIRED on every product item: a product with no shop "
+            + "would be listed and orderable at every shop of the tenant, so an item without one is REJECTED "
+            + "with code SHOP_REQUIRED. On an update it must be the shop the SKU already belongs to "
+            + "(otherwise REJECTED with code SHOP_MISMATCH). The caller needs SHOP_MANAGER on it.",
+            example = "8f14e45f-ceea-467f-a0e6-7c3d1c8a1b2e")
+    private UUID shopId;
+
+    @Schema(description = "Whether the product is on sale. Optional; omitted keeps the current value (true on create).",
+            example = "true")
+    private Boolean available;
+
+    @Min(value = 0, message = "Stock quantity must be non-negative")
+    @Schema(description = "Quantity in stock. Optional; omitted keeps the stored quantity. Sending a number "
+            + "tracks stock at that count. Same rules as PUT /products/{id}.", example = "12")
+    private Integer quantityInStock;
+
+    @Schema(description = "Stock tracking, as on PUT /products/{id}: omit to keep the current tracking; false "
+            + "stops tracking (quantityInStock must then be omitted); true requires quantityInStock. A "
+            + "contradiction is REJECTED with code INVALID_FIELDS.", example = "true")
+    private Boolean trackInventory;
 
     // ---- shop fields: bounds mirror CreateShopRequest ----
 

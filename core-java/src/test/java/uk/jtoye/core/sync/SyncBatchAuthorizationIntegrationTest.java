@@ -58,8 +58,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li><b>SEC-5, the human half</b> — after resolving the product by SKU, the write is
  *       gated on the product's OWNING shop via {@code ShopAccessService.require(shopId,
  *       SHOP_MANAGER)}, the {@code ProductService.updateProduct} pattern (VSA-02 / D-02). A
- *       user holding a SHOP_MANAGER grant on shop A who names shop B's SKU gets the typed
- *       {@code shop-access-denied} 403 and shop B's row is untouched; the same user on shop
+ *       user holding a SHOP_MANAGER grant on shop A who names shop B's SKU gets that item
+ *       REJECTED with code {@code SHOP_ACCESS_DENIED} (37-40: per item, inside a 200, where it
+ *       used to be a {@code shop-access-denied} 403 for the whole batch) and shop B's row is untouched; the same user on shop
  *       A's SKU succeeds. Strict-scoping stays OFF (the live default, adjudication A1): once
  *       a user holds ANY explicit grant they are scoped even under OFF
  *       ({@code ShopAccessService} Javadoc; pinned by
@@ -100,7 +101,6 @@ class SyncBatchAuthorizationIntegrationTest {
 
     private static final String SYNC = "/api/v1/sync/batch";
     private static final String TYPE_FORBIDDEN = "https://jtoye.uk/errors/forbidden";
-    private static final String TYPE_SHOP_DENIED = "https://jtoye.uk/errors/shop-access-denied";
     private static final String TYPE_VALIDATION = "https://jtoye.uk/errors/validation";
 
     @Autowired private MockMvc mockMvc;
@@ -128,7 +128,7 @@ class SyncBatchAuthorizationIntegrationTest {
     void unauthenticatedCallerIs401() throws Exception {
         Fixture f = seed();
         mockMvc.perform(post(SYNC).contentType("application/json")
-                        .content(productJson(f.skuA, "anon-mutated", 0, 100)))
+                        .content(productJson(f.skuA, f.shopA, "anon-mutated", 0, 100)))
                 .andExpect(status().isUnauthorized());
         assertThat(titleOf(f.tenant, f.skuA)).isEqualTo(originalTitle(f.skuA));
     }
@@ -144,7 +144,7 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(scopedJwt(UUID.randomUUID(), f.tenant, "catalog:read"))
                         .contentType("application/json")
-                        .content(productJson(f.skuA, "ro-mutated", 0, 100)))
+                        .content(productJson(f.skuA, f.shopA, "ro-mutated", 0, 100)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.type").value(TYPE_FORBIDDEN));
         assertThat(titleOf(f.tenant, f.skuA))
@@ -159,7 +159,7 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(scopedJwt(UUID.randomUUID(), f.tenant, null))
                         .contentType("application/json")
-                        .content(productJson(f.skuA, "noscope-mutated", 0, 100)))
+                        .content(productJson(f.skuA, f.shopA, "noscope-mutated", 0, 100)))
                 .andExpect(status().isForbidden());
         assertThat(titleOf(f.tenant, f.skuA)).isEqualTo(originalTitle(f.skuA));
     }
@@ -171,10 +171,11 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(adminJwt(f.tenant))
                         .contentType("application/json")
-                        .content(productJson(f.skuA, "admin-updated", 3, 750)))
+                        .content(productJson(f.skuA, f.shopA, "admin-updated", 3, 750)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
-                .andExpect(jsonPath("$.processedCount").value(1));
+                .andExpect(jsonPath("$.processedCount").value(1))
+                .andExpect(jsonPath("$.results[0].outcome").value("UPDATED"));
         assertThat(titleOf(f.tenant, f.skuA)).isEqualTo("admin-updated");
         assertThat(jdbc.queryForObject("SELECT price_pennies FROM products WHERE tenant_id = ? AND sku = ?",
                 Long.class, f.tenant, f.skuA)).isEqualTo(750L);
@@ -189,18 +190,25 @@ class SyncBatchAuthorizationIntegrationTest {
      * product by SKU alone (unique per tenant), so without a shop predicate this rewrites shop
      * B's title, ingredients and — the consumer-safety point — its legally-operative allergen
      * declaration. RED on the unfixed tree: 200, processedCount 1, shop B mutated.
+     *
+     * <p>37-40 (RWO-037): the refusal is now reported for the item (200, REJECTED
+     * SHOP_ACCESS_DENIED naming shop B and the role) instead of a 403 for the whole batch; what
+     * this arm guards — shop B's row is untouched — is unchanged.
      */
     @Test
-    void shopManagerOnShopA_isDeniedWritingShopBsSku_withTheTypedShop403() throws Exception {
+    void shopManagerOnShopA_isDeniedWritingShopBsSku_withTheTypedShopRefusal() throws Exception {
         Fixture f = seed();
         mockMvc.perform(post(SYNC)
                         .with(managerJwt(f))
                         .contentType("application/json")
-                        .content(productJson(f.skuB, "PWNED-by-shop-A-manager", 1, 1)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.type").value(TYPE_SHOP_DENIED))
-                .andExpect(jsonPath("$.shopId").value(f.shopB.toString()))
-                .andExpect(jsonPath("$.requiredRole").value("SHOP_MANAGER"));
+                        .content(productJson(f.skuB, f.shopB, "PWNED-by-shop-A-manager", 1, 1)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.processedCount").value(0))
+                .andExpect(jsonPath("$.results[0].outcome").value("REJECTED"))
+                .andExpect(jsonPath("$.results[0].code").value("SHOP_ACCESS_DENIED"))
+                .andExpect(jsonPath("$.results[0].message").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString(f.shopB.toString()),
+                        org.hamcrest.Matchers.containsString("SHOP_MANAGER"))));
         assertThat(titleOf(f.tenant, f.skuB))
                 .as("shop B's row must be byte-identical after the denied write")
                 .isEqualTo(originalTitle(f.skuB));
@@ -217,16 +225,18 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(managerJwt(f))
                         .contentType("application/json")
-                        .content(productJson(f.skuA, "manager-updated", 2, 650)))
+                        .content(productJson(f.skuA, f.shopA, "manager-updated", 2, 650)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.processedCount").value(1));
+                .andExpect(jsonPath("$.processedCount").value(1))
+                .andExpect(jsonPath("$.results[0].outcome").value("UPDATED"));
         assertThat(titleOf(f.tenant, f.skuA)).isEqualTo("manager-updated");
     }
 
     /**
-     * CR-04 write half: a brand-new SKU has no owning shop (the batch never sets shop_id), so
-     * it is a tenant-wide resource and GROUP_ADMIN-only — a scoped SHOP_MANAGER must not mint
-     * it. RED on the unfixed tree: 200 and a shop_id-NULL product appears.
+     * CR-04 write half: a brand-new SKU with no shop would be a tenant-wide product — a scoped
+     * SHOP_MANAGER must not mint it. RED on the unfixed tree: 200 and a shop_id-NULL product
+     * appears. 37-40 (RWO-017): NOBODY may mint one through sync any more; the item is REJECTED
+     * SHOP_REQUIRED (see the realm-admin arm below) and no row is written.
      */
     @Test
     void shopManagerCannotMintATenantWideProduct() throws Exception {
@@ -235,10 +245,26 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(managerJwt(f))
                         .contentType("application/json")
-                        .content(productJson(newSku, "minted-by-scoped-user", 0, 100)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.type").value(TYPE_SHOP_DENIED))
-                .andExpect(jsonPath("$.requiredRole").value("GROUP_ADMIN"));
+                        .content(productJson(newSku, null, "minted-by-scoped-user", 0, 100)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.processedCount").value(0))
+                .andExpect(jsonPath("$.results[0].outcome").value("REJECTED"))
+                .andExpect(jsonPath("$.results[0].code").value("SHOP_REQUIRED"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM products WHERE tenant_id = ? AND sku = ?",
+                Long.class, f.tenant, newSku)).isZero();
+    }
+
+    /** 37-40 (RWO-017): the GROUP_ADMIN half — a realm admin cannot mint a shop-less product through sync either. */
+    @Test
+    void realmAdminCannotMintATenantWideProductEither() throws Exception {
+        Fixture f = seed();
+        String newSku = "NEW-" + UUID.randomUUID().toString().substring(0, 8);
+        mockMvc.perform(post(SYNC)
+                        .with(adminJwt(f.tenant))
+                        .contentType("application/json")
+                        .content(productJson(newSku, null, "minted-by-admin", 0, 100)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].code").value("SHOP_REQUIRED"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM products WHERE tenant_id = ? AND sku = ?",
                 Long.class, f.tenant, newSku)).isZero();
     }
@@ -252,9 +278,11 @@ class SyncBatchAuthorizationIntegrationTest {
                         .with(managerJwt(f))
                         .contentType("application/json")
                         .content(shopJson(shopBName, "99 Hijacked Road")))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.type").value(TYPE_SHOP_DENIED))
-                .andExpect(jsonPath("$.shopId").value(f.shopB.toString()));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.processedCount").value(0))
+                .andExpect(jsonPath("$.results[0].code").value("SHOP_ACCESS_DENIED"))
+                .andExpect(jsonPath("$.results[0].message").value(
+                        org.hamcrest.Matchers.containsString(f.shopB.toString())));
         assertThat(jdbc.queryForObject("SELECT address FROM shops WHERE id = ?", String.class, f.shopB))
                 .isEqualTo("1 Test Street, London");
     }
@@ -268,9 +296,11 @@ class SyncBatchAuthorizationIntegrationTest {
                         .with(managerJwt(f))
                         .contentType("application/json")
                         .content(shopJson(name, "1 Rogue Lane")))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.type").value(TYPE_SHOP_DENIED))
-                .andExpect(jsonPath("$.requiredRole").value("GROUP_ADMIN"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.processedCount").value(0))
+                .andExpect(jsonPath("$.results[0].code").value("SHOP_ACCESS_DENIED"))
+                .andExpect(jsonPath("$.results[0].message").value(
+                        org.hamcrest.Matchers.containsString("GROUP_ADMIN")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM shops WHERE tenant_id = ? AND name = ?",
                 Long.class, f.tenant, name)).isZero();
     }
@@ -286,7 +316,7 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(adminJwt(f.tenant))
                         .contentType("application/json")
-                        .content(productJson(f.skuA, "should-not-land", 0, -500)))
+                        .content(productJson(f.skuA, f.shopA, "should-not-land", 0, -500)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value(TYPE_VALIDATION))
                 .andExpect(jsonPath("$.errors['items[0].pricePennies']").value("Price must be non-negative"));
@@ -302,7 +332,7 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(adminJwt(f.tenant))
                         .contentType("application/json")
-                        .content(productJson(f.skuA, "should-not-land", 16384, 100)))
+                        .content(productJson(f.skuA, f.shopA, "should-not-land", 16384, 100)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value(TYPE_VALIDATION))
                 .andExpect(jsonPath("$.errors['items[0].allergenMask']")
@@ -318,7 +348,7 @@ class SyncBatchAuthorizationIntegrationTest {
         mockMvc.perform(post(SYNC)
                         .with(adminJwt(f.tenant))
                         .contentType("application/json")
-                        .content(productJson(f.skuA, "should-not-land", -1, 100)))
+                        .content(productJson(f.skuA, f.shopA, "should-not-land", -1, 100)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value(TYPE_VALIDATION))
                 .andExpect(jsonPath("$.errors['items[0].allergenMask']").value("Allergen mask must be non-negative"));
@@ -344,7 +374,8 @@ class SyncBatchAuthorizationIntegrationTest {
                         .contentType("application/json")
                         .content(shopJson(name, "2 Sync Street, London")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.processedCount").value(1));
+                .andExpect(jsonPath("$.processedCount").value(1))
+                .andExpect(jsonPath("$.results[0].outcome").value("CREATED"));
 
         Map<String, Object> row = jdbc.queryForMap(
                 "SELECT slug, published, tenant_id::text AS tenant_id, address FROM shops WHERE tenant_id = ? AND name = ?",
@@ -436,7 +467,7 @@ class SyncBatchAuthorizationIntegrationTest {
     void unknownItemKeysAreIgnored() throws Exception {
         Fixture f = seed();
         String body = "{\"tenantId\":\"" + f.tenant + "\",\"items\":[{\"type\":\"PRODUCT\",\"sku\":\"" + f.skuA
-                + "\",\"title\":\"extra-keys-ok\",\"ingredientsText\":\"Rice\",\"allergenMask\":0,"
+                + "\",\"shopId\":\"" + f.shopA + "\",\"title\":\"extra-keys-ok\",\"ingredientsText\":\"Rice\",\"allergenMask\":0,"
                 + "\"pricePennies\":120,\"edgeMeta\":{\"source\":\"pos\"},\"unknownFlag\":true}]}";
         mockMvc.perform(post(SYNC)
                         .with(adminJwt(f.tenant))
@@ -554,8 +585,10 @@ class SyncBatchAuthorizationIntegrationTest {
     // request bodies + principals
     // ---------------------------------------------------------------------
 
-    private static String productJson(String sku, String title, int allergenMask, long pricePennies) {
+    /** A one-product batch; {@code shopId} null omits the key (the shop-less item 37-40 refuses). */
+    private static String productJson(String sku, UUID shopId, String title, int allergenMask, long pricePennies) {
         return "{\"items\":[{\"type\":\"product\",\"sku\":\"" + sku + "\",\"title\":\"" + title
+                + (shopId == null ? "" : "\",\"shopId\":\"" + shopId)
                 + "\",\"ingredientsText\":\"Rice, tomatoes\",\"allergenMask\":" + allergenMask
                 + ",\"pricePennies\":" + pricePennies + "}]}";
     }
