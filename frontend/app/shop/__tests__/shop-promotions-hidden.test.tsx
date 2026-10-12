@@ -136,7 +136,7 @@ function expectNoDiscountClaim() {
 }
 
 function promotionRequests(): string[] {
-  return mockGet.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("promotion"))
+  return mockGet.mock.calls.map((c) => String(c[0])).filter((u) => /\/promotions(\?|$)/.test(u))
 }
 
 beforeEach(() => {
@@ -241,7 +241,7 @@ describe("loadShopDetail — the server render does not fetch or carry promotion
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const r = await loadShopDetail("promotions-hidden-ssr")
+    const r = await loadShopDetail("brixton-village-grill-ssr")
     expect(r.state).toBe("ok")
     if (r.state !== "ok") return
 
@@ -251,7 +251,7 @@ describe("loadShopDetail — the server render does not fetch or carry promotion
     expect(urls.some((u) => u.endsWith("/announcements"))).toBe(true)
     expect(r.data.announcements).toEqual([announcement])
 
-    expect(urls.filter((u) => u.includes("promotion"))).toEqual([])
+    expect(urls.filter((u) => /\/promotions(\?|$)/.test(u))).toEqual([])
     expect(r.data).not.toHaveProperty("promotions")
   })
 })

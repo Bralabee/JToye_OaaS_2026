@@ -177,15 +177,6 @@ export interface Review {
   createdAt: string
 }
 
-export interface PublicPromotion {
-  label: string
-  discountType: "PERCENTAGE" | "FLAT_AMOUNT"
-  discountPercent: number | null
-  discountAmountPennies: number | null
-  category: string | null
-  validUntil: string
-}
-
 export interface PublicAnnouncement {
   title: string
   body: string | null
@@ -207,7 +198,8 @@ export interface ShopDetail {
   reviews: Review[]
   reviewCount: number
   avgRating: number
-  promotions: PublicPromotion[]
+  // 37-36 (D-17): no `promotions`. Checkout applies no discount, so the storefront payload
+  // carries none to render; the vendor's promotions live on in types/api.ts for the dashboard.
   announcements: PublicAnnouncement[]
   // 37-22: no `isOpen` here any more. The loader used to compute one from the free-text
   // hours; whether the shop takes orders is now the server's `shop.openNow` / `pausedUntil`

@@ -4,7 +4,6 @@ import type { PageResponse } from "@/types/api"
 import type {
   PublicAnnouncement,
   PublicProduct,
-  PublicPromotion,
   PublicShop,
   ProductsByCategory,
   Review,
@@ -105,7 +104,7 @@ async function getJson<T>(path: string): Promise<StorefrontLoad<T>> {
 }
 
 /**
- * An OPTIONAL sub-resource: reviews, config, promotions, announcements.
+ * An OPTIONAL sub-resource: reviews, config, announcements.
  *
  * These already `.catch()` to defaults on the client, so a failure in one of
  * them must not take down the page or downgrade it to `defer` — the menu is
@@ -140,14 +139,21 @@ export async function loadShopList({
 /**
  * One shop and everything its page shows.
  *
- * The two critical calls (shop + products) decide the outcome; the four
- * optional ones degrade to empty. That split is the same one the client made,
- * kept so the page cannot start failing for a reason it used to tolerate.
+ * The two critical calls (shop + products) decide the outcome; the two
+ * optional ones (reviews, announcements) degrade to empty. That split is the same
+ * one the client made, kept so the page cannot start failing for a reason it used
+ * to tolerate.
+ *
+ * NO PROMOTIONS (37-36, D-17, UXT-008). Checkout does not apply a discount, so the
+ * page must not advertise one, and the loader neither asks for promotions nor hands
+ * the page a field to render them from. The server answers [] since 37-35; not
+ * fetching at all is what keeps an older or misconfigured core from putting a
+ * "20% off" back into the HTML.
  *
  * WRAPPED IN `react.cache` BECAUSE IT IS CALLED TWICE PER REQUEST — once by
  * `generateMetadata` (which needs the shop's name and description for the title,
  * canonical and OG tags) and once by the page (which needs the menu). Without
- * memoisation that is 10 upstream calls per page view instead of 5, on public
+ * memoisation that is 8 upstream calls per page view instead of 4, on public
  * endpoints that are rate-limited per client. `cache` is per-request, so it
  * cannot serve one visitor's shop to another.
  */
@@ -156,14 +162,13 @@ export const loadShopDetail = cache(async function loadShopDetail(
 ): Promise<StorefrontLoad<ShopDetail>> {
   const encoded = encodeURIComponent(slug)
 
-  const [shopRes, productsRes, reviews, promotions, announcements] = await Promise.all([
+  const [shopRes, productsRes, reviews, announcements] = await Promise.all([
     getJson<PublicShop>(`/public/shops/${encoded}`),
     getJson<ProductsByCategory>(`/public/shops/${encoded}/products`),
     getOptional<{ content: Review[]; totalElements: number }>(
       `/public/shops/${encoded}/reviews?size=5`,
       { content: [], totalElements: 0 }
     ),
-    getOptional<PublicPromotion[]>(`/public/shops/${encoded}/promotions`, []),
     getOptional<PublicAnnouncement[]>(`/public/shops/${encoded}/announcements`, []),
   ])
 
@@ -189,7 +194,6 @@ export const loadShopDetail = cache(async function loadShopDetail(
       reviews: sample,
       reviewCount: reviews.totalElements ?? 0,
       avgRating,
-      promotions: promotions ?? [],
       announcements: announcements ?? [],
     },
   }

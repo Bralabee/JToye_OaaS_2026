@@ -6,7 +6,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test"
-import { cancelOrdersByNumber, orderNumberIn, uniqueContact } from "./order-cleanup"
+import { cancelOrdersByNumber, orderNumberIn, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
 
 // Honour PLAYWRIGHT_BASE_URL (set it only for a non-default host). Mirrors the
 // default in playwright.config.ts. The "MCP server holds :3000" claim this
@@ -488,37 +488,63 @@ test.describe("Shop Menu & Product Cards", () => {
     }
   })
 
-  test("promotion banner and discount badge render on shop detail (STFR-06)", async ({ page }) => {
-    await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
-    await page.waitForLoadState("networkidle")
-    await page.waitForTimeout(2000)
-
-    // Announcement/promotion block lives above the menu. Presence is seed-
-    // dependent: skip cleanly if neither an announcement nor an active
-    // promotion exists in the dev stack. A deterministic V33 seed fixture
-    // is tracked as a milestone-4+ follow-up in 10-03-SUMMARY.md.
-    const announcement = page.locator("section:has(h2:has-text('Menu')) ~ *, aside, div").filter({
-      hasText: /announcement|new|promo|offer/i,
+  // STFR-06, inverted by 37-36 (D-17, UXT-008). This test used to assert that a "% off" badge
+  // RENDERS. J'Toye applies no discount at checkout, so a badge advertised a price the customer
+  // would not be charged: the storefront now renders no promotion at all, and asks for none.
+  // The vendor's promotion is seeded as ACTIVE first, so the absence below is about the page and
+  // not about an empty seed. Without the vendor credentials (KEYCLOAK_CLIENT_SECRET + the vendor
+  // password, which CI sources from the stack's .env) the seed is skipped and recorded as an
+  // annotation; the request and text assertions still run.
+  test("no promotion banner or discount badge on shop detail, even with an active promotion (STFR-06, D-17)", async ({ page, request }) => {
+    const API = process.env.PLAYWRIGHT_API_URL || "http://localhost:9090"
+    const label = `E2E 20% OFF everything ${Date.now()}`
+    const token = await vendorToken(request)
+    const shopId = token ? await vendorShopId(request, token, SHOP_SLUG) : null
+    let promotionId: string | null = null
+    if (token && shopId) {
+      const res = await request.post(`${API}/api/v1/promotions`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: {
+          label,
+          discountType: "PERCENTAGE",
+          discountPercent: 20,
+          validFrom: new Date(Date.now() - 60_000).toISOString(),
+          validUntil: new Date(Date.now() + 3_600_000).toISOString(),
+          active: true,
+          shopId,
+        },
+      })
+      expect(res.status(), "the vendor can still create a promotion (the CRUD stays)").toBe(201)
+      promotionId = ((await res.json()) as { id: string }).id
+    }
+    test.info().annotations.push({
+      type: "promotion-seed",
+      description: promotionId ? `active 20% promotion ${promotionId} seeded` : "not seeded (no vendor credentials)",
     })
-    const percentBadge = page.locator("article").filter({ hasText: /\d+% off/ }).first()
-    const flatBadge = page.locator("article").filter({ hasText: /£\d+(\.\d+)? off/ }).first()
 
-    const announcementVisible = await announcement.first().isVisible().catch(() => false)
-    const percentVisible = await percentBadge.isVisible().catch(() => false)
-    const flatVisible = await flatBadge.isVisible().catch(() => false)
+    try {
+      const promotionRequests: string[] = []
+      page.on("request", (r) => {
+        if (/\/promotions(\?|$)/.test(r.url())) promotionRequests.push(r.url())
+      })
+      await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
+      await page.waitForLoadState("networkidle")
 
-    test.skip(
-      !announcementVisible && !percentVisible && !flatVisible,
-      "No active announcement or promotion seed — banner/badge assertion requires a V33 promo fixture (tracked as 10-03 follow-up)"
-    )
+      // Control: the storefront really rendered its menu.
+      await expect(page.getByRole("heading", { level: 1, name: SHOP_NAME })).toBeVisible()
+      await expect(page.locator("article").first()).toBeVisible()
 
-    // At least one of the three marketing surfaces must render when the
-    // skip guard above did not trigger.
-    expect(announcementVisible || percentVisible || flatVisible).toBe(true)
-
-    if (percentVisible || flatVisible) {
-      const anyBadge = percentVisible ? percentBadge : flatBadge
-      await expect(anyBadge).toBeVisible()
+      const body = (await page.locator("body").textContent()) ?? ""
+      expect(body).not.toContain(label)
+      expect(body).not.toMatch(/\d+\s*%\s*off/i)
+      expect(body).not.toMatch(/£\d+(\.\d+)?\s*off/i)
+      expect(promotionRequests, "the browser asked for promotions").toEqual([])
+    } finally {
+      if (token && promotionId) {
+        await request.delete(`${API}/api/v1/promotions/${promotionId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
     }
   })
 
