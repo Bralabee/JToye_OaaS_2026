@@ -59,7 +59,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * request commits. The test profile has no Stripe key, so storefront orders take the COD branch.
  *
  * <p>RLS note: the Testcontainers bootstrap role is a SUPERUSER, so these arms prove the
- * application contract, not RLS enforcement. This plan adds no table and no policy.
+ * application contract, not RLS enforcement. This plan adds no table and no policy. That blind spot
+ * hid a live defect until the 37-38 gate: under RLS an anonymous tracking read saw the order and none
+ * of its lines, so the tracking arm below was green while every real guest order tracked as "not
+ * recorded". {@link GuestTrackingOrderLinesRlsIntegrationTest} is the NOSUPERUSER NOBYPASSRLS arm of
+ * this contract (V84 {@code order_items_guest_tracking}).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
