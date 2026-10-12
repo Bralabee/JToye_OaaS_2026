@@ -633,3 +633,18 @@ where it must be resolved.
   selection mode kept after a batch, each is a one-line change with a test to flip. Also: the basket drawer's
   stepper limit is null until the shop page has been read in this provider (a deep link to /checkout) — the
   server's 422 is the gate, the spec's declared other branch.
+- **The review-form notice (UI-SPEC C4, 37-36 truth 3) has no form to sit on (37-36, open).**
+  status: open
+  **What:** the plan and UI-SPEC § C4 ask for "Your review will show your first name and the first letter of
+  your last name, like "{First} {L}."." as a 14px slate-600 notice above the review form's Submit. The frontend
+  has NO review form: `rg -uu` over `frontend/app`, `components`, `lib` and `hooks` finds no caller of
+  `POST /public/shops/{slug}/reviews` (only the GET in `storefront-server.ts` and the shop client), and the
+  UXT-044 repro itself reads "Create a review for a completed order" through the API. Reviews are created only
+  by API callers today, so no customer sees a form, and none can be annotated. Building one (completed-order
+  binding by order number + email, food/delivery ratings, comment, photos, the UXT-005 cross-shop refusal copy,
+  its error states) is a new customer surface with no UI-SPEC contract, so 37-36 did not invent it. What
+  shipped: the public name is minimised server-side (37-35) and rendered verbatim with the "Customer" fallback
+  (37-36), so the data-protection half of UXT-044 holds with or without a form. **Recommendation:** when a
+  review form is built, the notice goes above its Submit with the copy above, `{First} {L}.` derived from the
+  order's name by the same rule as `ReviewerDisplayName.of`; 37-38's human check "read the review form notice"
+  cannot be performed and should be recorded N/A with this reference.

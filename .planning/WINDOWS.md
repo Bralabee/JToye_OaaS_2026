@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 15
 waived_count: 0
 fixed_count: 28
-total_count: 42
-last_updated: 2026-10-11T18:37:35.663Z
+total_count: 43
+last_updated: 2026-10-12T16:10:54.367Z
 ---
 
 # Broken Windows Ledger
@@ -57,6 +57,7 @@ last_updated: 2026-10-11T18:37:35.663Z
 | 40 | 37 | todo | core-java/src/main/java/uk/jtoye/core/shop/ShopService.java |  | DEFERRED to Phase 39 (owner ruling 2026-10-10): old-slug 301 aliases (a shop_slug_alias table, RLS-exempt by addition like V62/V75) so printed links and QR codes survive a deliberate slug change; the slug-keep fix itself is 37-48 | open |  | 2026-10-10T18:48:49.311Z |  |
 | 41 | 37 | todo | infra/keycloak/realm-export.template.json |  | staging and production vendor realms are not in this repo: an operator must set ssoSessionMaxLifespan 50400 (D-14 amended 2026-10-10); refresh-token rotation stays off there as here | open |  | 2026-10-10T18:48:49.440Z |  |
 | 42 | 37 | todo | infra/keycloak/realm-export.template.json | 9 | DEFERRED (orchestrator revision 2026-10-10, recorded for the owner): refresh-token rotation stays off (revokeRefreshToken false). A per-process single-flight cannot protect the 3 k8s frontend replicas (nor middleware.ts, which runs auth in another runtime). Turning it on needs a shared guard (a Redis-backed single-flight keyed by refresh token, or sticky sessions proven) or a Keycloak refreshTokenMaxReuse policy, then its own ruling | open |  | 2026-10-10T18:48:49.557Z |  |
+| 43 | 37 | unmet-truth | frontend/app/shop/[slug]/shop-detail-client.tsx |  | 37-36 truth 3 / UI-SPEC C4: the review-form notice was not shipped because the frontend has no review form (reviews are API-only); see 37 deferred-items | open |  | 2026-10-12T16:10:54.367Z |  |
 
 ````json
 [
@@ -603,6 +604,19 @@ last_updated: 2026-10-11T18:37:35.663Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-10T18:48:49.557Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 43,
+    "kind": "unmet-truth",
+    "phase": "37",
+    "file": "frontend/app/shop/[slug]/shop-detail-client.tsx",
+    "line": null,
+    "description": "37-36 truth 3 / UI-SPEC C4: the review-form notice was not shipped because the frontend has no review form (reviews are API-only); see 37 deferred-items",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-12T16:10:54.367Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
