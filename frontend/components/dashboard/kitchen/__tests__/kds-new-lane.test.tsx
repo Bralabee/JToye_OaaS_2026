@@ -328,35 +328,48 @@ describe("KDS New card: Accept says exactly why it failed (UI-SPEC § Copywritin
   })
 })
 
-describe("KDS New card: Reject order (single, through the existing cancel)", () => {
-  it("asks first ('Reject order {number}?', 'Keep order'), then posts /orders/{id}/cancel and leaves the lane", async () => {
+describe("KDS New card: Reject order (single, through RejectOrdersDialog — 37-30)", () => {
+  it("asks first ('Reject order {number}?', a required reason, 'Keep order'), posts the one id to /bulk-cancel with the reason, and Close summary leaves the lane", async () => {
     stubBoard([orderFixture("new-1", "PENDING")])
+    mockPost.mockResolvedValue({ data: { results: [{ orderId: "new-1", outcome: "REJECTED" }] } })
     render(<KitchenPage />)
-
     const card = await newCard("new-1")
+
     await act(async () => {
       fireEvent.click(within(card).getByRole("button", { name: /^Reject order/ }))
     })
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("Reject order ORD-new-1?")).toBeInTheDocument()
-    expect(dialog).toHaveTextContent("The customer is told the shop couldn't accept the order.")
+    expect(dialog).toHaveTextContent("The reason stays on the order for your records and isn't sent to the customer.")
     expect(within(dialog).getByRole("button", { name: "Keep order" })).toBeInTheDocument()
+    const confirm = within(dialog).getByRole("button", { name: "Reject order" })
+    expect(confirm).toBeDisabled()
     expect(mockPost).not.toHaveBeenCalled()
 
+    // This file's Select mock has no placeholder option, so the native select already DISPLAYS
+    // the first reason; choosing a different one is what fires the change (the dialog's own
+    // state starts empty either way — the disabled confirm above is the proof).
+    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "CUSTOMER_REQUEST" } })
     await act(async () => {
-      fireEvent.click(within(dialog).getByRole("button", { name: "Reject order" }))
+      fireEvent.click(confirm)
     })
+    expect(mockPost).toHaveBeenCalledWith("/api/v1/orders/bulk-cancel", {
+      orderIds: ["new-1"],
+      reasonCode: "CUSTOMER_REQUEST",
+    })
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("1 rejected.")
 
-    expect(mockPost).toHaveBeenCalledWith("/api/v1/orders/new-1/cancel")
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close summary" }))
+    })
     await waitFor(() => expect(within(lane()).queryByText("ORD-new-1")).toBeNull())
-    expect(screen.queryByText("ORD-new-1")).toBeNull()
   })
 
   it("'Keep order' closes the dialog and sends nothing", async () => {
     stubBoard([orderFixture("new-1", "PENDING")])
     render(<KitchenPage />)
-
     const card = await newCard("new-1")
+
     await act(async () => {
       fireEvent.click(within(card).getByRole("button", { name: /^Reject order/ }))
     })
@@ -364,9 +377,34 @@ describe("KDS New card: Reject order (single, through the existing cancel)", () 
     await act(async () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Keep order" }))
     })
-
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     expect(mockPost).not.toHaveBeenCalled()
-    expect(within(lane()).getByText("ORD-new-1")).toBeInTheDocument()
+    expectCardStaysUsable(card)
+  })
+
+  it("an order accepted on another screen reads ALREADY_ACCEPTED, and the board is re-read when the summary closes", async () => {
+    stubBoard([orderFixture("new-1", "PENDING")])
+    mockPost.mockResolvedValue({ data: { results: [{ orderId: "new-1", outcome: "ALREADY_ACCEPTED" }] } })
+    render(<KitchenPage />)
+    const card = await newCard("new-1")
+    const readsBefore = mockGet.mock.calls.filter(([u]) => String(u).startsWith("/api/v1/orders/kitchen")).length
+
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: /^Reject order/ }))
+    })
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "OTHER" } })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Reject order" }))
+    })
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "1 couldn't be rejected because it had already been accepted."
+    )
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close summary" }))
+    })
+    await waitFor(() =>
+      expect(mockGet.mock.calls.filter(([u]) => String(u).startsWith("/api/v1/orders/kitchen")).length).toBe(readsBefore + 1)
+    )
   })
 })

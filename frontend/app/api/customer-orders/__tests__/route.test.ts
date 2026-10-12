@@ -13,7 +13,7 @@
  *  - upstream network failure → 502, not an unhandled rejection
  */
 
-import { GET } from "../route"
+import { GET, POST } from "../route"
 import { NextRequest } from "next/server"
 
 const ACCESS_COOKIE = "jtoye-customer-access"
@@ -107,5 +107,96 @@ describe("/api/customer-orders", () => {
     expect(res.status).toBe(502)
     const body = await res.json()
     expect(body).toEqual({ error: "upstream_unavailable" })
+  })
+})
+
+/**
+ * 37-30 (D-18, T-37-76): POST /api/customer-orders?shop={slug} places a signed-in customer's
+ * order through the same server-side proxy, so core receives the access token on
+ * X-Customer-Token (37-27 records contact_verified from it) while the browser never holds it.
+ */
+describe("POST /api/customer-orders?shop=", () => {
+  const realFetch = global.fetch
+  afterEach(() => {
+    global.fetch = realFetch
+    jest.restoreAllMocks()
+  })
+
+  function postRequest(url: string, body: unknown, headers: Record<string, string> = {}): NextRequest {
+    return new NextRequest(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    })
+  }
+
+  it("forwards the body and the Idempotency-Key to /public/shops/{slug}/orders with X-Customer-Token from the cookie", async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      status: 201,
+      headers: new Headers(),
+      json: async () => ({ orderNumber: "ORD-9" }),
+    })
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    const res = await POST(
+      postRequest(
+        "http://localhost/api/customer-orders?shop=jollof-express",
+        { customerEmail: "ade@example.com", idempotencyKey: "k-1" },
+        { cookie: `${ACCESS_COOKIE}=tok-abc`, "idempotency-key": "k-1" }
+      )
+    )
+
+    expect(res.status).toBe(201)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchSpy.mock.calls[0]
+    expect(String(url)).toMatch(/\/public\/shops\/jollof-express\/orders$/)
+    expect(init.method).toBe("POST")
+    expect(init.headers["X-Customer-Token"]).toBe("tok-abc")
+    expect(init.headers["Idempotency-Key"]).toBe("k-1")
+    expect(init.headers["Content-Type"]).toBe("application/json")
+    expect(JSON.parse(init.body)).toEqual({ customerEmail: "ade@example.com", idempotencyKey: "k-1" })
+    expect(await res.json()).toEqual({ orderNumber: "ORD-9" })
+  })
+
+  it("without the cookie it still places the order, as a guest: no X-Customer-Token is sent", async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({ status: 201, headers: new Headers(), json: async () => ({}) })
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    const res = await POST(postRequest("http://localhost/api/customer-orders?shop=jollof-express", { a: 1 }))
+
+    expect(res.status).toBe(201)
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init.headers["X-Customer-Token"]).toBeUndefined()
+  })
+
+  it("passes a typed refusal through unchanged (status, body) and forwards Retry-After when core sends one", async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      status: 429,
+      headers: new Headers({ "Retry-After": "19" }),
+      json: async () => ({ type: "https://jtoye.uk/errors/rate-limited", retryAfterSeconds: 19 }),
+    })
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    const res = await POST(
+      postRequest("http://localhost/api/customer-orders?shop=jollof-express", {}, { cookie: `${ACCESS_COOKIE}=tok` })
+    )
+    expect(res.status).toBe(429)
+    expect(res.headers.get("Retry-After")).toBe("19")
+    expect((await res.json()).retryAfterSeconds).toBe(19)
+  })
+
+  it("refuses a malformed shop slug with 400 and never calls core", async () => {
+    const fetchSpy = jest.fn()
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    const res = await POST(postRequest("http://localhost/api/customer-orders?shop=../admin", {}))
+    expect(res.status).toBe(400)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("upstream network failure is a 502, not an unhandled rejection", async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error("ECONNREFUSED")) as unknown as typeof fetch
+    const res = await POST(postRequest("http://localhost/api/customer-orders?shop=jollof-express", {}))
+    expect(res.status).toBe(502)
   })
 })

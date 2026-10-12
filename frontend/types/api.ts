@@ -358,6 +358,11 @@ export interface Order {
   voidedAt?: string | null
   voidedBy?: string | null
   voidReason?: string | null
+  // Phase 37-27 (D-18, V81): whether the storefront request carried a verified customer token for
+  // its customerEmail. ABSENT (OrderDto is NON_NULL) or null = NOT RECORDED — every vendor, REST and
+  // MCP order and every pre-V81 order. Only `false` renders the "Unverified contact" badge; absent
+  // never does (F20). Never derive it from the absence of a token.
+  contactVerified?: boolean | null
 }
 
 /** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */
@@ -465,6 +470,11 @@ export interface OrderDetail {
   voidedAt?: string | null
   voidedBy?: string | null
   voidReason?: string | null
+  // Phase 37-27 (D-18, V81): whether the storefront request carried a verified customer token for
+  // its customerEmail. ABSENT (OrderDto is NON_NULL) or null = NOT RECORDED — every vendor, REST and
+  // MCP order and every pre-V81 order. Only `false` renders the "Unverified contact" badge; absent
+  // never does (F20). Never derive it from the absence of a token.
+  contactVerified?: boolean | null
 }
 
 export interface CreateOrderRequest {

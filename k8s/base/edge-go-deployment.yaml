@@ -78,6 +78,37 @@ spec:
               key: keycloak.public.issuer.uri
         - name: PORT
           value: "8080"
+        # 37-25 (D-19 / RWO-039): the two rate-limit layers, read from app-config
+        # so an overlay can tune them without patching the Deployment. The valve
+        # (RATE_LIMIT_RPS / RATE_LIMIT_BURST) is per replica — a flood guard, not
+        # a quota; the per-tenant bucket (RATE_LIMIT_TENANT_*) is applied after
+        # JWT validation and keyed on the validated tenant_id. A key with no env
+        # wiring here would be the silently-ignored-value class (DEF-6).
+        - name: RATE_LIMIT_RPS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.rps
+        - name: RATE_LIMIT_BURST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.burst
+        - name: RATE_LIMIT_TENANT_RPS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.tenant.rps
+        - name: RATE_LIMIT_TENANT_BURST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.tenant.burst
+        - name: RATE_LIMIT_TENANT_MAX
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: edge.rate-limit.tenant.max
         resources:
           requests:
             memory: "64Mi"

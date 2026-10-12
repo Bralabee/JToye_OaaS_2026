@@ -356,7 +356,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
-| 37. Real-world operations readiness | v2.3 | 22/53 | In Progress | — |
+| 37. Real-world operations readiness | v2.3 | 30/53 | In Progress | — |
 | 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -995,7 +995,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
   7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end on the delivered runtime. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
   8. **Catalogue & shop admin (37-G).** Vendors can set a delivery fee, a free-delivery threshold and collection-only, enforced on every writer, and editing a shop keeps its public address.
 
-**Plans:** 22/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
+**Plans:** 30/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
 
 Plans:
 **Wave 1**
@@ -1053,28 +1053,28 @@ Plans:
 - [x] 37-21-PLAN.md — 37-A: kitchen pause control, hours editor, vendor hours notices
 
 **Wave 17** *(blocked on Wave 16 completion)*
-- [ ] 37-23-PLAN.md — 37-A gate
+- [x] 37-23-PLAN.md — 37-A gate
 
 **Wave 18** *(blocked on Wave 17 completion)*
-- [ ] 37-24-PLAN.md — 37-D: trusted-proxy client IP resolver and render invariant
+- [x] 37-24-PLAN.md — 37-D: trusted-proxy client IP resolver and render invariant
 
 **Wave 19** *(blocked on Wave 18 completion)*
-- [ ] 37-25-PLAN.md — 37-D: edge per-tenant rate limiter with typed 429
+- [x] 37-25-PLAN.md — 37-D: edge per-tenant rate limiter with typed 429
 
 **Wave 20** *(blocked on Wave 19 completion)*
-- [ ] 37-26-PLAN.md — 37-D: order size limits on every writer; review shop check
+- [x] 37-26-PLAN.md — 37-D: order size limits on every writer; review shop check
 
 **Wave 21** *(blocked on Wave 20 completion)*
-- [ ] 37-27-PLAN.md — 37-D: open cash-order caps by email/phone; contact-verified flag (V81)
+- [x] 37-27-PLAN.md — 37-D: open cash-order caps by email/phone; contact-verified flag (V81)
 
 **Wave 22** *(blocked on Wave 21 completion)*
-- [ ] 37-28-PLAN.md — 37-D: keyed client-IP digest cap, retention and erasure (D-27)
+- [x] 37-28-PLAN.md — 37-D: keyed client-IP digest cap, retention and erasure (D-27)
 
 **Wave 23** *(blocked on Wave 22 completion)*
-- [ ] 37-29-PLAN.md — 37-D: bulk reject with a kept reason
+- [x] 37-29-PLAN.md — 37-D: bulk reject with a kept reason
 
 **Wave 24** *(blocked on Wave 23 completion)*
-- [ ] 37-30-PLAN.md — 37-D: reject dialog, unverified badge, checkout refusals, stepper limit, R-16
+- [x] 37-30-PLAN.md — 37-D: reject dialog, unverified badge, checkout refusals, stepper limit, R-16
 
 **Wave 25** *(blocked on Wave 24 completion)*
 - [ ] 37-31-PLAN.md — 37-D gate

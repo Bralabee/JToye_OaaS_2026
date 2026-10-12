@@ -109,6 +109,87 @@ export function basketAllergenMask(
   return mask
 }
 
+// ---------------------------------------------------------------------------------------------
+// 37-30 (UI-SPEC § D1; D-18, D-20): the two typed refusals a cash order can meet, each with its
+// own sentence, branched on the problem TYPE before describeOrderError's generic path. The cap
+// 429 carries no Retry-After by design (a slot frees when an order completes, not when time
+// passes), so it must never read as the rate-limiter's "wait N seconds" and is never retried.
+// The limit 422 interpolates the limit and the item FROM THE BODY: no limit lives here.
+// ---------------------------------------------------------------------------------------------
+
+export const ORDER_CAP_PROBLEM_TYPE = "https://jtoye.uk/errors/order-cap-exceeded"
+export const ORDER_LIMIT_PROBLEM_TYPE = "https://jtoye.uk/errors/order-limit-exceeded"
+export const PAY_BY_CARD_SUFFIX = ", or pay by card"
+
+export type OrderCapAxis = "EMAIL" | "PHONE" | "IP"
+
+function problemOf(err: unknown): { status?: number; data?: Record<string, unknown> } | null {
+  const res = (err as { response?: { status?: number; data?: unknown } } | null)?.response
+  if (!res || typeof res.data !== "object" || res.data === null) return null
+  return { status: res.status, data: res.data as Record<string, unknown> }
+}
+
+function hasType(data: Record<string, unknown>, exact: string, suffix: string): boolean {
+  const type = data.type
+  return typeof type === "string" && (type === exact || type.endsWith(suffix))
+}
+
+/** 37-27's 429 order-cap-exceeded, with its axis (an unknown axis reads as the customer's). */
+export function readOrderCapProblem(err: unknown): { axis: OrderCapAxis } | null {
+  const res = problemOf(err)
+  if (!res || res.status !== 429 || !res.data) return null
+  if (!hasType(res.data, ORDER_CAP_PROBLEM_TYPE, "/order-cap-exceeded")) return null
+  const axis = res.data.axis
+  return { axis: axis === "IP" || axis === "PHONE" ? axis : "EMAIL" }
+}
+
+/** UI-SPEC § Copywriting C1-C4 "Cap 429": by axis, with the card suffix only when cards are taken. */
+export function orderCapCopy(axis: OrderCapAxis, cardOffered: boolean): string {
+  const suffix = cardOffered ? PAY_BY_CARD_SUFFIX : ""
+  if (axis === "IP") {
+    return `Too many cash orders have been placed from this connection. Try again later${suffix}.`
+  }
+  return `You already have the most open cash orders this shop allows for one customer. You can order again once one is completed${suffix}.`
+}
+
+export interface OrderLimitProblem {
+  field: string
+  value: number
+  limit: number
+  productName: string | null
+}
+
+/** 37-26's 422 order-limit-exceeded; null when it is not one or the body's limit is unusable. */
+export function readOrderLimitProblem(err: unknown): OrderLimitProblem | null {
+  const res = problemOf(err)
+  if (!res || res.status !== 422 || !res.data) return null
+  if (!hasType(res.data, ORDER_LIMIT_PROBLEM_TYPE, "/order-limit-exceeded")) return null
+  const { field, value, limit, productName } = res.data
+  if (typeof field !== "string" || typeof limit !== "number" || !Number.isFinite(limit)) return null
+  return {
+    field,
+    value: typeof value === "number" ? value : Number.NaN,
+    limit,
+    productName: typeof productName === "string" && productName.length > 0 ? productName : null,
+  }
+}
+
+/** UI-SPEC § Copywriting C1-C4 "Limit 422": the numbers come from the body, never from here. */
+export function orderLimitCopy(p: OrderLimitProblem): string {
+  switch (p.field) {
+    case "quantity":
+      return `You can order up to ${p.limit} of one item. Reduce ${p.productName ?? "it"} to ${p.limit} or fewer.`
+    case "units":
+      return `This order is bigger than this shop accepts online (up to ${p.limit} items). Contact the shop for large orders.`
+    case "lines":
+      return `This order is bigger than this shop accepts online (up to ${p.limit} lines). Contact the shop for large orders.`
+    case "total":
+      return `This order is over this shop's online limit of ${formatPrice(p.limit)}. Contact the shop for large orders.`
+    default:
+      return "This order is bigger than this shop accepts online. Contact the shop for large orders."
+  }
+}
+
 /** The current set a stale-acknowledgement 409 carries, or null when it is not one / is malformed. */
 type StaleAllergenSet = { mask: number; names: string[] }
 
@@ -300,10 +381,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // Pre-fill from customer session if logged in (async, cookie-backed)
   const [customerName, setCustomerName] = useState("")
   const [customerEmail, setCustomerEmail] = useState("")
+  // 37-30 (37-27, T-37-76): whether a customer is signed in decides WHERE the order is posted.
+  // The access token is an HttpOnly cookie the browser cannot read, so a signed-in customer's
+  // order goes through the same-origin proxy (POST /api/customer-orders?shop=) that adds
+  // X-Customer-Token server-side — the /orders/mine shape — and core records the contact as
+  // verified. A guest's order goes straight to core as before.
+  const [customerSignedIn, setCustomerSignedIn] = useState(false)
   useEffect(() => {
     let cancelled = false
     getCustomerSession().then((session) => {
       if (cancelled || !session) return
+      setCustomerSignedIn(true)
       setCustomerName((prev) => prev || session.profile.name || "")
       setCustomerEmail((prev) => prev || session.profile.email || "")
     })
@@ -663,8 +751,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       // other mutating endpoint speaks; the body field is the storefront's working legacy
       // convention and stays authoritative server-side. Both are sent (additive — nothing
       // displaced), carrying the same value.
+      // An ABSOLUTE same-origin URL bypasses the client's core baseURL; the proxy forwards the
+      // body and the Idempotency-Key and adds the token from the cookie (never from here).
+      const orderUrl = customerSignedIn
+        ? `${window.location.origin}/api/customer-orders?shop=${encodeURIComponent(slug)}`
+        : `/public/shops/${slug}/orders`
       const res = await publicApiClient.post<GuestOrderConfirmation>(
-        `/public/shops/${slug}/orders`,
+        orderUrl,
         payload,
         { headers: { "Idempotency-Key": idempotencyKey } }
       )
@@ -740,6 +833,19 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       const shopClosed = readShopClosedProblem(err)
       if (shopClosed) {
         setError(shopClosedRaceCopy(shop?.name ?? "This shop", shopClosed))
+        return
+      }
+      // 37-30 (UI-SPEC § D1): the cash-order cap and the order limits, by type, before the generic
+      // path. Nothing was written and no reservation held on either (37-26, 37-27); the basket is
+      // kept and NOTHING retries — a cap 429 has no Retry-After to honour and must not be looped.
+      const cap = readOrderCapProblem(err)
+      if (cap) {
+        setError(orderCapCopy(cap.axis, shop?.acceptsCardPayments === true))
+        return
+      }
+      const limit = readOrderLimitProblem(err)
+      if (limit) {
+        setError(orderLimitCopy(limit))
         return
       }
       // #409: this used to read ONLY `response.data.detail` (RFC 7807). The rate

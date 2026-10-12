@@ -25,6 +25,35 @@ definitions:
         example: 1713484800
         type: integer
     type: object
+  main.ProblemDetail:
+    properties:
+      code:
+        description: Stable machine-readable code. RATE_LIMITED for a 429.
+        example: RATE_LIMITED
+        type: string
+      detail:
+        description: Human-readable explanation specific to this occurrence.
+        example: Rate limit exceeded. Please try again in 1 seconds.
+        type: string
+      retryAfterSeconds:
+        description: Whole seconds to wait before retrying; equals the Retry-After
+          header.
+        example: 1
+        type: integer
+      status:
+        description: HTTP status code, repeated in the body.
+        example: 429
+        type: integer
+      title:
+        description: Short human-readable summary of the problem type.
+        example: Too Many Requests
+        type: string
+      type:
+        description: Stable problem type URI. https://jtoye.uk/errors/rate-limited
+          for a 429.
+        example: https://jtoye.uk/errors/rate-limited
+        type: string
+    type: object
   main.ReadyResponse:
     properties:
       core:
@@ -90,6 +119,14 @@ paths:
         breaker so edge degrades gracefully when Core is down. The
         caller must present a Keycloak JWT — the tenant_id claim
         is extracted and used to scope the write.
+
+        Rate-limited per tenant AFTER authentication, keyed on the
+        token's tenant_id (RATE_LIMIT_TENANT_RPS / _BURST), beneath a
+        per-replica pre-auth valve (RATE_LIMIT_RPS / _BURST) that only
+        guards against floods. A 429 from either layer is
+        application/problem+json with type
+        https://jtoye.uk/errors/rate-limited and code RATE_LIMITED;
+        wait Retry-After seconds, then retry the same request.
       parameters:
       - description: Batch payload
         in: body
@@ -112,6 +149,27 @@ paths:
           description: Missing or malformed Bearer token
           schema:
             $ref: '#/definitions/main.ErrorResponse'
+        "429":
+          description: 'Rate limit exceeded: the caller''s tenant bucket or this replica''s
+            pre-auth valve is empty. application/problem+json, type https://jtoye.uk/errors/rate-limited,
+            code RATE_LIMITED. Wait Retry-After seconds.'
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before retrying (at least 1); equals
+                retryAfterSeconds in the body
+              type: integer
+            X-RateLimit-Limit:
+              description: 'Capacity of the bucket that refused: the per-tenant burst,
+                or the valve''s burst'
+              type: integer
+            X-RateLimit-Remaining:
+              description: Tokens left in that bucket (always 0 on a 429)
+              type: integer
+            X-RateLimit-Reset:
+              description: Unix epoch second at which that bucket is full again
+              type: integer
+          schema:
+            $ref: '#/definitions/main.ProblemDetail'
         "502":
           description: Core API unreachable or tripped the circuit breaker
           schema:
@@ -170,6 +228,27 @@ paths:
           description: Missing or invalid HMAC signature
           schema:
             $ref: '#/definitions/main.ErrorResponse'
+        "429":
+          description: This replica's pre-auth valve is empty (a per-replica flood
+            guard, not a quota; the route is public, so no tenant bucket applies).
+            application/problem+json, type https://jtoye.uk/errors/rate-limited, code
+            RATE_LIMITED. Wait Retry-After seconds.
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before retrying (at least 1); equals
+                retryAfterSeconds in the body
+              type: integer
+            X-RateLimit-Limit:
+              description: Capacity of the valve (its burst)
+              type: integer
+            X-RateLimit-Remaining:
+              description: Tokens left in the valve (always 0 on a 429)
+              type: integer
+            X-RateLimit-Reset:
+              description: Unix epoch second at which the valve is full again
+              type: integer
+          schema:
+            $ref: '#/definitions/main.ProblemDetail'
         "503":
           description: WHATSAPP_APP_SECRET not configured — the route is unavailable
             until an operator sets it (fails closed)

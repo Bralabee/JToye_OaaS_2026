@@ -447,6 +447,17 @@ class AllergyNoteAckIntegrationTest {
         return json(created, 201).path("orderNumber").asString();
     }
 
+    /**
+     * 37-27 (D-18): the cash-order caps count OPEN orders per email AND per phone at a shop (three each),
+     * and the shop and its orders persist across this class's arms, so every arm needs its own contact
+     * details (RESEARCH Pitfall 9: unique details, never a raised default). The phone is derived from the
+     * arm's address rather than drawn at random so an arm that resubmits an identical body (an
+     * idempotency replay) still sends the same body.
+     */
+    private static String phoneFor(String email) {
+        return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
+    }
+
     private Map<String, Object> body(String email, UUID product, String notes, String allergyNote) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("productId", product);
@@ -454,7 +465,7 @@ class AllergyNoteAckIntegrationTest {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("customerName", "Allergy Note Buyer");
         body.put("customerEmail", email);
-        body.put("customerPhone", "+447700900313");
+        body.put("customerPhone", phoneFor(email));
         body.put("fulfilmentType", "COLLECTION");
         body.put("items", List.of(item));
         body.put("acknowledgedAllergenMask",
@@ -561,8 +572,19 @@ class AllergyNoteAckIntegrationTest {
         return "/api/v1/public/shops/" + SHOP_SLUG + "/orders";
     }
 
+    /**
+     * 37-28 (D-27): every storefront request in an arm is sent from the arm's own socket peer. MockMvc's
+     * default is 127.0.0.1 for every request, so across a class run that one "client" held more than
+     * jtoye.storefront.cash-caps.per-ip (5) open cash orders at the shop and the IP axis refused later
+     * arms 429 order-cap-exceeded (measured when the axis landed). Each arm draws its own RFC 5737
+     * address, so the only refusal an arm can meet is the one it is about (RESEARCH Pitfall 9).
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger ARM_PEER = new java.util.concurrent.atomic.AtomicInteger();
+    private final String armPeer = "203.0.113." + (1 + ARM_PEER.getAndIncrement() % 250);
+
     private MvcResult perform(MockHttpServletRequestBuilder request, Object body) throws Exception {
         return mockMvc.perform(request.contentType(MediaType.APPLICATION_JSON)
+                        .with(r -> { r.setRemoteAddr(armPeer); return r; })
                         .content(jsonMapper.writeValueAsString(body)))
                 .andReturn();
     }

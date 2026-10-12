@@ -191,6 +191,61 @@ jtoye:
     # Only an EXPLICITLY supplied slug can collide: ShopService appends a random
     # 8-character suffix to any slug it generates itself.
     reserved-slugs: ${SHOP_RESERVED_SLUGS:account,auth,orders,signin}
+  # Phase 37-26 (D-20, RWO-042 / UXT-042): how large ONE order may be. Read by OrderLimits, the
+  # single validator every order writer calls (storefront checkout, vendor dashboard, REST API and
+  # the MCP create_order tool), so a 1,000,000-unit line is refused 422 order-limit-exceeded on every
+  # path instead of being persisted as a GBP 19 billion order. Config KEYS, not secrets; env-
+  # overridable per runtime (compose, .env.example, k8s app-config). The defaults clear every real
+  # basket the persona run produced: a 20-line, 40-unit basket (P2-CHA-16) and the UXT-007 office
+  # lunch (about 35 items, GBP 198.50) hit no limit. A value below 1 refuses to start, naming the key.
+  order-limits:
+    # Most units of one product on one line.
+    max-line-quantity: ${ORDER_LIMIT_MAX_LINE_QUANTITY:50}
+    # Most units across the whole basket.
+    max-basket-units: ${ORDER_LIMIT_MAX_BASKET_UNITS:200}
+    # Most distinct lines in one basket.
+    max-lines: ${ORDER_LIMIT_MAX_LINES:50}
+    # Highest basket total (the line totals, delivery excluded), in pennies: GBP 1,000.00.
+    max-basket-total-pennies: ${ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES:100000}
+  storefront:
+    # Phase 37-27 (D-18, RWO-041 / UXT-041): the most OPEN cash orders (PENDING, CONFIRMED, PREPARING or
+    # READY, paid in cash, not voided) ONE customer identity may hold at ONE shop. Read by CashOrderCaps,
+    # which refuses the next one 429 order-cap-exceeded (its own type, never the auto-retried
+    # rate-limited one). A COUNT, not a rate: a slot frees when the kitchen completes or cancels an
+    # order. Card orders are outside the cap. Config KEYS, not secrets (D-18: never literals); a value
+    # below 1 refuses to start, naming the key. Compose keeps these defaults (RESEARCH Pitfall 9: an E2E
+    # spec that trips a cap uses unique contact details, never a raised default); k8s declares them in
+    # app-config (CASH_CAP_PER_EMAIL / _PHONE / _IP, 37-28) so every render states them.
+    cash-caps:
+      # Per normalised (trimmed, lower-cased) email address.
+      per-email: ${CASH_CAP_PER_EMAIL:3}
+      # Per normalised phone number (digits only; a UK leading 0 is read as +44, so "07700 900123" and
+      # "+44 7700 900123" are one number).
+      per-phone: ${CASH_CAP_PER_PHONE:3}
+      # Per client address, counted on the keyed digest orders.client_ip_digest (D-27) — the axis
+      # 37-28 enforces. Higher than the identity caps: one household or office shares one address.
+      per-ip: ${CASH_CAP_PER_IP:5}
+    # Phase 37-28 (D-27, RWO-041): the HMAC-SHA256 key under which ClientIpDigester turns the resolved
+    # client address (ClientIpResolver, D-19) into the pseudonym stored on orders.client_ip_digest for
+    # the per-ip cap above. A SECRET, unlike the caps: 64 hexadecimal characters (32 bytes), generated
+    # with `openssl rand -hex 32`, supplied only by the environment (the DSAR_ENCRYPTION_KEY shape). The
+    # default is deliberately EMPTY so an absent key fails fast at startup (ClientIpDigester refuses to
+    # construct, naming this property and never the value) instead of digesting under something
+    # guessable — a plain or weakly-keyed hash of the IPv4 space is reversible by enumeration. Never
+    # commit a value here. Rotating it only changes which open orders a client is counted against.
+    client-ip-hmac-key: ${CLIENT_IP_HMAC_KEY:}
+    # Phase 37-28 (D-27): the DECLARED lifetime of that digest. OrderService nulls it the moment an
+    # order reaches COMPLETED, CANCELLED or REFUNDED (the cap counts open orders only), but an order is
+    # not guaranteed to reach one, so ClientIpDigestRetentionSweep also nulls, once a day, every digest
+    # older than retention-hours in every tenant (one pinned at a time: a bare UPDATE under FORCE RLS
+    # matches zero rows and reports success). 72 hours: longer than any open order should sit on a
+    # kitchen board, shorter than any retention a network address could justify. Published as the
+    # retention period for this data (the customer-facing register row lands with 37-30's copy).
+    # A value below 1 refuses to start, naming the key. The cron is the hour the sweep runs at, a
+    # config key rather than a tunable; the @Scheduled annotation carries the same inline default.
+    client-ip-digest:
+      retention-hours: ${CLIENT_IP_DIGEST_RETENTION_HOURS:72}
+      sweep-cron: "0 20 3 * * *"
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:
@@ -323,6 +378,21 @@ jtoye:
         # would let a flood do real damage in an hour.
         global-requests-per-hour: ${DSAR_RATE_LIMIT_GLOBAL_REQUESTS_PER_HOUR:200}
   security:
+    # 37-24 (D-19, RWO-006 / UXT-006): the proxies whose X-Forwarded-For core believes. A
+    # comma-separated CIDR list (IPv4 or IPv6), read by ClientIpResolver. The header is read ONLY
+    # when the socket peer is inside one of these ranges, walking the hops from the right and
+    # taking the first address that is not itself a trusted proxy; from any other peer the header
+    # is ignored and the socket address is the client. DEFAULT EMPTY = TRUST NONE: with no proxies
+    # declared every client is its socket address, the safe posture, because a client can write any
+    # header but cannot forge the address its packets come from. A resolver that believed the
+    # header from anyone let a rotated header mint a fresh public bucket per request (the #88
+    # regression). 0.0.0.0/0 and ::/0 are REFUSED at startup, and k8s/scripts/check-render-invariants.sh
+    # fails a rendered overlay carrying /0, a prefix shorter than /8 or a public range: "trust
+    # everyone" re-opens UXT-006 exactly. Compose leaves it empty (browsers reach core directly);
+    # each k8s overlay declares its ingress controller's pod range (staging/production: an operator
+    # input, see 37-24's user_setup). server.forward-headers-strategy stays UNSET on purpose:
+    # Tomcat's RemoteIpValve would be a second, silent trust list this bean cannot see.
+    trusted-proxies: ${TRUSTED_PROXY_CIDRS:}
     jwt:
       expected-audience: ${JWT_EXPECTED_AUDIENCE:core-api}
       # issue #87 follow-up (split-horizon issuer fix): the value required in the
@@ -511,6 +581,17 @@ jtoye:
     # edit, which is the whole point of surfacing them here.
     default-radius-km: ${GEO_DEFAULT_RADIUS_KM:5}
     max-radius-km: ${GEO_MAX_RADIUS_KM:50}
+  # Phase 37-29 (D-18, RWO-041 / roadmap SC-4): how many orders ONE bulk reject may name. Read by
+  # BulkCancelLimit; a request above it is refused 400 bulk-cancel-too-large before any order is
+  # touched, and a value below 1 refuses to start, naming the key. A config KEY, not a secret (D-18:
+  # never a literal in code). No env placeholder, deliberately: every runtime keeps this default
+  # (Spring relaxed binding still honours JTOYE_ORDERS_BULKCANCEL_MAXIDS if an operator must move
+  # it), so the env-contract gate owes no compose / .env.example / k8s line — the 37-27 cash-caps
+  # precedent. Each id is its own transaction, cancel transition, outbox row and customer email,
+  # so the bound is a bound on one request's work; 100 exceeds any kitchen board page.
+  orders:
+    bulk-cancel:
+      max-ids: 100
 
 # Outbox flusher tunables (27-04 T4, finding E). PRE-EXISTING DEFECT fixed here, not introduced:
 # these eight keys were bound by @Value/@Scheduled inline defaults and appeared in NO yml, env

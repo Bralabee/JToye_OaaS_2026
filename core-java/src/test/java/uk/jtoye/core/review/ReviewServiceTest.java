@@ -80,6 +80,9 @@ class ReviewServiceTest {
             idField.setAccessible(true);
             idField.set(order, orderId);
         } catch (Exception e) { throw new RuntimeException(e); }
+        // 37-26 (D-21): the fixture order is placed AT the reviewed shop. Until the shop check
+        // existed this was never declared, and a null shop id passed every gate.
+        order.setShopId(shopId);
         order.setStatus(OrderStatus.COMPLETED);
         order.setCustomerEmail("test@example.com");
         order.setCustomerName("Test User");
@@ -171,6 +174,24 @@ class ReviewServiceTest {
         assertNotNull(result);
         assertEquals(5, result.getFoodRating());
         assertEquals(4, result.getDeliveryRating());
+    }
+
+    @Test
+    @DisplayName("37-26 D-21 / UXT-005: createReview refuses an order placed at ANOTHER shop of the tenant, before the COMPLETED and duplicate gates")
+    void createReview_refusesAnOrderFromAnotherShop() {
+        order.setShopId(UUID.randomUUID()); // bought at shop A; reviewing the shop the slug resolves to
+        CreateReviewRequest request = new CreateReviewRequest();
+        request.setOrderId(orderId);
+        request.setFoodRating(5);
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop")).thenReturn(Optional.of(shop));
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        // lenient: on the fixed tree the refusal fires before save; on the unfixed tree save is reached.
+        lenient().when(reviewRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertThrows(uk.jtoye.core.exception.ReviewOrderShopMismatchException.class,
+                () -> reviewService.createReview("test-shop", "test@example.com", request));
+        verify(reviewRepository, never()).save(any());
     }
 
     @Test

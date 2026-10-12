@@ -397,3 +397,74 @@ data:
   # config edit. scripts/check-strict-scoping-default.sh (CI) fails on a "false"
   # here, in any overlay or golden, in compose, .env.example or application*.yml.
   access.strict-scoping: "true"
+
+  # --- Trusted proxies (37-24, D-19 / RWO-006) ---------------------------------
+  # Consumed as core TRUSTED_PROXY_CIDRS -> application.yml
+  # jtoye.security.trusted-proxies: the CIDR ranges whose X-Forwarded-For core
+  # believes (comma-separated). The header is read only when the socket peer is
+  # inside one of them, walking the hops from the right; from anyone else it is
+  # ignored and the socket address is the client, so a header a client writes can
+  # never choose its rate-limit bucket (UXT-006, the #88 regression).
+  #
+  # "" = TRUST NONE, the safe default and the base value. Each overlay declares
+  # its ingress-nginx controller's POD CIDR (the ingress is the only thing that
+  # appends the header before core sees it): k8s/local the minikube default,
+  # staging/production an operator input left empty until measured (37-24
+  # user_setup). INV-12 in k8s/scripts/check-render-invariants.sh fails any
+  # render whose value carries /0, a prefix shorter than /8 or a public range, and
+  # core refuses to start on 0.0.0.0/0 or ::/0.
+  security.trusted-proxies: ""
+
+  # --- Order size limits (37-26, D-20 / RWO-042, UXT-042) ----------------------
+  # Consumed as core ORDER_LIMIT_MAX_LINE_QUANTITY, ORDER_LIMIT_MAX_BASKET_UNITS,
+  # ORDER_LIMIT_MAX_LINES and ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES ->
+  # application.yml jtoye.order-limits.*: how large ONE order may be, enforced
+  # by OrderLimits on every writer (storefront checkout, vendor dashboard, REST
+  # API, MCP create_order) as a typed 422 order-limit-exceeded. A 1,000,000-unit
+  # line was accepted as a GBP 19 billion order before it. The values are the
+  # application.yml defaults, declared here so every render states them (the
+  # DEF-6 shape: a default nobody declared is a default nobody reviewed); they
+  # clear a 20-line / 40-unit basket and a 35-item GBP 198.50 office lunch. A
+  # value below 1 refuses to start, naming the key. The storefront stepper reads
+  # the line limit from the public shop payload (maxLineQuantity).
+  order-limits.max-line-quantity: "50"
+  order-limits.max-basket-units: "200"
+  order-limits.max-lines: "50"
+  order-limits.max-basket-total-pennies: "100000"
+
+  # --- Cash-order caps and the client-IP digest window (37-27 / 37-28, D-18 / D-27) --
+  # Consumed as core CASH_CAP_PER_EMAIL, CASH_CAP_PER_PHONE, CASH_CAP_PER_IP ->
+  # application.yml jtoye.storefront.cash-caps.*: the most OPEN cash orders (PENDING,
+  # CONFIRMED, PREPARING or READY, paid in cash, not voided) one trimmed lower-cased
+  # email, one normalised phone and one client address may hold at ONE shop; the next is
+  # a typed 429 order-cap-exceeded (no Retry-After: a slot frees when an order completes).
+  # The IP axis counts on a keyed digest of the address (CLIENT_IP_HMAC_KEY, a Secret),
+  # never the address, and CLIENT_IP_DIGEST_RETENTION_HOURS ->
+  # jtoye.storefront.client-ip-digest.retention-hours is how long that digest is kept
+  # before a daily per-tenant sweep nulls it (it is also nulled when the order reaches a
+  # terminal state and by Article 17 erasure). The values are the application.yml
+  # defaults, declared here so every render states them (DEF-6). A value below 1 on any
+  # of the four refuses to start, naming the key.
+  storefront.cash-caps.per-email: "3"
+  storefront.cash-caps.per-phone: "3"
+  storefront.cash-caps.per-ip: "5"
+  storefront.client-ip-digest.retention-hours: "72"
+
+  # --- Edge rate limits (37-25, D-19 / RWO-039) --------------------------------
+  # Consumed by edge-go (k8s/base/edge-go-deployment.yaml) as RATE_LIMIT_RPS,
+  # RATE_LIMIT_BURST, RATE_LIMIT_TENANT_RPS, RATE_LIMIT_TENANT_BURST and
+  # RATE_LIMIT_TENANT_MAX. Two layers. The pre-auth, process-wide valve is a
+  # PER-REPLICA flood guard, not a quota: the effective ceiling is the value
+  # times the replica count. The per-tenant bucket is applied after JWT
+  # validation and keyed on the validated tenant_id, so one integrator's burst
+  # cannot exhaust another vendor's sync (UXT-039). Every 429 from either layer
+  # is application/problem+json (type https://jtoye.uk/errors/rate-limited)
+  # with Retry-After and the X-RateLimit-* headers. The values are the code
+  # defaults; core's Bucket4j per-tenant quota (100/min + burst 20) stays the
+  # authoritative limit beneath the edge's 10 rps / 20. The tenant max bounds
+  # the buckets held in memory; tenants beyond it share one overflow bucket.
+  edge.rate-limit.rps: "200"
+  edge.rate-limit.burst: "400"
+  edge.rate-limit.tenant.rps: "10"
+  edge.rate-limit.tenant.burst: "20"
+  edge.rate-limit.tenant.max: "10000"

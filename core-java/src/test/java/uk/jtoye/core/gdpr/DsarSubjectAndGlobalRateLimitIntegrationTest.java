@@ -26,8 +26,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /**
  * QA-council cluster S1 (SEC-1) — {@code DsarIntakeRateLimiter}'s ONLY bucket was keyed on
- * {@link uk.jtoye.core.security.ClientIpResolver#resolveClientIp(jakarta.servlet.http.HttpServletRequest)},
- * which trusts the FIRST, client-controllable {@code X-Forwarded-For} hop. Rotating that header on
+ * {@link uk.jtoye.core.security.ClientIpResolver#resolve(jakarta.servlet.http.HttpServletRequest)}, which until 37-24 (D-19)
+ * trusted the FIRST, client-controllable {@code X-Forwarded-For} hop from ANY peer. Rotating that header on
  * every request defeats the bucket entirely: each "new" IP gets its own fresh 5/hour allowance, so
  * an attacker can drive an unbounded number of real verification emails at any address it names —
  * an email-bombing amplifier hiding behind a rate limiter.
@@ -162,7 +162,7 @@ class DsarSubjectAndGlobalRateLimitIntegrationTest {
     private org.springframework.test.web.servlet.ResultActions lodge(String email, String clientIp)
             throws Exception {
         return mockMvc.perform(post(INTAKE_PATH)
-                .header("X-Forwarded-For", clientIp)
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }) // 37-24 (D-19): identity is the socket peer; the header is inert
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
                         Map.of("email", email, "requestType", "ERASURE"))));

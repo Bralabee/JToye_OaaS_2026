@@ -87,6 +87,8 @@ class OrderCreateFulfilmentTest {
 
     /** Real, not mocked — see the note in OrderServiceTest (COR-5). */
     @Spy private OrderNumberGenerator orderNumberGenerator = new OrderNumberGenerator();
+    /** 37-26 (D-20): a REAL validator at the shipped defaults, for the same reason as the generator above. */
+    @Spy private OrderLimits orderLimits = new OrderLimits(50, 200, 50, 100_000L);
 
     @InjectMocks private OrderService orderService;
 

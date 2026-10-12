@@ -39,6 +39,9 @@ import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
+import uk.jtoye.core.exception.OrderCapExceededException;
+import uk.jtoye.core.exception.BulkCancelTooLargeException;
+import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
 import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
@@ -49,6 +52,7 @@ import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.ReviewOrderShopMismatchException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.exception.ShopClosedException;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
@@ -873,6 +877,86 @@ public class GlobalExceptionHandler {
         problem.setProperty("code", "SHOP_CLOSED");
         problem.setProperty("reason", ex.getReason());
         problem.setProperty("reopensAt", ex.getReopensAt());
+        return problem;
+    }
+
+    /**
+     * Phase 37-26 (D-20, RWO-042 / UXT-042): an order is larger than the platform allows — a line
+     * quantity, the number of lines, the number of units or the basket total is above its configured
+     * limit ({@code jtoye.order-limits.*}). 422: every field is valid on its own, the order as a whole
+     * is refused. Thrown by {@link uk.jtoye.core.order.OrderLimits} on EVERY writer (storefront,
+     * vendor dashboard, REST API, MCP), so this is the one body all of them return.
+     *
+     * <p>{@code field} ({@code quantity | lines | units | total}), {@code value} and {@code limit}
+     * are typed properties so the storefront can point at the line and stop its stepper at the
+     * limit, and an agent can branch without parsing the sentence; {@code productName} names the
+     * line for a {@code quantity} refusal and is null for a basket-level one.
+     */
+    @ExceptionHandler(OrderLimitExceededException.class)
+    public ProblemDetail handleOrderLimitExceeded(OrderLimitExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Order too large");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-limit-exceeded"));
+        problem.setProperty("code", "ORDER_LIMIT_EXCEEDED");
+        problem.setProperty("field", ex.getField());
+        problem.setProperty("value", ex.getValue());
+        problem.setProperty("limit", ex.getLimit());
+        problem.setProperty("productName", ex.getProductName());
+        return problem;
+    }
+
+    /**
+     * Phase 37-29 (D-18, RWO-041 / SC-4): a bulk cancel named more order ids than
+     * {@code jtoye.orders.bulk-cancel.max-ids} allows. 400 with its own type: the request as a whole
+     * is outside the contract before any id is read, and nothing was written. {@code count} and
+     * {@code limit} are typed properties, so the dashboard can split the selection and an agent can
+     * branch without parsing the sentence.
+     */
+    @ExceptionHandler(BulkCancelTooLargeException.class)
+    public ProblemDetail handleBulkCancelTooLarge(BulkCancelTooLargeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Too many orders in one request");
+        problem.setType(URI.create("https://jtoye.uk/errors/bulk-cancel-too-large"));
+        problem.setProperty("code", "BULK_CANCEL_TOO_LARGE");
+        problem.setProperty("count", ex.getCount());
+        problem.setProperty("limit", ex.getLimit());
+        return problem;
+    }
+
+    /**
+     * Phase 37-27 (D-18, RWO-041 / UXT-041): one customer identity already holds the most OPEN cash
+     * orders this shop allows. 429 with its OWN type and code: {@code lib/api-client.ts} auto-retries a
+     * 429 of type {@code rate-limited}, and a cap is not time-based — the slot frees when an order
+     * completes — so this type must never be that one and NO {@code Retry-After} is sent (RESEARCH
+     * Pitfall 8). {@code axis} ({@code EMAIL | PHONE | IP}) and {@code cap} are typed properties: the
+     * checkout shows the copy for the axis (UI-SPEC D1) and an agent branches without parsing the
+     * sentence. Thrown by {@link uk.jtoye.core.storefront.CashOrderCaps} inside the reserved idempotency
+     * work, so the refusal leaves no order and no reservation.
+     */
+    @ExceptionHandler(OrderCapExceededException.class)
+    public ProblemDetail handleOrderCapExceeded(OrderCapExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problem.setTitle("Too many open cash orders");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-cap-exceeded"));
+        problem.setProperty("code", "ORDER_CAP_EXCEEDED");
+        problem.setProperty("axis", ex.getAxis().name());
+        problem.setProperty("cap", ex.getCap());
+        return problem;
+    }
+
+    /**
+     * Phase 37-26 (D-21, RWO-005 / UXT-005 P0): a review cited an order that was not placed at the
+     * shop being reviewed. 400 with its own stable type and code, distinct from the generic
+     * {@code invalid-argument} the other review gates still use, so the storefront can say exactly
+     * why and an agent can branch without parsing the sentence. The detail is a constant: it names
+     * neither the order's real shop nor anything else about it.
+     */
+    @ExceptionHandler(ReviewOrderShopMismatchException.class)
+    public ProblemDetail handleReviewOrderShopMismatch(ReviewOrderShopMismatchException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Order not from this shop");
+        problem.setType(URI.create("https://jtoye.uk/errors/review-order-shop-mismatch"));
+        problem.setProperty("code", "REVIEW_ORDER_SHOP_MISMATCH");
         return problem;
     }
 

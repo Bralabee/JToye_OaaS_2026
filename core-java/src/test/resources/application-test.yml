@@ -50,6 +50,13 @@ jtoye:
       # construction, and one context holds one cipher. Deliberately NOT routed through the
       # DSAR_ENCRYPTION_KEY env var, so a developer's real key can never leak into a test run.
       encryption-key: ${random.value}${random.value}
+  storefront:
+    # 37-28 (D-27): the HMAC key for the client-IP digest, a PER-RUN RANDOM key in the exact shape the
+    # DSAR key above takes (two random.value draws = 64 hex characters), never a literal and never the
+    # CLIENT_IP_HMAC_KEY env var, so a developer's real key can never leak into a test run.
+    # ClientIpDigester reads it once, at construction; ClientIpCapIntegrationTest reads the same value
+    # to compute its expected digest independently.
+    client-ip-hmac-key: ${random.value}${random.value}
 
 storage:
   blob:

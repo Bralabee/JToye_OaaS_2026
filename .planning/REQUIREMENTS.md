@@ -182,10 +182,10 @@ that mints these IDs) declares all 35 and is omitted from the traceability rows.
 
 **37-A Kitchen & order operations**
 
-- [ ] **RWO-011**: #786 (P0) — Every kitchen-board card shows the customer's notes and the fulfilment type (delivery or collection), as the printed ticket already does (D-12).
-- [ ] **RWO-020**: #795 — PENDING orders appear in a "New" lane on the kitchen board, where Accept moves them to CONFIRMED (D-11), and a new order raises a repeating alert (a looping sound after an explicit "Enable sound" tap, a flashing card, a "(N) New orders" tab title) until it is accepted, with a mute that is honoured and visibly shown (D-12).
-- [ ] **RWO-021**: #796 — When the session lapses the kitchen board shows a full-screen "Signed out: new orders are NOT showing" state with an alarm and returns to `/dashboard/kitchen` after sign-in; it refreshes its token silently while the SSO session lasts, and a lapsed session, a muted handover or an unreachable API is never shown as "Live" (D-14).
-- [ ] **RWO-022**: #797 — A vendor can pause ordering (20 min, 40 min, or until reopened) and set structured per-day opening hours, both enforced server-side by the storefront and checkout with a customer-facing message; empty or unparseable hours read as CLOSED for every shop created or edited after deploy, while shops whose hours were empty or unparseable at deploy are marked "legacy always open", behave exactly as before, and their vendors are told to set structured hours (D-15, D-25).
+- [x] **RWO-011**: #786 (P0) — Every kitchen-board card shows the customer's notes and the fulfilment type (delivery or collection), as the printed ticket already does (D-12).
+- [x] **RWO-020**: #795 — PENDING orders appear in a "New" lane on the kitchen board, where Accept moves them to CONFIRMED (D-11), and a new order raises a repeating alert (a looping sound after an explicit "Enable sound" tap, a flashing card, a "(N) New orders" tab title) until it is accepted, with a mute that is honoured and visibly shown (D-12).
+- [x] **RWO-021**: #796 — When the session lapses the kitchen board shows a full-screen "Signed out: new orders are NOT showing" state with an alarm and returns to `/dashboard/kitchen` after sign-in; it refreshes its token silently while the SSO session lasts, and a lapsed session, a muted handover or an unreachable API is never shown as "Live" (D-14).
+- [x] **RWO-022**: #797 — A vendor can pause ordering (20 min, 40 min, or until reopened) and set structured per-day opening hours, both enforced server-side by the storefront and checkout with a customer-facing message; empty or unparseable hours read as CLOSED for every shop created or edited after deploy, while shops whose hours were empty or unparseable at deploy are marked "legacy always open", behave exactly as before, and their vendors are told to set structured hours (D-15, D-25).
 
 **37-D Abuse resistance**
 

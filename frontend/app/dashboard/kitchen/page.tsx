@@ -33,6 +33,7 @@ import {
   type AllergyNoteAcknowledgement,
 } from "@/components/dashboard/kitchen/allergy-note-block"
 import { KdsNewLane } from "@/components/dashboard/kitchen/kds-new-lane"
+import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
 import { KdsItemList, elapsedText } from "@/components/dashboard/kitchen/kds-card-parts"
 import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
 import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
@@ -1009,6 +1010,9 @@ export default function KitchenPage() {
         loaded={!loading && lastSyncedAt !== null}
         onAccepted={handleAccepted}
         onRejected={handleRejected}
+        onRefresh={() => {
+          void fetchOrders()
+        }}
         onPrint={(order) => print([order])}
         onAllergyNoteAcknowledged={handleAllergyNoteAcknowledged}
       />
@@ -1159,9 +1163,11 @@ export default function KitchenPage() {
                       />
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      {/* Customer name */}
-                      <div className="text-sm font-medium text-slate-700">
-                        {order.customerName || "Walk-in"}
+                      {/* Customer name + the unverified-contact badge (37-30, F20): from the stored
+                          fact only — `false` renders it, null/absent (not recorded) never does. */}
+                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700">
+                        <span>{order.customerName || "Walk-in"}</span>
+                        <UnverifiedContactBadge contactVerified={order.contactVerified} />
                       </div>
 
                       {/* 37-16 (UXT-011, P0): the customer's notes, after the name and before

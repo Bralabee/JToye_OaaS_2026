@@ -137,15 +137,11 @@ func TestRateLimiter_BlocksAfterBurstExhausted(t *testing.T) {
 	c.Request = httptest.NewRequest("GET", "/test", nil)
 	handler(c)
 
-	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("Expected 429 after burst exhausted, got %d", w.Code)
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["error"] != "rate limit exceeded" {
-		t.Errorf("Expected 'rate limit exceeded' error, got %v", resp["error"])
-	}
+	// 37-25 (D-19): the valve's refusal is the same typed 429 the per-tenant
+	// limiter sends — problem+json with core's type, a code, and the four
+	// headers — not the former untyped {"error":"rate limit exceeded"}.
+	// X-RateLimit-Limit advertises the valve's burst (3 here).
+	assertTypedRateLimited(t, w, 3)
 }
 
 func TestRateLimiter_RefillsOverTime(t *testing.T) {

@@ -137,6 +137,65 @@ func TestOpenAPISpec_AllRoutesDocumented(t *testing.T) {
 	}
 }
 
+// rateLimitHeaders are the four headers every edge 429 carries (core's
+// names, RateLimitInterceptor.java). The published contract must name each
+// one on every route the limiter can refuse, or an integrator reading the
+// spec has no way to know how long to back off.
+var rateLimitHeaders = []string{"Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"}
+
+// TestOpenAPISpec_RateLimited429IsDocumented (37-25, D-19 / RWO-039): the
+// two routes the rate limiters gate — the protected sync route (per-tenant
+// bucket + valve) and the public webhook (valve only) — must document a 429
+// whose schema is the ProblemDetail body and which declares all four
+// rate-limit headers. /health and /ready are exempt from the valve and
+// must NOT claim a 429 they cannot return.
+func TestOpenAPISpec_RateLimited429IsDocumented(t *testing.T) {
+	spec := readSpec(t)
+	paths, _ := spec["paths"].(map[string]interface{})
+
+	for route, method := range map[string]string{"/api/v1/sync/batch": "post", "/api/v1/webhooks/whatsapp": "post"} {
+		ops, _ := paths[route].(map[string]interface{})
+		op, _ := ops[method].(map[string]interface{})
+		responses, _ := op["responses"].(map[string]interface{})
+		resp, ok := responses["429"].(map[string]interface{})
+		if !ok {
+			t.Errorf("%s %s: no 429 response documented; responses = %v", method, route, pathKeys(responses))
+			continue
+		}
+		schema, _ := resp["schema"].(map[string]interface{})
+		if ref, _ := schema["$ref"].(string); ref != "#/definitions/main.ProblemDetail" {
+			t.Errorf("%s %s: 429 schema $ref = %q, want #/definitions/main.ProblemDetail", method, route, ref)
+		}
+		headers, _ := resp["headers"].(map[string]interface{})
+		for _, h := range rateLimitHeaders {
+			if _, ok := headers[h]; !ok {
+				t.Errorf("%s %s: 429 does not declare header %s; headers = %v", method, route, h, pathKeys(headers))
+			}
+		}
+	}
+
+	defs, _ := spec["definitions"].(map[string]interface{})
+	pd, ok := defs["main.ProblemDetail"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("definitions.main.ProblemDetail missing; definitions = %v", pathKeys(defs))
+	}
+	props, _ := pd["properties"].(map[string]interface{})
+	for _, p := range []string{"type", "title", "status", "detail", "code", "retryAfterSeconds"} {
+		if _, ok := props[p]; !ok {
+			t.Errorf("main.ProblemDetail lacks property %q; properties = %v", p, pathKeys(props))
+		}
+	}
+
+	for _, probe := range []string{"/health", "/ready"} {
+		ops, _ := paths[probe].(map[string]interface{})
+		op, _ := ops["get"].(map[string]interface{})
+		responses, _ := op["responses"].(map[string]interface{})
+		if _, claims := responses["429"]; claims {
+			t.Errorf("get %s documents a 429 but is exempt from the valve and never returns one", probe)
+		}
+	}
+}
+
 // TestOpenAPISpec_HasSecurityDefinition ensures the BearerAuth scheme is
 // declared (the protected endpoints reference it in their @Security
 // annotations).

@@ -77,3 +77,14 @@ data:
   # https://app-staging.olajay.co.uk/api/vendor-auth/logout-complete. See
   # k8s/base/configmap.yaml for the mechanism and the failure it guards.
   vendor.logout-complete.enabled: "false"
+
+  # --- Trusted proxies (37-24, D-19 / RWO-006): OPERATOR INPUT, deliberately empty --
+  # The ingress-nginx controller's pod CIDR on the staging AKS cluster is not in
+  # this repo (kubenet / Azure CNI assign it per cluster). Empty = trust none: core
+  # keys every client on its socket address, which behind the ingress is the
+  # ingress pod, so EVERY client shares ONE public bucket until this is set.
+  # INV-12 WARNS on this line (never fails) and refuses /0, anything shorter than
+  # /8 and any public range once a value is given. Fill it per 37-24's user_setup:
+  #   kubectl --context jtoye-staging get pods -n ingress-nginx -o wide
+  # and declare that pod range, a private /16 or narrower, never 0.0.0.0/0.
+  security.trusted-proxies: ""

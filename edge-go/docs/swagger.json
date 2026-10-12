@@ -22,7 +22,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Forwards an opaque list of domain items to the Core Java\nAPI's /api/v1/sync/batch endpoint, wrapped in a circuit\nbreaker so edge degrades gracefully when Core is down. The\ncaller must present a Keycloak JWT — the tenant_id claim\nis extracted and used to scope the write.",
+                "description": "Forwards an opaque list of domain items to the Core Java\nAPI's /api/v1/sync/batch endpoint, wrapped in a circuit\nbreaker so edge degrades gracefully when Core is down. The\ncaller must present a Keycloak JWT — the tenant_id claim\nis extracted and used to scope the write.\n\nRate-limited per tenant AFTER authentication, keyed on the\ntoken's tenant_id (RATE_LIMIT_TENANT_RPS / _BURST), beneath a\nper-replica pre-auth valve (RATE_LIMIT_RPS / _BURST) that only\nguards against floods. A 429 from either layer is\napplication/problem+json with type\nhttps://jtoye.uk/errors/rate-limited and code RATE_LIMITED;\nwait Retry-After seconds, then retry the same request.",
                 "consumes": [
                     "application/json"
                 ],
@@ -61,6 +61,30 @@
                         "description": "Missing or malformed Bearer token",
                         "schema": {
                             "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded: the caller's tenant bucket or this replica's pre-auth valve is empty. application/problem+json, type https://jtoye.uk/errors/rate-limited, code RATE_LIMITED. Wait Retry-After seconds.",
+                        "schema": {
+                            "$ref": "#/definitions/main.ProblemDetail"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before retrying (at least 1); equals retryAfterSeconds in the body"
+                            },
+                            "X-RateLimit-Limit": {
+                                "type": "integer",
+                                "description": "Capacity of the bucket that refused: the per-tenant burst, or the valve's burst"
+                            },
+                            "X-RateLimit-Remaining": {
+                                "type": "integer",
+                                "description": "Tokens left in that bucket (always 0 on a 429)"
+                            },
+                            "X-RateLimit-Reset": {
+                                "type": "integer",
+                                "description": "Unix epoch second at which that bucket is full again"
+                            }
                         }
                     },
                     "502": {
@@ -114,6 +138,30 @@
                         "description": "Missing or invalid HMAC signature",
                         "schema": {
                             "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "This replica's pre-auth valve is empty (a per-replica flood guard, not a quota; the route is public, so no tenant bucket applies). application/problem+json, type https://jtoye.uk/errors/rate-limited, code RATE_LIMITED. Wait Retry-After seconds.",
+                        "schema": {
+                            "$ref": "#/definitions/main.ProblemDetail"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before retrying (at least 1); equals retryAfterSeconds in the body"
+                            },
+                            "X-RateLimit-Limit": {
+                                "type": "integer",
+                                "description": "Capacity of the valve (its burst)"
+                            },
+                            "X-RateLimit-Remaining": {
+                                "type": "integer",
+                                "description": "Tokens left in the valve (always 0 on a 429)"
+                            },
+                            "X-RateLimit-Reset": {
+                                "type": "integer",
+                                "description": "Unix epoch second at which the valve is full again"
+                            }
                         }
                     },
                     "503": {
@@ -211,6 +259,41 @@
                     "description": "Unix timestamp (seconds) at the moment the probe was served.",
                     "type": "integer",
                     "example": 1713484800
+                }
+            }
+        },
+        "main.ProblemDetail": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Stable machine-readable code. RATE_LIMITED for a 429.",
+                    "type": "string",
+                    "example": "RATE_LIMITED"
+                },
+                "detail": {
+                    "description": "Human-readable explanation specific to this occurrence.",
+                    "type": "string",
+                    "example": "Rate limit exceeded. Please try again in 1 seconds."
+                },
+                "retryAfterSeconds": {
+                    "description": "Whole seconds to wait before retrying; equals the Retry-After header.",
+                    "type": "integer",
+                    "example": 1
+                },
+                "status": {
+                    "description": "HTTP status code, repeated in the body.",
+                    "type": "integer",
+                    "example": 429
+                },
+                "title": {
+                    "description": "Short human-readable summary of the problem type.",
+                    "type": "string",
+                    "example": "Too Many Requests"
+                },
+                "type": {
+                    "description": "Stable problem type URI. https://jtoye.uk/errors/rate-limited for a 429.",
+                    "type": "string",
+                    "example": "https://jtoye.uk/errors/rate-limited"
                 }
             }
         },

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.InvalidReviewPhotoException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.ReviewOrderShopMismatchException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
@@ -74,6 +75,16 @@ public class ReviewService {
             // Validate: order belongs to this customer
             if (!customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
                 throw new IllegalArgumentException("You can only review your own orders");
+            }
+
+            // 37-26 (D-21, UXT-005 P0): the order must have been placed AT THIS SHOP. RLS scopes
+            // findById to the TENANT, not the shop, so without this a customer who bought once from
+            // shop A could leave a "verified" review on every other shop of the tenant. The order is
+            // a proof of purchase from the shop reviewed, or it is no proof at all. Typed 400, after
+            // the ownership check (a stranger's order is refused as a stranger's first) and before
+            // the status and one-per-order gates.
+            if (!shop.getId().equals(order.getShopId())) {
+                throw new ReviewOrderShopMismatchException();
             }
 
             // Validate: order must be completed

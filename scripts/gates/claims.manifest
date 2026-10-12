@@ -102,3 +102,4 @@ rule	retention	media_quarantine_hours	frontend/app/legal/retention/page.tsx	R-3 
 rule	retention	customer_refresh_cookie_days	frontend/app/legal/retention/page.tsx	R-4 customer sign-in cookies	PERIOD_CUSTOMER_SIGN_IN_COOKIES = "\K[0-9]+(?= days")
 rule	retention	dsar_unconfirmed_request_hours	frontend/app/legal/retention/page.tsx	R-14 data request email	PERIOD_DATA_REQUEST_EMAIL = "[^"]*?\K[0-9]+(?= hours)
 rule	retention	dsar_access_export_hours	frontend/app/legal/retention/page.tsx	R-15 prepared copy of your data	PERIOD_PREPARED_DATA_COPY = "[^"]*?\K[0-9]+(?= hours)
+rule	retention	client_ip_digest_hours	frontend/app/legal/retention/page.tsx	R-16 connection pseudonym on a cash order	PERIOD_CONNECTION_PSEUDONYM = "[^"]*?\K[0-9]+(?= hours)

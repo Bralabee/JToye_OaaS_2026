@@ -53,6 +53,11 @@ data:
   backup.blob.prefix: backups
   cors.allowed-origins: https://app.olajay.co.uk
   db.port: "5432"
+  edge.rate-limit.burst: "400"
+  edge.rate-limit.rps: "200"
+  edge.rate-limit.tenant.burst: "20"
+  edge.rate-limit.tenant.max: "10000"
+  edge.rate-limit.tenant.rps: "10"
   frontend.url: https://app.olajay.co.uk
   gdpr.dsar.export-download-base-url: https://app.olajay.co.uk/data-request/download
   gdpr.dsar.verify-base-url: https://app.olajay.co.uk/data-request/confirm
@@ -73,6 +78,10 @@ data:
   media.outbox.resurrect.interval.ms: "300000"
   notification.email.tracking-base-url: https://app.olajay.co.uk
   notification.unsubscribe.base-url: https://app.olajay.co.uk
+  order-limits.max-basket-total-pennies: "100000"
+  order-limits.max-basket-units: "200"
+  order-limits.max-line-quantity: "50"
+  order-limits.max-lines: "50"
   payment.outbox.backoff.base.ms: "5000"
   payment.outbox.backoff.cap.ms: "300000"
   payment.outbox.flush.interval.ms: "5000"
@@ -88,6 +97,7 @@ data:
   rabbitmq.port: "5672"
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
   redis.port: "6379"
+  security.trusted-proxies: ""
   smtp.auth: "false"
   smtp.host: email-smtp.eu-west-2.amazonaws.com
   smtp.port: "587"
@@ -104,6 +114,10 @@ data:
   storage.blob.public-container: jtoye-images
   storage.blob.public-url: https://jtoyeprodmedia.blob.core.windows.net/jtoye-images
   storage.blob.quarantine-container: jtoye-quarantine
+  storefront.cash-caps.per-email: "3"
+  storefront.cash-caps.per-ip: "5"
+  storefront.cash-caps.per-phone: "3"
+  storefront.client-ip-digest.retention-hours: "72"
   stripe.connect.refresh-url: https://app.olajay.co.uk/dashboard/payments/connect/refresh
   stripe.connect.return-url: https://app.olajay.co.uk/dashboard/payments/connect/return
   vendor.logout-complete.enabled: "false"
@@ -570,6 +584,11 @@ spec:
             secretKeyRef:
               key: encryption-key
               name: dsar-credentials
+        - name: CLIENT_IP_HMAC_KEY
+          valueFrom:
+            secretKeyRef:
+              key: hmac-key
+              name: client-ip-credentials
         - name: NOTIFICATION_UNSUBSCRIBE_SECRET
           valueFrom:
             secretKeyRef:
@@ -617,6 +636,51 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: access.strict-scoping
+              name: app-config
+        - name: TRUSTED_PROXY_CIDRS
+          valueFrom:
+            configMapKeyRef:
+              key: security.trusted-proxies
+              name: app-config
+        - name: ORDER_LIMIT_MAX_LINE_QUANTITY
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-line-quantity
+              name: app-config
+        - name: ORDER_LIMIT_MAX_BASKET_UNITS
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-basket-units
+              name: app-config
+        - name: ORDER_LIMIT_MAX_LINES
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-lines
+              name: app-config
+        - name: ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES
+          valueFrom:
+            configMapKeyRef:
+              key: order-limits.max-basket-total-pennies
+              name: app-config
+        - name: CASH_CAP_PER_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.cash-caps.per-email
+              name: app-config
+        - name: CASH_CAP_PER_PHONE
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.cash-caps.per-phone
+              name: app-config
+        - name: CASH_CAP_PER_IP
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.cash-caps.per-ip
+              name: app-config
+        - name: CLIENT_IP_DIGEST_RETENTION_HOURS
+          valueFrom:
+            configMapKeyRef:
+              key: storefront.client-ip-digest.retention-hours
               name: app-config
         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
         imagePullPolicy: IfNotPresent
@@ -756,6 +820,31 @@ spec:
               name: app-config
         - name: PORT
           value: "8080"
+        - name: RATE_LIMIT_RPS
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.rps
+              name: app-config
+        - name: RATE_LIMIT_BURST
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.burst
+              name: app-config
+        - name: RATE_LIMIT_TENANT_RPS
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.tenant.rps
+              name: app-config
+        - name: RATE_LIMIT_TENANT_BURST
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.tenant.burst
+              name: app-config
+        - name: RATE_LIMIT_TENANT_MAX
+          valueFrom:
+            configMapKeyRef:
+              key: edge.rate-limit.tenant.max
+              name: app-config
         image: ghcr.io/bralabee/jtoye-edge-go:2.1.0
         imagePullPolicy: IfNotPresent
         livenessProbe:

@@ -270,7 +270,7 @@ class DsarSubjectAddressIntegrationTest {
 
     private void lodge(String email, String type, String clientIp) throws Exception {
         mockMvc.perform(post(INTAKE_PATH)
-                        .header("X-Forwarded-For", clientIp)
+                        .with(req -> { req.setRemoteAddr(clientIp); return req; }) // 37-24 (D-19): identity is the socket peer; the header is inert
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonMapper.writeValueAsString(Map.of("email", email, "requestType", type))))
                 .andExpect(status().isAccepted());

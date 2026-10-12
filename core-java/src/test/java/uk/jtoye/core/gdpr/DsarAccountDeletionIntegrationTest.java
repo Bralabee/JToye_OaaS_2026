@@ -440,7 +440,7 @@ class DsarAccountDeletionIntegrationTest {
     UUID lodgeVerifiedErasure(String email) throws Exception {
         String ip = "203.0.113." + (100 + (IP_COUNTER.getAndIncrement() % 100));
         mockMvc.perform(post(INTAKE_PATH)
-                        .header("X-Forwarded-For", ip)
+                        .with(req -> { req.setRemoteAddr(ip); return req; }) // 37-24 (D-19): identity is the socket peer; the header is inert
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonMapper.writeValueAsString(Map.of("email", email, "requestType", "ERASURE"))))
                 .andExpect(status().isAccepted());

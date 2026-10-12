@@ -135,6 +135,21 @@ public class OrderDto {
     @Schema(description = "Why the order was voided. Absent unless voided.")
     private String voidReason;
 
+    // Phase 37-27 (D-18, UXT-041): whether the storefront request that placed the order carried a
+    // verified customer token for its email. A scalar V81 column, so the list carries it with no
+    // collection load. NON_NULL, like the fields above: ABSENT means NOT RECORDED (a pre-V81 order, or a
+    // vendor / REST API / MCP order), and the kitchen badge renders nothing for absent and "Unverified
+    // contact" for false (UI-SPEC D1 / F20) — a stored fact, never one derived on the client.
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Whether the storefront request that placed this order carried a verified customer token "
+            + "for its customerEmail. true = verified; false = a storefront order with no such token (an unverified "
+            + "contact); absent = not recorded (the order predates the fact, or was placed by the vendor, the REST API "
+            + "or MCP, where there is no customer contact to verify).")
+    private Boolean contactVerified;
+
+    public Boolean getContactVerified() { return contactVerified; }
+    public void setContactVerified(Boolean contactVerified) { this.contactVerified = contactVerified; }
+
     public OffsetDateTime getVoidedAt() { return voidedAt; }
     public void setVoidedAt(OffsetDateTime voidedAt) { this.voidedAt = voidedAt; }
 

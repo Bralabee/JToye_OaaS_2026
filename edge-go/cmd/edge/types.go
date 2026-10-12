@@ -67,3 +67,23 @@ type ErrorResponse struct {
 	// Human-readable error message.
 	Error string `json:"error" example:"invalid request body"`
 }
+
+// ProblemDetail is the RFC 7807 body (application/problem+json) the edge
+// returns for a rate-limit refusal (37-25, D-19). It is core's shape
+// (RateLimitInterceptor.writeProblem): the same `type` URI, so an integrator
+// backs off from an edge 429 exactly as from a core one, plus a stable `code`
+// and a typed `retryAfterSeconds` so nothing has to be mined out of prose.
+type ProblemDetail struct {
+	// Stable problem type URI. https://jtoye.uk/errors/rate-limited for a 429.
+	Type string `json:"type" example:"https://jtoye.uk/errors/rate-limited"`
+	// Short human-readable summary of the problem type.
+	Title string `json:"title" example:"Too Many Requests"`
+	// HTTP status code, repeated in the body.
+	Status int `json:"status" example:"429"`
+	// Human-readable explanation specific to this occurrence.
+	Detail string `json:"detail" example:"Rate limit exceeded. Please try again in 1 seconds."`
+	// Stable machine-readable code. RATE_LIMITED for a 429.
+	Code string `json:"code" example:"RATE_LIMITED"`
+	// Whole seconds to wait before retrying; equals the Retry-After header.
+	RetryAfterSeconds int `json:"retryAfterSeconds" example:"1"`
+}

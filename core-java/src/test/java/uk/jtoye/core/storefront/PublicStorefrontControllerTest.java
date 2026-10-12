@@ -1,5 +1,6 @@
 package uk.jtoye.core.storefront;
 
+import org.springframework.context.annotation.Import;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(PublicStorefrontController.class)
+@Import(uk.jtoye.core.security.ClientIpResolver.class) // 37-24: the slice includes RateLimitInterceptor (a HandlerInterceptor), which needs the ClientIpResolver bean
 @AutoConfigureMockMvc(addFilters = false)
 class PublicStorefrontControllerTest {
 

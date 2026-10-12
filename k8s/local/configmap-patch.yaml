@@ -246,3 +246,16 @@ data:
   # and reverting would change a working local default to no benefit. The base
   # mount is simply unused in this overlay.
   log.path: "/tmp"
+
+  # --- Trusted proxies (37-24, D-19 / RWO-006) ------------------------------
+  # The minikube ingress-nginx addon runs as a pod, so X-Forwarded-For reaches
+  # core-java from the POD network and the ingress pod CIDR is the trusted range.
+  # minikube's default pod CIDR is 10.244.0.0/16 (kindnet/bridge, every driver
+  # in this repo's rehearsals). It was NOT measured on a live cluster when this
+  # line was written: the `jtoye` profile did not exist on 2026-10-11 (37-24
+  # Task 3 recorded `minikube profile list` -> no such container). When the
+  # cluster is up, confirm with
+  #   kubectl --context jtoye get pods -n ingress-nginx -o wide
+  # and narrow this to the controller's range if it differs. Base is "" (trust
+  # none); INV-12 refuses /0, anything shorter than /8 and any public range.
+  security.trusted-proxies: "10.244.0.0/16"

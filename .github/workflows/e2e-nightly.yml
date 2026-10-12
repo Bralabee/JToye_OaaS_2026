@@ -149,7 +149,7 @@ jobs:
           # kept here so this lane exercises the single-credential fallback path; the local dev
           # .env holds DIFFERING values, so the split path is exercised there. DB_USER itself is
           # NOT in REQUIRED_VARS, so it is never in this loop and keeps .env.example's jtoye_runtime.
-          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD DB_MIGRATION_USER DB_MIGRATION_PASSWORD DSAR_ENCRYPTION_KEY"
+          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD DB_MIGRATION_USER DB_MIGRATION_PASSWORD DSAR_ENCRYPTION_KEY CLIENT_IP_HMAC_KEY"
           required=$(bash scripts/verify-env.sh --list-required)
           [ -n "$required" ] || { echo "FATAL: verify-env.sh --list-required produced nothing" >&2; exit 1; }
 
@@ -237,6 +237,10 @@ jobs:
           # generated here as a real 32-byte key. Like every value in this file it
           # is never echoed; verify-env.sh checks its format before the build.
           echo "DSAR_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
+          # CLIENT_IP_HMAC_KEY (37-28, D-27) has the identical contract: the HMAC key for the
+          # client-IP digest behind the per-IP cash-order cap, exactly 64 hex characters or
+          # core-java refuses to start. DERIVED for the same reason, generated the same way.
+          echo "CLIENT_IP_HMAC_KEY=$(openssl rand -hex 32)" >> .env
 
           echo "appended $(wc -l < .env) total lines"
 

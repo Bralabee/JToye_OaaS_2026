@@ -400,6 +400,17 @@ class GuestOrderAllergenAckIntegrationTest {
 
     // ---- Request builders for the service-level arm ----
 
+    /**
+     * 37-27 (D-18): the cash-order caps count OPEN orders per email AND per phone at a shop (three each),
+     * and the shop and its orders persist across this class's arms, so every arm needs its own contact
+     * details (RESEARCH Pitfall 9: unique details, never a raised default). The phone is derived from the
+     * arm's address rather than drawn at random so an arm that resubmits an identical body (an
+     * idempotency replay) still sends the same body.
+     */
+    private static String phoneFor(String email) {
+        return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
+    }
+
     private static uk.jtoye.core.storefront.dto.GuestOrderRequest guestRequest(String email, UUID productId, int ack) {
         uk.jtoye.core.storefront.dto.GuestOrderItemRequest item = new uk.jtoye.core.storefront.dto.GuestOrderItemRequest();
         item.setProductId(productId);
@@ -407,7 +418,7 @@ class GuestOrderAllergenAckIntegrationTest {
         uk.jtoye.core.storefront.dto.GuestOrderRequest request = new uk.jtoye.core.storefront.dto.GuestOrderRequest();
         request.setCustomerName("Allergen Ack Buyer");
         request.setCustomerEmail(email);
-        request.setCustomerPhone("+447700900311");
+        request.setCustomerPhone(phoneFor(email));
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(item));
         request.setAcknowledgedAllergenMask(ack);
@@ -470,7 +481,7 @@ class GuestOrderAllergenAckIntegrationTest {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("customerName", "Allergen Ack Buyer");
         body.put("customerEmail", email);
-        body.put("customerPhone", "+447700900311");
+        body.put("customerPhone", phoneFor(email));
         body.put("fulfilmentType", "COLLECTION");
         body.put("items", items);
         if (ack != null) {
