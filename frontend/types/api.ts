@@ -195,7 +195,13 @@ export interface CreateProductRequest {
   preparationTimeMinutes?: number
   dietaryTags?: string
   shopId?: string
+  /** Omitted or null on PUT keeps the stored quantity (37-39); stop tracking with trackInventory false. */
   quantityInStock?: number | null
+  /**
+   * UXT-016 (37-39): omitted keeps the product's tracking and stock; false stops tracking and clears the
+   * stored quantity (quantityInStock must then be null or omitted); true requires quantityInStock.
+   */
+  trackInventory?: boolean
   /** D-16: omitted or null on PUT keeps the stored value; 0 is an explicit "no cross-contact risk". */
   mayContainMask?: number | null
   /**
