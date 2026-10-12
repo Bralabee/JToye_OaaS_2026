@@ -379,15 +379,56 @@ class GuestOrderBasketRevalidationIntegrationTest {
         assertThat(below.has("productId")).isFalse();
         assertThat(countOrdersByEmail(email)).isZero();
 
-        // Direct API, no race: a basket submitted under the minimum at the prices shown is refused with
-        // the BELOW_MINIMUM entry alone (the storefront disables submit; the server is the gate).
+    }
+
+    // ------------------------------------------------------------------
+    // PR #918 round 1: a basket that was ALWAYS below the minimum — at the very prices the customer saw —
+    // is not a change. It is refused exactly as before 37-33 (400 errors/invalid-argument, the WR-01
+    // sentence), never as a 409 basket-changed whose contract says "resubmit under the same key": an
+    // API or MCP caller following that contract would resubmit the same basket for ever.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("Always below the minimum at the prices shown: refused 400 invalid-argument with the WR-01 sentence (the pre-37-33 refusal), never 409 basket-changed, and no order")
+    void basketAlwaysBelowTheMinimum_isRefusedTheOld400_notBasketChanged() throws Exception {
+        UUID minShop = seedShopIdempotent("shop-37-33-minimum", "37-33 Minimum Shop", 2000);
         UUID snack = seedProductInShop(minShop, "SKU-3733-MIN-DIRECT", "Snack", 500L, 0, 100);
         String direct = "minimum-direct-" + UUID.randomUUID() + "@example.com";
         MvcResult refusedDirect = perform(post(ordersUrl("shop-37-33-minimum")),
                 body(direct, List.of(line(snack, 1, 500L)), 500L, 0));
-        JsonNode directProblem = assertProblem(refusedDirect, 409, BASKET_CHANGED, "BASKET_CHANGED");
-        assertThat(kinds(directProblem)).as(responseText(refusedDirect)).containsExactly("BELOW_MINIMUM");
+        assertOldMinimumRefusal(refusedDirect, "£20.00");
         assertThat(countOrdersByEmail(direct)).isZero();
+    }
+
+    @Test
+    @DisplayName("Always below the minimum AND repriced: the 409 lists the real changes without BELOW_MINIMUM, and the resubmit under the same key meets the 400 instead of looping")
+    void basketAlwaysBelowTheMinimum_withARealChange_isRefusedTheChangeThenThe400_neverALoop() throws Exception {
+        UUID minShop = seedShopIdempotent("shop-37-33-minimum", "37-33 Minimum Shop", 2000);
+        UUID dip = seedProductInShop(minShop, "SKU-3733-MIN-ALWAYS", "Dip", 400L, 0, 100);
+        vendorEditsInShop(minShop, dip, "Dip", 600L, 0, true, 100);
+
+        String key = "minimum-always-" + UUID.randomUUID();
+        String email = "minimum-always-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = perform(post(ordersUrl("shop-37-33-minimum")).header("Idempotency-Key", key),
+                body(email, List.of(line(dip, 1, 400L)), 400L, 0));
+        JsonNode problem = assertProblem(refused, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        assertThat(kinds(problem)).as(responseText(refused)).containsExactly("PRICE_CHANGED", "TOTAL_CHANGED");
+
+        // The caller does what the 409 contract says: shows the change and resubmits under the same key.
+        MvcResult resubmitted = perform(post(ordersUrl("shop-37-33-minimum")).header("Idempotency-Key", key),
+                body(email, List.of(line(dip, 1, 600L)), 600L, 0));
+        assertOldMinimumRefusal(resubmitted, "£20.00");
+        assertThat(countOrdersByEmail(email)).isZero();
+    }
+
+    /** The pre-37-33 WR-01 refusal, byte for byte: IllegalArgumentException through GlobalExceptionHandler. */
+    private void assertOldMinimumRefusal(MvcResult result, String minimum) throws Exception {
+        String text = responseText(result);
+        assertThat(result.getResponse().getStatus()).as(text).isEqualTo(400);
+        JsonNode problem = jsonMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(problem.path("type").asString()).as(text).isEqualTo("https://jtoye.uk/errors/invalid-argument");
+        assertThat(problem.path("detail").asString()).as(text)
+                .isEqualTo("Order is below this shop's minimum order value of " + minimum + ".");
+        assertThat(problem.has("changes")).as(text).isFalse();
     }
 
     // ------------------------------------------------------------------
