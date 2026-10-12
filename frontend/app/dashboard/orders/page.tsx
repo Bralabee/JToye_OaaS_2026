@@ -51,6 +51,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { VoidedBadge } from "@/components/dashboard/orders/voided-badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
 import {
   RejectOrdersDialog,
   type RejectableOrder,
@@ -839,8 +840,11 @@ function OrdersPageInner() {
                         </TableCell>
                         <TableCell>
                           <div>
-                            <div className="font-medium">
-                              {order.customerName || "N/A"}
+                            {/* 37-30 (F20): the unverified-contact badge beside the name, from the
+                                stored fact only — `false` renders it, null/absent never does. */}
+                            <div className="flex flex-wrap items-center gap-2 font-medium">
+                              <span>{order.customerName || "N/A"}</span>
+                              <UnverifiedContactBadge contactVerified={order.contactVerified} />
                             </div>
                             {order.customerEmail && (
                               <div className="text-xs text-slate-500">

@@ -346,13 +346,16 @@ describe("KDS New card: Reject order (single, through RejectOrdersDialog — 37-
     expect(confirm).toBeDisabled()
     expect(mockPost).not.toHaveBeenCalled()
 
-    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "SUSPECTED_FAKE" } })
+    // This file's Select mock has no placeholder option, so the native select already DISPLAYS
+    // the first reason; choosing a different one is what fires the change (the dialog's own
+    // state starts empty either way — the disabled confirm above is the proof).
+    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "CUSTOMER_REQUEST" } })
     await act(async () => {
       fireEvent.click(confirm)
     })
     expect(mockPost).toHaveBeenCalledWith("/api/v1/orders/bulk-cancel", {
       orderIds: ["new-1"],
-      reasonCode: "SUSPECTED_FAKE",
+      reasonCode: "CUSTOMER_REQUEST",
     })
     expect(await within(dialog).findByRole("status")).toHaveTextContent("1 rejected.")
 

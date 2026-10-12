@@ -29,6 +29,7 @@ import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switche
 import { fetchStaff, type StaffPerson } from "@/lib/staff-api"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
 import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
+import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
 import type { OrderDetail, OrderStatus, Refund } from "@/types/api"
 import { formatUkDateTime } from "@/lib/uk-datetime"
 import { AllergyNoteBlock } from "@/components/dashboard/kitchen/allergy-note-block"
@@ -301,9 +302,12 @@ export function OrderDetailPanel({ order, onRefundIssued, onVoided }: OrderDetai
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
             Customer
           </p>
-          <p className="font-medium text-slate-900">
-            {order.customerName || "N/A"}
-          </p>
+          {/* 37-30 (F20): the unverified-contact badge beside the name, from the stored fact
+              only — `false` renders it, null/absent (not recorded) never does. */}
+          <div className="flex flex-wrap items-center gap-2 font-medium text-slate-900">
+            <span>{order.customerName || "N/A"}</span>
+            <UnverifiedContactBadge contactVerified={order.contactVerified} />
+          </div>
         </div>
         {order.customerEmail && (
           <div>
