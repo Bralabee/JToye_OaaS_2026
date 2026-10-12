@@ -475,6 +475,14 @@ function basketSignatureOf(lines: readonly Pick<CartItem, "productId" | "quantit
   return lines.map((i) => `${i.productId}:${i.quantity}`).join("|")
 }
 
+/**
+ * What a server-quoted total was quoted FOR (PR #918): the fulfilment and every line with its quantity
+ * and unit price. An accepted TOTAL_CHANGED applies only while the basket still has exactly this basis.
+ */
+function totalBasisOf(lines: readonly Pick<CartItem, "productId" | "quantity" | "pricePennies">[], fulfilment: string): string {
+  return `${fulfilment}|${lines.map((i) => `${i.productId}:${i.quantity}@${i.pricePennies}`).join("|")}`
+}
+
 export default function CheckoutPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
@@ -541,7 +549,21 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // below: the server said, in the same problem, whether the acknowledged allergen set moved, so
   // the effect keeps the server's set (never drops back to a client view the server just refused)
   // and keeps a still-valid acknowledgement instead of resetting it as a shopper's edit would.
-  const serverRewriteRef = useRef<{ keepAcknowledged: boolean } | null>(null)
+  // PR #918 (finding 4): the ref carries the line signature the rewrite was computed to produce, and the
+  // effect honours it ONLY when the basket it sees has exactly that signature. The 409 handler computes
+  // the rewrite from its render-closure basket while the provider rewrites its CURRENT one; when those
+  // differ (a sibling tab edited the basket while the POST was in flight) the provider's write may change
+  // nothing, the effect does not run, and an unguarded ref would be read by the shopper's NEXT real change
+  // as the server's — keeping the acknowledgement across it (D-02). Every effect run clears it.
+  const serverRewriteRef = useRef<{ keepAcknowledged: boolean; signature: string } | null>(null)
+  // PR #918 (finding 1): the total a basket-changed 409 QUOTED (TOTAL_CHANGED.current) and the basket it
+  // was quoted for. The page previews the delivery fee from the shop it loaded; when the server's fee is
+  // one the page cannot preview (the shop read failed and the preview is £0, or the vendor changed the fee
+  // or threshold after load), the panel shows the server's total, the customer accepts it, and the
+  // resubmit must carry THAT total — or every resubmit meets the same 409. Applied only while the basket
+  // and fulfilment are exactly the ones it was quoted for; the panel showed it, and Place order is refused
+  // until it is accepted, so it is never sent unseen (D-16).
+  const [serverQuotedTotal, setServerQuotedTotal] = useState<{ totalPennies: number; basis: string } | null>(null)
   const focusAcceptChanges = () => {
     const el = acceptChangesRef.current
     if (el && el.isConnected) el.focus()
@@ -634,8 +656,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
    */
   const basketSignature = useMemo(() => basketSignatureOf(items), [items])
   useEffect(() => {
-    const rewrite = serverRewriteRef.current
+    const armed = serverRewriteRef.current
     serverRewriteRef.current = null
+    const rewrite = armed && armed.signature === basketSignature ? armed : null
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setAckError(null)
     if (rewrite) {
@@ -661,12 +684,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     () => items.map((item) => ({ productId: item.productId, quantity: item.quantity, expectedUnitPricePennies: item.pricePennies })),
     [items]
   )
-  const previewFeePennies = previewDeliveryFeePennies(
-    totalPennies,
-    fulfilmentType,
-    shop?.deliveryFeePennies,
-    shop?.freeDeliveryThresholdPennies
-  )
+  // PR #918: a total the server quoted for exactly this basket and fulfilment is the one shown and sent;
+  // otherwise the client preview, as before.
+  const quotedTotalApplies =
+    serverQuotedTotal !== null &&
+    serverQuotedTotal.totalPennies >= totalPennies &&
+    serverQuotedTotal.basis === totalBasisOf(items, fulfilmentType)
+  const previewFeePennies = quotedTotalApplies
+    ? serverQuotedTotal.totalPennies - totalPennies
+    : previewDeliveryFeePennies(totalPennies, fulfilmentType, shop?.deliveryFeePennies, shop?.freeDeliveryThresholdPennies)
   const expectedTotalPennies = totalPennies + previewFeePennies
 
   // The body this page will POST, built ONCE from the form state and used for BOTH the request
@@ -944,6 +970,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         setBasketChanged(null)
         setBasketChangesAccepted(false)
         setBasketChangeRefused(false)
+        setServerQuotedTotal(null)
       }
 
       if (!confirmation.clientSecret) {
@@ -1011,10 +1038,21 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         // When the lines (not only prices) change, the basket-signature effect is told it was the
         // server, and whether the acknowledgement still stands (see serverRewriteRef).
         const nextItems = applyBasketChanges(items, basket.changes)
-        if (basketSignatureOf(nextItems) !== basketSignature) {
-          serverRewriteRef.current = { keepAcknowledged: basket.allergens === null }
+        const nextSignature = basketSignatureOf(nextItems)
+        if (nextSignature !== basketSignature) {
+          serverRewriteRef.current = { keepAcknowledged: basket.allergens === null, signature: nextSignature }
         }
         applyServerChanges(basket.changes)
+        // PR #918 (finding 1): the server's total for the basket after these changes — shown in the panel
+        // ("Total was …, now …") and, once accepted, the one the resubmit carries. The shop is re-read too,
+        // so the fee preview is current for any later edit the quote no longer covers.
+        const quoted = basket.changes.find((change) => change.kind === "TOTAL_CHANGED")
+        setServerQuotedTotal(
+          quoted && quoted.current !== undefined
+            ? { totalPennies: quoted.current, basis: totalBasisOf(nextItems, fulfilmentType) }
+            : null
+        )
+        loadShop()
         if (basket.allergens) {
           // The same 409 carried the 31.1 properties: the allergen panel states the server's set,
           // unticked (D-05 composed, not beside), and the panel above says why.
@@ -1122,6 +1160,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             setBasketChanged(null)
             setBasketChangesAccepted(false)
             setBasketChangeRefused(false)
+            setServerQuotedTotal(null)
             setPaymentState(null)
           }}
           className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-4"
