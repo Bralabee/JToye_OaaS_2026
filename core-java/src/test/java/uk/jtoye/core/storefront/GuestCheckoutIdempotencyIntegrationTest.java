@@ -451,6 +451,8 @@ class GuestCheckoutIdempotencyIntegrationTest {
         request.setItems(List.of(request.getItems().getFirst(),
                 guestRequest(secondProduct, 1073741824, null).getItems().getFirst()));
         GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
+        // 37-32 (D-16): the re-built two-line basket carries the prices shown for BOTH lines and its total.
+        GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
 
         String refused = mockMvc.perform(post("/api/v1/public/shops/" + SHOP_SLUG + "/orders")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -533,7 +535,9 @@ class GuestCheckoutIdempotencyIntegrationTest {
         // COLLECTION: no address, delivery fee forced to £0 — fulfilment is not what is under test.
         request.setFulfilmentType("COLLECTION");
         // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
-        return GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
+        GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
+        // 37-32 (D-16): and the prices the customer saw — each line's current unit price and the total.
+        return GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
     }
 
     // ---- Read helpers (superuser bootstrap role; TenantContext set for correctness) ----

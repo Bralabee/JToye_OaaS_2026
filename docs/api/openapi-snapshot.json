@@ -1978,6 +1978,12 @@
       },
       "GuestOrderItemRequest" : {
         "properties" : {
+          "expectedUnitPricePennies" : {
+            "description" : "The unit price, in pennies, the storefront showed the customer for this line when they confirmed the basket. The server charges its own current price and uses this only to detect a change: a missing value is refused 422 with code BASKET_CONFIRMATION_REQUIRED, and one that differs from the current price is refused 409 with code BASKET_CHANGED listing each change.",
+            "format" : "int64",
+            "minimum" : 0,
+            "type" : "integer"
+          },
           "productId" : {
             "format" : "uuid",
             "type" : "string"
@@ -2044,6 +2050,12 @@
             "maxLength" : 50,
             "minLength" : 0,
             "type" : "string"
+          },
+          "expectedTotalPennies" : {
+            "description" : "The order total, in pennies (line totals plus delivery fee), the storefront showed the customer when they confirmed the basket. The server recomputes its own total and uses this only to detect a change: a missing value is refused 422 with code BASKET_CONFIRMATION_REQUIRED, and one that differs from the current total is refused 409 with code BASKET_CHANGED listing each change.",
+            "format" : "int64",
+            "minimum" : 0,
+            "type" : "integer"
           },
           "fulfilmentType" : {
             "maxLength" : 20,
