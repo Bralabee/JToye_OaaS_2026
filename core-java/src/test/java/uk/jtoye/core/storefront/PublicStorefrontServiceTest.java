@@ -34,11 +34,9 @@ import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
-import uk.jtoye.core.shop.DiscountType;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncement;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
-import uk.jtoye.core.shop.ShopPromotion;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.*;
@@ -69,7 +67,6 @@ class PublicStorefrontServiceTest {
     @Mock private EntityManager entityManager;
     @Mock private Session hibernateSession;
     @Mock private PaymentService paymentService;
-    @Mock private uk.jtoye.core.shop.ShopPromotionRepository promotionRepository;
     @Mock private ShopAnnouncementRepository announcementRepository;
     @Mock private PostcodeGeocoder postcodeGeocoder;
     @Mock private IdempotencyService idempotencyService;
@@ -103,7 +100,7 @@ class PublicStorefrontServiceTest {
         // 37-27: a real CashOrderCaps over the mocked OrderRepository, whose count queries return 0 unless an
         // arm stubs them, so no cash order in this file is capped by accident.
         // 37-28: a real ClientIpDigester under a fixture key (not a credential); the arms pass no address.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), new ClientIpDigester(TEST_HMAC_KEY), 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), new ClientIpDigester(TEST_HMAC_KEY), 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -1118,41 +1115,17 @@ class PublicStorefrontServiceTest {
     }
 
     @Test
-    @DisplayName("getActivePromotions returns filtered list with discount type info")
-    void getActivePromotions_returnsFilteredList() {
+    @DisplayName("37-35 (D-17): getActivePromotions is empty for a published shop, because checkout applies no promotion")
+    void getActivePromotions_isAlwaysEmpty() {
+        // Superseded 2026-10-12: this arm used to assert the two stored promotions were mapped out to
+        // the public. UXT-008 is exactly that behaviour (a discount advertised, never applied); the
+        // stored rows are still the vendor's, listed by PromotionService (PublicPromotionsHiddenTest).
         when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
                 .thenReturn(Optional.of(publishedShop));
 
-        ShopPromotion percentagePromo = new ShopPromotion();
-        setField(percentagePromo, "id", UUID.randomUUID());
-        percentagePromo.setLabel("10% Off");
-        percentagePromo.setDiscountType(DiscountType.PERCENTAGE);
-        percentagePromo.setDiscountPercent(10);
-        percentagePromo.setCategory("All");
-        percentagePromo.setValidUntil(OffsetDateTime.now().plusDays(30));
-
-        ShopPromotion flatPromo = new ShopPromotion();
-        setField(flatPromo, "id", UUID.randomUUID());
-        flatPromo.setLabel("500p Off");
-        flatPromo.setDiscountType(DiscountType.FLAT_AMOUNT);
-        flatPromo.setDiscountAmountPennies(500);
-        flatPromo.setCategory("Mains");
-        flatPromo.setValidUntil(OffsetDateTime.now().plusDays(14));
-
-        when(promotionRepository.findActiveByShopId(publishedShop.getId()))
-                .thenReturn(List.of(percentagePromo, flatPromo));
-
         var result = service.getActivePromotions("test-shop-abc12345");
 
-        assertEquals(2, result.size());
-        assertEquals("10% Off", result.get(0).getLabel());
-        assertEquals(DiscountType.PERCENTAGE, result.get(0).getDiscountType());
-        assertEquals(10, result.get(0).getDiscountPercent());
-        assertNull(result.get(0).getDiscountAmountPennies());
-        assertEquals("500p Off", result.get(1).getLabel());
-        assertEquals(DiscountType.FLAT_AMOUNT, result.get(1).getDiscountType());
-        assertEquals(500, result.get(1).getDiscountAmountPennies());
-        assertNull(result.get(1).getDiscountPercent());
+        assertTrue(result.isEmpty());
     }
 
     @Test
@@ -1208,10 +1181,10 @@ class PublicStorefrontServiceTest {
 
         when(announcementRepository.findActiveByShopId(publishedShop.getId()))
                 .thenReturn(List.of(a1));
-        when(promotionRepository.findActiveByShopId(publishedShop.getId()))
-                .thenReturn(List.of());
 
         var result = service.getShopConfig("test-shop-abc12345");
+        assertNotNull(result.getActivePromotions());
+        assertTrue(result.getActivePromotions().isEmpty(), "37-35 (D-17): no promotion is published");
 
         assertNotNull(result.getAnnouncements());
         assertEquals(1, result.getAnnouncements().size());
@@ -1471,7 +1444,7 @@ class PublicStorefrontServiceTest {
         /** A service built with an arbitrary geo configuration; everything else is the shared mocks. */
         private PublicStorefrontService serviceWithRadii(double defaultRadiusKm, double maxRadiusKm) {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
-                    eventPublisher, entityManager, paymentService, promotionRepository,
+                    eventPublisher, entityManager, paymentService,
                     announcementRepository, idempotencyService, postcodeGeocoder,
                     new OrderNumberGenerator(), traderIdentityService,
                     new ShopAvailabilityPolicy(java.time.Clock.systemUTC()),

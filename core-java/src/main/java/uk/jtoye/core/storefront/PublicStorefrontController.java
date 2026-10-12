@@ -179,13 +179,15 @@ public class PublicStorefrontController {
     }
 
     @GetMapping("/shops/{slug}/config")
-    @Operation(summary = "Get shop config", description = "Server-driven content: announcements, featured products, active promotions.")
+    @Operation(summary = "Get shop config", description = "Server-driven content: announcements and featured products. "
+            + "activePromotions is always an empty list: promotions are not shown until checkout applies them.")
     public ResponseEntity<ShopConfigDto> getShopConfig(@PathVariable String slug) {
         return ResponseEntity.ok(storefrontService.getShopConfig(slug));
     }
 
     @GetMapping("/shops/{slug}/promotions")
-    @Operation(summary = "Get active promotions", description = "Returns currently active promotions for a published shop.")
+    @Operation(summary = "Get active promotions", description = "Always an empty list for a published shop: promotions "
+            + "are not shown until checkout applies them. 404 for an unknown or unpublished shop.")
     public ResponseEntity<List<PublicPromotionDto>> getShopPromotions(@PathVariable String slug) {
         return ResponseEntity.ok(storefrontService.getActivePromotions(slug));
     }

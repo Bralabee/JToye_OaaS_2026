@@ -49,7 +49,6 @@ import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
-import uk.jtoye.core.shop.ShopPromotionRepository;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
@@ -93,7 +92,10 @@ public class PublicStorefrontService {
     private final OrderEventPublisher eventPublisher;
     private final EntityManager entityManager;
     private final PaymentService paymentService;
-    private final ShopPromotionRepository promotionRepository;
+    // 37-35 (D-17, UXT-008): no ShopPromotionRepository here, deliberately. Checkout applies no
+    // promotion, so the public reads publish none; without the dependency there is no code path, flag
+    // or config key that could put a stored promotion back in front of a customer. A real promotions
+    // engine (applied and recorded server-side) is a separate, deferred capability (37-CONTEXT).
     private final ShopAnnouncementRepository announcementRepository;
     private final IdempotencyService idempotencyService;
 
@@ -163,7 +165,6 @@ public class PublicStorefrontService {
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
                                    EntityManager entityManager, PaymentService paymentService,
-                                   ShopPromotionRepository promotionRepository,
                                    ShopAnnouncementRepository announcementRepository,
                                    IdempotencyService idempotencyService,
                                    PostcodeGeocoder postcodeGeocoder,
@@ -181,7 +182,6 @@ public class PublicStorefrontService {
         this.eventPublisher = eventPublisher;
         this.entityManager = entityManager;
         this.paymentService = paymentService;
-        this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
         this.idempotencyService = idempotencyService;
         this.postcodeGeocoder = postcodeGeocoder;
@@ -239,7 +239,8 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Get server-driven config for a shop: announcements, featured products, promotions.
+     * Get server-driven config for a shop: announcements and featured products. {@code activePromotions}
+     * is always empty (37-35, D-17): promotions are not shown until checkout applies them.
      */
     public ShopConfigDto getShopConfig(String slug) {
         // SEC-01 tenant-match gate applied up-front (Phase 13). Helper sets
@@ -267,34 +268,23 @@ public class PublicStorefrontService {
             TenantContext.clear();
         }
 
-        // Fetch active promotions
-        List<ShopConfigDto.PromotionDto> promos = promotionRepository.findActiveByShopId(shop.getId()).stream()
-                .map(p -> new ShopConfigDto.PromotionDto(p.getLabel(), p.getDiscountType(), p.getDiscountPercent(), p.getDiscountAmountPennies(), p.getCategory(), p.getValidUntil()))
-                .toList();
-        config.setActivePromotions(promos);
+        // 37-35 (D-17, UXT-008): an empty list, unconditionally. The persona run saw "20% OFF" and paid
+        // full price, because the order path never read shop_promotions. The field stays (an array, so
+        // the storefront's contract holds) and the vendor's stored promotions are untouched.
+        config.setActivePromotions(List.of());
 
         return config;
     }
 
     /**
-     * Get active promotions for a published shop.
+     * Public promotions of a published shop: always an empty list (37-35, D-17, UXT-008). Checkout
+     * applies no promotion, so none is advertised. The slug is still resolved, so an unknown or
+     * unpublished shop stays a 404 rather than reading as "no offers".
      */
     public List<PublicPromotionDto> getActivePromotions(String slug) {
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+        shopRepository.findBySlugAndPublishedTrue(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
-
-        return promotionRepository.findActiveByShopId(shop.getId()).stream()
-                .map(p -> {
-                    PublicPromotionDto dto = new PublicPromotionDto();
-                    dto.setLabel(p.getLabel());
-                    dto.setDiscountType(p.getDiscountType());
-                    dto.setDiscountPercent(p.getDiscountPercent());
-                    dto.setDiscountAmountPennies(p.getDiscountAmountPennies());
-                    dto.setCategory(p.getCategory());
-                    dto.setValidUntil(p.getValidUntil());
-                    return dto;
-                })
-                .toList();
+        return List.of();
     }
 
     /**
