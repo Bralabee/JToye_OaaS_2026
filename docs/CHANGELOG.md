@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37-C: Checkout integrity (#918) — 2026-10-12
+
+The fourth of Phase 37's sub-theme pull requests (plans 37-32 to 37-38 of 53): the order a customer
+places is the order they saw, nothing is advertised that checkout does not apply, a reviewer's full
+name is not published, and a cash order's confirmation is its own announced, refresh-safe page. One
+migration, V84, added at the gate (V82 and V83 stay reserved for 37-45 and 37-48 and apply out of
+order).
+
+- **Submit-time basket re-validation (D-16).** The guest order carries `expectedUnitPricePennies`
+  per line and `expectedTotalPennies`; a missing expectation is 422 `basket-confirmation-required`,
+  and every price, availability, sold-out, removed-line, minimum or total change is one 409
+  `basket-changed` with a typed `changes[]`, composed with the 31.1 stale-allergen 409. The checkout
+  lists each change in `BasketChangedPanel` and places the order only after Accept changes, under
+  the same Idempotency-Key, rewriting the basket without losing its owner.
+- **No unapplied promotions; minimised reviewer names (D-17).** Public promotion reads return `[]`
+  and the storefront requests and renders none (vendor records and CRUD kept; the marketing page
+  says why). Public reviews show "First L."; the stored name is kept for erasure and export.
+- **A cash order's confirmation route.** `/shop/{slug}/orders/{n}` moves focus to its heading,
+  announces once, sets its own title and never re-POSTs on refresh; `PublicOrderStatus` gains
+  `fulfilmentType` and `deliveryFeePennies`.
+- **Order lines on the tracking read (V84).** `order_items_guest_tracking`, FOR SELECT only, admits a
+  line when its own order matches the same tracking pair as `orders_guest_tracking`. The tracking
+  read had seen orders but no lines since 31.1 (#901), so the recorded allergen set read "not
+  recorded" on `/track`, the card route and the new cash confirmation; proven under a NOSUPERUSER
+  role.
+
 ### Phase 37-D: Abuse resistance (#917) — 2026-10-12
 
 The third of Phase 37's sub-theme pull requests (plans 37-24 to 37-31 of 53): rate limits key on a
