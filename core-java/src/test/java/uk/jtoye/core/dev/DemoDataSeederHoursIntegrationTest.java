@@ -48,7 +48,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("dev")
 @TestPropertySource(properties = {"storage.blob.validate-on-startup=false",
         "jtoye.geo.postcode-import.enabled=false",
-        "jtoye.gdpr.dsar.encryption-key=${random.value}${random.value}"})
+        "jtoye.gdpr.dsar.encryption-key=${random.value}${random.value}",
+        // 37-28: ClientIpDigester refuses to start without a 64-hex key, and the dev profile has none
+        // (CLIENT_IP_HMAC_KEY is a runtime secret); a per-run random key, the DSAR precedent above.
+        "jtoye.storefront.client-ip-hmac-key=${random.value}${random.value}"})
 @Tag("testcontainers")
 class DemoDataSeederHoursIntegrationTest {
 

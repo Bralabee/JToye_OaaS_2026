@@ -154,6 +154,11 @@ class DatabaseConfigurationValidatorOwnershipTest {
         // refuses to start without a key. A per-run random one, resolved by Spring from the
         // command-line value — never a literal.
         p.put("jtoye.gdpr.dsar.encryption-key", "${random.value}${random.value}");
+        // 37-28: ClientIpDigester refuses to start without a 64-hex key for the same reason, and
+        // the default profile has none (CLIENT_IP_HMAC_KEY is a runtime secret). Same shape: a
+        // per-run random key, never a literal — otherwise THIS unrelated boot error is what the
+        // ownership assertion below sees instead of the validator's.
+        p.put("jtoye.storefront.client-ip-hmac-key", "${random.value}${random.value}");
         return p.entrySet().stream()
                 .map(e -> "--" + e.getKey() + "=" + e.getValue())
                 .toArray(String[]::new);
