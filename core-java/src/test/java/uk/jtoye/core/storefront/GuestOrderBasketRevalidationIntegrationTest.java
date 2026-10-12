@@ -255,11 +255,209 @@ class GuestOrderBasketRevalidationIntegrationTest {
         assertThat(row.get("allergen_ack_mask")).isEqualTo(PEANUTS);
     }
 
+    // ------------------------------------------------------------------
+    // Task 2: every other kind of change, each collected in the same loop and reported together.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("UNAVAILABLE: a product made unavailable after render is refused 409 basket-changed naming the line, with the total of what remains; the same key then accepts the basket without it")
+    void productMadeUnavailableAfterRender_isRefusedUnavailable_thenAcceptedWithoutTheLine() throws Exception {
+        UUID suya = seedProduct("SKU-3733-UNAVAIL-A", "Suya", 900L, PEANUTS, 100);
+        UUID rice = seedProduct("SKU-3733-UNAVAIL-B", "Plain Rice", 700L, 0, 100);
+        vendorEdits(suya, "Suya", 900L, PEANUTS, false, 100);
+
+        String key = "unavailable-" + UUID.randomUUID();
+        String email = "unavailable-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(suya, 1, 900L), line(rice, 1, 700L)), 1600L, PEANUTS));
+        JsonNode problem = assertProblem(refused, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        String text = responseText(refused);
+        assertThat(kinds(problem)).as(text).containsExactly("UNAVAILABLE", "TOTAL_CHANGED");
+        JsonNode unavailable = problem.path("changes").get(0);
+        assertThat(unavailable.path("productId").asString()).isEqualTo(suya.toString());
+        assertThat(unavailable.path("name").asString()).isEqualTo("Suya");
+        assertThat(unavailable.has("expected")).as("an availability entry carries no prices").isFalse();
+        JsonNode total = problem.path("changes").get(1);
+        assertThat(total.path("expected").asLong()).isEqualTo(1600L);
+        assertThat(total.path("current").asLong()).as("the total of the lines that can still be ordered").isEqualTo(700L);
+        assertThat(countOrdersByEmail(email)).isZero();
+        assertThat(countReservationsForKey(key)).isZero();
+
+        MvcResult accepted = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(rice, 1, 700L)), 700L, 0));
+        assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
+        assertThat(countOrdersByEmail(email)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SOLD_OUT: fewer units in stock than requested is refused 409 basket-changed with requested and available; the same key then accepts the available quantity")
+    void soldOutAfterRender_isRefusedSoldOut_withRequestedAndAvailable_thenAcceptedAtTheAvailableQuantity() throws Exception {
+        UUID suya = seedProduct("SKU-3733-SOLDOUT", "Suya", 900L, PEANUTS, 10);
+        vendorEdits(suya, "Suya", 900L, PEANUTS, true, 2);
+
+        String key = "soldout-" + UUID.randomUUID();
+        String email = "soldout-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(suya, 3, 900L)), 2700L, PEANUTS));
+        JsonNode problem = assertProblem(refused, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        String text = responseText(refused);
+        assertThat(kinds(problem)).as(text).containsExactly("SOLD_OUT", "TOTAL_CHANGED");
+        JsonNode soldOut = problem.path("changes").get(0);
+        assertThat(soldOut.path("productId").asString()).isEqualTo(suya.toString());
+        assertThat(soldOut.path("name").asString()).isEqualTo("Suya");
+        assertThat(soldOut.path("requested").asInt()).isEqualTo(3);
+        assertThat(soldOut.path("available").asInt()).isEqualTo(2);
+        JsonNode total = problem.path("changes").get(1);
+        assertThat(total.path("expected").asLong()).isEqualTo(2700L);
+        assertThat(total.path("current").asLong()).as("the line counted at the quantity that can be had").isEqualTo(1800L);
+        assertThat(countOrdersByEmail(email)).isZero();
+
+        MvcResult accepted = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(suya, 2, 900L)), 1800L, PEANUTS));
+        assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
+        assertThat(((Number) orderRowByEmail(email).get("total_amount_pennies")).longValue()).isEqualTo(1800L);
+    }
+
+    @Test
+    @DisplayName("REMOVED (T-37-81): another shop's product and a non-existent id get the same 409 entry, the id only, never the other shop's name; the same key then accepts the basket without it")
+    void anotherShopsProduct_andANonExistentId_areBothRemoved_withTheIdOnly() throws Exception {
+        UUID otherShop = seedShopIdempotent("shop-37-33-other", "37-33 Other Shop", 0);
+        UUID secret = seedProductInShop(otherShop, "SKU-3733-OTHER", "Secret Jollof 4471", 1200L, 0, 100);
+        UUID rice = seedProduct("SKU-3733-REMOVED-OK", "Plain Rice", 700L, 0, 100);
+        UUID ghost = UUID.randomUUID();
+
+        String key = "removed-" + UUID.randomUUID();
+        String email = "removed-" + UUID.randomUUID() + "@example.com";
+        MvcResult foreign = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(secret, 1, 1200L), line(rice, 1, 700L)), 1900L, 0));
+        JsonNode foreignProblem = assertProblem(foreign, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        String foreignText = responseText(foreign);
+        assertThat(foreignText).as("another shop's product is never named").doesNotContain("Secret Jollof", "4471");
+        assertThat(foreignText).as("no 31.1-era 404 wording either").doesNotContain("Product not found");
+        assertThat(kinds(foreignProblem)).as(foreignText).containsExactly("REMOVED", "TOTAL_CHANGED");
+        JsonNode removed = foreignProblem.path("changes").get(0);
+        assertThat(removed.path("productId").asString()).isEqualTo(secret.toString());
+        assertThat(removed.has("name")).as("id only").isFalse();
+        assertThat(removed.has("expected")).isFalse();
+        assertThat(foreignProblem.path("changes").get(1).path("current").asLong()).isEqualTo(700L);
+
+        MvcResult missing = perform(post(ordersUrl()),
+                body(email, List.of(line(ghost, 1, 1200L), line(rice, 1, 700L)), 1900L, 0));
+        JsonNode missingProblem = assertProblem(missing, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        // Byte-for-byte the same shape once the id is substituted: nothing distinguishes "exists
+        // elsewhere" from "does not exist".
+        String foreignShape = foreignProblem.toString().replace(secret.toString(), "<id>");
+        String missingShape = missingProblem.toString().replace(ghost.toString(), "<id>");
+        assertThat(foreignShape).isEqualTo(missingShape);
+        assertThat(countOrdersByEmail(email)).isZero();
+        assertThat(countReservationsForKey(key)).isZero();
+
+        MvcResult accepted = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(rice, 1, 700L)), 700L, 0));
+        assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
+        assertThat(countOrdersByEmail(email)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("BELOW_MINIMUM: a vendor reprice that drops the basket under the shop's minimum is refused 409 basket-changed with the minimum, the subtotal and the human wording, beside the price and total changes")
+    void vendorRepriceBelowTheMinimum_isRefusedBelowMinimum_withTheHumanWording() throws Exception {
+        UUID minShop = seedShopIdempotent("shop-37-33-minimum", "37-33 Minimum Shop", 2000);
+        UUID platter = seedProductInShop(minShop, "SKU-3733-MIN-RACE", "Party Platter", 2500L, 0, 100);
+        vendorEditsInShop(minShop, platter, "Party Platter", 900L, 0, true, 100);
+
+        String email = "minimum-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = perform(post(ordersUrl("shop-37-33-minimum")),
+                body(email, List.of(line(platter, 1, 2500L)), 2500L, 0));
+        JsonNode problem = assertProblem(refused, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        String text = responseText(refused);
+        assertThat(kinds(problem)).as(text).containsExactly("PRICE_CHANGED", "BELOW_MINIMUM", "TOTAL_CHANGED");
+        JsonNode below = problem.path("changes").get(1);
+        assertThat(below.path("minimum").asLong()).isEqualTo(2000L);
+        assertThat(below.path("subtotal").asLong()).isEqualTo(900L);
+        assertThat(below.path("detail").asString())
+                .as("the WR-01 wording is kept inside the entry")
+                .isEqualTo("Order is below this shop's minimum order value of £20.00.");
+        assertThat(below.has("productId")).isFalse();
+        assertThat(countOrdersByEmail(email)).isZero();
+
+        // Direct API, no race: a basket submitted under the minimum at the prices shown is refused with
+        // the BELOW_MINIMUM entry alone (the storefront disables submit; the server is the gate).
+        UUID snack = seedProductInShop(minShop, "SKU-3733-MIN-DIRECT", "Snack", 500L, 0, 100);
+        String direct = "minimum-direct-" + UUID.randomUUID() + "@example.com";
+        MvcResult refusedDirect = perform(post(ordersUrl("shop-37-33-minimum")),
+                body(direct, List.of(line(snack, 1, 500L)), 500L, 0));
+        JsonNode directProblem = assertProblem(refusedDirect, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        assertThat(kinds(directProblem)).as(responseText(refusedDirect)).containsExactly("BELOW_MINIMUM");
+        assertThat(countOrdersByEmail(direct)).isZero();
+    }
+
+    // ------------------------------------------------------------------
+    // Composition with 31.1 D-05. Price AND allergens changed: ONE basket-changed problem carrying the
+    // 31.1 allergen properties, so the client re-renders both panels and re-confirms once. Allergens
+    // ONLY: the 31.1 problem, unchanged in type, code and properties.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("Mixed: a reprice AND an allergen change are refused with ONE 409 basket-changed carrying changes[] and the 31.1 allergen properties; re-confirming both under the same key succeeds")
+    void priceAndAllergenChanged_isRefusedBasketChanged_carryingTheAllergenProperties_thenReconfirmedUnderTheSameKey() throws Exception {
+        UUID satay = seedProduct("SKU-3733-MIXED", "Satay", 900L, PEANUTS, 100);
+        vendorEdits(satay, "Satay", 1400L, PEANUTS | MILK, true, 100);
+
+        String key = "mixed-" + UUID.randomUUID();
+        String email = "mixed-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(satay, 1, 900L)), 900L, PEANUTS));
+        JsonNode problem = assertProblem(refused, 409, BASKET_CHANGED, "BASKET_CHANGED");
+        String text = responseText(refused);
+        assertThat(kinds(problem)).as(text).containsExactly("PRICE_CHANGED", "TOTAL_CHANGED");
+        assertThat(problem.path("currentAllergenMask").asInt()).as(text).isEqualTo(PEANUTS | MILK);
+        assertThat(problem.path("acknowledgedAllergenMask").asInt()).isEqualTo(PEANUTS);
+        assertThat(texts(problem.path("currentAllergens"))).containsExactly("Peanuts", "Milk");
+        JsonNode lines = problem.path("lines");
+        assertThat(lines.size()).as(text).isEqualTo(1);
+        assertThat(lines.get(0).path("productId").asString()).isEqualTo(satay.toString());
+        assertThat(lines.get(0).path("productName").asString()).isEqualTo("Satay");
+        assertThat(lines.get(0).path("allergenMask").asInt()).isEqualTo(PEANUTS | MILK);
+        assertThat(texts(lines.get(0).path("allergens"))).containsExactly("Peanuts", "Milk");
+        assertThat(countOrdersByEmail(email)).isZero();
+        assertThat(countReservationsForKey(key)).isZero();
+
+        MvcResult accepted = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(satay, 1, 1400L)), 1400L, PEANUTS | MILK));
+        assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
+        Map<String, Object> row = orderRowByEmail(email);
+        assertThat(((Number) row.get("total_amount_pennies")).longValue()).isEqualTo(1400L);
+        assertThat(row.get("allergen_ack_mask")).isEqualTo(PEANUTS | MILK);
+    }
+
+    @Test
+    @DisplayName("Allergens only: an allergen change with the prices unchanged is refused exactly as 31.1 built it (409 allergen-acknowledgement-stale, its code and properties, no changes[])")
+    void allergenOnlyChange_isRefusedExactlyAs31_1() throws Exception {
+        UUID satay = seedProduct("SKU-3733-ALLERGEN-ONLY", "Satay", 1000L, PEANUTS, 100);
+        vendorEdits(satay, "Satay", 1000L, PEANUTS | MILK, true, 100);
+
+        String email = "allergen-only-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = perform(post(ordersUrl()), body(email, List.of(line(satay, 1, 1000L)), 1000L, PEANUTS));
+        JsonNode problem = assertProblem(refused, 409, "https://jtoye.uk/errors/allergen-acknowledgement-stale",
+                "ALLERGEN_ACKNOWLEDGEMENT_STALE");
+        String text = responseText(refused);
+        assertThat(problem.path("title").asString()).as(text).isEqualTo("Allergen information changed");
+        assertThat(problem.path("currentAllergenMask").asInt()).isEqualTo(PEANUTS | MILK);
+        assertThat(problem.path("acknowledgedAllergenMask").asInt()).isEqualTo(PEANUTS);
+        assertThat(texts(problem.path("currentAllergens"))).containsExactly("Peanuts", "Milk");
+        assertThat(problem.path("lines").size()).isEqualTo(1);
+        assertThat(problem.has("changes")).as("the 31.1 contract carries no basket diff: " + text).isFalse();
+        assertThat(countOrdersByEmail(email)).isZero();
+    }
+
     // ---- Vendor edits through the real product endpoint ----
 
     /** The vendor's real edit path: PUT /api/v1/products/{id} with a catalog-write token. */
     private void vendorEdits(UUID productId, String title, long pricePennies, int allergenMask,
                              boolean available, Integer quantityInStock) throws Exception {
+        vendorEditsInShop(shopId, productId, title, pricePennies, allergenMask, available, quantityInStock);
+    }
+
+    private void vendorEditsInShop(UUID shop, UUID productId, String title, long pricePennies, int allergenMask,
+                                   boolean available, Integer quantityInStock) throws Exception {
         Map<String, Object> update = new LinkedHashMap<>();
         update.put("sku", "SKU-3733-EDITED-" + productId);
         update.put("title", title);
@@ -268,7 +466,7 @@ class GuestOrderBasketRevalidationIntegrationTest {
         update.put("pricePennies", pricePennies);
         update.put("vatRate", "STANDARD");
         update.put("available", available);
-        update.put("shopId", shopId);
+        update.put("shopId", shop);
         update.put("quantityInStock", quantityInStock);
         MvcResult edited = mockMvc.perform(put("/api/v1/products/" + productId)
                         .with(jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
@@ -289,7 +487,11 @@ class GuestOrderBasketRevalidationIntegrationTest {
     // ---- HTTP helpers ----
 
     private String ordersUrl() {
-        return "/api/v1/public/shops/" + SHOP_SLUG + "/orders";
+        return ordersUrl(SHOP_SLUG);
+    }
+
+    private static String ordersUrl(String slug) {
+        return "/api/v1/public/shops/" + slug + "/orders";
     }
 
     private MvcResult perform(MockHttpServletRequestBuilder request, Object body) throws Exception {
@@ -373,6 +575,19 @@ class GuestOrderBasketRevalidationIntegrationTest {
             }
         });
         return matching;
+    }
+
+    /** The kinds in changes[], in the order the server reported them. */
+    private static List<String> kinds(JsonNode problem) {
+        List<String> kinds = new java.util.ArrayList<>();
+        problem.path("changes").forEach(change -> kinds.add(change.path("kind").asString()));
+        return kinds;
+    }
+
+    private static List<String> texts(JsonNode array) {
+        List<String> values = new java.util.ArrayList<>();
+        array.forEach(node -> values.add(node.asString()));
+        return values;
     }
 
     private static String responseText(MvcResult result) throws Exception {
