@@ -113,16 +113,25 @@ async function resolveShop(
 
   const prodRes = await request.get(`${API}/api/v1/public/shops/${slug}/products`)
   if (!prodRes.ok()) return null
+  // GET /public/shops/{slug}/products answers a map of category -> products (measured on the
+  // live stack at the 37-31 gate: {"Drinks":[...],"Mains":[...],"Sides":[...]}), not a list and
+  // not a page. Read as written in Task 1 (array | .content) every block resolved no product
+  // and SKIPPED "shop not present" — a skip that read as a pass. Flatten the groups too.
   const body = (await prodRes.json()) as unknown
   const list: Array<Record<string, unknown>> = Array.isArray(body)
     ? (body as Array<Record<string, unknown>>)
-    : ((body as { content?: Array<Record<string, unknown>> }).content ?? [])
+    : Array.isArray((body as { content?: unknown }).content)
+      ? ((body as { content: Array<Record<string, unknown>> }).content)
+      : Object.values(body as Record<string, unknown>).flatMap((group) =>
+          Array.isArray(group) ? (group as Array<Record<string, unknown>>) : [],
+        )
   const product = list.find(
     (p) =>
       typeof p.id === "string" &&
       typeof p.pricePennies === "number" &&
       (p.pricePennies as number) > 0 &&
-      p.available !== false,
+      p.available !== false &&
+      p.inStock !== false,
   )
   if (!product) return null
 
@@ -167,10 +176,39 @@ async function placeGuestCashOrder(
   return { status, order }
 }
 
-/** Cancel the orders a block created, so reruns do not leave the shop near the per-IP cap. */
-async function cancelOrders(request: APIRequestContext, token: string | null, created: PlacedOrder[]) {
-  if (!token || created.length === 0) return
-  const ids = created.map((o) => o.id).filter((id): id is string => typeof id === "string")
+/**
+ * Cancel the orders a block created, so reruns do not leave the shop near the per-IP cap.
+ *
+ * The public confirmation (GuestOrderConfirmation) carries an orderNumber and NO id — measured at
+ * the 37-31 gate, where the Task 1 version of this helper filtered on `o.id`, found none, and
+ * silently cancelled nothing. The ids are resolved through the vendor's own per-shop order list
+ * (GET /api/v1/orders/shop/{shopId}, newest first) by number, which is the only honest route a
+ * guest-placed order has back to its id.
+ */
+async function cancelOrders(
+  request: APIRequestContext,
+  token: string | null,
+  shopId: string | undefined,
+  created: PlacedOrder[],
+) {
+  if (!token || !shopId || created.length === 0) return
+  const wanted = new Set(created.map((o) => o.orderNumber))
+  const ids: string[] = created
+    .map((o) => o.id)
+    .filter((id): id is string => typeof id === "string")
+  if (ids.length < created.length) {
+    const listRes = await request
+      .get(`${API}/api/v1/orders/shop/${shopId}?size=100&sort=createdAt,desc`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .catch(() => null)
+    if (listRes && listRes.ok()) {
+      const page = (await listRes.json()) as { content?: Array<{ id: string; orderNumber: string }> }
+      for (const o of page.content ?? []) {
+        if (wanted.has(o.orderNumber) && !ids.includes(o.id)) ids.push(o.id)
+      }
+    }
+  }
   if (ids.length === 0) return
   await request
     .post(`${API}/api/v1/orders/bulk-cancel`, {
@@ -203,10 +241,11 @@ async function vendorLogin(page: Page) {
 
 test.describe("37-D abuse bounds — vendor bulk reject", () => {
   let token: string | null = null
+  let shopId: string | undefined
   let created: PlacedOrder[] = []
 
   test.afterEach(async ({ request }) => {
-    await cancelOrders(request, token, created)
+    await cancelOrders(request, token, shopId, created)
     created = []
   })
 
@@ -218,6 +257,7 @@ test.describe("37-D abuse bounds — vendor bulk reject", () => {
     const shop = await resolveShop(request, SHOP_BULK)
     test.skip(shop === null, `seeded shop ${SHOP_BULK} not present on this stack`)
     if (!shop) return
+    shopId = shop.id
     token = await vendorToken(request)
 
     // Three PENDING guest cash orders, each a DIFFERENT email and phone so only the open-work set
@@ -262,10 +302,11 @@ test.describe("37-D abuse bounds — vendor bulk reject", () => {
 
 test.describe("37-D abuse bounds — the unverified-contact badge", () => {
   let token: string | null = null
+  let shopId: string | undefined
   let created: PlacedOrder[] = []
 
   test.afterEach(async ({ request }) => {
-    await cancelOrders(request, token, created)
+    await cancelOrders(request, token, shopId, created)
     created = []
   })
 
@@ -277,6 +318,7 @@ test.describe("37-D abuse bounds — the unverified-contact badge", () => {
     const shop = await resolveShop(request, SHOP_BADGE)
     test.skip(shop === null, `seeded shop ${SHOP_BADGE} not present on this stack`)
     if (!shop) return
+    shopId = shop.id
     token = await vendorToken(request)
 
     // A guest order: no token, so contactVerified is false — the badge's one true trigger.
@@ -346,10 +388,11 @@ test.describe("37-D abuse bounds — the unverified-contact badge", () => {
 
 test.describe("37-D abuse bounds — the checkout cap copy", () => {
   let token: string | null = null
+  let shopId: string | undefined
   let created: PlacedOrder[] = []
 
   test.afterEach(async ({ request }) => {
-    await cancelOrders(request, token, created)
+    await cancelOrders(request, token, shopId, created)
     created = []
   })
 
@@ -361,6 +404,7 @@ test.describe("37-D abuse bounds — the checkout cap copy", () => {
     test.skip(shop === null, `seeded shop ${SHOP_CAP} not present on this stack`)
     if (!shop) return
     test.skip(shop.acceptsCardPayments === true, `${SHOP_CAP} takes card payments — no cash-only cap to hit`)
+    shopId = shop.id
     token = await vendorToken(request)
 
     // Fill the per-email cap (3 open cash orders) for ONE email at this shop, via the API.
