@@ -23,12 +23,15 @@ import CheckoutPage from "@/app/shop/[slug]/checkout/page"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
 import {
+  ALLERGENS_ALSO_CHANGED_COPY,
   BASKET_CHANGED_ACCEPT_LABEL,
   BASKET_CHANGED_HEADING_COPY,
   BASKET_CHANGED_REFUSAL_COPY,
   BASKET_CONFIRMATION_REQUIRED_COPY,
   BASKET_UPDATED_NOTE_COPY,
 } from "@/components/storefront/basket-changed-panel"
+import { ALLERGEN_ACK_STALE_COPY } from "@/components/storefront/order-allergen-panel"
+import { CUSTOMER_ID_KEY } from "@/lib/cart-identity"
 import type { BasketChange } from "@/types/storefront"
 
 // DISTINCT keys per call: the same-key arm asserts the SAME key across two submits, which a constant
@@ -420,5 +423,166 @@ describe("UI-SPEC § C1 empty and error: a malformed 409 and the 422 show the ge
     expect(screen.queryByTestId("basket-changed-panel")).not.toBeInTheDocument()
     expect(mockedPost).toHaveBeenCalledTimes(1)
     expect(storedItems()).toEqual(before)
+  })
+})
+
+/**
+ * Task 2 (F15; UI-SPEC § C1 "What the page does with the change"): the page UPDATES the stored
+ * basket to the server's values when the panel renders — new prices; unavailable and removed lines
+ * dropped; sold-out quantities set to what is available or dropped at 0 — WITHOUT touching the
+ * basket's ownership stamp. So the resubmit after "Accept changes" sends the new prices and the
+ * new total under the same key, and the Place order label shows the new total.
+ */
+describe("the basket is rewritten to the server's values and still belongs to the right person (37-34 Task 2, F15)", () => {
+  const MILK = 1 << 6
+  const storedPayload = () => JSON.parse(localStorage.getItem(STORAGE_KEY) as string) as { owner?: string | null; items: Array<{ productId: string; pricePennies: number; quantity: number }> }
+  const storedLines = () => storedPayload().items.map((i) => `${i.productId}:${i.pricePennies}x${i.quantity}`)
+
+  it("a reprice: the stored Suya line is £14.00, the Place order label shows the new total, and the resubmit carries the new price and total under the SAME key", async () => {
+    await submitIntoRepriced409()
+    await screen.findByTestId("basket-changed-panel")
+    // Stored content, not the rendered view: Suya at 1400, Jollof Rice as it was.
+    await waitFor(() => expect(storedLines()).toEqual(["p1:1400x1", "p2:500x2"]))
+
+    fireEvent.click(screen.getByRole("button", { name: BASKET_CHANGED_ACCEPT_LABEL }))
+    // £14.00 + 2 x £5.00, collection: the label is the new total the customer now commits to.
+    expect(submitButton()).toHaveTextContent("Place order · £24.00")
+
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+    expect(posted(1)[1].items).toEqual([
+      { productId: "p1", quantity: 1, expectedUnitPricePennies: 1400 },
+      { productId: "p2", quantity: 2, expectedUnitPricePennies: 500 },
+    ])
+    expect(posted(1)[1].expectedTotalPennies).toBe(2400)
+    expect(posted(1)[1].idempotencyKey).toBe(posted(0)[1].idempotencyKey)
+    await screen.findByText(/order confirmed/i)
+  })
+
+  it("sold out, unavailable and removed: the stored lines follow the diff, a REMOVED line is still named from the basket's copy, and one Place order after Accept submits once without a re-tick", async () => {
+    await submitIntoRepriced409([
+      { kind: "REMOVED", productId: "p1" },
+      { kind: "SOLD_OUT", productId: "p2", name: "Jollof Rice", requested: 2, available: 1 },
+      { kind: "TOTAL_CHANGED", expected: 1900, current: 500 },
+    ])
+    await screen.findByTestId("basket-changed-panel")
+    await waitFor(() => expect(storedLines()).toEqual(["p2:500x1"]))
+    const rows = screen.getAllByTestId("basket-change-row")
+    expect(rows[0]).toHaveTextContent("Suya · no longer on this shop's menu, removed from your basket")
+    expect(rows[1]).toHaveTextContent("Jollof Rice · only 1 left, we've changed your quantity from 2 to 1")
+    // The server sent no allergen properties: the set the customer acknowledged is unchanged, and
+    // the box stays ticked — one Place order after Accept changes submits.
+    expect(ackCheckbox()).toBeChecked()
+
+    fireEvent.click(screen.getByRole("button", { name: BASKET_CHANGED_ACCEPT_LABEL }))
+    expect(submitButton()).toHaveTextContent("Place order · £5.00")
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+    expect(posted(1)[1].items).toEqual([{ productId: "p2", quantity: 1, expectedUnitPricePennies: 500 }])
+    expect(posted(1)[1].expectedTotalPennies).toBe(500)
+    expect(posted(1)[1].acknowledgedAllergenMask).toBe(0)
+    expect(posted(1)[1].idempotencyKey).toBe(posted(0)[1].idempotencyKey)
+  })
+
+  it("F15 at the page: the ownership stamp is byte-identical through the rewrite, with the session lapsed between the 409 and the update", async () => {
+    // A signed in when the basket was stamped; the access cookie lapsed by checkout (the id is
+    // gone, nobody is signed in now). The rewrite must preserve A — never downgrade to null.
+    mockEndpoints()
+    mockedPost.mockRejectedValueOnce(basketChanged409(SUYA_REPRICED)).mockResolvedValue({ data: COD_CONFIRMATION })
+    seedCart()
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...storedPayload(), owner: "sub-customer-a" }))
+    localStorage.removeItem(CUSTOMER_ID_KEY)
+    renderCheckout()
+    await screen.findByRole("heading", { name: "No allergens declared for this order" })
+    fireEvent.click(screen.getByRole("button", { name: /collection/i }))
+    fillDetails()
+    fireEvent.click(ackCheckbox())
+    await waitFor(() => expect(ackCheckbox()).toBeChecked())
+    const ownerBefore = JSON.stringify(storedPayload().owner)
+    expect(ownerBefore).toBe('"sub-customer-a"')
+
+    placeOrder()
+    await screen.findByTestId("basket-changed-panel")
+    await waitFor(() => expect(storedLines()).toEqual(["p1:1400x1", "p2:500x2"]))
+    expect(JSON.stringify(storedPayload().owner)).toBe(ownerBefore)
+  })
+
+  it("the same 409 carrying the allergen properties: the allergen panel re-renders the new set unticked, the panel says so, and one Place order after re-tick + Accept submits once with the new mask", async () => {
+    const CATALOGUE_AFTER_EDIT = { Mains: [product("p1", "Suya", 1400, MILK), product("p2", "Jollof Rice", 500)] }
+    mockedGet.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.endsWith("/products")) {
+        // Mount reads the catalogue as the customer read it; the re-fetch after the 409 reads the edited one.
+        const calls = mockedGet.mock.calls.filter(([u]) => typeof u === "string" && u.endsWith("/products")).length
+        return Promise.resolve({ data: calls <= 1 ? CATALOGUE : CATALOGUE_AFTER_EDIT })
+      }
+      return Promise.resolve({ data: SHOP })
+    })
+    mockedPost
+      .mockRejectedValueOnce(
+        basketChanged409(SUYA_REPRICED, {
+          currentAllergenMask: MILK,
+          currentAllergens: ["Milk"],
+          acknowledgedAllergenMask: 0,
+          lines: [
+            { productId: "p1", productName: "Suya", allergenMask: MILK, allergens: ["Milk"] },
+            { productId: "p2", productName: "Jollof Rice", allergenMask: 0, allergens: [] },
+          ],
+        })
+      )
+      .mockResolvedValue({ data: { ...COD_CONFIRMATION, acknowledgedAllergenMask: MILK, acknowledgedAllergens: ["Milk"], recordedAllergens: ["Milk"] } })
+    seedCart()
+    renderCheckout()
+    await screen.findByRole("heading", { name: "No allergens declared for this order" })
+    fireEvent.click(screen.getByRole("button", { name: /collection/i }))
+    fillDetails()
+    fireEvent.click(ackCheckbox())
+    await waitFor(() => expect(ackCheckbox()).toBeChecked())
+
+    placeOrder()
+    await screen.findByTestId("basket-changed-panel")
+    expect(screen.getByText(ALLERGENS_ALSO_CHANGED_COPY)).toBeInTheDocument()
+    // The allergen panel now states the server's set, unticked.
+    await waitFor(() => expect(screen.getAllByTestId("allergen-chip").map((c) => c.textContent)).toEqual(["Milk"]))
+    await waitFor(() => expect(ackCheckbox()).not.toBeChecked())
+    await waitFor(() => expect(storedLines()).toEqual(["p1:1400x1", "p2:500x2"]))
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+
+    // Re-tick, accept, one Place order.
+    fireEvent.click(ackCheckbox())
+    await waitFor(() => expect(ackCheckbox()).toBeChecked())
+    fireEvent.click(screen.getByRole("button", { name: BASKET_CHANGED_ACCEPT_LABEL }))
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+    expect(posted(1)[1].acknowledgedAllergenMask).toBe(MILK)
+    expect(posted(1)[1].items[0]).toEqual({ productId: "p1", quantity: 1, expectedUnitPricePennies: 1400 })
+    expect(posted(1)[1].idempotencyKey).toBe(posted(0)[1].idempotencyKey)
+    await screen.findByText(/order confirmed/i)
+  })
+
+  it("an allergen-only 409 keeps the unchanged 31.1 path: no basket panel, the stale copy in the allergen panel, the stored prices untouched", async () => {
+    mockEndpoints()
+    mockedPost.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          type: "https://jtoye.uk/errors/allergen-acknowledgement-stale",
+          title: "Allergen information changed",
+          status: 409,
+          code: "ALLERGEN_ACKNOWLEDGEMENT_STALE",
+          currentAllergenMask: MILK,
+          currentAllergens: ["Milk"],
+          acknowledgedAllergenMask: 0,
+          lines: [{ productId: "p1", productName: "Suya", allergenMask: MILK, allergens: ["Milk"] }],
+        },
+      },
+    })
+    await armCheckout()
+    const before = storedLines()
+
+    placeOrder()
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(ALLERGEN_ACK_STALE_COPY))
+    expect(screen.queryByTestId("basket-changed-panel")).not.toBeInTheDocument()
+    expect(storedLines()).toEqual(before)
+    expect(mockedPost).toHaveBeenCalledTimes(1)
   })
 })

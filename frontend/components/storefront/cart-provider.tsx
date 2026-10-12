@@ -19,6 +19,15 @@ import {
   hasActiveSessionMarker,
   resolveCartOwner,
 } from "@/lib/cart-identity"
+import type { BasketChange } from "@/types/storefront"
+
+/**
+ * 37-34 (D-16) RED scaffold: the name the page and the tests import, applying nothing yet. The
+ * GREEN commit makes it rewrite the lines to the server's `changes[]`.
+ */
+export function applyBasketChanges(items: CartItem[], _changes: readonly BasketChange[]): CartItem[] {
+  return items
+}
 
 export interface CartItem {
   productId: string
@@ -69,6 +78,8 @@ interface CartContextValue {
    */
   lineLimit: number | null
   setLineLimit: (limit: number | null) => void
+  /** 37-34 (D-16): rewrite the lines to the server's basket-changed `changes[]`. RED scaffold: a no-op. */
+  applyServerChanges: (changes: readonly BasketChange[]) => void
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
@@ -324,6 +335,10 @@ export function CartProvider({
     setItems([])
   }, [setItems])
 
+  const applyServerChanges = useCallback((_changes: readonly BasketChange[]) => {
+    /* RED scaffold: nothing applied yet */
+  }, [])
+
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0)
   const totalPennies = items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0)
 
@@ -347,8 +362,9 @@ export function CartProvider({
       shopSlug,
       lineLimit,
       setLineLimit,
+      applyServerChanges,
     }),
-    [items, addItem, removeItem, updateQuantity, clearCart, itemCount, totalPennies, shopSlug, lineLimit]
+    [items, addItem, removeItem, updateQuantity, clearCart, itemCount, totalPennies, shopSlug, lineLimit, applyServerChanges]
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
