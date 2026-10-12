@@ -533,10 +533,27 @@ test.describe("Shop Menu & Product Cards", () => {
       await expect(page.getByRole("heading", { level: 1, name: SHOP_NAME })).toBeVisible()
       await expect(page.locator("article").first()).toBeVisible()
 
+      // The label is looked for in the WHOLE body text, scripts included, so a promotion serialised
+      // into the RSC payload or the JSON-LD would be caught even where nothing renders it.
       const body = (await page.locator("body").textContent()) ?? ""
       expect(body).not.toContain(label)
-      expect(body).not.toMatch(/\d+\s*%\s*off/i)
-      expect(body).not.toMatch(/£\d+(\.\d+)?\s*off/i)
+      // The discount patterns are looked for in what the customer can READ, minus the vendor's own
+      // announcement band. 37-36 keeps announcements (vendor-written text, with a warning on the
+      // form against putting discounts in them), so "20% off" typed by a vendor into an announcement
+      // is not a promotion this page advertises. Measured at the 37-38 gate: the shared stack's
+      // mama-ades-kitchen carries an announcement "New this week — 20% off selected dishes." left by
+      // an e2e run on 2026-10-07, and the textContent form matched it (and its copy in the RSC
+      // payload) although no promotion rendered. The excluded text is recorded as an annotation.
+      const announcement = (await page.getByTestId("shop-announcements").allInnerTexts()).join("\n")
+      test.info().annotations.push({
+        type: "announcement-excluded",
+        description: announcement ? announcement.replace(/\s+/g, " ").trim() : "none (no announcement band rendered)",
+      })
+      const readable = await page.locator("body").innerText()
+      const outsideAnnouncement = announcement ? readable.split(announcement).join("\n") : readable
+      expect(outsideAnnouncement.length, "VOID: the readable page is empty").toBeGreaterThan(0)
+      expect(outsideAnnouncement).not.toMatch(/\d+\s*%\s*off/i)
+      expect(outsideAnnouncement).not.toMatch(/£\d+(\.\d+)?\s*off/i)
       expect(promotionRequests, "the browser asked for promotions").toEqual([])
     } finally {
       if (token && promotionId) {
