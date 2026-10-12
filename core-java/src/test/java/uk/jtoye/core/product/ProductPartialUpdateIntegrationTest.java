@@ -45,6 +45,7 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 /**
@@ -97,6 +98,11 @@ class ProductPartialUpdateIntegrationTest {
 
     private static final String PRODUCTS = "/api/v1/products/";
     private static final String VALIDATION = "https://jtoye.uk/errors/validation";
+    private static final String SHOP_ACCESS_DENIED = "https://jtoye.uk/errors/shop-access-denied";
+    private static final String FORBIDDEN = "https://jtoye.uk/errors/forbidden";
+    /** Every allergen fact on the row, plus the fields a stock/availability patch must never touch. */
+    private static final String ALLERGEN_AND_CORE_COLUMNS = "allergen_mask, allergen_spans::text AS allergen_spans, "
+            + "may_contain_mask, ingredients_text, title, price_pennies, vat_rate, shop_id";
 
     @Autowired private ProductService productService;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -109,6 +115,8 @@ class ProductPartialUpdateIntegrationTest {
     private String suffix;
     private UUID shopA;
     private UUID managerOfA;
+    private UUID shopB;
+    private UUID managerOfB;
 
     @BeforeEach
     void setUp() {
@@ -123,6 +131,9 @@ class ProductPartialUpdateIntegrationTest {
         shopA = seedShop("pu-a-3739-" + suffix, "37-39 Shop A " + suffix);
         managerOfA = UUID.randomUUID();
         grant(managerOfA, shopA, "SHOP_MANAGER");
+        shopB = seedShop("pu-b-3739-" + suffix, "37-39 Shop B " + suffix);
+        managerOfB = UUID.randomUUID();
+        grant(managerOfB, shopB, "SHOP_MANAGER");
     }
 
     @AfterEach
@@ -224,6 +235,137 @@ class ProductPartialUpdateIntegrationTest {
 
         assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(200);
         assertThat(stockOf(product)).isEqualTo(7);
+    }
+
+    // ------------------------------------------------------------------
+    // 37-39 Task 2 (UXT-016): PATCH /products/{id} — stock and availability only, never allergen data
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("UXT-016: PATCH {available: false} makes the product unavailable and leaves every allergen fact unchanged by SQL")
+    void patchAvailabilityLeavesAllergenDataUnchanged() throws Exception {
+        UUID product = seedProduct(shopA, "PA-AVAIL-" + suffix, 12);
+        Map<String, Object> before = allergenAndCoreRow(product);
+
+        MvcResult result = patchProduct(userJwt(managerOfA), product, Map.of("available", false));
+
+        JsonNode dto = json(result, 200);
+        assertThat(dto.path("available").asBoolean()).as(text(result)).isFalse();
+        assertThat(availableOf(product)).as("unavailable by SQL").isFalse();
+        assertThat(allergenAndCoreRow(product))
+                .as("allergen mask, emphasis spans, may-contain mask, ingredients, title, price, VAT and shop "
+                        + "are exactly what they were before the PATCH")
+                .isEqualTo(before);
+        assertThat(stockOf(product)).as("a PATCH that does not mention stock keeps it").isEqualTo(12);
+    }
+
+    @Test
+    @DisplayName("UXT-016: PATCH {allergenMask: 0} is a typed 400 naming allergenMask, and the declared mask stays 64 by SQL")
+    void patchRefusesAllergenMaskByName() throws Exception {
+        UUID product = seedProduct(shopA, "PA-MASK-" + suffix, 12);
+        Map<String, Object> before = allergenAndCoreRow(product);
+
+        MvcResult result = patchProduct(userJwt(managerOfA), product, Map.of("allergenMask", 0));
+
+        JsonNode problem = json(result, 400);
+        assertThat(problem.path("type").asString()).as(text(result)).isEqualTo(VALIDATION);
+        assertThat(problem.path("errors").has("allergenMask"))
+                .as("the 400 names the property it refused: %s", text(result)).isTrue();
+        assertThat(allergenAndCoreRow(product)).as("nothing changed").isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("UXT-016: PATCH mixing an accepted field with ingredientsText and mayContainMask is refused whole: 400 naming both, nothing changes")
+    void patchWithAnyRefusedPropertyChangesNothing() throws Exception {
+        UUID product = seedProduct(shopA, "PA-MIX-" + suffix, 12);
+        Map<String, Object> before = allergenAndCoreRow(product);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("available", false);
+        body.put("ingredientsText", "Beef, yaji spice");
+        body.put("mayContainMask", 0);
+
+        MvcResult result = patchProduct(userJwt(managerOfA), product, body);
+
+        JsonNode problem = json(result, 400);
+        assertThat(problem.path("type").asString()).as(text(result)).isEqualTo(VALIDATION);
+        assertThat(problem.path("errors").has("ingredientsText")).as(text(result)).isTrue();
+        assertThat(problem.path("errors").has("mayContainMask")).as(text(result)).isTrue();
+        assertThat(availableOf(product)).as("the accepted field was not applied either").isTrue();
+        assertThat(allergenAndCoreRow(product)).as("nothing changed").isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("UXT-016: PATCH by a manager of another shop is the typed 403 and nothing changes")
+    void patchByManagerOfAnotherShopIsForbidden() throws Exception {
+        UUID product = seedProduct(shopA, "PA-XSHOP-" + suffix, 12);
+
+        MvcResult result = patchProduct(userJwt(managerOfB), product, Map.of("available", false));
+
+        JsonNode problem = json(result, 403);
+        assertThat(problem.path("type").asString()).as(text(result)).isEqualTo(SHOP_ACCESS_DENIED);
+        assertThat(availableOf(product)).as("nothing changed").isTrue();
+    }
+
+    @Test
+    @DisplayName("UXT-016: PATCH without the catalog:write scope is the typed 403 and nothing changes")
+    void patchWithoutCatalogWriteScopeIsForbidden() throws Exception {
+        UUID product = seedProduct(shopA, "PA-SCOPE-" + suffix, 12);
+        UUID t = tenant;
+        RequestPostProcessor noScope = jwt().jwt(j -> j.subject(managerOfA.toString()).claim("tenant_id", t.toString()))
+                .authorities(new SimpleGrantedAuthority("SCOPE_catalog:read"));
+
+        MvcResult result = patchProduct(noScope, product, Map.of("available", false));
+
+        JsonNode problem = json(result, 403);
+        assertThat(problem.path("type").asString()).as(text(result)).isEqualTo(FORBIDDEN);
+        assertThat(availableOf(product)).as("nothing changed").isTrue();
+    }
+
+    @Test
+    @DisplayName("UXT-016: PATCH stock follows the trackInventory rule: a quantity sets it, false clears it, true needs a quantity")
+    void patchStockFollowsTheTrackInventoryRule() throws Exception {
+        UUID product = seedProduct(shopA, "PA-STOCK-" + suffix, 12);
+
+        MvcResult set = patchProduct(userJwt(managerOfA), product, Map.of("quantityInStock", 3));
+        assertThat(json(set, 200).path("quantityInStock").asInt()).as(text(set)).isEqualTo(3);
+        assertThat(stockOf(product)).isEqualTo(3);
+
+        MvcResult off = patchProduct(userJwt(managerOfA), product, Map.of("trackInventory", false));
+        assertThat(off.getResponse().getStatus()).as(text(off)).isEqualTo(200);
+        assertThat(stockOf(product)).as("trackInventory false stops tracking").isNull();
+
+        MvcResult onWithoutQty = patchProduct(userJwt(managerOfA), product, Map.of("trackInventory", true));
+        JsonNode problem = json(onWithoutQty, 400);
+        assertThat(problem.path("errors").has("quantityInStock")).as(text(onWithoutQty)).isTrue();
+        assertThat(stockOf(product)).as("nothing changed").isNull();
+
+        MvcResult on = patchProduct(userJwt(managerOfA), product, Map.of("trackInventory", true, "quantityInStock", 4));
+        assertThat(on.getResponse().getStatus()).as(text(on)).isEqualTo(200);
+        assertThat(stockOf(product)).isEqualTo(4);
+
+        MvcResult negative = patchProduct(userJwt(managerOfA), product, Map.of("quantityInStock", -1));
+        JsonNode negativeProblem = json(negative, 400);
+        assertThat(negativeProblem.path("errors").has("quantityInStock")).as(text(negative)).isTrue();
+        assertThat(stockOf(product)).as("nothing changed").isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("UXT-016: the same PATCH twice gives the same product (absolute values, idempotent by construction)")
+    void patchIsIdempotent() throws Exception {
+        UUID product = seedProduct(shopA, "PA-IDEM-" + suffix, 12);
+        Map<String, Object> body = Map.of("available", false, "quantityInStock", 2);
+
+        MvcResult first = patchProduct(userJwt(managerOfA), product, body);
+        JsonNode one = json(first, 200);
+        Map<String, Object> afterFirst = allergenAndCoreRow(product);
+        MvcResult second = patchProduct(userJwt(managerOfA), product, body);
+        JsonNode two = json(second, 200);
+
+        assertThat(two.path("available").asBoolean()).isEqualTo(one.path("available").asBoolean()).isFalse();
+        assertThat(two.path("quantityInStock").asInt()).isEqualTo(one.path("quantityInStock").asInt()).isEqualTo(2);
+        assertThat(allergenAndCoreRow(product)).isEqualTo(afterFirst);
+        assertThat(stockOf(product)).isEqualTo(2);
+        assertThat(availableOf(product)).isFalse();
     }
 
     // ------------------------------------------------------------------
@@ -331,6 +473,21 @@ class ProductPartialUpdateIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonMapper.writeValueAsString(body)))
                 .andReturn();
+    }
+
+    private MvcResult patchProduct(RequestPostProcessor caller, UUID product, Map<String, Object> body) throws Exception {
+        return mockMvc.perform(patch(PRODUCTS + product).with(caller)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonMapper.writeValueAsString(body)))
+                .andReturn();
+    }
+
+    private Map<String, Object> allergenAndCoreRow(UUID product) {
+        return jdbcTemplate.queryForMap("SELECT " + ALLERGEN_AND_CORE_COLUMNS + " FROM products WHERE id = ?", product);
+    }
+
+    private Boolean availableOf(UUID product) {
+        return jdbcTemplate.queryForObject("SELECT available FROM products WHERE id = ?", Boolean.class, product);
     }
 
     /** The fields bean validation requires on every PUT — the shape of an integrator's partial edit. */
