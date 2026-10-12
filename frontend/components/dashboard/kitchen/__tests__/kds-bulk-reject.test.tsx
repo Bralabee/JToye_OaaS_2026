@@ -208,6 +208,11 @@ describe("KDS New lane: selection mode (UI-SPEC § K1 'Bulk reject')", () => {
       reasonCode: "SUSPECTED_FAKE",
     })
     expect(await within(dialog).findByRole("status")).toHaveTextContent("2 rejected.")
+    // While the summary is open the cards are still on the lane and the title still names the batch:
+    // taking them off at once shrinks the dialog's orders prop under the open summary ("Reject 0 orders?").
+    expect(within(dialog).getByText("Reject 2 orders?")).toBeInTheDocument()
+    expect(within(lane()).getByText("ORD-new-1")).toBeInTheDocument()
+    expect(within(lane()).getByText("ORD-new-3")).toBeInTheDocument()
 
     await act(async () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Close summary" }))
