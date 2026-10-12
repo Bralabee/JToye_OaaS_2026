@@ -1097,7 +1097,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   if (placedOrderNumber) {
     return (
       <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center" aria-busy="true">
-        <Loader2 className="h-8 w-8 animate-spin text-amber-500" aria-hidden="true" />
+        <Loader2 className="h-8 w-8 animate-spin text-amber-700" aria-hidden="true" />
         <p className="mt-3 text-sm text-slate-600">Opening your order {placedOrderNumber}…</p>
       </div>
     )
