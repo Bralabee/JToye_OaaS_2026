@@ -480,17 +480,59 @@ where it must be resolved.
   `contactVerified: true`, a guest's `false`, a dashboard order none; `SELECT version FROM flyway_schema_history
   ORDER BY installed_rank DESC LIMIT 1` -> 81 inside the running Postgres.
 - **`orders.client_ip_digest` is reserved by V81 and written by nobody until 37-28 (recorded so the erasure path is not forgotten).**
-  status: open
+  status: resolved
+  **Resolved by 37-28:** the storefront writes the digest (a54b679a); `GdprService.anonymiseSubjectInTenant` nulls it, `OrderService` nulls it at COMPLETED/CANCELLED/REFUNDED and `ClientIpDigestRetentionSweep` nulls it after 72 h per tenant (65ba6565), each proven by `ClientIpDigestRetentionIntegrationTest` under NOSUPERUSER.
   **What:** V81's COMMENT and CLAUDE.md say the digest is "nulled by the retention purge and by Article 17
   erasure". Today the column is NULL on every row, so no erasure gap exists; 37-28, which writes it, must in
   the SAME plan null it in `GdprService.anonymiseSubjectInTenant` (the live-row anonymisation; the two
   `orders_aud` scrubs need nothing, there is no audit mirror by design) and declare its retention window with a
   purge. `CashOrderCaps.perIp()` is bound and refused below 1 from day one but counts nothing until then.
 - **The `jtoye.storefront.cash-caps.*` keys are declared in `application.yml` only (no env placeholders, no compose / `.env.example` / k8s wiring).**
-  status: open
+  status: resolved
+  **Resolved by 37-28:** the three caps are `${CASH_CAP_PER_EMAIL:3}` / `_PHONE` / `_IP` in `application.yml`, declared in `k8s/base/configmap.yaml` and read by the deployment (7b811046); compose keeps the defaults by design (see the 37-28 entry below).
   **What:** deliberate for this plan (its file list names only `application.yml`, and the probe note says compose
   keeps the defaults; Spring relaxed binding still lets an operator override them as
   `JTOYE_STOREFRONT_CASHCAPS_PEREMAIL` etc.), and unlike 37-26's `ORDER_LIMIT_*` they are therefore not in
   `k8s/base/configmap.yaml`. If a per-overlay tuning is wanted, 37-28 — which adds the HMAC key for the IP axis
   and must wire THAT through compose, `.env.example` and k8s with the env-contract gate — is the plan to carry all
   three caps across in one change.
+- **Docs metrics drift from 37-28 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-28 (`java_test_methods` 2534 -> 2626, `java_test_files`
+  371 -> 380, `total_logical_invocations` 5573 at the measurement): this plan adds `ClientIpDigesterTest` (12,
+  one of them a 5-value parameterised method), `ClientIpCapIntegrationTest` (3) and
+  `ClientIpDigestRetentionIntegrationTest` (3), on top of the 37-24..37-27 drift. `check-doc-metrics` stays
+  PASS 37/37 (no schema or count moved by hand). Regenerate `docs/metrics.json` with `--write` and re-point the
+  prose counts in CLAUDE.md, AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-28 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 (the 37-26 and 37-27 fields the running
+  service cannot emit); the per-IP axis, the digest write, the terminal-state null, the sweep and the erasure
+  null reach no running container until the rebuild. The rebuild REQUIRES `CLIENT_IP_HMAC_KEY` in the local
+  `.env` (added, 64 hex, untracked; `scripts/verify-env.sh` PASS 20/20) or compose refuses to interpolate
+  (`docker compose config` rc 1 naming the key, measured). Live probes for the gate: six cash orders from one
+  connection with a fresh email and phone each -> five `201` then `429 order-cap-exceeded` axis `IP`, no
+  `Retry-After`; `SELECT client_ip_digest FROM orders WHERE ...` -> 64 hex on the five, NULL after
+  `/complete`; no column of those rows contains the probe's address.
+- **The retention register has no row for the client-IP digest yet (37-30 owns the customer-facing copy, per the plan's probe note).**
+  status: open
+  **What:** `jtoye.storefront.client-ip-digest.retention-hours: 72` is enforced (terminal-state null,
+  `ClientIpDigestRetentionSweep` daily per tenant, erasure null) but `docs/retention-manifest.json` has no R-16
+  row, so `scripts/check-retention-enforcement.sh` (PASS 14 rows) does not yet gate the value. 37-30 adds the row
+  (`enforced_by` = `application.yml` key `retention-hours`, consumer `ClientIpDigestRetentionSweep.java`
+  must_contain `jtoye.storefront.client-ip-digest.retention-hours`, unit hours, 72) with the customer-facing
+  wording; until then the number is declared in config and the k8s configmap only.
+- **The sweep's hour is a config literal, not an env tunable (37-28, recorded).**
+  status: open
+  **What:** `jtoye.storefront.client-ip-digest.sweep-cron: "0 20 3 * * *"` (03:20 server time daily) has no
+  `${ENV:default}` placeholder, deliberately: the window (`retention-hours`) is the tunable and is wired through
+  the configmap; the hour is incidental and an env placeholder would need a configmap key the env-contract gate
+  then demands. If an operator ever needs to move it, add `CLIENT_IP_DIGEST_SWEEP_CRON` and its configmap key
+  together.
+- **The cash-cap and retention env names are k8s-only; compose keeps the application defaults (37-28, recorded).**
+  status: open
+  **What:** `CASH_CAP_PER_EMAIL` / `_PHONE` / `_IP` and `CLIENT_IP_DIGEST_RETENTION_HOURS` are declared in
+  `k8s/base/configmap.yaml` and read by the deployment; `docker-compose.full-stack.yml` and `.env.example` do
+  not carry them (RESEARCH Pitfall 9: an E2E spec that trips a cap uses unique contact details, never a raised
+  default). This closes the 37-27 entry above about the caps living in `application.yml` only.
