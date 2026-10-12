@@ -275,7 +275,7 @@ function ProductCard({
               </span>
             )}
             {/* 37-36 (D-17, UXT-008): no promotion chip. Checkout does not apply a discount, so a
-                "20% off" here advertised a price the customer would not be charged. */}
+                discount chip here advertised a price the customer would not be charged. */}
           </div>
         </div>
 
