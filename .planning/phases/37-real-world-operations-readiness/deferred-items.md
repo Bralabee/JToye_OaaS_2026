@@ -648,3 +648,15 @@ where it must be resolved.
   review form is built, the notice goes above its Submit with the copy above, `{First} {L}.` derived from the
   order's name by the same rule as `ReviewerDisplayName.of`; 37-38's human check "read the review form notice"
   cannot be performed and should be recorded N/A with this reference.
+- **The storefront header overflows by 4px at 360px with root font-size 130% (found in 37-37, open).**
+  status: open
+  **What:** measuring the C3 backstop truth ("the carried-over breakdown rows fit at 360px with root 130%") on a
+  local stack-free build, every breakdown row fit exactly (scrollWidth 275 = clientWidth 275 for Subtotal,
+  Delivery and Total, with and without the just-placed marker), but the DOCUMENT is 364px wide on a 360px
+  viewport: the overflowing elements are the shared storefront header (`nav.flex items-center gap-3 sm:gap-4
+  text-sm`, "Shops / For operators / Track order / 0 items", and its `sm:hidden` 44px menu button), plus the
+  fixed toaster `ol` and the cookie-notice `section`, which take their width from it. Nothing on the order page
+  37-37 changed causes it; it is the header every storefront route shares. **Owner:** 37-52 (UXT-080 F6: "the
+  shop header h1 wrap ... no horizontal overflow") is the plan that holds the header to 360px/130%; its
+  instrument should include an order page. Not fixed in 37-37 (scope boundary: a shared component another plan
+  owns).
