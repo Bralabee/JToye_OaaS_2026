@@ -3,7 +3,7 @@
 import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store, Banknote } from "lucide-react"
+import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, Bike, Store, Banknote } from "lucide-react"
 // #793: the `/pure` entry, NEVER the package default. The default entry injects js.stripe.com as
 // a module side effect, so merely importing it put Stripe's script — and its `__stripe_mid` /
 // `__stripe_sid` cookies and m.stripe.network calls — on every cash checkout, which takes no
@@ -29,6 +29,8 @@ import { SellerBlock } from "@/components/storefront/seller-block"
 import { ShopAvailabilityNotice } from "@/components/storefront/shop-availability-notice"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
+import { markJustPlaced } from "@/lib/just-placed"
+import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { describeOrderError } from "@/lib/order-error"
 import { readShopAvailability, readShopClosedProblem, shopClosedRaceCopy } from "@/lib/shop-availability"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
@@ -358,11 +360,7 @@ const SHOP_AVAILABILITY_EXPLAINER_ID = "shop-availability-explainer"
 /** How long after the server's stated reopening time the shop is asked again (the kitchen uses the same grace). */
 const REOPEN_RECHECK_GRACE_MS = 500
 
-const NO_VAT_REGISTRATION_COPY = "This seller hasn't declared a VAT registration, so no VAT is shown."
-
-function NoVatRegistrationNote() {
-  return <p className="text-sm text-slate-600">{NO_VAT_REGISTRATION_COPY}</p>
-}
+// The B7 note (NoVatRegistrationNote) is components/storefront/no-vat-registration-note.tsx, shared with the order page (37-37).
 
 /** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
 type StripePromise = ReturnType<typeof loadStripe>
@@ -809,21 +807,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     allergenWarnings: string[]
   } & RecordedAllergens | null>(null)
 
-  // COD confirmation — shows full breakdown before redirect. Carries the
-  // submitted fulfilment type so the payment instruction reads "Pay on
-  // delivery" for DELIVERY orders (WR-08).
-  const [codConfirmation, setCodConfirmation] = useState<{
-    orderNumber: string
-    fulfilmentType: FulfilmentType
-    subtotalPennies: number
-    deliveryFeePennies: number
-    vatRate: string
-    vatAmountPennies: number
-    totalAmountPennies: number
-    allergenWarnings: string[]
-  } & RecordedAllergens | null>(null)
+  // 37-37 (UI-SPEC C3, UXT-029): the order number of a cash order that was just placed, held only
+  // while the page routes to /shop/{slug}/orders/{orderNumber}. The confirmation itself — "Pay on
+  // delivery/collection" (WR-08), the breakdown, the recorded allergens and the seller — is that
+  // route's now, read from the tracking response, so it is announced and survives a refresh.
+  const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null)
 
-  if (items.length === 0 && !paymentState && !codConfirmation) {
+  if (items.length === 0 && !paymentState && !placedOrderNumber) {
     return (
       <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center">
         <ShoppingBag className="h-16 w-16 text-slate-200" />
@@ -957,7 +947,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       }
 
       if (!confirmation.clientSecret) {
-        // COD mode — show confirmation with full breakdown before redirect
+        // COD mode — 37-37 (UI-SPEC C3): the card path's route, after the card path's save. The
+        // email is stored first because the order page reads tracking data bound to number + email
+        // (goods F3); the marker tells that page this is the first view, so it says "Order
+        // confirmed" once, focused and announced. The page only READS: a refresh re-posts nothing.
         localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
         saveLocalOrder({
           orderNumber: confirmation.orderNumber,
@@ -965,18 +958,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           shopSlug: slug,
           placedAt: new Date().toISOString(),
         })
+        markJustPlaced(confirmation.orderNumber)
+        setPlacedOrderNumber(confirmation.orderNumber)
         clearCart()
-        setCodConfirmation({
-          orderNumber: confirmation.orderNumber,
-          fulfilmentType,
-          subtotalPennies: confirmation.subtotalPennies,
-          deliveryFeePennies: confirmation.deliveryFeePennies || 0,
-          vatRate: confirmation.vatRate,
-          vatAmountPennies: confirmation.vatAmountPennies,
-          totalAmountPennies: confirmation.totalAmountPennies,
-          allergenWarnings: confirmation.allergenWarnings || [],
-          ...recordedAllergensOf(confirmation),
-        })
+        router.push(`/shop/${slug}/orders/${confirmation.orderNumber}`)
         return
       }
 
@@ -1106,91 +1091,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     }
   }
 
-  // COD confirmation — shows full price breakdown before tracking
-  if (codConfirmation) {
+  // 37-37 (UI-SPEC C3, UXT-029): a cash order is confirmed on its own route now, not in place here.
+  // Between the 201 and the navigation the basket is already empty, so this stands in for the
+  // "Nothing to checkout" screen, which would read as a lost order.
+  if (placedOrderNumber) {
     return (
-      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
-        <div className="text-center mb-6">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
-            <CheckCircle className="h-8 w-8 text-emerald-600" />
-          </div>
-          <h1 className="mt-4 text-xl font-bold text-slate-900">Order confirmed!</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Order {codConfirmation.orderNumber} &middot; Pay on{" "}
-            {codConfirmation.fulfilmentType === "COLLECTION" ? "collection" : "delivery"}
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm mb-6">
-          <h2 className="text-sm font-semibold text-slate-900 mb-3">Order total</h2>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Subtotal</span>
-              <span className="text-slate-900">{formatPrice(codConfirmation.subtotalPennies)}</span>
-            </div>
-            {codConfirmation.deliveryFeePennies > 0 ? (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Delivery</span>
-                <span className="text-slate-900">{formatPrice(codConfirmation.deliveryFeePennies)}</span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Delivery</span>
-                <span className="text-emerald-700 font-medium">Free</span>
-              </div>
-            )}
-            {sellerVatRegistered && codConfirmation.vatAmountPennies > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(codConfirmation.vatRate))})</span>
-                <span className="text-slate-900">{formatPrice(codConfirmation.vatAmountPennies)}</span>
-              </div>
-            )}
-            <div className="flex items-center justify-between pt-2 border-t border-cream-100">
-              <span className="text-base font-bold text-slate-900">Total</span>
-              <span className="text-base font-bold text-slate-900">{formatPrice(codConfirmation.totalAmountPennies)}</span>
-            </div>
-            {sellerVatUndeclared && <NoVatRegistrationNote />}
-          </div>
-        </div>
-
-        {/* D-08: what the order RECORDS — the set acknowledged and the set the kitchen works from —
-            read from the confirmation response, never from the basket the client computed. */}
-        <RecordedAllergenSet
-          acknowledged={codConfirmation.acknowledgedAllergens}
-          recorded={codConfirmation.recordedAllergens}
-          flags={codConfirmation.recordedAllergenFlags}
-          className="mb-6"
-        />
-
-        {codConfirmation.allergenWarnings.length > 0 && (
-          <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-6">
-            <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
-            <ul className="space-y-1">
-              {codConfirmation.allergenWarnings.map((warning, i) => (
-                <li key={i} className="text-sm text-amber-700">{warning}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* #789 (31.1-24, D-13): who the customer bought from, on the confirmation they are left
-            with, before they navigate away. `shop` is null only if its fetch failed, and a failed
-            fetch is not "the seller has not provided their details", so nothing renders then. */}
-        {shop && <SellerBlock seller={shop.seller} className="mb-6" />}
-
-        <Link
-          href={`/shop/${slug}/orders/${codConfirmation.orderNumber}`}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg"
-        >
-          Track your order
-        </Link>
-        <Link
-          href={`/shop/${slug}`}
-          className="flex w-full items-center justify-center gap-1 mt-3 rounded-2xl border border-cream-100 py-2.5 text-sm font-medium text-slate-600 hover:bg-cream transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to shop
-        </Link>
+      <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center" aria-busy="true">
+        <Loader2 className="h-8 w-8 animate-spin text-amber-500" aria-hidden="true" />
+        <p className="mt-3 text-sm text-slate-600">Opening your order {placedOrderNumber}…</p>
       </div>
     )
   }

@@ -263,6 +263,7 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
 })
 
 describe("Place order carries what the customer saw (D-16, 37-32 contract)", () => {
@@ -306,7 +307,8 @@ describe("F14: a basket-changed 409 is shown and must be accepted (UI-SPEC § C1
     expect(screen.getAllByTestId("basket-change-row")[0]).toHaveTextContent("Suya · £9.00 → £14.00")
     expect(screen.getAllByTestId("basket-change-row")[1]).toHaveTextContent("Total was £19.00, now £24.00")
     await waitFor(() => expect(document.activeElement).toBe(heading))
-    expect(screen.queryByText(/order confirmed/i)).not.toBeInTheDocument()
+    // 37-37 (C3): a placed cash order leaves the jtoye-just-placed marker and routes away; none was left.
+    expect(Object.keys(sessionStorage).filter((k) => k.startsWith("jtoye-just-placed:"))).toEqual([])
     expect(mockedPost).toHaveBeenCalledTimes(1)
   })
 
@@ -349,7 +351,8 @@ describe("F14: a basket-changed 409 is shown and must be accepted (UI-SPEC § C1
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
     expect(posted(1)[1].idempotencyKey).toBe(posted(0)[1].idempotencyKey)
     expect(posted(1)[2].headers?.["Idempotency-Key"]).toBe(posted(0)[2].headers?.["Idempotency-Key"])
-    await screen.findByText(/order confirmed/i)
+    // 37-37 (C3): the cash order was placed — the checkout left the order route's one-shot marker.
+    await waitFor(() => expect(sessionStorage.getItem("jtoye-just-placed:ORD-BASKET-1")).toBe("ORD-BASKET-1"))
   })
 })
 
@@ -456,7 +459,8 @@ describe("the basket is rewritten to the server's values and still belongs to th
     ])
     expect(posted(1)[1].expectedTotalPennies).toBe(2400)
     expect(posted(1)[1].idempotencyKey).toBe(posted(0)[1].idempotencyKey)
-    await screen.findByText(/order confirmed/i)
+    // 37-37 (C3): the cash order was placed — the checkout left the order route's one-shot marker.
+    await waitFor(() => expect(sessionStorage.getItem("jtoye-just-placed:ORD-BASKET-1")).toBe("ORD-BASKET-1"))
   })
 
   it("sold out, unavailable and removed: the stored lines follow the diff, a REMOVED line is still named from the basket's copy, and one Place order after Accept submits once without a re-tick", async () => {
@@ -556,7 +560,8 @@ describe("the basket is rewritten to the server's values and still belongs to th
     expect(posted(1)[1].acknowledgedAllergenMask).toBe(MILK)
     expect(posted(1)[1].items[0]).toEqual({ productId: "p1", quantity: 1, expectedUnitPricePennies: 1400 })
     expect(posted(1)[1].idempotencyKey).toBe(posted(0)[1].idempotencyKey)
-    await screen.findByText(/order confirmed/i)
+    // 37-37 (C3): the cash order was placed — the checkout left the order route's one-shot marker.
+    await waitFor(() => expect(sessionStorage.getItem("jtoye-just-placed:ORD-BASKET-1")).toBe("ORD-BASKET-1"))
   })
 
   it("an allergen-only 409 keeps the unchanged 31.1 path: no basket panel, the stale copy in the allergen panel, the stored prices untouched", async () => {

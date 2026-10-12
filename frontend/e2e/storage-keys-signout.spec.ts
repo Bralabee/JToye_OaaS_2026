@@ -40,6 +40,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test"
+import { awaitCashConfirmation } from "./cash-confirmation"
 
 import {
   CLIENT_STORAGE_KEYS,
@@ -141,11 +142,8 @@ async function placeCashCollectionOrder(page: Page, email: string): Promise<stri
   await expect(allergenAck).toBeChecked()
 
   await page.locator('button[type="submit"]:has-text("Place order")').click()
-  await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
-  const confText = await page.getByText(/Order\s+ORD-/).first().innerText()
-  const match = confText.match(/ORD-[A-Z0-9-]+/)
-  expect(match, "no order number on the confirmation").not.toBeNull()
-  return match![0]
+  // 37-37 (C3): the cash confirmation is the order's own route; its number is read from the URL.
+  return awaitCashConfirmation(page)
 }
 
 test.describe("#840 browser storage: declared, and personal keys cleared on explicit sign-out", () => {

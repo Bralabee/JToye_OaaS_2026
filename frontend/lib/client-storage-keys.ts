@@ -42,6 +42,7 @@
 import { CART_KEY_PREFIX, CUSTOMER_EXPIRES_KEY, CUSTOMER_ID_KEY, CUSTOMER_LAST_SIGNIN_KEY, CUSTOMER_MARKER_KEY } from "@/lib/cart-identity"
 import { CONSENT_CHOICES_KEY, COOKIE_NOTICE_ACK_KEY } from "@/lib/consent"
 import { GUEST_ORDERS_KEY } from "@/lib/order-history"
+import { JUST_PLACED_KEY_PREFIX } from "@/lib/just-placed"
 
 export type StorageArea = "localStorage" | "sessionStorage"
 
@@ -205,6 +206,18 @@ export const CLIENT_STORAGE_KEYS: readonly ClientStorageKey[] = [
     purpose:
       "Carries the email address you typed on one order-tracking page across to the next, so you do not type it twice. This one holds an email address.",
     lifetime: "Cleared when you sign out or close the tab.",
+  },
+  {
+    // lib/just-placed.ts (37-37, UI-SPEC C3): written by the cash checkout, removed by the order page.
+    name: JUST_PLACED_KEY_PREFIX,
+    match: "prefix",
+    area: "sessionStorage",
+    personal: false,
+    clearedOnSignOut: false,
+    purpose:
+      "Holds only the number of an order you have just placed, so its order page can tell you it is confirmed the first time you see it, and not again when you refresh it.",
+    lifetime:
+      "Removed the first time that order's page is shown, and in any case when you close the tab.",
   },
   {
     // lib/customer-auth.ts (customerLogin / customerRegister).

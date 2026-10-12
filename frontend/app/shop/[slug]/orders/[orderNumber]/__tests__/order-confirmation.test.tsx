@@ -130,7 +130,9 @@ function statusRegion() {
   return regions[0]
 }
 
-const fetchSpy = jest.fn((..._args: unknown[]) => Promise.reject(new Error("no network in tests")))
+const fetchSpy = jest.fn<Promise<never>, [RequestInfo | URL, RequestInit?]>(() =>
+  Promise.reject(new Error("no network in tests"))
+)
 const ORIGINAL_FETCH = globalThis.fetch
 
 /** F16: no request with method POST reached the network, through the API client or bare fetch. */

@@ -146,9 +146,14 @@ describe("accessibility statement page — scope", () => {
     // one from BOTH the data and the page still fails here.
     expect(items).toEqual(STATEMENT.inScopeRoutes.map((r) => `${r.path} — ${r.label}`))
     const text = items.join("\n")
-    for (const path of ["/shop/[slug]/cart", "/shop/[slug]/orders/[orderNumber]", "/track"]) {
+    for (const path of ["/shop/[slug]/cart", "/track"]) {
       expect(items.filter((i) => i.startsWith(`${path} — `))).toHaveLength(1)
     }
+    // 37-37 (UI-SPEC C3): the order page carries two surfaces — the page, and the cash order
+    // confirmation that is its first view straight after placing — like /shop/[slug] and its dish panel.
+    const orderPage = items.filter((i) => i.startsWith("/shop/[slug]/orders/[orderNumber] — "))
+    expect(orderPage).toHaveLength(2)
+    expect(orderPage.filter((i) => /order confirmation/i.test(i))).toHaveLength(1)
     expect(text).toMatch(/order confirmation/i)
   })
 

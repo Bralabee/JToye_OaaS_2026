@@ -30,6 +30,7 @@
 import { test, expect, type APIRequestContext, type Page, type TestInfo } from "@playwright/test"
 
 import { servedHtml } from "./helpers/served-html"
+import { awaitCashConfirmation } from "./cash-confirmation"
 
 // The deterministic seeded shop the storefront suites use (DemoDataSeeder, UIX-05). Cash-only on
 // the compose stack, which the cash walk below asserts rather than assumes.
@@ -228,7 +229,8 @@ test.describe("#789 seller identity before purchase and on the confirmation", ()
     await placeOrder.click()
 
     // THE CONFIRMATION the customer is left with.
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
+    // 37-37 (C3): the cash confirmation is the order's own route now, not a state of the checkout.
+    await awaitCashConfirmation(page)
     await expect(
       page.getByText(/Pay on collection/i),
       "this walk needs a CASH-ONLY shop; the stack under test has card payments configured"

@@ -58,7 +58,8 @@
 import { test, expect, type APIRequestContext, type Page, type Response } from "@playwright/test"
 import { CART_KEY_PREFIX } from "../lib/cart-identity"
 import { VENDOR_PASSWORD, VENDOR_USERNAME, skipWithoutVendorPassword } from "./vendor-credentials"
-import { cancelOrdersByNumber, orderNumberIn, uniqueContact, vendorShopId } from "./order-cleanup"
+import { cancelOrdersByNumber, uniqueContact, vendorShopId } from "./order-cleanup"
+import { awaitCashConfirmation, confirmedHeading } from "./cash-confirmation"
 
 // The seeded shop with a Suya on its menu (DemoDataSeeder: "Suya Platter", Mains, 1200). The
 // product is resolved by title at run time; the slug is the only fixture.
@@ -317,7 +318,8 @@ test.describe("UXT-007: a vendor reprice between render and submit", () => {
       const heading = panel.getByRole("heading", { level: 2, name: HEADING_COPY })
       await expect(heading).toBeFocused()
       await expect(panel.getByTestId("basket-change-row").first()).toContainText(expectedRow)
-      await expect(page.getByRole("heading", { name: "Order confirmed!" })).toHaveCount(0)
+      await expect(confirmedHeading(page)).toHaveCount(0)
+      await expect(page, "the page left the checkout, so an order was confirmed").toHaveURL(/\/checkout(\?|$)/)
       // The stored basket already holds the new price — and the same owner stamp it held before (F15).
       await expect.poll(async () => (await storedBasket(page)).prices[product.id]).toBe(newPrice)
       expect(JSON.stringify((await storedBasket(page)).owner)).toBe(stampBefore)
@@ -343,8 +345,8 @@ test.describe("UXT-007: a vendor reprice between render and submit", () => {
       const accepted = await secondPost
       expect(accepted.status(), "the resubmit at the accepted price was not accepted").toBeLessThan(300)
       expect(accepted.request().headers()["idempotency-key"]).toBe(refused.request().headers()["idempotency-key"])
-      await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
-      const number = orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent())
+      // 37-37 (C3): the cash confirmation is the order's own route; its number is read from the URL.
+      const number = await awaitCashConfirmation(page)
       expect(number, "no order number on the confirmation").toBeTruthy()
       placed.push(number as string)
       await shoot(page, testInfo, "basket-changed-confirmation")
@@ -384,9 +386,9 @@ test.describe("UXT-007: a vendor reprice between render and submit", () => {
     await placeOrder.click()
     const accepted = await firstPost
     expect(accepted.status(), "the unchanged basket was refused").toBeLessThan(300)
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
+    // 37-37 (C3): the cash confirmation is the order's own route; its number is read from the URL.
+    const number = await awaitCashConfirmation(page)
     await expect(page.getByTestId("basket-changed-panel")).toHaveCount(0)
-    const number = orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent())
     expect(number).toBeTruthy()
     placed.push(number as string)
     const orders = await ordersFor(request, token, contact.email)

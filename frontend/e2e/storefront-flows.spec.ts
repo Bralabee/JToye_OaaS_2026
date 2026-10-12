@@ -6,7 +6,8 @@
  */
 
 import { test, expect, type Page } from "@playwright/test"
-import { cancelOrdersByNumber, orderNumberIn, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
+import { cancelOrdersByNumber, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
+import { awaitCashConfirmation } from "./cash-confirmation"
 
 // Honour PLAYWRIGHT_BASE_URL (set it only for a non-default host). Mirrors the
 // default in playwright.config.ts. The "MCP server holds :3000" claim this
@@ -118,7 +119,7 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
   // app/shop/[slug]/checkout/page.tsx, BEFORE any network call. The submit button
   // stays deliberately ENABLED, so without this tick the click is simply swallowed:
   // no order row is created and the failure surfaces 15s later as a missing
-  // "Order confirmed!" heading, which reads like a broken checkout and is not one.
+  // "Order confirmed" heading, which reads like a broken checkout and is not one.
   // The gate is present in ALL THREE panel states, so ticking it is unconditional.
   // Radix renders button[role=checkbox] and its BubbleInput sibling is aria-hidden,
   // so this role locator matches exactly one node — and .click() is required,
@@ -132,17 +133,15 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
 
   await page.locator('button[type="submit"]:has-text("Place order")').click()
 
-  // No Stripe keys in this env → the order takes the COD path and confirms
-  // INLINE ("Order confirmed! · Pay on delivery" — this is a DELIVERY order,
-  // WR-08), rather than redirecting to /orders/ORD- (that redirect only
-  // follows a live Stripe payment). The order is genuinely created (its
-  // number is shown + a confirmation email is sent).
-  await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
-  placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent().catch(() => null)) ?? "")
-  const confText = await page.getByText(/Order\s+ORD-/).innerText()
-  const match = confText.match(/ORD-[A-Z0-9-]+/)
-  expect(match).not.toBeNull()
-  return match![0]
+  // No Stripe keys in this env → the order takes the COD path. Since 37-37
+  // (UI-SPEC C3) a cash order routes to /shop/{slug}/orders/ORD-… like a card
+  // order, and that page's first view reads "Order confirmed" and "Pay on
+  // delivery" (a DELIVERY order, WR-08). The order is genuinely created (its
+  // number is in the URL + a confirmation email is sent).
+  const number = await awaitCashConfirmation(page)
+  placed.push(number)
+  await expect(page.getByText("Pay on delivery", { exact: true })).toBeVisible()
+  return number
 }
 
 // ============================
@@ -687,13 +686,12 @@ test.describe("Cart + Checkout", () => {
 
     await placeOrder.click()
 
-    // COD path (no Stripe keys in this env): the order confirms INLINE with the
-    // fee breakdown — "Order confirmed! · Pay on delivery" (a DELIVERY order,
-    // WR-08) — proving the order was created and the fee-before-pay total is
-    // shown, without a live card.
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText(/Order\s+ORD-/)).toBeVisible()
-    placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent()) ?? "")
+    // COD path (no Stripe keys in this env): the order routes to its own page
+    // (37-37, UI-SPEC C3), whose first view carries the fee breakdown — "Order
+    // confirmed" and "Pay on delivery" (a DELIVERY order, WR-08) — proving the
+    // order was created and the fee-before-pay total is shown, without a live card.
+    placed.push(await awaitCashConfirmation(page))
+    await expect(page.getByText("Pay on delivery", { exact: true })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Order total" })).toBeVisible()
   })
 

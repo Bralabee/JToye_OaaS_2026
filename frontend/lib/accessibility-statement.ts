@@ -126,7 +126,9 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
 
   // Each entry is one surface. A PATH may repeat — the dish panel and the cash
   // order confirmation are states of a URL that is also listed for its main
-  // page — but a LABEL never does (asserted by the dates test).
+  // page — but a LABEL never does (asserted by the dates test). Since 37-37
+  // (UI-SPEC C3) the cash confirmation is the first view of the order's own page,
+  // not a state of the checkout: the axe gate scans it there.
   inScopeRoutes: [
     { path: "/", label: "The J'Toye home page" },
     { path: "/shop", label: "The list of vendors" },
@@ -138,9 +140,9 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     { path: "/shop/[slug]/cart", label: "Your basket at a vendor" },
     { path: "/shop/[slug]/checkout", label: "Checkout" },
     {
-      path: "/shop/[slug]/checkout",
+      path: "/shop/[slug]/orders/[orderNumber]",
       label:
-        "The order confirmation shown on the checkout page when you pay on collection or delivery",
+        "The order confirmation shown on an order's page straight after you place it, when you pay on collection or delivery",
     },
     {
       path: "/shop/[slug]/orders/[orderNumber]",

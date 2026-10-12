@@ -80,10 +80,11 @@ describe("accessibility statement — the constant parsed at all", () => {
     expect(paths).toContain("/shop/[slug]/cart")
     expect(paths).toContain("/shop/[slug]/orders/[orderNumber]")
     expect(paths).toContain("/track")
-    // The cash confirmation is a STATE of the checkout URL, not a route of its
-    // own, so it is identified by its label rather than by a path.
+    // The cash confirmation is a STATE of a URL also listed for its main page,
+    // so it is identified by its label rather than by a path. Since 37-37
+    // (UI-SPEC C3) that URL is the order's own page, not the checkout.
     const confirmation = S.inScopeRoutes.filter((r) => /order confirmation/i.test(r.label))
-    expect(confirmation.map((r) => r.path)).toEqual(["/shop/[slug]/checkout"])
+    expect(confirmation.map((r) => r.path)).toEqual(["/shop/[slug]/orders/[orderNumber]"])
   })
 
   it("names one standard throughout — the one the axe gate tests — and never the superseded one", () => {

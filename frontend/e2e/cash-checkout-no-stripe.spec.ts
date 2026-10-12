@@ -30,7 +30,8 @@
  */
 
 import { test, expect, type Request } from "@playwright/test"
-import { cancelOrdersByNumber, orderNumberIn, uniqueContact } from "./order-cleanup"
+import { cancelOrdersByNumber, uniqueContact } from "./order-cleanup"
+import { awaitCashConfirmation } from "./cash-confirmation"
 
 // The deterministic seeded shop the storefront suite also uses (DemoDataSeeder, UIX-05).
 const SHOP_SLUG = "mama-ades-kitchen"
@@ -145,8 +146,8 @@ test.describe("#793 cash checkout loads no Stripe", () => {
     await expect(allergenAck).toBeChecked()
 
     await placeOrder.click()
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
-    placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent()) ?? "")
+    // 37-37 (C3): the cash confirmation is the order's own route; its number is read from the URL.
+    placed.push(await awaitCashConfirmation(page))
     await expect(page.getByText(/Pay on collection/i)).toBeVisible()
 
     // The default entry injected Stripe after a tick; its iframe and fraud beacons follow the

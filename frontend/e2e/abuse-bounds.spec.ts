@@ -45,6 +45,7 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test"
 import { VENDOR_USERNAME, VENDOR_PASSWORD, skipWithoutVendorPassword } from "./vendor-credentials"
 import { cancelOrdersByNumber, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
+import { confirmedHeading } from "./cash-confirmation"
 
 // The frontend as the browser sees it; the core API as the runner sees it. Same env vars and
 // defaults as storefront-flows.spec.ts — core-java is a separate service, so not a base-URL
@@ -382,8 +383,10 @@ test.describe("37-D abuse bounds — the checkout cap copy", () => {
 
     await page.locator('button[type="submit"]:has-text("Place order")').click()
 
-    // THE CLAIM: the honest, typed cap copy — not a generic error, not "Order confirmed!".
+    // THE CLAIM: the honest, typed cap copy — not a generic error, not a confirmation (37-37: the
+    // order route's "Order confirmed", which a placed cash order navigates to).
     await expect(page.getByText(CAP_COPY)).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toHaveCount(0)
+    await expect(confirmedHeading(page)).toHaveCount(0)
+    await expect(page, "the page left the checkout, so an order was confirmed").toHaveURL(/\/checkout(\?|$)/)
   })
 })

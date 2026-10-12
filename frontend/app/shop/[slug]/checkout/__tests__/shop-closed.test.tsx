@@ -179,6 +179,7 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
   jest.useRealTimers()
 })
 
@@ -312,7 +313,8 @@ describe("the checkout race: the shop stops while the customer is on the page (t
     )
     // The basket on disk is byte-for-byte what it was: nothing cleared it, nothing re-stamped it.
     expect(localStorage.getItem(STORAGE_KEY)).toBe(storedBefore)
-    expect(screen.queryByText(/order confirmed/i)).not.toBeInTheDocument()
+    // 37-37 (C3): a placed cash order leaves the jtoye-just-placed marker and routes away; none was left.
+    expect(Object.keys(sessionStorage).filter((k) => k.startsWith("jtoye-just-placed:"))).toEqual([])
   })
 
   it("a closed shop with no reopening time ends the race copy with 'Check back later.'", async () => {

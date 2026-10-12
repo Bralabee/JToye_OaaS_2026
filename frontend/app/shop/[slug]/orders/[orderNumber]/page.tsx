@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, use, useEffect, useState, useCallback } from "react"
+import { Suspense, use, useEffect, useRef, useState, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { m } from "framer-motion"
@@ -12,7 +12,12 @@ import {
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
-import type { PublicOrderAllergenRecord } from "@/types/storefront"
+import { SellerBlock } from "@/components/storefront/seller-block"
+import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
+import { consumeJustPlaced } from "@/lib/just-placed"
+import { asVatRate, vatRateLabel } from "@/lib/vat"
+import type { FulfilmentType } from "@/types/api"
+import type { PublicOrderAllergenRecord, PublicShop } from "@/types/storefront"
 
 /**
  * The tracking response (`PublicOrderStatus`). The allergen record (31.1-09) and the allergy-note
@@ -34,6 +39,18 @@ interface OrderStatus extends PublicOrderAllergenRecord {
    * `itemCount` — the count is simply not rendered when it is not known.
    */
   unitCount?: number | null
+  /**
+   * 37-37 (UI-SPEC C3): the breakdown the cash confirmation used to show in place at checkout, now
+   * shown here. All optional: an older backend omits them, and an omitted value is NOT RENDERED —
+   * never guessed (an absent fee is not "Free"; an absent fulfilment type is not "delivery").
+   * totalAmountPennies = subtotalPennies + deliveryFeePennies (Order.calculateTotal); VAT is inside.
+   */
+  paymentStatus?: string | null
+  fulfilmentType?: FulfilmentType | null
+  subtotalPennies?: number | null
+  deliveryFeePennies?: number | null
+  vatRate?: string | null
+  vatAmountPennies?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -105,6 +122,39 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
     }
   }, [])
 
+  // 37-37 (UI-SPEC C3, UXT-029): is this the FIRST view of an order the customer just placed? The
+  // cash checkout leaves a one-shot sessionStorage marker (lib/just-placed.ts) and routes here; it is
+  // consumed once, on mount, so a refresh or a later visit is a plain view. The ref keeps it to one
+  // read under StrictMode's effect replay (the ref survives it; a second read would find nothing and
+  // is never made). The marker is a hint only: everything shown is still read from the tracking
+  // endpoint below, bound to number + email (F3).
+  const [justPlaced, setJustPlaced] = useState(false)
+  const markerReadRef = useRef(false)
+  useEffect(() => {
+    if (markerReadRef.current) return
+    markerReadRef.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage is client-only and must be read exactly once after mount; a render-time read would double-consume under StrictMode
+    if (consumeJustPlaced(orderNumber)) setJustPlaced(true)
+  }, [orderNumber])
+
+  // The seller, for the B7 VAT rule and the seller block (both carried over from the in-place cash
+  // confirmation, 37-37). A GET of the public shop; a failed read proves nothing, so it shows neither.
+  const [shop, setShop] = useState<PublicShop | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    publicApiClient
+      .get<PublicShop>(`/public/shops/${slug}`)
+      .then((res) => {
+        if (!cancelled) setShop(res.data)
+      })
+      .catch(() => {
+        /* no seller block and no VAT statement: an unloaded shop is not an undeclared seller */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slug])
+
   const fetchStatus = useCallback(async () => {
     if (!email) {
       setLoading(false)
@@ -146,10 +196,41 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
     return () => clearInterval(interval)
   }, [order, fetchStatus])
 
+  // C3: the heading takes focus ONCE, on the first view, as soon as there is something to say —
+  // the confirmation, or (C3 error, planner assumption) that the order was placed although its
+  // details did not load. Later views leave focus where the browser puts it.
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const focusedRef = useRef(false)
+  const settled = !loading && (order !== null || error !== null)
+  useEffect(() => {
+    if (!justPlaced || !settled || focusedRef.current) return
+    focusedRef.current = true
+    headingRef.current?.focus()
+  }, [justPlaced, settled])
+
+  // C3 title: the confirmed variant on the first view, the plain one on every other.
+  useEffect(() => {
+    if (!settled) return
+    if (order) {
+      document.title = justPlaced
+        ? `Order ${orderNumber} confirmed · ${order.shopName} — J'Toye`
+        : `Order ${orderNumber} · ${order.shopName} — J'Toye`
+    } else {
+      document.title = justPlaced ? `Order ${orderNumber} placed — J'Toye` : `Order ${orderNumber} — J'Toye`
+    }
+  }, [settled, justPlaced, order, orderNumber])
+
   const copyOrderNumber = () => {
     navigator.clipboard.writeText(orderNumber)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  // C3 error: Retry reads the tracking data again (a GET — never a re-submit) and puts focus back on
+  // the heading, because the Retry button it was on is gone once the details load.
+  const retryAfterPlacing = async () => {
+    await fetchStatus()
+    headingRef.current?.focus()
   }
 
   const isCancelled = order?.status === "CANCELLED"
@@ -159,29 +240,77 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   const isRefunded = order?.status === "REFUNDED"
   const currentStep = order ? getStepIndex(order.status) : -1
 
+  // UXT-047 (37-14, B7) on the carried-over breakdown: a VAT row needs a DECLARED registration; the
+  // note needs a LOADED shop that declares none.
+  const sellerVatRegistered = Boolean(shop?.seller?.vatNumber)
+  const sellerVatUndeclared = shop !== null && !sellerVatRegistered
+
+  // The payment instruction the in-place confirmation led with (WR-08: "delivery" for a DELIVERY
+  // order, never "collection"). Only for an unpaid cash order that can still be fulfilled: a card
+  // order is paid, and a cancelled, refunded or completed order needs no instruction.
+  const payOnLine =
+    order &&
+    order.paymentStatus === "NONE" &&
+    order.fulfilmentType &&
+    !TERMINAL_STATUSES.includes(order.status)
+      ? `Pay on ${order.fulfilmentType === "COLLECTION" ? "collection" : "delivery"}`
+      : null
+
+  // C3: ONE status region, present from the first render (a live region added together with its
+  // text is often not announced), written once the first view has something to say.
+  const announcement = justPlaced && settled
+    ? order
+      ? `Order confirmed, ${orderNumber}`
+      : `Order placed, ${orderNumber}`
+    : ""
+  const statusRegion = (
+    <div role="status" aria-live="polite" className="sr-only">
+      {announcement}
+    </div>
+  )
+
   if (loading) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
-        <p className="mt-3 text-sm text-slate-600">Loading order status...</p>
-      </div>
+      <>
+        {statusRegion}
+        <div className="mx-auto max-w-lg px-4 py-16 text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
+          <p className="mt-3 text-sm text-slate-600">Loading order status...</p>
+        </div>
+      </>
     )
   }
 
   // No email — inline email prompt (no redirect needed)
   if (!email && !order) {
-    return <EmailPrompt orderNumber={orderNumber} onSubmit={(e) => {
-      localStorage.setItem(`jtoye-checkout-email-${slug}`, e)
-      window.location.reload()
-    }} />
+    return (
+      <>
+        {statusRegion}
+        <EmailPrompt orderNumber={orderNumber} onSubmit={(e) => {
+          localStorage.setItem(`jtoye-checkout-email-${slug}`, e)
+          window.location.reload()
+        }} />
+      </>
+    )
   }
+
+  // C3 heading: "Order confirmed" on the first view, "Order {number} placed" when that first view
+  // could not load the details, and "Order {number}" on every other view. One element in all three,
+  // so focus stays on it when a Retry turns the second into the first.
+  const showPlacedFallback = justPlaced && !order && error !== null
+  const headingText = justPlaced
+    ? order
+      ? "Order confirmed"
+      : `Order ${orderNumber} placed`
+    : `Order ${orderNumber}`
 
   return (
     <div className="mx-auto max-w-lg px-4 sm:px-6 py-8">
+      {statusRegion}
       {/* Header */}
-      {!error && order && (
-        <div className="text-center mb-8">
-          {isCancelled ? (
+      <div className="text-center mb-8">
+        {!error && order && (
+          isCancelled ? (
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
               <XCircle className="h-8 w-8 text-red-500" />
             </div>
@@ -189,7 +318,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
               <RefreshCw className="h-8 w-8 text-orange-700" />
             </div>
-          ) : currentStep >= 4 ? (
+          ) : currentStep >= 4 || justPlaced ? (
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
               <CheckCircle2 className="h-8 w-8 text-emerald-600" />
             </div>
@@ -197,19 +326,32 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
               <Clock className="h-8 w-8 text-amber-700" />
             </div>
-          )}
-          <h1 className="mt-4 text-xl font-bold text-slate-900">
-            {isCancelled
-              ? "Order Cancelled"
-              : isRefunded
-                ? "Order Refunded"
-                : currentStep >= 4
-                  ? "Order Complete!"
-                  : "Order in Progress"}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">{order.shopName}</p>
-        </div>
-      )}
+          )
+        )}
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="mt-4 text-2xl font-semibold text-slate-900 [overflow-wrap:anywhere] focus:outline-none"
+        >
+          {headingText}
+        </h1>
+        {!error && order && (
+          <>
+            {/* The status words the heading used to carry (the C3 heading is about the order). */}
+            <p className="mt-1 text-sm font-semibold text-slate-700">
+              {isCancelled
+                ? "Order Cancelled"
+                : isRefunded
+                  ? "Order Refunded"
+                  : currentStep >= 4
+                    ? "Order Complete!"
+                    : "Order in Progress"}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">{order.shopName}</p>
+            {payOnLine && <p className="mt-1 text-sm font-medium text-slate-900">{payOnLine}</p>}
+          </>
+        )}
+      </div>
 
       {/* Order number */}
       <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm text-center mb-6">
@@ -218,7 +360,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             accessible name. The label is slate-600 (the A11Y-11 precedent); the button is named. */}
         <p className="text-xs font-medium text-slate-600 uppercase tracking-wider">Order number</p>
         <div className="mt-1 flex items-center justify-center gap-2">
-          <p className="text-sm font-bold font-mono text-slate-900">{orderNumber}</p>
+          <p className="text-sm font-bold font-mono text-slate-900 [overflow-wrap:anywhere]">{orderNumber}</p>
           <button
             type="button"
             onClick={copyOrderNumber}
@@ -240,8 +382,23 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         )}
       </div>
 
+      {/* C3 error (planner assumption): the first view's tracking read failed, but the order WAS
+          placed — say so, and offer a Retry, instead of an error that reads as a failed order. */}
+      {showPlacedFallback && (
+        <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 text-center mb-6">
+          <p className="text-sm text-slate-900">We couldn&apos;t load the latest details. Your order was placed.</p>
+          <button
+            type="button"
+            onClick={retryAfterPlacing}
+            className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 hover:bg-slate-50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Error state */}
-      {error && (
+      {error && !showPlacedFallback && (
         <div className="rounded-xl bg-red-50 border border-red-100 p-4 text-center mb-6">
           <p className="text-sm text-red-700">{error}</p>
           <button
@@ -343,6 +500,42 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         </div>
       )}
 
+      {/* 37-37 (UI-SPEC C3): the breakdown the cash confirmation showed in place at checkout — kept
+          whole (goods P2-REG-17: the fees and the total, not just the total). Each row renders only
+          from a value the tracking response carries; a missing value is left out, never guessed. */}
+      {order && order.subtotalPennies != null && (
+        <div data-testid="order-breakdown" className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm mb-6">
+          <h2 className="text-sm font-semibold text-slate-900 mb-3">Order total</h2>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-slate-600">Subtotal</span>
+              <span className="text-slate-900">{formatPrice(order.subtotalPennies)}</span>
+            </div>
+            {order.deliveryFeePennies != null && (
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-600">Delivery</span>
+                {order.deliveryFeePennies > 0 ? (
+                  <span className="text-slate-900">{formatPrice(order.deliveryFeePennies)}</span>
+                ) : (
+                  <span className="text-emerald-700 font-medium">Free</span>
+                )}
+              </div>
+            )}
+            {sellerVatRegistered && (order.vatAmountPennies ?? 0) > 0 && (
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(order.vatRate))})</span>
+                <span className="text-slate-900">{formatPrice(order.vatAmountPennies ?? 0)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-cream-100">
+              <span className="text-base font-bold text-slate-900">Total</span>
+              <span className="text-base font-bold text-slate-900">{formatPrice(order.totalAmountPennies)}</span>
+            </div>
+            {sellerVatUndeclared && <NoVatRegistrationNote />}
+          </div>
+        </div>
+      )}
+
       {/* What this order recorded about allergens, who placed it, and whether the shop read the
           customer's allergy note (31.1-18: #785, #812; D-07, D-08, D-15). Rendered from the
           tracking response only — this page computes nothing about allergens. Shown for every
@@ -359,6 +552,11 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
           className="mb-6"
         />
       )}
+
+      {/* #789 (31.1-24, D-13), carried over from the in-place cash confirmation (37-37): who the
+          customer bought from. `shop` is null only while loading or when its read failed, and a
+          failed read is not "the seller has not provided their details", so nothing renders then. */}
+      {order && shop && <SellerBlock seller={shop.seller} className="mb-6" />}
 
       {/* Auto-refresh indicator */}
       {order && !isCancelled && !isRefunded && currentStep < 4 && (
