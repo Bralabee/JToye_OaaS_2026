@@ -411,7 +411,7 @@ class GuestOrderAllergenAckIntegrationTest {
         return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
     }
 
-    private static uk.jtoye.core.storefront.dto.GuestOrderRequest guestRequest(String email, UUID productId, int ack) {
+    private uk.jtoye.core.storefront.dto.GuestOrderRequest guestRequest(String email, UUID productId, int ack) {
         uk.jtoye.core.storefront.dto.GuestOrderItemRequest item = new uk.jtoye.core.storefront.dto.GuestOrderItemRequest();
         item.setProductId(productId);
         item.setQuantity(1);
@@ -422,7 +422,8 @@ class GuestOrderAllergenAckIntegrationTest {
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(item));
         request.setAcknowledgedAllergenMask(ack);
-        return request;
+        // 37-32 (D-16): the prices the customer saw — the line's current unit price and the total.
+        return uk.jtoye.core.testsupport.GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
     }
 
     /** The vendor's real edit path: PUT /api/v1/products/{id} with a catalog-write token. */
@@ -477,13 +478,15 @@ class GuestOrderAllergenAckIntegrationTest {
     }
 
     /** A guest-order body. {@code ack == null} OMITS the field, which is what an old client sends. */
-    private static Map<String, Object> body(String email, List<Map<String, Object>> items, Integer ack) {
+    private Map<String, Object> body(String email, List<Map<String, Object>> items, Integer ack) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("customerName", "Allergen Ack Buyer");
         body.put("customerEmail", email);
         body.put("customerPhone", phoneFor(email));
         body.put("fulfilmentType", "COLLECTION");
         body.put("items", items);
+        // 37-32 (D-16): every line carries the unit price the customer saw, and the body the total.
+        body.put("expectedTotalPennies", uk.jtoye.core.testsupport.GuestOrderAcknowledgements.expectCurrentPrices(jdbcTemplate, TENANT_ID, "COLLECTION", items));
         if (ack != null) {
             body.put("acknowledgedAllergenMask", ack);
         }

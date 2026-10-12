@@ -132,17 +132,24 @@ public final class GuestOrderAcknowledgements {
     }
 
     /**
-     * For mocked unit tests: the total the service will compute for the request against in-memory
-     * products (each line's product resolved by id from {@code products}) and the shop's fee rule.
+     * For mocked unit tests: sets the request's total to what the checkout shows — the sum of each
+     * item's already-set {@code expectedUnitPricePennies} × quantity (set from the in-memory product at
+     * the builder, see {@link #expectedUnitPrice(Product)}) plus the shop's fee rule for the request's
+     * fulfilment type. An item with no expected unit price fails loudly: a line the checkout never
+     * priced cannot be summed into a total it claims to have shown.
      */
-    public static long expectedTotal(Shop shop, GuestOrderRequest request, Product... products) {
+    public static GuestOrderRequest expectShownTotal(GuestOrderRequest request, Shop shop) {
         long subtotal = 0L;
         for (GuestOrderItemRequest item : request.getItems()) {
-            subtotal += expectedUnitPrice(productById(item.getProductId(), products)) * item.getQuantity();
+            if (item.getExpectedUnitPricePennies() == null) {
+                throw new IllegalStateException("Item " + item.getProductId() + " has no expectedUnitPricePennies; set it from its product first");
+            }
+            subtotal += item.getExpectedUnitPricePennies() * item.getQuantity();
         }
-        return subtotal + FulfilmentPolicy.deliveryFeePennies(
+        request.setExpectedTotalPennies(subtotal + FulfilmentPolicy.deliveryFeePennies(
                 FulfilmentPolicy.resolve(request.getFulfilmentType(), FulfilmentType.DELIVERY), subtotal,
-                shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies());
+                shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies()));
+        return request;
     }
 
     /**
@@ -157,15 +164,6 @@ public final class GuestOrderAcknowledgements {
             lines.add(new Line(item.getProductId(), item.getQuantity()));
         }
         request.setExpectedTotalPennies(expectedTotal(jdbc, tenantId, request.getFulfilmentType(), lines));
-        return request;
-    }
-
-    /** For mocked unit tests: as {@link #expectCurrentPrices(GuestOrderRequest, JdbcTemplate, UUID)} against in-memory products. */
-    public static GuestOrderRequest expectCurrentPrices(GuestOrderRequest request, Shop shop, Product... products) {
-        for (GuestOrderItemRequest item : request.getItems()) {
-            item.setExpectedUnitPricePennies(expectedUnitPrice(productById(item.getProductId(), products)));
-        }
-        request.setExpectedTotalPennies(expectedTotal(shop, request, products));
         return request;
     }
 
@@ -204,15 +202,6 @@ public final class GuestOrderAcknowledgements {
             throw new IllegalStateException("Expected one product row for " + productId + " (" + sql + "), found " + rows);
         }
         return rows.get(0);
-    }
-
-    private static Product productById(UUID productId, Product... products) {
-        for (Product product : products) {
-            if (productId.equals(product.getId())) {
-                return product;
-            }
-        }
-        throw new IllegalStateException("No in-memory product with id " + productId + " among the " + products.length + " given");
     }
 
     private static Long asLong(Object value) {

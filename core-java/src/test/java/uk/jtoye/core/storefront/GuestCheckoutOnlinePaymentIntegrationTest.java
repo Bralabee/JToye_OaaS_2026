@@ -300,7 +300,9 @@ class GuestCheckoutOnlinePaymentIntegrationTest {
         // required, delivery fee forced to £0.
         request.setFulfilmentType("COLLECTION");
         // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
-        return GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
+        GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
+        // 37-32 (D-16): and the prices the customer saw — each line's current unit price and the total.
+        return GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
     }
 
     // ---- Read helpers (Testcontainers bootstrap role is SUPERUSER, so RLS is

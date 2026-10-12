@@ -195,11 +195,16 @@ class CrossTenantSpoofIntegrationTest {
         // UIX-04 (Phase 19): fulfilmentType is @NotBlank on GuestOrderRequest —
         // without it bean validation 400s before the tenant gate can 403.
         // COLLECTION keeps the body minimal (no address required).
+        // 37-32 (D-16): the body also carries expectedUnitPricePennies and expectedTotalPennies,
+        // the shape every storefront client sends. The product does not exist by design, so there
+        // is no current price to read; these are the only values in the test suite not computed from
+        // the server, and they are inert here: the tenant gate refuses before any price is compared.
         UUID dummyProductId = UUID.randomUUID();
         String minimalOrderJson = "{\"customerEmail\":\"t@example.com\"," +
                 "\"customerName\":\"T\",\"customerPhone\":\"+447000000000\"," +
                 "\"fulfilmentType\":\"COLLECTION\"," +
-                "\"items\":[{\"productId\":\"" + dummyProductId + "\",\"quantity\":1}]," +
+                "\"items\":[{\"productId\":\"" + dummyProductId + "\",\"quantity\":1,\"expectedUnitPricePennies\":100}]," +
+                "\"expectedTotalPennies\":100," +
                 "\"idempotencyKey\":\"test-key-1\"}";
 
         mockMvc.perform(post("/public/shops/{slug}/orders", slugB)

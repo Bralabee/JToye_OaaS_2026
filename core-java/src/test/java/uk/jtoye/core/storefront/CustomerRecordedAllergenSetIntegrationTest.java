@@ -558,7 +558,7 @@ class CustomerRecordedAllergenSetIntegrationTest {
         return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
     }
 
-    private static Map<String, Object> body(String email, List<UUID> productIds, Integer ack) {
+    private Map<String, Object> body(String email, List<UUID> productIds, Integer ack) {
         List<Map<String, Object>> items = new ArrayList<>();
         for (UUID productId : productIds) {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -572,6 +572,8 @@ class CustomerRecordedAllergenSetIntegrationTest {
         body.put("customerPhone", phoneFor(email));
         body.put("fulfilmentType", "COLLECTION");
         body.put("items", items);
+        // 37-32 (D-16): every line carries the unit price the customer saw, and the body the total.
+        body.put("expectedTotalPennies", GuestOrderAcknowledgements.expectCurrentPrices(jdbcTemplate, TENANT_ID, "COLLECTION", items));
         if (ack != null) {
             body.put("acknowledgedAllergenMask", ack);
         }

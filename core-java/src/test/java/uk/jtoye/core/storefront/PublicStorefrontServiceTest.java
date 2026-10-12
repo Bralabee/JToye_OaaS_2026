@@ -488,6 +488,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerEmail("test@example.com");
         request.setCustomerPhone("07700000000");
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -509,6 +510,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerEmail("test@example.com");
         request.setCustomerPhone("07700000000");
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -552,6 +554,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerEmail("owl@example.com");
         request.setCustomerPhone("07700900005");
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -637,6 +640,8 @@ class PublicStorefrontServiceTest {
         GuestOrderItemRequest itemReq = new GuestOrderItemRequest();
         itemReq.setProductId(product.getId());
         itemReq.setQuantity(quantity);
+        // 37-32 (D-16): the unit price the checkout showed for this line, from the product as rendered.
+        itemReq.setExpectedUnitPricePennies(GuestOrderAcknowledgements.expectedUnitPrice(product));
         return itemReq;
     }
 
@@ -652,7 +657,8 @@ class PublicStorefrontServiceTest {
         request.setItems(List.of(itemFor(product, 2)));
         // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
-        return request;
+        // 37-32 (D-16): and the total the checkout showed (the shown line prices plus the shop's fee rule).
+        return GuestOrderAcknowledgements.expectShownTotal(request, publishedShop);
     }
 
     @Test
@@ -703,6 +709,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -748,6 +755,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -831,7 +839,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setIdempotencyKey("retry-key-123");
         request.setItems(List.of());
-        return request;
+        return GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
     }
 
     @Test
@@ -1042,6 +1050,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1))); // 300 < 1000 minimum
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -1088,6 +1097,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("DELIVERY");
         // no address fields set
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
