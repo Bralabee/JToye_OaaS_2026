@@ -1084,32 +1084,44 @@ public class PublicStorefrontService {
         List<BasketChange> basketChanges = new ArrayList<>();
 
         for (GuestOrderItemRequest itemReq : request.getItems()) {
-            Product product = productRepository.findById(itemReq.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + itemReq.getProductId()));
+            Optional<Product> found = productRepository.findById(itemReq.getProductId());
 
             // UIX-05 invariant (CR-01): an order for shop X may only contain
             // shop X's products. RLS scopes findById to the TENANT, not the
             // shop, so without this check an unauthenticated client could
             // order any product of the tenant — including items quarantined
             // into the unpublished archive shop — through this storefront.
-            // Deliberately the SAME exception type + message shape as the
-            // absent-row case above so the response does not disclose that a
-            // product exists in another shop (no title, no shop id).
-            if (!shop.getId().equals(product.getShopId())) {
-                throw new ResourceNotFoundException(
-                        "Product not found: " + itemReq.getProductId());
+            // 37-33 (D-16): both cases are ONE collected change, REMOVED, carrying the id the caller
+            // already supplied and nothing else — deliberately the SAME entry for the absent row and
+            // for another shop's product, so the response does not disclose that a product exists in
+            // another shop (no title, no shop id; goods P2-KYL-P3, T-37-81). The line contributes
+            // nothing to the basket that remains.
+            if (found.isEmpty() || !shop.getId().equals(found.get().getShopId())) {
+                basketChanges.add(BasketChange.removed(itemReq.getProductId()));
+                continue;
             }
+            Product product = found.get();
 
+            // 37-33 (D-16): an unavailable line is reported and dropped from the basket that remains.
             if (!Boolean.TRUE.equals(product.getAvailable())) {
-                throw new IllegalArgumentException("Product is not available: " + product.getTitle());
+                basketChanges.add(BasketChange.unavailable(product.getId(), product.getTitle()));
+                continue;
             }
 
-            // Validate stock
-            if (!product.hasStock(itemReq.getQuantity())) {
-                throw new IllegalArgumentException(
-                        "Insufficient stock for '" + product.getTitle() + "': requested "
-                                + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
+            // 37-33 (D-16): too few units in stock is reported with what was asked and what can be had.
+            // The line is kept at the quantity that CAN be had, only so the diff's total and allergen
+            // set describe the basket after the change (a customer who takes the two that are left
+            // resubmits exactly that); a SOLD_OUT entry always refuses, so this item is never persisted.
+            // This read-only check is an early UX availability check, NOT a reservation (#85): stock is
+            // decremented once, at CONFIRMED, through StockService.
+            int quantity = itemReq.getQuantity();
+            if (!product.hasStock(quantity)) {
+                int available = Math.max(0, product.getQuantityInStock());
+                basketChanges.add(BasketChange.soldOut(product.getId(), product.getTitle(), quantity, available));
+                if (available == 0) {
+                    continue;
+                }
+                quantity = available;
             }
 
             // 37-33 (D-16): the unit price the customer saw is COMPARED, never charged (T-37-80). A
@@ -1122,7 +1134,7 @@ public class PublicStorefrontService {
 
             OrderItem item = new OrderItem(
                     product.getId(),
-                    itemReq.getQuantity(),
+                    quantity,
                     product.getPricePennies() // Server-side price — never trust client
             );
             item.setTenantId(tenantId);
@@ -1161,6 +1173,18 @@ public class PublicStorefrontService {
         long deliveryFee = FulfilmentPolicy.deliveryFeePennies(
                 fulfilmentType, itemSubtotal,
                 shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies());
+
+        // WR-01: the shop's advertised minimum order value, on the item subtotal (delivery fee
+        // excluded), server-side. The storefront renders "Min order £X" and the checkout disables
+        // submit below it, but those are advisory — this is the authoritative gate. 37-33 (D-16):
+        // reported as one entry of the diff, with the sentence the customer always read kept inside it.
+        if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
+                && itemSubtotal < shop.getMinimumOrderPennies()) {
+            basketChanges.add(BasketChange.belowMinimum(shop.getMinimumOrderPennies(), itemSubtotal,
+                    String.format(java.util.Locale.ROOT,
+                            "Order is below this shop's minimum order value of £%.2f.",
+                            shop.getMinimumOrderPennies() / 100.0)));
+        }
 
         // 37-33 (D-16): the total the customer saw against the total the server would charge — the same
         // number Order.calculateTotal() produces (line totals plus the delivery fee; VAT is inclusive).
@@ -1234,18 +1258,7 @@ public class PublicStorefrontService {
         // this predominant liability via calculateTotal().
         order.setVatRate(VatCalculator.predominantRate(lineRates));
 
-        // WR-01: enforce the shop's advertised minimum order value on the
-        // item subtotal (delivery fee excluded), server-side. The storefront
-        // renders "Min order £X" and the checkout disables submit below it,
-        // but those are advisory — this is the authoritative gate.
-        if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
-                && itemSubtotal < shop.getMinimumOrderPennies()) {
-            throw new IllegalArgumentException(String.format(java.util.Locale.ROOT,
-                    "Order is below this shop's minimum order value of £%.2f.",
-                    shop.getMinimumOrderPennies() / 100.0));
-        }
-
-        // The fee computed above, with the subtotal, before the basket diff (37-33).
+        // The fee computed above, with the subtotal and the minimum, before the basket diff (37-33).
         order.setDeliveryFeePennies(deliveryFee);
 
         order.calculateTotal();

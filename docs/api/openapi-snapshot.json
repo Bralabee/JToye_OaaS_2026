@@ -11680,7 +11680,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is in flight"
+            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
           },
           "410" : {
             "content" : {
@@ -11700,7 +11700,7 @@
                 }
               }
             },
-            "description" : "Idempotency-Key reused with a different payload or shop"
+            "description" : "Idempotency-Key reused with a different payload or shop (errors/idempotency-payload-mismatch); expected prices missing — send expectedUnitPricePennies on each item and expectedTotalPennies (errors/basket-confirmation-required); allergen acknowledgement missing (errors/allergen-acknowledgement-required); or the order is larger than the platform allows (errors/order-limit-exceeded)"
           }
         },
         "summary" : "Place a guest order",
@@ -14283,7 +14283,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is in flight"
+            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
           },
           "410" : {
             "content" : {
@@ -14303,7 +14303,7 @@
                 }
               }
             },
-            "description" : "Idempotency-Key reused with a different payload or shop"
+            "description" : "Idempotency-Key reused with a different payload or shop (errors/idempotency-payload-mismatch); expected prices missing — send expectedUnitPricePennies on each item and expectedTotalPennies (errors/basket-confirmation-required); allergen acknowledgement missing (errors/allergen-acknowledgement-required); or the order is larger than the platform allows (errors/order-limit-exceeded)"
           }
         },
         "summary" : "Place a guest order",

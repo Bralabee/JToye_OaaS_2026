@@ -494,10 +494,24 @@ class GuestOrderBasketRevalidationIntegrationTest {
         return "/api/v1/public/shops/" + slug + "/orders";
     }
 
+    /**
+     * 37-28 (D-27): every storefront request is sent from the arm's OWN socket peer, derived from the
+     * arm's address like the phone is. MockMvc's default peer is one address for the whole class, and
+     * the per-connection cash cap (5 open orders at a shop) would refuse this class's sixth order with
+     * a 429 that has nothing to do with the basket — a unique identity per arm, never a raised default.
+     */
     private MvcResult perform(MockHttpServletRequestBuilder request, Object body) throws Exception {
+        String peer = peerFor(body);
         return mockMvc.perform(request.contentType(MediaType.APPLICATION_JSON)
+                        .with(r -> { r.setRemoteAddr(peer); return r; })
                         .content(jsonMapper.writeValueAsString(body)))
                 .andReturn();
+    }
+
+    private static String peerFor(Object body) {
+        Object email = body instanceof Map<?, ?> map ? map.get("customerEmail") : null;
+        int hash = Math.floorMod(String.valueOf(email).hashCode(), 250 * 250);
+        return "203.0." + (1 + hash / 250) + "." + (1 + hash % 250);
     }
 
     /** A basket line as the checkout sends it: the product, the quantity and the unit price it showed. */

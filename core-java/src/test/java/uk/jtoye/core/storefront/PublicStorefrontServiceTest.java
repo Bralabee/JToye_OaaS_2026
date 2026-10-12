@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
+import uk.jtoye.core.exception.BasketChangedException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
@@ -1052,9 +1053,15 @@ class PublicStorefrontServiceTest {
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
         GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
-        var ex = assertThrows(IllegalArgumentException.class,
+        // 37-33 (D-16): the minimum is one entry of the basket diff, its WR-01 wording kept inside it.
+        var ex = assertThrows(BasketChangedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
-        assertTrue(ex.getMessage().contains("minimum order value of £10.00"));
+        assertEquals(1, ex.getChanges().size());
+        BasketChangedException.BasketChange below = ex.getChanges().get(0);
+        assertEquals(BasketChangedException.Kind.BELOW_MINIMUM, below.kind());
+        assertEquals(1000L, below.minimum());
+        assertEquals(300L, below.subtotal());
+        assertTrue(below.detail().contains("minimum order value of £10.00"));
         verify(orderRepository, never()).save(any(Order.class));
     }
 
@@ -1071,14 +1078,20 @@ class PublicStorefrontServiceTest {
         when(productRepository.findById(foreignProduct.getId()))
                 .thenReturn(Optional.of(foreignProduct));
 
-        var ex = assertThrows(ResourceNotFoundException.class,
+        // 37-33 (D-16): a REMOVED entry of the basket diff, the same entry a non-existent id gets.
+        var ex = assertThrows(BasketChangedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(foreignProduct)));
 
         // Response must be indistinguishable from a nonexistent product: no
         // title, no shop detail — only the id the caller already supplied.
-        assertFalse(ex.getMessage().contains("Label Cake"),
+        List<BasketChangedException.BasketChange> removed = ex.getChanges().stream()
+                .filter(change -> change.kind() == BasketChangedException.Kind.REMOVED)
+                .toList();
+        assertEquals(1, removed.size());
+        assertEquals(foreignProduct.getId(), removed.get(0).productId());
+        assertNull(removed.get(0).name(), "rejection must not leak the foreign product's title");
+        assertFalse((ex.getMessage() + ex.getChanges()).contains("Label Cake"),
                 "rejection must not leak the foreign product's title");
-        assertTrue(ex.getMessage().contains(foreignProduct.getId().toString()));
 
         // No order row may be minted for the rejected request.
         verify(orderRepository, never()).save(any(Order.class));

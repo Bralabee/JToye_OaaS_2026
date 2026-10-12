@@ -217,9 +217,21 @@ public class PublicStorefrontController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Order created (or the original confirmation replayed for a repeated key)"),
             @ApiResponse(responseCode = "400", description = "Invalid request, including disagreeing keys or total quantity above 2147483647"),
-            @ApiResponse(responseCode = "409", description = "A request with this Idempotency-Key is in flight"),
+            @ApiResponse(responseCode = "409", description = "A request with this Idempotency-Key is in flight "
+                    + "(errors/idempotency-conflict); or the basket changed since it was priced "
+                    + "(errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind "
+                    + "PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | "
+                    + "SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | "
+                    + "BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the "
+                    + "allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each "
+                    + "change, then resubmit under the same Idempotency-Key. An allergen-only change is "
+                    + "errors/allergen-acknowledgement-stale, unchanged"),
             @ApiResponse(responseCode = "410", description = "The completed order has been deleted or expired; no replacement is created"),
-            @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload or shop")
+            @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload or shop "
+                    + "(errors/idempotency-payload-mismatch); expected prices missing — send expectedUnitPricePennies on "
+                    + "each item and expectedTotalPennies (errors/basket-confirmation-required); allergen acknowledgement "
+                    + "missing (errors/allergen-acknowledgement-required); or the order is larger than the platform allows "
+                    + "(errors/order-limit-exceeded)")
     })
     public ResponseEntity<GuestOrderConfirmation> createGuestOrder(
             @PathVariable String slug,
