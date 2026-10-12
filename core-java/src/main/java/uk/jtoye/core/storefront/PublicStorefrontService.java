@@ -1174,14 +1174,27 @@ public class PublicStorefrontService {
 
         // WR-01: the shop's advertised minimum order value, on the item subtotal (delivery fee
         // excluded), server-side. The storefront renders "Min order £X" and the checkout disables
-        // submit below it, but those are advisory — this is the authoritative gate. 37-33 (D-16):
-        // reported as one entry of the diff, with the sentence the customer always read kept inside it.
+        // submit below it, but those are advisory — this is the authoritative gate.
+        //
+        // 37-33 (D-16) made it one entry of the basket diff — but only a basket that CHANGED belongs in
+        // that diff (PR #918 round 1). When the basket the customer SAW (their expected unit prices times
+        // the quantities they asked for, every line they sent) was already below the minimum, nothing
+        // changed: it is refused exactly as before 37-33 (400 errors/invalid-argument, the same
+        // sentence), after the diff, the acknowledgement and the limits — the pre-37-33 order. A 409
+        // here would tell an API or MCP caller to resubmit the same basket under the same key, for ever.
+        // When such a basket ALSO has real changes, the 409 lists those (without BELOW_MINIMUM) and the
+        // resubmit at the accepted prices then meets this 400 — two answers, never a loop.
+        String belowMinimumSentence = null;
         if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
                 && itemSubtotal < shop.getMinimumOrderPennies()) {
-            basketChanges.add(BasketChange.belowMinimum(shop.getMinimumOrderPennies(), itemSubtotal,
-                    String.format(java.util.Locale.ROOT,
-                            "Order is below this shop's minimum order value of £%.2f.",
-                            shop.getMinimumOrderPennies() / 100.0)));
+            String sentence = String.format(java.util.Locale.ROOT,
+                    "Order is below this shop's minimum order value of £%.2f.",
+                    shop.getMinimumOrderPennies() / 100.0);
+            if (seenBasketMetMinimum(request, shop.getMinimumOrderPennies())) {
+                basketChanges.add(BasketChange.belowMinimum(shop.getMinimumOrderPennies(), itemSubtotal, sentence));
+            } else {
+                belowMinimumSentence = sentence;
+            }
         }
 
         // 37-33 (D-16): the total the customer saw against the total the server would charge — the same
@@ -1234,6 +1247,11 @@ public class PublicStorefrontService {
                         .map(item -> new OrderLimits.LineCheck(item.getProductName(), item.getQuantity()))
                         .toList(),
                 itemSubtotal);
+        // WR-01, unchanged from before 37-33: a basket below the minimum at the prices the customer saw
+        // (see belowMinimumSentence above). Thrown inside the reserved work, so nothing is held under the key.
+        if (belowMinimumSentence != null) {
+            throw new IllegalArgumentException(belowMinimumSentence);
+        }
         // D-06: what the customer acknowledged, when, and through which channel.
         order.setAllergenAckMask(acknowledgedAllergenMask);
         order.setAllergenAckAt(OffsetDateTime.now());
@@ -1560,5 +1578,29 @@ public class PublicStorefrontService {
                 MayContainAllergens.undeclaredNames(product.getMayContainMask(), product.getAllergenMask()));
 
         return dto;
+    }
+
+    /**
+     * Whether the basket the customer SAW met the shop's minimum: every line they sent, at the unit price
+     * they were shown ({@code expectedUnitPricePennies}, required by then) times the quantity they asked
+     * for. Stops adding once the minimum is reached, so no sum of large values can overflow; a product
+     * that overflows a long is far past any minimum.
+     */
+    private static boolean seenBasketMetMinimum(GuestOrderRequest request, long minimumPennies) {
+        long seen = 0;
+        for (GuestOrderItemRequest line : request.getItems()) {
+            long linePennies;
+            try {
+                linePennies = Math.multiplyExact(line.getExpectedUnitPricePennies().longValue(),
+                        (long) line.getQuantity());
+            } catch (ArithmeticException overflow) {
+                return true;
+            }
+            seen += linePennies;
+            if (seen >= minimumPennies) {
+                return true;
+            }
+        }
+        return false;
     }
 }

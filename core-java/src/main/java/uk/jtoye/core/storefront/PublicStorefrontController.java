@@ -218,13 +218,16 @@ public class PublicStorefrontController {
                     + "A completed reservation whose order has been deleted or expired returns 410; it never creates a replacement.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Order created (or the original confirmation replayed for a repeated key)"),
-            @ApiResponse(responseCode = "400", description = "Invalid request, including disagreeing keys or total quantity above 2147483647"),
+            @ApiResponse(responseCode = "400", description = "Invalid request, including disagreeing keys, total quantity above 2147483647, "
+                    + "or a basket below the shop's minimum order value at the prices shown (errors/invalid-argument; "
+                    + "not a basket change, so resubmitting it is refused again)"),
             @ApiResponse(responseCode = "409", description = "A request with this Idempotency-Key is in flight "
                     + "(errors/idempotency-conflict); or the basket changed since it was priced "
                     + "(errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind "
                     + "PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | "
                     + "SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | "
-                    + "BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the "
+                    + "BELOW_MINIMUM {minimum, subtotal, detail} (only when the basket met the minimum at the prices shown) | "
+                    + "TOTAL_CHANGED {expected, current} — and, when the "
                     + "allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each "
                     + "change, then resubmit under the same Idempotency-Key. An allergen-only change is "
                     + "errors/allergen-acknowledgement-stale, unchanged"),

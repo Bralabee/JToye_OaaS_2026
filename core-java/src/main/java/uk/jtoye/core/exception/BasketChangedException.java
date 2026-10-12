@@ -44,7 +44,8 @@ public class BasketChangedException extends RuntimeException {
         SOLD_OUT,
         /** The product is not on this shop's menu (no such product, or another shop's): id only, no name. */
         REMOVED,
-        /** The lines that can still be ordered no longer reach the shop's minimum: {@code minimum} vs {@code subtotal}. */
+        /** The basket met the shop's minimum at the prices shown, and the lines that can still be ordered no longer
+         *  reach it: {@code minimum} vs {@code subtotal}. A basket that was always below it is not a change (400). */
         BELOW_MINIMUM,
         /** The order total differs from the one the customer saw: {@code expected} → {@code current}. */
         TOTAL_CHANGED
