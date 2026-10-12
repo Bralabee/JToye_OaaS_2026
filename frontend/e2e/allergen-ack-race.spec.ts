@@ -40,6 +40,7 @@ import { test, expect, type APIRequestContext, type Page, type Response } from "
 import { CART_KEY_PREFIX } from "../lib/cart-identity"
 import { ALLERGENS, getAllergenNames } from "../types/api"
 import { VENDOR_PASSWORD, VENDOR_USERNAME, skipWithoutVendorPassword } from "./vendor-credentials"
+import { cancelOrdersByNumber, orderNumberIn, uniqueContact } from "./order-cleanup"
 
 // The deterministic seeded shop (DemoDataSeeder, tenant 00000000-…-0001 — the vendor's tenant).
 const SHOP_SLUG = "mama-ades-kitchen"
@@ -142,6 +143,11 @@ async function shoot(page: Page, testInfo: import("@playwright/test").TestInfo, 
 }
 
 test.describe("#785 the allergen acknowledgement race", () => {
+  const placed: string[] = []
+  test.afterEach(async ({ request }) => {
+    await cancelOrdersByNumber(request, SHOP_SLUG, placed.splice(0))
+  })
+
   test("a vendor edit after the tick is refused 409, re-acknowledged, and recorded", async ({
     page,
     request,
@@ -205,9 +211,13 @@ test.describe("#785 the allergen acknowledgement race", () => {
       await expect(panel.getByText(addedName, { exact: true })).toHaveCount(0)
 
       await page.getByRole("button", { name: /collection/i }).click()
+      // Per-run contact details and a cancel at the end (e2e/order-cleanup.ts): a fixed email and
+      // phone here accumulated 8 open cash orders at this shop and the 37-27 per-email cap refused
+      // this spec's own order 429 at the 37-31 gate.
+      const contact = uniqueContact("race-785")
       await page.fill("input#name", "Allergen Race 785")
-      await page.fill("input#email", "race-785@test.com")
-      await page.fill("input#phone", "07700 785785")
+      await page.fill("input#email", contact.email)
+      await page.fill("input#phone", contact.phone)
       const ack = page.getByRole("checkbox", { name: /I have read the allergen information for this order\./i })
       await ack.click()
       await expect(ack).toBeChecked()
@@ -248,6 +258,7 @@ test.describe("#785 the allergen acknowledgement race", () => {
       expect(accepted.status(), "the re-acknowledged order was not accepted").toBeLessThan(300)
 
       await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
+      placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent()) ?? "")
       await expect(page.getByTestId("recorded-ack")).toContainText("You confirmed you had read:")
       await expect(page.getByTestId("recorded-ack")).toContainText(addedName)
       await expect(page.getByTestId("recorded-set")).toContainText("Recorded on your order:")

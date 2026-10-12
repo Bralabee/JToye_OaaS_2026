@@ -6,9 +6,10 @@
  *      shop appear as PENDING rows on /dashboard/orders, are selected, rejected with a kept reason,
  *      and the dialog reads back a per-order summary ("3 rejected.") before it closes.
  *   2. The "Unverified contact" badge appears on a guest order (contactVerified === false, 37-27)
- *      and NOT on a signed-in verified customer's order — with the guest-row assertion standing as
- *      the positive control that makes the verified-row absence a real negative (the INSTRUMENT arm:
- *      asserting the badge is PRESENT on the verified order must fail).
+ *      and NOT on a vendor-placed order (contactVerified null = not recorded, F20) — with the
+ *      guest-row assertion standing as the positive control that makes the not-recorded row's
+ *      absence a real negative (the INSTRUMENT arm: asserting the badge is PRESENT on the
+ *      not-recorded order must fail).
  *   3. The checkout refuses the fourth open cash order for one email with the per-email cap copy
  *      (37-27's 429 order-cap-exceeded, axis EMAIL), rendered from the problem type, no auto-retry.
  *
@@ -17,44 +18,39 @@
  * Orders are placed through the public API (the honest guest path: no X-Customer-Token, so
  * contactVerified is false) and the vendor-facing and checkout assertions run in a real browser.
  *
- * THE PER-CONNECTION IP CAP (37-28, cap 5). The runner and the browser share the Docker gateway
- * address, so open cash orders at ONE shop accumulate against ONE IP digest. Each block therefore
- * (a) uses a DISTINCT seeded shop, (b) keeps its open cash orders at that shop at or below three,
- * and (c) cancels every order it created in an afterEach through a vendor token, so reruns do not
- * leave the shop near the cap. The six-orders-from-one-connection IP proof is a Task 3 curl arm
- * (37-31 must_haves), deliberately NOT a browser arm here, for exactly this reason.
+ * THE CAPS AND THIS SPEC'S OWN HYGIENE (e2e/order-cleanup.ts has the measured history). The runner
+ * and the browser share the Docker gateway address, so open cash orders at ONE shop accumulate
+ * against ONE IP digest (37-28, cap 5); a repeated email or phone accumulates against its own cap
+ * (37-27, 3 each). Each block therefore (a) uses a DISTINCT seeded shop, (b) uses per-run contact
+ * details, (c) keeps its open cash orders at that shop at or below three, and (d) cancels every
+ * order it created in an afterEach through the vendor's own cancel, resolved BY NUMBER — the
+ * public confirmation carries no id and the public shop DTO carries no id, which is how the Task 1
+ * version of this cleanup cancelled nothing and left the gate's second project to trip the IP cap
+ * on the first project's leftovers. The six-orders-from-one-connection IP proof is a Task 3 curl
+ * arm (37-31 must_haves), deliberately NOT a browser arm here, for exactly this reason.
+ *
+ * THE COOKIE NOTICE. On a phone the dashboard's cookie notice and the selection bar both sit at the
+ * bottom of the viewport and the notice paints over the bar's button (measured at the gate: every
+ * click on "Reject 3 orders" at 390 px was intercepted by the notice's "cookies" link). A vendor
+ * dismisses the notice once; this spec taps "Got it" after sign-in, as a vendor would.
  *
  * WHEN IT IS RUN. Written and type-checked in Task 1; RUN in Task 3, which rebuilds every image.
- * No running image carries this branch's 37-26..37-30 behaviour before that rebuild, and a run
- * against a stale image proves nothing about the branch (CLAUDE.md, runtime parity). Without a
- * vendor password (E2E_VENDOR_PASSWORD or KC_SEED_USER_PASSWORD) and the core-api client secret
- * (KEYCLOAK_CLIENT_SECRET) the vendor-facing blocks SKIP naming the fix, rather than timing out as
- * a fake failure — `set -a; . ./.env; set +a` supplies both.
+ * Without a vendor password (E2E_VENDOR_PASSWORD or KC_SEED_USER_PASSWORD) and the core-api client
+ * secret (KEYCLOAK_CLIENT_SECRET) the vendor-facing blocks SKIP naming the fix, rather than timing
+ * out as a fake failure — `set -a; . ./.env; set +a` supplies both.
  *
  * Run: npx playwright test e2e/abuse-bounds.spec.ts
  */
 
-import {
-  test,
-  expect,
-  type APIRequestContext,
-  type Page,
-} from "@playwright/test"
-import {
-  VENDOR_USERNAME,
-  VENDOR_PASSWORD,
-  skipWithoutVendorPassword,
-} from "./vendor-credentials"
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test"
+import { VENDOR_USERNAME, VENDOR_PASSWORD, skipWithoutVendorPassword } from "./vendor-credentials"
+import { cancelOrdersByNumber, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
 
-// The frontend as the browser sees it; the core API and Keycloak as the runner sees them. Same
-// env vars and defaults as storefront-flows.spec.ts — core-java and Keycloak are separate services,
-// so not base-URL fallbacks (scripts/check-e2e-baseurl-contract.sh scope note).
+// The frontend as the browser sees it; the core API as the runner sees it. Same env vars and
+// defaults as storefront-flows.spec.ts — core-java is a separate service, so not a base-URL
+// fallback (scripts/check-e2e-baseurl-contract.sh scope note).
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const API = process.env.PLAYWRIGHT_API_URL || "http://localhost:9090"
-const KEYCLOAK = process.env.PLAYWRIGHT_KEYCLOAK_URL || "http://localhost:8085"
-const REALM = process.env.E2E_VENDOR_REALM || "jtoye-dev"
-const CLIENT_ID = process.env.E2E_VENDOR_CLIENT_ID || "core-api"
-const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? ""
 
 // Distinct seeded shops so each block's open cash orders key on their own shop under the per-IP
 // cap. All three belong to the dev vendor's tenant (00000000-…-0001); resolved live, and the block
@@ -68,35 +64,15 @@ const CAP_COPY = /the most open cash orders this shop allows for one customer/i
 
 interface PlacedOrder {
   orderNumber: string
-  id?: string
   status: string
+  slug: string
 }
 
-/** A vendor JWT via the password grant — only used to CANCEL the orders a block created. */
-async function vendorToken(request: APIRequestContext): Promise<string | null> {
-  if (!VENDOR_PASSWORD || !CLIENT_SECRET) return null
-  const res = await request.post(
-    `${KEYCLOAK}/realms/${REALM}/protocol/openid-connect/token`,
-    {
-      form: {
-        grant_type: "password",
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        username: VENDOR_USERNAME,
-        password: VENDOR_PASSWORD,
-      },
-    },
-  )
-  if (!res.ok()) return null
-  return (await res.json()).access_token as string
-}
-
-/** The shop's id, minimum and a buildable item — or null when the slug is not on this stack. */
+/** The shop's minimum and a buildable item — or null when the slug is not on this stack. */
 async function resolveShop(
   request: APIRequestContext,
   slug: string,
 ): Promise<{
-  id: string
   minimumOrderPennies: number
   acceptsCardPayments: boolean
   productId: string
@@ -106,7 +82,6 @@ async function resolveShop(
   const shopRes = await request.get(`${API}/api/v1/public/shops/${slug}`)
   if (!shopRes.ok()) return null
   const shop = (await shopRes.json()) as {
-    id: string
     minimumOrderPennies?: number
     acceptsCardPayments?: boolean
   }
@@ -121,7 +96,7 @@ async function resolveShop(
   const list: Array<Record<string, unknown>> = Array.isArray(body)
     ? (body as Array<Record<string, unknown>>)
     : Array.isArray((body as { content?: unknown }).content)
-      ? ((body as { content: Array<Record<string, unknown>> }).content)
+      ? (body as { content: Array<Record<string, unknown>> }).content
       : Object.values(body as Record<string, unknown>).flatMap((group) =>
           Array.isArray(group) ? (group as Array<Record<string, unknown>>) : [],
         )
@@ -136,7 +111,6 @@ async function resolveShop(
   if (!product) return null
 
   return {
-    id: shop.id,
     minimumOrderPennies: shop.minimumOrderPennies ?? 0,
     acceptsCardPayments: shop.acceptsCardPayments === true,
     productId: product.id as string,
@@ -145,10 +119,14 @@ async function resolveShop(
   }
 }
 
+function clearingQuantity(shop: NonNullable<Awaited<ReturnType<typeof resolveShop>>>): number {
+  return Math.max(1, Math.ceil(shop.minimumOrderPennies / shop.pricePennies) + 1)
+}
+
 /**
  * Place ONE guest cash (collection) order through the public API. No X-Customer-Token, so the
  * server records contactVerified = false. The quantity clears the shop minimum; the acknowledged
- * allergen mask equals the single product's declared mask (the 37-69 equality the server enforces).
+ * allergen mask equals the single product's declared mask (the V69 equality the server enforces).
  * Returns the parsed order, or the HTTP status when the server refused (e.g. 429 at the cap).
  */
 async function placeGuestCashOrder(
@@ -158,7 +136,6 @@ async function placeGuestCashOrder(
   contact: { email: string; phone: string },
 ): Promise<{ status: number; order: PlacedOrder | null }> {
   if (!shop) throw new Error("placeGuestCashOrder: shop not resolved")
-  const quantity = Math.max(1, Math.ceil(shop.minimumOrderPennies / shop.pricePennies) + 1)
   const res = await request.post(`${API}/api/v1/public/shops/${slug}/orders`, {
     headers: { "Idempotency-Key": crypto.randomUUID() },
     data: {
@@ -167,55 +144,20 @@ async function placeGuestCashOrder(
       customerPhone: contact.phone,
       fulfilmentType: "COLLECTION",
       acknowledgedAllergenMask: shop.allergenMask,
-      items: [{ productId: shop.productId, quantity }],
+      items: [{ productId: shop.productId, quantity: clearingQuantity(shop) }],
     },
   })
   const status = res.status()
   if (status !== 201) return { status, order: null }
-  const order = (await res.json()) as PlacedOrder
-  return { status, order }
+  const body = (await res.json()) as { orderNumber: string; status: string }
+  return { status, order: { orderNumber: body.orderNumber, status: body.status, slug } }
 }
 
-/**
- * Cancel the orders a block created, so reruns do not leave the shop near the per-IP cap.
- *
- * The public confirmation (GuestOrderConfirmation) carries an orderNumber and NO id — measured at
- * the 37-31 gate, where the Task 1 version of this helper filtered on `o.id`, found none, and
- * silently cancelled nothing. The ids are resolved through the vendor's own per-shop order list
- * (GET /api/v1/orders/shop/{shopId}, newest first) by number, which is the only honest route a
- * guest-placed order has back to its id.
- */
-async function cancelOrders(
-  request: APIRequestContext,
-  token: string | null,
-  shopId: string | undefined,
-  created: PlacedOrder[],
-) {
-  if (!token || !shopId || created.length === 0) return
-  const wanted = new Set(created.map((o) => o.orderNumber))
-  const ids: string[] = created
-    .map((o) => o.id)
-    .filter((id): id is string => typeof id === "string")
-  if (ids.length < created.length) {
-    const listRes = await request
-      .get(`${API}/api/v1/orders/shop/${shopId}?size=100&sort=createdAt,desc`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .catch(() => null)
-    if (listRes && listRes.ok()) {
-      const page = (await listRes.json()) as { content?: Array<{ id: string; orderNumber: string }> }
-      for (const o of page.content ?? []) {
-        if (wanted.has(o.orderNumber) && !ids.includes(o.id)) ids.push(o.id)
-      }
-    }
-  }
-  if (ids.length === 0) return
-  await request
-    .post(`${API}/api/v1/orders/bulk-cancel`, {
-      headers: { Authorization: `Bearer ${token}` },
-      data: { orderIds: ids, reasonCode: "OTHER" },
-    })
-    .catch(() => undefined)
+/** Cancel what a block created (by number, per shop), so reruns start with the caps clear. */
+async function cancelOrders(request: APIRequestContext, created: PlacedOrder[]) {
+  const bySlug = new Map<string, string[]>()
+  for (const o of created) bySlug.set(o.slug, [...(bySlug.get(o.slug) ?? []), o.orderNumber])
+  for (const [slug, numbers] of bySlug) await cancelOrdersByNumber(request, slug, numbers)
 }
 
 /** Genuine vendor SSO sign-in (the dashboard's server-side auth gate needs it), as kitchen-flow does. */
@@ -239,13 +181,17 @@ async function vendorLogin(page: Page) {
   await page.waitForURL(/\/dashboard/, { timeout: 30_000 })
 }
 
+/** Dismiss the cookie notice the way a vendor does, so the bottom-anchored selection bar is reachable. */
+async function dismissCookieNotice(page: Page) {
+  const gotIt = page.getByRole("button", { name: "Got it" })
+  if ((await gotIt.count()) > 0) await gotIt.first().click({ timeout: 5_000 }).catch(() => undefined)
+}
+
 test.describe("37-D abuse bounds — vendor bulk reject", () => {
-  let token: string | null = null
-  let shopId: string | undefined
   let created: PlacedOrder[] = []
 
   test.afterEach(async ({ request }) => {
-    await cancelOrders(request, token, shopId, created)
+    await cancelOrders(request, created)
     created = []
   })
 
@@ -257,17 +203,11 @@ test.describe("37-D abuse bounds — vendor bulk reject", () => {
     const shop = await resolveShop(request, SHOP_BULK)
     test.skip(shop === null, `seeded shop ${SHOP_BULK} not present on this stack`)
     if (!shop) return
-    shopId = shop.id
-    token = await vendorToken(request)
 
     // Three PENDING guest cash orders, each a DIFFERENT email and phone so only the open-work set
     // grows (no per-email/per-phone cap at 3-each), staying at three open at this shop (under IP 5).
     for (let i = 0; i < 3; i++) {
-      const stamp = `${Date.now()}-${i}`
-      const { status, order } = await placeGuestCashOrder(request, SHOP_BULK, shop, {
-        email: `bulk-${stamp}@abuse-e2e.test`,
-        phone: `07700 9${String(100000 + i).slice(-6)}`,
-      })
+      const { status, order } = await placeGuestCashOrder(request, SHOP_BULK, shop, uniqueContact("bulk"))
       expect(status, `order ${i} should be created (201)`).toBe(201)
       expect(order).not.toBeNull()
       if (order) created.push(order)
@@ -276,6 +216,7 @@ test.describe("37-D abuse bounds — vendor bulk reject", () => {
 
     await vendorLogin(page)
     await page.goto(`${BASE}/dashboard/orders`, { waitUntil: "domcontentloaded" })
+    await dismissCookieNotice(page)
 
     // Select this block's three orders by their ORD- numbers (the checkbox aria-label).
     for (const o of created) {
@@ -301,16 +242,14 @@ test.describe("37-D abuse bounds — vendor bulk reject", () => {
 })
 
 test.describe("37-D abuse bounds — the unverified-contact badge", () => {
-  let token: string | null = null
-  let shopId: string | undefined
   let created: PlacedOrder[] = []
 
   test.afterEach(async ({ request }) => {
-    await cancelOrders(request, token, shopId, created)
+    await cancelOrders(request, created)
     created = []
   })
 
-  test("a guest order carries the badge; a signed-in verified customer's order does not (instrument control)", async ({
+  test("a guest order carries the badge; a vendor-placed (not recorded) order does not (instrument control)", async ({
     page,
     request,
   }) => {
@@ -318,24 +257,21 @@ test.describe("37-D abuse bounds — the unverified-contact badge", () => {
     const shop = await resolveShop(request, SHOP_BADGE)
     test.skip(shop === null, `seeded shop ${SHOP_BADGE} not present on this stack`)
     if (!shop) return
-    shopId = shop.id
-    token = await vendorToken(request)
+    const token = await vendorToken(request)
+    const shopId = token ? await vendorShopId(request, token, SHOP_BADGE) : null
 
     // A guest order: no token, so contactVerified is false — the badge's one true trigger.
-    const guestEmail = `guest-badge-${Date.now()}@abuse-e2e.test`
-    const guest = await placeGuestCashOrder(request, SHOP_BADGE, shop, {
-      email: guestEmail,
-      phone: "07700 933333",
-    })
+    const guest = await placeGuestCashOrder(request, SHOP_BADGE, shop, uniqueContact("guest-badge"))
     expect(guest.status).toBe(201)
     expect(guest.order).not.toBeNull()
     if (guest.order) created.push(guest.order)
 
     await vendorLogin(page)
     await page.goto(`${BASE}/dashboard/orders`, { waitUntil: "domcontentloaded" })
+    await dismissCookieNotice(page)
 
     // The guest order's row shows the badge. This assertion is also the POSITIVE CONTROL for the
-    // negative below: it proves the locator can match, so the verified row's absence is a real
+    // negative below: it proves the locator can match, so the not-recorded row's absence is a real
     // negative and not a broken selector.
     const guestRow = page.locator("tr", { hasText: guest.order?.orderNumber ?? "" })
     await expect(guestRow, "guest order row not found").toBeVisible({ timeout: 20_000 })
@@ -350,49 +286,45 @@ test.describe("37-D abuse bounds — the unverified-contact badge", () => {
     // NO badge. Asserting the badge is PRESENT here is the assertion that MUST fail — the control
     // that proves the test can tell "not recorded" from "unverified". Placed as the vendor so the
     // order is unambiguously not-recorded (every vendor/REST/MCP order leaves contact_verified NULL).
-    if (token) {
-      const vendorOrderRes = await request.post(`${API}/api/v1/orders`, {
-        headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": crypto.randomUUID() },
-        data: {
-          shopId: shop.id,
-          customerName: "Vendor Placed (not recorded)",
-          customerEmail: `vendor-order-${Date.now()}@abuse-e2e.test`,
-          fulfilmentType: "COLLECTION",
-          items: [{ productId: shop.productId, quantity: Math.max(1, Math.ceil(shop.minimumOrderPennies / shop.pricePennies) + 1) }],
-        },
-      })
-      if (vendorOrderRes.status() === 201 || vendorOrderRes.status() === 200) {
-        const vo = (await vendorOrderRes.json()) as PlacedOrder
-        created.push(vo)
-        await page.reload({ waitUntil: "domcontentloaded" })
-        const vendorRow = page.locator("tr", { hasText: vo.orderNumber })
-        await expect(vendorRow, "vendor order row not found").toBeVisible({ timeout: 20_000 })
-        // The real assertion: no badge for a not-recorded order.
-        await expect(
-          vendorRow.getByTestId(UNVERIFIED_BADGE),
-          "a not-recorded (contactVerified=null) order must NOT show the badge",
-        ).toHaveCount(0)
-        // The instrument check, run as a soft expectation so its failure is recorded without
-        // failing the test: asserting PRESENCE on the not-recorded order is the direction that
-        // must fail, which is what makes the toHaveCount(0) above a real negative.
-        const badgeOnVendorOrder = await vendorRow.getByTestId(UNVERIFIED_BADGE).count()
-        expect(
-          badgeOnVendorOrder,
-          "INSTRUMENT: the badge-present assertion against a not-recorded order fails (count 0), " +
-            "which is the control proving the negative above is real",
-        ).toBe(0)
-      }
-    }
+    expect(token, "vendor token needed for the not-recorded control").not.toBeNull()
+    expect(shopId, `vendor shop id for ${SHOP_BADGE} not resolved`).not.toBeNull()
+    const vendorOrderRes = await request.post(`${API}/api/v1/orders`, {
+      headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        shopId,
+        customerName: "Vendor Placed (not recorded)",
+        customerEmail: uniqueContact("vendor-order").email,
+        fulfilmentType: "COLLECTION",
+        items: [{ productId: shop.productId, quantity: clearingQuantity(shop) }],
+      },
+    })
+    expect(vendorOrderRes.status(), "the vendor-placed control order should be created").toBe(201)
+    const vo = (await vendorOrderRes.json()) as { orderNumber: string; status: string }
+    created.push({ orderNumber: vo.orderNumber, status: vo.status, slug: SHOP_BADGE })
+    await page.reload({ waitUntil: "domcontentloaded" })
+    const vendorRow = page.locator("tr", { hasText: vo.orderNumber })
+    await expect(vendorRow, "vendor order row not found").toBeVisible({ timeout: 20_000 })
+    // The real assertion: no badge for a not-recorded order.
+    await expect(
+      vendorRow.getByTestId(UNVERIFIED_BADGE),
+      "a not-recorded (contactVerified=null) order must NOT show the badge",
+    ).toHaveCount(0)
+    // The instrument check: asserting PRESENCE on the not-recorded order is the direction that
+    // must fail (count 0), which is what makes the toHaveCount(0) above a real negative.
+    const badgeOnVendorOrder = await vendorRow.getByTestId(UNVERIFIED_BADGE).count()
+    expect(
+      badgeOnVendorOrder,
+      "INSTRUMENT: the badge-present assertion against a not-recorded order fails (count 0), " +
+        "which is the control proving the negative above is real",
+    ).toBe(0)
   })
 })
 
 test.describe("37-D abuse bounds — the checkout cap copy", () => {
-  let token: string | null = null
-  let shopId: string | undefined
   let created: PlacedOrder[] = []
 
   test.afterEach(async ({ request }) => {
-    await cancelOrders(request, token, shopId, created)
+    await cancelOrders(request, created)
     created = []
   })
 
@@ -404,15 +336,14 @@ test.describe("37-D abuse bounds — the checkout cap copy", () => {
     test.skip(shop === null, `seeded shop ${SHOP_CAP} not present on this stack`)
     if (!shop) return
     test.skip(shop.acceptsCardPayments === true, `${SHOP_CAP} takes card payments — no cash-only cap to hit`)
-    shopId = shop.id
-    token = await vendorToken(request)
 
-    // Fill the per-email cap (3 open cash orders) for ONE email at this shop, via the API.
-    const email = `cap-${Date.now()}@abuse-e2e.test`
+    // Fill the per-email cap (3 open cash orders) for ONE email at this shop, via the API; three
+    // different phones, so the refusal is the EMAIL axis and nothing else.
+    const { email } = uniqueContact("cap")
     for (let i = 0; i < 3; i++) {
       const { status, order } = await placeGuestCashOrder(request, SHOP_CAP, shop, {
         email,
-        phone: `07700 9${String(200000 + i).slice(-6)}`,
+        phone: uniqueContact("cap-phone").phone,
       })
       expect(status, `priming order ${i} should be 201`).toBe(201)
       if (order) created.push(order)
@@ -440,7 +371,7 @@ test.describe("37-D abuse bounds — the checkout cap copy", () => {
     await page.getByRole("button", { name: /collection/i }).click()
     await page.fill("input#name", "Cap Copy E2E")
     await page.fill("input#email", email)
-    await page.fill("input#phone", "07700 944444")
+    await page.fill("input#phone", uniqueContact("cap-checkout").phone)
 
     const ack = page.getByRole("checkbox", {
       name: /I have read the allergen information for this order\./i,

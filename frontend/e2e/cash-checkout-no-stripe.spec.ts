@@ -30,6 +30,7 @@
  */
 
 import { test, expect, type Request } from "@playwright/test"
+import { cancelOrdersByNumber, orderNumberIn, uniqueContact } from "./order-cleanup"
 
 // The deterministic seeded shop the storefront suite also uses (DemoDataSeeder, UIX-05).
 const SHOP_SLUG = "mama-ades-kitchen"
@@ -65,6 +66,11 @@ function isStripeCookieDomain(domain: string): boolean {
 }
 
 test.describe("#793 cash checkout loads no Stripe", () => {
+  const placed: string[] = []
+  test.afterEach(async ({ request }) => {
+    await cancelOrdersByNumber(request, SHOP_SLUG, placed.splice(0))
+  })
+
   test("a cash order walked to its confirmation makes zero Stripe requests and sets no Stripe cookie", async ({
     page,
     context,
@@ -119,9 +125,13 @@ test.describe("#793 cash checkout loads no Stripe", () => {
 
     // A COLLECTION order: no address needed, and the confirmation reads "Pay on collection".
     await page.getByRole("button", { name: /collection/i }).click()
+    // Per-run contact details and a cancel at the end (e2e/order-cleanup.ts): a fixed email and
+    // phone here accumulated 8 open cash orders at this shop and the 37-27 per-email cap refused
+    // this spec's own order 429 at the 37-31 gate.
+    const contact = uniqueContact("cash-793")
     await page.fill("input#name", "Cash Checkout 793")
-    await page.fill("input#email", "cash-793@test.com")
-    await page.fill("input#phone", "07700 793793")
+    await page.fill("input#email", contact.email)
+    await page.fill("input#phone", contact.phone)
 
     const placeOrder = page.locator('button[type="submit"]:has-text("Place order")')
     await expect(placeOrder, "Place order is disabled — basket is likely under the shop minimum").toBeEnabled({
@@ -136,6 +146,7 @@ test.describe("#793 cash checkout loads no Stripe", () => {
 
     await placeOrder.click()
     await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
+    placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent()) ?? "")
     await expect(page.getByText(/Pay on collection/i)).toBeVisible()
 
     // The default entry injected Stripe after a tick; its iframe and fraud beacons follow the
