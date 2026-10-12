@@ -10,7 +10,7 @@ import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, S
 // payment online. `/pure` injects nothing until `loadStripe()` is called (see getStripe below).
 import { loadStripe } from "@stripe/stripe-js/pure"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
-import { useCart } from "@/components/storefront/cart-provider"
+import { applyBasketChanges, useCart, type CartItem } from "@/components/storefront/cart-provider"
 // 37-34 (UI-SPEC § C1, D-16): the panel that renders the server's basket diff, and the one error-slot
 // sentence for a body this page cannot act on (the 422, or a malformed 409).
 import { BASKET_CONFIRMATION_REQUIRED_COPY, BasketChangedPanel } from "@/components/storefront/basket-changed-panel"
@@ -472,10 +472,15 @@ function PaymentForm({
   )
 }
 
+/** The lines-only signature the acknowledgement is reset on (D-02): `productId:quantity` per line. */
+function basketSignatureOf(lines: readonly Pick<CartItem, "productId" | "quantity">[]): string {
+  return lines.map((i) => `${i.productId}:${i.quantity}`).join("|")
+}
+
 export default function CheckoutPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
-  const { items, totalPennies, itemCount, clearCart } = useCart()
+  const { items, totalPennies, itemCount, clearCart, applyServerChanges } = useCart()
 
   // Pre-fill from customer session if logged in (async, cookie-backed)
   const [customerName, setCustomerName] = useState("")
@@ -534,6 +539,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // however the taps land. The flag is consumed by the next submit, so a later edit mints a fresh
   // key as before (API-4 / M3).
   const reuseKeyAfterBasketChangeRef = useRef(false)
+  // Set just before the 409's rewrite changes the lines, read ONCE by the basket-signature effect
+  // below: the server said, in the same problem, whether the acknowledged allergen set moved, so
+  // the effect keeps the server's set (never drops back to a client view the server just refused)
+  // and keeps a still-valid acknowledgement instead of resetting it as a shopper's edit would.
+  const serverRewriteRef = useRef<{ keepAcknowledged: boolean } | null>(null)
   const focusAcceptChanges = () => {
     const el = acceptChangesRef.current
     if (el && el.isConnected) el.focus()
@@ -624,14 +634,21 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
    * the acknowledgement — acknowledging one basket must not silently carry to another. This is
    * deliberately basket-only: correcting a phone number is not a new set of allergens.
    */
-  const basketSignature = useMemo(
-    () => items.map((i) => `${i.productId}:${i.quantity}`).join("|"),
-    [items]
-  )
+  const basketSignature = useMemo(() => basketSignatureOf(items), [items])
   useEffect(() => {
+    const rewrite = serverRewriteRef.current
+    serverRewriteRef.current = null
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
-    setAcknowledged(false)
     setAckError(null)
+    if (rewrite) {
+      // 37-34: the SERVER rewrote the lines (a basket-changed 409 applied). It is the authority on
+      // whether the allergen set moved: when the same 409 carried the 31.1 properties the box was
+      // unticked and the server's set held as the override; when it did not, the acknowledged set is
+      // exactly the one the remaining lines declare, and the customer is not asked to tick again.
+      if (!rewrite.keepAcknowledged) setAcknowledged(false)
+      return
+    }
+    setAcknowledged(false)
     setStaleOverride(null)
   }, [basketSignature])
 
@@ -1003,6 +1020,32 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         })
         setBasketChangesAccepted(false)
         setBasketChangeRefused(false)
+        // THE BASKET FOLLOWS THE SERVER'S FACTS (UI-SPEC § C1; F15). The stored lines become the
+        // server's — through the provider's own write, which leaves the ownership stamp alone — so
+        // the total on the button and the prices the resubmit sends are the ones just accepted.
+        // When the lines (not only prices) change, the basket-signature effect is told it was the
+        // server, and whether the acknowledgement still stands (see serverRewriteRef).
+        const nextItems = applyBasketChanges(items, basket.changes)
+        if (basketSignatureOf(nextItems) !== basketSignature) {
+          serverRewriteRef.current = { keepAcknowledged: basket.allergens === null }
+        }
+        applyServerChanges(basket.changes)
+        if (basket.allergens) {
+          // The same 409 carried the 31.1 properties: the allergen panel states the server's set,
+          // unticked (D-05 composed, not beside), and the panel above says why.
+          setStaleOverride(basket.allergens)
+          setAcknowledged(false)
+        }
+        // Re-read the catalogue so prices, flags and attribution are current; the override is
+        // released only when the fresh catalogue agrees with the set the server refused on (the
+        // 31.1 convergence rule — a further vendor edit arrives as a newer 409, never as a loop).
+        void fetchProductIndex().then((fresh) => {
+          if (!fresh) return
+          setProductIndex(fresh)
+          if (!basket.allergens) return
+          const freshMask = basketAllergenMask(nextItems, fresh)
+          setStaleOverride((prev) => (prev && freshMask === prev.mask ? null : prev))
+        })
         return
       }
       // The 422 a request without the expected prices meets — this client always sends them, so

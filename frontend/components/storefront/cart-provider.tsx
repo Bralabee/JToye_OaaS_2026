@@ -21,12 +21,78 @@ import {
 } from "@/lib/cart-identity"
 import type { BasketChange } from "@/types/storefront"
 
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+}
+
 /**
- * 37-34 (D-16) RED scaffold: the name the page and the tests import, applying nothing yet. The
- * GREEN commit makes it rewrite the lines to the server's `changes[]`.
+ * 37-34 (D-16, UI-SPEC § C1 "What the page does with the change"): the basket AFTER the server's
+ * basket-changed `changes[]` (37-33), as a pure function over the lines.
+ *
+ *   PRICE_CHANGED  the line's price becomes the server's `current`
+ *   UNAVAILABLE    the line is dropped
+ *   REMOVED        the line is dropped (the entry carries only the id; the name is this basket's)
+ *   SOLD_OUT       the quantity becomes what is available — never more than was asked for — or
+ *                  the line is dropped at 0
+ *   BELOW_MINIMUM, TOTAL_CHANGED, an id this basket does not hold:   nothing to rewrite
+ *
+ * LINES ONLY. Everything else a line carries (title, image, category, VAT rate) is kept, and the
+ * payload's ownership stamp is not this function's to touch: the provider's one serialize path
+ * stamps it (`resolveCartOwner`), so a server rewrite goes through exactly the write a shopper's
+ * own edit would — ADD or CONFIRM an owner, never ERASE one (R-16). Returns the SAME array when
+ * nothing changes, so a diff with no line entries causes no state churn and no re-persist.
  */
-export function applyBasketChanges(items: CartItem[], _changes: readonly BasketChange[]): CartItem[] {
-  return items
+export function applyBasketChanges(items: CartItem[], changes: readonly BasketChange[]): CartItem[] {
+  const byProduct = new Map<string, BasketChange[]>()
+  for (const change of changes) {
+    if (!change.productId) continue
+    const list = byProduct.get(change.productId)
+    if (list) list.push(change)
+    else byProduct.set(change.productId, [change])
+  }
+  if (byProduct.size === 0) return items
+
+  let touched = false
+  const next: CartItem[] = []
+  for (const item of items) {
+    const mine = byProduct.get(item.productId)
+    if (!mine) {
+      next.push(item)
+      continue
+    }
+    let line: CartItem | null = item
+    for (const change of mine) {
+      if (!line) break
+      switch (change.kind) {
+        case "PRICE_CHANGED":
+          if (isCount(change.current) && change.current !== line.pricePennies) {
+            line = { ...line, pricePennies: change.current }
+            touched = true
+          }
+          break
+        case "UNAVAILABLE":
+        case "REMOVED":
+          line = null
+          touched = true
+          break
+        case "SOLD_OUT": {
+          const available = isCount(change.available) ? change.available : 0
+          if (available <= 0) {
+            line = null
+            touched = true
+          } else if (available < line.quantity) {
+            line = { ...line, quantity: available }
+            touched = true
+          }
+          break
+        }
+        default:
+          break
+      }
+    }
+    if (line) next.push(line)
+  }
+  return touched ? next : items
 }
 
 export interface CartItem {
@@ -78,7 +144,12 @@ interface CartContextValue {
    */
   lineLimit: number | null
   setLineLimit: (limit: number | null) => void
-  /** 37-34 (D-16): rewrite the lines to the server's basket-changed `changes[]`. RED scaffold: a no-op. */
+  /**
+   * 37-34 (D-16): rewrite the stored lines to the server's basket-changed `changes[]` — new prices,
+   * unavailable/removed lines dropped, sold-out quantities set (see `applyBasketChanges`). Goes
+   * through the same persist as every other edit, so the ownership stamp is left exactly as the
+   * R-16 rule leaves it on any write.
+   */
   applyServerChanges: (changes: readonly BasketChange[]) => void
 }
 
@@ -335,9 +406,15 @@ export function CartProvider({
     setItems([])
   }, [setItems])
 
-  const applyServerChanges = useCallback((_changes: readonly BasketChange[]) => {
-    /* RED scaffold: nothing applied yet */
-  }, [])
+  // 37-34: a functional update over the CURRENT lines (a sibling-tab re-read or a shopper's edit
+  // landing between the 409 and this call is not overwritten), persisted by the one serialize
+  // path above — which is what keeps the owner stamp out of this function's hands (F15).
+  const applyServerChanges = useCallback(
+    (changes: readonly BasketChange[]) => {
+      setItems((prev) => applyBasketChanges(prev, changes))
+    },
+    [setItems]
+  )
 
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0)
   const totalPennies = items.reduce((sum, i) => sum + i.pricePennies * i.quantity, 0)
