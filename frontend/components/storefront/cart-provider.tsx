@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useState,
   type ReactNode,
 } from "react"
 import { useStoredState } from "@/hooks/use-stored-state"
@@ -58,6 +59,16 @@ interface CartContextValue {
   itemCount: number
   totalPennies: number
   shopSlug: string
+  /**
+   * 37-30 (D-20): the shop's per-line maximum (`PublicShop.maxLineQuantity`), set by the shop
+   * page from the server's payload so every stepper in this provider — the dish card, the dish
+   * modal and the basket drawer, which has no shop of its own — stops at the same number with the
+   * same hint. React state only, never persisted: a stored limit could outlive the shop's. null =
+   * no client limit (an older backend, or the shop page not yet read), and the server's 422 is the
+   * only gate.
+   */
+  lineLimit: number | null
+  setLineLimit: (limit: number | null) => void
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
@@ -321,6 +332,9 @@ export function CartProvider({
   // updateQuantity/clearCart are already stable via useCallback above, so the
   // only thing that should change the reference identity is the cart data
   // itself.
+  // 37-30 (D-20): the shop's per-line maximum, React state only (see CartContextValue.lineLimit).
+  const [lineLimit, setLineLimit] = useState<number | null>(null)
+
   const value = useMemo<CartContextValue>(
     () => ({
       items,
@@ -331,8 +345,10 @@ export function CartProvider({
       itemCount,
       totalPennies,
       shopSlug,
+      lineLimit,
+      setLineLimit,
     }),
-    [items, addItem, removeItem, updateQuantity, clearCart, itemCount, totalPennies, shopSlug]
+    [items, addItem, removeItem, updateQuantity, clearCart, itemCount, totalPennies, shopSlug, lineLimit]
   )
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>

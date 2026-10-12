@@ -3,14 +3,13 @@
   "_schema": "top-level flat integer claim keys + .rows[] + .deliberately_unpublished[]",
   "_last_measured": "2026-08-16",
   "_legal_status": "Every lawful-basis statement here is a legal position and needs adviser confirmation before it is relied upon. The periods themselves are measurements and are gated. No statutory retention figure is published as a number anywhere in this file - see R-9.",
-
   "draft_order_hours": 24,
   "webhook_delivery_days": 30,
   "media_quarantine_hours": 72,
   "customer_refresh_cookie_days": 30,
   "dsar_unconfirmed_request_hours": 168,
   "dsar_access_export_hours": 168,
-
+  "client_ip_digest_hours": 72,
   "rows": [
     {
       "id": "R-1",
@@ -265,9 +264,30 @@
         }
       },
       "note": "Held only as AES-256-GCM ciphertext behind the SHA-256 of a single-use token (V75, decision D-01). DsarAccessExportService stamps the link's expiry from the key named here when it stores the copy. Two mechanisms destroy it, each proven by DsarExportDownloadIntegrationTest: DsarExportDownloadService NULLs the copy in the same statement that hands it over, so it can be downloaded once; and DsarExportPurgeJob NULLs every copy whose link lapsed unused and stamps purged_at. The database CHECK ck_dsar_access_export_consumed_payload refuses a downloaded copy that still holds its payload. The purge runs every hour (jtoye.gdpr.dsar.export-purge-interval-ms), so an uncollected copy is destroyed within an hour of its link expiring. A request that cannot be completed deletes its copy outright (31.1-16). Measured 2026-10-06 (31.1-17)."
+    },
+    {
+      "id": "R-16",
+      "category": "A pseudonym of your connection on a cash order",
+      "detail": "When you place a cash order, a keyed one-way code made from your connection's network address - never the address itself - so that one connection cannot flood a shop with cash orders. It is removed when the order is completed or cancelled, cleared by a daily job once it is older than the period here, and erased if you ask us to erase your data.",
+      "period_value": 72,
+      "period_unit": "hours",
+      "period_display": "Up to 72 hours, or until the order is completed or cancelled if sooner",
+      "lawful_basis": "Legitimate interests (UK GDPR Art. 6(1)(f)) - protecting vendors from floods of fake cash orders, using a pseudonym rather than the address so the least data is held for the shortest time.",
+      "enforcement": "Automated",
+      "claim_key": "client_ip_digest_hours",
+      "enforced_by": {
+        "path": "core-java/src/main/resources/application.yml",
+        "key": "retention-hours",
+        "kind": "yaml-env-default",
+        "unit": "hours",
+        "consumer": {
+          "path": "core-java/src/main/java/uk/jtoye/core/storefront/ClientIpDigestRetentionSweep.java",
+          "must_contain": "jtoye.storefront.client-ip-digest.retention-hours"
+        }
+      },
+      "note": "Held only as an HMAC-SHA256 under a key outside the database (CLIENT_IP_HMAC_KEY, 37-28, decision D-27): orders.client_ip_digest, with NO audit mirror (@NotAudited), written by the storefront order path from the address ClientIpResolver resolved (D-19). Three mechanisms null it, each proven under NOSUPERUSER by ClientIpDigestRetentionIntegrationTest: OrderService.transitionOrder in the same save that moves the order to COMPLETED, CANCELLED or REFUNDED; ClientIpDigestRetentionSweep once a day (jtoye.storefront.client-ip-digest.sweep-cron, 03:20) for every digest older than the key named here, one tenant pinned at a time; and GdprService.anonymiseSubjectInTenant with the rest of the order PII on an Article 17 erasure. The published number is the sweep's ceiling for an order that never reaches a terminal state; an order that does loses the digest at once. Measured 2026-10-12 (37-30, from 37-28's a54b679a / 65ba6565)."
     }
   ],
-
   "deliberately_unpublished": [
     {
       "id": "R-10",

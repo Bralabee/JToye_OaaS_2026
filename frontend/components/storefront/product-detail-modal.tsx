@@ -26,11 +26,21 @@ function getDietaryIcon(tag: string) {
   return null
 }
 
+/** UI-SPEC § D1 "Quantity stepper": the 14px hint beside a stepper at the server's per-line maximum. */
+export function lineLimitHintCopy(limit: number): string {
+  return `Max ${limit} per order`
+}
+
 interface ProductDetailModalProps {
   product: PublicProduct
   isOpen: boolean
   onClose: () => void
   quantity: number
+  /**
+   * 37-30 (D-20): the shop's per-line maximum from the server (`PublicShop.maxLineQuantity`).
+   * At it, "+" disables with the hint; null/absent = no client limit.
+   */
+  lineLimit?: number | null
   onAdd: () => void
   onIncrement: () => void
   onDecrement: () => void
@@ -41,11 +51,14 @@ export function ProductDetailModal({
   isOpen,
   onClose,
   quantity,
+  lineLimit = null,
   onAdd,
   onIncrement,
   onDecrement,
 }: ProductDetailModalProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const lineLimitHintId = useId()
+  const atLineLimit = lineLimit != null && quantity >= lineLimit
   // Whoever had focus when the dialog opened — see onCloseAutoFocus below.
   const openerRef = useRef<HTMLElement | null>(null)
 
@@ -376,11 +389,18 @@ export function ProductDetailModal({
                     type="button"
                     onClick={onIncrement}
                     aria-label={`Add one more ${product.title} to cart`}
-                    className="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink flex items-center justify-center transition-all active:scale-95"
+                    aria-describedby={atLineLimit ? lineLimitHintId : undefined}
+                    disabled={atLineLimit}
+                    className="h-10 w-10 rounded-full bg-amber-500 hover:bg-amber-400 text-amber-ink flex items-center justify-center transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
+                {atLineLimit && (
+                  <span id={lineLimitHintId} className="text-sm text-slate-600">
+                    {lineLimitHintCopy(lineLimit)}
+                  </span>
+                )}
                 <span className="text-sm font-semibold text-slate-900">
                   {formatPrice(product.pricePennies * quantity)}
                 </span>

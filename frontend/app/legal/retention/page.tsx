@@ -45,9 +45,9 @@ export const metadata: Metadata = {
  *      test suite does not execute, and its M-1 invariant means deleting the
  *      sentence fails the gate rather than silently satisfying it.
  *
- * ── THE SIX GATED PERIODS ────────────────────────────────────────────────────
+ * ── THE SEVEN GATED PERIODS ──────────────────────────────────────────────────
  *
- * These six are the rows the manifest gives a `claim_key`, i.e. the ones this
+ * These seven are the rows the manifest gives a `claim_key`, i.e. the ones this
  * platform enforces itself and can be held to. They are named constants rather
  * than inline strings for one specific reason: `grep -P` is LINE-based, so a
  * rule anchored on a row's category words cannot reach a `period:` sitting four
@@ -68,6 +68,10 @@ export const metadata: Metadata = {
  * R-15 (31.1-17, D-01) has the same shape: the prepared copy of a person's
  * data is held until they download it, and the number is the link's lifetime
  * if they never do.
+ *
+ * R-16 (37-28 / 37-30, D-27) is the same shape again: the keyed pseudonym of a
+ * connection on a cash order is removed the moment the order is completed or
+ * cancelled, and the number is the daily sweep's ceiling for one that never is.
  */
 const PERIOD_ABANDONED_CHECKOUTS = "24 hours"
 const PERIOD_WEBHOOK_DELIVERY_RECORDS = "30 days"
@@ -75,6 +79,7 @@ const PERIOD_QUARANTINED_IMAGE_UPLOADS = "72 hours"
 const PERIOD_CUSTOMER_SIGN_IN_COOKIES = "30 days"
 const PERIOD_DATA_REQUEST_EMAIL = "Until your request is closed, or 168 hours if you never confirm it"
 const PERIOD_PREPARED_DATA_COPY = "Until you download it, or 168 hours if you never do"
+const PERIOD_CONNECTION_PSEUDONYM = "Up to 72 hours, or until the order is completed or cancelled if sooner"
 
 /**
  * Exported so the test can compare it to `docs/retention-manifest.json`. The
@@ -219,6 +224,16 @@ export const RETENTION_ROWS: readonly RetentionRow[] = [
     period: PERIOD_PREPARED_DATA_COPY,
     lawfulBasis:
       "Legal obligation (UK GDPR Art. 6(1)(c)) - Article 15 requires us to give you a copy of your personal data, and keeping it until you collect it is part of giving it to you.",
+    enforcement: "Automated",
+  },
+  {
+    id: "R-16",
+    category: "A pseudonym of your connection on a cash order",
+    detail:
+      "When you place a cash order, a keyed one-way code made from your connection's network address - never the address itself - so that one connection cannot flood a shop with cash orders. It is removed when the order is completed or cancelled, cleared by a daily job once it is older than the period here, and erased if you ask us to erase your data.",
+    period: PERIOD_CONNECTION_PSEUDONYM,
+    lawfulBasis:
+      "Legitimate interests (UK GDPR Art. 6(1)(f)) - protecting vendors from floods of fake cash orders, using a pseudonym rather than the address so the least data is held for the shortest time.",
     enforcement: "Automated",
   },
 ]

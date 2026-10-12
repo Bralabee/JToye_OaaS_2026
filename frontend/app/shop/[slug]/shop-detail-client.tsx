@@ -17,6 +17,7 @@ import { DAY_LABELS, DAY_ORDER } from "@/lib/opening-hours"
 import { scheduleRows, type OpeningScheduleMap } from "@/lib/opening-schedule"
 import { headerPillLabel, readShopAvailability } from "@/lib/shop-availability"
 import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } from "@/types/storefront"
+import { lineLimitHintCopy } from "@/components/storefront/product-detail-modal"
 import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
 import { productAllergenStatement } from "@/lib/product-allergens"
 import { useCart } from "@/components/storefront/cart-provider"
@@ -79,7 +80,7 @@ function ProductCard({
   inFeaturedRail?: boolean
 }) {
   const [modalOpen, setModalOpen] = useState(false)
-  const { addItem, items, updateQuantity } = useCart()
+  const { addItem, items, updateQuantity, lineLimit } = useCart()
   const dietaryTags = product.dietaryTags?.split(",").filter(Boolean) || []
   // #817 / D-18: the allergen line, in words, in every state. Its id is per RENDER (useId), not per
   // product: a featured dish renders twice (rail + category), and two elements sharing one id would
@@ -88,6 +89,10 @@ function ProductCard({
   const allergenLineId = useId()
   const cartItem = items.find((i) => i.productId === product.id)
   const quantity = cartItem?.quantity || 0
+  // 37-30 (D-20, UI-SPEC § D1 "Quantity stepper"): the stepper stops at the SERVER's per-line
+  // maximum, held on the cart context so the modal and the drawer stop at the same number.
+  const lineLimitHintId = useId()
+  const atLineLimit = lineLimit != null && quantity >= lineLimit
 
   const images = product.imageUrls?.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : [])
   const primaryImage = images[0] || null
@@ -240,11 +245,18 @@ function ProductCard({
                   <button
                     onClick={() => updateQuantity(product.id, quantity + 1)}
                     aria-label={`Increase quantity of ${product.title}`}
-                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
+                    aria-describedby={atLineLimit ? lineLimitHintId : undefined}
+                    disabled={atLineLimit}
+                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <PlusIcon className="h-3 w-3" />
                   </button>
                 </div>
+              )}
+              {atLineLimit && (
+                <span id={lineLimitHintId} className="relative z-10 text-sm text-slate-600">
+                  {lineLimitHintCopy(lineLimit)}
+                </span>
               )}
             </div>
           </div>
@@ -318,6 +330,7 @@ function ProductCard({
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         quantity={quantity}
+        lineLimit={lineLimit}
         onAdd={handleAddToCart}
         onIncrement={() => updateQuantity(product.id, quantity + 1)}
         onDecrement={() => updateQuantity(product.id, quantity - 1)}
@@ -359,6 +372,14 @@ export function ShopDetailClient({
   initial: ShopDetail | null
 }) {
   const [shop, setShop] = useState<PublicShop | null>(initial?.shop ?? null)
+  // 37-30 (D-20): publish the server's per-line maximum to the cart context so every stepper
+  // (card, modal, drawer) stops at it. Optional-called: test harnesses that stub useCart without
+  // this setter must not throw (the limit is then simply unset — no client limit).
+  const { setLineLimit } = useCart()
+  const maxLineQuantity = shop?.maxLineQuantity ?? null
+  useEffect(() => {
+    setLineLimit?.(maxLineQuantity)
+  }, [setLineLimit, maxLineQuantity])
   const [products, setProducts] = useState<ProductsByCategory>(initial?.products ?? {})
   const [reviews, setReviews] = useState<Review[]>(initial?.reviews ?? [])
   const [reviewCount, setReviewCount] = useState(initial?.reviewCount ?? 0)

@@ -30,6 +30,14 @@ export interface PublicShop {
   // "How you'll pay" section (the pre-fix behaviour).
   acceptsCardPayments?: boolean
   /**
+   * 37-26 / 37-30 (D-20): the most units of one product a single order line may carry
+   * (jtoye.order-limits.max-line-quantity). The storefront steppers stop here with the hint
+   * "Max {n} per order"; the client holds NO limit of its own. Optional AND nullable for
+   * old-backend tolerance: absent or null means no client limit, and the server's 422
+   * order-limit-exceeded is the only gate (UI-SPEC § D1 "Quantity stepper").
+   */
+  maxLineQuantity?: number | null
+  /**
    * Kilometres from the coordinate the caller supplied — 33-06's
    * `GET /public/shops?lat=&lon=&radiusKm=`. NULL on every unlocated response,
    * and absent entirely from an older backend, hence optional-AND-nullable:
