@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef, useMemo, useCallback, useId } from "react"
+import { useEffect, useState, useRef, useCallback, useId } from "react"
 import Link from "next/link"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
@@ -18,7 +18,7 @@ import { scheduleRows, type OpeningScheduleMap } from "@/lib/opening-schedule"
 import { headerPillLabel, readShopAvailability } from "@/lib/shop-availability"
 import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } from "@/types/storefront"
 import { lineLimitHintCopy } from "@/components/storefront/product-detail-modal"
-import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
+import type { PublicAnnouncement } from "@/types/storefront"
 import { productAllergenStatement } from "@/lib/product-allergens"
 import { useCart } from "@/components/storefront/cart-provider"
 import { FloatingCartBar } from "@/components/storefront/floating-cart-bar"
@@ -72,11 +72,9 @@ function DietaryBadge({ tag }: { tag: string }) {
  */
 function ProductCard({
   product,
-  promo,
   inFeaturedRail = false,
 }: {
   product: PublicProduct
-  promo?: PublicPromotion
   inFeaturedRail?: boolean
 }) {
   const [modalOpen, setModalOpen] = useState(false)
@@ -276,16 +274,8 @@ function ProductCard({
                 +{images.length - 1}
               </span>
             )}
-            {promo && (
-              <Badge
-                variant="destructive"
-                className="absolute top-1.5 left-1.5 text-xs px-1.5 py-0 shadow-md"
-              >
-                {promo.discountType === "PERCENTAGE"
-                  ? `${promo.discountPercent}% off`
-                  : `£${((promo.discountAmountPennies ?? 0) / 100).toFixed(2)} off`}
-              </Badge>
-            )}
+            {/* 37-36 (D-17, UXT-008): no promotion chip. Checkout does not apply a discount, so a
+                discount chip here advertised a price the customer would not be charged. */}
           </div>
         </div>
 
@@ -339,10 +329,11 @@ function ProductCard({
   )
 }
 
+// 37-36 (D-17): the config's `activePromotions` is deliberately not declared, so nothing on this
+// page can read a promotion out of it (the server sends [] since 37-35 in any case).
 interface ShopConfig {
   announcements: string[]
   featuredProducts: PublicProduct[]
-  activePromotions: { label: string; discountPercent: number | null; category: string | null; validUntil: string }[]
 }
 
 /**
@@ -351,8 +342,10 @@ interface ShopConfig {
  * WHAT CHANGED AND WHAT DID NOT. Every capability this page had is still here —
  * the busy/retrying 429 state with its bounded backoff and manual retry, the
  * "Shop not found" fallback, the sticky category rail with smooth scroll, the
- * featured section, promotions, announcements, reviews, the empty-menu state and
+ * featured section, announcements, reviews, the empty-menu state and
  * the floating cart bar. The single change is WHERE the first load comes from.
+ * (Promotions were removed later, in 37-36 under D-17: checkout does not apply a
+ * discount, so the storefront must not advertise one.)
  *
  * `initial` non-null means the SERVER already fetched and rendered this shop, so
  * there is no fetch on mount and nothing to wait for: the customer sees the menu
@@ -385,7 +378,6 @@ export function ShopDetailClient({
   const [reviewCount, setReviewCount] = useState(initial?.reviewCount ?? 0)
   const [avgRating, setAvgRating] = useState(initial?.avgRating ?? 0)
   const [, setShopConfig] = useState<ShopConfig | null>(null)
-  const [promotions, setPromotions] = useState<PublicPromotion[]>(initial?.promotions ?? [])
   const [announcements, setAnnouncements] = useState<PublicAnnouncement[]>(initial?.announcements ?? [])
   // Server-rendered content is never "loading": the skeleton would replace real
   // HTML with a placeholder on hydration, which is the layout shift this change
@@ -411,14 +403,14 @@ export function ShopDetailClient({
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      // Only the critical shop + products calls can drive the busy state; the 4
-      // optional calls already .catch() to defaults so they never reject.
-      const [shopRes, productsRes, reviewsRes, configRes, promotionsRes, announcementsRes] = await Promise.all([
+      // Only the critical shop + products calls can drive the busy state; the 3
+      // optional calls already .catch() to defaults so they never reject. No promotions
+      // call (37-36, D-17): the page renders none, so it does not ask for any.
+      const [shopRes, productsRes, reviewsRes, configRes, announcementsRes] = await Promise.all([
         publicApiClient.get<PublicShop>(`/public/shops/${slug}`),
         publicApiClient.get<ProductsByCategory>(`/public/shops/${slug}/products`),
         publicApiClient.get<{ content: Review[], totalElements: number }>(`/public/shops/${slug}/reviews?size=5`).catch(() => ({ data: { content: [], totalElements: 0 } })),
         publicApiClient.get<ShopConfig>(`/public/shops/${slug}/config`).catch(() => ({ data: null })),
-        publicApiClient.get<PublicPromotion[]>(`/public/shops/${slug}/promotions`).catch(() => ({ data: [] as PublicPromotion[] })),
         publicApiClient.get<PublicAnnouncement[]>(`/public/shops/${slug}/announcements`).catch(() => ({ data: [] as PublicAnnouncement[] })),
       ])
       setShop(shopRes.data)
@@ -430,7 +422,6 @@ export function ShopDetailClient({
         setAvgRating(Math.round(avg * 10) / 10)
       }
       if (configRes.data) setShopConfig(configRes.data)
-      setPromotions(promotionsRes.data || [])
       setAnnouncements(announcementsRes.data || [])
       const cats = Object.keys(productsRes.data)
       if (cats.length > 0) setActiveCategory(cats[0])
@@ -493,14 +484,6 @@ export function ShopDetailClient({
   const featuredProducts = Object.values(products)
     .flat()
     .filter((p) => p.featured)
-
-  const promotionsByCategory = useMemo(() => {
-    const map = new Map<string, PublicPromotion>()
-    for (const p of promotions) {
-      if (p.category) map.set(p.category, p)
-    }
-    return map
-  }, [promotions])
 
   function scrollToCategory(cat: string) {
     setActiveCategory(cat)
@@ -752,9 +735,11 @@ export function ShopDetailClient({
         </div>
       )}
 
-      {/* Announcements & Promotions (dedicated public endpoints) */}
-      {(announcements.length > 0 || promotions.length > 0) && (
-        <div className="bg-white border-b border-cream-100">
+      {/* Announcements (dedicated public endpoint). The band renders only when there is an
+          announcement, so removing the promotions (37-36, D-17) leaves no empty strip above the
+          menu: a shop with neither had no band before, and a shop with only promotions has none now. */}
+      {announcements.length > 0 && (
+        <div data-testid="shop-announcements" className="bg-white border-b border-cream-100">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 py-3 space-y-2">
             {announcements.length > 0 && (
               <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2">
@@ -767,24 +752,6 @@ export function ShopDetailClient({
                 </div>
               </div>
             )}
-            {promotions.map((promo, i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-                <span className="text-sm font-medium text-amber-800">{promo.label}</span>
-                {promo.discountType === "PERCENTAGE" && promo.discountPercent !== null && (
-                  // A11Y-6 (QA council 20260902-134741, A26): white on amber-500 is 2.15:1;
-                  // amber-ink (#3A2400) on it is 6.83 — the pairing the Add button on this
-                  // page already uses. Dark text, not a darker amber.
-                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-amber-ink">
-                    {promo.discountPercent}% off
-                  </span>
-                )}
-                {promo.discountType === "FLAT_AMOUNT" && promo.discountAmountPennies !== null && (
-                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-amber-ink">
-                    £{(promo.discountAmountPennies / 100).toFixed(2)} off
-                  </span>
-                )}
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -806,7 +773,10 @@ export function ShopDetailClient({
               {reviews.slice(0, 3).map((review) => (
                 <div key={review.id} className="rounded-lg bg-cream p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-700">{review.customerName || "Anonymous"}</span>
+                    {/* UXT-044 (UI-SPEC § C4): the server publishes the minimised name ("Grace P.", a
+                        single word as given) since 37-35; the page renders it as is. No name is a
+                        "Customer" — "Anonymous" claimed a choice the reviewer never made. */}
+                    <span className="text-xs font-medium text-slate-700">{review.customerName?.trim() || "Customer"}</span>
                     <div className="flex items-center gap-0.5">
                       {[1, 2, 3, 4, 5].map((s) => (
                         <Star key={s} className={`h-3 w-3 ${s <= review.foodRating ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
@@ -876,7 +846,6 @@ export function ShopDetailClient({
                   key={product.id}
                   product={product}
                   inFeaturedRail
-                  promo={product.category ? promotionsByCategory.get(product.category) : undefined}
                 />
               ))}
             </div>
@@ -896,7 +865,6 @@ export function ShopDetailClient({
                 <ProductCard
                   key={product.id}
                   product={product}
-                  promo={promotionsByCategory.get(category)}
                 />
               ))}
             </div>

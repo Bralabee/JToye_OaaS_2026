@@ -332,7 +332,8 @@ describe("#840 source scan — every setItem key is declared in the registry", (
     }
     if (PRINT) console.info(`resolved keys:\n${JSON.stringify({ localStorage: [...keys.localStorage].sort(), sessionStorage: [...keys.sessionStorage].sort() }, null, 1)}`)
     expect(keys.localStorage.size).toBeGreaterThanOrEqual(9)
-    expect(keys.sessionStorage.size).toBe(5)
+    // 6 since 37-37: jtoye-just-placed:<order number> (lib/just-placed.ts, UI-SPEC C3).
+    expect(keys.sessionStorage.size).toBe(6)
   })
 
   it("every registry entry is written by some call site (no over-disclosure)", () => {

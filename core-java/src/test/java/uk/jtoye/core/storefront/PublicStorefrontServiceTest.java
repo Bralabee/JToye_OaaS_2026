@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
+import uk.jtoye.core.exception.BasketChangedException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
@@ -33,11 +34,9 @@ import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
-import uk.jtoye.core.shop.DiscountType;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncement;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
-import uk.jtoye.core.shop.ShopPromotion;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.*;
@@ -68,7 +67,6 @@ class PublicStorefrontServiceTest {
     @Mock private EntityManager entityManager;
     @Mock private Session hibernateSession;
     @Mock private PaymentService paymentService;
-    @Mock private uk.jtoye.core.shop.ShopPromotionRepository promotionRepository;
     @Mock private ShopAnnouncementRepository announcementRepository;
     @Mock private PostcodeGeocoder postcodeGeocoder;
     @Mock private IdempotencyService idempotencyService;
@@ -102,7 +100,7 @@ class PublicStorefrontServiceTest {
         // 37-27: a real CashOrderCaps over the mocked OrderRepository, whose count queries return 0 unless an
         // arm stubs them, so no cash order in this file is capped by accident.
         // 37-28: a real ClientIpDigester under a fixture key (not a credential); the arms pass no address.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), new ClientIpDigester(TEST_HMAC_KEY), 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), new ClientIpDigester(TEST_HMAC_KEY), 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -438,6 +436,46 @@ class PublicStorefrontServiceTest {
         assertEquals(0L, result.getVatAmountPennies());
     }
 
+    /**
+     * 37-37 (UI-SPEC C3, UXT-029). The cash confirmation moved from an in-place render at checkout
+     * to this tracking response's page, and it must carry everything the in-place one showed: the
+     * payment instruction ("Pay on delivery" / "Pay on collection") needs the fulfilment type, and
+     * the breakdown needs the delivery fee ("Free" when 0). Neither was on the response, so the page
+     * could only have guessed them. Both pass through as stored; 0 is a real fee of nothing.
+     */
+    @Test
+    @DisplayName("C3: trackOrder carries the fulfilment type and the delivery fee for the moved cash confirmation")
+    void trackOrder_carriesFulfilmentTypeAndDeliveryFee() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-C3-20261012-A1");
+        order.setCustomerEmail("c3@example.com");
+        order.setStatus(OrderStatus.PENDING);
+        order.setShopId(publishedShop.getId());
+        order.setFulfilmentType(FulfilmentType.COLLECTION);
+        order.setSubtotalPennies(2000L);
+        order.setDeliveryFeePennies(0L);
+        order.setTotalAmountPennies(2000L);
+        order.setUpdatedAt(OffsetDateTime.now());
+
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-C3-20261012-A1", "c3@example.com"))
+                .thenReturn(Optional.of(order));
+        when(shopRepository.findById(publishedShop.getId()))
+                .thenReturn(Optional.of(publishedShop));
+
+        var collection = service.trackOrder("ORD-C3-20261012-A1", "c3@example.com");
+        assertEquals("COLLECTION", collection.getFulfilmentType());
+        assertEquals(0L, collection.getDeliveryFeePennies(),
+                "a stored fee of 0 is disclosed as 0 (the page renders 'Free'), not as null");
+
+        order.setFulfilmentType(FulfilmentType.DELIVERY);
+        order.setDeliveryFeePennies(300L);
+        order.setTotalAmountPennies(2300L);
+        var delivery = service.trackOrder("ORD-C3-20261012-A1", "c3@example.com");
+        assertEquals("DELIVERY", delivery.getFulfilmentType());
+        assertEquals(300L, delivery.getDeliveryFeePennies());
+    }
+
     @Test
     @DisplayName("trackOrder throws when order not found")
     void trackOrder_notFound() {
@@ -470,6 +508,9 @@ class PublicStorefrontServiceTest {
 
         assertEquals(1, result.getTotalElements());
         assertEquals("ORD-HIST-001", result.getContent().get(0).getOrderNumber());
+        // 37-37 (C3): the history reader carries the same fulfilment and fee columns as tracking.
+        assertEquals("DELIVERY", result.getContent().get(0).getFulfilmentType());
+        assertEquals(0L, result.getContent().get(0).getDeliveryFeePennies());
         assertEquals("COMPLETED", result.getContent().get(0).getStatus());
     }
 
@@ -488,6 +529,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerEmail("test@example.com");
         request.setCustomerPhone("07700000000");
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -509,6 +551,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerEmail("test@example.com");
         request.setCustomerPhone("07700000000");
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -552,6 +595,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerEmail("owl@example.com");
         request.setCustomerPhone("07700900005");
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(uk.jtoye.core.exception.ShopClosedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -637,6 +681,8 @@ class PublicStorefrontServiceTest {
         GuestOrderItemRequest itemReq = new GuestOrderItemRequest();
         itemReq.setProductId(product.getId());
         itemReq.setQuantity(quantity);
+        // 37-32 (D-16): the unit price the checkout showed for this line, from the product as rendered.
+        itemReq.setExpectedUnitPricePennies(GuestOrderAcknowledgements.expectedUnitPrice(product));
         return itemReq;
     }
 
@@ -652,7 +698,8 @@ class PublicStorefrontServiceTest {
         request.setItems(List.of(itemFor(product, 2)));
         // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
-        return request;
+        // 37-32 (D-16): and the total the checkout showed (the shown line prices plus the shop's fee rule).
+        return GuestOrderAcknowledgements.expectShownTotal(request, publishedShop);
     }
 
     @Test
@@ -703,6 +750,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -748,6 +796,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -831,7 +880,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setIdempotencyKey("retry-key-123");
         request.setItems(List.of());
-        return request;
+        return GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
     }
 
     @Test
@@ -1042,10 +1091,17 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1))); // 300 < 1000 minimum
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
-        var ex = assertThrows(IllegalArgumentException.class,
+        // 37-33 (D-16): the minimum is one entry of the basket diff, its WR-01 wording kept inside it.
+        var ex = assertThrows(BasketChangedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
-        assertTrue(ex.getMessage().contains("minimum order value of £10.00"));
+        assertEquals(1, ex.getChanges().size());
+        BasketChangedException.BasketChange below = ex.getChanges().get(0);
+        assertEquals(BasketChangedException.Kind.BELOW_MINIMUM, below.kind());
+        assertEquals(1000L, below.minimum());
+        assertEquals(300L, below.subtotal());
+        assertTrue(below.detail().contains("minimum order value of £10.00"));
         verify(orderRepository, never()).save(any(Order.class));
     }
 
@@ -1062,14 +1118,20 @@ class PublicStorefrontServiceTest {
         when(productRepository.findById(foreignProduct.getId()))
                 .thenReturn(Optional.of(foreignProduct));
 
-        var ex = assertThrows(ResourceNotFoundException.class,
+        // 37-33 (D-16): a REMOVED entry of the basket diff, the same entry a non-existent id gets.
+        var ex = assertThrows(BasketChangedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", deliveryRequest(foreignProduct)));
 
         // Response must be indistinguishable from a nonexistent product: no
         // title, no shop detail — only the id the caller already supplied.
-        assertFalse(ex.getMessage().contains("Label Cake"),
+        List<BasketChangedException.BasketChange> removed = ex.getChanges().stream()
+                .filter(change -> change.kind() == BasketChangedException.Kind.REMOVED)
+                .toList();
+        assertEquals(1, removed.size());
+        assertEquals(foreignProduct.getId(), removed.get(0).productId());
+        assertNull(removed.get(0).name(), "rejection must not leak the foreign product's title");
+        assertFalse((ex.getMessage() + ex.getChanges()).contains("Label Cake"),
                 "rejection must not leak the foreign product's title");
-        assertTrue(ex.getMessage().contains(foreignProduct.getId().toString()));
 
         // No order row may be minted for the rejected request.
         verify(orderRepository, never()).save(any(Order.class));
@@ -1088,6 +1150,7 @@ class PublicStorefrontServiceTest {
         request.setFulfilmentType("DELIVERY");
         // no address fields set
         request.setItems(List.of());
+        GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16): an empty basket's total
 
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -1095,41 +1158,17 @@ class PublicStorefrontServiceTest {
     }
 
     @Test
-    @DisplayName("getActivePromotions returns filtered list with discount type info")
-    void getActivePromotions_returnsFilteredList() {
+    @DisplayName("37-35 (D-17): getActivePromotions is empty for a published shop, because checkout applies no promotion")
+    void getActivePromotions_isAlwaysEmpty() {
+        // Superseded 2026-10-12: this arm used to assert the two stored promotions were mapped out to
+        // the public. UXT-008 is exactly that behaviour (a discount advertised, never applied); the
+        // stored rows are still the vendor's, listed by PromotionService (PublicPromotionsHiddenTest).
         when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
                 .thenReturn(Optional.of(publishedShop));
 
-        ShopPromotion percentagePromo = new ShopPromotion();
-        setField(percentagePromo, "id", UUID.randomUUID());
-        percentagePromo.setLabel("10% Off");
-        percentagePromo.setDiscountType(DiscountType.PERCENTAGE);
-        percentagePromo.setDiscountPercent(10);
-        percentagePromo.setCategory("All");
-        percentagePromo.setValidUntil(OffsetDateTime.now().plusDays(30));
-
-        ShopPromotion flatPromo = new ShopPromotion();
-        setField(flatPromo, "id", UUID.randomUUID());
-        flatPromo.setLabel("500p Off");
-        flatPromo.setDiscountType(DiscountType.FLAT_AMOUNT);
-        flatPromo.setDiscountAmountPennies(500);
-        flatPromo.setCategory("Mains");
-        flatPromo.setValidUntil(OffsetDateTime.now().plusDays(14));
-
-        when(promotionRepository.findActiveByShopId(publishedShop.getId()))
-                .thenReturn(List.of(percentagePromo, flatPromo));
-
         var result = service.getActivePromotions("test-shop-abc12345");
 
-        assertEquals(2, result.size());
-        assertEquals("10% Off", result.get(0).getLabel());
-        assertEquals(DiscountType.PERCENTAGE, result.get(0).getDiscountType());
-        assertEquals(10, result.get(0).getDiscountPercent());
-        assertNull(result.get(0).getDiscountAmountPennies());
-        assertEquals("500p Off", result.get(1).getLabel());
-        assertEquals(DiscountType.FLAT_AMOUNT, result.get(1).getDiscountType());
-        assertEquals(500, result.get(1).getDiscountAmountPennies());
-        assertNull(result.get(1).getDiscountPercent());
+        assertTrue(result.isEmpty());
     }
 
     @Test
@@ -1185,10 +1224,10 @@ class PublicStorefrontServiceTest {
 
         when(announcementRepository.findActiveByShopId(publishedShop.getId()))
                 .thenReturn(List.of(a1));
-        when(promotionRepository.findActiveByShopId(publishedShop.getId()))
-                .thenReturn(List.of());
 
         var result = service.getShopConfig("test-shop-abc12345");
+        assertNotNull(result.getActivePromotions());
+        assertTrue(result.getActivePromotions().isEmpty(), "37-35 (D-17): no promotion is published");
 
         assertNotNull(result.getAnnouncements());
         assertEquals(1, result.getAnnouncements().size());
@@ -1448,7 +1487,7 @@ class PublicStorefrontServiceTest {
         /** A service built with an arbitrary geo configuration; everything else is the shared mocks. */
         private PublicStorefrontService serviceWithRadii(double defaultRadiusKm, double maxRadiusKm) {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
-                    eventPublisher, entityManager, paymentService, promotionRepository,
+                    eventPublisher, entityManager, paymentService,
                     announcementRepository, idempotencyService, postcodeGeocoder,
                     new OrderNumberGenerator(), traderIdentityService,
                     new ShopAvailabilityPolicy(java.time.Clock.systemUTC()),

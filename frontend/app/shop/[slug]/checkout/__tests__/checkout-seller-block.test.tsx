@@ -233,27 +233,26 @@ describe("#789: the seller block is in front of the customer BEFORE they place t
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     const body = JSON.stringify(mockedPost.mock.calls[0][1])
     expect(body).not.toMatch(/seller|legalName|Mama Ade Foods Ltd|01234567/)
-    // the keys that reach the wire (JSON drops the undefined allergyNote/notes of an empty form)
+    // the keys that reach the wire (JSON drops the undefined allergyNote/notes of an empty form);
+    // expectedTotalPennies is the checkout's own D-16 field (37-34), not the seller's
     expect(Object.keys(JSON.parse(body)).sort()).toEqual(
-      ["acknowledgedAllergenMask", "customerEmail", "customerName", "customerPhone", "fulfilmentType", "idempotencyKey", "items"].sort()
+      [
+        "acknowledgedAllergenMask",
+        "customerEmail",
+        "customerName",
+        "customerPhone",
+        "expectedTotalPennies",
+        "fulfilmentType",
+        "idempotencyKey",
+        "items",
+      ].sort()
     )
   })
 })
 
 describe("#789: the seller block is on what the customer is left with afterwards", () => {
-  it("the cash confirmation names the seller and carries the cancellation statement", async () => {
-    renderCheckout()
-    await placeCollectionOrder()
-    await screen.findByText(/Order confirmed!/i)
-    const region = screen.getByRole("region", REGION)
-    expect(within(region).getByText("Mama Ade Foods Ltd")).toBeInTheDocument()
-    expect(within(region).getByText(PLATFORM_NOT_SELLER_COPY)).toBeInTheDocument()
-    expect(within(region).getByText(CANCELLATION_STATEMENT_COPY)).toBeInTheDocument()
-    // before the customer navigates away from it
-    const track = screen.getByRole("link", { name: /track your order/i })
-    expect(region.compareDocumentPosition(track) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
+  // 37-37 (UI-SPEC C3): the cash confirmation is the order route now, and its seller-block arm moved
+  // with it (orders/[orderNumber]/__tests__/order-confirmation.test.tsx). The card payment step stays here.
   it("the card payment step names the seller before the card form", async () => {
     process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_789"
     mockEndpoints({ ...SHOP_BASE, acceptsCardPayments: true, seller: SELLER })

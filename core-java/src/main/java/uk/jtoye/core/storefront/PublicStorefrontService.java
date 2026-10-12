@@ -16,6 +16,9 @@ import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
 import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
+import uk.jtoye.core.exception.BasketChangedException;
+import uk.jtoye.core.exception.BasketChangedException.BasketChange;
+import uk.jtoye.core.exception.BasketConfirmationRequiredException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -46,7 +49,6 @@ import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
-import uk.jtoye.core.shop.ShopPromotionRepository;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.PublicAnnouncementDto;
@@ -90,7 +92,10 @@ public class PublicStorefrontService {
     private final OrderEventPublisher eventPublisher;
     private final EntityManager entityManager;
     private final PaymentService paymentService;
-    private final ShopPromotionRepository promotionRepository;
+    // 37-35 (D-17, UXT-008): no ShopPromotionRepository here, deliberately. Checkout applies no
+    // promotion, so the public reads publish none; without the dependency there is no code path, flag
+    // or config key that could put a stored promotion back in front of a customer. A real promotions
+    // engine (applied and recorded server-side) is a separate, deferred capability (37-CONTEXT).
     private final ShopAnnouncementRepository announcementRepository;
     private final IdempotencyService idempotencyService;
 
@@ -160,7 +165,6 @@ public class PublicStorefrontService {
     public PublicStorefrontService(ShopRepository shopRepository, ProductRepository productRepository,
                                    OrderRepository orderRepository, OrderEventPublisher eventPublisher,
                                    EntityManager entityManager, PaymentService paymentService,
-                                   ShopPromotionRepository promotionRepository,
                                    ShopAnnouncementRepository announcementRepository,
                                    IdempotencyService idempotencyService,
                                    PostcodeGeocoder postcodeGeocoder,
@@ -178,7 +182,6 @@ public class PublicStorefrontService {
         this.eventPublisher = eventPublisher;
         this.entityManager = entityManager;
         this.paymentService = paymentService;
-        this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
         this.idempotencyService = idempotencyService;
         this.postcodeGeocoder = postcodeGeocoder;
@@ -236,7 +239,8 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Get server-driven config for a shop: announcements, featured products, promotions.
+     * Get server-driven config for a shop: announcements and featured products. {@code activePromotions}
+     * is always empty (37-35, D-17): promotions are not shown until checkout applies them.
      */
     public ShopConfigDto getShopConfig(String slug) {
         // SEC-01 tenant-match gate applied up-front (Phase 13). Helper sets
@@ -264,34 +268,23 @@ public class PublicStorefrontService {
             TenantContext.clear();
         }
 
-        // Fetch active promotions
-        List<ShopConfigDto.PromotionDto> promos = promotionRepository.findActiveByShopId(shop.getId()).stream()
-                .map(p -> new ShopConfigDto.PromotionDto(p.getLabel(), p.getDiscountType(), p.getDiscountPercent(), p.getDiscountAmountPennies(), p.getCategory(), p.getValidUntil()))
-                .toList();
-        config.setActivePromotions(promos);
+        // 37-35 (D-17, UXT-008): an empty list, unconditionally. The persona run saw "20% OFF" and paid
+        // full price, because the order path never read shop_promotions. The field stays (an array, so
+        // the storefront's contract holds) and the vendor's stored promotions are untouched.
+        config.setActivePromotions(List.of());
 
         return config;
     }
 
     /**
-     * Get active promotions for a published shop.
+     * Public promotions of a published shop: always an empty list (37-35, D-17, UXT-008). Checkout
+     * applies no promotion, so none is advertised. The slug is still resolved, so an unknown or
+     * unpublished shop stays a 404 rather than reading as "no offers".
      */
     public List<PublicPromotionDto> getActivePromotions(String slug) {
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
+        shopRepository.findBySlugAndPublishedTrue(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
-
-        return promotionRepository.findActiveByShopId(shop.getId()).stream()
-                .map(p -> {
-                    PublicPromotionDto dto = new PublicPromotionDto();
-                    dto.setLabel(p.getLabel());
-                    dto.setDiscountType(p.getDiscountType());
-                    dto.setDiscountPercent(p.getDiscountPercent());
-                    dto.setDiscountAmountPennies(p.getDiscountAmountPennies());
-                    dto.setCategory(p.getCategory());
-                    dto.setValidUntil(p.getValidUntil());
-                    return dto;
-                })
-                .toList();
+        return List.of();
     }
 
     /**
@@ -643,6 +636,9 @@ public class PublicStorefrontService {
             status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
             status.setShopName(shopName);
             status.setSubtotalPennies(order.getSubtotalPennies());
+            // 37-37 (C3): fulfilment and fee, from columns, as the tracking reader below sets them.
+            status.setFulfilmentType(order.getFulfilmentType() != null ? order.getFulfilmentType().name() : null);
+            status.setDeliveryFeePennies(order.getDeliveryFeePennies());
             status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
             status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
@@ -710,6 +706,11 @@ public class PublicStorefrontService {
         // fallbacks below are copied from it verbatim so the two customer surfaces cannot
         // disagree about the same order.
         status.setSubtotalPennies(order.getSubtotalPennies());
+        // 37-37 (UI-SPEC C3, UXT-029): the cash confirmation now lives on the page this response
+        // feeds, and it shows "Pay on delivery / collection" and the delivery row ("Free" at 0).
+        // Passed through as stored: no fallback is invented for a value the order does not hold.
+        status.setFulfilmentType(order.getFulfilmentType() != null ? order.getFulfilmentType().name() : null);
+        status.setDeliveryFeePennies(order.getDeliveryFeePennies());
         status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
         status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
@@ -1067,38 +1068,71 @@ public class PublicStorefrontService {
         // Per-line attribution for the stale 409, in basket order, from the same reads.
         List<AllergenAcknowledgementStaleException.StaleLine> allergenLines = new ArrayList<>();
 
+        // 37-33 (D-16, UXT-007): the prices the customer was SHOWN are required before any product is
+        // read (CONTEXT Q4, the 31.1 missing-acknowledgement precedent): without them the server cannot
+        // tell whether the basket still matches the render, and an optional check is a skippable one.
+        // Thrown inside the reserved idempotency work, like every refusal below.
+        if (request.getExpectedTotalPennies() == null
+                || request.getItems().stream().anyMatch(itemReq -> itemReq.getExpectedUnitPricePennies() == null)) {
+            throw new BasketConfirmationRequiredException();
+        }
+        // 37-33 (D-16): every difference between the basket as shown and the basket as the server reads
+        // it NOW is COLLECTED here, in the same loop and transaction as the allergen read above, and
+        // refused ONCE after the loop — so the customer sees every change together and re-confirms once.
+        List<BasketChange> basketChanges = new ArrayList<>();
+
         for (GuestOrderItemRequest itemReq : request.getItems()) {
-            Product product = productRepository.findById(itemReq.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + itemReq.getProductId()));
+            Optional<Product> found = productRepository.findById(itemReq.getProductId());
 
             // UIX-05 invariant (CR-01): an order for shop X may only contain
             // shop X's products. RLS scopes findById to the TENANT, not the
             // shop, so without this check an unauthenticated client could
             // order any product of the tenant — including items quarantined
             // into the unpublished archive shop — through this storefront.
-            // Deliberately the SAME exception type + message shape as the
-            // absent-row case above so the response does not disclose that a
-            // product exists in another shop (no title, no shop id).
-            if (!shop.getId().equals(product.getShopId())) {
-                throw new ResourceNotFoundException(
-                        "Product not found: " + itemReq.getProductId());
+            // 37-33 (D-16): both cases are ONE collected change, REMOVED, carrying the id the caller
+            // already supplied and nothing else — deliberately the SAME entry for the absent row and
+            // for another shop's product, so the response does not disclose that a product exists in
+            // another shop (no title, no shop id; goods P2-KYL-P3, T-37-81). The line contributes
+            // nothing to the basket that remains.
+            if (found.isEmpty() || !shop.getId().equals(found.get().getShopId())) {
+                basketChanges.add(BasketChange.removed(itemReq.getProductId()));
+                continue;
             }
+            Product product = found.get();
 
+            // 37-33 (D-16): an unavailable line is reported and dropped from the basket that remains.
             if (!Boolean.TRUE.equals(product.getAvailable())) {
-                throw new IllegalArgumentException("Product is not available: " + product.getTitle());
+                basketChanges.add(BasketChange.unavailable(product.getId(), product.getTitle()));
+                continue;
             }
 
-            // Validate stock
-            if (!product.hasStock(itemReq.getQuantity())) {
-                throw new IllegalArgumentException(
-                        "Insufficient stock for '" + product.getTitle() + "': requested "
-                                + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
+            // 37-33 (D-16): too few units in stock is reported with what was asked and what can be had.
+            // The line is kept at the quantity that CAN be had, only so the diff's total and allergen
+            // set describe the basket after the change (a customer who takes the two that are left
+            // resubmits exactly that); a SOLD_OUT entry always refuses, so this item is never persisted.
+            // This read-only check is an early UX availability check, NOT a reservation (#85): stock is
+            // decremented once, at CONFIRMED, through StockService.
+            int quantity = itemReq.getQuantity();
+            if (!product.hasStock(quantity)) {
+                int available = Math.max(0, product.getQuantityInStock());
+                basketChanges.add(BasketChange.soldOut(product.getId(), product.getTitle(), quantity, available));
+                if (available == 0) {
+                    continue;
+                }
+                quantity = available;
+            }
+
+            // 37-33 (D-16): the unit price the customer saw is COMPARED, never charged (T-37-80). A
+            // difference in either direction is a change the customer must see: the line is still
+            // added below at the server's price so the current total can be reported with it.
+            if (itemReq.getExpectedUnitPricePennies().longValue() != product.getPricePennies()) {
+                basketChanges.add(BasketChange.priceChanged(product.getId(), product.getTitle(),
+                        itemReq.getExpectedUnitPricePennies(), product.getPricePennies()));
             }
 
             OrderItem item = new OrderItem(
                     product.getId(),
-                    itemReq.getQuantity(),
+                    quantity,
                     product.getPricePennies() // Server-side price — never trust client
             );
             item.setTenantId(tenantId);
@@ -1124,22 +1158,58 @@ public class PublicStorefrontService {
                     item.getTotalPricePennies(), product.getVatRate()));
         }
 
-        // 37-26 (D-20, UXT-042): the order's SIZE is bounded here, after every line is resolved and
-        // before any save, on the lines as they will be persisted (server-side quantities and prices,
-        // never the client's arithmetic). The same OrderLimits bean guards OrderService.createOrder,
-        // so no writer is the one that forgot (theme 6). Thrown inside the reserved idempotency work
-        // for the same reason as the allergen refusals below: the reservation rolls back with this
-        // transaction and a corrected resubmit under the same key succeeds (T-37-67).
-        orderLimits.check(
-                order.getItems().stream()
-                        .map(item -> new OrderLimits.LineCheck(item.getProductName(), item.getQuantity()))
-                        .toList(),
-                order.getItems().stream().mapToLong(OrderItem::getTotalPricePennies).sum());
+        // The order's money, as the server computes it for the lines it will persist. The delivery fee is
+        // server-authoritative (the client's preview value is NEVER read): COLLECTION always costs £0;
+        // DELIVERY uses the shop's fee, waived when the subtotal clears the free-delivery threshold.
+        // Tampering with fulfilmentType to underpay is neutralised because the total is recomputed
+        // here, not taken from the request. COR-1: the rule lives in FulfilmentPolicy, called by BOTH
+        // order-creation paths, byte-for-byte the rule that was here, with the null handling made
+        // explicit (a null threshold is "no waiver configured", not "always free").
+        long itemSubtotal = order.getItems().stream()
+                .mapToLong(OrderItem::getTotalPricePennies)
+                .sum();
+        long deliveryFee = FulfilmentPolicy.deliveryFeePennies(
+                fulfilmentType, itemSubtotal,
+                shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies());
+
+        // WR-01: the shop's advertised minimum order value, on the item subtotal (delivery fee
+        // excluded), server-side. The storefront renders "Min order £X" and the checkout disables
+        // submit below it, but those are advisory — this is the authoritative gate. 37-33 (D-16):
+        // reported as one entry of the diff, with the sentence the customer always read kept inside it.
+        if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
+                && itemSubtotal < shop.getMinimumOrderPennies()) {
+            basketChanges.add(BasketChange.belowMinimum(shop.getMinimumOrderPennies(), itemSubtotal,
+                    String.format(java.util.Locale.ROOT,
+                            "Order is below this shop's minimum order value of £%.2f.",
+                            shop.getMinimumOrderPennies() / 100.0)));
+        }
+
+        // 37-33 (D-16): the total the customer saw against the total the server would charge — the same
+        // number Order.calculateTotal() produces (line totals plus the delivery fee; VAT is inclusive).
+        long currentTotal = itemSubtotal + deliveryFee;
+        if (request.getExpectedTotalPennies().longValue() != currentTotal) {
+            basketChanges.add(BasketChange.totalChanged(request.getExpectedTotalPennies(), currentTotal));
+        }
+
+        Integer acknowledgedAllergenMask = request.getAcknowledgedAllergenMask();
+        // 37-33 (D-16), composed with 31.1 D-05 rather than beside it. Order of checks: shop availability
+        // (validateShopIsOpen, before the reserved work), the basket diff, the allergen acknowledgement,
+        // the order limits, the cash caps. Any basket change is refused ONCE with every change; when the
+        // allergen set ALSO differs from the acknowledged one, the same problem carries the 31.1
+        // properties so the client re-renders both panels and asks for one re-confirmation. When ONLY
+        // the allergen set differs, the 31.1 exception below is thrown unchanged.
+        if (!basketChanges.isEmpty()) {
+            boolean allergenStale = acknowledgedAllergenMask != null && acknowledgedAllergenMask != currentAllergenMask;
+            throw new BasketChangedException(basketChanges,
+                    allergenStale ? currentAllergenMask : null,
+                    allergenStale ? AllergenCatalog.namesFor(currentAllergenMask) : null,
+                    allergenStale ? acknowledgedAllergenMask : null,
+                    allergenStale ? allergenLines : null);
+        }
 
         // D-05: the acknowledgement is enforced HERE, on the server, before the first save. Both
         // refusals are thrown inside the reserved idempotency work, so the reservation rolls back
         // with this transaction and a corrected resubmit under the same key succeeds.
-        Integer acknowledgedAllergenMask = request.getAcknowledgedAllergenMask();
         if (acknowledgedAllergenMask == null) {
             throw new AllergenAcknowledgementRequiredException();
         }
@@ -1151,6 +1221,19 @@ public class PublicStorefrontService {
             throw new AllergenAcknowledgementStaleException(currentAllergenMask,
                     AllergenCatalog.namesFor(currentAllergenMask), acknowledgedAllergenMask, allergenLines);
         }
+
+        // 37-26 (D-20, UXT-042): the order's SIZE is bounded here, after every line is resolved and
+        // before any save, on the lines as they will be persisted (server-side quantities and prices,
+        // never the client's arithmetic). The same OrderLimits bean guards OrderService.createOrder,
+        // so no writer is the one that forgot (theme 6). Thrown inside the reserved idempotency work
+        // for the same reason as the refusals above: the reservation rolls back with this transaction
+        // and a corrected resubmit under the same key succeeds (T-37-67). 37-33 placed it after the
+        // basket diff and the acknowledgement (the order of checks above).
+        orderLimits.check(
+                order.getItems().stream()
+                        .map(item -> new OrderLimits.LineCheck(item.getProductName(), item.getQuantity()))
+                        .toList(),
+                itemSubtotal);
         // D-06: what the customer acknowledged, when, and through which channel.
         order.setAllergenAckMask(acknowledgedAllergenMask);
         order.setAllergenAckAt(OffsetDateTime.now());
@@ -1173,32 +1256,7 @@ public class PublicStorefrontService {
         // this predominant liability via calculateTotal().
         order.setVatRate(VatCalculator.predominantRate(lineRates));
 
-        // Calculate delivery fee — server-authoritative (client value is
-        // preview-only and NEVER read). COLLECTION always costs £0; DELIVERY
-        // uses the shop's fee, waived when the subtotal clears the free-delivery
-        // threshold. Tampering with fulfilmentType to underpay is neutralised
-        // because the total is recomputed here, not taken from the request.
-        long itemSubtotal = order.getItems().stream()
-                .mapToLong(item -> item.getTotalPricePennies())
-                .sum();
-
-        // WR-01: enforce the shop's advertised minimum order value on the
-        // item subtotal (delivery fee excluded), server-side. The storefront
-        // renders "Min order £X" and the checkout disables submit below it,
-        // but those are advisory — this is the authoritative gate.
-        if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
-                && itemSubtotal < shop.getMinimumOrderPennies()) {
-            throw new IllegalArgumentException(String.format(java.util.Locale.ROOT,
-                    "Order is below this shop's minimum order value of £%.2f.",
-                    shop.getMinimumOrderPennies() / 100.0));
-        }
-
-        // COR-1: the rule now lives in FulfilmentPolicy, called by BOTH order-creation paths.
-        // It is byte-for-byte the rule that was here, with the null handling made explicit
-        // (a null threshold is "no waiver configured", not "always free").
-        long deliveryFee = FulfilmentPolicy.deliveryFeePennies(
-                fulfilmentType, itemSubtotal,
-                shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies());
+        // The fee computed above, with the subtotal and the minimum, before the basket diff (37-33).
         order.setDeliveryFeePennies(deliveryFee);
 
         order.calculateTotal();

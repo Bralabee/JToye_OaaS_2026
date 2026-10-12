@@ -45,6 +45,7 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test"
 import { VENDOR_USERNAME, VENDOR_PASSWORD, skipWithoutVendorPassword } from "./vendor-credentials"
 import { cancelOrdersByNumber, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
+import { confirmedHeading } from "./cash-confirmation"
 
 // The frontend as the browser sees it; the core API as the runner sees it. Same env vars and
 // defaults as storefront-flows.spec.ts — core-java is a separate service, so not a base-URL
@@ -136,6 +137,11 @@ async function placeGuestCashOrder(
   contact: { email: string; phone: string },
 ): Promise<{ status: number; order: PlacedOrder | null }> {
   if (!shop) throw new Error("placeGuestCashOrder: shop not resolved")
+  // 37-32/37-33 (D-16): a guest order carries the basket the customer saw — each line's price and
+  // the total on the button — or the server refuses it 422 basket-confirmation-required. The values
+  // are the live menu's, read by resolveShop; a COLLECTION order has no delivery fee, so the total is
+  // price x quantity. Found at the 37-38 gate: without them every order here was 422.
+  const quantity = clearingQuantity(shop)
   const res = await request.post(`${API}/api/v1/public/shops/${slug}/orders`, {
     headers: { "Idempotency-Key": crypto.randomUUID() },
     data: {
@@ -144,7 +150,8 @@ async function placeGuestCashOrder(
       customerPhone: contact.phone,
       fulfilmentType: "COLLECTION",
       acknowledgedAllergenMask: shop.allergenMask,
-      items: [{ productId: shop.productId, quantity: clearingQuantity(shop) }],
+      items: [{ productId: shop.productId, quantity, expectedUnitPricePennies: shop.pricePennies }],
+      expectedTotalPennies: shop.pricePennies * quantity,
     },
   })
   const status = res.status()
@@ -382,8 +389,10 @@ test.describe("37-D abuse bounds — the checkout cap copy", () => {
 
     await page.locator('button[type="submit"]:has-text("Place order")').click()
 
-    // THE CLAIM: the honest, typed cap copy — not a generic error, not "Order confirmed!".
+    // THE CLAIM: the honest, typed cap copy — not a generic error, not a confirmation (37-37: the
+    // order route's "Order confirmed", which a placed cash order navigates to).
     await expect(page.getByText(CAP_COPY)).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toHaveCount(0)
+    await expect(confirmedHeading(page)).toHaveCount(0)
+    await expect(page, "the page left the checkout, so an order was confirmed").toHaveURL(/\/checkout(\?|$)/)
   })
 })

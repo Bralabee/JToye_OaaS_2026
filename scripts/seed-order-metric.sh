@@ -178,8 +178,12 @@ echo "  product    : $product x $qty (declared allergen mask $allergen_mask)"
 # acknowledgedAllergenMask (31.1-03, #784): a one-product basket's declared set IS that
 # product's mask. Missing, the server answers 422; stale (the vendor edited it since the
 # menu was read), 409 — both are a non-201 and VOID below with the server's own body.
+# expectedUnitPricePennies / expectedTotalPennies (37-32, D-16): the prices this script SAW on
+# the same menu JSON — the line's pricePennies, and the total that line makes with COLLECTION's
+# £0 delivery fee. Read from the menu, never assumed: a vendor reprice between the menu read and
+# the POST is a 409 basket-changed (37-33), again a non-201 and a VOID with the server's body.
 key="metric-seed-$(date -u +%Y%m%d%H%M%S)-$$"
-body=$(jq -n --arg k "$key" --arg p "$product" --argjson q "$qty" --argjson m "$allergen_mask" '{
+body=$(jq -n --arg k "$key" --arg p "$product" --argjson q "$qty" --argjson m "$allergen_mask" --argjson price "$price" '{
   customerName:   "Metric Seed Probe",
   customerEmail:  "metric-seed@jtoye.local",
   customerPhone:  "+441234567890",
@@ -187,7 +191,8 @@ body=$(jq -n --arg k "$key" --arg p "$product" --argjson q "$qty" --argjson m "$
   idempotencyKey: $k,
   fulfilmentType: "COLLECTION",
   acknowledgedAllergenMask: $m,
-  items: [{productId: $p, quantity: $q}]
+  expectedTotalPennies: ($price * $q),
+  items: [{productId: $p, quantity: $q, expectedUnitPricePennies: $price}]
 }') || void "could not build the request body"
 
 tmp=$(mktemp)

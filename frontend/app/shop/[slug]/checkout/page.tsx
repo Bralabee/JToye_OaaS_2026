@@ -3,14 +3,17 @@
 import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store, Banknote } from "lucide-react"
+import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, Bike, Store, Banknote } from "lucide-react"
 // #793: the `/pure` entry, NEVER the package default. The default entry injects js.stripe.com as
 // a module side effect, so merely importing it put Stripe's script — and its `__stripe_mid` /
 // `__stripe_sid` cookies and m.stripe.network calls — on every cash checkout, which takes no
 // payment online. `/pure` injects nothing until `loadStripe()` is called (see getStripe below).
 import { loadStripe } from "@stripe/stripe-js/pure"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
-import { useCart } from "@/components/storefront/cart-provider"
+import { applyBasketChanges, useCart, type CartItem } from "@/components/storefront/cart-provider"
+// 37-34 (UI-SPEC § C1, D-16): the panel that renders the server's basket diff, and the one error-slot
+// sentence for a body this page cannot act on (the 422, or a malformed 409).
+import { BASKET_CONFIRMATION_REQUIRED_COPY, BasketChangedPanel } from "@/components/storefront/basket-changed-panel"
 // The refusal copy lives in the panel, which owns its own `role="alert"` region — the page sets
 // only the errored flag, so there is one source for the legally-operative string.
 import {
@@ -26,6 +29,8 @@ import { SellerBlock } from "@/components/storefront/seller-block"
 import { ShopAvailabilityNotice } from "@/components/storefront/shop-availability-notice"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
+import { markJustPlaced } from "@/lib/just-placed"
+import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { describeOrderError } from "@/lib/order-error"
 import { readShopAvailability, readShopClosedProblem, shopClosedRaceCopy } from "@/lib/shop-availability"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
@@ -40,7 +45,11 @@ import { basketAllergenAttribution, basketAllergenFlags, indexProductsById } fro
 import { getAllergenNames, type FulfilmentType, type OrderAllergenFlag } from "@/types/api"
 import {
   ALLERGEN_ACK_STALE_PROBLEM_TYPE,
+  BASKET_CHANGED_PROBLEM_TYPE,
+  BASKET_CONFIRMATION_REQUIRED_PROBLEM_TYPE,
   type AllergenAcknowledgementStaleProblem,
+  type BasketChange,
+  type BasketChangeKind,
   type GuestOrderConfirmation,
   type PublicProduct,
   type PublicShop,
@@ -213,6 +222,14 @@ export function readStaleAllergenProblem(
     (data.type === ALLERGEN_ACK_STALE_PROBLEM_TYPE ||
       (typeof data.type === "string" && data.type.endsWith("/allergen-acknowledgement-stale")))
   if (!isStale) return { stale: false }
+  return { stale: true, current: readCurrentAllergenSet(data) }
+}
+
+/** The 31.1 `currentAllergenMask` / `currentAllergens` pair, or null when it cannot be trusted. */
+function readCurrentAllergenSet(data: {
+  currentAllergenMask?: unknown
+  currentAllergens?: unknown
+}): StaleAllergenSet | null {
   const mask = data.currentAllergenMask
   const names = data.currentAllergens
   const wellFormed =
@@ -222,7 +239,91 @@ export function readStaleAllergenProblem(
     mask <= 16383 &&
     Array.isArray(names) &&
     names.every((n) => typeof n === "string")
-  return { stale: true, current: wellFormed ? { mask, names: [...names] } : null }
+  return wellFormed ? { mask: mask as number, names: [...(names as string[])] } : null
+}
+
+// ---------------------------------------------------------------------------------------------
+// 37-34 (UI-SPEC § C1; D-16; RWO-007): the two typed refusals 37-33 added to the guest order,
+// branched on the problem TYPE before every other path — the stale-allergen 409 and the
+// idempotency 409 are different problems with different recoveries.
+//
+//   409 basket-changed {changes[]}            what the customer SAW is not what the server reads at
+//                                             submit: the panel lists every change and the customer
+//                                             accepts them before the SAME key is resubmitted.
+//   422 basket-confirmation-required          a body without the expected prices: this client always
+//                                             sends them, so this is a cached pre-37-C page, and the
+//                                             generic copy asks for a refresh.
+//
+// A `changes[]` the page cannot read in full — missing, empty, an unknown kind, a price change
+// without both prices — is NOT applied: rewriting the stored basket from a body we half-understand
+// is the dangerous direction, so the whole body is treated as malformed (the `readStaleAllergenProblem`
+// null precedent) and the basket is left exactly as it was.
+// ---------------------------------------------------------------------------------------------
+
+const BASKET_CHANGE_KINDS: ReadonlySet<string> = new Set<BasketChangeKind>([
+  "PRICE_CHANGED",
+  "UNAVAILABLE",
+  "SOLD_OUT",
+  "REMOVED",
+  "BELOW_MINIMUM",
+  "TOTAL_CHANGED",
+])
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+}
+
+/** One `changes[]` entry with exactly the fields its kind needs, or null when it cannot be trusted. */
+function readBasketChange(raw: unknown): BasketChange | null {
+  if (!raw || typeof raw !== "object") return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.kind !== "string" || !BASKET_CHANGE_KINDS.has(r.kind)) return null
+  const change: BasketChange = { kind: r.kind as BasketChangeKind }
+  if (typeof r.productId === "string" && r.productId.length > 0) change.productId = r.productId
+  if (typeof r.name === "string") change.name = r.name
+  for (const field of ["expected", "current", "requested", "available", "minimum", "subtotal"] as const) {
+    if (isCount(r[field])) change[field] = r[field] as number
+  }
+  if (typeof r.detail === "string") change.detail = r.detail
+  switch (change.kind) {
+    case "PRICE_CHANGED":
+    case "TOTAL_CHANGED":
+      return change.expected !== undefined && change.current !== undefined ? change : null
+    case "SOLD_OUT":
+      return change.available !== undefined ? change : null
+    case "BELOW_MINIMUM":
+      return (change.minimum !== undefined && change.subtotal !== undefined) || change.detail ? change : null
+    default:
+      return change
+  }
+}
+
+/**
+ * Recognise 37-33's 409 `basket-changed` and read its diff. `changes` is null for a body whose type
+ * matches but whose list cannot be read in full (see above); `allergens` is the 31.1 current set
+ * when the same problem carries it (the acknowledged allergen set moved too), else null.
+ */
+export function readBasketChangedProblem(
+  err: unknown
+): { changed: false } | { changed: true; changes: BasketChange[] | null; allergens: StaleAllergenSet | null } {
+  const res = problemOf(err)
+  if (!res || res.status !== 409 || !res.data) return { changed: false }
+  if (!hasType(res.data, BASKET_CHANGED_PROBLEM_TYPE, "/basket-changed")) return { changed: false }
+  const raw = res.data.changes
+  let changes: BasketChange[] | null = null
+  if (Array.isArray(raw) && raw.length > 0) {
+    const parsed = raw.map(readBasketChange)
+    changes = parsed.every((c) => c !== null) ? (parsed as BasketChange[]) : null
+  }
+  const allergens = res.data.currentAllergenMask === undefined ? null : readCurrentAllergenSet(res.data)
+  return { changed: true, changes, allergens }
+}
+
+/** 37-33's 422 `basket-confirmation-required`: the request carried no expected prices. */
+export function readBasketConfirmationRequiredProblem(err: unknown): boolean {
+  const res = problemOf(err)
+  if (!res || res.status !== 422 || !res.data) return false
+  return hasType(res.data, BASKET_CONFIRMATION_REQUIRED_PROBLEM_TYPE, "/basket-confirmation-required")
 }
 
 /**
@@ -259,11 +360,7 @@ const SHOP_AVAILABILITY_EXPLAINER_ID = "shop-availability-explainer"
 /** How long after the server's stated reopening time the shop is asked again (the kitchen uses the same grace). */
 const REOPEN_RECHECK_GRACE_MS = 500
 
-const NO_VAT_REGISTRATION_COPY = "This seller hasn't declared a VAT registration, so no VAT is shown."
-
-function NoVatRegistrationNote() {
-  return <p className="text-sm text-slate-600">{NO_VAT_REGISTRATION_COPY}</p>
-}
+// The B7 note (NoVatRegistrationNote) is components/storefront/no-vat-registration-note.tsx, shared with the order page (37-37).
 
 /** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
 type StripePromise = ReturnType<typeof loadStripe>
@@ -373,10 +470,15 @@ function PaymentForm({
   )
 }
 
+/** The lines-only signature the acknowledgement is reset on (D-02): `productId:quantity` per line. */
+function basketSignatureOf(lines: readonly Pick<CartItem, "productId" | "quantity">[]): string {
+  return lines.map((i) => `${i.productId}:${i.quantity}`).join("|")
+}
+
 export default function CheckoutPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const router = useRouter()
-  const { items, totalPennies, itemCount, clearCart } = useCart()
+  const { items, totalPennies, itemCount, clearCart, applyServerChanges } = useCart()
 
   // Pre-fill from customer session if logged in (async, cookie-backed)
   const [customerName, setCustomerName] = useState("")
@@ -407,6 +509,43 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const idempotencyKeyRef = useRef<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The shop, read once on load and again after a stated reopening time (the loader is below). It is
+  // declared here because the order intent — the expected total, D-16 — needs its delivery fee.
+  const [shop, setShop] = useState<PublicShop | null>(null)
+
+  // 37-34 (UI-SPEC § C1, D-16): the server's basket diff, held until it is accepted or an order is
+  // placed. `names` is the basket AS THE CUSTOMER SAW IT at the moment of the 409 — a REMOVED entry
+  // carries no name on the wire and the line is gone from the cart once applied, so the panel reads
+  // the name from this snapshot. `seq` keys the panel: a second 409 mounts a fresh one (focus moves
+  // again).
+  const [basketChanged, setBasketChanged] = useState<{
+    changes: BasketChange[]
+    allergensChanged: boolean
+    names: Record<string, string>
+    seq: number
+  } | null>(null)
+  const [basketChangesAccepted, setBasketChangesAccepted] = useState(false)
+  // Place order was pressed before "Accept changes": the refusal line beside the panel.
+  const [basketChangeRefused, setBasketChangeRefused] = useState(false)
+  const acceptChangesRef = useRef<HTMLButtonElement>(null)
+  const basketChangeSeqRef = useRef(0)
+  // KEY POLICY (RESEARCH §37-C.1 step 5; goods P2-CHA-12/13, P2-RAV-20): the resubmit after a
+  // basket-changed 409 reuses the SAME Idempotency-Key even though the body changes (new prices,
+  // the new total, perhaps a re-ticked mask). The server threw the 409 inside its reserved
+  // idempotency work and rolled the reservation back (37-33), so nothing is held under the key and
+  // the corrected body is accepted; keeping it means one key per tap sequence — exactly one order
+  // however the taps land. The flag is consumed by the next submit, so a later edit mints a fresh
+  // key as before (API-4 / M3).
+  const reuseKeyAfterBasketChangeRef = useRef(false)
+  // Set just before the 409's rewrite changes the lines, read ONCE by the basket-signature effect
+  // below: the server said, in the same problem, whether the acknowledged allergen set moved, so
+  // the effect keeps the server's set (never drops back to a client view the server just refused)
+  // and keeps a still-valid acknowledgement instead of resetting it as a shopper's edit would.
+  const serverRewriteRef = useRef<{ keepAcknowledged: boolean } | null>(null)
+  const focusAcceptChanges = () => {
+    const el = acceptChangesRef.current
+    if (el && el.isConnected) el.focus()
+  }
 
   // Fulfilment + conditional UK delivery address (UIX-04 / Surface E).
   // Default = Delivery; Collection is one tap away and zeroes the delivery fee.
@@ -493,16 +632,42 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
    * the acknowledgement — acknowledging one basket must not silently carry to another. This is
    * deliberately basket-only: correcting a phone number is not a new set of allergens.
    */
-  const basketSignature = useMemo(
-    () => items.map((i) => `${i.productId}:${i.quantity}`).join("|"),
-    [items]
-  )
+  const basketSignature = useMemo(() => basketSignatureOf(items), [items])
   useEffect(() => {
+    const rewrite = serverRewriteRef.current
+    serverRewriteRef.current = null
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
-    setAcknowledged(false)
     setAckError(null)
+    if (rewrite) {
+      // 37-34: the SERVER rewrote the lines (a basket-changed 409 applied). It is the authority on
+      // whether the allergen set moved: when the same 409 carried the 31.1 properties the box was
+      // unticked and the server's set held as the override; when it did not, the acknowledged set is
+      // exactly the one the remaining lines declare, and the customer is not asked to tick again.
+      if (!rewrite.keepAcknowledged) setAcknowledged(false)
+      return
+    }
+    setAcknowledged(false)
     setStaleOverride(null)
   }, [basketSignature])
+
+  // D-16 (37-32/37-34): WHAT THE CUSTOMER SAW, sent with the order so the server can refuse a
+  // difference (409 basket-changed) instead of charging it. Per line, the unit price the basket
+  // holds — the number on every row of the order summary; at the top level, the total on the Place
+  // order button: the line totals plus the delivery fee this page previews, which mirrors the
+  // server's FulfilmentPolicy (lib/delivery-fee.ts), so the comparison is like with like. A shop
+  // that has not loaded previews a £0 fee, and if the server's fee differs the customer is SHOWN the
+  // difference ("Total was …, now …") rather than charged it silently.
+  const expectedLines = useMemo(
+    () => items.map((item) => ({ productId: item.productId, quantity: item.quantity, expectedUnitPricePennies: item.pricePennies })),
+    [items]
+  )
+  const previewFeePennies = previewDeliveryFeePennies(
+    totalPennies,
+    fulfilmentType,
+    shop?.deliveryFeePennies,
+    shop?.freeDeliveryThresholdPennies
+  )
+  const expectedTotalPennies = totalPennies + previewFeePennies
 
   // The body this page will POST, built ONCE from the form state and used for BOTH the request
   // and the idempotency signature, so no field can be submitted without being signed
@@ -519,12 +684,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         address2,
         city,
         postcode,
-        items,
+        items: expectedLines,
         // #784/#785 (D-05): the set the panel SHOWED. Signed with everything else, so a
         // re-acknowledged resubmit after a stale 409 rotates the Idempotency-Key and an unchanged
         // resubmit after a lost reply replays.
         acknowledgedAllergenMask: declaredAllergenMask,
         allergyNote,
+        expectedTotalPennies,
       }),
     [
       customerName,
@@ -536,9 +702,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       address2,
       city,
       postcode,
-      items,
+      expectedLines,
       declaredAllergenMask,
       allergyNote,
+      expectedTotalPennies,
     ]
   )
   const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
@@ -567,7 +734,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
   // failure degrades gracefully to a £0 preview (server stays authoritative).
-  const [shop, setShop] = useState<PublicShop | null>(null)
+  // (`shop` itself is declared above, beside the order intent that reads it.)
   const loadShop = useCallback(() => {
     let cancelled = false
     publicApiClient
@@ -640,21 +807,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     allergenWarnings: string[]
   } & RecordedAllergens | null>(null)
 
-  // COD confirmation — shows full breakdown before redirect. Carries the
-  // submitted fulfilment type so the payment instruction reads "Pay on
-  // delivery" for DELIVERY orders (WR-08).
-  const [codConfirmation, setCodConfirmation] = useState<{
-    orderNumber: string
-    fulfilmentType: FulfilmentType
-    subtotalPennies: number
-    deliveryFeePennies: number
-    vatRate: string
-    vatAmountPennies: number
-    totalAmountPennies: number
-    allergenWarnings: string[]
-  } & RecordedAllergens | null>(null)
+  // 37-37 (UI-SPEC C3, UXT-029): the order number of a cash order that was just placed, held only
+  // while the page routes to /shop/{slug}/orders/{orderNumber}. The confirmation itself — "Pay on
+  // delivery/collection" (WR-08), the breakdown, the recorded allergens and the seller — is that
+  // route's now, read from the tracking response, so it is announced and survives a refresh.
+  const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null)
 
-  if (items.length === 0 && !paymentState && !codConfirmation) {
+  if (items.length === 0 && !paymentState && !placedOrderNumber) {
     return (
       <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center">
         <ShoppingBag className="h-16 w-16 text-slate-200" />
@@ -700,6 +859,16 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     }
     setFieldErrors({})
 
+    // 37-34 (UI-SPEC § C1) — THE BASKET-CHANGED GATE. The server has said the basket is not the one
+    // the customer saw, and they have not yet accepted the changes: refuse, announce it beside the
+    // panel and move focus to "Accept changes". Refuse-not-disable, the 31.1 pattern below — and a
+    // tap that lands as the 409 returns meets THIS, never a submit at prices not yet seen.
+    if (basketChanged && !basketChangesAccepted) {
+      setBasketChangeRefused(true)
+      focusAcceptChanges()
+      return
+    }
+
     // D-02 — THE ALLERGEN GATE. Refused BEFORE any network call: an error rendered alongside a
     // created order is the dangerous outcome, because the kitchen is already cooking while the
     // customer is being told off. The button deliberately stays ENABLED (see the note at the
@@ -735,10 +904,16 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     setSubmitting(true)
 
     try {
-      if (!idempotencyKeyRef.current || lastIntentSignatureRef.current !== intentSignature) {
+      // A new key for a changed intent — EXCEPT the one change the server itself asked for: the
+      // resubmit after a basket-changed 409 keeps its key (reuseKeyAfterBasketChangeRef, above).
+      if (
+        !idempotencyKeyRef.current ||
+        (lastIntentSignatureRef.current !== intentSignature && !reuseKeyAfterBasketChangeRef.current)
+      ) {
         idempotencyKeyRef.current = crypto.randomUUID()
-        lastIntentSignatureRef.current = intentSignature
       }
+      lastIntentSignatureRef.current = intentSignature
+      reuseKeyAfterBasketChangeRef.current = false
       // One read, used for BOTH the header and the body field, so the two can never disagree.
       const idempotencyKey = idempotencyKeyRef.current
       // The body is the SIGNED intent plus the key — the same object the signature was taken
@@ -763,9 +938,19 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       )
 
       const confirmation = res.data
+      // The order exists: whatever the server said about the basket has been acted on. Only when
+      // something WAS said — the common path leaves these untouched, as before 37-34.
+      if (basketChanged) {
+        setBasketChanged(null)
+        setBasketChangesAccepted(false)
+        setBasketChangeRefused(false)
+      }
 
       if (!confirmation.clientSecret) {
-        // COD mode — show confirmation with full breakdown before redirect
+        // COD mode — 37-37 (UI-SPEC C3): the card path's route, after the card path's save. The
+        // email is stored first because the order page reads tracking data bound to number + email
+        // (goods F3); the marker tells that page this is the first view, so it says "Order
+        // confirmed" once, focused and announced. The page only READS: a refresh re-posts nothing.
         localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
         saveLocalOrder({
           orderNumber: confirmation.orderNumber,
@@ -773,18 +958,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           shopSlug: slug,
           placedAt: new Date().toISOString(),
         })
+        markJustPlaced(confirmation.orderNumber)
+        setPlacedOrderNumber(confirmation.orderNumber)
         clearCart()
-        setCodConfirmation({
-          orderNumber: confirmation.orderNumber,
-          fulfilmentType,
-          subtotalPennies: confirmation.subtotalPennies,
-          deliveryFeePennies: confirmation.deliveryFeePennies || 0,
-          vatRate: confirmation.vatRate,
-          vatAmountPennies: confirmation.vatAmountPennies,
-          totalAmountPennies: confirmation.totalAmountPennies,
-          allergenWarnings: confirmation.allergenWarnings || [],
-          ...recordedAllergensOf(confirmation),
-        })
+        router.push(`/shop/${slug}/orders/${confirmation.orderNumber}`)
         return
       }
 
@@ -806,6 +983,62 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         ...recordedAllergensOf(confirmation),
       })
     } catch (err: unknown) {
+      // 37-34 (UI-SPEC § C1, D-16): the basket the server read at submit is not the one the customer
+      // saw — a vendor reprice, a line gone unavailable, sold out or removed, the minimum or the
+      // total. No order exists and the key was not held (37-33). Show every change, keep the SAME
+      // key for the resubmit, and refuse Place order until "Accept changes" is pressed. Checked
+      // FIRST among the 409s: the allergen-only case never carries this type (31.1 unchanged).
+      const basket = readBasketChangedProblem(err)
+      if (basket.changed) {
+        if (!basket.changes) {
+          // A body this page cannot read in full is not applied: the generic copy, the basket as it was.
+          setError(BASKET_CONFIRMATION_REQUIRED_COPY)
+          return
+        }
+        reuseKeyAfterBasketChangeRef.current = true
+        basketChangeSeqRef.current += 1
+        setBasketChanged({
+          changes: basket.changes,
+          allergensChanged: basket.allergens !== null,
+          names: Object.fromEntries(items.map((item) => [item.productId, item.title])),
+          seq: basketChangeSeqRef.current,
+        })
+        setBasketChangesAccepted(false)
+        setBasketChangeRefused(false)
+        // THE BASKET FOLLOWS THE SERVER'S FACTS (UI-SPEC § C1; F15). The stored lines become the
+        // server's — through the provider's own write, which leaves the ownership stamp alone — so
+        // the total on the button and the prices the resubmit sends are the ones just accepted.
+        // When the lines (not only prices) change, the basket-signature effect is told it was the
+        // server, and whether the acknowledgement still stands (see serverRewriteRef).
+        const nextItems = applyBasketChanges(items, basket.changes)
+        if (basketSignatureOf(nextItems) !== basketSignature) {
+          serverRewriteRef.current = { keepAcknowledged: basket.allergens === null }
+        }
+        applyServerChanges(basket.changes)
+        if (basket.allergens) {
+          // The same 409 carried the 31.1 properties: the allergen panel states the server's set,
+          // unticked (D-05 composed, not beside), and the panel above says why.
+          setStaleOverride(basket.allergens)
+          setAcknowledged(false)
+        }
+        // Re-read the catalogue so prices, flags and attribution are current; the override is
+        // released only when the fresh catalogue agrees with the set the server refused on (the
+        // 31.1 convergence rule — a further vendor edit arrives as a newer 409, never as a loop).
+        void fetchProductIndex().then((fresh) => {
+          if (!fresh) return
+          setProductIndex(fresh)
+          if (!basket.allergens) return
+          const freshMask = basketAllergenMask(nextItems, fresh)
+          setStaleOverride((prev) => (prev && freshMask === prev.mask ? null : prev))
+        })
+        return
+      }
+      // The 422 a request without the expected prices meets — this client always sends them, so
+      // only a cached pre-37-C page can get here: ask for a refresh, keep the basket.
+      if (readBasketConfirmationRequiredProblem(err)) {
+        setError(BASKET_CONFIRMATION_REQUIRED_COPY)
+        return
+      }
       // #785 (D-05): the set the customer acknowledged is no longer the basket's declared set — a
       // vendor edit landed after they read the panel. No order exists and the server did not hold
       // the key. Show the server's current set, untick, announce it in the panel's own alert
@@ -858,91 +1091,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     }
   }
 
-  // COD confirmation — shows full price breakdown before tracking
-  if (codConfirmation) {
+  // 37-37 (UI-SPEC C3, UXT-029): a cash order is confirmed on its own route now, not in place here.
+  // Between the 201 and the navigation the basket is already empty, so this stands in for the
+  // "Nothing to checkout" screen, which would read as a lost order.
+  if (placedOrderNumber) {
     return (
-      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
-        <div className="text-center mb-6">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
-            <CheckCircle className="h-8 w-8 text-emerald-600" />
-          </div>
-          <h1 className="mt-4 text-xl font-bold text-slate-900">Order confirmed!</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Order {codConfirmation.orderNumber} &middot; Pay on{" "}
-            {codConfirmation.fulfilmentType === "COLLECTION" ? "collection" : "delivery"}
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm mb-6">
-          <h2 className="text-sm font-semibold text-slate-900 mb-3">Order total</h2>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-600">Subtotal</span>
-              <span className="text-slate-900">{formatPrice(codConfirmation.subtotalPennies)}</span>
-            </div>
-            {codConfirmation.deliveryFeePennies > 0 ? (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Delivery</span>
-                <span className="text-slate-900">{formatPrice(codConfirmation.deliveryFeePennies)}</span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Delivery</span>
-                <span className="text-emerald-700 font-medium">Free</span>
-              </div>
-            )}
-            {sellerVatRegistered && codConfirmation.vatAmountPennies > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(codConfirmation.vatRate))})</span>
-                <span className="text-slate-900">{formatPrice(codConfirmation.vatAmountPennies)}</span>
-              </div>
-            )}
-            <div className="flex items-center justify-between pt-2 border-t border-cream-100">
-              <span className="text-base font-bold text-slate-900">Total</span>
-              <span className="text-base font-bold text-slate-900">{formatPrice(codConfirmation.totalAmountPennies)}</span>
-            </div>
-            {sellerVatUndeclared && <NoVatRegistrationNote />}
-          </div>
-        </div>
-
-        {/* D-08: what the order RECORDS — the set acknowledged and the set the kitchen works from —
-            read from the confirmation response, never from the basket the client computed. */}
-        <RecordedAllergenSet
-          acknowledged={codConfirmation.acknowledgedAllergens}
-          recorded={codConfirmation.recordedAllergens}
-          flags={codConfirmation.recordedAllergenFlags}
-          className="mb-6"
-        />
-
-        {codConfirmation.allergenWarnings.length > 0 && (
-          <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-6">
-            <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
-            <ul className="space-y-1">
-              {codConfirmation.allergenWarnings.map((warning, i) => (
-                <li key={i} className="text-sm text-amber-700">{warning}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* #789 (31.1-24, D-13): who the customer bought from, on the confirmation they are left
-            with, before they navigate away. `shop` is null only if its fetch failed, and a failed
-            fetch is not "the seller has not provided their details", so nothing renders then. */}
-        {shop && <SellerBlock seller={shop.seller} className="mb-6" />}
-
-        <Link
-          href={`/shop/${slug}/orders/${codConfirmation.orderNumber}`}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg"
-        >
-          Track your order
-        </Link>
-        <Link
-          href={`/shop/${slug}`}
-          className="flex w-full items-center justify-center gap-1 mt-3 rounded-2xl border border-cream-100 py-2.5 text-sm font-medium text-slate-600 hover:bg-cream transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to shop
-        </Link>
+      <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 text-center" aria-busy="true">
+        <Loader2 className="h-8 w-8 animate-spin text-amber-700" aria-hidden="true" />
+        <p className="mt-3 text-sm text-slate-600">Opening your order {placedOrderNumber}…</p>
       </div>
     )
   }
@@ -963,6 +1119,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             // new one. Acknowledging the previous basket must not carry silently into this one.
             setAcknowledged(false)
             setAckError(null)
+            setBasketChanged(null)
+            setBasketChangesAccepted(false)
+            setBasketChangeRefused(false)
             setPaymentState(null)
           }}
           className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-4"
@@ -1079,14 +1238,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // Definite fee preview shown BEFORE payment — mirrors the server waiver so the
   // customer sees exactly what they'll pay (Deliveroo/Just Eat comparator).
   const subtotalPennies = totalPennies
-  const deliveryFeePennies = previewDeliveryFeePennies(
-    subtotalPennies,
-    fulfilmentType,
-    shop?.deliveryFeePennies,
-    shop?.freeDeliveryThresholdPennies
-  )
+  // ONE preview (computed above, beside the order intent): what the Delivery row and the Place order
+  // button show IS what `expectedTotalPennies` sends (D-16), by construction.
+  const deliveryFeePennies = previewFeePennies
   const deliveryIsFree = deliveryFeePennies === 0
-  const previewTotalPennies = subtotalPennies + deliveryFeePennies
+  const previewTotalPennies = expectedTotalPennies
   // WR-01: mirror the server-side minimum-order gate (item subtotal, delivery
   // fee excluded). The server enforces it authoritatively in createGuestOrder;
   // this just stops the user submitting an order that would be rejected.
@@ -1424,6 +1580,28 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             fetch is not "the seller has not provided their details". Display only — nothing in
             it is submitted. */}
         {shop && <SellerBlock seller={shop.seller} />}
+
+        {/* 37-34 (UI-SPEC § C1, D-16): what the server found different from what the customer saw,
+            DIRECTLY ABOVE the allergen panel (where the eyes and the thumb are), inside the form.
+            Keyed on the 409's sequence so a second refusal mounts a fresh panel and moves focus
+            again. Collapses to a one-line note once accepted; the Place order label below then
+            shows the new total. */}
+        {basketChanged && (
+          <BasketChangedPanel
+            key={basketChanged.seq}
+            changes={basketChanged.changes}
+            nameFor={(productId) => (productId ? (basketChanged.names[productId] ?? null) : null)}
+            allergensChanged={basketChanged.allergensChanged}
+            accepted={basketChangesAccepted}
+            onAccept={() => {
+              setBasketChangesAccepted(true)
+              setBasketChangeRefused(false)
+            }}
+            refused={basketChangeRefused}
+            acceptRef={acceptChangesRef}
+            refusalId="basket-changed-refusal"
+          />
+        )}
 
         {/* D-02 — the pre-submit allergen block. Deliberately the LAST thing read before
             committing: after "How you'll pay", immediately above the submit run. Not in the order

@@ -63,7 +63,6 @@ const detail: ShopDetail = {
   reviews: [],
   reviewCount: 0,
   avgRating: 0,
-  promotions: [],
   announcements: [],
 }
 

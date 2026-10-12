@@ -30,6 +30,8 @@
 import { test, expect, type APIRequestContext, type Page, type TestInfo } from "@playwright/test"
 
 import { servedHtml } from "./helpers/served-html"
+import { awaitCashConfirmation } from "./cash-confirmation"
+import { cancelOrdersByNumber, uniqueContact } from "./order-cleanup"
 
 // The deterministic seeded shop the storefront suites use (DemoDataSeeder, UIX-05). Cash-only on
 // the compose stack, which the cash walk below asserts rather than assumes.
@@ -169,6 +171,14 @@ test.describe("#789 seller identity on the shop page — served HTML @desktop-on
 })
 
 test.describe("#789 seller identity before purchase and on the confirmation", () => {
+  // Cap hygiene (37-31 rule, e2e/order-cleanup.ts), added at the 37-38 gate: a FIXED phone number
+  // accumulated an open cash order per run until the 37-D per-phone cap (3) refused the walk with
+  // "You already have the most open cash orders this shop allows for one customer". The phone is
+  // now per run, and the order the walk places is cancelled by number afterwards.
+  const placed: string[] = []
+  test.afterEach(async ({ request }) => {
+    await cancelOrdersByNumber(request, SHOP_SLUG, placed.splice(0))
+  })
   test("the checkout shows the seller above Place order, and the cash confirmation and its email name them", async ({
     page,
     request,
@@ -220,7 +230,7 @@ test.describe("#789 seller identity before purchase and on the confirmation", ()
     await page.getByRole("button", { name: /collection/i }).click()
     await page.fill("input#name", "Seller Identity 789")
     await page.fill("input#email", address)
-    await page.fill("input#phone", "07700 789789")
+    await page.fill("input#phone", uniqueContact("seller-789").phone)
     await expect(placeOrder).toBeEnabled({ timeout: 10_000 })
     const allergenAck = page.getByRole("checkbox", { name: /I have read the allergen information for this order\./i })
     await allergenAck.click()
@@ -228,7 +238,8 @@ test.describe("#789 seller identity before purchase and on the confirmation", ()
     await placeOrder.click()
 
     // THE CONFIRMATION the customer is left with.
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
+    // 37-37 (C3): the cash confirmation is the order's own route now, not a state of the checkout.
+    placed.push(await awaitCashConfirmation(page))
     await expect(
       page.getByText(/Pay on collection/i),
       "this walk needs a CASH-ONLY shop; the stack under test has card payments configured"

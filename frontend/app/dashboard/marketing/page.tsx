@@ -255,6 +255,35 @@ function PageLocalFilterNotice({
 }
 
 /**
+ * 37-36 (D-17, UXT-008, UI-SPEC § C2). The storefront no longer shows promotions:
+ * J'Toye applies no discount at checkout, so a promotion on the shop page advertised
+ * a price the customer would not be charged. The vendor's promotions are KEPT (the
+ * CRUD below is unchanged), so without this panel the dashboard would read as if they
+ * still went live. Static copy, full width, above the list.
+ */
+function PromotionsHiddenNotice() {
+  return (
+    <div
+      data-testid="promotions-hidden-notice"
+      className="mb-4 flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm"
+    >
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+      <div>
+        <p className="font-semibold text-slate-900">Customers can&apos;t see your promotions yet</p>
+        <p className="mt-1 text-slate-600">
+          J&apos;Toye doesn&apos;t apply discounts at checkout yet, so showing a promotion would advertise
+          a price customers wouldn&apos;t be charged. Your promotions are saved here and will appear
+          once checkout can apply them.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** UI-SPEC § C2 "Announcement helper": linked to the title and body by aria-describedby. */
+const ANNOUNCEMENT_HELPER_ID = "ann-discount-helper"
+
+/**
  * Shown when a status filter matches nothing on the current page but the list
  * itself is not empty.
  *
@@ -753,6 +782,8 @@ export default function MarketingPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
+          <PromotionsHiddenNotice />
+
           {/* Status filter bar */}
           <div className="mb-4 flex items-center gap-2">
             {(["all", "active", "upcoming", "expired"] as StatusFilter[]).map((f) => (
@@ -1353,6 +1384,7 @@ export default function MarketingPage() {
                 <Input
                   id="ann-title"
                   placeholder="e.g., New Menu Available"
+                  aria-describedby={ANNOUNCEMENT_HELPER_ID}
                   {...annForm.register("title")}
                 />
                 {annForm.formState.errors.title && (
@@ -1396,10 +1428,17 @@ export default function MarketingPage() {
               <textarea
                 id="ann-body"
                 placeholder="Tell your customers about the news..."
+                aria-describedby={ANNOUNCEMENT_HELPER_ID}
                 {...annForm.register("body")}
                 rows={3}
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
+              {/* 37-36 (D-17): an announcement is the one customer-facing marketing text left on
+                  the storefront, so it must not become a back door for an unapplied discount. */}
+              <p id={ANNOUNCEMENT_HELPER_ID} className="text-sm text-slate-600">
+                Don&apos;t advertise discounts or prices here. Checkout can&apos;t apply them, so
+                customers would be charged the full price.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

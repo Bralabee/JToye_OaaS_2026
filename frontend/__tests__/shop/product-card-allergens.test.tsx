@@ -95,7 +95,6 @@ async function renderMenu(products: PublicProduct[]) {
     reviews: [],
     reviewCount: 0,
     avgRating: 0,
-    promotions: [],
     announcements: [],
   }
   await act(async () => {

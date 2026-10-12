@@ -9,8 +9,10 @@
  *
  * It is never persisted client-side (T-31.1-55): the only place the value goes is the POST body.
  *
- * The second half: the COD confirmation and the card payment step render the RECORDED allergen
- * set from the confirmation response (RecordedAllergenSet), not from anything the client holds.
+ * The second half: the card payment step renders the RECORDED allergen set from the confirmation
+ * response (RecordedAllergenSet), not from anything the client holds. 37-37 (UI-SPEC C3) moved the
+ * cash confirmation to the order route, which renders the same block from the tracking response
+ * (orders/[orderNumber]/__tests__/order-tracking-allergens.test.tsx).
  */
 
 import { Suspense } from "react"
@@ -256,7 +258,8 @@ describe("the allergy note field (#812, D-15)", () => {
 
   it("never writes the note to browser storage (T-31.1-55)", async () => {
     await armAndSubmit({ note: "Severe sesame allergy" })
-    await screen.findByText(/order confirmed/i)
+    // 37-37 (C3): the cash order was placed — the checkout left the order route's one-shot marker.
+    await waitFor(() => expect(sessionStorage.getItem("jtoye-just-placed:ORD-NOTE-1")).toBe("ORD-NOTE-1"))
     const stored = [
       ...Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? ""),
       ...Object.keys(sessionStorage).map((k) => sessionStorage.getItem(k) ?? ""),
@@ -268,9 +271,11 @@ describe("the allergy note field (#812, D-15)", () => {
 })
 
 describe("the confirmation shows the RECORDED set from the response (D-08)", () => {
-  it("COD confirmation renders the acknowledged and recorded sets, and the flag as a Check line", async () => {
+  it("the card payment step renders the acknowledged and recorded sets, and the flag as a Check line", async () => {
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_recorded_set"
+    mockedPost.mockResolvedValue({ data: { ...CONFIRMATION, clientSecret: "pi_x_secret_y" } })
     await armAndSubmit()
-    await screen.findByText(/order confirmed/i)
+    await screen.findByRole("heading", { name: "Payment", level: 1 })
 
     expect(screen.getByTestId("recorded-ack")).toHaveTextContent(`${RECORDED_ACK_HEADING_COPY} Milk`)
     expect(screen.getByTestId("recorded-set")).toHaveTextContent(`${RECORDED_SET_HEADING_COPY} Milk`)
@@ -280,11 +285,12 @@ describe("the confirmation shows the RECORDED set from the response (D-08)", () 
   it("renders what the SERVER recorded, not the basket the client computed", async () => {
     // The response says Gluten was recorded; the basket's client-side set is Milk. The block must
     // follow the response — it is the record, and the client view is not.
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_recorded_set"
     mockedPost.mockResolvedValue({
-      data: { ...CONFIRMATION, recordedAllergens: ["Gluten", "Milk"], recordedAllergenFlags: [] },
+      data: { ...CONFIRMATION, clientSecret: "pi_x_secret_y", recordedAllergens: ["Gluten", "Milk"], recordedAllergenFlags: [] },
     })
     await armAndSubmit()
-    await screen.findByText(/order confirmed/i)
+    await screen.findByRole("heading", { name: "Payment", level: 1 })
     expect(screen.getByTestId("recorded-set")).toHaveTextContent(`${RECORDED_SET_HEADING_COPY} Gluten, Milk`)
   })
 

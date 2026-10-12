@@ -1978,6 +1978,12 @@
       },
       "GuestOrderItemRequest" : {
         "properties" : {
+          "expectedUnitPricePennies" : {
+            "description" : "The unit price, in pennies, the storefront showed the customer for this line when they confirmed the basket. The server charges its own current price and uses this only to detect a change: a missing value is refused 422 with code BASKET_CONFIRMATION_REQUIRED, and one that differs from the current price is refused 409 with code BASKET_CHANGED listing each change.",
+            "format" : "int64",
+            "minimum" : 0,
+            "type" : "integer"
+          },
           "productId" : {
             "format" : "uuid",
             "type" : "string"
@@ -2044,6 +2050,12 @@
             "maxLength" : 50,
             "minLength" : 0,
             "type" : "string"
+          },
+          "expectedTotalPennies" : {
+            "description" : "The order total, in pennies (line totals plus delivery fee), the storefront showed the customer when they confirmed the basket. The server recomputes its own total and uses this only to detect a change: a missing value is refused 422 with code BASKET_CONFIRMATION_REQUIRED, and one that differs from the current total is refused 409 with code BASKET_CHANGED listing each change.",
+            "format" : "int64",
+            "minimum" : 0,
+            "type" : "integer"
           },
           "fulfilmentType" : {
             "maxLength" : 20,
@@ -3770,6 +3782,19 @@
             "format" : "date-time",
             "type" : "string"
           },
+          "deliveryFeePennies" : {
+            "description" : "The delivery fee charged on this order, in pennies. 0 means no fee was charged (a collection order, or a delivery that cleared the free-delivery threshold). totalAmountPennies = subtotalPennies + deliveryFeePennies.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fulfilmentType" : {
+            "description" : "How the order is fulfilled: DELIVERY or COLLECTION.",
+            "enum" : [
+              "DELIVERY",
+              "COLLECTION"
+            ],
+            "type" : "string"
+          },
           "itemCount" : {
             "format" : "int32",
             "type" : "integer"
@@ -4276,7 +4301,12 @@
             "type" : "string"
           },
           "customerName" : {
-            "type" : "string"
+            "description" : "The reviewer as first name plus last initial, e.g. \"Grace P.\"; a single name as given; null when the order carried no name. Never the full surname.",
+            "example" : "Grace P.",
+            "type" : [
+              "string",
+              "null"
+            ]
           },
           "deliveryRating" : {
             "format" : "int32",
@@ -4849,6 +4879,7 @@
       "ShopConfigDto" : {
         "properties" : {
           "activePromotions" : {
+            "description" : "Always an empty list: promotions are not shown until checkout applies them. Kept as an array for contract stability.",
             "items" : {
               "$ref" : "#/components/schemas/PromotionDto"
             },
@@ -11566,7 +11597,7 @@
     },
     "/api/v1/public/shops/{slug}/config" : {
       "get" : {
-        "description" : "Server-driven content: announcements, featured products, active promotions.",
+        "description" : "Server-driven content: announcements and featured products. activePromotions is always an empty list: promotions are not shown until checkout applies them.",
         "operationId" : "getShopConfig_1",
         "parameters" : [
           {
@@ -11668,7 +11699,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is in flight"
+            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
           },
           "410" : {
             "content" : {
@@ -11688,7 +11719,7 @@
                 }
               }
             },
-            "description" : "Idempotency-Key reused with a different payload or shop"
+            "description" : "Idempotency-Key reused with a different payload or shop (errors/idempotency-payload-mismatch); expected prices missing — send expectedUnitPricePennies on each item and expectedTotalPennies (errors/basket-confirmation-required); allergen acknowledgement missing (errors/allergen-acknowledgement-required); or the order is larger than the platform allows (errors/order-limit-exceeded)"
           }
         },
         "summary" : "Place a guest order",
@@ -11737,7 +11768,7 @@
     },
     "/api/v1/public/shops/{slug}/promotions" : {
       "get" : {
-        "description" : "Returns currently active promotions for a published shop.",
+        "description" : "Always an empty list for a published shop: promotions are not shown until checkout applies them. 404 for an unknown or unpublished shop.",
         "operationId" : "getShopPromotions",
         "parameters" : [
           {
@@ -14169,7 +14200,7 @@
     },
     "/public/shops/{slug}/config" : {
       "get" : {
-        "description" : "Server-driven content: announcements, featured products, active promotions.",
+        "description" : "Server-driven content: announcements and featured products. activePromotions is always an empty list: promotions are not shown until checkout applies them.",
         "operationId" : "getShopConfig",
         "parameters" : [
           {
@@ -14271,7 +14302,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is in flight"
+            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
           },
           "410" : {
             "content" : {
@@ -14291,7 +14322,7 @@
                 }
               }
             },
-            "description" : "Idempotency-Key reused with a different payload or shop"
+            "description" : "Idempotency-Key reused with a different payload or shop (errors/idempotency-payload-mismatch); expected prices missing — send expectedUnitPricePennies on each item and expectedTotalPennies (errors/basket-confirmation-required); allergen acknowledgement missing (errors/allergen-acknowledgement-required); or the order is larger than the platform allows (errors/order-limit-exceeded)"
           }
         },
         "summary" : "Place a guest order",
@@ -14340,7 +14371,7 @@
     },
     "/public/shops/{slug}/promotions" : {
       "get" : {
-        "description" : "Returns currently active promotions for a published shop.",
+        "description" : "Always an empty list for a published shop: promotions are not shown until checkout applies them. 404 for an unknown or unpublished shop.",
         "operationId" : "getShopPromotions_1",
         "parameters" : [
           {

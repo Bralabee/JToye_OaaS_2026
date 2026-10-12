@@ -135,7 +135,12 @@ beforeEach(() => {
   mockShop(SHOP)
 })
 
-/** Fill a COLLECTION order, acknowledge the allergen panel and submit, landing on the COD confirmation. */
+/**
+ * Fill a COLLECTION order, acknowledge the allergen panel and submit, landing on the CARD payment
+ * step. 37-37 (C3) moved the cash confirmation to the order route, where its VAT label is asserted
+ * (orders/[orderNumber]/__tests__/order-confirmation.test.tsx); the card payment summary is the
+ * post-order screen that stays on this page.
+ */
 async function placeCollectionOrder() {
   await screen.findByRole("button", { name: /place order/i })
   fireEvent.click(screen.getByRole("button", { name: /collection/i }))
@@ -144,8 +149,10 @@ async function placeCollectionOrder() {
   fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: "07700 900000" } })
   fireEvent.click(screen.getByRole("checkbox", { name: /I have read the allergen information/i }))
   fireEvent.click(screen.getByRole("button", { name: /place order/i }))
-  await screen.findByText(/Order confirmed/i)
+  await screen.findByText("Payment details")
 }
+
+const ORIGINAL_STRIPE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
 const CONFIRMATION = {
   orderNumber: "ORD-VAT-LABEL-1",
@@ -157,12 +164,14 @@ const CONFIRMATION = {
   totalAmountPennies: 1200,
   shopName: "Jollof Express",
   itemCount: 1,
-  clientSecret: null,
+  clientSecret: "pi_vat_label_secret_x",
   allergenWarnings: [],
 }
 
 afterEach(() => {
   localStorage.clear()
+  if (ORIGINAL_STRIPE_KEY === undefined) delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  else process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = ORIGINAL_STRIPE_KEY
 })
 
 describe("COR-6: the checkout VAT preview follows the basket's rate", () => {
@@ -227,7 +236,12 @@ describe("COR-6: the checkout VAT preview follows the basket's rate", () => {
  * "VAT (20%)" while the preview one screen earlier read "VAT (incl. 20%)". Both now go through
  * `vatRateLabel`, the same table the preview uses, so the wording cannot disagree across screens.
  */
-describe("the confirmation screen labels the server's rate through vatRateLabel (PR #726 low c)", () => {
+describe("the card payment summary labels the server's rate through vatRateLabel (PR #726 low c)", () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_vat_label"
+    mockShop({ ...SHOP, acceptsCardPayments: true })
+  })
+
   it("an EXEMPT order reads 'VAT (exempt)', never 'VAT (0%)'", async () => {
     // `vatAmountPennies > 0` is the row's render gate, so a non-zero figure is what makes the
     // label observable at all; the point under test is the WORD, not the arithmetic.

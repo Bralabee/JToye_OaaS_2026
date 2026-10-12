@@ -60,6 +60,9 @@ describe("guestOrderIntentSignature — any submitted field changes the key", ()
     ["basket quantity", { items: [{ productId: "p1", quantity: 2 }] }],
     ["basket line added", { items: [{ productId: "p1", quantity: 1 }, { productId: "p2", quantity: 1 }] }],
     ["basket line swapped", { items: [{ productId: "p2", quantity: 1 }] }],
+    // 37-34 (D-16): the two fields 37-32 added to the contract are submitted, so they are signed.
+    ["expectedUnitPricePennies", { items: [{ productId: "p1", quantity: 1, expectedUnitPricePennies: 900 }] }],
+    ["expectedTotalPennies", { expectedTotalPennies: 900 }],
   ])("changing only %s produces a different signature", (_field, overrides) => {
     expect(sig(overrides)).not.toBe(sig())
   })
@@ -121,6 +124,36 @@ describe("the allergy note is part of the signed intent (#812, D-15)", () => {
   it("a blank note is ABSENT, exactly as before the field existed (31.1-13 fingerprint rule)", () => {
     expect(buildGuestOrderIntent({ ...BASE, allergyNote: "   " }).allergyNote).toBeUndefined()
     expect(sig({ allergyNote: "   " })).toBe(sig())
+  })
+})
+
+describe("the prices the customer saw are part of the signed intent (37-34, D-16)", () => {
+  // The displayed unit price per line and the displayed total are submitted fields like any other.
+  // A reprice the customer then ACCEPTS changes the body; the page deliberately keeps the key across
+  // that one change (the server rolled its reservation back on the 409), which is the page's policy —
+  // the signature itself must still move, or a genuinely different submission could replay.
+  const PRICED: Partial<GuestOrderFields> = {
+    items: [{ productId: "p1", quantity: 1, expectedUnitPricePennies: 900 }],
+    expectedTotalPennies: 900,
+  }
+
+  it("carries both on the body, per line and at the top level", () => {
+    const intent = buildGuestOrderIntent({ ...BASE, ...PRICED })
+    expect(intent.items).toEqual([{ productId: "p1", quantity: 1, expectedUnitPricePennies: 900 }])
+    expect(intent.expectedTotalPennies).toBe(900)
+  })
+
+  it("a repriced line changes the signature; an unchanged one keeps it", () => {
+    const repriced = { ...PRICED, items: [{ productId: "p1", quantity: 1, expectedUnitPricePennies: 1400 }] }
+    expect(sig(repriced)).not.toBe(sig(PRICED))
+    expect(sig(PRICED)).toBe(sig(PRICED))
+  })
+
+  it("keeps a £0.00 total as a value, and leaves both ABSENT for a caller that has none (the pre-37-32 fingerprint)", () => {
+    expect(buildGuestOrderIntent({ ...BASE, expectedTotalPennies: 0 }).expectedTotalPennies).toBe(0)
+    const bare = buildGuestOrderIntent(BASE)
+    expect(bare.expectedTotalPennies).toBeUndefined()
+    expect("expectedUnitPricePennies" in bare.items[0]).toBe(false)
   })
 })
 

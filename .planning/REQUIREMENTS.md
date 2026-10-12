@@ -189,11 +189,11 @@ that mints these IDs) declares all 35 and is omitted from the traceability rows.
 
 **37-D Abuse resistance**
 
-- [ ] **RWO-005**: #781 (P0) — A review is accepted only when the cited order belongs to the reviewed shop (`order.shopId == shop.id` in `ReviewService`), so a buyer of shop A cannot review shop B of the same tenant (D-21).
-- [ ] **RWO-006**: #782 (P0) — The client IP comes from a config-declared trusted-proxy CIDR list whose default trusts none: `X-Forwarded-For` is read only when the immediate peer is a trusted proxy, taking the right-most untrusted hop, so rotating the header no longer defeats the public rate limiter (D-19; a regression of closed #88).
-- [ ] **RWO-039**: #808 — The edge gateway rate-limits per tenant after JWT validation (keeping a larger pre-auth process-wide valve), and its 429 is a typed `application/problem+json` with `Retry-After` and rate-limit headers, so anonymous traffic can no longer block every vendor's sync (D-19).
-- [ ] **RWO-041**: #810 — Cash checkout is bounded by config-declared caps on open cash orders per email, per phone and per client IP, the IP held only as an HMAC under a configured key (never raw), nulled by erasure and under declared retention, with a typed 429 over the cap; guest orders show an "unverified contact" badge on the kitchen board, and vendors can bulk-reject junk orders (D-18, D-27).
-- [ ] **RWO-042**: #811 — Item quantity has a config-declared per-line ceiling and the basket a config-declared total sanity cap, both enforced in the domain service every writer calls (storefront, vendor API, MCP), so a £19 billion order is refused with a typed error (D-20).
+- [x] **RWO-005**: #781 (P0) — A review is accepted only when the cited order belongs to the reviewed shop (`order.shopId == shop.id` in `ReviewService`), so a buyer of shop A cannot review shop B of the same tenant (D-21).
+- [x] **RWO-006**: #782 (P0) — The client IP comes from a config-declared trusted-proxy CIDR list whose default trusts none: `X-Forwarded-For` is read only when the immediate peer is a trusted proxy, taking the right-most untrusted hop, so rotating the header no longer defeats the public rate limiter (D-19; a regression of closed #88).
+- [x] **RWO-039**: #808 — The edge gateway rate-limits per tenant after JWT validation (keeping a larger pre-auth process-wide valve), and its 429 is a typed `application/problem+json` with `Retry-After` and rate-limit headers, so anonymous traffic can no longer block every vendor's sync (D-19).
+- [x] **RWO-041**: #810 — Cash checkout is bounded by config-declared caps on open cash orders per email, per phone and per client IP, the IP held only as an HMAC under a configured key (never raw), nulled by erasure and under declared retention, with a typed 429 over the cap; guest orders show an "unverified contact" badge on the kitchen board, and vendors can bulk-reject junk orders (D-18, D-27).
+- [x] **RWO-042**: #811 — Item quantity has a config-declared per-line ceiling and the basket a config-declared total sanity cap, both enforced in the domain service every writer calls (storefront, vendor API, MCP), so a £19 billion order is refused with a typed error (D-20).
 
 **37-C Checkout integrity**
 

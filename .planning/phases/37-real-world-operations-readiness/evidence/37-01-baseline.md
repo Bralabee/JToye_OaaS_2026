@@ -102,6 +102,17 @@ Each owning plan names its file (`rg -uu -o 'V(7[6-9]|8[0-3])__[a-z_]+'` over th
 (RESEARCH § "Migration numbering" proposed V76-V82 by sub-theme; the plan set re-keyed them to one number
 per owning plan, V76-V83, as above. This table is the authority.)
 
+**Addendum 2026-10-12 (37-38, owner decision "option A"): V84 is TAKEN** by the 37-C gate for
+`V84__order_items_guest_tracking.sql` (the `order_items` guest-tracking SELECT policy; evidence
+`37-38-gate-37C.md` 2.9 and Part 3). It was not in this table because the defect was found at the gate. V82 and V83
+stay reserved for 37-45 and 37-48 and are NOT renumbered: on a database already at V84 they apply out of order,
+which `spring.flyway.out-of-order=true` admits — measured at 37-38 with the real migration set plus planted
+V82/V83 on postgres:15 (`outOfOrder=false` refused "Detected resolved migration not applied to database: 82 … 83";
+`outOfOrder=true` executed exactly `[82, 83]`, states `84:SUCCESS, 82:OUT_OF_ORDER, 83:OUT_OF_ORDER`). For 37-45 and
+37-48: `docs/metrics.json` `schema_version` is the HIGHEST file number, so after either lands it stays **84** and the
+"Current schema version" prose stays V84 (add the new migration's paragraph after V84's, not before it); the next
+free number after V84 is V85.
+
 ### Proof the numbers are unused on every ref
 
 Per ref: `git -C <worktree> ls-tree -r --name-only <ref> > refs/<name>.txt` (each rc=0), then

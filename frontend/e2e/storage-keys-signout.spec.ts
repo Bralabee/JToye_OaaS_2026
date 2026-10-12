@@ -40,6 +40,8 @@
  */
 
 import { test, expect, type Page } from "@playwright/test"
+import { awaitCashConfirmation } from "./cash-confirmation"
+import { cancelOrdersByNumber, uniqueContact } from "./order-cleanup"
 
 import {
   CLIENT_STORAGE_KEYS,
@@ -131,7 +133,7 @@ async function placeCashCollectionOrder(page: Page, email: string): Promise<stri
   await page.getByRole("button", { name: /collection/i }).click()
   await page.fill("input#name", "Storage Keys 840")
   await page.fill("input#email", email)
-  await page.fill("input#phone", "07700 840840")
+  await page.fill("input#phone", uniqueContact("e2e-840").phone)
 
   const allergenAck = page.getByRole("checkbox", {
     name: /I have read the allergen information for this order\./i,
@@ -141,14 +143,19 @@ async function placeCashCollectionOrder(page: Page, email: string): Promise<stri
   await expect(allergenAck).toBeChecked()
 
   await page.locator('button[type="submit"]:has-text("Place order")').click()
-  await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
-  const confText = await page.getByText(/Order\s+ORD-/).first().innerText()
-  const match = confText.match(/ORD-[A-Z0-9-]+/)
-  expect(match, "no order number on the confirmation").not.toBeNull()
-  return match![0]
+  // 37-37 (C3): the cash confirmation is the order's own route; its number is read from the URL.
+  return awaitCashConfirmation(page)
 }
 
 test.describe("#840 browser storage: declared, and personal keys cleared on explicit sign-out", () => {
+  // Cap hygiene (37-31 rule, e2e/order-cleanup.ts), added at the 37-38 gate: a FIXED phone number
+  // accumulated an open cash order per run until the 37-D per-phone cap (3) refused the walk with
+  // "You already have the most open cash orders this shop allows for one customer". The phone is
+  // now per run, and the order the walk places is cancelled by number afterwards.
+  const placed: string[] = []
+  test.afterEach(async ({ request }) => {
+    await cancelOrdersByNumber(request, SHOP_SLUG, placed.splice(0))
+  })
   test("a signed-in cash order stores only registered keys, and Sign out removes every personal one", async ({
     page,
   }) => {
@@ -156,6 +163,7 @@ test.describe("#840 browser storage: declared, and personal keys cleared on expl
 
     const email = await registerCustomer(page)
     const orderNumber = await placeCashCollectionOrder(page, email)
+    placed.push(orderNumber)
     // The app origin, read from where the walk actually is (never a hardcoded base URL).
     const origin = new URL(page.url()).origin
 

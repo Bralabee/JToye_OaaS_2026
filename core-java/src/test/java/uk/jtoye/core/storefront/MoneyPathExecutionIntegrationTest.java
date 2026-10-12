@@ -234,13 +234,16 @@ class MoneyPathExecutionIntegrationTest {
         request.setAddressLine1("12 Coldharbour Lane");
         request.setAddressCity("London");
         request.setAddressPostcode("SW9 8LF");
-        return request;
+        // 37-32 (D-16): the prices the customer saw, computed AFTER the fulfilment type is known
+        // because the expected total carries the delivery fee that type decides.
+        return GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
     }
 
     private GuestOrderRequest collectionRequest(UUID productId, int qty, String idempotencyKey) {
         GuestOrderRequest request = baseRequest(productId, qty, idempotencyKey);
         request.setFulfilmentType("COLLECTION");
-        return request;
+        // 37-32 (D-16): as deliveryRequest — the total for COLLECTION carries no fee.
+        return GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
     }
 
     private UUID seedShop() {

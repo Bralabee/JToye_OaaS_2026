@@ -1,5 +1,6 @@
 import { render, act } from "@testing-library/react"
-import { CartProvider, useCart, type CartItem } from "../cart-provider"
+import { CartProvider, applyBasketChanges, useCart, type CartItem } from "../cart-provider"
+import type { BasketChange } from "@/types/storefront"
 import {
   CUSTOMER_ID_KEY,
   CUSTOMER_EXPIRES_KEY,
@@ -402,6 +403,118 @@ describe("CartProvider identity boundary", () => {
       const { getByTestId } = renderCart()
       expect(getByTestId("ids").textContent).toBe("legacy-jollof")
       expect(storedPayload()?.owner).toBe(A)
+    })
+  })
+
+  /**
+   * 37-34 (D-16, UI-SPEC § C1; F15). After a basket-changed 409 the page rewrites the stored basket
+   * to the server's facts: new prices; unavailable and removed lines dropped; a sold-out line kept
+   * at what is available, or dropped at 0. That write must touch ONLY the lines — never the
+   * ownership stamp — and it must do so THROUGH the identity transitions the R-16 trap is about,
+   * because a stamp asserted on the rendered view while the write silently downgraded the payload
+   * is exactly how R-16 shipped. Every assertion below reads the STORED payload.
+   */
+  describe("applyServerChanges rewrites the lines and leaves the owner alone (37-34, F15)", () => {
+    function priced(productId: string, pricePennies: number, quantity: number): CartItem {
+      return { ...item(productId), pricePennies, quantity }
+    }
+    function seedPriced(owner: string | null | undefined, items: CartItem[]) {
+      const payload: Record<string, unknown> = { shopSlug: SLUG, items }
+      if (owner !== undefined) payload.owner = owner
+      localStorage.setItem(cartStorageKey(SLUG), JSON.stringify(payload))
+    }
+    const stored = () => storedPayload() as { owner?: string | null; items: CartItem[]; shopSlug?: string }
+    const lines = () => stored().items.map((i) => `${i.productId}:${i.pricePennies}x${i.quantity}`)
+
+    /** The 37-33 diff for a basket of Suya £9.00 x1, Jollof £5.00 x2, Puff Puff £3.00 x3, Egusi £7.00 x1. */
+    const SERVER_CHANGES: BasketChange[] = [
+      { kind: "PRICE_CHANGED", productId: "suya", name: "Suya", expected: 900, current: 1400 },
+      { kind: "UNAVAILABLE", productId: "jollof", name: "Jollof Rice" },
+      { kind: "SOLD_OUT", productId: "puff", name: "Puff Puff", requested: 3, available: 2 },
+      { kind: "REMOVED", productId: "egusi" },
+      { kind: "TOTAL_CHANGED", expected: 3100, current: 2000 },
+    ]
+    const SEEN: CartItem[] = [priced("suya", 900, 1), priced("jollof", 500, 2), priced("puff", 300, 3), priced("egusi", 700, 1)]
+    const AFTER = ["suya:1400x1", "puff:300x2"]
+
+    function renderAndApply(changes: BasketChange[] = SERVER_CHANGES) {
+      const captured: Array<ReturnType<typeof useCart>> = []
+      function Capture() {
+        const ctx = useCart()
+        captured.push(ctx)
+        return <div data-testid="ids">{ctx.items.map((i) => i.productId).join(",")}</div>
+      }
+      render(
+        <CartProvider shopSlug={SLUG}>
+          <Capture />
+        </CartProvider>
+      )
+      return {
+        apply: () =>
+          act(() => {
+            captured[captured.length - 1].applyServerChanges(changes)
+          }),
+      }
+    }
+
+    it("applyBasketChanges (pure): new prices, unavailable and removed lines dropped, sold-out quantity set, dropped at 0; untouched lines kept as they were", () => {
+      const next = applyBasketChanges(SEEN, SERVER_CHANGES)
+      expect(next.map((i) => `${i.productId}:${i.pricePennies}x${i.quantity}`)).toEqual(AFTER)
+      // The line it kept at £3.00 x2 is the same line object's data: title, image, category, VAT survive.
+      expect(next[1]).toEqual({ ...SEEN[2], quantity: 2 })
+      expect(applyBasketChanges(SEEN, [{ kind: "SOLD_OUT", productId: "puff", requested: 3, available: 0 }]).map((i) => i.productId)).toEqual([
+        "suya",
+        "jollof",
+        "egusi",
+      ])
+      // Entries that name no line of this basket change nothing; the input is not mutated.
+      expect(applyBasketChanges(SEEN, [{ kind: "TOTAL_CHANGED", expected: 1, current: 2 }])).toEqual(SEEN)
+      expect(SEEN.map((i) => i.pricePennies)).toEqual([900, 500, 300, 700])
+    })
+
+    it("F15: a lapsed session between the 409 and the update — the stamp stays A, byte-identical, while the lines move", () => {
+      // The R-16 transition itself: signed in as A when the basket was written, the 300s access
+      // cookie lapsed by the time the 409 came back and the page applied the server's changes.
+      seedPriced(A, SEEN)
+      signedInAs(A)
+      const { apply } = renderAndApply()
+      const ownerBefore = JSON.stringify(stored().owner)
+      signedInAs(null) // the lapse, between the 409 and the update
+      apply()
+      expect(lines()).toEqual(AFTER)
+      expect(JSON.stringify(stored().owner)).toBe(ownerBefore)
+      expect(stored().owner).toBe(A)
+      expect(stored().shopSlug).toBe(SLUG)
+    })
+
+    it("F15: a sign-in as the same person between the 409 and the update — the stamp stays A, byte-identical", () => {
+      // Written while A's session had lapsed (stamp A preserved), A signs back in before accepting.
+      seedPriced(A, SEEN)
+      signedInAs(null)
+      const { apply } = renderAndApply()
+      const ownerBefore = JSON.stringify(stored().owner)
+      signedInAs(A) // the sign-in, between the 409 and the update
+      apply()
+      expect(lines()).toEqual(AFTER)
+      expect(JSON.stringify(stored().owner)).toBe(ownerBefore)
+      expect(stored().owner).toBe(A)
+    })
+
+    it("F15: a guest basket stays a guest basket (owner null), and a signed-in owner's stays theirs", () => {
+      seedPriced(null, SEEN)
+      signedInAs(null)
+      const guest = renderAndApply()
+      guest.apply()
+      expect(lines()).toEqual(AFTER)
+      expect(stored().owner).toBeNull()
+
+      localStorage.clear()
+      seedPriced(A, SEEN)
+      signedInAs(A)
+      const owned = renderAndApply()
+      owned.apply()
+      expect(lines()).toEqual(AFTER)
+      expect(stored().owner).toBe(A)
     })
   })
 })

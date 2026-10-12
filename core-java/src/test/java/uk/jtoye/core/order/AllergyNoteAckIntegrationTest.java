@@ -467,9 +467,12 @@ class AllergyNoteAckIntegrationTest {
         body.put("customerEmail", email);
         body.put("customerPhone", phoneFor(email));
         body.put("fulfilmentType", "COLLECTION");
-        body.put("items", List.of(item));
+        List<Map<String, Object>> items = List.of(item);
+        body.put("items", items);
         body.put("acknowledgedAllergenMask",
                 GuestOrderAcknowledgements.currentMask(jdbcTemplate, TENANT_ID, List.of(product)));
+        // 37-32 (D-16): the line carries the unit price the customer saw, and the body the total.
+        body.put("expectedTotalPennies", GuestOrderAcknowledgements.expectCurrentPrices(jdbcTemplate, TENANT_ID, "COLLECTION", items));
         if (notes != null) {
             body.put("notes", notes);
         }

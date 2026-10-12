@@ -178,10 +178,15 @@ public class ReviewService {
         return shop;
     }
 
+    /**
+     * The PUBLIC review shape. Both callers are {@code /public/shops/{slug}/reviews} (the list and the
+     * customer's own POST); no authenticated vendor view of reviews exists. The author is published as
+     * {@link ReviewerDisplayName} ("Grace P."), never the stored full name (37-35, UXT-044).
+     */
     private ReviewDto toDto(Review review) {
         ReviewDto dto = new ReviewDto();
         dto.setId(review.getId());
-        dto.setCustomerName(review.getCustomerName());
+        dto.setCustomerName(ReviewerDisplayName.of(review.getCustomerName()));
         dto.setFoodRating(review.getFoodRating());
         dto.setDeliveryRating(review.getDeliveryRating());
         dto.setComment(review.getComment());

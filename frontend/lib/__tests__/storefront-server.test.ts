@@ -135,8 +135,9 @@ describe("loadShopDetail", () => {
     await loadShopDetail("brixton-village-grill")
     await loadShopList()
 
-    // shop, products, reviews, promotions, announcements, and the directory.
-    expect(fetchMock.mock.calls).toHaveLength(6)
+    // shop, products, reviews, announcements, and the directory. No promotions call
+    // (37-36, D-17: the storefront renders none, so it does not ask for any).
+    expect(fetchMock.mock.calls).toHaveLength(5)
     for (const [url, init] of fetchMock.mock.calls as Array<[string, RequestInit & { next?: unknown }]>) {
       expect({ url, cache: init?.cache }).toEqual({ url, cache: "no-store" })
       // A revalidate window beside no-store would be a second, contradicting caching rule.
@@ -193,7 +194,6 @@ describe("loadShopDetail", () => {
       [/\/public\/shops\/[^/?]+$/, 200, shop],
       [/\/products$/, 200, { Mains: [product] }],
       [/\/reviews/, 500, null],
-      [/\/promotions$/, 500, null],
       [/\/announcements$/, 500, null],
     ]) as unknown as typeof fetch
 
@@ -202,7 +202,6 @@ describe("loadShopDetail", () => {
     if (r.state !== "ok") return
     expect(r.data.reviews).toEqual([])
     expect(r.data.reviewCount).toBe(0)
-    expect(r.data.promotions).toEqual([])
     expect(r.data.announcements).toEqual([])
   })
 

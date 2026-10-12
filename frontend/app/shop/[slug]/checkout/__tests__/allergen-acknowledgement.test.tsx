@@ -405,14 +405,21 @@ describe("checkout: the acknowledgement is per ORDER INTENT, not per page mount"
 })
 
 describe("checkout: preserved goods (Incremental Betterment)", () => {
-  it("still guards BOTH post-order-creation allergen panels on allergenWarnings.length > 0", () => {
-    // These panels render only AFTER the order exists and are provably always empty today
-    // (PublicStorefrontService records allergenWarnings as an empty list). Their silence is
-    // EXPECTED and is not a regression signal — this plan adds a pre-submit block beside them
+  it("still guards the post-order-creation allergen panel on allergenWarnings.length > 0", () => {
+    // This panel renders only AFTER the order exists and is provably always empty today
+    // (PublicStorefrontService records allergenWarnings as an empty list). Its silence is
+    // EXPECTED and is not a regression signal — this plan adds a pre-submit block beside it
     // and must not repurpose or delete the seam.
+    //
+    // There were TWO until 37-37 (UI-SPEC C3): the cash confirmation moved off this page to the
+    // order route, which renders the tracking response. That response has no allergenWarnings —
+    // the list is computed at creation, never stored, and empty by construction since 2026-07-30 —
+    // so the cash panel showed nothing and nothing it showed was lost. The seam stays on
+    // GuestOrderConfirmation and on the card payment step guarded here; a future consented warning
+    // path must persist its warnings and expose them on the tracking response for cash orders.
     const src = readCheckoutSource()
     const occurrences = src.split("allergenWarnings.length > 0").length - 1
-    expect(occurrences).toBe(2)
+    expect(occurrences).toBe(1)
   })
 
   it("does not disable ANY button on the acknowledgement state, and keeps the belowMinimum gate", () => {

@@ -31,6 +31,14 @@ import type { FulfilmentType } from "@/types/api"
 export interface GuestOrderLine {
   productId: string
   quantity: number
+  /**
+   * 37-32/37-34 (D-16): the unit price the checkout DISPLAYED for this line, in pennies
+   * (`GuestOrderItemRequest.expectedUnitPricePennies`). The server compares it with the price it
+   * reads at submit and refuses a difference with 409 `basket-changed`; a line without it is refused
+   * 422 `basket-confirmation-required`. Optional only so callers that predate it still type-check;
+   * the checkout page always sends it. Part of the signed intent, like every submitted field.
+   */
+  expectedUnitPricePennies?: number
 }
 
 /** The raw form state the checkout page holds. Nothing here is trimmed yet. */
@@ -58,6 +66,13 @@ export interface GuestOrderFields {
    * it did before the field existed (31.1-13).
    */
   allergyNote?: string
+  /**
+   * 37-32/37-34 (D-16): the total the checkout DISPLAYED on Place order, in pennies — the line
+   * totals plus the delivery fee the page previewed (`lib/delivery-fee.ts`, which mirrors the
+   * server's `FulfilmentPolicy`), so the server compares like with like
+   * (`GuestOrderRequest.expectedTotalPennies`). Optional for callers that predate it.
+   */
+  expectedTotalPennies?: number | null
 }
 
 /**
@@ -80,6 +95,8 @@ export interface GuestOrderIntent {
   acknowledgedAllergenMask?: number
   /** GuestOrderRequest.allergyNote (31.1-13, max 500). Part of the signed intent. */
   allergyNote?: string
+  /** GuestOrderRequest.expectedTotalPennies (37-32, D-16). Part of the signed intent. */
+  expectedTotalPennies?: number
 }
 
 /** Normalise the form state into the body the checkout page submits. */
@@ -101,10 +118,17 @@ export function buildGuestOrderIntent(fields: GuestOrderFields): GuestOrderInten
     items: fields.items.map((item) => ({
       productId: item.productId,
       quantity: item.quantity,
+      // D-16: the displayed unit price travels with its line. ABSENT, never null, when a caller
+      // has none, so a body without it fingerprints exactly as it did before the field existed.
+      ...(typeof item.expectedUnitPricePennies === "number"
+        ? { expectedUnitPricePennies: item.expectedUnitPricePennies }
+        : {}),
     })),
     // `??`, not `||`: a 0 mask is "declared none", a statement the customer acknowledged.
     acknowledgedAllergenMask: fields.acknowledgedAllergenMask ?? undefined,
     allergyNote: fields.allergyNote?.trim() || undefined,
+    // `??`, not `||`: a £0.00 total (a free basket) is a value the customer saw, and is signed.
+    expectedTotalPennies: fields.expectedTotalPennies ?? undefined,
   }
 }
 
