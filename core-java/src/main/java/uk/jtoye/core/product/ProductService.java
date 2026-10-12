@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.SqlStateExtractor;
@@ -132,6 +133,8 @@ public class ProductService {
         // (body shopId). Additive to the controller's @PreAuthorize SCOPE_catalog:write.
         // STAFF is read + order-state only — a STAFF caller is denied here.
         shopAccessService.require(request.getShopId(), ShopRole.SHOP_MANAGER);
+        // 37-39 (UXT-016): refuse a contradictory trackInventory/quantityInStock pair before anything is built.
+        validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
 
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
@@ -363,9 +366,13 @@ public class ProductService {
         // VSA-02 (D-02): parent-lookup — catalogue update requires SHOP_MANAGER on the
         // product's owning shop.
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
+        // 37-39 (UXT-016): refused before the mapper touches the entity, so a 400 changes nothing.
+        validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
 
-        // Update all fields via mapper (handles both core and storefront fields)
+        // Update all fields via mapper (handles both core and storefront fields). quantityInStock is
+        // IGNORE-null like every other field; the explicit tracking switch is applied after it.
         productMapper.updateEntity(request, product);
+        applyStockTracking(request.getTrackInventory(), product);
 
         // Re-parse the (possibly edited) ingredients_text and refresh the cached
         // allergen spans (PPDS, Issue #82) — keeps the persisted cache in step with
@@ -381,6 +388,39 @@ public class ProductService {
                 product.getId(), product.getSku(), product.getPricePennies());
 
         return resolveDetail(productMapper.toDto(product));
+    }
+
+    /**
+     * Phase 37-39 (RWO-016 / UXT-016, P0): the explicit stock-tracking rule, shared by create, PUT and PATCH.
+     * A product is stock-tracked exactly when its stored {@code quantityInStock} is non-null.
+     * <ul>
+     *   <li>{@code trackInventory} null: no statement about tracking — a sent quantity sets the count, an
+     *       omitted one keeps it;</li>
+     *   <li>{@code false}: stop tracking; a quantity sent beside it contradicts the request (typed 400);</li>
+     *   <li>{@code true}: track; the quantity is required (typed 400 when absent).</li>
+     * </ul>
+     * Both refusals name {@code quantityInStock} in the {@code errors/validation} body.
+     */
+    static void validateStockTracking(Boolean trackInventory, Integer quantityInStock) {
+        if (Boolean.TRUE.equals(trackInventory) && quantityInStock == null) {
+            throw new InvalidRequestFieldsException(Map.of("quantityInStock",
+                    "quantityInStock is required when trackInventory is true"));
+        }
+        if (Boolean.FALSE.equals(trackInventory) && quantityInStock != null) {
+            throw new InvalidRequestFieldsException(Map.of("quantityInStock",
+                    "quantityInStock must be omitted when trackInventory is false (stopping tracking clears it)"));
+        }
+    }
+
+    /**
+     * Applies {@code trackInventory} after the stock count has been mapped: {@code false} clears the stored
+     * quantity (tracking off). {@code true} and null need nothing more — a true request carries its quantity
+     * ({@link #validateStockTracking}), and null keeps whatever the mapping left.
+     */
+    private static void applyStockTracking(Boolean trackInventory, Product product) {
+        if (Boolean.FALSE.equals(trackInventory)) {
+            product.setQuantityInStock(null);
+        }
     }
 
     // NOTE (Phase 24 / 24-03): `uploadImage(...)` (the synchronous store-image + return-DTO

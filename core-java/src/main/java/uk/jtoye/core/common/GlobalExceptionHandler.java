@@ -58,6 +58,7 @@ import uk.jtoye.core.exception.ReviewOrderShopMismatchException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.exception.ShopClosedException;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
+import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
@@ -864,6 +865,21 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(InvalidOpeningScheduleException.class)
     public ProblemDetail handleInvalidOpeningSchedule(InvalidOpeningScheduleException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        problem.setTitle("Validation Error");
+        problem.setType(URI.create("https://jtoye.uk/errors/validation"));
+        problem.setProperty("errors", new java.util.TreeMap<>(ex.getErrors()));
+        return problem;
+    }
+
+    /**
+     * Phase 37-39 (RWO-016 / UXT-016): a field refused by a rule bean validation cannot express (a
+     * {@code trackInventory}/{@code quantityInStock} combination, or a property {@code PATCH /products/{id}}
+     * does not accept). The same type, title and {@code errors} shape as {@link #handleValidationErrors}, keyed
+     * by the field, so an integrator handles it like any validation failure and learns which field to fix.
+     */
+    @ExceptionHandler(InvalidRequestFieldsException.class)
+    public ProblemDetail handleInvalidRequestFields(InvalidRequestFieldsException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
         problem.setTitle("Validation Error");
         problem.setType(URI.create("https://jtoye.uk/errors/validation"));

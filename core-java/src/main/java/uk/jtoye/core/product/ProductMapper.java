@@ -65,10 +65,14 @@ public interface ProductMapper {
     // ShopMapper.updateEntity's existing @BeanMapping for QA-council BE-02 (same failure mode,
     // same fix).
     //
-    // quantityInStock is the ONE deliberate exception: the frontend always sends it explicitly
-    // (`trackInventory ? qty : null`) and reconstructs "is tracking on" from whether it is null,
-    // so under blanket IGNORE a vendor could never turn tracking off again. SET_TO_NULL overrides
-    // the bean-level IGNORE for this field alone, so an explicit null still clears it.
+    // quantityInStock follows the same IGNORE rule as every other field (Phase 37-39, RWO-016 /
+    // UXT-016, P0). It used to be the one SET_TO_NULL exception, because the dashboard spelled "stop
+    // tracking" as an explicit null — and a DTO cannot tell that null from an absent field, so every
+    // integrator's partial PUT that did not mention stock silently turned tracking OFF. Stopping
+    // tracking is now its own field, CreateProductRequest.trackInventory, applied by
+    // ProductService.applyStockTracking AFTER this mapping: null keeps stock and tracking, false
+    // clears the stored quantity, true requires a quantity. trackInventory has no Product property,
+    // so MapStruct never maps it.
     //
     // mayContainMask (#861, D-16) maps by name on toDto, toEntity and here, under the bean-level
     // IGNORE: an edit form that does not render it keeps the stored value, and 0 is the explicit
@@ -80,7 +84,5 @@ public interface ProductMapper {
     @Mapping(target = "additionalImageUrls", ignore = true)
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "allergenSpans", ignore = true)
-    @Mapping(target = "quantityInStock",
-            nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.SET_TO_NULL)
     void updateEntity(CreateProductRequest request, @MappingTarget Product product);
 }
