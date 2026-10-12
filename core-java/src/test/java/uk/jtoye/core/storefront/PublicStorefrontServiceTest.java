@@ -436,6 +436,46 @@ class PublicStorefrontServiceTest {
         assertEquals(0L, result.getVatAmountPennies());
     }
 
+    /**
+     * 37-37 (UI-SPEC C3, UXT-029). The cash confirmation moved from an in-place render at checkout
+     * to this tracking response's page, and it must carry everything the in-place one showed: the
+     * payment instruction ("Pay on delivery" / "Pay on collection") needs the fulfilment type, and
+     * the breakdown needs the delivery fee ("Free" when 0). Neither was on the response, so the page
+     * could only have guessed them. Both pass through as stored; 0 is a real fee of nothing.
+     */
+    @Test
+    @DisplayName("C3: trackOrder carries the fulfilment type and the delivery fee for the moved cash confirmation")
+    void trackOrder_carriesFulfilmentTypeAndDeliveryFee() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-C3-20261012-A1");
+        order.setCustomerEmail("c3@example.com");
+        order.setStatus(OrderStatus.PENDING);
+        order.setShopId(publishedShop.getId());
+        order.setFulfilmentType(FulfilmentType.COLLECTION);
+        order.setSubtotalPennies(2000L);
+        order.setDeliveryFeePennies(0L);
+        order.setTotalAmountPennies(2000L);
+        order.setUpdatedAt(OffsetDateTime.now());
+
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-C3-20261012-A1", "c3@example.com"))
+                .thenReturn(Optional.of(order));
+        when(shopRepository.findById(publishedShop.getId()))
+                .thenReturn(Optional.of(publishedShop));
+
+        var collection = service.trackOrder("ORD-C3-20261012-A1", "c3@example.com");
+        assertEquals("COLLECTION", collection.getFulfilmentType());
+        assertEquals(0L, collection.getDeliveryFeePennies(),
+                "a stored fee of 0 is disclosed as 0 (the page renders 'Free'), not as null");
+
+        order.setFulfilmentType(FulfilmentType.DELIVERY);
+        order.setDeliveryFeePennies(300L);
+        order.setTotalAmountPennies(2300L);
+        var delivery = service.trackOrder("ORD-C3-20261012-A1", "c3@example.com");
+        assertEquals("DELIVERY", delivery.getFulfilmentType());
+        assertEquals(300L, delivery.getDeliveryFeePennies());
+    }
+
     @Test
     @DisplayName("trackOrder throws when order not found")
     void trackOrder_notFound() {
@@ -468,6 +508,9 @@ class PublicStorefrontServiceTest {
 
         assertEquals(1, result.getTotalElements());
         assertEquals("ORD-HIST-001", result.getContent().get(0).getOrderNumber());
+        // 37-37 (C3): the history reader carries the same fulfilment and fee columns as tracking.
+        assertEquals("DELIVERY", result.getContent().get(0).getFulfilmentType());
+        assertEquals(0L, result.getContent().get(0).getDeliveryFeePennies());
         assertEquals("COMPLETED", result.getContent().get(0).getStatus());
     }
 

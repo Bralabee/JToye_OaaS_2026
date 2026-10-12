@@ -12,6 +12,25 @@ public class PublicOrderStatus {
     private String paymentStatus;
     private String shopName;
     private Long subtotalPennies;
+
+    // ------------------------------------------------------------------
+    // 37-37 (UI-SPEC C3, UXT-029): the cash-order confirmation moved from an in-place render at
+    // checkout to the order page this response feeds, and that page must carry everything the
+    // in-place confirmation showed — the payment instruction ("Pay on delivery" / "Pay on
+    // collection") and the delivery row of the breakdown ("Free" when 0). Both are order columns
+    // (V45), so the history list carries them at no extra query. Not personal data: the delivery
+    // ADDRESS is never on this unauthenticated response.
+    // ------------------------------------------------------------------
+
+    @Schema(description = "How the order is fulfilled: DELIVERY or COLLECTION.",
+            allowableValues = {"DELIVERY", "COLLECTION"})
+    private String fulfilmentType;
+
+    @Schema(description = "The delivery fee charged on this order, in pennies. 0 means no fee was charged "
+            + "(a collection order, or a delivery that cleared the free-delivery threshold). "
+            + "totalAmountPennies = subtotalPennies + deliveryFeePennies.")
+    private Long deliveryFeePennies;
+
     private String vatRate;
     private Long vatAmountPennies;
     private Long totalAmountPennies;
@@ -106,6 +125,10 @@ public class PublicOrderStatus {
     public void setTotalAmountPennies(Long totalAmountPennies) { this.totalAmountPennies = totalAmountPennies; }
     public Long getSubtotalPennies() { return subtotalPennies; }
     public void setSubtotalPennies(Long subtotalPennies) { this.subtotalPennies = subtotalPennies; }
+    public String getFulfilmentType() { return fulfilmentType; }
+    public void setFulfilmentType(String fulfilmentType) { this.fulfilmentType = fulfilmentType; }
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
     public String getVatRate() { return vatRate; }
     public void setVatRate(String vatRate) { this.vatRate = vatRate; }
     public Long getVatAmountPennies() { return vatAmountPennies; }

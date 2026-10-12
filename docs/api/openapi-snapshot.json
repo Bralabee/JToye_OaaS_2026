@@ -3782,6 +3782,19 @@
             "format" : "date-time",
             "type" : "string"
           },
+          "deliveryFeePennies" : {
+            "description" : "The delivery fee charged on this order, in pennies. 0 means no fee was charged (a collection order, or a delivery that cleared the free-delivery threshold). totalAmountPennies = subtotalPennies + deliveryFeePennies.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fulfilmentType" : {
+            "description" : "How the order is fulfilled: DELIVERY or COLLECTION.",
+            "enum" : [
+              "DELIVERY",
+              "COLLECTION"
+            ],
+            "type" : "string"
+          },
           "itemCount" : {
             "format" : "int32",
             "type" : "integer"

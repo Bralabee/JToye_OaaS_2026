@@ -636,6 +636,9 @@ public class PublicStorefrontService {
             status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
             status.setShopName(shopName);
             status.setSubtotalPennies(order.getSubtotalPennies());
+            // 37-37 (C3): fulfilment and fee, from columns, as the tracking reader below sets them.
+            status.setFulfilmentType(order.getFulfilmentType() != null ? order.getFulfilmentType().name() : null);
+            status.setDeliveryFeePennies(order.getDeliveryFeePennies());
             status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
             status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
@@ -703,6 +706,11 @@ public class PublicStorefrontService {
         // fallbacks below are copied from it verbatim so the two customer surfaces cannot
         // disagree about the same order.
         status.setSubtotalPennies(order.getSubtotalPennies());
+        // 37-37 (UI-SPEC C3, UXT-029): the cash confirmation now lives on the page this response
+        // feeds, and it shows "Pay on delivery / collection" and the delivery row ("Free" at 0).
+        // Passed through as stored: no fallback is invented for a value the order does not hold.
+        status.setFulfilmentType(order.getFulfilmentType() != null ? order.getFulfilmentType().name() : null);
+        status.setDeliveryFeePennies(order.getDeliveryFeePennies());
         status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
         status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
