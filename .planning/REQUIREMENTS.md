@@ -204,7 +204,7 @@ that mints these IDs) declares all 35 and is omitted from the traceability rows.
 
 **37-E Integrator surface**
 
-- [ ] **RWO-016**: #790 (P0) — A product update that omits `quantityInStock` preserves both stock and tracking; tracking is turned off only by an explicit `trackInventory: false` (sent by the dashboard form in the same change), and a narrow PATCH for availability and stock cannot touch allergen or ingredients data.
+- [x] **RWO-016**: #790 (P0) — A product update that omits `quantityInStock` preserves both stock and tracking; tracking is turned off only by an explicit `trackInventory: false` (sent by the dashboard form in the same change), and a narrow PATCH for availability and stock cannot touch allergen or ingredients data.
 - [ ] **RWO-017**: #727 (comment, P0) — `/sync/batch` requires a `shopId` on product create (typed 400) and writes through `ProductService`, and orders refuse a product that belongs to no shop, so a synced product is orderable only at its own shop with its own allergen record.
 - [ ] **RWO-035**: #805 — A Group admin can issue, rotate and revoke a scoped API credential: a Keycloak service-account client per credential with #206 client scopes and a hard-coded `tenant_id` mapper, its secret shown once, its service-account user limited by an ordinary `shop_staff` grant no higher than the issuer's own, every action recorded with who and when, and the Developers page listing each credential's scopes, shops and last-used time (D-22, D-23, D-24).
 - [ ] **RWO-036**: #806 — An order created through the MCP `create_order` tool is PENDING, lands in the kitchen's New lane and emits the same events as a storefront order, and the tool description states the resulting status; the dashboard's draft capability is kept (D-13).
