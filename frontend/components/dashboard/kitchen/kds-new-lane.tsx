@@ -180,6 +180,10 @@ export function KdsNewLane({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
   const bulkRefusedRef = useRef(false)
+  // The ids the server rejected in a batch, held until the summary closes: the dialog reads its
+  // orders from the selection, so taking the cards off the lane at once would shrink the open
+  // summary to "Reject 0 orders?" (the per-card rejectedIdsRef rule, applied to the batch).
+  const bulkRejectedRef = useRef<string[]>([])
 
   const selectedOrders: RejectableOrder[] = oldestFirst
     .filter((o) => selectedIds.has(o.id))
@@ -303,10 +307,13 @@ export function KdsNewLane({
         orders={selectedOrders}
         onRejected={(ids) => {
           bulkRefusedRef.current = ids.length < selectedOrders.length
-          ids.forEach(onRejected)
+          bulkRejectedRef.current = ids
         }}
         onClosedAfterSubmit={() => {
+          const ids = bulkRejectedRef.current
+          bulkRejectedRef.current = []
           stopSelecting()
+          ids.forEach(onRejected)
           if (bulkRefusedRef.current) onRefresh?.()
           bulkRefusedRef.current = false
         }}
