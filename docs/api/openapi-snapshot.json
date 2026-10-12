@@ -11689,7 +11689,7 @@
                 }
               }
             },
-            "description" : "Invalid request, including disagreeing keys or total quantity above 2147483647"
+            "description" : "Invalid request, including disagreeing keys, total quantity above 2147483647, or a basket below the shop's minimum order value at the prices shown (errors/invalid-argument; not a basket change, so resubmitting it is refused again)"
           },
           "409" : {
             "content" : {
@@ -11699,7 +11699,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
+            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} (only when the basket met the minimum at the prices shown) | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
           },
           "410" : {
             "content" : {
@@ -14292,7 +14292,7 @@
                 }
               }
             },
-            "description" : "Invalid request, including disagreeing keys or total quantity above 2147483647"
+            "description" : "Invalid request, including disagreeing keys, total quantity above 2147483647, or a basket below the shop's minimum order value at the prices shown (errors/invalid-argument; not a basket change, so resubmitting it is refused again)"
           },
           "409" : {
             "content" : {
@@ -14302,7 +14302,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
+            "description" : "A request with this Idempotency-Key is in flight (errors/idempotency-conflict); or the basket changed since it was priced (errors/basket-changed, code BASKET_CHANGED): changes[] lists every change — kind PRICE_CHANGED {productId, name, expected, current} | UNAVAILABLE {productId, name} | SOLD_OUT {productId, name, requested, available} | REMOVED {productId} | BELOW_MINIMUM {minimum, subtotal, detail} (only when the basket met the minimum at the prices shown) | TOTAL_CHANGED {expected, current} — and, when the allergen set changed too, the allergen-acknowledgement-stale properties; show the customer each change, then resubmit under the same Idempotency-Key. An allergen-only change is errors/allergen-acknowledgement-stale, unchanged"
           },
           "410" : {
             "content" : {

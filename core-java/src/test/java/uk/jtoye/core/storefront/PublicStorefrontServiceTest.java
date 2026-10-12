@@ -1093,12 +1093,40 @@ class PublicStorefrontServiceTest {
         request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
         GuestOrderAcknowledgements.expectShownTotal(request, publishedShop); // 37-32 (D-16)
 
-        // 37-33 (D-16): the minimum is one entry of the basket diff, its WR-01 wording kept inside it.
+        // PR #918 round 1: the basket was below the minimum at the very prices the customer saw, so
+        // nothing CHANGED — the pre-37-33 WR-01 refusal (400 invalid-argument), never a 409
+        // basket-changed that tells an API caller to resubmit the same basket under the same key.
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertEquals("Order is below this shop's minimum order value of £10.00.", ex.getMessage());
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder reports BELOW_MINIMUM in the basket diff only when the basket the customer SAW met the minimum (PR #918)")
+    void createGuestOrder_belowMinimumIsAChangeOnlyWhenTheSeenBasketMetIt() {
+        publishedShop.setMinimumOrderPennies(1000L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Zobo", 300L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Min Checker");
+        request.setCustomerEmail("min@example.com");
+        request.setCustomerPhone("07700900003");
+        request.setFulfilmentType("COLLECTION");
+        GuestOrderItemRequest line = itemFor(product, 1);
+        line.setExpectedUnitPricePennies(1200L); // the customer saw £12.00 >= the £10.00 minimum; now £3.00
+        request.setItems(List.of(line));
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
+        request.setExpectedTotalPennies(1200L);
+
         var ex = assertThrows(BasketChangedException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
-        assertEquals(1, ex.getChanges().size());
-        BasketChangedException.BasketChange below = ex.getChanges().get(0);
-        assertEquals(BasketChangedException.Kind.BELOW_MINIMUM, below.kind());
+        BasketChangedException.BasketChange below = ex.getChanges().stream()
+                .filter(c -> c.kind() == BasketChangedException.Kind.BELOW_MINIMUM)
+                .findFirst().orElseThrow();
         assertEquals(1000L, below.minimum());
         assertEquals(300L, below.subtotal());
         assertTrue(below.detail().contains("minimum order value of £10.00"));

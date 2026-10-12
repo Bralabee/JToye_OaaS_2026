@@ -13,7 +13,10 @@ import java.util.regex.Pattern;
  *   "Grace Ann Pemberton"  -> "Grace P."      (middle names are dropped)
  *   "Mary-Jane O'Neil"     -> "Mary-Jane O."
  *   "grace pemberton"      -> "grace P."      (only the initial is upper-cased)
+ *   "Pemberton, Grace"     -> "Grace P."      (the comma form is "Family, Given")
+ *   "Grace (Pemberton)"    -> "Grace P."      (punctuation around a name is not part of it)
  *   "Grace"                -> "Grace"         (a single name is shown as given)
+ *   "Pemberton,"           -> null            (a family name alone: nothing is published)
  *   "", "   ", null        -> null            (the storefront shows "Customer")
  * </pre>
  *
@@ -23,6 +26,14 @@ import java.util.regex.Pattern;
  * or a no-break space between two names cannot make them one token and publish the surname whole.
  * The initial is a code point, so a surname beginning outside the Basic Multilingual Plane keeps its
  * whole first character.
+ *
+ * <p>The output is only ever the first GIVEN name and one letter (PR #918 round 1): a comma marks the
+ * "Family, Given" order, so the family name is never the token published whole, and each token is
+ * trimmed of the punctuation around it, so the initial is a letter or digit and no trailing comma or
+ * bracket rides along. Known residual, deliberately not guessed at: a surname-first name WITHOUT a
+ * comma ("PEMBERTON Grace") cannot be told apart from "Given Family" in general and is shown as
+ * "PEMBERTON G." — inventing a capitalisation heuristic would mis-handle every customer who types
+ * their whole name in capitals.
  */
 public final class ReviewerDisplayName {
 
@@ -39,9 +50,20 @@ public final class ReviewerDisplayName {
         if (fullName == null) {
             return null;
         }
-        List<String> tokens = Arrays.stream(WHITESPACE.split(fullName))
-                .filter(token -> !token.isEmpty())
-                .toList();
+        int comma = fullName.indexOf(',');
+        if (comma >= 0) {
+            List<String> family = tokens(fullName.substring(0, comma));
+            List<String> given = tokens(fullName.substring(comma + 1));
+            if (given.isEmpty()) {
+                // A family name and no given name: publishing it would publish the surname whole.
+                return null;
+            }
+            if (family.isEmpty()) {
+                return given.get(0);
+            }
+            return given.get(0) + " " + initialOf(family.get(0));
+        }
+        List<String> tokens = tokens(fullName);
         if (tokens.isEmpty()) {
             return null;
         }
@@ -49,7 +71,32 @@ public final class ReviewerDisplayName {
         if (tokens.size() == 1) {
             return first;
         }
-        int initial = Character.toUpperCase(tokens.get(tokens.size() - 1).codePointAt(0));
-        return first + " " + Character.toString(initial) + ".";
+        return first + " " + initialOf(tokens.get(tokens.size() - 1));
+    }
+
+    /** The white-space separated tokens of {@code part}, each trimmed of surrounding punctuation; empty ones dropped. */
+    private static List<String> tokens(String part) {
+        return Arrays.stream(WHITESPACE.split(part))
+                .map(ReviewerDisplayName::trimPunctuation)
+                .filter(token -> !token.isEmpty())
+                .toList();
+    }
+
+    /** {@code token} without the non-letter, non-digit code points at either end ("(Pemberton)" -> "Pemberton"). */
+    private static String trimPunctuation(String token) {
+        int start = 0;
+        int end = token.length();
+        while (start < end && !Character.isLetterOrDigit(token.codePointAt(start))) {
+            start += Character.charCount(token.codePointAt(start));
+        }
+        while (end > start && !Character.isLetterOrDigit(token.codePointBefore(end))) {
+            end -= Character.charCount(token.codePointBefore(end));
+        }
+        return token.substring(start, end);
+    }
+
+    /** The upper-cased first code point and a full stop; the token is non-empty and starts with a letter or digit. */
+    private static String initialOf(String token) {
+        return Character.toString(Character.toUpperCase(token.codePointAt(0))) + ".";
     }
 }
