@@ -275,3 +275,10 @@ None. No external service configuration required.
 ---
 *Phase: 37-real-world-operations-readiness*
 *Completed: 2026-10-12*
+
+## Self-Check: PASSED
+
+- 7/7 key files FOUND on disk (2 new main classes, the new jest file, 3 RED records, this SUMMARY).
+- 9/9 commits FOUND as ancestors of HEAD (f3080ee7 9ce3da21 01d51270 59dd3b82 1e7254ac 6ddee703 e82c3f72 f97107b2 366e008e).
+- `gsd_run check evaluation-scope --plan 37-39 --commits-only`: status resolved, source plan-subjects, commits on this branch.
+- Acceptance criteria re-run: Task 1 RED then GREEN (recorded); Task 2 SQL-unchanged arm plus B1 (unknown-property arm RED under the updateEntity mapping); Task 3 F1 (the form omitting trackInventory fails the test). All recorded above with both directions.
