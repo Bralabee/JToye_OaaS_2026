@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37-D: Abuse resistance (#917) — 2026-10-12
+
+The third of Phase 37's sub-theme pull requests (plans 37-24 to 37-31 of 53): rate limits key on a
+trusted client identity, the edge limits per tenant with a typed 429, order quantity and open cash
+orders per identity are bounded, a vendor can bulk-reject junk orders with a kept reason, and a
+review is accepted only from a buyer of that shop. One migration, V81, reserved for the whole
+sub-theme: no backfill, three partial indexes over the open cash orders the caps count.
+
+- **A trusted client address (D-19).** `ClientIpResolver` reads `X-Forwarded-For` only when the
+  socket peer is in `jtoye.security.trusted-proxies` (default empty = trust none), walking the
+  hops from the right; `0.0.0.0/0` and `::/0` are refused at startup and a render invariant
+  refuses any overlay list that is not private and narrower than /8. The public rate limiter and
+  the DSAR intake key on it.
+- **Per-tenant limits at the edge.** A token bucket per validated `tenant_id`, bounded with idle
+  eviction and one overflow bucket; every edge 429 is `application/problem+json` with core's
+  `rate-limited` type, `Retry-After` and the `X-RateLimit-*` headers, in the edge OpenAPI.
+- **Order size bounds (D-20) and the review shop check (D-21).** `OrderLimits` (line 50, lines
+  50, units 200, basket £1,000, config-declared) on the storefront checkout and on
+  `OrderService.createOrder`, a typed 422 `order-limit-exceeded`; the storefront steppers stop at
+  the shop's `maxLineQuantity`; a review citing another shop's order is 400.
+- **Open cash-order caps (D-18, D-27; V81).** The fourth open cash order per email or phone and
+  the sixth per connection at a shop are refused 429 `order-cap-exceeded` with a typed axis and no
+  `Retry-After`, inside the idempotency work so a refusal leaves nothing behind. The connection is
+  an HMAC under `CLIENT_IP_HMAC_KEY` stored as `orders.client_ip_digest` with no audit mirror,
+  nulled on completion, after 72 h by a daily sweep, and on Article 17 erasure (retention row
+  R-16). `orders.contact_verified` records a verified customer token; the kitchen badges a stored
+  false as "Unverified contact".
+- **Bulk reject with a kept reason.** `POST /api/v1/orders/bulk-cancel` reports one outcome per
+  id, each in its own transaction, idempotent, bounded; the reason is written with the status
+  change and reaches no customer surface, event or webhook. The Orders page and the kitchen New
+  lane reject through one dialog with a required reason and a per-order summary; checkout renders
+  the cap and limit refusals from the problem body.
+
+
 ### Phase 37-A: Kitchen and order operations (#916) — 2026-10-11
 
 The second of Phase 37's sub-theme pull requests (plans 37-16 to 37-23 of 53): a storefront order
