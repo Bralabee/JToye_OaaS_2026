@@ -14,9 +14,10 @@ import java.util.UUID;
 public interface ProductRepository extends JpaRepository<Product, UUID> {
     Optional<Product> findBySku(String sku);
 
-    // Phase 37-40 (RWO-017): the sync upsert key is (tenant, sku, shop). The tenant predicate is explicit,
-    // not RLS-only, as in findTenantScopedInGrantSetOrTenantWide below.
-    Optional<Product> findByTenantIdAndSkuAndShopId(UUID tenantId, String sku, UUID shopId);
+    // Phase 37-40 (RWO-017): the sync upsert looks a SKU up within the caller's tenant (unique per tenant,
+    // V3) and then compares its shop. The tenant predicate is explicit, not RLS-only, as in
+    // findTenantScopedInGrantSetOrTenantWide below.
+    Optional<Product> findByTenantIdAndSku(UUID tenantId, String sku);
 
     // Vendor-scoped access (Phase 23, VSA-02 / D-01; WR-08 read half, plan 23-10): read-scope
     // the product list to the caller's GRANT SET at the QUERY, ALSO admitting legacy

@@ -252,7 +252,18 @@ public class SyncService {
         // SHOP_MANAGER there learns nothing about the SKU.
         shopAccessService.require(shopId, ShopRole.SHOP_MANAGER);
 
-        Optional<Product> existing = productRepository.findByTenantIdAndSkuAndShopId(tenantId, sku, shopId);
+        // The SKU is unique per tenant (V3), so it names at most one product; it is updated only when it
+        // already belongs to the shop the item names. Anything else would move another shop's product
+        // (or a legacy shop-less one) into this shop, or overwrite it, so it is refused and left as is.
+        Optional<Product> existing = productRepository.findByTenantIdAndSku(tenantId, sku);
+        if (existing.isPresent() && !shopId.equals(existing.get().getShopId())) {
+            return SyncItemResult.rejected(index, item.getType(), sku, Code.SHOP_MISMATCH,
+                    existing.get().getShopId() == null
+                            ? "SKU '" + sku + "' is an existing product with no shop; assign it a shop in the "
+                                    + "dashboard before syncing it"
+                            : "SKU '" + sku + "' already belongs to a different shop of this business; a SKU "
+                                    + "is unique across your shops and sync does not move products between them");
+        }
         if (existing.isPresent()) {
             UUID productId = existing.get().getId();
             // PR #726 review M7: every absent field means "unchanged" — updateProduct maps IGNORE-null, and

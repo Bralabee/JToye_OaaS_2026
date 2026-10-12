@@ -25,9 +25,11 @@ public class BatchSyncResponse {
 
     public static final String SUCCESS = "SUCCESS";
     public static final String PARTIAL = "PARTIAL";
+    public static final String REJECTED = "REJECTED";
 
-    @Schema(description = "SUCCESS when every item was written; PARTIAL when some were written and some rejected",
-            allowableValues = {SUCCESS, PARTIAL}, example = SUCCESS)
+    @Schema(description = "SUCCESS when every item was written (or the batch was empty); PARTIAL when some were "
+            + "written and some rejected; REJECTED when none was written. Never SUCCESS when any item was refused.",
+            allowableValues = {SUCCESS, PARTIAL, REJECTED}, example = SUCCESS)
     private String status;
 
     @Schema(description = "Number of items written (CREATED plus UPDATED)", example = "3")
@@ -40,7 +42,7 @@ public class BatchSyncResponse {
     /** Builds the response from the per-item results; the status is derived, never asserted. */
     public static BatchSyncResponse of(List<SyncItemResult> results) {
         int written = (int) results.stream().filter(SyncItemResult::isWritten).count();
-        String status = written == results.size() ? SUCCESS : PARTIAL;
+        String status = written == results.size() ? SUCCESS : written == 0 ? REJECTED : PARTIAL;
         return BatchSyncResponse.builder()
                 .status(status)
                 .processedCount(written)

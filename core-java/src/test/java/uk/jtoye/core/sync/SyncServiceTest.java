@@ -164,7 +164,7 @@ class SyncServiceTest {
      */
     @Test
     void testProcessBatch_CreateProduct_goesThroughProductServiceInTheItemsShop() {
-        when(productRepository.findByTenantIdAndSkuAndShopId(tenantId, "SKU123", shopA)).thenReturn(Optional.empty());
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU123")).thenReturn(Optional.empty());
         UUID newId = UUID.randomUUID();
         when(productService.createProduct(any(CreateProductRequest.class))).thenReturn(productDto(newId));
 
@@ -180,7 +180,7 @@ class SyncServiceTest {
         ArgumentCaptor<CreateProductRequest> captor = ArgumentCaptor.forClass(CreateProductRequest.class);
         InOrder inOrder = inOrder(shopAccessService, productRepository, productService);
         inOrder.verify(shopAccessService).require(shopA, ShopRole.SHOP_MANAGER);
-        inOrder.verify(productRepository).findByTenantIdAndSkuAndShopId(tenantId, "SKU123", shopA);
+        inOrder.verify(productRepository).findByTenantIdAndSku(tenantId, "SKU123");
         inOrder.verify(productService).createProduct(captor.capture());
         CreateProductRequest sent = captor.getValue();
         assertThat(sent.getShopId()).isEqualTo(shopA);
@@ -202,7 +202,7 @@ class SyncServiceTest {
     void testProcessBatch_UpdateProduct_isGatedOnTheShopBeforeTheWrite() {
         UUID productId = UUID.randomUUID();
         Product existing = existingProduct(productId, "SKU-B", shopA);
-        when(productRepository.findByTenantIdAndSkuAndShopId(tenantId, "SKU-B", shopA)).thenReturn(Optional.of(existing));
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-B")).thenReturn(Optional.of(existing));
 
         BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
                 .items(Collections.singletonList(productItem("SKU-B", shopA, "Renamed", "Rice", 2, 700L)))
@@ -215,6 +215,32 @@ class SyncServiceTest {
         inOrder.verify(productService).updateProduct(eq(productId), captor.capture());
         assertThat(captor.getValue().getTitle()).isEqualTo("Renamed");
         verify(cacheEvictor).evictEntityAfterCommit("products", "getProductById", productId);
+    }
+
+    /**
+     * 37-40 (RWO-017): the SKU exists in another shop (or in none). Refused SHOP_MISMATCH after the gate,
+     * and nothing is written: sync never moves a product between shops.
+     */
+    @Test
+    void testProcessBatch_SkuOfAnotherShop_isRejectedShopMismatch() {
+        UUID shopB = UUID.randomUUID();
+        Product other = existingProduct(UUID.randomUUID(), "SKU-X", shopB);
+        Product legacy = existingProduct(UUID.randomUUID(), "SKU-L", null);
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-X")).thenReturn(Optional.of(other));
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-L")).thenReturn(Optional.of(legacy));
+
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Arrays.asList(productItem("SKU-X", shopA, "Moved", "Rice", 0, 1L),
+                        productItem("SKU-L", shopA, "Adopted", "Rice", 0, 1L)))
+                .build());
+
+        assertThat(response.getResults()).extracting(SyncItemResult::getCode)
+                .containsExactly(SyncItemResult.Code.SHOP_MISMATCH, SyncItemResult.Code.SHOP_MISMATCH);
+        assertThat(response.getResults().get(1).getMessage()).contains("no shop");
+        assertThat(response.getStatus()).isEqualTo("REJECTED");
+        verify(shopAccessService, times(2)).require(shopA, ShopRole.SHOP_MANAGER);
+        verifyNoInteractions(productService);
+        assertThat(other.getTitle()).isEqualTo("Original");
     }
 
     /** A denial is reported for that item, nothing is looked up, written or evicted, and its transaction rolls back. */
@@ -233,7 +259,7 @@ class SyncServiceTest {
             assertThat(r.getCode()).isEqualTo(SyncItemResult.Code.SHOP_ACCESS_DENIED);
         });
         assertThat(response.getProcessedCount()).isZero();
-        verify(productRepository, never()).findByTenantIdAndSkuAndShopId(any(), anyString(), any());
+        verify(productRepository, never()).findByTenantIdAndSku(any(), anyString());
         verifyNoInteractions(productService);
         verify(cacheEvictor, never()).evictEntityAfterCommit(anyString(), anyString(), any(UUID.class));
         verify(transactionManager).rollback(any());
@@ -260,7 +286,7 @@ class SyncServiceTest {
     void testProcessBatch_UpdateProduct_absentTitleAndIngredientsAreLeftAlone() {
         UUID productId = UUID.randomUUID();
         Product existing = existingProduct(productId, "SKU-P", shopA);
-        when(productRepository.findByTenantIdAndSkuAndShopId(tenantId, "SKU-P", shopA)).thenReturn(Optional.of(existing));
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-P")).thenReturn(Optional.of(existing));
 
         syncService.processBatch(BatchSyncRequest.builder()
                 .items(Collections.singletonList(
@@ -280,7 +306,7 @@ class SyncServiceTest {
      */
     @Test
     void testProcessBatch_CreateProduct_withoutRequiredFieldsIsRejected_andWritesNothing() {
-        when(productRepository.findByTenantIdAndSkuAndShopId(tenantId, "NEW-NO-TITLE", shopA)).thenReturn(Optional.empty());
+        when(productRepository.findByTenantIdAndSku(tenantId, "NEW-NO-TITLE")).thenReturn(Optional.empty());
 
         BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
                 .items(Collections.singletonList(
@@ -306,7 +332,7 @@ class SyncServiceTest {
 
         when(shopRepository.findByNameAndTenantId(anyString(), any(UUID.class))).thenReturn(Optional.empty());
         when(shopService.createShop(any(CreateShopRequest.class))).thenReturn(shopDto(UUID.randomUUID()));
-        when(productRepository.findByTenantIdAndSkuAndShopId(any(), anyString(), any())).thenReturn(Optional.empty());
+        when(productRepository.findByTenantIdAndSku(any(), anyString())).thenReturn(Optional.empty());
         when(productService.createProduct(any(CreateProductRequest.class))).thenReturn(productDto(UUID.randomUUID()));
 
         // Act

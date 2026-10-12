@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p><b>Why the #287 fix is the WRONG fix here, and this class proves it.</b> #287 could simply
  * DELETE the eviction, because bulk import is provably create-only — a row that never existed
  * has no cache key to stale. {@code SyncService} genuinely upserts
- * ({@code shopRepository.findByNameAndTenantId(...)} / {@code productRepository.findByTenantIdAndSkuAndShopId(...)} then write),
+ * ({@code shopRepository.findByNameAndTenantId(...)} / {@code productRepository.findByTenantIdAndSku(...)} then write),
  * so existing rows really are mutated and an eviction is NECESSARY. Only its RADIUS was wrong.
  * {@link #anUpdatedProductsOwnEntryIsStillInvalidated()} and
  * {@link #anUpdatedShopsOwnEntryIsStillInvalidated()} are the arms that go red if a future
@@ -298,7 +298,7 @@ class SyncServiceTenantCacheScopeTest {
         String existingKey = productKey(TENANT_B, UUID.randomUUID());
         products().put(existingKey, "tenant-B-product-dto");
 
-        Mockito.when(productRepository.findByTenantIdAndSkuAndShopId(TENANT_B, "NEW-SKU", SHOP_OF_B))
+        Mockito.when(productRepository.findByTenantIdAndSku(TENANT_B, "NEW-SKU"))
                 .thenReturn(Optional.empty());
         ProductDto created = new ProductDto();
         created.setId(UUID.randomUUID());
@@ -434,7 +434,7 @@ class SyncServiceTenantCacheScopeTest {
         ReflectionTestUtils.setField(existing, "id", id);
         existing.setSku(sku);
         existing.setShopId(SHOP_OF_B);
-        Mockito.when(productRepository.findByTenantIdAndSkuAndShopId(TENANT_B, sku, SHOP_OF_B))
+        Mockito.when(productRepository.findByTenantIdAndSku(TENANT_B, sku))
                 .thenReturn(Optional.of(existing));
     }
 
