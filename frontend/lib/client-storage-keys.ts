@@ -50,6 +50,12 @@ export interface ClientStorageKey {
   /** The literal key, or for `match: "prefix"` the part before the shop's short name. */
   readonly name: string
   readonly match: "exact" | "prefix"
+  /**
+   * For a `prefix` key, what follows the prefix, as the policy prints it. Default `<shop>`; a key
+   * suffixed with something else says so (37-37: `<order number>`), or the policy would name a key
+   * this site never writes.
+   */
+  readonly suffixLabel?: string
   readonly area: StorageArea
   /** Personal data: identifies, or is about, the person using the browser. */
   readonly personal: boolean
@@ -211,6 +217,7 @@ export const CLIENT_STORAGE_KEYS: readonly ClientStorageKey[] = [
     // lib/just-placed.ts (37-37, UI-SPEC C3): written by the cash checkout, removed by the order page.
     name: JUST_PLACED_KEY_PREFIX,
     match: "prefix",
+    suffixLabel: "<order number>",
     area: "sessionStorage",
     personal: false,
     clearedOnSignOut: false,
@@ -284,12 +291,12 @@ export function isRegisteredStorageKey(area: StorageArea, key: string): boolean 
 }
 
 /**
- * How the policy names an entry: the literal key, or for a per-shop key the
- * prefix with `<shop>` on the end, so a reader can match what they find in
- * their own browser.
+ * How the policy names an entry: the literal key, or for a prefix key the
+ * prefix with its suffix label on the end (`<shop>` unless the entry says
+ * otherwise), so a reader can match what they find in their own browser.
  */
 export function storageKeyDisplayName(entry: ClientStorageKey): string {
-  return entry.match === "prefix" ? `${entry.name}<shop>` : entry.name
+  return entry.match === "prefix" ? `${entry.name}${entry.suffixLabel ?? "<shop>"}` : entry.name
 }
 
 /**
