@@ -154,6 +154,18 @@ public class OrderDetailDto {
     @Schema(description = "Why the order was voided; null unless voided.")
     private String voidReason;
 
+    // Phase 37-27 (D-18, UXT-041): the same stored fact as OrderDto.contactVerified, on the detail view
+    // the kitchen board and the order dialog read. NON_NULL so "not recorded" is ABSENT and renders no
+    // badge; false renders "Unverified contact" (UI-SPEC D1 / F20).
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Whether the storefront request that placed this order carried a verified customer token "
+            + "for its customerEmail. true = verified; false = an unverified storefront contact; absent = not recorded "
+            + "(pre-V81, or a vendor / REST API / MCP order).")
+    private Boolean contactVerified;
+
+    public Boolean getContactVerified() { return contactVerified; }
+    public void setContactVerified(Boolean contactVerified) { this.contactVerified = contactVerified; }
+
     public OffsetDateTime getVoidedAt() { return voidedAt; }
     public void setVoidedAt(OffsetDateTime voidedAt) { this.voidedAt = voidedAt; }
 

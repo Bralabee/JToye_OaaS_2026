@@ -482,3 +482,14 @@ describe("OrderDetailPanel — the allergy note (31.1-22, #812, D-15)", () => {
     expect(screen.queryByTestId("allergy-note")).toBeNull()
   })
 })
+
+describe("OrderDetailPanel: the unverified-contact badge (37-30, F20)", () => {
+  it("renders 'Unverified contact' only when contactVerified is false", () => {
+    const { unmount } = render(<OrderDetailPanel order={makeOrder({ contactVerified: false })} />)
+    expect(screen.getByText("Unverified contact")).toBeInTheDocument()
+    unmount()
+
+    render(<OrderDetailPanel order={makeOrder({ contactVerified: null })} />)
+    expect(screen.queryByText("Unverified contact")).toBeNull()
+  })
+})

@@ -104,7 +104,10 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 > `keycloak-credentials`, `nextauth-secret`, `redis-credentials`,
 > `rabbitmq-credentials`, `dsar-credentials` (key `encryption-key`, phase 31.1
 > D-19: 64 hex characters from `openssl rand -hex 32`, one per environment;
-> core-java refuses to start without it).
+> core-java refuses to start without it), `client-ip-credentials` (key
+> `hmac-key`, phase 37 D-27: the same 64-hex shape, one per environment; the
+> client-IP digest key behind the per-IP cash-order cap; core-java refuses to
+> start without it).
 > CI guard: `k8s/scripts/check-no-plaintext-secrets.sh`.
 >
 > **Object storage has no Secret, by design (Phase 36, D-02).** Media and the
@@ -189,6 +192,12 @@ kubectl create secret generic nextauth-secret \
 # One fresh key per environment: openssl rand -hex 32
 kubectl create secret generic dsar-credentials \
   --from-literal=encryption-key='YOUR_64_HEX_CHARACTER_KEY' \
+  -n jtoye-production
+
+# Client-IP digest key (phase 37 plan 28, D-27; REQUIRED, 64 hex characters).
+# One fresh key per environment: openssl rand -hex 32
+kubectl create secret generic client-ip-credentials \
+  --from-literal=hmac-key='YOUR_64_HEX_CHARACTER_KEY' \
   -n jtoye-production
 ```
 

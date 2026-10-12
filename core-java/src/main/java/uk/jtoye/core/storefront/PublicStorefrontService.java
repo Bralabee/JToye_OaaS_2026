@@ -30,6 +30,7 @@ import uk.jtoye.core.order.OrderAllergenSnapshot;
 import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
+import uk.jtoye.core.order.OrderLimits;
 import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -134,6 +135,25 @@ public class PublicStorefrontService {
 
     /** The one open/paused/closed decision (37-20, D-15): the checkout gate and every public shop read. */
     private final ShopAvailabilityPolicy availabilityPolicy;
+
+    /**
+     * The one order-size rule (37-26, D-20): shared with {@code OrderService.createOrder}, so the
+     * storefront, the vendor dashboard, the REST API and MCP refuse the same oversized orders.
+     */
+    private final OrderLimits orderLimits;
+
+    /**
+     * The per-identity caps on OPEN cash orders at a shop (37-27, D-18): how many one email or phone may
+     * hold, counted over V81's partial indexes. Checked on the cash branch only, before the save.
+     */
+    private final CashOrderCaps cashOrderCaps;
+
+    /**
+     * The keyed digest of the customer's client address (37-28, D-27): written on every storefront order
+     * and counted by the IP axis of {@link #cashOrderCaps} on the cash branch. The address itself never
+     * reaches this class — the controller resolves it and this service digests it before any write.
+     */
+    private final ClientIpDigester clientIpDigester;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -147,6 +167,9 @@ public class PublicStorefrontService {
                                    OrderNumberGenerator orderNumberGenerator,
                                    TraderIdentityService traderIdentityService,
                                    ShopAvailabilityPolicy availabilityPolicy,
+                                   OrderLimits orderLimits,
+                                   CashOrderCaps cashOrderCaps,
+                                   ClientIpDigester clientIpDigester,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -165,6 +188,9 @@ public class PublicStorefrontService {
         this.orderNumberGenerator = orderNumberGenerator;
         this.traderIdentityService = traderIdentityService;
         this.availabilityPolicy = availabilityPolicy;
+        this.orderLimits = orderLimits;
+        this.cashOrderCaps = cashOrderCaps;
+        this.clientIpDigester = clientIpDigester;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -762,7 +788,38 @@ public class PublicStorefrontService {
     @Transactional
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
                                                    String headerIdempotencyKey) {
+        return createGuestOrder(slug, request, headerIdempotencyKey, null);
+    }
+
+    /**
+     * Four-argument form (Phase 37-27, D-18): {@code verifiedEmail} is the address a verified customer
+     * token proved, or {@code null} when the request carried none (or an invalid one). It decides ONLY the
+     * stored {@code contact_verified} fact: {@code true} when it equals the order's {@code customerEmail}
+     * ignoring case and surrounding space, {@code false} otherwise. It never changes who the order is
+     * for, never enters the idempotency fingerprint (a retry with or without the cookie replays the same
+     * order), and never refuses anything.
+     */
+    @Transactional
+    public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
+                                                   String headerIdempotencyKey, String verifiedEmail) {
+        return createGuestOrder(slug, request, headerIdempotencyKey, verifiedEmail, null);
+    }
+
+    /**
+     * Five-argument form (Phase 37-28, D-27): {@code clientIp} is the client address the controller
+     * resolved through {@code ClientIpResolver} (D-19), or {@code null} when the caller has none (the
+     * in-process callers). It is DIGESTED here, before any write, and only the digest is stored
+     * ({@code orders.client_ip_digest}); the address itself is never persisted, logged or returned. The
+     * digest keys the per-IP cash-order cap and, like {@code verifiedEmail}, never enters the idempotency
+     * fingerprint — a retry from another network path replays the same order.
+     */
+    @Transactional
+    public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
+                                                   String headerIdempotencyKey, String verifiedEmail,
+                                                   String clientIp) {
         log.debug("Creating guest order for shop: {}", slug);
+        // D-27: the only form of the address that survives this line. Null when the caller had none.
+        String clientIpDigest = clientIpDigester.digest(clientIp);
 
         // SEC-01 tenant-match gate BEFORE any write (Phase 13) — rejects
         // cross-tenant spoof with 403 before Order/OrderItem rows are minted.
@@ -777,7 +834,7 @@ public class PublicStorefrontService {
             String idempotencyKey = resolveGuestIdempotencyKey(request.getIdempotencyKey(), headerIdempotencyKey);
             if (idempotencyKey == null) {
                 // No key from either source: the pre-existing, non-idempotent create (census).
-                return placeGuestOrder(shop, request, null);
+                return placeGuestOrder(shop, request, null, verifiedEmail, clientIpDigest);
             }
 
             // Cluster E (API-3 / API-4 / INT-15, adjudication A3): the keyed path goes through the
@@ -791,7 +848,7 @@ public class PublicStorefrontService {
             // back with the order and a genuine retry succeeds.
             return idempotencyService.executeWithoutStoringResponse(
                     GUEST_ORDER_ENDPOINT, idempotencyKey, new GuestCheckoutIdentity(shop.getId(), request), request,
-                    () -> placeGuestOrder(shop, request, idempotencyKey),
+                    () -> placeGuestOrder(shop, request, idempotencyKey, verifiedEmail, clientIpDigest),
                     () -> replayGuestOrder(shop, idempotencyKey)).value();
         } finally {
             // Owned HERE, at the outermost boundary, and deliberately NOT inside placeGuestOrder:
@@ -933,7 +990,8 @@ public class PublicStorefrontService {
      * transaction, as the reserved WORK when a key is present and directly when none is.
      * Does NOT touch {@code TenantContext}: the caller owns set and clear.
      */
-    private GuestOrderConfirmation placeGuestOrder(Shop shop, GuestOrderRequest request, String idempotencyKey) {
+    private GuestOrderConfirmation placeGuestOrder(Shop shop, GuestOrderRequest request, String idempotencyKey,
+                                                   String verifiedEmail, String clientIpDigest) {
         UUID tenantId = shop.getTenantId();
         // Legacy lookup on orders.idempotency_key (V24), RETAINED inside the reserved work.
         // Two reasons: an order placed with a key BEFORE the V50 reservation existed has no
@@ -1066,6 +1124,18 @@ public class PublicStorefrontService {
                     item.getTotalPricePennies(), product.getVatRate()));
         }
 
+        // 37-26 (D-20, UXT-042): the order's SIZE is bounded here, after every line is resolved and
+        // before any save, on the lines as they will be persisted (server-side quantities and prices,
+        // never the client's arithmetic). The same OrderLimits bean guards OrderService.createOrder,
+        // so no writer is the one that forgot (theme 6). Thrown inside the reserved idempotency work
+        // for the same reason as the allergen refusals below: the reservation rolls back with this
+        // transaction and a corrected resubmit under the same key succeeds (T-37-67).
+        orderLimits.check(
+                order.getItems().stream()
+                        .map(item -> new OrderLimits.LineCheck(item.getProductName(), item.getQuantity()))
+                        .toList(),
+                order.getItems().stream().mapToLong(OrderItem::getTotalPricePennies).sum());
+
         // D-05: the acknowledgement is enforced HERE, on the server, before the first save. Both
         // refusals are thrown inside the reserved idempotency work, so the reservation rolls back
         // with this transaction and a corrected resubmit under the same key succeeds.
@@ -1085,6 +1155,18 @@ public class PublicStorefrontService {
         order.setAllergenAckMask(acknowledgedAllergenMask);
         order.setAllergenAckAt(OffsetDateTime.now());
         order.setPlacedVia(OrderChannel.STOREFRONT);
+        // 37-27 (D-18, UI-SPEC D1): a STORED fact about who placed the order, written on EVERY storefront
+        // order — true only when a verified customer token proved THIS address (case and surrounding space
+        // folded, the same normalisation the caps use), false otherwise. The vendor writer leaves it NULL
+        // ("not recorded"), which is a different fact from false and renders no badge (Pitfall 12).
+        String verifiedNormalised = CashOrderCaps.normaliseEmail(verifiedEmail);
+        order.setContactVerified(verifiedNormalised != null
+                && verifiedNormalised.equals(CashOrderCaps.normaliseEmail(request.getCustomerEmail())));
+        // 37-28 (D-27): the keyed digest of the client address, on EVERY storefront order (card too — it
+        // is the record the per-IP cap counts once a card order's status opens, and the retention sweep,
+        // the terminal-state null and erasure all treat the two branches alike). Null when the caller had
+        // no address. The vendor writer (OrderService) leaves it NULL: no customer connection to record.
+        order.setClientIpDigest(clientIpDigest);
 
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows
@@ -1179,6 +1261,16 @@ public class PublicStorefrontService {
                 throw new RuntimeException("Payment processing unavailable. Please try again later.");
             }
         } else {
+            // 37-27 (D-18, UXT-041): a CASH order is bounded per identity BEFORE it is saved — how many
+            // open cash orders this email (and phone, Task 2) already holds at this shop. Cash only:
+            // the card branch above is the customer's own commitment and is outside the cap. Thrown
+            // inside the reserved idempotency work, like every refusal in this method, so a capped
+            // request leaves no order and no reservation and the same key succeeds once a slot frees.
+            cashOrderCaps.checkEmailAndPhone(tenantId, shop.getId(), request.getCustomerEmail(), request.getCustomerPhone());
+            // 37-28 (D-27, the third axis): how many open cash orders this CONNECTION already holds at the
+            // shop, counted on the keyed digest — the axis that bounds a flood inventing a fresh email and
+            // phone per order. Same placement and the same rollback contract as the two above.
+            cashOrderCaps.checkIp(tenantId, shop.getId(), clientIpDigest);
             // COD fallback — no online payment. UNCHANGED by #538: this
             // branch still mutates in place and is persisted by the single
             // save below, exactly as before.
@@ -1351,6 +1443,9 @@ public class PublicStorefrontService {
         dto.setOpeningSchedule(shop.getOpeningSchedule());
         dto.setLegacyAlwaysOpen(shop.getHoursSource() == uk.jtoye.core.shop.HoursSource.LEGACY_ALWAYS_OPEN);
         dto.setHoursSource(shop.getHoursSource());
+        // 37-26 (D-20, theme 6): the SAME configured ceiling placeGuestOrder refuses on, so the basket
+        // stepper stops exactly where checkout would say no, and never from a client-side constant.
+        dto.setMaxLineQuantity(orderLimits.maxLineQuantity());
         return dto;
     }
 

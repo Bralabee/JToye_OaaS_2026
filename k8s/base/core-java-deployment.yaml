@@ -526,6 +526,17 @@ spec:
             secretKeyRef:
               name: dsar-credentials
               key: encryption-key
+        # REQUIRED Secret (client-ip-credentials), phase 37 plan 28 decision D-27. The
+        # HMAC-SHA256 key under which the client address behind a storefront order is
+        # stored as a pseudonym (orders.client_ip_digest) for the per-IP cash-order cap:
+        # 64 hexadecimal characters, generated per environment with `openssl rand -hex 32`
+        # and sealed, never committed. core-java refuses to start without a valid key, and
+        # there is deliberately NO optional flag, for the DSAR_ENCRYPTION_KEY reason above.
+        - name: CLIENT_IP_HMAC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: client-ip-credentials
+              key: hmac-key
         # OPTIONAL Secret (notification-credentials). The application.yml
         # default for this signing secret is the EMPTY STRING — i.e. an HMAC
         # over an empty key, which is forgeable. Wiring it here makes the real
@@ -590,6 +601,68 @@ spec:
             configMapKeyRef:
               name: app-config
               key: access.strict-scoping
+        # --- Trusted proxies (37-24, D-19 / RWO-006) ---
+        # The CIDR ranges whose X-Forwarded-For core-java believes -> application.yml
+        # jtoye.security.trusted-proxies. Wired here so the overlay value (the ingress
+        # controller's pod range) reaches the container; a configmap key with no
+        # configMapKeyRef is the silently-ignored-value class INV-1/DEF-6 exist for.
+        # INV-12 in k8s/scripts/check-render-invariants.sh refuses /0, a prefix shorter
+        # than /8 and any public range in every render.
+        - name: TRUSTED_PROXY_CIDRS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: security.trusted-proxies
+        # --- Order size limits (37-26, D-20 / RWO-042, UXT-042) ---
+        # How large ONE order may be -> application.yml jtoye.order-limits.*, enforced by
+        # OrderLimits on every writer as a typed 422 order-limit-exceeded. Wired here so the
+        # app-config values reach the container; a configmap key with no configMapKeyRef is
+        # the silently-ignored-value class INV-1/DEF-6 exist for.
+        - name: ORDER_LIMIT_MAX_LINE_QUANTITY
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: order-limits.max-line-quantity
+        - name: ORDER_LIMIT_MAX_BASKET_UNITS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: order-limits.max-basket-units
+        - name: ORDER_LIMIT_MAX_LINES
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: order-limits.max-lines
+        - name: ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: order-limits.max-basket-total-pennies
+        # --- Cash-order caps and the client-IP digest window (37-27 / 37-28, D-18 / D-27) ---
+        # How many OPEN cash orders one email, one phone and one client address may hold at a
+        # shop -> application.yml jtoye.storefront.cash-caps.*, and how long the keyed digest
+        # the IP axis counts on is kept -> jtoye.storefront.client-ip-digest.retention-hours.
+        # Wired here so the app-config values reach the container (INV-1/DEF-6).
+        - name: CASH_CAP_PER_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: storefront.cash-caps.per-email
+        - name: CASH_CAP_PER_PHONE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: storefront.cash-caps.per-phone
+        - name: CASH_CAP_PER_IP
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: storefront.cash-caps.per-ip
+        - name: CLIENT_IP_DIGEST_RETENTION_HOURS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: storefront.client-ip-digest.retention-hours
         resources:
           requests:
             # Issue #94 [P2-3]: memory request == limit (Guaranteed-memory QoS).

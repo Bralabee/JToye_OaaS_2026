@@ -60,9 +60,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <h2>Per-test client IP</h2>
  *
  * The intake carries its own IP-keyed bucket, and it is a singleton for the whole context. Every
- * test therefore declares its own {@code X-Forwarded-For} value: without that the rate-limit test
- * would exhaust the bucket every other test shares, and the resulting failures would look like
+ * test therefore declares its own SOCKET PEER ({@code setRemoteAddr}): without that the rate-limit
+ * test would exhaust the bucket every other test shares, and the resulting failures would look like
  * product defects. It doubles as proof that the keying is real — independent IPs do not interfere.
+ * Until 37-24 the tests minted identity through {@code X-Forwarded-For}; under D-19 that header is
+ * inert from an untrusted peer (MockMvc's loopback is not a trusted proxy), so the peer is set instead.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -222,7 +224,7 @@ class DsarIntakeIntegrationTest {
     @Test
     void aMissingBodyIsFourHundredNotFiveHundred() throws Exception {
         MvcResult result = mockMvc.perform(post(INTAKE_PATH)
-                        .header("X-Forwarded-For", "198.51.100.15")
+                        .with(req -> { req.setRemoteAddr("198.51.100.15"); return req; }) // 37-24 (D-19): identity is the socket peer; the header is inert
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andReturn();
@@ -376,7 +378,7 @@ class DsarIntakeIntegrationTest {
     private org.springframework.test.web.servlet.ResultActions lodge(
             String email, String requestType, String clientIp, String idempotencyKey) throws Exception {
         var builder = post(INTAKE_PATH)
-                .header("X-Forwarded-For", clientIp)
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }) // 37-24 (D-19): identity is the socket peer; the header is inert
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
                         Map.of("email", email, "requestType", requestType)));

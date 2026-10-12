@@ -102,6 +102,12 @@ public class PublicShopDto {
             + "days stay open until the vendor saves hours (D-25); openNow already accounts for it.", nullable = true)
     private HoursSource hoursSource;
 
+    // ---- 37-26 (D-20, theme 6): the server's per-line ceiling, so the basket stepper stops where checkout refuses ----
+
+    @Schema(description = "The most units of one product a single order line may carry (jtoye.order-limits.max-line-quantity). "
+            + "A line above it is refused 422 order-limit-exceeded on every order path; the storefront stepper stops here.")
+    private Integer maxLineQuantity;
+
     public String getSlug() { return slug; }
     public void setSlug(String slug) { this.slug = slug; }
     public String getName() { return name; }
@@ -154,4 +160,6 @@ public class PublicShopDto {
     public void setLegacyAlwaysOpen(boolean legacyAlwaysOpen) { this.legacyAlwaysOpen = legacyAlwaysOpen; }
     public HoursSource getHoursSource() { return hoursSource; }
     public void setHoursSource(HoursSource hoursSource) { this.hoursSource = hoursSource; }
+    public Integer getMaxLineQuantity() { return maxLineQuantity; }
+    public void setMaxLineQuantity(Integer maxLineQuantity) { this.maxLineQuantity = maxLineQuantity; }
 }

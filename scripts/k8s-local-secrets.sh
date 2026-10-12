@@ -122,6 +122,7 @@ REQUIRED_VALUES=(
   KEYCLOAK_CLIENT_SECRET
   NEXTAUTH_SECRET
   DSAR_ENCRYPTION_KEY
+  CLIENT_IP_HMAC_KEY
 )
 missing=0
 for var in "${REQUIRED_VALUES[@]}"; do
@@ -149,7 +150,14 @@ if ! [[ "${DSAR_ENCRYPTION_KEY}" =~ ^[0-9a-fA-F]{64}$ ]]; then
   echo "REFUSED [weak-value]: DSAR_ENCRYPTION_KEY in .env is not exactly 64 hexadecimal characters (value redacted). Generate one with: openssl rand -hex 32" >&2
   exit 1
 fi
-echo "OK: all ${#REQUIRED_VALUES[@]} required values present, DB_BACKUP_PASSWORD is not the placeholder and DSAR_ENCRYPTION_KEY is 64 hex characters"
+# CLIENT_IP_HMAC_KEY (37-28, D-27) carries the identical contract: 64 hex characters or core-java
+# refuses to start; taken from .env so k8s/local and compose count a client against the same
+# digests. Matched in-process, never printed.
+if ! [[ "${CLIENT_IP_HMAC_KEY}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  echo "REFUSED [weak-value]: CLIENT_IP_HMAC_KEY in .env is not exactly 64 hexadecimal characters (value redacted). Generate one with: openssl rand -hex 32" >&2
+  exit 1
+fi
+echo "OK: all ${#REQUIRED_VALUES[@]} required values present, DB_BACKUP_PASSWORD is not the placeholder, DSAR_ENCRYPTION_KEY and CLIENT_IP_HMAC_KEY are 64 hex characters"
 
 # ---------------------------------------------------------------------------
 # STEP 1c — the Postgres port must mean the same thing on both sides (issue #271).
@@ -343,6 +351,11 @@ apply_secret nextauth-secret \
 apply_secret dsar-credentials \
   "--from-literal=encryption-key=$DSAR_ENCRYPTION_KEY"
 
+# REQUIRED by core-java (no optional flag): the D-27 client-IP HMAC key from .env, validated
+# in STEP 1b, so k8s/local and compose digest a client address to the same pseudonym.
+apply_secret client-ip-credentials \
+  "--from-literal=hmac-key=$CLIENT_IP_HMAC_KEY"
+
 # No storage credential Secret: the local overlay authenticates to the host
 # Azurite with the key-less emulator string (STEP 4 note above).
 
@@ -379,6 +392,7 @@ for s in "${CREATED[@]}"; do
     keycloak-credentials)   echo "  - $s: admin-username, admin-password, frontend-client-secret" ;;
     nextauth-secret)        echo "  - $s: secret" ;;
     dsar-credentials)       echo "  - $s: encryption-key" ;;
+    client-ip-credentials)  echo "  - $s: hmac-key" ;;
     notification-credentials) echo "  - $s: unsubscribe-signing-secret" ;;
     stripe-credentials)     echo "  - $s: api-key, webhook-secret" ;;
     *)                      echo "  - $s" ;;

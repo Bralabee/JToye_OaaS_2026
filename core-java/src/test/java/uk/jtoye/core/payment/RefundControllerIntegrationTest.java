@@ -47,7 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest(RefundController.class)
 @AutoConfigureMockMvc(addFilters = false)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, uk.jtoye.core.security.ClientIpResolver.class}) // 37-24: the slice includes RateLimitInterceptor (a HandlerInterceptor), which needs the ClientIpResolver bean
 class RefundControllerIntegrationTest {
 
     @Autowired private MockMvc mockMvc;

@@ -154,6 +154,28 @@ var rateLimiterExemptPaths = map[string]bool{
 	"/ready":  true,
 }
 
+// Defaults of the pre-auth valve, config-declared through RATE_LIMIT_RPS and
+// RATE_LIMIT_BURST.
+//
+// 37-25 (D-19): raised from 20 rps / 40 burst to 200 / 400. The valve was the
+// ONLY limit, so it had to be sized as a quota; now the per-tenant limiter
+// (ratelimit_tenant.go, 10 rps / 20 burst per tenant) is the quota and the
+// valve is only the per-replica flood guard. 400 is twenty tenants at their
+// full burst at once; 200 rps is twenty tenants at their full steady rate.
+// A smaller valve than that would let one tenant's refused burst — which
+// still spends valve tokens before auth — starve the others again.
+const (
+	defaultRateLimitRPS   = 200
+	defaultRateLimitBurst = 400
+)
+
+// valveLimitsFromEnv reads the process-wide valve's rate and burst from the
+// environment, with the documented defaults (getEnvInt falls back on a
+// non-positive or non-numeric value).
+func valveLimitsFromEnv() (rps int, burst int) {
+	return getEnvInt("RATE_LIMIT_RPS", defaultRateLimitRPS), getEnvInt("RATE_LIMIT_BURST", defaultRateLimitBurst)
+}
+
 // rateLimiter is a single, process-wide token-bucket used purely as a coarse
 // DoS / overload guard for this edge replica — it is NOT a per-tenant quota.
 // The authoritative per-tenant rate limit (e.g. 100 req/min per tenant) lives
@@ -186,6 +208,10 @@ func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
 		}
 	}()
 
+	// One refill tick: the longest a refused caller has to wait for a token,
+	// and what Retry-After advertises (rounded up to whole seconds, min 1).
+	tick := time.Second / time.Duration(rps)
+
 	return func(c *gin.Context) {
 		if rateLimiterExemptPaths[c.Request.URL.Path] {
 			c.Next()
@@ -195,9 +221,102 @@ func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
 		case <-tokens:
 			c.Next()
 		default:
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+			// 37-25 (D-19): the same typed 429 as the per-tenant limiter, so
+			// an integrator backs off from either refusal the same way. The
+			// bucket is empty by construction here; Reset is when it would
+			// be full again at the configured rate.
+			now := time.Now()
+			writeRateLimited(c, rateDecision{
+				allowed:    false,
+				limit:      burst,
+				remaining:  0,
+				retryAfter: tick,
+				resetAt:    now.Add(time.Duration(burst) * tick),
+			})
 		}
 	}
+}
+
+// routerDeps is everything newRouter needs that main() resolves from the
+// environment or constructs from it. The JWT validator and the pre-auth valve
+// are passed as handlers rather than built inside, so a test can drive the
+// REAL route table and middleware order with a stubbed validator (one that
+// sets tenant_id from a header) and a deterministic valve — the wiring under
+// test is then the wiring that ships, not a copy of it in the test file.
+type routerDeps struct {
+	handlers *edgeHandlers
+	// validate is jwtMiddleware.Validate() in production. It is the ONLY
+	// writer of c.Get("tenant_id") on the protected group.
+	validate gin.HandlerFunc
+	// valve is the process-wide pre-auth rateLimiter — the DoS guard that
+	// gates every non-exempt route before authentication.
+	valve gin.HandlerFunc
+	// tenantLimits is the per-tenant quota applied on the protected group,
+	// after validate has written tenant_id (ratelimit_tenant.go).
+	tenantLimits tenantRateLimitConfig
+	// clock is the per-tenant limiter's time source: realClock in
+	// production, a fake in tests.
+	clock clock
+	// managementPort, when non-empty, moves /metrics off the application
+	// router (issue #550); see registerAppMetricsRoute.
+	managementPort string
+	// accessLog adds gin.Logger(); main sets it, tests leave it off.
+	accessLog bool
+}
+
+// newRouter builds the application router. It returns whether /metrics was
+// registered on it (false when a management port takes the route), so main
+// can log which topology is live.
+func newRouter(d routerDeps) (*gin.Engine, bool) {
+	r := gin.New()
+	if d.accessLog {
+		r.Use(gin.Logger())
+	}
+	r.Use(gin.Recovery())
+
+	// Prometheus instrumentation. Registered before the rate limiter so EVERY
+	// request — including those rejected with 429 — is counted with its final
+	// status. See metrics.go for the low-cardinality route-template labelling.
+	r.Use(prometheusMiddleware())
+
+	// Process-wide DoS guard: a per-replica overload valve, not a per-tenant
+	// quota (see rateLimiter()).
+	r.Use(d.valve)
+
+	// Public probes. Liveness must not depend on any downstream — a failing
+	// /health causes the kubelet to restart the pod, so it must not report
+	// DOWN just because Core or Keycloak is having a bad day. Readiness
+	// checks downstream and returns 503 when any dep is unhealthy so the
+	// pod is pulled from the Service without being restarted.
+	r.GET("/health", d.handlers.Health)
+	r.GET("/ready", d.handlers.Ready)
+
+	// Prometheus scrape endpoint. Public (no JWT) so Prometheus can scrape it;
+	// exposes only aggregate, low-cardinality series (see metrics.go). Absent
+	// from this router when a management port is configured (main.go explains).
+	metricsOnAppPort := registerAppMetricsRoute(r, d.managementPort)
+
+	// Documentation routes (/openapi.json + /docs) are registered here. The
+	// registration is wired up in docs.go (added in task 16-03) via
+	// registerDocRoutes(r). Kept public (before the protected group) so
+	// partners can fetch the spec without auth.
+	registerDocRoutes(r)
+
+	// WhatsApp webhook is a PUBLIC route: Meta authenticates via the HMAC
+	// signature (verified in the handler), not a Keycloak JWT. Registered
+	// outside the protected group so the real integration can actually call it.
+	r.POST("/api/v1/webhooks/whatsapp", d.handlers.WhatsAppWebhook)
+
+	// Protected routes (require JWT). The per-tenant limiter runs AFTER the
+	// validator and keys on the tenant_id it wrote — never on a header the
+	// caller controls (D-19, T-37-64) — so one tenant's burst is refused
+	// with a typed 429 while every other tenant's sync continues (UXT-039).
+	protected := r.Group("/")
+	protected.Use(d.validate)
+	protected.Use(tenantRateLimiter(d.tenantLimits, d.clock))
+	protected.POST("/api/v1/sync/batch", d.handlers.SyncBatch)
+
+	return r, metricsOnAppPort
 }
 
 func main() {
@@ -263,41 +382,26 @@ func main() {
 		whatsAppTenantID: whatsAppTenantID,
 	}
 
-	// Setup Gin
-	r := gin.Default()
-
-	// Prometheus instrumentation. Registered before the rate limiter so EVERY
-	// request — including those rejected with 429 — is counted with its final
-	// status. See metrics.go for the low-cardinality route-template labelling.
-	r.Use(prometheusMiddleware())
-
 	// Process-wide DoS guard (configurable via env). This is a per-replica
 	// overload valve, not a per-tenant quota — see rateLimiter() and Core's
 	// Bucket4j for the authoritative per-tenant limit.
-	rps := getEnvInt("RATE_LIMIT_RPS", 20)
-	burst := getEnvInt("RATE_LIMIT_BURST", 40)
+	rps, burst := valveLimitsFromEnv()
 	logger.Info("Process-wide DoS-guard rate limiter configured (per-replica, not per-tenant)",
 		zap.Int("rps", rps), zap.Int("burst", burst))
-	r.Use(rateLimiter(ctx, rps, burst))
+	tenantLimits := tenantLimitsFromEnv()
+	logger.Info("Per-tenant rate limiter configured (after JWT validation, keyed on tenant_id)",
+		zap.Int("rps", tenantLimits.RPS), zap.Int("burst", tenantLimits.Burst), zap.Int("max_tenants", tenantLimits.MaxTenants))
 
-	// Public probes. Liveness must not depend on any downstream — a failing
-	// /health causes the kubelet to restart the pod, so it must not report
-	// DOWN just because Core or Keycloak is having a bad day. Readiness
-	// checks downstream and returns 503 when any dep is unhealthy so the
-	// pod is pulled from the Service without being restarted.
-	r.GET("/health", h.Health)
-	r.GET("/ready", h.Ready)
-
-	// Prometheus scrape endpoint. Public (no JWT) so Prometheus can scrape it;
-	// exposes only aggregate, low-cardinality series (see metrics.go).
+	// Prometheus scrape endpoint topology (see newRouter for the route itself).
 	//
 	// issue #442 [SEC-02 / F-M7] built the switch; issue #550 [SEC-02 / C4] turns it
-	// on for compose. When EDGE_MANAGEMENT_PORT is set, this route is served ONLY on
-	// the separate management listener (below) and is deliberately absent here, so it
-	// is not reachable on the published application port. Mirrors core-java's
-	// management.server.port so one mental model covers both runtimes.
+	// on for compose. When EDGE_MANAGEMENT_PORT is set, /metrics is served ONLY on
+	// the separate management listener (below) and is deliberately absent from the
+	// application router, so it is not reachable on the published application port.
+	// Mirrors core-java's management.server.port so one mental model covers both
+	// runtimes.
 	//
-	// UNSET => this route stays exactly where it was. That default is still
+	// UNSET => the route stays exactly where it was. That default is still
 	// load-bearing for any runtime whose scrape config targets the app port with no
 	// credentials; the compose scrape target moved to the management port in the same
 	// change that set the variable, so the two can never disagree.
@@ -308,26 +412,22 @@ func main() {
 	if err != nil {
 		logger.Fatal("Invalid EDGE_MANAGEMENT_PORT", zap.Error(err))
 	}
-	if registerAppMetricsRoute(r, managementPort) {
+
+	// Setup Gin. The wiring lives in newRouter so the tests can drive the
+	// production route table and middleware order with a stubbed JWT validator.
+	r, metricsOnAppPort := newRouter(routerDeps{
+		handlers:       h,
+		validate:       jwtMiddleware.Validate(),
+		valve:          rateLimiter(ctx, rps, burst),
+		tenantLimits:   tenantLimits,
+		clock:          realClock{},
+		managementPort: managementPort,
+		accessLog:      true,
+	})
+	if metricsOnAppPort {
 		logger.Info("/metrics is served on the APPLICATION port — set EDGE_MANAGEMENT_PORT to move it to a separate listener",
 			zap.String("port", port))
 	}
-
-	// Documentation routes (/openapi.json + /docs) are registered here. The
-	// registration is wired up in docs.go (added in task 16-03) via
-	// registerDocRoutes(r). Kept public (before the protected group) so
-	// partners can fetch the spec without auth.
-	registerDocRoutes(r)
-
-	// WhatsApp webhook is a PUBLIC route: Meta authenticates via the HMAC
-	// signature (verified in the handler), not a Keycloak JWT. Registered
-	// outside the protected group so the real integration can actually call it.
-	r.POST("/api/v1/webhooks/whatsapp", h.WhatsAppWebhook)
-
-	// Protected routes (require JWT)
-	protected := r.Group("/")
-	protected.Use(jwtMiddleware.Validate())
-	protected.POST("/api/v1/sync/batch", h.SyncBatch)
 
 	logger.Info("Edge service starting", zap.String("port", port), zap.String("core_api", coreAPIURL))
 

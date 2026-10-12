@@ -6,6 +6,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test"
+import { cancelOrdersByNumber, orderNumberIn, uniqueContact } from "./order-cleanup"
 
 // Honour PLAYWRIGHT_BASE_URL (set it only for a non-default host). Mirrors the
 // default in playwright.config.ts. The "MCP server holds :3000" claim this
@@ -18,6 +19,15 @@ const KEYCLOAK = process.env.PLAYWRIGHT_KEYCLOAK_URL || "http://localhost:8085"
 // stable slug and a curated Nigerian menu (Jollof Rice @ £8.99, featured items,
 // Halal tags) with no duplicate line items.
 const SHOP_SLUG = "mama-ades-kitchen"
+
+// Every order this file places is cancelled after its test (e2e/order-cleanup.ts): the fixed
+// "cartflow@test.com" / "07700 111111" identity had accumulated 18 open cash orders at this shop by
+// the 37-31 gate, so the 37-27 per-email cap refused the checkout test's own order 429, and the
+// orders left PENDING by one Playwright project tripped the 37-28 per-connection cap for the next.
+const placed: string[] = []
+test.afterEach(async ({ request }) => {
+  await cancelOrdersByNumber(request, SHOP_SLUG, placed.splice(0))
+})
 const SHOP_NAME = "Mama Ade's Kitchen"
 
 // Helper: register + login a customer, returns the page with an active session
@@ -92,7 +102,7 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
 
   await page.fill("input#name", name)
   await page.fill("input#email", email)
-  await page.fill("input#phone", "07700 000000")
+  await page.fill("input#phone", uniqueContact("signed-in").phone)
 
   // Default fulfilment is Delivery — a UK address is required to submit.
   await page.fill("input#address1", "12 Coldharbour Lane")
@@ -128,6 +138,7 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
   // follows a live Stripe payment). The order is genuinely created (its
   // number is shown + a confirmation email is sent).
   await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
+  placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent().catch(() => null)) ?? "")
   const confText = await page.getByText(/Order\s+ORD-/).innerText()
   const match = confText.match(/ORD-[A-Z0-9-]+/)
   expect(match).not.toBeNull()
@@ -611,9 +622,10 @@ test.describe("Cart + Checkout", () => {
     await expect(page.getByRole("button", { name: /collection/i })).toBeVisible()
     await expect(page.locator("text=Delivery address")).toBeVisible()
 
+    const contact = uniqueContact("cartflow")
     await page.fill("input#name", "Cart Flow Tester")
-    await page.fill("input#email", "cartflow@test.com")
-    await page.fill("input#phone", "07700 111111")
+    await page.fill("input#email", contact.email)
+    await page.fill("input#phone", contact.phone)
     await page.fill("input#address1", "5 Atlantic Road")
     await page.fill("input#city", "London")
     await page.fill("input#postcode", "SW9 8HX")
@@ -655,6 +667,7 @@ test.describe("Cart + Checkout", () => {
     // shown, without a live card.
     await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/Order\s+ORD-/)).toBeVisible()
+    placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent()) ?? "")
     await expect(page.getByRole("heading", { name: "Order total" })).toBeVisible()
   })
 

@@ -15,6 +15,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { springSoft } from "@/lib/motion"
+import { lineLimitHintCopy } from "@/components/storefront/product-detail-modal"
 
 // Local mirror of the cart page's formatter so the drawer stays a drop-in
 // companion (same money presentation, £X.XX) without coupling the two files.
@@ -31,7 +32,7 @@ function formatPrice(pennies: number): string {
  * basket" link, so no capability is displaced.
  */
 export function CartDrawer() {
-  const { items, updateQuantity, removeItem, clearCart, itemCount, totalPennies, shopSlug } =
+  const { items, updateQuantity, removeItem, clearCart, itemCount, totalPennies, shopSlug, lineLimit } =
     useCart()
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
@@ -109,7 +110,7 @@ export function CartDrawer() {
           <>
             {/* Scrollable body. Its own component so it mounts with the sheet's content: the
                 catalogue is read each time the drawer opens (#860). */}
-            <DrawerItems items={items} slug={shopSlug} updateQuantity={updateQuantity} />
+            <DrawerItems items={items} slug={shopSlug} updateQuantity={updateQuantity} lineLimit={lineLimit ?? null} />
 
             {/* Sticky footer */}
             <div className="flex-shrink-0 space-y-3 border-t border-cream-100 bg-white p-4">
@@ -159,16 +160,22 @@ function DrawerItems({
   items,
   slug,
   updateQuantity,
+  lineLimit,
 }: {
   items: CartItem[]
   slug: string
   updateQuantity: (productId: string, quantity: number) => void
+  /** 37-30 (D-20): the shop's per-line maximum from the cart context; null = no client limit. */
+  lineLimit: number | null
 }) {
   const catalogueIndex = useCatalogueIndex(slug)
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4">
       <AnimatePresence initial={false}>
-        {items.map((item) => (
+        {items.map((item) => {
+          const atLineLimit = lineLimit != null && item.quantity >= lineLimit
+          const hintId = `cart-line-limit-${item.productId}`
+          return (
           <m.div
             key={item.productId}
             layout
@@ -225,14 +232,23 @@ function DrawerItems({
                   whileTap={{ scale: 0.9 }}
                   onClick={() => updateQuantity(item.productId, item.quantity + 1)}
                   aria-label="Increase quantity"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
+                  aria-describedby={atLineLimit ? hintId : undefined}
+                  disabled={atLineLimit}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </m.button>
               </div>
             </div>
+            {/* UI-SPEC § D1 "Quantity stepper": the hint beside the stepper at the server's limit. */}
+            {atLineLimit && (
+              <p id={hintId} className="-mt-2 mb-3 text-right text-sm text-slate-600">
+                {lineLimitHintCopy(lineLimit)}
+              </p>
+            )}
           </m.div>
-        ))}
+          )
+        })}
       </AnimatePresence>
     </div>
   )

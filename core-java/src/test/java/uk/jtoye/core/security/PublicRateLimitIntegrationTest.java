@@ -63,7 +63,10 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 // 31.1-07 (D-19): a dev-profile context never reads the test profile, so it carries its own per-run
 // random DSAR key (never a literal); without one DsarCipher refuses to start the context.
 @TestPropertySource(properties = {"storage.blob.validate-on-startup=false",
-        "jtoye.gdpr.dsar.encryption-key=${random.value}${random.value}"})
+        "jtoye.gdpr.dsar.encryption-key=${random.value}${random.value}",
+        // 37-28: ClientIpDigester refuses to start without a 64-hex key, and the dev profile has none
+        // (CLIENT_IP_HMAC_KEY is a runtime secret); a per-run random key, the DSAR precedent above.
+        "jtoye.storefront.client-ip-hmac-key=${random.value}${random.value}"})
 @Tag("testcontainers")
 class PublicRateLimitIntegrationTest {
 
@@ -194,7 +197,7 @@ class PublicRateLimitIntegrationTest {
     private static MockHttpServletRequest publicRequest(String clientIp) {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/public/shops");
         request.setRequestURI("/public/shops");
-        request.addHeader("X-Forwarded-For", clientIp);
+        request.setRemoteAddr(clientIp); // 37-24 (D-19): identity is the socket peer; the header is inert
         return request;
     }
 }

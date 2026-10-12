@@ -66,6 +66,10 @@ REQUIRED_VARS=(
   # stack that never comes up. Beyond presence, section (c2) below checks its exact
   # FORMAT, because a long, non-weak value can still be the wrong shape.
   DSAR_ENCRYPTION_KEY
+  # 37-28 / D-27: the HMAC key for the client-IP digest behind the per-IP cash-order cap. The
+  # same contract as the DSAR key: core-java refuses to START without a valid 64-hex value, and
+  # section (c2) checks the exact shape.
+  CLIENT_IP_HMAC_KEY
 )
 
 # Variables that must match an exact format, as "NAME|extended-regex|description".
@@ -74,6 +78,7 @@ REQUIRED_VARS=(
 # still a value the application rejects at boot.
 FORMAT_RULES=(
   "DSAR_ENCRYPTION_KEY|[0-9a-fA-F]{64}|exactly 64 hexadecimal characters (32 bytes); generate one with: openssl rand -hex 32"
+  "CLIENT_IP_HMAC_KEY|[0-9a-fA-F]{64}|exactly 64 hexadecimal characters (32 bytes); generate one with: openssl rand -hex 32"
 )
 
 # Weak values that must never be used. Tokens are stored canonical UPPER-case and

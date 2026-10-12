@@ -279,6 +279,22 @@ services:
       # reachable on demand by exceeding the widened budget.
       RATE_LIMIT_PUBLIC_PER_MINUTE: ${RATE_LIMIT_PUBLIC_PER_MINUTE:-600}
       RATE_LIMIT_PUBLIC_BURST: ${RATE_LIMIT_PUBLIC_BURST:-120}
+      # 37-24 (D-19, RWO-006): the proxies whose X-Forwarded-For core believes, as a CIDR list.
+      # EMPTY HERE ON PURPOSE = trust none. In this stack the browser calls core directly
+      # (NEXT_PUBLIC_API_URL) and no proxy appends the header, so every client is its socket
+      # address: host clients appear as the docker bridge gateway and share ONE public bucket,
+      # which is why the public limit above is widened. Never set 0.0.0.0/0: core refuses to
+      # start on it, and a wide range re-opens UXT-006 (a rotated header minting fresh buckets).
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      # 37-26 (D-20, RWO-042 / UXT-042): how large ONE order may be, enforced by OrderLimits on every
+      # writer (storefront checkout, vendor dashboard, REST API, MCP create_order) as a typed 422
+      # order-limit-exceeded. The values are the application.yml defaults, declared here so the
+      # posture is visible and tunable from .env; they clear a 20-line / 40-unit basket (P2-CHA-16)
+      # and the UXT-007 office lunch. Not secrets.
+      ORDER_LIMIT_MAX_LINE_QUANTITY: ${ORDER_LIMIT_MAX_LINE_QUANTITY:-50}
+      ORDER_LIMIT_MAX_BASKET_UNITS: ${ORDER_LIMIT_MAX_BASKET_UNITS:-200}
+      ORDER_LIMIT_MAX_LINES: ${ORDER_LIMIT_MAX_LINES:-50}
+      ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES: ${ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES:-100000}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
@@ -296,6 +312,11 @@ services:
       # stops compose BEFORE a container is created rather than leaving a crash-looping one.
       # It comes from .env only, never a literal here; verify-env.sh checks its format.
       DSAR_ENCRYPTION_KEY: ${DSAR_ENCRYPTION_KEY:?DSAR_ENCRYPTION_KEY must be set in .env - generate one with openssl rand -hex 32}
+      # 37-28 / D-27: the HMAC-SHA256 key under which the client address behind a storefront order
+      # is stored as a pseudonym (orders.client_ip_digest) for the per-IP cash-order cap. Same shape
+      # and the same guard as the DSAR key above: 64 hex characters from .env, never a literal here,
+      # or compose stops before a container is created. verify-env.sh checks its format.
+      CLIENT_IP_HMAC_KEY: ${CLIENT_IP_HMAC_KEY:?CLIENT_IP_HMAC_KEY must be set in .env - generate one with openssl rand -hex 32}
       # JWKS is fetched from the INTERNAL Keycloak host (reachable in-network)…
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       # …but tokens are stamped with the PUBLIC issuer (KC_HOSTNAME=localhost:8085),
@@ -452,6 +473,18 @@ services:
       # pins the expected aud (override per-env via EDGE_JWT_AUDIENCE).
       EDGE_JWT_AUDIENCE: ${EDGE_JWT_AUDIENCE:-core-api}
       PORT: 8080
+      # 37-25 (D-19 / RWO-039): the two rate-limit layers, from .env with the
+      # code defaults. The valve (RATE_LIMIT_RPS/BURST) is the per-replica flood
+      # guard; the per-tenant bucket (RATE_LIMIT_TENANT_*) is applied after JWT
+      # validation and keyed on the token's tenant_id, so one integrator's burst
+      # cannot exhaust another vendor's sync. Until 37-25 the two .env keys were
+      # documented but reached no container (the DEF-6 class); now they reach
+      # this one. Nothing else in this file reads these names.
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-200}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-400}
+      RATE_LIMIT_TENANT_RPS: ${RATE_LIMIT_TENANT_RPS:-10}
+      RATE_LIMIT_TENANT_BURST: ${RATE_LIMIT_TENANT_BURST:-20}
+      RATE_LIMIT_TENANT_MAX: ${RATE_LIMIT_TENANT_MAX:-10000}
       # issue #550 [SEC-02 / C4]: move the Prometheus scrape endpoint OFF the
       # published application port. Set here (not defaulted in Go) because this
       # is the runtime where the exposure is real: 8089 below is a named app-tier

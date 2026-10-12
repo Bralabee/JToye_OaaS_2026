@@ -403,3 +403,233 @@ where it must be resolved.
   files (editor 23 -> 26, card 7 -> 8, pause 16 -> 17, board-stopped 27 -> 29): jest 2616 tests / 221
   suites against the re-measured 2607/220. Java: `CustomerAccessGateIntegrationTest` 12 -> 22. The
   37-17 `.each(TABLE.filter(...))` VOID is untouched; regenerate `docs/metrics.json` after it is fixed.
+- **`scripts/check-doc-citations.sh` reports a VOID on `docs/ops/terminal-states.yaml` on this machine (37-24, pre-existing, out of scope).**
+  status: open
+  **What:** the gate's YAML-citation extractor runs a bare `python3 -c` (around line 187); the
+  machine's python shim refuses that spelling outside a declared env, so the extractor prints the
+  shim's refusal and the gate records `citations=0` for that file as VOID. The gate still exits 0
+  when the other 29 citations verify (37-24 measured rc=0 with the VOID present), so it is not a
+  gate break here, and CI has no shim. The fix belongs to the gate (spell `/usr/bin/python3 -c`,
+  the sanctioned stdlib one-liner form, or declare an env), not to this plan.
+- **The local trusted-proxy range is the minikube default, not a measurement (37-24).**
+  status: open
+  **What:** `k8s/local/configmap-patch.yaml` declares `security.trusted-proxies: "10.244.0.0/16"`.
+  The `jtoye` minikube profile had no container on 2026-10-11 (`minikube profile list`: "No such
+  container: jtoye"; `kubectl --context jtoye`: context does not exist), so the ingress pod CIDR
+  could not be read. When the cluster is next up, confirm with
+  `kubectl --context jtoye get pods -n ingress-nginx -o wide` and narrow the range if it differs.
+- **`edge-go/README.md` describes a rate limiter that never shipped (37-25, pre-existing, out of scope).**
+  status: open
+  **What:** the README's "Rate Limiting" and "Troubleshooting" sections say "100 requests/second",
+  list `uber-go/ratelimit` as a dependency and `MicahParks/keyfunc`, and document `JWKS_URL` /
+  `JWT_ISSUER` and `POST /api/sync/batch` — none of which is the code (hand-rolled buckets,
+  `KC_ISSUER_URI` / `JWT_EXPECTED_ISSUER`, `/api/v1/sync/batch`). 37-25 made its "Per-tenant rate
+  limiting support" line true and added the `RATE_LIMIT_*` keys to `edge-go/.env.example`, but the
+  README was not in the plan's file list and is not touched here. A rewrite belongs with the
+  sub-theme PR's docs pass; `docs/audit/**` and `docs/analysis/**` descriptions of the old single
+  bucket are dated records and stay as written.
+- **Docs metrics drift from 37-25 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-25: `go_test_funcs` 98 -> 103 and
+  `go_test_files` 13 -> 14 are this plan's (`ratelimit_tenant_test.go` x4, `openapi_test.go` +1);
+  `java_test_methods` 2534 -> 2558 and `java_test_files` 371 -> 372 were already drifted before it
+  (37-24). Regenerate `docs/metrics.json` with `--write` and re-point the prose counts in CLAUDE.md,
+  AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **Docs metrics drift from 37-26 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-26 (`total_logical_invocations` 5526 at the
+  measurement): this plan adds 3 Java test files (`OrderLimitsTest` 13, `OrderLimitsIntegrationTest` 8,
+  `ReviewCrossShopIntegrationTest` 7) and 1 method to `ReviewServiceTest`, on top of the drift 37-24 and
+  37-25 recorded. Regenerate `docs/metrics.json` with `--write` and re-point the prose counts in CLAUDE.md,
+  AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-26 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 because the committed snapshot now
+  declares `PublicShopDto.maxLineQuantity` and the running core-java cannot emit it; the two typed
+  refusals (`order-limit-exceeded`, `review-order-shop-mismatch`) and the four `ORDER_LIMIT_*` env entries
+  likewise reach no running container until the rebuild. Live probes for the gate: a storefront line of 51
+  -> 422 `order-limit-exceeded` with `field`/`value`/`limit`; a dashboard order of 1,000,000 -> the same 422;
+  `GET /api/v1/public/shops/{slug}` -> `maxLineQuantity: 50`; a review of shop B citing a shop A order ->
+  400 `review-order-shop-mismatch`.
+- **The MCP `create_order` schema still says only `quantity >= 1` (37-26, recorded, out of scope).**
+  status: open
+  **What:** `mcp-server/src/tools/create-order.ts:86` validates `z.number().int().min(1)` with no maximum.
+  The tool calls `POST /api/v1/orders`, which now refuses an oversized order with the typed 422, so the
+  rule holds on the server (theme 6); the client schema could mirror the limit so an agent is told before
+  the round trip. A `.max()` there would be a second copy of a config value, which is why it is recorded
+  rather than added here.
+- **Docs metrics drift from 37-27 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-27 (`java_test_methods` 2534 -> 2613, `java_test_files`
+  371 -> 377, `total_logical_invocations` 5560 at the measurement): this plan adds `CashOrderCapIntegrationTest`
+  (12) and `CashOrderCapsTest` (20) and two methods to `PublicStorefrontServiceTest`, on top of the 37-24..37-26
+  drift. `schema_version` 80 -> 81 WAS moved by hand in `docs/metrics.json` (with CLAUDE.md, AGENTS.md and
+  README.md; `check-doc-metrics` PASS 37/37), because the dispatch requires the schema line to move with the
+  migration; the counts are regenerated with `--write` in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-27 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 because the committed snapshot now declares
+  `OrderDto.contactVerified` and `OrderDetailDto.contactVerified` (beside 37-26's `maxLineQuantity`) and the
+  running core-java cannot emit them; V81, the typed 429 `order-cap-exceeded` and the `X-Customer-Token` read on
+  the guest-order POST reach no running container until the rebuild. Live probes for the gate: three cash orders
+  for one email at one shop then a fourth spelled in another case -> 429 `order-cap-exceeded` axis `EMAIL`, no
+  `Retry-After`; three with `07700 ...` then `+44 7700 ...` -> axis `PHONE`; completing one -> the same
+  Idempotency-Key is 201; a signed-in customer's storefront order -> `GET /api/v1/orders/{id}/detail` carries
+  `contactVerified: true`, a guest's `false`, a dashboard order none; `SELECT version FROM flyway_schema_history
+  ORDER BY installed_rank DESC LIMIT 1` -> 81 inside the running Postgres.
+- **`orders.client_ip_digest` is reserved by V81 and written by nobody until 37-28 (recorded so the erasure path is not forgotten).**
+  status: resolved
+  **Resolved by 37-28:** the storefront writes the digest (a54b679a); `GdprService.anonymiseSubjectInTenant` nulls it, `OrderService` nulls it at COMPLETED/CANCELLED/REFUNDED and `ClientIpDigestRetentionSweep` nulls it after 72 h per tenant (65ba6565), each proven by `ClientIpDigestRetentionIntegrationTest` under NOSUPERUSER.
+  **What:** V81's COMMENT and CLAUDE.md say the digest is "nulled by the retention purge and by Article 17
+  erasure". Today the column is NULL on every row, so no erasure gap exists; 37-28, which writes it, must in
+  the SAME plan null it in `GdprService.anonymiseSubjectInTenant` (the live-row anonymisation; the two
+  `orders_aud` scrubs need nothing, there is no audit mirror by design) and declare its retention window with a
+  purge. `CashOrderCaps.perIp()` is bound and refused below 1 from day one but counts nothing until then.
+- **The `jtoye.storefront.cash-caps.*` keys are declared in `application.yml` only (no env placeholders, no compose / `.env.example` / k8s wiring).**
+  status: resolved
+  **Resolved by 37-28:** the three caps are `${CASH_CAP_PER_EMAIL:3}` / `_PHONE` / `_IP` in `application.yml`, declared in `k8s/base/configmap.yaml` and read by the deployment (7b811046); compose keeps the defaults by design (see the 37-28 entry below).
+  **What:** deliberate for this plan (its file list names only `application.yml`, and the probe note says compose
+  keeps the defaults; Spring relaxed binding still lets an operator override them as
+  `JTOYE_STOREFRONT_CASHCAPS_PEREMAIL` etc.), and unlike 37-26's `ORDER_LIMIT_*` they are therefore not in
+  `k8s/base/configmap.yaml`. If a per-overlay tuning is wanted, 37-28 — which adds the HMAC key for the IP axis
+  and must wire THAT through compose, `.env.example` and k8s with the env-contract gate — is the plan to carry all
+  three caps across in one change.
+- **Docs metrics drift from 37-28 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-28 (`java_test_methods` 2534 -> 2626, `java_test_files`
+  371 -> 380, `total_logical_invocations` 5573 at the measurement): this plan adds `ClientIpDigesterTest` (12,
+  one of them a 5-value parameterised method), `ClientIpCapIntegrationTest` (3) and
+  `ClientIpDigestRetentionIntegrationTest` (3), on top of the 37-24..37-27 drift. `check-doc-metrics` stays
+  PASS 37/37 (no schema or count moved by hand). Regenerate `docs/metrics.json` with `--write` and re-point the
+  prose counts in CLAUDE.md, AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-28 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 (the 37-26 and 37-27 fields the running
+  service cannot emit); the per-IP axis, the digest write, the terminal-state null, the sweep and the erasure
+  null reach no running container until the rebuild. The rebuild REQUIRES `CLIENT_IP_HMAC_KEY` in the local
+  `.env` (added, 64 hex, untracked; `scripts/verify-env.sh` PASS 20/20) or compose refuses to interpolate
+  (`docker compose config` rc 1 naming the key, measured). Live probes for the gate: six cash orders from one
+  connection with a fresh email and phone each -> five `201` then `429 order-cap-exceeded` axis `IP`, no
+  `Retry-After`; `SELECT client_ip_digest FROM orders WHERE ...` -> 64 hex on the five, NULL after
+  `/complete`; no column of those rows contains the probe's address.
+- **The retention register has no row for the client-IP digest yet (37-30 owns the customer-facing copy, per the plan's probe note).**
+  status: open
+  **What:** `jtoye.storefront.client-ip-digest.retention-hours: 72` is enforced (terminal-state null,
+  `ClientIpDigestRetentionSweep` daily per tenant, erasure null) but `docs/retention-manifest.json` has no R-16
+  row, so `scripts/check-retention-enforcement.sh` (PASS 14 rows) does not yet gate the value. 37-30 adds the row
+  (`enforced_by` = `application.yml` key `retention-hours`, consumer `ClientIpDigestRetentionSweep.java`
+  must_contain `jtoye.storefront.client-ip-digest.retention-hours`, unit hours, 72) with the customer-facing
+  wording; until then the number is declared in config and the k8s configmap only.
+- **The sweep's hour is a config literal, not an env tunable (37-28, recorded).**
+  status: open
+  **What:** `jtoye.storefront.client-ip-digest.sweep-cron: "0 20 3 * * *"` (03:20 server time daily) has no
+  `${ENV:default}` placeholder, deliberately: the window (`retention-hours`) is the tunable and is wired through
+  the configmap; the hour is incidental and an env placeholder would need a configmap key the env-contract gate
+  then demands. If an operator ever needs to move it, add `CLIENT_IP_DIGEST_SWEEP_CRON` and its configmap key
+  together.
+- **The cash-cap and retention env names are k8s-only; compose keeps the application defaults (37-28, recorded).**
+  status: open
+  **What:** `CASH_CAP_PER_EMAIL` / `_PHONE` / `_IP` and `CLIENT_IP_DIGEST_RETENTION_HOURS` are declared in
+  `k8s/base/configmap.yaml` and read by the deployment; `docker-compose.full-stack.yml` and `.env.example` do
+  not carry them (RESEARCH Pitfall 9: an E2E spec that trips a cap uses unique contact details, never a raised
+  default). This closes the 37-27 entry above about the caps living in `application.yml` only.
+- **Docs metrics drift from 37-29 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-29 (`java_test_methods` 2534 -> 2634, `java_test_files`
+  371 -> 381, `total_logical_invocations` 5581 at the measurement): this plan adds `OrderBulkCancelIntegrationTest`
+  (8 methods, 1 file) on top of the 37-24..37-28 drift. `check-doc-metrics` stays PASS 37/37 (no schema or count
+  moved by hand; V81 was already recorded by 37-27). Regenerate `docs/metrics.json` with `--write` and re-point
+  the prose counts in CLAUDE.md, AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-29 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 — the committed snapshot now declares
+  `/api/v1/orders/bulk-cancel`, `BulkCancelRequest`, `BulkCancelResult` (+ `Entry`) and `CancelOrderRequest`
+  beside the 37-26..37-28 fields, and the running core-java emits none of them. Live probes for the gate: three
+  storefront cash orders at one shop, then `POST /api/v1/orders/bulk-cancel {orderIds:[the three + one random],
+  reasonCode:"SUSPECTED_FAKE"}` as a shop STAFF user -> 200 with REJECTED x3 and NOT_FOUND; the same body again
+  -> ALREADY_CANCELLED x3; `SELECT status, cancel_reason_code FROM orders WHERE id IN (...)` -> CANCELLED /
+  SUSPECTED_FAKE; Mailhog shows one "Cancelled" email per order whose source contains neither `SUSPECTED_FAKE`
+  nor `fake`; `GET /api/v1/public/orders/{number}?email=` -> `"status":"CANCELLED"` and no reason;
+  `POST /api/v1/orders/bulk-cancel` with 101 ids -> 400 `bulk-cancel-too-large` (`count` 101, `limit` 100);
+  `POST /api/v1/orders/{id}/cancel` with `{"reasonCode":"OTHER"}` -> the row reads OTHER, without a body NULL.
+- **`jtoye.orders.bulk-cancel.max-ids` is declared in `application.yml` only (no env placeholder, no compose / `.env.example` / k8s wiring; 37-29, recorded).**
+  status: open
+  **What:** deliberate, the 37-27 cash-caps shape: the plan's file list names only `application.yml`, the
+  default (100) exceeds any kitchen board page, and an env placeholder would make `k8s/scripts/check-env-contract.sh`
+  demand a configmap key. Spring relaxed binding still honours `JTOYE_ORDERS_BULKCANCEL_MAXIDS` if an operator must
+  move it. If a per-overlay value is ever wanted, add `BULK_CANCEL_MAX_IDS` with its configmap key together, as
+  37-28 did for the caps.
+- **A DRAFT order in a bulk-cancel list reads `ALREADY_ACCEPTED` (37-29, recorded for 37-30's copy).**
+  status: open
+  **What:** the four outcomes are the plan's (D-18, SC-4): `REJECTED | ALREADY_ACCEPTED | ALREADY_CANCELLED |
+  NOT_FOUND`. A DRAFT is before PENDING, not after it, so neither "accepted" nor "cancelled" names it exactly;
+  it is reported `ALREADY_ACCEPTED` ("not waiting in the New-orders lane; left as it was") rather than a fifth
+  value the contract does not have. Unreachable from the UI-SPEC D1 surfaces, which offer the checkbox on
+  PENDING rows only; an API caller who lists a draft gets the order left untouched, which is the safe outcome.
+  If 37-30's per-order result copy needs to name it, widen the enum there (the OpenAPI snapshot and this IT
+  move with it).
+- **A per-order failure inside a bulk cancel ends the batch with the earlier orders committed (37-29, recorded).**
+  status: open
+  **What:** each id runs in its own REQUIRES_NEW transaction, so an unexpected exception on one order (an
+  optimistic-lock collision with a kitchen that accepts it at the same instant, a database error) propagates
+  as that error's typed response after the earlier ids have committed; nothing is rolled back and nothing is
+  reported for the later ids. The recovery is the contract itself: re-send the same request, and every order
+  already rejected reads `ALREADY_CANCELLED`. A "partial batch" shape (a FAILED outcome per id) was not added
+  because the plan's outcome set is closed; record here in case the kitchen E2E (37-31) ever observes the race.
+- **Docs metrics drift from 37-30 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-30 (`jest_blocks` 2627 -> 2672, `jest_files` 222 -> 229,
+  `total_logical_invocations` 5626 at the measurement; the Java counts are 37-24..37-29's): this plan adds seven
+  jest suites (reject-orders-dialog, bulk-reject, kds-bulk-reject, unverified-contact-badge, abuse-refusals,
+  stepper-limit, retention-r16) and extends three. `check-doc-metrics` stays PASS 37/37 (no count moved by hand).
+  Regenerate `docs/metrics.json` with `--write` and re-point the prose counts in CLAUDE.md, AGENTS.md and
+  README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-30 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree (core-java and frontend Up 7 h at
+  measurement). `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 as recorded by 37-27..37-29.
+  Live probes for the gate: three storefront cash orders at one shop as a guest -> on `/dashboard/orders` each
+  PENDING row has a checkbox, the header checkbox selects them, the bar reads "3 selected", "Reject 3 orders" ->
+  the dialog requires a reason -> the summary reads "3 rejected." and the rows are CANCELLED after "Close
+  summary"; the same three on `/dashboard/kitchen` show "Unverified contact" beside the name (a vendor-created
+  order shows none); the fourth guest cash order with the same email is refused in the checkout error slot with
+  "You already have the most open cash orders this shop allows for one customer…" (", or pay by card" iff the
+  shop takes cards) and the network log shows ONE POST; a line above `jtoye.order-limits.max-line-quantity`
+  cannot be reached (the "+" is disabled with "Max {n} per order"); `/legal/retention` lists R-16 "Up to 72
+  hours…"; a signed-in customer's order shows no badge and the request went to `/api/customer-orders?shop=`.
+- **Signed-in orders through the proxy and the per-IP cap (37-30, found; a server or operator decision, not the frontend's).**
+  status: open
+  **What:** the access token is an HttpOnly cookie, so a signed-in customer's order is posted through
+  `POST /api/customer-orders?shop=` (the `/orders/mine` shape), and core then sees the FRONTEND CONTAINER as
+  the socket peer. `ClientIpResolver` (37-24, D-19) reads `X-Forwarded-For` only from a peer declared in
+  `jtoye.security.trusted-proxies` (`TRUSTED_PROXY_CIDRS`, empty by default), and a Next 16 route handler cannot
+  read its own socket peer, so unless an ingress sets the header AND the frontend's range is declared trusted,
+  every signed-in customer's cash order at a shop is digested under ONE address (the frontend's) and the per-IP
+  cap (5 open) can refuse legitimate signed-in customers. The route forwards the chain it receives, which is
+  enough once the two conditions hold. **Recommendation (research-then-recommend ruling 2026-10-10):** the
+  principled fix is in `CashOrderCaps` — do not count or check the IP axis for an order whose contact is
+  VERIFIED (the IP axis exists for anonymous floods; a verified contact is already bounded by the email axis),
+  which also removes the dependency on proxy topology; the operator alternative is declaring the frontend's
+  range in `TRUSTED_PROXY_CIDRS` per environment behind an ingress that sets `X-Forwarded-For`. Either is a
+  one-line decision for the owner before the first shared environment takes signed-in cash orders; 37-31's IP-cap
+  spec must place its six orders as a GUEST (direct to core) or it measures the frontend's address.
+- **The reject dialog's single-order path uses /bulk-cancel, not the single cancel's optional body (37-30, recorded decision).**
+  status: resolved
+  **What:** the dispatch named "the optional {reasonCode} body on the single cancel"; the dialog sends every
+  reject, one or many, as a batch so an order accepted on another screen a second earlier is reported
+  ALREADY_ACCEPTED instead of being cancelled (the single cancel accepts a CONFIRMED order). The single cancel's
+  body stays an API-caller feature (37-29's IT covers it). Resolved by decision; here so a reader of 37-29's
+  "Next Phase Readiness" is not left looking for the UI call site.
+- **UI-SPEC D1 "empty" and the selection-mode edges were planner assumptions, now implemented one way (37-30, recorded).**
+  status: open
+  **What:** no PENDING row on the Orders page -> no selection column and no header checkbox; the Orders bar
+  renders only while >= 1 row is selected; the kitchen bar renders throughout selection mode ("0 selected",
+  Reject disabled) because "Stop selecting" lives on it; selection mode ends when a batch's summary closes; the
+  per-card single reject leaves the card on "Close summary". If the owner wants the kitchen bar hidden at 0 or
+  selection mode kept after a batch, each is a one-line change with a test to flip. Also: the basket drawer's
+  stepper limit is null until the shop page has been read in this provider (a deep link to /checkout) — the
+  server's 422 is the gate, the spec's declared other branch.

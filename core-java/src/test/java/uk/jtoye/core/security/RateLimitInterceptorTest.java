@@ -81,7 +81,9 @@ class RateLimitInterceptorTest {
     @SuppressWarnings("unchecked")
     void setUp() throws Exception {
         testTenantId = UUID.randomUUID();
-        interceptor = new RateLimitInterceptor(meterRegistryProvider, jsonMapper);
+        // 37-24 (D-19): a resolver that trusts NO proxy, the application.yml default. The public
+        // tests below set the socket peer and send a spoofed X-Forwarded-For that must be inert.
+        interceptor = new RateLimitInterceptor(meterRegistryProvider, jsonMapper, new ClientIpResolver(List.of()));
 
         // Standard mock
         bucket = mock(Bucket.class, withSettings().extraInterfaces(Class.forName("io.github.bucket4j.distributed.BucketProxy")));
@@ -223,7 +225,8 @@ class RateLimitInterceptorTest {
      */
     @Test
     void negativeControl_aMapperWithoutBootsProblemDetailMixin_nestsTheExtensions() throws Exception {
-        RateLimitInterceptor plain = new RateLimitInterceptor(meterRegistryProvider, JsonMapper.builder().build());
+        RateLimitInterceptor plain = new RateLimitInterceptor(meterRegistryProvider, JsonMapper.builder().build(),
+                new ClientIpResolver(List.of()));
         ReflectionTestUtils.setField(plain, "rateLimitingEnabled", true);
         ReflectionTestUtils.setField(plain, "defaultLimit", 100);
         ReflectionTestUtils.setField(plain, "burstCapacity", 20);
@@ -400,10 +403,12 @@ class RateLimitInterceptorTest {
     @Test
     @SuppressWarnings("unchecked")
     void testPublicPath_UnderLimit_AllowedAndKeyedByClientIp() throws Exception {
-        // Arrange: NO tenant context (guest request), a public path, and an XFF client IP.
+        // Arrange: NO tenant context (guest request), a public path, the socket peer, and a
+        // SPOOFED X-Forwarded-For from that untrusted peer (37-24, D-19: it must be inert).
         TenantContext.clear();
         when(request.getRequestURI()).thenReturn("/public/shops");
-        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.7");
+        when(request.getRemoteAddr()).thenReturn("203.0.113.7");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("198.51.100.250");
 
         ConsumptionProbe probe = mock(ConsumptionProbe.class);
         when(probe.isConsumed()).thenReturn(true);
@@ -413,14 +418,15 @@ class RateLimitInterceptorTest {
         // Act
         boolean result = interceptor.preHandle(request, response, new Object());
 
-        // Assert: allowed, public-tier headers, and the bucket keyed by rl:public:{ip}
-        // (NOT the tenant "rate_limit::" namespace).
+        // Assert: allowed, public-tier headers, and the bucket keyed by rl:public:{socket peer}
+        // (NOT the tenant "rate_limit::" namespace, and NOT the header the client wrote).
         assertTrue(result, "Public request under limit should be allowed");
         verify(response).setHeader("X-RateLimit-Limit", "40");   // API-8: capacity (30 + burst 10), not the refill rate
         verify(response).setHeader("X-RateLimit-Remaining", "29");
         verify(bucket).tryConsumeAndReturnRemaining(1);
         verify(builder).build(
-                argThat((String key) -> key.startsWith("rl:public:") && key.contains("203.0.113.7")),
+                argThat((String key) -> key.startsWith("rl:public:") && key.contains("203.0.113.7")
+                        && !key.contains("198.51.100.250")),
                 any(Supplier.class));
     }
 
@@ -432,7 +438,8 @@ class RateLimitInterceptorTest {
         // guest flood could pick the alias and bypass the public bucket entirely.
         TenantContext.clear();
         when(request.getRequestURI()).thenReturn("/api/v1/public/shops");
-        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.42");
+        when(request.getRemoteAddr()).thenReturn("203.0.113.42");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("198.51.100.250"); // spoof, inert (D-19)
 
         ConsumptionProbe probe = mock(ConsumptionProbe.class);
         when(probe.isConsumed()).thenReturn(true);
@@ -444,7 +451,8 @@ class RateLimitInterceptorTest {
         assertTrue(result, "Versioned public alias request under limit should be allowed");
         verify(response).setHeader("X-RateLimit-Limit", "40");   // API-8: capacity (30 + burst 10), not the refill rate
         verify(builder).build(
-                argThat((String key) -> key.startsWith("rl:public:") && key.contains("203.0.113.42")),
+                argThat((String key) -> key.startsWith("rl:public:") && key.contains("203.0.113.42")
+                        && !key.contains("198.51.100.250")),
                 any(Supplier.class));
     }
 
@@ -454,7 +462,7 @@ class RateLimitInterceptorTest {
         // Arrange: tenant-less public flood.
         TenantContext.clear();
         when(request.getRequestURI()).thenReturn("/public/shops/acme/orders");
-        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.99");
+        when(request.getRemoteAddr()).thenReturn("203.0.113.99");
 
         ConsumptionProbe probe = mock(ConsumptionProbe.class);
         when(probe.isConsumed()).thenReturn(false);
@@ -529,7 +537,7 @@ class RateLimitInterceptorTest {
         // Arrange: tenant-less public request where the Redis bucket build blows up.
         TenantContext.clear();
         when(request.getRequestURI()).thenReturn("/public/shops");
-        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.7");
+        when(request.getRemoteAddr()).thenReturn("203.0.113.7");
 
         RemoteBucketBuilder throwingBuilder = mock(RemoteBucketBuilder.class);
         doReturn(throwingBuilder).when(proxyManager).builder();
@@ -615,7 +623,7 @@ class RateLimitInterceptorTest {
         // The second bucket, the one CLAUDE.md never documented. Same defect, own code path.
         TenantContext.clear();
         when(request.getRequestURI()).thenReturn("/api/v1/public/shops");
-        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.11");
+        when(request.getRemoteAddr()).thenReturn("203.0.113.11");
 
         // 39 = the public bucket full (30 + burst 10) with one token consumed; the same
         // shape as the live 719-out-of-600 reading under the compose 600/120 override.

@@ -79,8 +79,15 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      */
     private final JsonMapper jsonMapper;
 
+    /**
+     * 37-24 (D-19): the ONE answer to "what is this client". The public bucket keys on it, so a
+     * header the socket peer is not trusted to set can no longer choose the bucket (UXT-006).
+     */
+    private final ClientIpResolver clientIpResolver;
+
     public RateLimitInterceptor(ObjectProvider<MeterRegistry> meterRegistryProvider,
-                                JsonMapper jsonMapper) {
+                                JsonMapper jsonMapper,
+                                ClientIpResolver clientIpResolver) {
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
         this.failOpenCounter = reg != null
                 ? Counter.builder("jtoye.ratelimit.fail_open")
@@ -88,6 +95,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                     .register(reg)
                 : null;
         this.jsonMapper = jsonMapper;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Value("${rate-limiting.enabled:true}")
@@ -319,7 +327,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      * @return true if the request may proceed (allowed or failed-open); false if throttled (429)
      */
     private boolean handlePublicRateLimit(HttpServletRequest request, HttpServletResponse response, String requestPath) throws Exception {
-        String clientIp = ClientIpResolver.resolveClientIp(request);
+        String clientIp = clientIpResolver.resolve(request);
         String rateLimitKey = PUBLIC_RATE_LIMIT_KEY_PREFIX + clientIp;
 
         Supplier<BucketConfiguration> configSupplier = this::createPublicBucketConfiguration;

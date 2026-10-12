@@ -50,6 +50,12 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { VoidedBadge } from "@/components/dashboard/orders/voided-badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
+import {
+  RejectOrdersDialog,
+  type RejectableOrder,
+} from "@/components/dashboard/orders/reject-orders-dialog"
 import {
   ShoppingCart,
   Plus,
@@ -281,6 +287,14 @@ const getAvailableTransitions = (
 
 const PAGE_SIZE = 20
 
+/** The sticky bar's confirm label (UI-SPEC § D1 "Bulk reject (Orders page)"), singular at one. */
+export function rejectSelectionCopy(count: number): string {
+  return count === 1 ? "Reject 1 order" : `Reject ${count} orders`
+}
+
+export const SELECT_ALL_PENDING_LABEL = "Select all pending orders on this page"
+export const CLEAR_SELECTION_COPY = "Clear selection"
+
 function OrdersPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -299,6 +313,11 @@ function OrdersPageInner() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null)
+  // 37-30 (UI-SPEC § D1): the PENDING rows ticked for a bulk reject, and the dialog that
+  // rejects them. Held as ids; what is "selected" is always re-derived against the rows on
+  // screen, so a row that left PENDING under the selection drops out without an effect.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [orderItems, setOrderItems] = useState<{ productId: string; quantity: number }[]>([])
   // Phase 17-04: the inline detail Dialog is preserved for v2.2 per
   // 17-CONTEXT but is no longer reachable from the UI — row clicks now
@@ -435,6 +454,30 @@ function OrdersPageInner() {
     contextShopId && customerIdParam
       ? orders.filter((o) => o.shopId === contextShopId)
       : orders
+
+  const filteredOrders = visibleOrders.filter(
+    (o) => statusFilter === "ALL" || o.status === statusFilter
+  )
+
+  // 37-30 (D-18): only a PENDING order can be rejected in bulk (37-29 reports any other state
+  // ALREADY_ACCEPTED / ALREADY_CANCELLED), so only PENDING rows offer a checkbox, the header
+  // checkbox covers exactly those, and the column itself exists only while there is one.
+  const pendingOnPage = filteredOrders.filter((o) => o.status === "PENDING")
+  const showSelection = pendingOnPage.length > 0
+  const selectedPending: RejectableOrder[] = pendingOnPage
+    .filter((o) => selectedIds.has(o.id))
+    .map((o) => ({ id: o.id, label: o.orderNumber ?? `${o.id.substring(0, 8)}...` }))
+  const allPendingSelected =
+    pendingOnPage.length > 0 && pendingOnPage.every((o) => selectedIds.has(o.id))
+
+  const toggleSelected = (orderId: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(orderId)
+      else next.delete(orderId)
+      return next
+    })
+  }
 
   const getProductName = (productId: string): string => {
     const product = products.find(p => p.id === productId)
@@ -590,7 +633,7 @@ function OrdersPageInner() {
     // declaration a test can falsify rather than an absence indistinguishable
     // from a forgotten cap. Do not "tidy" this by adding a max-width — the
     // narrowing would be the defect this phase exists to remove.
-    <div data-width-tier="index" className="space-y-6">
+    <div data-width-tier="index" className={`space-y-6${selectedPending.length > 0 ? " pb-28" : ""}`}>
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}
@@ -700,7 +743,7 @@ function OrdersPageInner() {
                 message={loadErrorMessage}
                 onRetry={fetchData}
               />
-            ) : visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).length === 0 ? (
+            ) : filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
@@ -718,6 +761,21 @@ function OrdersPageInner() {
               <Table containerLabel="Orders table">
                 <TableHeader>
                   <TableRow>
+                    {showSelection && (
+                      <TableHead className="w-11 px-1">
+                        <div className="flex min-h-11 min-w-11 items-center justify-center">
+                          <Checkbox
+                            aria-label={SELECT_ALL_PENDING_LABEL}
+                            checked={allPendingSelected}
+                            onCheckedChange={(checked) =>
+                              setSelectedIds(
+                                checked === true ? new Set(pendingOnPage.map((o) => o.id)) : new Set()
+                              )
+                            }
+                          />
+                        </div>
+                      </TableHead>
+                    )}
                     <TableHead>Order ID</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Status</TableHead>
@@ -727,11 +785,12 @@ function OrdersPageInner() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
+                  {filteredOrders.map((order) => {
                     const config = statusConfig[order.status]
                     const StatusIcon = config.icon
                     const transitions = getAvailableTransitions(order.status)
                     const isProcessing = processingOrderId === order.id
+                    const orderLabel = order.orderNumber ?? `${order.id.substring(0, 8)}...`
 
                     return (
                       <m.tr
@@ -755,6 +814,22 @@ function OrdersPageInner() {
                           router.push(`/dashboard/orders/${order.id}`)
                         }}
                       >
+                        {/* 37-30 (UI-SPEC § D1): a 24px box in a 44px cell on PENDING rows only;
+                            other rows keep an empty cell so the columns line up. The cell is a
+                            row action, so the row's own click handler declines to navigate. */}
+                        {showSelection && (
+                          <TableCell className="w-11 px-1" data-row-actions>
+                            {order.status === "PENDING" && (
+                              <div className="flex min-h-11 min-w-11 items-center justify-center">
+                                <Checkbox
+                                  aria-label={`Select order ${orderLabel}`}
+                                  checked={selectedIds.has(order.id)}
+                                  onCheckedChange={(checked) => toggleSelected(order.id, checked === true)}
+                                />
+                              </div>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell className="font-mono text-xs">
                           {/* QA-council FIX-5 (L1): customers quote the ORD-…
                               number from their receipt — show it here so a
@@ -765,8 +840,11 @@ function OrdersPageInner() {
                         </TableCell>
                         <TableCell>
                           <div>
-                            <div className="font-medium">
-                              {order.customerName || "N/A"}
+                            {/* 37-30 (F20): the unverified-contact badge beside the name, from the
+                                stored fact only — `false` renders it, null/absent never does. */}
+                            <div className="flex flex-wrap items-center gap-2 font-medium">
+                              <span>{order.customerName || "N/A"}</span>
+                              <UnverifiedContactBadge contactVerified={order.contactVerified} />
                             </div>
                             {order.customerEmail && (
                               <div className="text-xs text-slate-500">
@@ -851,6 +929,53 @@ function OrdersPageInner() {
           </CardContent>
         </Card>
       </m.div>
+
+      {/* 37-30 (UI-SPEC § D1 "Bulk reject"): the sticky bottom action bar, bottom-fixed and
+          safe-area padded, present only while something is selected. The same bar as K1's. */}
+      {selectedPending.length > 0 && (
+        <div
+          role="region"
+          aria-label="Selected orders"
+          data-testid="orders-selection-bar"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_12px_rgba(15,23,42,0.08)]"
+        >
+          <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-3">
+            <span className="text-sm font-semibold text-slate-900">
+              {selectedPending.length} selected
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 border-red-700 text-red-800 hover:bg-red-50 hover:text-red-900"
+              onClick={() => setRejectDialogOpen(true)}
+            >
+              <Ban className="mr-2 h-4 w-4" aria-hidden="true" />
+              {rejectSelectionCopy(selectedPending.length)}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              {CLEAR_SELECTION_COPY}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <RejectOrdersDialog
+        open={rejectDialogOpen}
+        onOpenChange={setRejectDialogOpen}
+        orders={selectedPending}
+        onRejected={() => {}}
+        onClosedAfterSubmit={() => {
+          // The list is re-read only now: fetchData swaps the page for its spinner, which would
+          // unmount the dialog before the summary could be read.
+          setSelectedIds(new Set())
+          fetchData()
+        }}
+      />
 
       {/* Create Order Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

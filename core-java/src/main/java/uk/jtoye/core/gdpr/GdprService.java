@@ -295,6 +295,11 @@ public class GdprService {
             order.setAddressLine2(null);
             order.setAddressCity(null);
             order.setAddressPostcode(null);
+            // Phase 37-28 (D-27, T-37-72): the keyed digest of the subject's client address is a
+            // pseudonymous identifier that lives with the order, so it goes with the rest. Live row only:
+            // Order.clientIpDigest is @NotAudited and orders_aud has no such column (V81), so the two
+            // audit scrubs below have nothing to chase.
+            order.setClientIpDigest(null);
             order.setUpdatedAt(OffsetDateTime.now());
         }
         int ordersAnonymised = ordersById.size();
