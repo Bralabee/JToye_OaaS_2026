@@ -3,21 +3,27 @@ package uk.jtoye.core.order;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import jakarta.mail.Message;
+import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.mockito.invocation.Invocation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -28,10 +34,13 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
+import uk.jtoye.core.testsupport.SentMail;
 import uk.jtoye.core.testsupport.StrictScopingGuard;
+import uk.jtoye.core.webhook.WebhookFanoutListener;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -39,7 +48,9 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
@@ -80,12 +91,24 @@ class OrderBulkCancelIntegrationTest {
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
+        // The no-leak arm reads the real cancellation email: the test profile turns the channel off, and
+        // the sender is a mock at the SMTP boundary (no server), so Boot's mail health contributor is off too.
+        registry.add("notification.email.enabled", () -> "true");
+        registry.add("notification.email.from", () -> "noreply@jtoye.test");
+        registry.add("notification.email.tracking-base-url", () -> "https://shop.jtoye.test");
+        registry.add("management.health.mail.enabled", () -> "false");
     }
 
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
     @Autowired ShopAccessService shopAccessService;
+    /** The real listener that turns an order-state event into the customer email (no broker in this context). */
+    @Autowired OrderStateChangeListener listener;
+    /** The real fan-out that writes the signed webhook envelope to webhook_delivery. */
+    @Autowired WebhookFanoutListener webhookFanout;
+    /** The SMTP boundary: what EmailNotificationService hands to it is what the customer would receive. */
+    @MockitoBean JavaMailSender mailSender;
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or order number. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000372900");
@@ -103,6 +126,8 @@ class OrderBulkCancelIntegrationTest {
     @BeforeEach
     void setUp() {
         TenantContext.clear();
+        Mockito.reset(mailSender);
+        when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
         bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
         jdbcTemplate.update(
                 "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) ON CONFLICT (id) DO NOTHING",
@@ -280,6 +305,167 @@ class OrderBulkCancelIntegrationTest {
         MvcResult refused = bulkCancel(List.of(pending), "OTHER", noScope);
         assertThat(refused.getResponse().getStatus()).as(responseText(refused)).isEqualTo(403);
         assertThat(orderRow(pending).get("status")).isEqualTo("PENDING");
+    }
+
+    // ==================================================================
+    // Task 2 (D-18, UI-SPEC D1 open item 2, T-37-75): the reason is kept, and never reaches the customer.
+    // ==================================================================
+
+    // ------------------------------------------------------------------
+    // Every outbound artefact of a rejection is captured and scanned: the outbox event payload (the bytes the
+    // broker carries, read by SQL), the customer cancellation email (the real listener and template, the sender
+    // mocked at the SMTP boundary), the webhook envelope (the real fan-out, read from webhook_delivery.payload)
+    // and the public tracking response (HTTP). The scan is for the code AND the word "fake" in any case: a
+    // rewording that leaks the meaning without the token is still a leak. Each artefact first proves it is the
+    // real thing (a control), because an empty string contains nothing.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("T-37-75: after a SUSPECTED_FAKE bulk reject the outbox event, the customer cancellation email, the webhook envelope and the public tracking payload each say the order is cancelled and none carries the reason code or the word fake in any case")
+    void reasonNeverReachesTheCustomer() throws Exception {
+        UUID product = seedProduct("Egusi (no leak)", 10);
+        UUID orderId = seedOrder(shopA, OrderStatus.PENDING, product);
+        String orderNumber = orderNumberOf(orderId);
+        String customerEmail = customerEmailOf(orderId);
+        seedWebhookSubscription();
+
+        json(bulkCancel(List.of(orderId), "SUSPECTED_FAKE", adminJwt()), 200);
+        assertThat(orderRow(orderId).get("cancel_reason_code")).as("control: the reason IS on the row")
+                .isEqualTo("SUSPECTED_FAKE");
+
+        // 1. The order-state event as persisted to the outbox.
+        String eventPayload = outboxPayloadFor(orderId);
+        assertThat(eventPayload).as("control: this order's CANCELLED event")
+                .contains(orderId.toString()).contains("\"newStatus\":\"CANCELLED\"");
+        assertNoReason("outbox event payload", eventPayload);
+        OrderStateChangeEvent event = jsonMapper.readValue(eventPayload, OrderStateChangeEvent.class);
+
+        // 2. The customer email: the real listener and template, captured at the SMTP boundary and re-parsed
+        //    from the wire bytes (headers and body alike).
+        listener.handleOrderStateChange(event);
+        MimeMessage sent = SentMail.reparse((MimeMessage) awaitSingleSend());
+        assertThat(SentMail.recipients(sent, Message.RecipientType.TO)).as("control: it went to the customer")
+                .containsExactly(customerEmail);
+        assertThat(SentMail.text(sent)).as("control: it is the cancellation email")
+                .contains("has been cancelled").contains(orderNumber);
+        assertNoReason("customer cancellation email (headers and body)", SentMail.raw(sent));
+
+        // 3. The webhook envelope: the real fan-out writes the exact bytes it will sign and POST.
+        webhookFanout.onOrderState(event);
+        String envelope = webhookPayloadFor(orderId);
+        assertThat(envelope).as("control: the delivery row carries this order's cancelled event")
+                .contains("\"type\":\"order.cancelled\"").contains(orderId.toString());
+        assertNoReason("webhook envelope", envelope);
+
+        // 4. The public tracking payload the customer's browser reads.
+        MvcResult tracking = mockMvc.perform(get("/api/v1/public/orders/" + orderNumber)
+                .param("email", customerEmail)).andReturn();
+        String trackingBody = responseText(tracking);
+        assertThat(tracking.getResponse().getStatus()).as(trackingBody).isEqualTo(200);
+        assertThat(trackingBody).as("control: the customer sees it cancelled").contains("\"status\":\"CANCELLED\"");
+        assertNoReason("public tracking payload", trackingBody);
+    }
+
+    // ------------------------------------------------------------------
+    // The single cancel gains an optional body. Without one it is byte-for-byte the cancel it was.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-18: POST /orders/{id}/cancel with {reasonCode: OTHER} cancels and stores OTHER; with no body it cancels, stores NULL and restores stock exactly as before; with a code outside the four it is a 400 and the order is untouched")
+    void singleCancel_storesTheReasonWhenGiven_andNothingWhenNot() throws Exception {
+        UUID product = seedProduct("Akara (single cancel)", 10);
+        UUID withReason = seedOrder(shopA, OrderStatus.PENDING, product);
+        UUID withoutBody = seedOrder(shopA, OrderStatus.CONFIRMED, product);
+        UUID badCode = seedOrder(shopA, OrderStatus.PENDING, product);
+        int stockBefore = stockOf(product);
+
+        MvcResult reasoned = mockMvc.perform(post(cancelUrl(withReason)).with(adminJwt())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reasonCode\":\"OTHER\"}")).andReturn();
+        assertThat(json(reasoned, 200).path("status").asString()).as(responseText(reasoned)).isEqualTo("CANCELLED");
+        Map<String, Object> row = orderRow(withReason);
+        assertThat(row.get("status")).as(row.toString()).isEqualTo("CANCELLED");
+        assertThat(row.get("cancel_reason_code")).as("the reason is kept on the single cancel too: " + row)
+                .isEqualTo("OTHER");
+
+        MvcResult bare = mockMvc.perform(post(cancelUrl(withoutBody)).with(adminJwt())).andReturn();
+        assertThat(json(bare, 200).path("status").asString()).as(responseText(bare)).isEqualTo("CANCELLED");
+        Map<String, Object> bareRow = orderRow(withoutBody);
+        assertThat(bareRow.get("status")).as(bareRow.toString()).isEqualTo("CANCELLED");
+        assertThat(bareRow.get("cancel_reason_code")).as("no body records no reason, as before: " + bareRow).isNull();
+        assertThat(cancelledEventsFor(withoutBody)).as("the single cancel still announces itself").isEqualTo(1);
+        // A CONFIRMED order had taken its 2 units; the cancel gives them back (the same path a bulk reject uses).
+        assertThat(stockOf(product)).as("stock restored by the CONFIRMED order's cancel").isEqualTo(stockBefore + 2);
+
+        MvcResult refused = mockMvc.perform(post(cancelUrl(badCode)).with(adminJwt())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reasonCode\":\"LOOKED_WRONG\"}")).andReturn();
+        assertThat(refused.getResponse().getStatus()).as(responseText(refused)).isEqualTo(400);
+        Map<String, Object> untouched = orderRow(badCode);
+        assertThat(untouched.get("status")).as(untouched.toString()).isEqualTo("PENDING");
+        assertThat(untouched.get("cancel_reason_code")).isNull();
+    }
+
+    /** The reason code, and the word behind it, in any case. */
+    private static void assertNoReason(String surface, String artefact) {
+        String lower = artefact.toLowerCase(Locale.ROOT);
+        assertThat(lower).as(surface + " must not carry the reason code").doesNotContain("suspected_fake");
+        assertThat(lower).as(surface + " must not carry the word fake in any case").doesNotContain("fake");
+    }
+
+    /** Wait for the listener's @Async send (up to 10 s), then insist on exactly one. */
+    private Object awaitSingleSend() throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        List<Invocation> sends = sends();
+        while (sends.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+            sends = sends();
+        }
+        assertThat(sends).as("the listener sent the customer email (waited 10 s for the @Async send)").isNotEmpty();
+        Thread.sleep(500);
+        sends = sends();
+        assertThat(sends).as("exactly one customer email per transition").hasSize(1);
+        return sends.get(0).getArgument(0);
+    }
+
+    private List<Invocation> sends() {
+        return Mockito.mockingDetails(mailSender).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("send"))
+                .toList();
+    }
+
+    private static String cancelUrl(UUID orderId) {
+        return "/api/v1/orders/" + orderId + "/cancel";
+    }
+
+    private String orderNumberOf(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT order_number FROM orders WHERE id = ?", String.class, orderId));
+    }
+
+    private String customerEmailOf(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT customer_email FROM orders WHERE id = ?", String.class, orderId));
+    }
+
+    /** The one CANCELLED outbox payload naming the order. */
+    private String outboxPayloadFor(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT payload FROM payment_event_outbox WHERE tenant_id = ? AND event_type = 'ORDER_STATE_CHANGED' "
+                        + "AND routing_key = 'order.state.cancelled' AND payload LIKE '%' || ? || '%'",
+                String.class, TENANT_ID, orderId.toString()));
+    }
+
+    /** The one webhook delivery payload naming the order. */
+    private String webhookPayloadFor(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT payload FROM webhook_delivery WHERE tenant_id = ? AND payload LIKE '%' || ? || '%'",
+                String.class, TENANT_ID, orderId.toString()));
+    }
+
+    /** An ACTIVE subscription to order-state events, so the fan-out writes a delivery row to read. */
+    private void seedWebhookSubscription() {
+        jdbcTemplate.update("INSERT INTO webhook_subscription "
+                        + "(id, tenant_id, target_url, event_types, signing_secret, status) "
+                        + "VALUES (?, ?, 'https://vendor.example.test/hook', ARRAY['ORDER_STATE_CHANGED'], "
+                        + "'whsec_bulk_cancel_fixture', 'ACTIVE')",
+                UUID.randomUUID(), TENANT_ID);
     }
 
     // ---- HTTP ----
