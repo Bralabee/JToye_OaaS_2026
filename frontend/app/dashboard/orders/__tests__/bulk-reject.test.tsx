@@ -241,3 +241,20 @@ describe("Orders page: rejecting the selection through RejectOrdersDialog (SC-4)
     expect(mockPush).not.toHaveBeenCalled()
   })
 })
+
+describe("Orders list: the unverified-contact badge in the Customer cell (F20, UI-SPEC § D1)", () => {
+  it("contactVerified false shows 'Unverified contact' beside the name; absent and null show nothing", async () => {
+    stubList([
+      orderRow("u1", "PENDING", { contactVerified: false }),
+      orderRow("n1", "PENDING", { contactVerified: null }),
+      orderRow("a1", "CONFIRMED"),
+    ])
+    render(<OrdersPage />)
+    await screen.findByText("ORD-u1")
+
+    const rowOf = (id: string) => screen.getByText(`ORD-${id}`).closest("tr") as HTMLElement
+    expect(within(rowOf("u1")).getByText("Unverified contact")).toBeInTheDocument()
+    expect(within(rowOf("n1")).queryByText("Unverified contact")).toBeNull()
+    expect(within(rowOf("a1")).queryByText("Unverified contact")).toBeNull()
+  })
+})
