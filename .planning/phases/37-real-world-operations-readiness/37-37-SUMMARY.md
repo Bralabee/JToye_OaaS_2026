@@ -324,3 +324,9 @@ None.
 ## Next Phase Readiness
 
 The 37-C code is complete with 37-37. Next is 37-38, the 37-C gate (`autonomous: false`): reconcile and merge, rebuild all images, run the live RED and GREEN arms, re-verify the goods, and run the human checks.
+
+## Self-Check: PASSED
+
+- Files: `frontend/lib/just-placed.ts`, `frontend/components/storefront/no-vat-registration-note.tsx`, `frontend/e2e/cash-confirmation.ts`, `frontend/app/shop/[slug]/orders/[orderNumber]/__tests__/order-confirmation.test.tsx`, this SUMMARY — all FOUND.
+- Commits: 533ddbc5, 8b31e4ae, 44eaa92f, 53451d8f, 7b8a7d00, 90b9c8d7, f337abff, 77ba0eb0 — all ancestors of HEAD.
+- REQUIREMENTS.md unchanged: RWO-029 is declared through the 37-38 gate (requirements-addressed, not completed).
