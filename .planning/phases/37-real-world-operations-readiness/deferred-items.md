@@ -660,3 +660,17 @@ where it must be resolved.
   shop header h1 wrap ... no horizontal overflow") is the plan that holds the header to 360px/130%; its
   instrument should include an order page. Not fixed in 37-37 (scope boundary: a shared component another plan
   owns).
+
+## From 37-38 (the 37-C gate)
+
+- **abuse-bounds' mobile bulk-reject arm is flaky on a Radix element that is "not stable" (found in 37-38, open).**
+  status: open
+  **What:** `e2e/abuse-bounds.spec.ts:205` ("three guest cash orders are rejected in one action with a per-order
+  summary"), mobile project only, timed out at 60 s on Playwright's stability check in 3 of 7 mobile runs at the 37-C gate (after the spec sent a basket expectation):
+  twice on `getByRole('option', { name: 'Looks like a fake or test order' })` (the reason Select's option) and once on
+  `getByRole('button', { name: 'Reject 3 orders' }).last()`, each "element is not stable" while it animated; the other
+  runs passed in 4–5 s, and desktop never failed. The orders the failed runs placed were cancelled by the spec's
+  `afterEach` (open count unchanged). Nothing 37-C changed touches the dialog (37-30's `RejectOrdersDialog`).
+  **Suggested owner:** whichever plan next edits the dialog or the spec — wait for the Select content / dialog to
+  finish its open animation (e.g. assert `data-state="open"` then a stable bounding box) rather than raising the
+  timeout. Not fixed at the gate (scope boundary: a 37-D spec, no 37-C cause).
