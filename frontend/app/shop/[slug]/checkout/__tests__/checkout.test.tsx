@@ -16,8 +16,10 @@
  */
 
 import { Suspense } from "react"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { useRouter } from "next/navigation"
 import CheckoutPage, { isValidUkPostcode } from "@/app/shop/[slug]/checkout/page"
+import { saveLocalOrder } from "@/lib/order-history"
 // PR #726 low (b): the checkout page no longer carries its own copy of the fee preview; the lib
 // is the one implementation both the cart page and the checkout page render from.
 import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
@@ -140,14 +142,28 @@ function renderCheckout() {
   )
 }
 
+// 37-37 (C3): a cash order now leaves this page through router.push, so the push is observed.
+const mockPush = jest.fn()
+
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
   mockShop(SHOP)
+  mockPush.mockReset()
+  ;(useRouter as jest.Mock).mockReturnValue({
+    push: mockPush,
+    replace: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    refresh: jest.fn(),
+    prefetch: jest.fn(),
+  })
 })
 
 afterEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
+  ;(saveLocalOrder as jest.Mock).mockClear()
 })
 
 // ---------------------------------------------------------------------------
@@ -270,7 +286,10 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
     expect(mockedPost).not.toHaveBeenCalled()
   })
 
-  it("COD confirmation says 'Pay on delivery' for a DELIVERY order (WR-08)", async () => {
+  // 37-37 (UI-SPEC C3, UXT-029): the cash confirmation is no longer rendered here. It was unannounced
+  // and a refresh lost it. The WR-08 wording ("Pay on delivery" for a DELIVERY order) now lives on the
+  // order route and is asserted there (orders/[orderNumber]/__tests__/order-confirmation.test.tsx).
+  it("a cash (COD) 201 saves the order, leaves the just-placed marker and routes to the order page — no in-place confirmation", async () => {
     seedCart(2000)
     mockedPost.mockResolvedValue({
       data: {
@@ -305,9 +324,23 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
     )
     fireEvent.click(screen.getByRole("button", { name: /place order/i }))
 
-    // A customer who chose Delivery must NOT be told to pay on collection.
-    expect(await screen.findByText(/Pay on delivery/)).toBeTruthy()
-    expect(screen.queryByText(/Pay on collection/)).toBeNull()
+    // The card path's route, after the card path's save (saveLocalOrder unchanged, then push).
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/shop/jollof-express/orders/ORD-TEST-1"))
+    expect(mockPush).toHaveBeenCalledTimes(1)
+    expect(saveLocalOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderNumber: "ORD-TEST-1", email: "ade@example.com", shopSlug: SLUG })
+    )
+    const saveOrder = (saveLocalOrder as jest.Mock).mock.invocationCallOrder[0]
+    expect(saveOrder).toBeLessThan(mockPush.mock.invocationCallOrder[0])
+    // The one-shot marker holds the order number only (not user-scoped data).
+    expect(sessionStorage.getItem("jtoye-just-placed:ORD-TEST-1")).toBe("ORD-TEST-1")
+    // Tracking stays bound to number + email: the order page reads the email this page stored.
+    expect(localStorage.getItem(`jtoye-checkout-email-${SLUG}`)).toBe("ade@example.com")
+    // The in-place confirmation is retired, and the emptied basket does not flash "Nothing to checkout".
+    expect(screen.queryByRole("heading", { name: /order confirmed/i })).not.toBeInTheDocument()
+    expect(screen.queryByText("Order total")).not.toBeInTheDocument()
+    expect(screen.queryByText("Nothing to checkout")).not.toBeInTheDocument()
+    expect(mockedPost).toHaveBeenCalledTimes(1)
   })
 
   it("blocks submit on an invalid postcode with the exact inline error", async () => {
