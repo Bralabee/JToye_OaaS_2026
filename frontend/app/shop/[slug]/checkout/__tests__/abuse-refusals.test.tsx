@@ -311,3 +311,28 @@ describe("Checkout: the signed-in customer's order carries the customer token (3
     expect(config?.headers?.["X-Customer-Token"]).toBeUndefined()
   })
 })
+
+/**
+ * UI-SPEC § UI Considerations "long-text" (D1, backstop): the limit refusal naming a 60-character
+ * item must wrap inside the checkout error slot at 375px. jsdom lays nothing out, so this is the
+ * held-out render the spec asks for: the copy is present IN FULL and the slot carries no class
+ * that would clip or refuse to wrap it (truncate / whitespace-nowrap / overflow-hidden). The
+ * visual check at 375px is 37-31's Playwright spec.
+ */
+describe("Checkout: a long item name in the limit refusal (UI-SPEC D1 long-text backstop)", () => {
+  it("renders the 60-character item in full inside an error slot that can wrap", async () => {
+    const longName = "Jollof rice with grilled plantain, suya and extra pepper sauce" // 60+ chars
+    expect(longName.length).toBeGreaterThanOrEqual(60)
+    mockShop(SHOP)
+    mockedPost.mockRejectedValue(limitProblem("quantity", 15, 12, longName))
+    renderCheckout()
+    await armCheckout()
+
+    placeOrder()
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent(`Reduce ${longName} to 12 or fewer.`)
+    for (const cls of ["truncate", "whitespace-nowrap", "overflow-hidden", "text-ellipsis"]) {
+      expect(alert).not.toHaveClass(cls)
+    }
+  })
+})
