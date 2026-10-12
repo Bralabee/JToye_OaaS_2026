@@ -519,6 +519,49 @@
         "type" : "object"
       },
       "BeanFactory" : { },
+      "BulkCancelRequest" : {
+        "description" : "Which orders to reject, and why. The reason is kept on each order and never shown to the customer.",
+        "properties" : {
+          "orderIds" : {
+            "description" : "The orders to reject, in the order the outcomes are reported. At most jtoye.orders.bulk-cancel.max-ids (default 100) per request; a duplicate id reports ALREADY_CANCELLED on its second appearance.",
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "minItems" : 1,
+            "type" : "array"
+          },
+          "reasonCode" : {
+            "description" : "Why the orders are being rejected. Stored on each rejected order for the vendor's records; never sent to the customer.",
+            "enum" : [
+              "SUSPECTED_FAKE",
+              "CANNOT_FULFIL",
+              "CUSTOMER_REQUEST",
+              "OTHER"
+            ],
+            "example" : "SUSPECTED_FAKE",
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "orderIds",
+          "reasonCode"
+        ],
+        "type" : "object"
+      },
+      "BulkCancelResult" : {
+        "description" : "One outcome per requested order id, in request order.",
+        "properties" : {
+          "results" : {
+            "description" : "The outcomes, one per requested id, in request order.",
+            "items" : {
+              "$ref" : "#/components/schemas/Entry"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
       "BulkImportResult" : {
         "properties" : {
           "created" : {
@@ -544,6 +587,23 @@
           "totalRows" : {
             "format" : "int32",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CancelOrderRequest" : {
+        "description" : "Why the order is being cancelled. Optional; kept on the order for the vendor's records and never shown to the customer.",
+        "properties" : {
+          "reasonCode" : {
+            "description" : "Why the order is being cancelled. Omit the body, or send null, to record no reason (the pre-existing behaviour).",
+            "enum" : [
+              "SUSPECTED_FAKE",
+              "CANNOT_FULFIL",
+              "CUSTOMER_REQUEST",
+              "OTHER"
+            ],
+            "example" : "CUSTOMER_REQUEST",
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -1502,6 +1562,21 @@
           "userId" : {
             "format" : "uuid",
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "Entry" : {
+        "description" : "One requested order id and what happened to it.",
+        "properties" : {
+          "orderId" : {
+            "description" : "The requested order id, echoed.",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "outcome" : {
+            "$ref" : "#/components/schemas/Outcome",
+            "description" : "What happened to it."
           }
         },
         "type" : "object"
@@ -2852,6 +2927,16 @@
           "quantity"
         ],
         "type" : "object"
+      },
+      "Outcome" : {
+        "description" : "REJECTED: it was PENDING and is now CANCELLED, with the reason stored. ALREADY_ACCEPTED: the kitchen had already taken it (or it is not a placed order), so it was left as it was. ALREADY_CANCELLED: it was already cancelled, refunded or voided; nothing to do. NOT_FOUND: no such order the caller may act on (it does not exist, belongs to a shop the caller is not granted, or belongs to another tenant; these are deliberately indistinguishable).",
+        "enum" : [
+          "REJECTED",
+          "ALREADY_ACCEPTED",
+          "ALREADY_CANCELLED",
+          "NOT_FOUND"
+        ],
+        "type" : "string"
       },
       "PageAnnouncementDto" : {
         "properties" : {
@@ -8333,6 +8418,63 @@
         ]
       }
     },
+    "/api/v1/orders/bulk-cancel" : {
+      "post" : {
+        "description" : "Rejects each PENDING order in the list through the same cancel transition a single cancel uses (stock bookkeeping, order event and customer email exactly as a single cancel) and reports one outcome per id, in request order: REJECTED, ALREADY_ACCEPTED, ALREADY_CANCELLED or NOT_FOUND. Each order needs at least STAFF on its own shop; an order the caller may not act on (another shop, another tenant, or no such order) reads NOT_FOUND without distinction. The reasonCode is kept on each rejected order for the vendor's records and is never sent to the customer. Idempotent: the same request again reports ALREADY_CANCELLED and changes nothing, so a retry needs no Idempotency-Key. At most jtoye.orders.bulk-cancel.max-ids (default 100) ids per request.",
+        "operationId" : "bulkCancel",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BulkCancelRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BulkCancelResult"
+                }
+              }
+            },
+            "description" : "The batch was processed; read each outcome. 200 whatever the outcomes are."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Request validation failed (errors/validation: no ids, a null id, no reasonCode or one outside the four), or more ids than the configured maximum (errors/bulk-cancel-too-large, with count and limit)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks the orders:write scope"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Reject several orders",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
     "/api/v1/orders/customer/{customerId}" : {
       "get" : {
         "description" : "Returns paginated orders for a specific customer of the authenticated tenant",
@@ -8786,7 +8928,7 @@
     },
     "/api/v1/orders/{id}/cancel" : {
       "post" : {
-        "description" : "Cancel an order at any stage (ANY → CANCELLED)",
+        "description" : "Cancel an order at any stage (ANY → CANCELLED). Optionally send {reasonCode} (SUSPECTED_FAKE | CANNOT_FULFIL | CUSTOMER_REQUEST | OTHER) to keep why on the order for the vendor's records; it is never sent to the customer. No body records no reason.",
         "operationId" : "cancelOrder",
         "parameters" : [
           {
@@ -8799,6 +8941,15 @@
             }
           }
         ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CancelOrderRequest"
+              }
+            }
+          }
+        },
         "responses" : {
           "200" : {
             "content" : {
@@ -8818,7 +8969,7 @@
                 }
               }
             },
-            "description" : "Transition not legal from the order's current status"
+            "description" : "Transition not legal from the order's current status, or a reasonCode outside the four"
           },
           "403" : {
             "content" : {

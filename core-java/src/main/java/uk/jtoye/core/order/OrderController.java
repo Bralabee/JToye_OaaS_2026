@@ -22,6 +22,7 @@ import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.order.dto.BulkCancelRequest;
 import uk.jtoye.core.order.dto.BulkCancelResult;
+import uk.jtoye.core.order.dto.CancelOrderRequest;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
@@ -383,19 +384,27 @@ public class OrderController {
      * Cancel order.
      * POST /orders/{id}/cancel
      * Transition: ANY → CANCELLED
+     *
+     * <p>Phase 37-29 (D-18): an OPTIONAL body {@code {reasonCode}} keeps why on the order for the vendor's
+     * records. No body is the cancel it has always been. The reason never reaches the customer (T-37-75).
      */
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @PostMapping("/{id}/cancel")
-    @Operation(summary = "Cancel order", description = "Cancel an order at any stage (ANY → CANCELLED)")
+    @Operation(summary = "Cancel order",
+            description = "Cancel an order at any stage (ANY → CANCELLED). Optionally send {reasonCode} "
+                    + "(SUSPECTED_FAKE | CANNOT_FULFIL | CUSTOMER_REQUEST | OTHER) to keep why on the order for "
+                    + "the vendor's records; it is never sent to the customer. No body records no reason.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Transition applied"),
-            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
+            @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status, "
+                    + "or a reasonCode outside the four"),
             @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
             @ApiResponse(responseCode = "404", description = "Order not found"),
             @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
     })
-    public ResponseEntity<OrderDto> cancelOrder(@PathVariable UUID id) {
-        OrderDto order = orderService.cancelOrder(id);
+    public ResponseEntity<OrderDto> cancelOrder(@PathVariable UUID id,
+                                                @RequestBody(required = false) CancelOrderRequest body) {
+        OrderDto order = orderService.cancelOrder(id, body == null ? null : body.reasonCode());
         return ResponseEntity.ok(order);
     }
 
