@@ -260,3 +260,8 @@ None.
 ---
 *Phase: 37-real-world-operations-readiness*
 *Completed: 2026-10-12*
+
+## Self-Check: PASSED
+
+- FOUND: `ReviewerDisplayName.java` (contains `class ReviewerDisplayName`; `ReviewService.java` references it), `ReviewerDisplayNameTest.java`, `PublicReviewerNameIntegrationTest.java`, `PublicPromotionsHiddenTest.java`, the three RED evidence records
+- FOUND commits (ancestors of HEAD): `a0c3ded5`, `180501a6`, `b0a71f98`, `5ff4cf8f`, `200d7058`, and the SUMMARY commit `64bea92f`
