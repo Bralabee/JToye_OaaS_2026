@@ -35,6 +35,44 @@ class ReviewerDisplayNameTest {
         assertThat(shown).doesNotContain(surname);
     }
 
+    @ParameterizedTest(name = "\"{0}\" -> \"{1}\"")
+    @DisplayName("PR #918: the comma form 'Family, Given' publishes the GIVEN name and the family initial, never the family name")
+    @CsvSource(delimiter = '|', quoteCharacter = '"', value = {
+            "\"Pemberton, Grace\"            | Grace P.     | Pemberton",
+            "\"Pemberton, Grace Ann\"        | Grace P.     | Pemberton",
+            "\"Pemberton,Grace\"             | Grace P.     | Pemberton",
+            "\"  Pemberton ,  Grace  \"      | Grace P.     | Pemberton",
+            "\"O'Neil, Mary-Jane\"           | Mary-Jane O. | O'Neil",
+            "\"Okonkwo-Bello, Adaeze\"       | Adaeze O.    | Okonkwo",
+            "\"Pemberton, Grace, Jr.\"       | Grace P.     | Pemberton",
+            "\"van der Berg, Anna\"          | Anna V.      | Berg",
+    })
+    void commaForm(String full, String expected, String familyName) {
+        String shown = ReviewerDisplayName.of(full);
+        assertThat(shown).isEqualTo(expected);
+        assertThat(shown).doesNotContain(familyName);
+    }
+
+    @Test
+    @DisplayName("PR #918: a comma with no given name is a family name alone, so nothing is published (the storefront shows 'Customer')")
+    void commaWithoutGivenName() {
+        assertThat(ReviewerDisplayName.of("Pemberton,")).isNull();
+        assertThat(ReviewerDisplayName.of("Pemberton ,  ")).isNull();
+        assertThat(ReviewerDisplayName.of(", Grace")).isEqualTo("Grace");
+    }
+
+    @ParameterizedTest(name = "\"{0}\" -> \"{1}\"")
+    @DisplayName("PR #918: punctuation around a name is not part of it — the output is only the first given name and a letter initial")
+    @CsvSource(delimiter = '|', quoteCharacter = '"', value = {
+            "\"Grace (Pemberton)\"           | Grace P.",
+            "\"Grace. Pemberton.\"           | Grace P.",
+            "\"'Grace' Pemberton\"           | Grace P.",
+            "\"Grace -Pemberton\"            | Grace P.",
+    })
+    void surroundingPunctuation(String full, String expected) {
+        assertThat(ReviewerDisplayName.of(full)).isEqualTo(expected);
+    }
+
     @Test
     @DisplayName("leading, trailing and repeated whitespace is not part of the name")
     void surroundingWhitespace() {
