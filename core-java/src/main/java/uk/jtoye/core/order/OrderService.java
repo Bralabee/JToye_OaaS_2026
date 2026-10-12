@@ -8,9 +8,14 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.exception.BulkCancelTooLargeException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
@@ -20,6 +25,8 @@ import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
+import uk.jtoye.core.order.dto.BulkCancelRequest;
+import uk.jtoye.core.order.dto.BulkCancelResult;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
@@ -39,6 +46,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -100,6 +108,19 @@ public class OrderService {
      */
     private final OrderLimits orderLimits;
 
+    /**
+     * The bound on one bulk cancel (37-29, D-18): {@code jtoye.orders.bulk-cancel.max-ids}, default 100.
+     */
+    private final BulkCancelLimit bulkCancelLimit;
+
+    /**
+     * One transaction PER ORDER for a bulk cancel (37-29): REQUIRES_NEW, so each order's cancel commits
+     * on its own and a later order's failure cannot roll back an earlier order's rejection, outbox row
+     * or email. A {@code TransactionTemplate} rather than a {@code @Transactional} private method,
+     * which the Spring proxy would not see (self-invocation).
+     */
+    private final TransactionTemplate perOrderTransaction;
+
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
                        ShopRepository shopRepository,
@@ -112,7 +133,9 @@ public class OrderService {
                        RefundService refundService,
                        ShopAccessService shopAccessService,
                        OrderNumberGenerator orderNumberGenerator,
-                       OrderLimits orderLimits) {
+                       OrderLimits orderLimits,
+                       BulkCancelLimit bulkCancelLimit,
+                       PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -126,6 +149,9 @@ public class OrderService {
         this.shopAccessService = shopAccessService;
         this.orderNumberGenerator = orderNumberGenerator;
         this.orderLimits = orderLimits;
+        this.bulkCancelLimit = bulkCancelLimit;
+        this.perOrderTransaction = new TransactionTemplate(transactionManager);
+        this.perOrderTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -560,11 +586,96 @@ public class OrderService {
     }
 
     /**
-     * Cancel order at any stage.
+     * Cancel order at any stage, recording no reason.
      * Transition: ANY → CANCELLED
      */
     public OrderDto cancelOrder(UUID orderId) {
-        return transitionOrder(orderId, OrderEvent.CANCEL);
+        return cancelOrder(orderId, null);
+    }
+
+    /**
+     * Cancel order at any stage, keeping why (Phase 37-29, D-18).
+     * Transition: ANY → CANCELLED
+     *
+     * <p>The reason is stored on {@code orders.cancel_reason_code} for the vendor's records in the SAME
+     * save as the status change, and only when the transition succeeds. It is deliberately NOT placed on
+     * {@link OrderStateChangeEvent}, the customer email context, the webhook envelope or any public DTO
+     * (T-37-75): the customer is told their order was cancelled, never that it looked fake.
+     *
+     * @param reason why, or {@code null} to record none (the pre-37-29 behaviour, unchanged)
+     */
+    public OrderDto cancelOrder(UUID orderId, CancelReason reason) {
+        return transitionOrder(orderId, OrderEvent.CANCEL, reason);
+    }
+
+    /**
+     * Reject a batch of PENDING orders in one action (Phase 37-29, D-18, roadmap SC-4; RWO-041).
+     *
+     * <p>Each id goes through the SAME {@link #transitionOrder cancel transition} a single cancel uses —
+     * stock bookkeeping, the outbox event and therefore the customer email are exactly what a single
+     * cancel produces — and each in its OWN transaction, so a batch is a set of independent, idempotent
+     * actions: a later order that someone accepted meanwhile does not undo an earlier rejection, and the
+     * same request again reports {@code ALREADY_CANCELLED} for everything already done and writes nothing.
+     * There is therefore no Idempotency-Key on this endpoint: a retried submit is safe by construction.
+     *
+     * <p><b>Who.</b> Each order needs STAFF on its own shop, checked per order with
+     * {@link ShopAccessService#permits}. An order the caller may not act on — another shop, another tenant
+     * (invisible under RLS), or no such row — reads the same {@code NOT_FOUND}, so the batch cannot be
+     * used to learn which ids exist elsewhere (T-37-74).
+     *
+     * <p><b>How many.</b> At most {@link BulkCancelLimit#maxIds()} ids; above it the whole request is a
+     * typed 400 before any order is read.
+     *
+     * <p>Runs OUTSIDE a transaction of its own ({@code NOT_SUPPORTED} overrides the class default) so the
+     * request thread does not hold a connection idle across the loop; each order's work opens and commits
+     * its own.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public BulkCancelResult bulkCancel(BulkCancelRequest request) {
+        List<UUID> ids = request.orderIds();
+        int limit = bulkCancelLimit.maxIds();
+        if (ids.size() > limit) {
+            throw new BulkCancelTooLargeException(ids.size(), limit);
+        }
+        List<BulkCancelResult.Entry> results = new ArrayList<>(ids.size());
+        Map<BulkCancelResult.Outcome, Integer> counts = new EnumMap<>(BulkCancelResult.Outcome.class);
+        for (UUID id : ids) {
+            BulkCancelResult.Outcome outcome = perOrderTransaction.execute(
+                    status -> cancelOneForBulk(id, request.reasonCode()));
+            results.add(new BulkCancelResult.Entry(id, outcome));
+            counts.merge(outcome, 1, Integer::sum);
+        }
+        // Counts only: no order number, no customer, and never the reason itself.
+        log.info("Bulk cancel of {} ids: {}", ids.size(), counts);
+        return new BulkCancelResult(results);
+    }
+
+    /**
+     * One id of a bulk cancel, inside its own transaction: classify first, transition only a PENDING
+     * order. The classification reads the committed state, so a duplicate id in one request reads the
+     * first occurrence's cancel and reports {@code ALREADY_CANCELLED}.
+     */
+    private BulkCancelResult.Outcome cancelOneForBulk(UUID orderId, CancelReason reason) {
+        // RLS: another tenant's order is simply absent, the same NOT_FOUND as a random id.
+        Optional<Order> found = orderRepository.findById(orderId);
+        if (found.isEmpty()) {
+            return BulkCancelResult.Outcome.NOT_FOUND;
+        }
+        Order order = found.get();
+        if (!shopAccessService.permits(order.getShopId(), ShopRole.STAFF)) {
+            return BulkCancelResult.Outcome.NOT_FOUND;
+        }
+        // A voided order is out of the books and does not move again (37-10); CANCELLED and REFUNDED are
+        // terminal. All three are "nothing left to reject".
+        if (order.isVoided() || order.getStatus() == OrderStatus.CANCELLED
+                || order.getStatus() == OrderStatus.REFUNDED) {
+            return BulkCancelResult.Outcome.ALREADY_CANCELLED;
+        }
+        if (order.getStatus() != OrderStatus.PENDING) {
+            return BulkCancelResult.Outcome.ALREADY_ACCEPTED;
+        }
+        transitionOrder(orderId, OrderEvent.CANCEL, reason);
+        return BulkCancelResult.Outcome.REJECTED;
     }
 
     /**
@@ -572,6 +683,14 @@ public class OrderService {
      * Validates transition, updates order, and persists.
      */
     private OrderDto transitionOrder(UUID orderId, OrderEvent event) {
+        return transitionOrder(orderId, event, null);
+    }
+
+    /**
+     * As {@link #transitionOrder(UUID, OrderEvent)}, recording {@code cancelReason} on the order when the
+     * transition lands on CANCELLED (37-29). Ignored for any other event; null records nothing.
+     */
+    private OrderDto transitionOrder(UUID orderId, OrderEvent event, CancelReason cancelReason) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         // VSA-02 (D-02/D-03): the single chokepoint for all six KDS state transitions
@@ -599,6 +718,11 @@ public class OrderService {
         // stock failure rolls back the status change (CQ-01 — RESEARCH §11 Q7).
         order.setStatus(newStatus);
         order.setUpdatedAt(OffsetDateTime.now());
+        // Phase 37-29 (D-18): why the vendor cancelled, kept on the row in the same save. Only on a
+        // cancel that the state machine has just accepted, so a refused transition records no reason.
+        if (newStatus == OrderStatus.CANCELLED && cancelReason != null) {
+            order.setCancelReasonCode(cancelReason);
+        }
         // Phase 37-28 (D-27): the keyed client-address digest exists only while the order is OPEN — it is
         // what the per-IP cash-order cap counts. A terminal state ends that need, so the digest goes with
         // it, in the same save; nothing else about the order changes. Written here, on the ONE transition

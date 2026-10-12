@@ -20,6 +20,8 @@ import uk.jtoye.core.common.idempotency.Idempotent;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
+import uk.jtoye.core.order.dto.BulkCancelRequest;
+import uk.jtoye.core.order.dto.BulkCancelResult;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
@@ -395,6 +397,40 @@ public class OrderController {
     public ResponseEntity<OrderDto> cancelOrder(@PathVariable UUID id) {
         OrderDto order = orderService.cancelOrder(id);
         return ResponseEntity.ok(order);
+    }
+
+    /**
+     * Reject several orders in one action (Phase 37-29, D-18, roadmap SC-4; RWO-041).
+     * POST /orders/bulk-cancel
+     *
+     * <p>Agent-readiness contract: idempotent by construction, so no Idempotency-Key is needed — each id
+     * is its own committed action and a repeat reports ALREADY_CANCELLED for what is already done. Errors
+     * are typed RFC 7807. There is deliberately no MCP tool for this: rejecting customer orders stays a
+     * human kitchen action (plan probe note).
+     */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // same scope as every other order mutation (AI-02)
+    @PostMapping("/bulk-cancel")
+    @Operation(summary = "Reject several orders",
+            description = "Rejects each PENDING order in the list through the same cancel transition a single "
+                    + "cancel uses (stock bookkeeping, order event and customer email exactly as a single cancel) "
+                    + "and reports one outcome per id, in request order: REJECTED, ALREADY_ACCEPTED, "
+                    + "ALREADY_CANCELLED or NOT_FOUND. Each order needs at least STAFF on its own shop; an order "
+                    + "the caller may not act on (another shop, another tenant, or no such order) reads NOT_FOUND "
+                    + "without distinction. The reasonCode is kept on each rejected order for the vendor's records "
+                    + "and is never sent to the customer. Idempotent: the same request again reports "
+                    + "ALREADY_CANCELLED and changes nothing, so a retry needs no Idempotency-Key. At most "
+                    + "jtoye.orders.bulk-cancel.max-ids (default 100) ids per request.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "The batch was processed; read each outcome. 200 whatever the outcomes are."),
+            @ApiResponse(responseCode = "400",
+                    description = "Request validation failed (errors/validation: no ids, a null id, no reasonCode "
+                            + "or one outside the four), or more ids than the configured maximum "
+                            + "(errors/bulk-cancel-too-large, with count and limit)"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks the orders:write scope")
+    })
+    public ResponseEntity<BulkCancelResult> bulkCancel(@Valid @RequestBody BulkCancelRequest request) {
+        return ResponseEntity.ok(orderService.bulkCancel(request));
     }
 
     /**

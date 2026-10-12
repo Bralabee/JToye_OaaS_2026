@@ -40,6 +40,7 @@ import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderCapExceededException;
+import uk.jtoye.core.exception.BulkCancelTooLargeException;
 import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
@@ -901,6 +902,24 @@ public class GlobalExceptionHandler {
         problem.setProperty("value", ex.getValue());
         problem.setProperty("limit", ex.getLimit());
         problem.setProperty("productName", ex.getProductName());
+        return problem;
+    }
+
+    /**
+     * Phase 37-29 (D-18, RWO-041 / SC-4): a bulk cancel named more order ids than
+     * {@code jtoye.orders.bulk-cancel.max-ids} allows. 400 with its own type: the request as a whole
+     * is outside the contract before any id is read, and nothing was written. {@code count} and
+     * {@code limit} are typed properties, so the dashboard can split the selection and an agent can
+     * branch without parsing the sentence.
+     */
+    @ExceptionHandler(BulkCancelTooLargeException.class)
+    public ProblemDetail handleBulkCancelTooLarge(BulkCancelTooLargeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Too many orders in one request");
+        problem.setType(URI.create("https://jtoye.uk/errors/bulk-cancel-too-large"));
+        problem.setProperty("code", "BULK_CANCEL_TOO_LARGE");
+        problem.setProperty("count", ex.getCount());
+        problem.setProperty("limit", ex.getLimit());
         return problem;
     }
 

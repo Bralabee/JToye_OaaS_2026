@@ -581,6 +581,17 @@ jtoye:
     # edit, which is the whole point of surfacing them here.
     default-radius-km: ${GEO_DEFAULT_RADIUS_KM:5}
     max-radius-km: ${GEO_MAX_RADIUS_KM:50}
+  # Phase 37-29 (D-18, RWO-041 / roadmap SC-4): how many orders ONE bulk reject may name. Read by
+  # BulkCancelLimit; a request above it is refused 400 bulk-cancel-too-large before any order is
+  # touched, and a value below 1 refuses to start, naming the key. A config KEY, not a secret (D-18:
+  # never a literal in code). No env placeholder, deliberately: every runtime keeps this default
+  # (Spring relaxed binding still honours JTOYE_ORDERS_BULKCANCEL_MAXIDS if an operator must move
+  # it), so the env-contract gate owes no compose / .env.example / k8s line — the 37-27 cash-caps
+  # precedent. Each id is its own transaction, cancel transition, outbox row and customer email,
+  # so the bound is a bound on one request's work; 100 exceeds any kitchen board page.
+  orders:
+    bulk-cancel:
+      max-ids: 100
 
 # Outbox flusher tunables (27-04 T4, finding E). PRE-EXISTING DEFECT fixed here, not introduced:
 # these eight keys were bound by @Value/@Scheduled inline defaults and appeared in NO yml, env
