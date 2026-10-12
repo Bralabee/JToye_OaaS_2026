@@ -197,10 +197,10 @@ that mints these IDs) declares all 35 and is omitted from the traceability rows.
 
 **37-C Checkout integrity**
 
-- [ ] **RWO-007**: #783 (P0) — Checkout submit carries the unit prices and total the customer saw (required; a missing expectation is a typed 422), and on any price, availability, sold-out or minimum change the server refuses with a typed RFC 7807 409 listing each change (for example "Suya £9.00 → £14.00"), composed with 31.1's stale-acknowledgement 409; the UI shows every change and requires re-confirmation (D-16).
-- [ ] **RWO-008**: #792 — No storefront surface renders a promotion that the order path does not apply; the vendor's promotion records are kept, and the marketing page tells the vendor promotions are not shown to customers until checkout applies them (D-17).
-- [ ] **RWO-029**: #802 — A cash order's confirmation has its own route, as the card path already does: focus moves to its heading, it announces the order number, sets its own title, survives a refresh without re-POSTing, and carries the full breakdown (subtotal, delivery, VAT, total, recorded allergen set).
-- [ ] **RWO-044**: #813 — Public reviews show a derived display name (first name plus initial), never the reviewer's full checkout name, and the review form tells the reviewer what will be published; the stored value is kept for erasure.
+- [x] **RWO-007**: #783 (P0) — Checkout submit carries the unit prices and total the customer saw (required; a missing expectation is a typed 422), and on any price, availability, sold-out or minimum change the server refuses with a typed RFC 7807 409 listing each change (for example "Suya £9.00 → £14.00"), composed with 31.1's stale-acknowledgement 409; the UI shows every change and requires re-confirmation (D-16).
+- [x] **RWO-008**: #792 — No storefront surface renders a promotion that the order path does not apply; the vendor's promotion records are kept, and the marketing page tells the vendor promotions are not shown to customers until checkout applies them (D-17).
+- [x] **RWO-029**: #802 — A cash order's confirmation has its own route, as the card path already does: focus moves to its heading, it announces the order number, sets its own title, survives a refresh without re-POSTing, and carries the full breakdown (subtotal, delivery, VAT, total, recorded allergen set).
+- [x] **RWO-044**: #813 — Public reviews show a derived display name (first name plus initial), never the reviewer's full checkout name, and the review form tells the reviewer what will be published; the stored value is kept for erasure.
 
 **37-E Integrator surface**
 
