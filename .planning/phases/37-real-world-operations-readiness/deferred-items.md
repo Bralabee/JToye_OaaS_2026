@@ -580,3 +580,56 @@ where it must be resolved.
   reported for the later ids. The recovery is the contract itself: re-send the same request, and every order
   already rejected reads `ALREADY_CANCELLED`. A "partial batch" shape (a FAILED outcome per id) was not added
   because the plan's outcome set is closed; record here in case the kitchen E2E (37-31) ever observes the race.
+- **Docs metrics drift from 37-30 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-30 (`jest_blocks` 2627 -> 2672, `jest_files` 222 -> 229,
+  `total_logical_invocations` 5626 at the measurement; the Java counts are 37-24..37-29's): this plan adds seven
+  jest suites (reject-orders-dialog, bulk-reject, kds-bulk-reject, unverified-contact-badge, abuse-refusals,
+  stepper-limit, retention-r16) and extends three. `check-doc-metrics` stays PASS 37/37 (no count moved by hand).
+  Regenerate `docs/metrics.json` with `--write` and re-point the prose counts in CLAUDE.md, AGENTS.md and
+  README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-30 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree (core-java and frontend Up 7 h at
+  measurement). `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 as recorded by 37-27..37-29.
+  Live probes for the gate: three storefront cash orders at one shop as a guest -> on `/dashboard/orders` each
+  PENDING row has a checkbox, the header checkbox selects them, the bar reads "3 selected", "Reject 3 orders" ->
+  the dialog requires a reason -> the summary reads "3 rejected." and the rows are CANCELLED after "Close
+  summary"; the same three on `/dashboard/kitchen` show "Unverified contact" beside the name (a vendor-created
+  order shows none); the fourth guest cash order with the same email is refused in the checkout error slot with
+  "You already have the most open cash orders this shop allows for one customer…" (", or pay by card" iff the
+  shop takes cards) and the network log shows ONE POST; a line above `jtoye.order-limits.max-line-quantity`
+  cannot be reached (the "+" is disabled with "Max {n} per order"); `/legal/retention` lists R-16 "Up to 72
+  hours…"; a signed-in customer's order shows no badge and the request went to `/api/customer-orders?shop=`.
+- **Signed-in orders through the proxy and the per-IP cap (37-30, found; a server or operator decision, not the frontend's).**
+  status: open
+  **What:** the access token is an HttpOnly cookie, so a signed-in customer's order is posted through
+  `POST /api/customer-orders?shop=` (the `/orders/mine` shape), and core then sees the FRONTEND CONTAINER as
+  the socket peer. `ClientIpResolver` (37-24, D-19) reads `X-Forwarded-For` only from a peer declared in
+  `jtoye.security.trusted-proxies` (`TRUSTED_PROXY_CIDRS`, empty by default), and a Next 16 route handler cannot
+  read its own socket peer, so unless an ingress sets the header AND the frontend's range is declared trusted,
+  every signed-in customer's cash order at a shop is digested under ONE address (the frontend's) and the per-IP
+  cap (5 open) can refuse legitimate signed-in customers. The route forwards the chain it receives, which is
+  enough once the two conditions hold. **Recommendation (research-then-recommend ruling 2026-10-10):** the
+  principled fix is in `CashOrderCaps` — do not count or check the IP axis for an order whose contact is
+  VERIFIED (the IP axis exists for anonymous floods; a verified contact is already bounded by the email axis),
+  which also removes the dependency on proxy topology; the operator alternative is declaring the frontend's
+  range in `TRUSTED_PROXY_CIDRS` per environment behind an ingress that sets `X-Forwarded-For`. Either is a
+  one-line decision for the owner before the first shared environment takes signed-in cash orders; 37-31's IP-cap
+  spec must place its six orders as a GUEST (direct to core) or it measures the frontend's address.
+- **The reject dialog's single-order path uses /bulk-cancel, not the single cancel's optional body (37-30, recorded decision).**
+  status: resolved
+  **What:** the dispatch named "the optional {reasonCode} body on the single cancel"; the dialog sends every
+  reject, one or many, as a batch so an order accepted on another screen a second earlier is reported
+  ALREADY_ACCEPTED instead of being cancelled (the single cancel accepts a CONFIRMED order). The single cancel's
+  body stays an API-caller feature (37-29's IT covers it). Resolved by decision; here so a reader of 37-29's
+  "Next Phase Readiness" is not left looking for the UI call site.
+- **UI-SPEC D1 "empty" and the selection-mode edges were planner assumptions, now implemented one way (37-30, recorded).**
+  status: open
+  **What:** no PENDING row on the Orders page -> no selection column and no header checkbox; the Orders bar
+  renders only while >= 1 row is selected; the kitchen bar renders throughout selection mode ("0 selected",
+  Reject disabled) because "Stop selecting" lives on it; selection mode ends when a batch's summary closes; the
+  per-card single reject leaves the card on "Close summary". If the owner wants the kitchen bar hidden at 0 or
+  selection mode kept after a batch, each is a one-line change with a test to flip. Also: the basket drawer's
+  stepper limit is null until the shop page has been read in this provider (a deep link to /checkout) — the
+  server's 422 is the gate, the spec's declared other branch.
