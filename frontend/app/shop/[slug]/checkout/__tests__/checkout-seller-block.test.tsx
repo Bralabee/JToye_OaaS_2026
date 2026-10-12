@@ -233,9 +233,19 @@ describe("#789: the seller block is in front of the customer BEFORE they place t
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     const body = JSON.stringify(mockedPost.mock.calls[0][1])
     expect(body).not.toMatch(/seller|legalName|Mama Ade Foods Ltd|01234567/)
-    // the keys that reach the wire (JSON drops the undefined allergyNote/notes of an empty form)
+    // the keys that reach the wire (JSON drops the undefined allergyNote/notes of an empty form);
+    // expectedTotalPennies is the checkout's own D-16 field (37-34), not the seller's
     expect(Object.keys(JSON.parse(body)).sort()).toEqual(
-      ["acknowledgedAllergenMask", "customerEmail", "customerName", "customerPhone", "fulfilmentType", "idempotencyKey", "items"].sort()
+      [
+        "acknowledgedAllergenMask",
+        "customerEmail",
+        "customerName",
+        "customerPhone",
+        "expectedTotalPennies",
+        "fulfilmentType",
+        "idempotencyKey",
+        "items",
+      ].sort()
     )
   })
 })

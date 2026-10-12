@@ -306,9 +306,12 @@ describe("Checkout idempotency contract (Cluster E client half)", () => {
     expect(second.bodyKey).not.toBe(first.bodyKey)
     // And the header still travels with the body on the rotated key.
     expect(second.headerKey).toBe(second.bodyKey)
-    // The edited quantity is what the second submit carries — it IS a different body.
-    const secondPayload = mockedPost.mock.calls[1][1] as { items: Array<{ productId: string; quantity: number }> }
-    expect(secondPayload.items).toEqual([{ productId: "p1", quantity: 2 }])
+    // The edited quantity is what the second submit carries — it IS a different body. The line
+    // also carries the unit price the page displayed (37-34, D-16: `expectedUnitPricePennies`).
+    const secondPayload = mockedPost.mock.calls[1][1] as {
+      items: Array<{ productId: string; quantity: number; expectedUnitPricePennies?: number }>
+    }
+    expect(secondPayload.items).toEqual([{ productId: "p1", quantity: 2, expectedUnitPricePennies: 1000 }])
   })
 
   /**
