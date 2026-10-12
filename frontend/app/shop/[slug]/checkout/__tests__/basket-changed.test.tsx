@@ -591,3 +591,148 @@ describe("the basket is rewritten to the server's values and still belongs to th
     expect(mockedPost).toHaveBeenCalledTimes(1)
   })
 })
+
+/**
+ * PR #918 round 1, finding 1: the total the customer ACCEPTED is the total the resubmit sends. The page
+ * previews the delivery fee from the shop it loaded; when the server's fee differs (the shop read failed
+ * and the preview degraded to £0, or the vendor changed the fee or threshold after the page loaded),
+ * the 409's TOTAL_CHANGED states the server's total, the panel shows it, the customer accepts it — and
+ * the resubmit must carry THAT total, or every resubmit is refused with the same 409 for ever.
+ */
+describe("a TOTAL_CHANGED the customer accepted is the total the resubmit carries (PR #918 finding 1)", () => {
+  it("the server's delivery fee differs from the page's preview: after Accept changes the label and the second POST carry the accepted total, under the SAME key", async () => {
+    mockEndpoints()
+    mockedPost
+      .mockRejectedValueOnce(basketChanged409([{ kind: "TOTAL_CHANGED", expected: 2200, current: 2500 }]))
+      .mockResolvedValue({ data: { ...COD_CONFIRMATION, deliveryFeePennies: 600, totalAmountPennies: 2500 } })
+    await armCheckout("DELIVERY")
+    expect(submitButton()).toHaveTextContent("£22.00")
+
+    placeOrder()
+    await screen.findByTestId("basket-changed-panel")
+    expect(screen.getAllByTestId("basket-change-row")[0]).toHaveTextContent("Total was £22.00, now £25.00")
+    await waitFor(() => expect(submitButton()).not.toBeDisabled())
+    fireEvent.click(screen.getByRole("button", { name: BASKET_CHANGED_ACCEPT_LABEL }))
+    // What the customer accepted is what the button now says...
+    await waitFor(() => expect(submitButton()).toHaveTextContent("Place order · £25.00"))
+
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+    // ...and what the resubmit sends.
+    expect(posted(1)[1].expectedTotalPennies).toBe(2500)
+    expect(posted(1)[1].idempotencyKey).toBe(posted(0)[1].idempotencyKey)
+  })
+
+  it("the shop read failed (the documented £0 preview): the accepted server total is sent, not the £0-fee total again", async () => {
+    mockedGet.mockImplementation((url: string) =>
+      typeof url === "string" && url.endsWith("/products")
+        ? Promise.resolve({ data: CATALOGUE })
+        : Promise.reject(new Error("shop read failed"))
+    )
+    mockedPost
+      .mockRejectedValueOnce(basketChanged409([{ kind: "TOTAL_CHANGED", expected: 1900, current: 2200 }]))
+      .mockResolvedValue({ data: COD_CONFIRMATION })
+    seedCart()
+    renderCheckout()
+    await screen.findByRole("heading", { name: "No allergens declared for this order" })
+    fireEvent.change(screen.getByLabelText(/address line 1/i), { target: { value: "12 Coldharbour Lane" } })
+    fireEvent.change(screen.getByLabelText(/town \/ city/i), { target: { value: "London" } })
+    fireEvent.change(screen.getByLabelText(/postcode/i), { target: { value: "SW9 8LF" } })
+    fillDetails()
+    fireEvent.click(ackCheckbox())
+    await waitFor(() => expect(ackCheckbox()).toBeChecked())
+    expect(submitButton()).toHaveTextContent("£19.00")
+
+    placeOrder()
+    await screen.findByTestId("basket-changed-panel")
+    await waitFor(() => expect(submitButton()).not.toBeDisabled())
+    fireEvent.click(screen.getByRole("button", { name: BASKET_CHANGED_ACCEPT_LABEL }))
+    await waitFor(() => expect(submitButton()).toHaveTextContent("Place order · £22.00"))
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+    expect(posted(0)[1].expectedTotalPennies).toBe(1900)
+    expect(posted(1)[1].expectedTotalPennies).toBe(2200)
+  })
+
+  it("an accepted total does not outlive the basket it was quoted for: switching to collection after accepting sends the collection total", async () => {
+    mockEndpoints()
+    mockedPost
+      .mockRejectedValueOnce(basketChanged409([{ kind: "TOTAL_CHANGED", expected: 2200, current: 2500 }]))
+      .mockResolvedValue({ data: COD_CONFIRMATION })
+    await armCheckout("DELIVERY")
+    placeOrder()
+    await screen.findByTestId("basket-changed-panel")
+    await waitFor(() => expect(submitButton()).not.toBeDisabled())
+    fireEvent.click(screen.getByRole("button", { name: BASKET_CHANGED_ACCEPT_LABEL }))
+    await waitFor(() => expect(submitButton()).toHaveTextContent("Place order · £25.00"))
+
+    fireEvent.click(screen.getByRole("button", { name: /collection/i }))
+    await waitFor(() => expect(submitButton()).toHaveTextContent("Place order · £19.00"))
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+    expect(posted(1)[1].expectedTotalPennies).toBe(1900)
+  })
+})
+
+/**
+ * PR #918 round 1, finding 4 (conditional): the 409 handler decides whether the server's rewrite will
+ * change the lines from the basket in its RENDER CLOSURE, while the provider rewrites its CURRENT state.
+ * A sibling tab that edits the basket while the POST is in flight makes the two differ: the handler
+ * flags a rewrite the provider never performs, the flag is not consumed, and the shopper's NEXT basket
+ * change is mistaken for the server's — keeping an allergen acknowledgement across a real change (D-02).
+ */
+describe("a sibling-tab edit during the POST cannot make a later basket change keep the acknowledgement (PR #918 finding 4)", () => {
+  function siblingTabWrites(items: Array<{ productId: string; title: string; pricePennies: number; quantity: number }>) {
+    act(() => {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          shopSlug: SLUG,
+          items: items.map((i) => ({ ...i, imageUrl: null, category: "Mains" })),
+        })
+      )
+      window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY }))
+    })
+  }
+
+  it("the server removes a line the sibling tab already removed; re-tick; the sibling then changes a quantity: the box is unticked", async () => {
+    mockEndpoints()
+    let reject: (reason: unknown) => void = () => {}
+    mockedPost
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, rej) => {
+            reject = rej
+          })
+      )
+      .mockResolvedValue({ data: COD_CONFIRMATION })
+    await armCheckout()
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+
+    // While the POST is in flight, another tab removes Suya. A real basket change: the box unticks.
+    siblingTabWrites([{ productId: "p2", title: "Jollof Rice", pricePennies: 500, quantity: 2 }])
+    await waitFor(() => expect(ackCheckbox()).not.toBeChecked())
+
+    // The 409 says the same thing the sibling did: Suya is gone.
+    await act(async () => {
+      reject(
+        basketChanged409([
+          { kind: "REMOVED", productId: "p1" },
+          { kind: "TOTAL_CHANGED", expected: 1900, current: 1000 },
+        ])
+      )
+    })
+    await screen.findByTestId("basket-changed-panel")
+    await waitFor(() => expect(submitButton()).not.toBeDisabled())
+
+    // The customer reads the panel and re-ticks for the basket they now see.
+    fireEvent.click(ackCheckbox())
+    await waitFor(() => expect(ackCheckbox()).toBeChecked())
+
+    // A REAL change to the basket — not the server's — must untick it (D-02).
+    siblingTabWrites([{ productId: "p2", title: "Jollof Rice", pricePennies: 500, quantity: 3 }])
+    await waitFor(() => expect(storedItems().map((i) => i.quantity)).toEqual([3]))
+    await waitFor(() => expect(ackCheckbox()).not.toBeChecked())
+  })
+})
