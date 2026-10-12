@@ -277,3 +277,8 @@ None.
 ---
 *Phase: 37-real-world-operations-readiness*
 *Completed: 2026-10-12*
+
+## Self-Check: PASSED
+
+- FOUND: `shop-promotions-hidden.test.tsx`, `review-display.test.tsx`, `marketing-promotions-notice.test.tsx`, both RED evidence records; `marketing/page.tsx` contains the panel heading, `shop-detail-client.tsx` the "Customer" fallback
+- FOUND commits (ancestors of HEAD): `25b29b98`, `4bb68d05`, `935283b9`, `eadaac14`, `77aa2a7d`, `5483dd41`, and the SUMMARY commit `b62f1a0a`
