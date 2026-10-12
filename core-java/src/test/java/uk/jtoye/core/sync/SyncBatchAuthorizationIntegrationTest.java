@@ -203,6 +203,7 @@ class SyncBatchAuthorizationIntegrationTest {
                         .contentType("application/json")
                         .content(productJson(f.skuB, f.shopB, "PWNED-by-shop-A-manager", 1, 1)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.processedCount").value(0))
                 .andExpect(jsonPath("$.results[0].outcome").value("REJECTED"))
                 .andExpect(jsonPath("$.results[0].code").value("SHOP_ACCESS_DENIED"))
@@ -216,6 +217,26 @@ class SyncBatchAuthorizationIntegrationTest {
                 Integer.class, f.tenant, f.skuB))
                 .as("the allergen declaration (V63 snapshot source) is untouched")
                 .isEqualTo(0);
+    }
+
+    /**
+     * 37-40 (RWO-017): the same manager names shop B's SKU UNDER shop A, which they manage. The gate on
+     * shop A passes, so the refusal must come from the SKU belonging to another shop: REJECTED
+     * SHOP_MISMATCH, and shop B's row is untouched (never moved into shop A, never overwritten).
+     */
+    @Test
+    void shopManagerOnShopA_namingShopBsSkuUnderShopA_isRejectedShopMismatch() throws Exception {
+        Fixture f = seed();
+        mockMvc.perform(post(SYNC)
+                        .with(managerJwt(f))
+                        .contentType("application/json")
+                        .content(productJson(f.skuB, f.shopA, "PWNED-via-shop-A", 1, 1)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].code").value("SHOP_MISMATCH"))
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+        assertThat(titleOf(f.tenant, f.skuB)).isEqualTo(originalTitle(f.skuB));
+        assertThat(jdbc.queryForObject("SELECT shop_id FROM products WHERE tenant_id = ? AND sku = ?",
+                UUID.class, f.tenant, f.skuB)).isEqualTo(f.shopB);
     }
 
     /** Allow arm for the human half: the same manager CAN write their own shop's SKU (the gate is scoped, not a wall). */
@@ -247,6 +268,7 @@ class SyncBatchAuthorizationIntegrationTest {
                         .contentType("application/json")
                         .content(productJson(newSku, null, "minted-by-scoped-user", 0, 100)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.processedCount").value(0))
                 .andExpect(jsonPath("$.results[0].outcome").value("REJECTED"))
                 .andExpect(jsonPath("$.results[0].code").value("SHOP_REQUIRED"));
@@ -279,6 +301,7 @@ class SyncBatchAuthorizationIntegrationTest {
                         .contentType("application/json")
                         .content(shopJson(shopBName, "99 Hijacked Road")))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.processedCount").value(0))
                 .andExpect(jsonPath("$.results[0].code").value("SHOP_ACCESS_DENIED"))
                 .andExpect(jsonPath("$.results[0].message").value(
@@ -297,6 +320,7 @@ class SyncBatchAuthorizationIntegrationTest {
                         .contentType("application/json")
                         .content(shopJson(name, "1 Rogue Lane")))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.processedCount").value(0))
                 .andExpect(jsonPath("$.results[0].code").value("SHOP_ACCESS_DENIED"))
                 .andExpect(jsonPath("$.results[0].message").value(

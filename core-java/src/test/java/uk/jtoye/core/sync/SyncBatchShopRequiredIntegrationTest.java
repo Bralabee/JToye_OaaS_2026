@@ -170,6 +170,103 @@ class SyncBatchShopRequiredIntegrationTest {
         assertThat(shopOf(f.tenant, syncSku)).isEqualTo(f.shopA.toString());
     }
 
+    // =====================================================================
+    // Updates: the shop must match, and availability and stock go through the 37-39 rules
+    // =====================================================================
+
+    /**
+     * An existing SKU belongs to shop A; an item names it with shop B. The SKU is unique per tenant, so
+     * this can only be a request to move or overwrite another shop's product. RED after the first
+     * GREEN: the (sku, shop) lookup misses and the create collides with the unique index
+     * (WRITE_CONFLICT), which tells the integrator nothing useful. Fixed: REJECTED SHOP_MISMATCH and
+     * the product is byte-identical (shop, title, price).
+     */
+    @Test
+    void updateNamingADifferentShopIsRejectedShopMismatchAndChangesNothing() throws Exception {
+        Fixture f = seed();
+        String sku = "MOVE-" + f.tag;
+        asRealmAdmin(f.tenant, () -> productService.createProduct(productRequest(f.shopA, sku, "Rice")).getId());
+
+        mockMvc.perform(post(SYNC).with(adminJwt(f.tenant)).contentType("application/json")
+                        .content("{\"items\":[" + product(sku, f.shopB, "Rice") + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].code").value("SHOP_MISMATCH"))
+                .andExpect(jsonPath("$.results[0].outcome").value("REJECTED"))
+                .andExpect(jsonPath("$.processedCount").value(0))
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT shop_id::text AS shop_id, title, price_pennies FROM products WHERE tenant_id = ? AND sku = ?",
+                f.tenant, sku);
+        assertThat(row.get("shop_id")).isEqualTo(f.shopA.toString());
+        assertThat(row.get("title")).isEqualTo("Product " + sku);
+        assertThat(((Number) row.get("price_pennies")).longValue()).isEqualTo(500L);
+    }
+
+    /**
+     * Same shop, {@code available false} and {@code quantityInStock 3}: UPDATED and stored, and the
+     * allergen declaration and spans are not touched by an item that does not mention them.
+     */
+    @Test
+    void updateInTheSameShopStoresAvailabilityAndStock() throws Exception {
+        Fixture f = seed();
+        String sku = "STOCK-" + f.tag;
+        asRealmAdmin(f.tenant, () -> productService.createProduct(productRequest(f.shopA, sku, EMPHASISED)).getId());
+        String spansBefore = spansOf(f.tenant, sku);
+
+        mockMvc.perform(post(SYNC).with(managerJwt(f)).contentType("application/json")
+                        .content("{\"items\":[{\"type\":\"product\",\"sku\":\"" + sku + "\",\"shopId\":\""
+                                + f.shopA + "\",\"available\":false,\"quantityInStock\":3}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.results[0].outcome").value("UPDATED"));
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT available, quantity_in_stock, allergen_mask, ingredients_text FROM products "
+                        + "WHERE tenant_id = ? AND sku = ?", f.tenant, sku);
+        assertThat((Boolean) row.get("available")).isFalse();
+        assertThat(((Number) row.get("quantity_in_stock")).intValue()).isEqualTo(3);
+        assertThat(((Number) row.get("allergen_mask")).intValue()).isZero();
+        assertThat(row.get("ingredients_text")).isEqualTo(EMPHASISED);
+        assertThat(spansOf(f.tenant, sku)).isEqualTo(spansBefore);
+    }
+
+    // =====================================================================
+    // The status is the truth about the items
+    // =====================================================================
+
+    @Test
+    void allItemsWrittenIsSuccess() throws Exception {
+        Fixture f = seed();
+        mockMvc.perform(post(SYNC).with(managerJwt(f)).contentType("application/json")
+                        .content("{\"items\":[" + product("OK1-" + f.tag, f.shopA, "Rice") + ","
+                                + product("OK2-" + f.tag, f.shopA, "Rice") + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.processedCount").value(2))
+                .andExpect(jsonPath("$.results[0].outcome").value("CREATED"))
+                .andExpect(jsonPath("$.results[1].outcome").value("CREATED"));
+    }
+
+    /**
+     * UXT-037: nothing was written, so the batch must not say SUCCESS or PARTIAL. RED after the first
+     * GREEN: PARTIAL.
+     */
+    @Test
+    void noItemWrittenIsRejected() throws Exception {
+        Fixture f = seed();
+        mockMvc.perform(post(SYNC).with(managerJwt(f)).contentType("application/json")
+                        .content("{\"items\":[" + product("BAD1-" + f.tag, null, "Rice") + ","
+                                + "{\"type\":\"widget\"},"
+                                + product("BAD2-" + f.tag, f.shopB, "Rice") + "]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.processedCount").value(0))
+                .andExpect(jsonPath("$.results.length()").value(3));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM products WHERE tenant_id = ?", Long.class, f.tenant))
+                .isZero();
+    }
+
     // ---------------------------------------------------------------------
     // fixture
     // ---------------------------------------------------------------------

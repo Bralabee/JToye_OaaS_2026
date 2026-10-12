@@ -323,6 +323,30 @@ class SyncServiceTest {
         verify(transactionManager, times(2)).getTransaction(any());
     }
 
+    /** UXT-037: a batch in which no item was written says REJECTED, never SUCCESS or PARTIAL. */
+    @Test
+    void testProcessBatch_NothingWritten_isRejected() {
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Arrays.asList(
+                        SyncItem.builder().type("unknown").build(),
+                        productItem("NO-SHOP", null, "T", "Rice", 0, 1L)))
+                .build());
+
+        assertThat(response.getStatus()).isEqualTo("REJECTED");
+        assertThat(response.getProcessedCount()).isZero();
+        assertThat(response.getResults()).hasSize(2);
+    }
+
+    /** An empty batch refused nothing and wrote nothing: SUCCESS with no results (nothing was skipped). */
+    @Test
+    void testProcessBatch_Empty_isSuccessWithNoResults() {
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder().items(java.util.List.of()).build());
+
+        assertThat(response.getStatus()).isEqualTo("SUCCESS");
+        assertThat(response.getResults()).isEmpty();
+        verifyNoInteractions(transactionManager);
+    }
+
     // ---- item builders (the typed SyncItem replaces the old Map<String,Object>; API-2) ----
 
     private static SyncItem shopItem(String name, String address) {
