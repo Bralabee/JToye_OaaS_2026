@@ -536,3 +536,47 @@ where it must be resolved.
   `k8s/base/configmap.yaml` and read by the deployment; `docker-compose.full-stack.yml` and `.env.example` do
   not carry them (RESEARCH Pitfall 9: an E2E spec that trips a cap uses unique contact details, never a raised
   default). This closes the 37-27 entry above about the caps living in `application.yml` only.
+- **Docs metrics drift from 37-29 (owed to the sub-theme PR pre-step, as for every Phase 37 plan).**
+  status: open
+  **What:** `scripts/docs-freshness.sh` rc 1 after 37-29 (`java_test_methods` 2534 -> 2634, `java_test_files`
+  371 -> 381, `total_logical_invocations` 5581 at the measurement): this plan adds `OrderBulkCancelIntegrationTest`
+  (8 methods, 1 file) on top of the 37-24..37-28 drift. `check-doc-metrics` stays PASS 37/37 (no schema or count
+  moved by hand; V81 was already recorded by 37-27). Regenerate `docs/metrics.json` with `--write` and re-point
+  the prose counts in CLAUDE.md, AGENTS.md and README.md in the 37-D PR's docs step, not per plan.
+- **The compose runtime does not yet carry 37-29 (the 37-D gate rebuilds).**
+  status: open
+  **What:** the stack still runs the images built from `6a825865`'s tree. Measured, not assumed:
+  `scripts/check-openapi-snapshot-fresh.sh` is FAIL (rc 1) on A-1 — the committed snapshot now declares
+  `/api/v1/orders/bulk-cancel`, `BulkCancelRequest`, `BulkCancelResult` (+ `Entry`) and `CancelOrderRequest`
+  beside the 37-26..37-28 fields, and the running core-java emits none of them. Live probes for the gate: three
+  storefront cash orders at one shop, then `POST /api/v1/orders/bulk-cancel {orderIds:[the three + one random],
+  reasonCode:"SUSPECTED_FAKE"}` as a shop STAFF user -> 200 with REJECTED x3 and NOT_FOUND; the same body again
+  -> ALREADY_CANCELLED x3; `SELECT status, cancel_reason_code FROM orders WHERE id IN (...)` -> CANCELLED /
+  SUSPECTED_FAKE; Mailhog shows one "Cancelled" email per order whose source contains neither `SUSPECTED_FAKE`
+  nor `fake`; `GET /api/v1/public/orders/{number}?email=` -> `"status":"CANCELLED"` and no reason;
+  `POST /api/v1/orders/bulk-cancel` with 101 ids -> 400 `bulk-cancel-too-large` (`count` 101, `limit` 100);
+  `POST /api/v1/orders/{id}/cancel` with `{"reasonCode":"OTHER"}` -> the row reads OTHER, without a body NULL.
+- **`jtoye.orders.bulk-cancel.max-ids` is declared in `application.yml` only (no env placeholder, no compose / `.env.example` / k8s wiring; 37-29, recorded).**
+  status: open
+  **What:** deliberate, the 37-27 cash-caps shape: the plan's file list names only `application.yml`, the
+  default (100) exceeds any kitchen board page, and an env placeholder would make `k8s/scripts/check-env-contract.sh`
+  demand a configmap key. Spring relaxed binding still honours `JTOYE_ORDERS_BULKCANCEL_MAXIDS` if an operator must
+  move it. If a per-overlay value is ever wanted, add `BULK_CANCEL_MAX_IDS` with its configmap key together, as
+  37-28 did for the caps.
+- **A DRAFT order in a bulk-cancel list reads `ALREADY_ACCEPTED` (37-29, recorded for 37-30's copy).**
+  status: open
+  **What:** the four outcomes are the plan's (D-18, SC-4): `REJECTED | ALREADY_ACCEPTED | ALREADY_CANCELLED |
+  NOT_FOUND`. A DRAFT is before PENDING, not after it, so neither "accepted" nor "cancelled" names it exactly;
+  it is reported `ALREADY_ACCEPTED` ("not waiting in the New-orders lane; left as it was") rather than a fifth
+  value the contract does not have. Unreachable from the UI-SPEC D1 surfaces, which offer the checkbox on
+  PENDING rows only; an API caller who lists a draft gets the order left untouched, which is the safe outcome.
+  If 37-30's per-order result copy needs to name it, widen the enum there (the OpenAPI snapshot and this IT
+  move with it).
+- **A per-order failure inside a bulk cancel ends the batch with the earlier orders committed (37-29, recorded).**
+  status: open
+  **What:** each id runs in its own REQUIRES_NEW transaction, so an unexpected exception on one order (an
+  optimistic-lock collision with a kitchen that accepts it at the same instant, a database error) propagates
+  as that error's typed response after the earlier ids have committed; nothing is rolled back and nothing is
+  reported for the later ids. The recovery is the contract itself: re-send the same request, and every order
+  already rejected reads `ALREADY_CANCELLED`. A "partial batch" shape (a FAILED outcome per id) was not added
+  because the plan's outcome set is closed; record here in case the kitchen E2E (37-31) ever observes the race.
