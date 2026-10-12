@@ -467,6 +467,10 @@ class GuestCheckoutIdempotencyIntegrationTest {
 
         request.getItems().getFirst().setQuantity(50);
         request.getItems().getLast().setQuantity(50);
+        // 37-33 (D-16): a basket with different quantities is a different basket; the expectation the
+        // customer saw for it is recomputed, as the checkout would. The old total (two 2^30-unit lines)
+        // would now be refused 409 basket-changed TOTAL_CHANGED before the limit is ever consulted.
+        GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
         GuestOrderConfirmation accepted = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
         assertThat(accepted.getUnitCount()).isEqualTo(100);
         assertThat(jdbcTemplate.queryForObject("SELECT unit_count FROM orders WHERE order_number = ?",
