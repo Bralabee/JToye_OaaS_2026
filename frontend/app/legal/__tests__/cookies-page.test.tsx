@@ -77,6 +77,8 @@ const SESSION_STORAGE_KEYS = [
   "jtoye-pkce-verifier",
   "jtoye-oauth-state",
   "jtoye-oauth-nonce",
+  // 37-37 (UI-SPEC C3): the one-shot "just placed" marker the cash checkout leaves for the order page.
+  "jtoye-just-placed:",
 ] as const
 
 /**
@@ -339,8 +341,9 @@ describe("cookie policy — the storage tables are the registry (#840)", () => {
       expect(rows).not.toBeNull()
       expect(rows!.length).toBeGreaterThan(1)
       for (const r of rows!) {
-        // "jtoye-cart-<shop>" -> a concrete key a reader would find in devtools.
-        const concrete = r.name.replace("<shop>", "rosies")
+        // "jtoye-cart-<shop>" -> a concrete key a reader would find in devtools; likewise
+        // "jtoye-just-placed:<order number>" (37-37).
+        const concrete = r.name.replace("<shop>", "rosies").replace("<order number>", "ORD-1")
         if (!registry!.isRegisteredStorageKey(area, concrete)) undeclared.push(`${area}:${r.name}`)
       }
     }
@@ -356,6 +359,29 @@ describe("cookie policy — the storage tables are the registry (#840)", () => {
     expect(bullet!).toMatch(/basket/i)
     expect(bullet!).toMatch(/order/i)
     expect(bullet!).toMatch(/email address/i)
+  })
+})
+
+describe("cookie policy — the just-placed marker (37-37, UI-SPEC C3, PGC-840 rule)", () => {
+  it("lists jtoye-just-placed:<order number> in the session-storage table, as an order number and not a shop", () => {
+    const { main } = renderPolicy()
+    const rows = tableRows(main, "sessionStorage")
+    expect(rows).not.toBeNull()
+    const names = rows!.map((r) => r.name)
+    // The suffix is the ORDER NUMBER the key is written with (lib/just-placed.ts), so a reader can
+    // match what they find in devtools; "<shop>" would describe a key this site never writes.
+    expect(names).toContain("jtoye-just-placed:<order number>")
+    expect(names).not.toContain("jtoye-just-placed:<shop>")
+  })
+
+  it("says it holds only the order number and is removed on the first view or when the tab closes", () => {
+    const { main } = renderPolicy()
+    const row = rowFor(main, "jtoye-just-placed:")
+    expect(row).not.toBeNull()
+    const text = normalisedText(row!)
+    expect(text).toMatch(/only the number of an order/i)
+    expect(text).toMatch(/removed the first time that order's page is shown/i)
+    expect(text).toMatch(/close the tab/i)
   })
 })
 

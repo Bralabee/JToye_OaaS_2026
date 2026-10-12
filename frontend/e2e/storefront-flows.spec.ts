@@ -6,7 +6,8 @@
  */
 
 import { test, expect, type Page } from "@playwright/test"
-import { cancelOrdersByNumber, orderNumberIn, uniqueContact } from "./order-cleanup"
+import { cancelOrdersByNumber, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
+import { awaitCashConfirmation } from "./cash-confirmation"
 
 // Honour PLAYWRIGHT_BASE_URL (set it only for a non-default host). Mirrors the
 // default in playwright.config.ts. The "MCP server holds :3000" claim this
@@ -118,7 +119,7 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
   // app/shop/[slug]/checkout/page.tsx, BEFORE any network call. The submit button
   // stays deliberately ENABLED, so without this tick the click is simply swallowed:
   // no order row is created and the failure surfaces 15s later as a missing
-  // "Order confirmed!" heading, which reads like a broken checkout and is not one.
+  // "Order confirmed" heading, which reads like a broken checkout and is not one.
   // The gate is present in ALL THREE panel states, so ticking it is unconditional.
   // Radix renders button[role=checkbox] and its BubbleInput sibling is aria-hidden,
   // so this role locator matches exactly one node — and .click() is required,
@@ -132,17 +133,15 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
 
   await page.locator('button[type="submit"]:has-text("Place order")').click()
 
-  // No Stripe keys in this env → the order takes the COD path and confirms
-  // INLINE ("Order confirmed! · Pay on delivery" — this is a DELIVERY order,
-  // WR-08), rather than redirecting to /orders/ORD- (that redirect only
-  // follows a live Stripe payment). The order is genuinely created (its
-  // number is shown + a confirmation email is sent).
-  await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
-  placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent().catch(() => null)) ?? "")
-  const confText = await page.getByText(/Order\s+ORD-/).innerText()
-  const match = confText.match(/ORD-[A-Z0-9-]+/)
-  expect(match).not.toBeNull()
-  return match![0]
+  // No Stripe keys in this env → the order takes the COD path. Since 37-37
+  // (UI-SPEC C3) a cash order routes to /shop/{slug}/orders/ORD-… like a card
+  // order, and that page's first view reads "Order confirmed" and "Pay on
+  // delivery" (a DELIVERY order, WR-08). The order is genuinely created (its
+  // number is in the URL + a confirmation email is sent).
+  const number = await awaitCashConfirmation(page)
+  placed.push(number)
+  await expect(page.getByText("Pay on delivery", { exact: true })).toBeVisible()
+  return number
 }
 
 // ============================
@@ -488,37 +487,80 @@ test.describe("Shop Menu & Product Cards", () => {
     }
   })
 
-  test("promotion banner and discount badge render on shop detail (STFR-06)", async ({ page }) => {
-    await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
-    await page.waitForLoadState("networkidle")
-    await page.waitForTimeout(2000)
-
-    // Announcement/promotion block lives above the menu. Presence is seed-
-    // dependent: skip cleanly if neither an announcement nor an active
-    // promotion exists in the dev stack. A deterministic V33 seed fixture
-    // is tracked as a milestone-4+ follow-up in 10-03-SUMMARY.md.
-    const announcement = page.locator("section:has(h2:has-text('Menu')) ~ *, aside, div").filter({
-      hasText: /announcement|new|promo|offer/i,
+  // STFR-06, inverted by 37-36 (D-17, UXT-008). This test used to assert that a "% off" badge
+  // RENDERS. J'Toye applies no discount at checkout, so a badge advertised a price the customer
+  // would not be charged: the storefront now renders no promotion at all, and asks for none.
+  // The vendor's promotion is seeded as ACTIVE first, so the absence below is about the page and
+  // not about an empty seed. Without the vendor credentials (KEYCLOAK_CLIENT_SECRET + the vendor
+  // password, which CI sources from the stack's .env) the seed is skipped and recorded as an
+  // annotation; the request and text assertions still run.
+  test("no promotion banner or discount badge on shop detail, even with an active promotion (STFR-06, D-17)", async ({ page, request }) => {
+    const API = process.env.PLAYWRIGHT_API_URL || "http://localhost:9090"
+    const label = `E2E 20% OFF everything ${Date.now()}`
+    const token = await vendorToken(request)
+    const shopId = token ? await vendorShopId(request, token, SHOP_SLUG) : null
+    let promotionId: string | null = null
+    if (token && shopId) {
+      const res = await request.post(`${API}/api/v1/promotions`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: {
+          label,
+          discountType: "PERCENTAGE",
+          discountPercent: 20,
+          validFrom: new Date(Date.now() - 60_000).toISOString(),
+          validUntil: new Date(Date.now() + 3_600_000).toISOString(),
+          active: true,
+          shopId,
+        },
+      })
+      expect(res.status(), "the vendor can still create a promotion (the CRUD stays)").toBe(201)
+      promotionId = ((await res.json()) as { id: string }).id
+    }
+    test.info().annotations.push({
+      type: "promotion-seed",
+      description: promotionId ? `active 20% promotion ${promotionId} seeded` : "not seeded (no vendor credentials)",
     })
-    const percentBadge = page.locator("article").filter({ hasText: /\d+% off/ }).first()
-    const flatBadge = page.locator("article").filter({ hasText: /£\d+(\.\d+)? off/ }).first()
 
-    const announcementVisible = await announcement.first().isVisible().catch(() => false)
-    const percentVisible = await percentBadge.isVisible().catch(() => false)
-    const flatVisible = await flatBadge.isVisible().catch(() => false)
+    try {
+      const promotionRequests: string[] = []
+      page.on("request", (r) => {
+        if (/\/promotions(\?|$)/.test(r.url())) promotionRequests.push(r.url())
+      })
+      await page.goto(`${BASE}/shop/${SHOP_SLUG}`)
+      await page.waitForLoadState("networkidle")
 
-    test.skip(
-      !announcementVisible && !percentVisible && !flatVisible,
-      "No active announcement or promotion seed — banner/badge assertion requires a V33 promo fixture (tracked as 10-03 follow-up)"
-    )
+      // Control: the storefront really rendered its menu.
+      await expect(page.getByRole("heading", { level: 1, name: SHOP_NAME })).toBeVisible()
+      await expect(page.locator("article").first()).toBeVisible()
 
-    // At least one of the three marketing surfaces must render when the
-    // skip guard above did not trigger.
-    expect(announcementVisible || percentVisible || flatVisible).toBe(true)
-
-    if (percentVisible || flatVisible) {
-      const anyBadge = percentVisible ? percentBadge : flatBadge
-      await expect(anyBadge).toBeVisible()
+      // The label is looked for in the WHOLE body text, scripts included, so a promotion serialised
+      // into the RSC payload or the JSON-LD would be caught even where nothing renders it.
+      const body = (await page.locator("body").textContent()) ?? ""
+      expect(body).not.toContain(label)
+      // The discount patterns are looked for in what the customer can READ, minus the vendor's own
+      // announcement band. 37-36 keeps announcements (vendor-written text, with a warning on the
+      // form against putting discounts in them), so "20% off" typed by a vendor into an announcement
+      // is not a promotion this page advertises. Measured at the 37-38 gate: the shared stack's
+      // mama-ades-kitchen carries an announcement "New this week — 20% off selected dishes." left by
+      // an e2e run on 2026-10-07, and the textContent form matched it (and its copy in the RSC
+      // payload) although no promotion rendered. The excluded text is recorded as an annotation.
+      const announcement = (await page.getByTestId("shop-announcements").allInnerTexts()).join("\n")
+      test.info().annotations.push({
+        type: "announcement-excluded",
+        description: announcement ? announcement.replace(/\s+/g, " ").trim() : "none (no announcement band rendered)",
+      })
+      const readable = await page.locator("body").innerText()
+      const outsideAnnouncement = announcement ? readable.split(announcement).join("\n") : readable
+      expect(outsideAnnouncement.length, "VOID: the readable page is empty").toBeGreaterThan(0)
+      expect(outsideAnnouncement).not.toMatch(/\d+\s*%\s*off/i)
+      expect(outsideAnnouncement).not.toMatch(/£\d+(\.\d+)?\s*off/i)
+      expect(promotionRequests, "the browser asked for promotions").toEqual([])
+    } finally {
+      if (token && promotionId) {
+        await request.delete(`${API}/api/v1/promotions/${promotionId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
     }
   })
 
@@ -661,13 +703,12 @@ test.describe("Cart + Checkout", () => {
 
     await placeOrder.click()
 
-    // COD path (no Stripe keys in this env): the order confirms INLINE with the
-    // fee breakdown — "Order confirmed! · Pay on delivery" (a DELIVERY order,
-    // WR-08) — proving the order was created and the fee-before-pay total is
-    // shown, without a live card.
-    await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText(/Order\s+ORD-/)).toBeVisible()
-    placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent()) ?? "")
+    // COD path (no Stripe keys in this env): the order routes to its own page
+    // (37-37, UI-SPEC C3), whose first view carries the fee breakdown — "Order
+    // confirmed" and "Pay on delivery" (a DELIVERY order, WR-08) — proving the
+    // order was created and the fee-before-pay total is shown, without a live card.
+    placed.push(await awaitCashConfirmation(page))
+    await expect(page.getByText("Pay on delivery", { exact: true })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Order total" })).toBeVisible()
   })
 

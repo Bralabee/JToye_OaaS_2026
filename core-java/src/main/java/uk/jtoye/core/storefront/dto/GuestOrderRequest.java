@@ -112,6 +112,29 @@ public class GuestOrderRequest {
             + "response.", maxLength = 500)
     private String allergyNote;
 
+    /**
+     * The order total the storefront SHOWED the customer, in pennies (Phase 37 D-16, RWO-007 /
+     * UXT-007): the line totals plus the delivery fee as the checkout rendered them, on the same scale
+     * as {@code GuestOrderConfirmation.totalAmountPennies}. Advisory to the server's arithmetic — the
+     * total charged is always recomputed server-side from current prices and the shop's fee rule — and
+     * used only to tell the customer when the two differ: 37-33 refuses a submit whose expectation is
+     * missing (422 {@code basket-confirmation-required}) or stale (409 {@code basket-changed}, carrying
+     * each per-line change and the total) so the checkout re-renders and asks for one re-confirmation
+     * under the same Idempotency-Key. Composed with, never beside, the 31.1 stale-acknowledgement 409.
+     *
+     * <p>{@code NON_NULL} for the same reason as {@link #acknowledgedAllergenMask}: the idempotency
+     * fingerprint serialises this DTO, so a request without the field hashes exactly as it did before
+     * 37-32, and a resubmit under the same key with a different expectation is a payload mismatch (422).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Min(value = 0, message = "expectedTotalPennies must not be negative")
+    @Schema(description = "The order total, in pennies (line totals plus delivery fee), the storefront showed the "
+            + "customer when they confirmed the basket. The server recomputes its own total and uses this only to "
+            + "detect a change: a missing value is refused 422 with code BASKET_CONFIRMATION_REQUIRED, and one that "
+            + "differs from the current total is refused 409 with code BASKET_CHANGED listing each change.",
+            minimum = "0")
+    private Long expectedTotalPennies;
+
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public String getCustomerEmail() { return customerEmail; }
@@ -140,4 +163,6 @@ public class GuestOrderRequest {
     }
     public String getAllergyNote() { return allergyNote; }
     public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
+    public Long getExpectedTotalPennies() { return expectedTotalPennies; }
+    public void setExpectedTotalPennies(Long expectedTotalPennies) { this.expectedTotalPennies = expectedTotalPennies; }
 }

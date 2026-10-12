@@ -238,29 +238,10 @@ describe("UXT-047 checkout step 1: VAT only for a VAT-registered seller (UI-SPEC
   })
 })
 
-describe("UXT-047 after the order: the cash confirmation and the card payment step", () => {
-  it("the cash confirmation for a seller with no VAT number prints no VAT row though the server sent a VAT amount", async () => {
-    mockEndpoints({ ...SHOP_BASE, seller: SOLE_TRADER })
-    renderCheckout()
-    await placeCollectionOrder()
-    await screen.findByText(/Order confirmed!/i)
-
-    expect(document.body.textContent).not.toMatch(VAT_ROW)
-    expect(screen.queryByText("£2.00")).not.toBeInTheDocument()
-    expectNoteUnderTotal()
-  })
-
-  it("the cash confirmation for a VAT-registered seller keeps 'VAT (incl. 20%)' with the server's figure", async () => {
-    mockEndpoints({ ...SHOP_BASE, seller: VAT_REGISTERED })
-    renderCheckout()
-    await placeCollectionOrder()
-    await screen.findByText(/Order confirmed!/i)
-
-    const label = screen.getByText("VAT (incl. 20%)")
-    expect(label.parentElement).toHaveTextContent("£2.00")
-    expect(screen.queryByText(NO_VAT_NOTE)).not.toBeInTheDocument()
-  })
-
+// 37-37 (UI-SPEC C3): the cash confirmation moved to the order route, so its two arms (no VAT row and
+// the note for an unregistered seller; "VAT (incl. 20%)" for a registered one) moved with it — they are
+// in orders/[orderNumber]/__tests__/order-confirmation.test.tsx and the order-page arm below.
+describe("UXT-047 after the order: the card payment step", () => {
   it("the card payment step for a seller with no VAT number prints no VAT row, and the note under Total", async () => {
     process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_uxt047"
     mockEndpoints({ ...SHOP_BASE, acceptsCardPayments: true, seller: SOLE_TRADER })
@@ -287,11 +268,14 @@ describe("UXT-047 after the order: the cash confirmation and the card payment st
   })
 })
 
-describe("UXT-047 on the order page: no VAT statement is made", () => {
+describe("UXT-047 on the order page: no VAT statement is made for an unregistered seller", () => {
+  // 37-37 (C3): the order page now carries the full breakdown, so it reads the shop's seller to apply
+  // the B7 rule. For a seller with no VAT number: no VAT row and no figure, and the B7 note instead.
   it("prints no VAT row or figure even though the tracking response carries a VAT amount", async () => {
     const ORDER_NUMBER = "ORD-UXT-047-TRACK"
     localStorage.setItem(`jtoye-checkout-email-${SLUG}`, "ade@example.com")
-    mockedGet.mockResolvedValue({
+    const shop = { ...SHOP_BASE, seller: SOLE_TRADER }
+    mockedGet.mockImplementation((url: string) => Promise.resolve(url === `/public/shops/${SLUG}` ? { data: shop } : {
       data: {
         orderNumber: ORDER_NUMBER,
         status: "PREPARING",
@@ -305,15 +289,17 @@ describe("UXT-047 on the order page: no VAT statement is made", () => {
         createdAt: "2026-10-09T10:00:00Z",
         updatedAt: "2026-10-09T10:05:00Z",
       },
-    })
+    }))
     render(
       <Suspense fallback={<div>loading</div>}>
         <OrderTrackingPage params={resolvedThenable({ slug: SLUG, orderNumber: ORDER_NUMBER })} />
       </Suspense>
     )
     await screen.findByText("Order in Progress")
+    await screen.findByText(NO_VAT_NOTE)
 
-    expect(document.body.textContent).not.toMatch(/VAT/)
+    expect(document.body.textContent).not.toMatch(VAT_ROW)
     expect(screen.queryByText("£2.00")).not.toBeInTheDocument()
+    expectNoteUnderTotal()
   })
 })

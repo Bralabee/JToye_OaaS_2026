@@ -106,10 +106,14 @@ describe("white-text fills in the colour maps all clear AA", () => {
 })
 
 describe("the individual text nodes axe named", () => {
-  it("storefront discount badge: bg-amber-500 carries dark text, not white", () => {
+  it("storefront discount badge: gone (37-36, D-17), and no white text on bg-amber-500 came back", () => {
+    // The two amber discount badges this case used to count were removed with the storefront's
+    // promotions in 37-36 (D-17: checkout applies no discount, so the page advertises none).
+    // What A11Y-6 forbade still holds: white text on amber-500 (2.15:1) must not reappear.
     const src = read("app/shop/[slug]/shop-detail-client.tsx")
     expect(src).not.toMatch(/bg-amber-500 px-2 py-0\.5 text-xs font-bold text-white/)
-    expect(src.match(/bg-amber-500 px-2 py-0\.5 text-xs font-bold text-amber-ink/g)?.length).toBe(2)
+    expect(src.match(/bg-amber-500 px-2 py-0\.5 text-xs font-bold/g)).toBeNull()
+    expect(src).not.toMatch(/% off/)
   })
 
   it("orders: the 'No actions' cell", () => {

@@ -253,9 +253,14 @@ describe("#860: attribution changes nothing the checkout SUBMITS", () => {
    * The exact body for this basket and form, minus the per-attempt idempotency key. Pinned as a
    * string so a reordered, added or renamed field reds it; the acknowledged mask is MILK|EGGS = 68,
    * the declared union, and never OR-s in the Egusi-style advisory flags.
+   *
+   * 37-34 (D-16) moved the pinned shape ONCE, by contract: every line carries the unit price the
+   * page displayed (`expectedUnitPricePennies`, 500 here) and the body carries the displayed total
+   * (`expectedTotalPennies`, 3 x 500 collected = 1500). Those two are the checkout's, not the
+   * attribution's — the claim of this test is unchanged: the attribution adds nothing of its own.
    */
   const EXPECTED_BODY =
-    '{"customerName":"Ade Johnson","customerEmail":"ade@example.com","customerPhone":"07700900000","fulfilmentType":"COLLECTION","items":[{"productId":"p-jollof","quantity":1},{"productId":"p-puff","quantity":2}],"acknowledgedAllergenMask":68}'
+    '{"customerName":"Ade Johnson","customerEmail":"ade@example.com","customerPhone":"07700900000","fulfilmentType":"COLLECTION","items":[{"productId":"p-jollof","quantity":1,"expectedUnitPricePennies":500},{"productId":"p-puff","quantity":2,"expectedUnitPricePennies":500}],"acknowledgedAllergenMask":68,"expectedTotalPennies":1500}'
 
   it("posts a body byte-identical to the pre-attribution checkout for the same basket", async () => {
     seedCart([JOLLOF_LINE, PUFF_LINE])

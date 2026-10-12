@@ -633,3 +633,44 @@ where it must be resolved.
   selection mode kept after a batch, each is a one-line change with a test to flip. Also: the basket drawer's
   stepper limit is null until the shop page has been read in this provider (a deep link to /checkout) — the
   server's 422 is the gate, the spec's declared other branch.
+- **The review-form notice (UI-SPEC C4, 37-36 truth 3) has no form to sit on (37-36, open).**
+  status: open
+  **What:** the plan and UI-SPEC § C4 ask for "Your review will show your first name and the first letter of
+  your last name, like "{First} {L}."." as a 14px slate-600 notice above the review form's Submit. The frontend
+  has NO review form: `rg -uu` over `frontend/app`, `components`, `lib` and `hooks` finds no caller of
+  `POST /public/shops/{slug}/reviews` (only the GET in `storefront-server.ts` and the shop client), and the
+  UXT-044 repro itself reads "Create a review for a completed order" through the API. Reviews are created only
+  by API callers today, so no customer sees a form, and none can be annotated. Building one (completed-order
+  binding by order number + email, food/delivery ratings, comment, photos, the UXT-005 cross-shop refusal copy,
+  its error states) is a new customer surface with no UI-SPEC contract, so 37-36 did not invent it. What
+  shipped: the public name is minimised server-side (37-35) and rendered verbatim with the "Customer" fallback
+  (37-36), so the data-protection half of UXT-044 holds with or without a form. **Recommendation:** when a
+  review form is built, the notice goes above its Submit with the copy above, `{First} {L}.` derived from the
+  order's name by the same rule as `ReviewerDisplayName.of`; 37-38's human check "read the review form notice"
+  cannot be performed and should be recorded N/A with this reference.
+- **The storefront header overflows by 4px at 360px with root font-size 130% (found in 37-37, open).**
+  status: open
+  **What:** measuring the C3 backstop truth ("the carried-over breakdown rows fit at 360px with root 130%") on a
+  local stack-free build, every breakdown row fit exactly (scrollWidth 275 = clientWidth 275 for Subtotal,
+  Delivery and Total, with and without the just-placed marker), but the DOCUMENT is 364px wide on a 360px
+  viewport: the overflowing elements are the shared storefront header (`nav.flex items-center gap-3 sm:gap-4
+  text-sm`, "Shops / For operators / Track order / 0 items", and its `sm:hidden` 44px menu button), plus the
+  fixed toaster `ol` and the cookie-notice `section`, which take their width from it. Nothing on the order page
+  37-37 changed causes it; it is the header every storefront route shares. **Owner:** 37-52 (UXT-080 F6: "the
+  shop header h1 wrap ... no horizontal overflow") is the plan that holds the header to 360px/130%; its
+  instrument should include an order page. Not fixed in 37-37 (scope boundary: a shared component another plan
+  owns).
+
+## From 37-38 (the 37-C gate)
+
+- **abuse-bounds' mobile bulk-reject arm is flaky on a Radix element that is "not stable" (found in 37-38, open).**
+  status: open
+  **What:** `e2e/abuse-bounds.spec.ts:205` ("three guest cash orders are rejected in one action with a per-order
+  summary"), mobile project only, timed out at 60 s on Playwright's stability check in 3 of 7 mobile runs at the 37-C gate (after the spec sent a basket expectation):
+  twice on `getByRole('option', { name: 'Looks like a fake or test order' })` (the reason Select's option) and once on
+  `getByRole('button', { name: 'Reject 3 orders' }).last()`, each "element is not stable" while it animated; the other
+  runs passed in 4–5 s, and desktop never failed. The orders the failed runs placed were cancelled by the spec's
+  `afterEach` (open count unchanged). Nothing 37-C changed touches the dialog (37-30's `RejectOrdersDialog`).
+  **Suggested owner:** whichever plan next edits the dialog or the spec — wait for the Select content / dialog to
+  finish its open animation (e.g. assert `data-state="open"` then a stable bounding box) rather than raising the
+  timeout. Not fixed at the gate (scope boundary: a 37-D spec, no 37-C cause).

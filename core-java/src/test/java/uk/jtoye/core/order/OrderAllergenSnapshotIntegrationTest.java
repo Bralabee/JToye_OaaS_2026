@@ -399,6 +399,8 @@ class OrderAllergenSnapshotIntegrationTest {
         request.setFulfilmentType("COLLECTION");
         // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
         GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
+        // 37-32 (D-16): and the prices the customer saw — each line's current unit price and the total.
+        GuestOrderAcknowledgements.expectCurrentPrices(request, jdbcTemplate, TENANT_ID);
 
         TenantContext.clear();
         GuestOrderConfirmation confirmation =

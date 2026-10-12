@@ -177,15 +177,6 @@ export interface Review {
   createdAt: string
 }
 
-export interface PublicPromotion {
-  label: string
-  discountType: "PERCENTAGE" | "FLAT_AMOUNT"
-  discountPercent: number | null
-  discountAmountPennies: number | null
-  category: string | null
-  validUntil: string
-}
-
 export interface PublicAnnouncement {
   title: string
   body: string | null
@@ -207,7 +198,8 @@ export interface ShopDetail {
   reviews: Review[]
   reviewCount: number
   avgRating: number
-  promotions: PublicPromotion[]
+  // 37-36 (D-17): no `promotions`. Checkout applies no discount, so the storefront payload
+  // carries none to render; the vendor's promotions live on in types/api.ts for the dashboard.
   announcements: PublicAnnouncement[]
   // 37-22: no `isOpen` here any more. The loader used to compute one from the free-text
   // hours; whether the shop takes orders is now the server's `shop.openNow` / `pausedUntil`
@@ -267,6 +259,64 @@ export interface AllergenAcknowledgementStaleProblem {
   acknowledgedAllergenMask: number
   /** One entry per basket line, in basket order. */
   lines: Array<{ productId: string; productName: string; allergenMask: number; allergens: string[] }>
+}
+
+/** The RFC 7807 `type` URI the basket-changed 409 carries (37-33, D-16). */
+export const BASKET_CHANGED_PROBLEM_TYPE = "https://jtoye.uk/errors/basket-changed"
+
+/** The RFC 7807 `type` URI of the 422 a body without the expected prices meets (37-33, CONTEXT Q4). */
+export const BASKET_CONFIRMATION_REQUIRED_PROBLEM_TYPE = "https://jtoye.uk/errors/basket-confirmation-required"
+
+/** `BasketChangedException.Kind` (37-33): what the server found different from what the customer saw. */
+export type BasketChangeKind =
+  | "PRICE_CHANGED"
+  | "UNAVAILABLE"
+  | "SOLD_OUT"
+  | "REMOVED"
+  | "BELOW_MINIMUM"
+  | "TOTAL_CHANGED"
+
+/**
+ * One entry of the basket-changed 409's `changes[]` (37-33, `record BasketChange`). Every field but
+ * `kind` is `@JsonInclude(NON_NULL)` on the wire, so each kind carries ONLY its own fields:
+ *   PRICE_CHANGED  {productId, name, expected, current}      pennies, what was shown -> what it is
+ *   UNAVAILABLE    {productId, name}                          the line is dropped
+ *   SOLD_OUT       {productId, name, requested, available}    the line is kept at `available`, dropped at 0
+ *   REMOVED        {productId}                                NO name, by design (another shop's product
+ *                                                             is not disclosed): the basket has the name
+ *   BELOW_MINIMUM  {minimum, subtotal, detail}                after the changes above
+ *   TOTAL_CHANGED  {expected, current}                        `current` is the total AFTER the changes
+ */
+export interface BasketChange {
+  kind: BasketChangeKind
+  productId?: string
+  name?: string | null
+  expected?: number
+  current?: number
+  requested?: number
+  available?: number
+  minimum?: number
+  subtotal?: number
+  detail?: string
+}
+
+/**
+ * 409 `basket-changed` (37-33, GlobalExceptionHandler.handleBasketChanged): the basket the server
+ * read at submit differs from the one the customer saw. No order was created and the key was not
+ * held. The four allergen properties are present ONLY when the acknowledged allergen set differs
+ * too (31.1 D-05 composed, not beside); an allergen-only change is the 31.1 problem, unchanged.
+ */
+export interface BasketChangedProblem {
+  type: string
+  title?: string
+  status?: number
+  detail?: string
+  code: "BASKET_CHANGED"
+  changes: BasketChange[]
+  currentAllergenMask?: number
+  currentAllergens?: string[]
+  acknowledgedAllergenMask?: number
+  lines?: AllergenAcknowledgementStaleProblem["lines"]
 }
 
 /** Which channel placed an order (31.1-09): the customer's storefront, or the shop on their behalf. */

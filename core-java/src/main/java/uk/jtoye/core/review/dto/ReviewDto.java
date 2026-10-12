@@ -1,11 +1,15 @@
 package uk.jtoye.core.review.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
 public class ReviewDto {
     private UUID id;
+    @Schema(description = "The reviewer as first name plus last initial, e.g. \"Grace P.\"; a single name as given; "
+            + "null when the order carried no name. Never the full surname.", example = "Grace P.", nullable = true)
     private String customerName;
     private Integer foodRating;
     private Integer deliveryRating;

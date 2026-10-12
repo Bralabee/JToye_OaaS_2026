@@ -59,7 +59,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * request commits. The test profile has no Stripe key, so storefront orders take the COD branch.
  *
  * <p>RLS note: the Testcontainers bootstrap role is a SUPERUSER, so these arms prove the
- * application contract, not RLS enforcement. This plan adds no table and no policy.
+ * application contract, not RLS enforcement. This plan adds no table and no policy. That blind spot
+ * hid a live defect until the 37-38 gate: under RLS an anonymous tracking read saw the order and none
+ * of its lines, so the tracking arm below was green while every real guest order tracked as "not
+ * recorded". {@link GuestTrackingOrderLinesRlsIntegrationTest} is the NOSUPERUSER NOBYPASSRLS arm of
+ * this contract (V84 {@code order_items_guest_tracking}).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -558,7 +562,7 @@ class CustomerRecordedAllergenSetIntegrationTest {
         return "07700" + String.format(java.util.Locale.ROOT, "%06d", Math.floorMod(email.hashCode(), 1_000_000));
     }
 
-    private static Map<String, Object> body(String email, List<UUID> productIds, Integer ack) {
+    private Map<String, Object> body(String email, List<UUID> productIds, Integer ack) {
         List<Map<String, Object>> items = new ArrayList<>();
         for (UUID productId : productIds) {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -572,6 +576,8 @@ class CustomerRecordedAllergenSetIntegrationTest {
         body.put("customerPhone", phoneFor(email));
         body.put("fulfilmentType", "COLLECTION");
         body.put("items", items);
+        // 37-32 (D-16): every line carries the unit price the customer saw, and the body the total.
+        body.put("expectedTotalPennies", GuestOrderAcknowledgements.expectCurrentPrices(jdbcTemplate, TENANT_ID, "COLLECTION", items));
         if (ack != null) {
             body.put("acknowledgedAllergenMask", ack);
         }

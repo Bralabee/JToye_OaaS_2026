@@ -614,8 +614,14 @@ class ShopPauseIntegrationTest {
         body.put("customerEmail", email);
         body.put("customerPhone", "+447700900372");
         body.put("fulfilmentType", "COLLECTION");
-        body.put("items", List.of(Map.of("productId", f.productId, "quantity", 1)));
+        Map<String, Object> line = new LinkedHashMap<>();
+        line.put("productId", f.productId);
+        line.put("quantity", 1);
+        List<Map<String, Object>> items = List.of(line);
+        body.put("items", items);
         body.put("acknowledgedAllergenMask", 0);
+        // 37-32 (D-16): the line carries the unit price the customer saw, and the body the total.
+        body.put("expectedTotalPennies", uk.jtoye.core.testsupport.GuestOrderAcknowledgements.expectCurrentPrices(jdbc, f.tenant, "COLLECTION", items));
         MockHttpServletRequestBuilder request = post("/api/v1/public/shops/" + f.slug + "/orders");
         if (key != null) {
             request = request.header("Idempotency-Key", key);

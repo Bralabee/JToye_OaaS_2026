@@ -26,6 +26,8 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
 import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
+import uk.jtoye.core.exception.BasketChangedException;
+import uk.jtoye.core.exception.BasketConfirmationRequiredException;
 import uk.jtoye.core.exception.DsarExportUnavailableException;
 import uk.jtoye.core.exception.DsarRateLimitExceededException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
@@ -970,6 +972,56 @@ public class GlobalExceptionHandler {
         problem.setProperty("currentAllergens", ex.getCurrentAllergens());
         problem.setProperty("acknowledgedAllergenMask", ex.getAcknowledgedMask());
         problem.setProperty("lines", ex.getLines());
+        return problem;
+    }
+
+    /**
+     * Phase 37-33 (D-16, RWO-007 / UXT-007 P0): a storefront guest order carried no expected prices —
+     * a line without {@code expectedUnitPricePennies} or a body without {@code expectedTotalPennies}.
+     * 422: the body is well-formed, but without what the customer was shown the server cannot tell
+     * whether the basket still matches it, and an optional check is a skippable one (CONTEXT Q4, the
+     * 31.1 missing-acknowledgement precedent). Its own stable type, distinct from the 31.1 422 and from
+     * both idempotency problems, so a client branches on {@code type} alone.
+     */
+    @ExceptionHandler(BasketConfirmationRequiredException.class)
+    public ProblemDetail handleBasketConfirmationRequired(BasketConfirmationRequiredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Basket confirmation required");
+        problem.setType(URI.create("https://jtoye.uk/errors/basket-confirmation-required"));
+        problem.setProperty("code", "BASKET_CONFIRMATION_REQUIRED");
+        return problem;
+    }
+
+    /**
+     * Phase 37-33 (D-16, RWO-007 / UXT-007 P0): the basket no longer matches what the customer was
+     * shown — a line was repriced, made unavailable, sold out or removed, the shop's minimum is no
+     * longer met, or the total differs. 409 with its own type (never {@code idempotency-conflict}, never
+     * 31.1's {@code allergen-acknowledgement-stale}), carrying ONE typed diff: {@code changes}, each
+     * entry a {@code kind} ({@code PRICE_CHANGED | UNAVAILABLE | SOLD_OUT | REMOVED | BELOW_MINIMUM |
+     * TOTAL_CHANGED}) with only the fields that belong to it, so the checkout renders "Suya £9.00 →
+     * £14.00" per change and asks for one re-confirmation, and an agent branches without parsing the
+     * sentence. A {@code REMOVED} entry carries the id only (T-37-81).
+     *
+     * <p>Composed with 31.1: when the allergen set changed as well, the same four properties the stale
+     * 409 carries ({@code currentAllergenMask}, {@code currentAllergens}, {@code acknowledgedAllergenMask},
+     * {@code lines}) are on this problem too, so the client re-renders both panels from one response.
+     * When ONLY allergens changed the service throws the 31.1 exception unchanged, so this handler never
+     * sees that case. Thrown inside the reserved idempotency work, so the refusal leaves no order and no
+     * reservation (T-37-82).
+     */
+    @ExceptionHandler(BasketChangedException.class)
+    public ProblemDetail handleBasketChanged(BasketChangedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Your basket has changed");
+        problem.setType(URI.create("https://jtoye.uk/errors/basket-changed"));
+        problem.setProperty("code", "BASKET_CHANGED");
+        problem.setProperty("changes", ex.getChanges());
+        if (ex.hasAllergenChange()) {
+            problem.setProperty("currentAllergenMask", ex.getCurrentAllergenMask());
+            problem.setProperty("currentAllergens", ex.getCurrentAllergens());
+            problem.setProperty("acknowledgedAllergenMask", ex.getAcknowledgedAllergenMask());
+            problem.setProperty("lines", ex.getAllergenLines());
+        }
         return problem;
     }
 

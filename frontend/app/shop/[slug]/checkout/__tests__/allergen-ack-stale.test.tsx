@@ -248,6 +248,7 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
 })
 
 describe("the submit carries the set the panel showed (#784, D-05)", () => {
@@ -286,7 +287,8 @@ describe("a stale acknowledgement (409 allergen-acknowledgement-stale) is recove
     // generic error box — so the announcement sits next to the control that resolves it.
     expect(screen.getByTestId("order-allergen-panel")).toContainElement(screen.getByRole("alert"))
     expect(ackCheckbox()).toHaveAttribute("aria-invalid", "true")
-    expect(screen.queryByText(/order confirmed/i)).not.toBeInTheDocument()
+    // 37-37 (C3): a placed cash order leaves the jtoye-just-placed marker and routes away; none was left.
+    expect(Object.keys(sessionStorage).filter((k) => k.startsWith("jtoye-just-placed:"))).toEqual([])
     // Exactly the one refused POST — nothing was re-sent behind the customer's back.
     expect(mockedPost).toHaveBeenCalledTimes(1)
   })
@@ -320,7 +322,8 @@ describe("a stale acknowledgement (409 allergen-acknowledgement-stale) is recove
     expect(posted(1)[1].acknowledgedAllergenMask).toBe(CURRENT_MASK)
     expect(posted(1)[1].idempotencyKey).not.toBe(posted(0)[1].idempotencyKey)
     expect(posted(1)[2].headers?.["Idempotency-Key"]).toBe(posted(1)[1].idempotencyKey)
-    await screen.findByText(/order confirmed/i)
+    // 37-37 (C3): the cash order was placed — the checkout left the order route's one-shot marker.
+    await waitFor(() => expect(sessionStorage.getItem("jtoye-just-placed:ORD-RACE-1")).toBe("ORD-RACE-1"))
   })
 
   it("holds the server's set even when the re-fetch fails, so the resubmit still sends it", async () => {

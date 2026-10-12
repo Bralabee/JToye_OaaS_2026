@@ -311,6 +311,8 @@ class OrderLimitsIntegrationTest {
         body.put("fulfilmentType", "COLLECTION");
         body.put("items", items);
         body.put("acknowledgedAllergenMask", GuestOrderAcknowledgements.currentMask(jdbcTemplate, TENANT_ID, productIds));
+        // 37-32 (D-16): every line carries the unit price the customer saw, and the body the total.
+        body.put("expectedTotalPennies", GuestOrderAcknowledgements.expectCurrentPrices(jdbcTemplate, TENANT_ID, "COLLECTION", items));
         return body;
     }
 

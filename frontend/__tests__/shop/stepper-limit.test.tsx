@@ -74,7 +74,7 @@ const product: PublicProduct = {
 }
 
 function detailFor(shop: PublicShop): ShopDetail {
-  return { shop, products: { Mains: [product] }, reviews: [], reviewCount: 0, avgRating: 0, promotions: [], announcements: [] }
+  return { shop, products: { Mains: [product] }, reviews: [], reviewCount: 0, avgRating: 0, announcements: [] }
 }
 
 function seed(quantity: number) {

@@ -40,7 +40,8 @@ import { test, expect, type APIRequestContext, type Page, type Response } from "
 import { CART_KEY_PREFIX } from "../lib/cart-identity"
 import { ALLERGENS, getAllergenNames } from "../types/api"
 import { VENDOR_PASSWORD, VENDOR_USERNAME, skipWithoutVendorPassword } from "./vendor-credentials"
-import { cancelOrdersByNumber, orderNumberIn, uniqueContact } from "./order-cleanup"
+import { cancelOrdersByNumber, uniqueContact } from "./order-cleanup"
+import { awaitCashConfirmation, confirmedHeading } from "./cash-confirmation"
 
 // The deterministic seeded shop (DemoDataSeeder, tenant 00000000-…-0001 — the vendor's tenant).
 const SHOP_SLUG = "mama-ades-kitchen"
@@ -244,7 +245,8 @@ test.describe("#785 the allergen acknowledgement race", () => {
       await expect(panel.getByRole("alert")).toContainText(/allergen information for your basket has changed/i)
       await expect(ack).not.toBeChecked()
       await expect(panel.getByTestId("allergen-chip").filter({ hasText: addedName })).toHaveCount(1)
-      await expect(page.getByRole("heading", { name: "Order confirmed!" })).toHaveCount(0)
+      await expect(confirmedHeading(page)).toHaveCount(0)
+      await expect(page, "the page left the checkout, so an order was confirmed").toHaveURL(/\/checkout(\?|$)/)
       await expect(ack).toBeFocused()
       await shoot(page, testInfo, "allergen-ack-stale")
 
@@ -257,8 +259,8 @@ test.describe("#785 the allergen acknowledgement race", () => {
       const accepted = await secondPost
       expect(accepted.status(), "the re-acknowledged order was not accepted").toBeLessThan(300)
 
-      await expect(page.getByRole("heading", { name: "Order confirmed!" })).toBeVisible({ timeout: 15_000 })
-      placed.push(orderNumberIn(await page.getByText(/Order\s+ORD-/).first().textContent()) ?? "")
+      // 37-37 (C3): the cash confirmation is the order's own route; its number is read from the URL.
+      placed.push(await awaitCashConfirmation(page))
       await expect(page.getByTestId("recorded-ack")).toContainText("You confirmed you had read:")
       await expect(page.getByTestId("recorded-ack")).toContainText(addedName)
       await expect(page.getByTestId("recorded-set")).toContainText("Recorded on your order:")

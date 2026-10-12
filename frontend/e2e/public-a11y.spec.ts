@@ -115,7 +115,7 @@ const SCOPE_COVERAGE: Record<string, string> = {
   "The dish detail panel that opens on a vendor's shop page": "the dish detail modal",
   "Your basket at a vendor": "cart (with a seeded basket)",
   Checkout: "checkout (with a seeded basket)",
-  "The order confirmation shown on the checkout page when you pay on collection or delivery":
+  "The order confirmation shown on an order's page straight after you place it, when you pay on collection or delivery":
     "the cash order confirmation",
   "The page for one order, where you follow its progress": "the per-shop order page",
   "Order tracking by order number and email address": "/track (lookup form) and /track (a looked-up order)",
@@ -469,63 +469,88 @@ test.describe(`public surfaces — ${CLAIM}`, () => {
   })
 
   /**
-   * THE CASH ORDER CONFIRMATION — A STATE OF THE CHECKOUT URL, REACHED BY PLACING AN ORDER.
+   * THE CASH ORDER CONFIRMATION — THE FIRST VIEW OF THE ORDER'S OWN ROUTE, REACHED BY PLACING AN ORDER.
    *
-   * It is not a route: `/shop/[slug]/checkout` renders "Order confirmed!" only
-   * after the order POST answers without a `clientSecret` (pay on collection or
-   * delivery). Navigating to the URL shows the form, and a scan there would
-   * report the FORM and call it the confirmation — the modal artefact again. So
-   * the order is actually placed (seeded basket, Collection, the three details,
-   * the allergen tick, Place order) against a stubbed POST, and the scan runs
-   * only once the confirmation's own heading and order number are on screen.
+   * Since 37-37 (UI-SPEC C3) a cash order routes from the checkout to
+   * `/shop/[slug]/orders/[orderNumber]`, and the FIRST view there (the one-shot
+   * `jtoye-just-placed:` marker present) is the confirmation: h1 "Order confirmed",
+   * focused, announced. Opening the URL directly shows the later view ("Order
+   * {number}"), so a scan there would report the order page and call it the
+   * confirmation — the modal artefact again. So the order is actually placed
+   * (seeded basket, Collection, the three details, the allergen tick, Place order)
+   * against a stubbed POST, and the scan runs only once the browser has LEFT the
+   * checkout and the confirmation's own heading is on screen.
    */
   test(`the cash order confirmation has no ${CLAIM} violations`, async ({
     page,
     context,
   }) => {
-    const path = await resolveStorefrontPath(page)
-    const slug = slugOf(path)
-
-    // Registered AFTER the shared stub, so it answers first (Playwright runs
-    // matching routes newest-first); anything else falls back to the stub.
-    await context.route(`**/public/shops/${slug}/orders`, async (route) => {
-      if (route.request().method() !== "POST") return route.fallback()
-      return route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify(cashConfirmation()),
-      })
+    const path = await placeStubbedCashOrder(page, context)
+    // The universal control in scanSurface counts <h1> once, without waiting, so the walk must have
+    // ARRIVED first: between the 201 and the route change the checkout shows a brief "Opening your
+    // order" state with no heading, and counting there would void the scan for the wrong reason.
+    await expect(page).toHaveURL(new RegExp(`/orders/${AUDIT_ORDER}$`), { timeout: 15_000 })
+    await expect(page.getByRole("heading", { level: 1, name: "Order confirmed", exact: true })).toBeVisible({
+      timeout: 15_000,
     })
 
-    await seedBasket(page, slug)
-    await open(page, `${path}/checkout`)
-    await expect(page.getByRole("heading", { level: 1, name: "Checkout" })).toBeVisible()
-
-    await page.getByRole("button", { name: /collection/i }).click()
-    await page.fill("input#name", "Accessibility Audit")
-    await page.fill("input#email", AUDIT_EMAIL)
-    await page.fill("input#phone", "07700 900878")
-    const ack = page.getByRole("checkbox", {
-      name: /I have read the allergen information for this order\./i,
-    })
-    await ack.click()
-    await expect(ack).toBeChecked()
-    await page.locator('button[type="submit"]:has-text("Place order")').click()
-
-    await scanSurface(page, `${path}/checkout (cash order confirmation)`, async (p) => {
-      // THE CONTROL THIS TEST EXISTS FOR: the confirmation, not the form.
+    await scanSurface(page, `${path}/orders/${AUDIT_ORDER} (cash order confirmation)`, async (p) => {
+      // THE CONTROL THIS TEST EXISTS FOR: the confirmation, not the form and not a later view.
       await expect(
-        p.getByRole("heading", { level: 1, name: "Order confirmed!" }),
-        "the order confirmation did not render — a scan now would measure the " +
-          "checkout form and report it as the confirmation"
+        p,
+        "the cash order did not leave the checkout — a scan now would measure the form"
+      ).toHaveURL(new RegExp(`/orders/${AUDIT_ORDER}$`), { timeout: 15_000 })
+      await expect(
+        p.getByRole("heading", { level: 1, name: "Order confirmed", exact: true }),
+        "the confirmation's first view did not render — a scan now would measure the " +
+          "plain order page (or its loading state) and report it as the confirmation"
       ).toBeVisible({ timeout: 15_000 })
-      await expect(p.getByText(`Order ${AUDIT_ORDER}`)).toBeVisible()
+      await expect(p.getByText(AUDIT_ORDER, { exact: true })).toBeVisible()
+      await expect(p.getByRole("heading", { level: 2, name: "Order total" })).toBeVisible()
       expect(
         await p.locator("form input#name").count(),
         "the checkout form is still on screen — this is not the confirmation state"
       ).toBe(0)
-      console.log(`  [control] confirmation for ${AUDIT_ORDER} rendered, form gone`)
+      console.log(`  [control] confirmation for ${AUDIT_ORDER} rendered on its own route, form gone`)
     })
+  })
+
+  /**
+   * C3 ARM (UXT-029): the confirmation is ANNOUNCED and FOCUSED, and a refresh does not re-post.
+   * axe cannot see either — focus and a live region's text are behaviour, not markup — so they are
+   * asserted here, after placing a cash order exactly as the scan above does. The refresh half is
+   * UI-SPEC F16: reload the route and count POSTs to the order endpoint in the network log.
+   */
+  test("C3: the cash confirmation takes focus, announces itself, and a refresh re-posts nothing", async ({
+    page,
+    context,
+  }) => {
+    const orderPosts: string[] = []
+    page.on("request", (req) => {
+      if (req.method() === "POST" && /\/orders(\?|$)/.test(new URL(req.url()).pathname + new URL(req.url()).search)) {
+        orderPosts.push(req.url())
+      }
+    })
+    const path = await placeStubbedCashOrder(page, context)
+
+    await expect(page).toHaveURL(new RegExp(`/orders/${AUDIT_ORDER}$`), { timeout: 15_000 })
+    const heading = page.getByRole("heading", { level: 1, name: "Order confirmed", exact: true })
+    await expect(heading).toBeVisible({ timeout: 15_000 })
+    await expect(heading, "focus did not move to the confirmation heading").toBeFocused()
+    await expect(page.getByRole("status").filter({ hasText: `Order confirmed, ${AUDIT_ORDER}` })).toHaveCount(1)
+    await expect(page).toHaveTitle(new RegExp(`^Order ${AUDIT_ORDER} confirmed · `))
+    // Non-vacuity for the refresh half: the placing POST WAS seen by this recorder.
+    expect(orderPosts, "the recorder saw no order POST — it cannot prove the refresh made none").toHaveLength(1)
+
+    await page.reload()
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.getByRole("heading", { level: 1, name: `Order ${AUDIT_ORDER}`, exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page.getByRole("heading", { level: 1, name: "Order confirmed", exact: true })).toHaveCount(0)
+    await page.waitForTimeout(SETTLE_MS)
+    expect(orderPosts, "the refresh of the confirmation route re-posted the order (F16)").toHaveLength(1)
+    console.log(`  [arm] ${path}/orders/${AUDIT_ORDER}: focused + announced; refresh plain, 0 re-posts`)
   })
 
   /**
@@ -546,11 +571,15 @@ test.describe(`public surfaces — ${CLAIM}`, () => {
     await open(page, `${path}/orders/${AUDIT_ORDER}`)
 
     await scanSurface(page, `${path}/orders/${AUDIT_ORDER}`, async (p) => {
+      // 37-37 (C3): the h1 names the order; the status words moved to the line under it.
       await expect(
-        p.getByRole("heading", { level: 1, name: "Order in Progress" }),
-        "the order did not load — the page is on its email prompt, loading " +
-          "spinner or error state, none of which is the order page"
+        p.getByRole("heading", { level: 1, name: `Order ${AUDIT_ORDER}`, exact: true }),
+        "the order page's heading did not render — the page is on its email prompt or loading spinner"
       ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        p.getByText("Order in Progress", { exact: true }),
+        "the order did not load — the page is on its error state, which is not the order page"
+      ).toBeVisible()
       await expect(p.getByText(AUDIT_ORDER, { exact: true })).toBeVisible()
       await expect(p.getByText("Preparing", { exact: true })).toBeVisible()
       console.log(`  [control] order page for ${AUDIT_ORDER} rendered its progress steps`)
@@ -646,6 +675,55 @@ async function seedBasket(page: Page, slug: string): Promise<void> {
   )
 }
 
+/**
+ * Seed a basket, open checkout, fill a COLLECTION order and press Place order against a stubbed
+ * 201 (no clientSecret: cash), with the tracking read the order route makes stubbed as that cash
+ * order. Returns the storefront path. 37-37: the browser then routes to the order's own page.
+ */
+async function placeStubbedCashOrder(page: Page, context: BrowserContext): Promise<string> {
+  const path = await resolveStorefrontPath(page)
+  const slug = slugOf(path)
+
+  // Registered AFTER the shared stub, so it answers first (Playwright runs
+  // matching routes newest-first); anything else falls back to the stub.
+  await context.route(`**/public/shops/${slug}/orders`, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback()
+    return route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify(cashConfirmation()),
+    })
+  })
+  await stubOrderLookup(context, CASH_TRACKING)
+
+  await seedBasket(page, slug)
+  await open(page, `${path}/checkout`)
+  await expect(page.getByRole("heading", { level: 1, name: "Checkout" })).toBeVisible()
+
+  await page.getByRole("button", { name: /collection/i }).click()
+  await page.fill("input#name", "Accessibility Audit")
+  await page.fill("input#email", AUDIT_EMAIL)
+  await page.fill("input#phone", "07700 900878")
+  const ack = page.getByRole("checkbox", {
+    name: /I have read the allergen information for this order\./i,
+  })
+  await ack.click()
+  await expect(ack).toBeChecked()
+  await page.locator('button[type="submit"]:has-text("Place order")').click()
+  return path
+}
+
+/** The tracking response for the stubbed cash order: unpaid, COLLECTION, the full breakdown. */
+const CASH_TRACKING = {
+  status: "PENDING",
+  paymentStatus: "NONE",
+  fulfilmentType: "COLLECTION",
+  subtotalPennies: 1900,
+  deliveryFeePennies: 0,
+  vatRate: "STANDARD",
+  vatAmountPennies: 317,
+} as const
+
 /** A cash (pay on collection) confirmation: no clientSecret, so no Stripe step. */
 function cashConfirmation() {
   return {
@@ -668,7 +746,7 @@ function cashConfirmation() {
 }
 
 /** GET /public/orders/{number}?email= — the tracking response both order surfaces read. */
-async function stubOrderLookup(context: BrowserContext): Promise<void> {
+async function stubOrderLookup(context: BrowserContext, overrides: Record<string, unknown> = {}): Promise<void> {
   const now = new Date().toISOString()
   await context.route(`**/public/orders/${AUDIT_ORDER}**`, (route) =>
     route.fulfill({
@@ -690,6 +768,7 @@ async function stubOrderLookup(context: BrowserContext): Promise<void> {
         placedVia: "STOREFRONT",
         allergyNoteProvided: false,
         allergyNoteAcknowledgedAt: null,
+        ...overrides,
       }),
     })
   )

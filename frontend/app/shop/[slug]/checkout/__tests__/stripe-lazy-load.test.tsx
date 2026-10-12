@@ -211,7 +211,9 @@ describe("Stripe lazy load (#793)", () => {
     await armCheckout()
 
     placeOrder()
-    await screen.findByText(/Order confirmed!/i)
+    // 37-37 (C3): a completed cash checkout leaves this page for the order route; the marker it
+    // writes for that route is the observable end of the submit.
+    await waitFor(() => expect(sessionStorage.getItem("jtoye-just-placed:ORD-793-CASH")).toBe("ORD-793-CASH"))
 
     // Non-vacuity: the order really was placed through the mocked API, so the zero below is
     // about a completed cash checkout, not about a render that never reached submission.

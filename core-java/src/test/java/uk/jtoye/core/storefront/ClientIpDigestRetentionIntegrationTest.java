@@ -217,8 +217,14 @@ class ClientIpDigestRetentionIntegrationTest {
         body.put("customerPhone", "07700 " + String.format(java.util.Locale.ROOT, "%06d",
                 java.util.concurrent.ThreadLocalRandom.current().nextInt(1_000_000)));
         body.put("fulfilmentType", "COLLECTION");
-        body.put("items", List.of(Map.of("productId", productId, "quantity", 1)));
+        Map<String, Object> line = new LinkedHashMap<>();
+        line.put("productId", productId);
+        line.put("quantity", 1);
+        List<Map<String, Object>> items = List.of(line);
+        body.put("items", items);
         body.put("acknowledgedAllergenMask", inTenant(tenant, () -> GuestOrderAcknowledgements.currentMask(jdbcTemplate, tenant, List.of(productId))));
+        // 37-32 (D-16): the line carries the unit price the customer saw, and the body the total.
+        body.put("expectedTotalPennies", inTenant(tenant, () -> GuestOrderAcknowledgements.expectCurrentPrices(jdbcTemplate, tenant, "COLLECTION", items)));
         MvcResult created = perform(post("/api/v1/public/shops/" + slug + "/orders")
                 .with(r -> { r.setRemoteAddr(peer); return r; }), body);
         assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
