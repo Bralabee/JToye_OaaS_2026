@@ -4288,7 +4288,12 @@
             "type" : "string"
           },
           "customerName" : {
-            "type" : "string"
+            "description" : "The reviewer as first name plus last initial, e.g. \"Grace P.\"; a single name as given; null when the order carried no name. Never the full surname.",
+            "example" : "Grace P.",
+            "type" : [
+              "string",
+              "null"
+            ]
           },
           "deliveryRating" : {
             "format" : "int32",
@@ -4861,6 +4866,7 @@
       "ShopConfigDto" : {
         "properties" : {
           "activePromotions" : {
+            "description" : "Always an empty list: promotions are not shown until checkout applies them. Kept as an array for contract stability.",
             "items" : {
               "$ref" : "#/components/schemas/PromotionDto"
             },
@@ -11578,7 +11584,7 @@
     },
     "/api/v1/public/shops/{slug}/config" : {
       "get" : {
-        "description" : "Server-driven content: announcements, featured products, active promotions.",
+        "description" : "Server-driven content: announcements and featured products. activePromotions is always an empty list: promotions are not shown until checkout applies them.",
         "operationId" : "getShopConfig_1",
         "parameters" : [
           {
@@ -11749,7 +11755,7 @@
     },
     "/api/v1/public/shops/{slug}/promotions" : {
       "get" : {
-        "description" : "Returns currently active promotions for a published shop.",
+        "description" : "Always an empty list for a published shop: promotions are not shown until checkout applies them. 404 for an unknown or unpublished shop.",
         "operationId" : "getShopPromotions",
         "parameters" : [
           {
@@ -14181,7 +14187,7 @@
     },
     "/public/shops/{slug}/config" : {
       "get" : {
-        "description" : "Server-driven content: announcements, featured products, active promotions.",
+        "description" : "Server-driven content: announcements and featured products. activePromotions is always an empty list: promotions are not shown until checkout applies them.",
         "operationId" : "getShopConfig",
         "parameters" : [
           {
@@ -14352,7 +14358,7 @@
     },
     "/public/shops/{slug}/promotions" : {
       "get" : {
-        "description" : "Returns currently active promotions for a published shop.",
+        "description" : "Always an empty list for a published shop: promotions are not shown until checkout applies them. 404 for an unknown or unpublished shop.",
         "operationId" : "getShopPromotions_1",
         "parameters" : [
           {
