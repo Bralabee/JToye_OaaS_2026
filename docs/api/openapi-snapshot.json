@@ -959,7 +959,7 @@
             "type" : "integer"
           },
           "quantityInStock" : {
-            "description" : "Quantity in stock (null = unlimited/untracked)",
+            "description" : "Quantity in stock. A product whose stored quantity is null is not stock-tracked (unlimited). On an edit, omitting it keeps the stored quantity; to stop tracking send trackInventory false.",
             "example" : 50,
             "format" : "int32",
             "minimum" : 0,
@@ -990,6 +990,11 @@
             "maxLength" : 255,
             "minLength" : 1,
             "type" : "string"
+          },
+          "trackInventory" : {
+            "description" : "Stock tracking. Omit (or null) to keep the product's current tracking and stock; false stops tracking and clears the stored quantity (quantityInStock must then be omitted); true tracks stock and requires quantityInStock (a 400 errors/validation naming quantityInStock otherwise).",
+            "example" : true,
+            "type" : "boolean"
           },
           "vatRate" : {
             "default" : "STANDARD",
@@ -3687,6 +3692,30 @@
               "EXEMPT"
             ],
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductPatchRequest" : {
+        "additionalProperties" : false,
+        "description" : "Stock and availability patch for one product. Accepts only available, quantityInStock and trackInventory; any other property (allergen, ingredient, price, ...) is refused with a 400 errors/validation naming it, and nothing is changed. Omitted fields keep their stored value.",
+        "properties" : {
+          "available" : {
+            "description" : "Whether the product can be ordered. Omit to keep the current value.",
+            "example" : false,
+            "type" : "boolean"
+          },
+          "quantityInStock" : {
+            "description" : "Absolute quantity in stock; setting it tracks stock. Omit to keep the stored quantity.",
+            "example" : 12,
+            "format" : "int32",
+            "minimum" : 0,
+            "type" : "integer"
+          },
+          "trackInventory" : {
+            "description" : "Stock tracking. Omit (or null) to keep the current tracking; false stops tracking and clears the stored quantity (quantityInStock must then be omitted); true requires quantityInStock.",
+            "example" : true,
+            "type" : "boolean"
           }
         },
         "type" : "object"
@@ -10262,6 +10291,106 @@
           }
         ],
         "summary" : "Get product by ID",
+        "tags" : [
+          "Products"
+        ]
+      },
+      "patch" : {
+        "description" : "Changes only available, quantityInStock and trackInventory, for EPOS and agent integrations that must never touch allergen or ingredient data. Any other property is refused with a 400 naming it and nothing is changed. Omitted fields keep their stored value; values are absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's shop, like PUT.",
+        "operationId" : "patch",
+        "parameters" : [
+          {
+            "description" : "Product ID",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProductPatchRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "Product patched; the full product is returned"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "errors/validation: a property other than available, quantityInStock and trackInventory (named in errors), trackInventory true without quantityInStock or false with one, or a negative quantityInStock; errors/unreadable-request: the body is not JSON"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the product's shop (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Product not found (errors/not-found)"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The product changed concurrently; re-read and retry (errors/concurrent-modification)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Patch product stock and availability",
         "tags" : [
           "Products"
         ]

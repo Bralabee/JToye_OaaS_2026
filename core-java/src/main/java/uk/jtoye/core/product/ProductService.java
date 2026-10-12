@@ -25,6 +25,7 @@ import uk.jtoye.core.product.dto.CopyProductsRequest;
 import uk.jtoye.core.product.dto.CopyProductsResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
+import uk.jtoye.core.product.dto.ProductPatchRequest;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
@@ -35,6 +36,7 @@ import uk.jtoye.core.storage.StorageService;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -387,6 +389,47 @@ public class ProductService {
         log.info("Updated product {} with SKU '{}', price: {} pennies",
                 product.getId(), product.getSku(), product.getPricePennies());
 
+        return resolveDetail(productMapper.toDto(product));
+    }
+
+    /**
+     * Phase 37-39 (RWO-016 / UXT-016, P0): {@code PATCH /products/{id}} — change stock and availability only.
+     *
+     * <p>The same gate as {@link #updateProduct} (SHOP_MANAGER on the product's own shop; the controller adds
+     * {@code SCOPE_catalog:write}). Every property other than {@code available}, {@code quantityInStock} and
+     * {@code trackInventory} is refused by name before anything is applied, and the entity is changed field by
+     * field here — never through {@link ProductMapper#updateEntity} — so no path from this body reaches the
+     * allergen mask, the emphasis spans, the may-contain mask or the ingredients. The spans are not re-parsed:
+     * the ingredients cannot have changed.
+     */
+    public ProductDto patchProduct(UUID productId, ProductPatchRequest request) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
+
+        if (!request.getUnknownProperties().isEmpty()) {
+            Map<String, String> refused = new LinkedHashMap<>();
+            for (String name : request.getUnknownProperties()) {
+                refused.put(name, "Not accepted by PATCH /products/{id}, which changes only available, "
+                        + "quantityInStock and trackInventory; use PUT to change other fields");
+            }
+            throw new InvalidRequestFieldsException(refused);
+        }
+        validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
+
+        if (request.getAvailable() != null) {
+            product.setAvailable(request.getAvailable());
+        }
+        if (request.getQuantityInStock() != null) {
+            product.setQuantityInStock(request.getQuantityInStock());
+        }
+        applyStockTracking(request.getTrackInventory(), product);
+
+        product = productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
+
+        log.info("Patched product {} (SKU '{}'): available={}, quantityInStock={}",
+                product.getId(), product.getSku(), product.getAvailable(), product.getQuantityInStock());
         return resolveDetail(productMapper.toDto(product));
     }
 

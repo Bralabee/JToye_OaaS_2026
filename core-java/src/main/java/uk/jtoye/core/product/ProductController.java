@@ -26,6 +26,7 @@ import uk.jtoye.core.product.dto.CopyProductsRequest;
 import uk.jtoye.core.product.dto.CopyProductsResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
+import uk.jtoye.core.product.dto.ProductPatchRequest;
 
 import java.net.URI;
 import java.time.LocalDate;
@@ -269,6 +270,36 @@ public class ProductController {
             @Parameter(description = "Product update request") @Valid @RequestBody CreateProductRequest req) {
         // issue #500: no local catch — GlobalExceptionHandler owns the RFC 7807 404 body.
         return ResponseEntity.ok(productService.updateProduct(id, req));
+    }
+
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // 37-39: the same scope as PUT
+    @PatchMapping("/{id}")
+    @Operation(summary = "Patch product stock and availability",
+            description = "Changes only available, quantityInStock and trackInventory, for EPOS and agent integrations "
+                    + "that must never touch allergen or ingredient data. Any other property is refused with a 400 "
+                    + "naming it and nothing is changed. Omitted fields keep their stored value; values are "
+                    + "absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's "
+                    + "shop, like PUT.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Product patched; the full product is returned"),
+            @ApiResponse(responseCode = "400",
+                    description = "errors/validation: a property other than available, quantityInStock and "
+                            + "trackInventory (named in errors), trackInventory true without quantityInStock or "
+                            + "false with one, or a negative quantityInStock; errors/unreadable-request: the body is "
+                            + "not JSON"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no "
+                            + "SHOP_MANAGER grant on the product's shop (errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Product not found (errors/not-found)"),
+            @ApiResponse(responseCode = "409",
+                    description = "The product changed concurrently; re-read and retry (errors/concurrent-modification)")
+    })
+    public ResponseEntity<ProductDto> patch(
+            @Parameter(description = "Product ID") @PathVariable UUID id,
+            @Valid @RequestBody ProductPatchRequest req) {
+        return ResponseEntity.ok(productService.patchProduct(id, req));
     }
 
     // NOTE (Phase 24 / 24-03): the synchronous `POST /{id}/image` upload+AI-suggest handler
