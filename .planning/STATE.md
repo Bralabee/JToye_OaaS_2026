@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-46 complete (46/53); sub-theme 37-E code complete (37-47 next: the 37-E gate, wave 37, autonomous:false). 37-46 closed 2026-10-13 (RWO-035 UI; UI-SPEC E1; tdd): /dashboard/developers for Group admins (the first Group-admin-gated nav item; also in the mobile More menu) lists ACTIVE credentials and creates, rotates and deletes them; the generalised SecretRevealDialog shows a secret exactly once (no close button until acknowledged, never in storage) and the webhooks page uses it too; CredentialDto gains serviceAccountUserId (additive OpenAPI); the Staff page shows a credential's service account as 'Integration: {name}' linking to Developers, and the Staff API now refuses to REVOKE a credential's grant (409 staff-target-is-credential, matching 37-45's grant refusal) so a credential can never be ACTIVE with no access. Jest 2790/240, build + full tsc rc 0, eslint 0 errors, unit 1821/0, full integration 1221/0 (on 6b9d2ad4), metrics 5907. The 37-47 gate owes the live proof on rebuilt images and real Keycloak: create/show-once/rotate/delete with no secret in DOM or storage, the Staff Integration row and 409, the two new nightly a11y scans, the long-text check (60-char name, six scope chips at 375 and 640 px; the table may scroll inside its own region, the page must not), plus the 37-39..37-45 items recorded in their SUMMARYs."
-last_updated: "2026-10-13T07:25:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-47 complete (47/53); sub-theme 37-E GATED (37-47 closed 2026-10-13 on the owner's proceed): every image rebuilt, freshness PASS 4/4, V82 live, OpenAPI live gate PASS, every live proof RED on the 37-C images and GREEN after, the full Keycloak credential lifecycle proven against jtoye-dev (secret recorded as length + sha256 prefix only), specs 66/0; tag cut/phase-37-e-integrators = 1a481448, PR branch phase-37-e-integrators = b0f26126 (one squash on origin/main bfef0f6e, tree-equal to the tag). Next: owner opens the 37-E PR and runs the D3 series; then 37-48 (37-G)."
+last_updated: "2026-10-13T07:55:00.000Z"
 last_activity: 2026-10-13
-state_head: 87eacd0e
+state_head: 54af1b72
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 231
+  completed_plans: 232
   percent: 65
 ---
 
@@ -1316,6 +1316,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-45 (orchestrator, 2026-10-13): owner question 1 (is staging/production keycloak.client-id the real dashboard client) is answered by construction: ACCESS_HUMAN_CLIENT_IDS reads the same app-config key the frontend uses as its OIDC client_id, so a person's azp equals it wherever sign-in works
 - [Phase 37]: 37-45 (OWNER QUESTION, open): turn off serviceAccountsEnabled on core-api in the dev realm? Its service-account token carries azp core-api and passes the human-only guard (still needs a GROUP_ADMIN grant). Researched: no in-repo consumer of core-api client_credentials (edge uses edge-api, MCP uses integration-*); recommended: turn it off
 - [Phase 37]: 37-46 (executor, 2026-10-13): the 37-45 open choice resolved as the only option that cannot leave a credential ACTIVE with no access: the Staff API refuses to revoke a credential's grant (409 staff-target-is-credential) and the Staff page shows the row as Integration: {name} linking to Developers
+- [Phase 37]: 37-47 (owner, 2026-10-13): proceed on the shared compose stack, including creating, rotating and deleting test credential clients in the jtoye-dev realm; core-api serviceAccountsEnabled left unchanged (still open)
+- [Phase 37]: 37-47 (OWNER QUESTION, before the 37-E PR merges): an integrator can order a product the shop switched off (createOrder never checked available, and since 37-42 an MCP order lands PENDING in the kitchen with no vendor review); recommended: refuse with the 404 a shop-less product gets, at least when submit is true, as a review-fix commit on the PR branch
+- [Phase 37]: 37-47 (OWNER QUESTION): revoked credentials stay on the Staff page as Integration rows with No access indefinitely; the Developers page header clips Create credential at 768 px (review-fix candidate)
 
 ### Pending Todos
 
@@ -1389,8 +1392,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-13T07:25:00.000Z
-Stopped at: Completed 37-46-PLAN.md (Developers page: create, show once, rotate, delete; Staff Integration rows). Next: 37-47 (wave 37, the 37-E gate, autonomous:false).
+Last session: 2026-10-13T07:55:00.000Z
+Stopped at: Completed 37-47-PLAN.md (the 37-E gate; PR branch phase-37-e-integrators cut, not yet opened). Next: the owner opens the 37-E PR by hand and runs the D3 review series; then 37-48 (37-G, V83).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
