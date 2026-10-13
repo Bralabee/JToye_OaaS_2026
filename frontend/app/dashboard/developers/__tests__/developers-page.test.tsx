@@ -17,6 +17,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import DevelopersPage from "../page"
 import apiClient from "@/lib/api-client"
 import { fetchMyShops } from "@/lib/shops-api"
+import { formatUkDate, formatUkDateTime } from "@/lib/uk-datetime"
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -203,5 +204,292 @@ describe("Developers page: create a credential and see its secret once (Task 1)"
       "Peckham Kitchen",
       "Brixton Bakery",
     ])
+  })
+})
+
+// --- Task 2: the list, rotate, delete and every page state --------------------------------------
+
+const ROTATED_SECRET = "Rt7-the-rotated-secret-shown-once-0002"
+const TWO_HOURS_AGO = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+
+function credential(overrides: Record<string, unknown> = {}) {
+  return {
+    id: CREDENTIAL_ID,
+    name: "Till system",
+    clientId: CLIENT_ID,
+    scopes: ["catalog:read", "orders:write"],
+    shopId: null,
+    role: "SHOP_MANAGER",
+    status: "ACTIVE",
+    createdBy: ADMIN,
+    createdAt: "2026-10-01T09:00:00Z",
+    rotatedBy: null,
+    rotatedAt: null,
+    revokedBy: null,
+    revokedAt: null,
+    lastUsedAt: null,
+    serviceAccountUserId: "5a5a5a5a-0000-0000-0000-000000000001",
+    ...overrides,
+  }
+}
+
+const STOCK_ID = "c0c0c0c0-0000-0000-0000-000000000002"
+const REVOKED_ID = "c0c0c0c0-0000-0000-0000-000000000003"
+
+function populated() {
+  return [
+    credential(),
+    credential({
+      id: STOCK_ID,
+      name: "Stock sync",
+      clientId: "jtoye-int-stock-sync-91bc",
+      scopes: ["catalog:read", "catalog:write", "orders:read", "orders:write", "customers:read", "customers:write"],
+      shopId: SHOP_A,
+      role: "STAFF",
+      lastUsedAt: TWO_HOURS_AGO,
+    }),
+    credential({
+      id: REVOKED_ID,
+      name: "Old website",
+      clientId: "jtoye-int-old-website-0000",
+      status: "REVOKED",
+      revokedBy: ADMIN,
+      revokedAt: "2026-10-05T09:00:00Z",
+    }),
+  ]
+}
+
+/** An axios-shaped rejection carrying an RFC 7807 body. */
+function problem(status: number, type: string, detail?: string, headers: Record<string, string> = {}) {
+  return Object.assign(new Error(`Request failed with status code ${status}`), {
+    response: {
+      status,
+      headers,
+      data: { type: `https://jtoye.uk/errors/${type}`, status, ...(detail ? { detail } : {}) },
+    },
+  })
+}
+
+/** The sm+ table region and the below-sm card list. */
+function tableRegion(): HTMLElement {
+  return screen.getByRole("region", { name: "API credentials table" })
+}
+
+function rowOf(name: string): HTMLElement {
+  const row = within(tableRegion()).getByText(name).closest("tr")
+  expect(row).not.toBeNull()
+  return row as HTMLElement
+}
+
+describe("Developers page: the credentials list and every page state (Task 2)", () => {
+  it("lists each active credential with what it can do, its shop, role, last use and creator", async () => {
+    listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
+    render(<DevelopersPage />)
+    await screen.findByRole("region", { name: "API credentials table" })
+
+    const heads = within(tableRegion())
+      .getAllByRole("columnheader")
+      .map((h) => h.textContent?.replace("*", "").trim())
+    expect(heads).toEqual(["Name", "Can", "Shops", "Role", "Last used", "Created", "Actions"])
+
+    const till = rowOf("Till system")
+    expect(within(till).getByText(CLIENT_ID)).toBeInTheDocument()
+    expect(within(till).getByText("Read your menu")).toBeInTheDocument()
+    expect(within(till).getByText("Create and update orders")).toBeInTheDocument()
+    expect(within(till).getByText("All shops")).toBeInTheDocument()
+    expect(within(till).getByText("Shop manager")).toBeInTheDocument()
+    expect(within(till).getByText("Never used")).toBeInTheDocument()
+    expect(within(till).getByText(`${formatUkDate("2026-10-01T09:00:00Z")} by Ada Owner`)).toBeInTheDocument()
+
+    const stock = rowOf("Stock sync")
+    expect(within(stock).getByText("Peckham Kitchen")).toBeInTheDocument()
+    expect(within(stock).getByText("Staff")).toBeInTheDocument()
+    for (const label of [
+      "Read your menu",
+      "Change your menu",
+      "Read orders",
+      "Create and update orders",
+      "Read customers",
+      "Create and update customers",
+    ]) {
+      expect(within(stock).getByText(label)).toBeInTheDocument()
+    }
+    // Relative time, with the absolute UK time in the title and for screen readers.
+    const absolute = formatUkDateTime(TWO_HOURS_AGO)
+    const when = within(stock).getByText(/2 hours ago/)
+    expect(when.closest("[title]")).toHaveAttribute("title", absolute)
+    expect(within(stock).getByText(`(${absolute})`)).toHaveClass("sr-only")
+
+    // A revoked credential has stopped working; it is not listed as one that can.
+    expect(screen.queryByText("Old website")).toBeNull()
+  })
+
+  it("says how often 'Last used' is updated, from the API's interval", async () => {
+    listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
+    const { unmount } = render(<DevelopersPage />)
+    expect(await screen.findByText("Updated at most every 15 minutes.")).toBeInTheDocument()
+    unmount()
+
+    // The footnote arm: another interval from the API, another sentence. No literal in the page.
+    listBody = { credentials: populated(), lastUsedIntervalMinutes: 5 }
+    render(<DevelopersPage />)
+    expect(await screen.findByText("Updated at most every 5 minutes.")).toBeInTheDocument()
+    expect(screen.queryByText("Updated at most every 15 minutes.")).toBeNull()
+  })
+
+  it("rotates after an accent confirm and shows the new secret once", async () => {
+    listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
+    mockedApiClient.post.mockImplementation(((url: string) => {
+      if (url === `/api/v1/credentials/${CREDENTIAL_ID}/rotate`) {
+        return Promise.resolve({ data: created({ clientSecret: ROTATED_SECRET }) })
+      }
+      return Promise.reject(new Error(`unexpected POST ${url}`))
+    }) as never)
+    render(<DevelopersPage />)
+    await screen.findByRole("region", { name: "API credentials table" })
+
+    fireEvent.click(within(rowOf("Till system")).getByRole("button", { name: /^Rotate secret/ }))
+    const confirm = await screen.findByRole("dialog", { name: 'Rotate the secret for "Till system"?' })
+    expect(within(confirm).getByText(/The current secret stops working immediately/)).toBeInTheDocument()
+    expect(within(confirm).getByRole("button", { name: "Keep current secret" })).toBeInTheDocument()
+    const go = within(confirm).getByRole("button", { name: "Rotate secret" })
+    expect(go).toHaveClass("bg-primary")
+    await act(async () => {
+      fireEvent.click(go)
+    })
+
+    expect(mockedApiClient.post).toHaveBeenCalledWith(`/api/v1/credentials/${CREDENTIAL_ID}/rotate`)
+    const reveal = await screen.findByRole("dialog", { name: "Copy your client secret" })
+    expect(within(reveal).getByLabelText("Client secret")).toHaveValue(ROTATED_SECRET)
+    fireEvent.click(within(reveal).getByRole("button", { name: "I've saved it" }))
+    await waitFor(() => expect(document.body.innerHTML).not.toContain(ROTATED_SECRET))
+  })
+
+  it("deletes after a destructive confirm, removes the row and confirms with a toast", async () => {
+    listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
+    mockedApiClient.delete.mockResolvedValue({ status: 204 } as never)
+    render(<DevelopersPage />)
+    await screen.findByRole("region", { name: "API credentials table" })
+
+    fireEvent.click(within(rowOf("Till system")).getByRole("button", { name: /^Delete credential/ }))
+    const confirm = await screen.findByRole("dialog", { name: 'Delete "Till system"?' })
+    expect(within(confirm).getByText(/It stops working immediately and can't be restored/)).toBeInTheDocument()
+    expect(within(confirm).getByRole("button", { name: "Keep credential" })).toBeInTheDocument()
+    const go = within(confirm).getByRole("button", { name: "Delete credential" })
+    expect(go).toHaveClass("bg-destructive")
+    await act(async () => {
+      fireEvent.click(go)
+    })
+
+    expect(mockedApiClient.delete).toHaveBeenCalledWith(`/api/v1/credentials/${CREDENTIAL_ID}`)
+    await waitFor(() => expect(within(tableRegion()).queryByText("Till system")).toBeNull())
+    expect(within(tableRegion()).getByText("Stock sync")).toBeInTheDocument()
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Credential deleted" }))
+  })
+
+  it("shows a refused rotate in place, in the server's words", async () => {
+    listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
+    mockedApiClient.post.mockRejectedValue(
+      problem(409, "credential-client-missing", "The Keycloak client behind this credential no longer exists. Delete the credential and issue a new one.") as never
+    )
+    render(<DevelopersPage />)
+    await screen.findByRole("region", { name: "API credentials table" })
+    fireEvent.click(within(rowOf("Till system")).getByRole("button", { name: /^Rotate secret/ }))
+    const confirm = await screen.findByRole("dialog", { name: 'Rotate the secret for "Till system"?' })
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole("button", { name: "Rotate secret" }))
+    })
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The Keycloak client behind this credential no longer exists. Delete the credential and issue a new one."
+    )
+    expect(screen.queryByRole("dialog", { name: "Copy your client secret" })).toBeNull()
+  })
+
+  it("empty: 'No API credentials yet' with its body and a Create credential button", async () => {
+    render(<DevelopersPage />)
+    expect(await screen.findByText("No API credentials yet")).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "Create a credential to let your till, website or an AI agent read your menu or place orders, without sharing your password."
+      )
+    ).toBeInTheDocument()
+    // Header and empty state both offer it; there is no count copy anywhere.
+    expect(screen.getAllByRole("button", { name: "Create credential" })).toHaveLength(2)
+    expect(screen.queryByRole("region", { name: "API credentials table" })).toBeNull()
+  })
+
+  it("loading: skeleton rows under the real column headers", async () => {
+    mockedApiClient.get.mockImplementation((() => new Promise(() => {})) as never)
+    render(<DevelopersPage />)
+    const region = await screen.findByRole("region", { name: "API credentials table" })
+    const heads = within(region).getAllByRole("columnheader").map((h) => h.textContent?.trim())
+    expect(heads).toEqual(["Name", "Can", "Shops", "Role", "Last used", "Created", "Actions"])
+    expect(region.querySelectorAll('[data-testid="credential-skeleton-row"]').length).toBeGreaterThan(0)
+    expect(screen.queryByText("No API credentials yet")).toBeNull()
+  })
+
+  it("load error: the LoadErrorPanel, never the empty state", async () => {
+    mockedApiClient.get.mockImplementation(((url: string) => {
+      if (url === "/api/v1/credentials") return Promise.reject(problem(500, "internal-error", "Boom."))
+      return Promise.resolve({ data: staffBody() })
+    }) as never)
+    render(<DevelopersPage />)
+    const panel = await screen.findByTestId("load-error-panel")
+    expect(panel).toHaveTextContent("Couldn't load API credentials")
+    expect(screen.queryByText("No API credentials yet")).toBeNull()
+  })
+
+  it("feature off: says credentials aren't available here and offers no Create", async () => {
+    mockedApiClient.get.mockImplementation(((url: string) => {
+      if (url === "/api/v1/credentials") {
+        return Promise.reject(problem(400, "credentials-not-configured", "Integration credentials are not available."))
+      }
+      return Promise.resolve({ data: staffBody() })
+    }) as never)
+    render(<DevelopersPage />)
+    expect(
+      await screen.findByText("API credentials aren't available on this installation yet.")
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Create credential" })).toBeNull()
+    expect(screen.queryByText("No API credentials yet")).toBeNull()
+  })
+
+  it("not a Group admin: the refusal, and no credential request at all", async () => {
+    mockedFetchMyShops.mockResolvedValue({ shops: shops as never, isGroupAdmin: false, userId: ADMIN } as never)
+    render(<DevelopersPage />)
+    expect(await screen.findByText("Only a Group admin can manage API credentials.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Create credential" })).toBeNull()
+    expect(mockedApiClient.get).not.toHaveBeenCalledWith("/api/v1/credentials")
+  })
+
+  it("the server's shop-access-denied 403 reads as the same refusal", async () => {
+    mockedApiClient.get.mockImplementation(((url: string) => {
+      if (url === "/api/v1/credentials") return Promise.reject(problem(403, "shop-access-denied"))
+      return Promise.resolve({ data: staffBody() })
+    }) as never)
+    render(<DevelopersPage />)
+    expect(await screen.findByText("Only a Group admin can manage API credentials.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Create credential" })).toBeNull()
+  })
+
+  it("below sm each credential is a <dl> card; from sm the table keeps its focusable region", async () => {
+    listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
+    const { container } = render(<DevelopersPage />)
+    const region = await screen.findByRole("region", { name: "API credentials table" })
+    expect(region).toHaveAttribute("tabindex", "0")
+
+    const table = container.querySelector('[data-testid="credentials-table"]')
+    const cards = container.querySelector('[data-testid="credentials-cards"]')
+    expect(table).toHaveClass("hidden", "sm:block")
+    expect(cards).toHaveClass("sm:hidden")
+    const lists = (cards as HTMLElement).querySelectorAll("dl")
+    expect(lists).toHaveLength(2)
+    const terms = Array.from(lists[0].querySelectorAll("dt")).map((d) => d.textContent)
+    expect(terms).toEqual(["Can", "Shops", "Role", "Last used", "Created"])
+    // Long values wrap rather than scroll: no field of a card declares a nowrap or a truncate.
+    for (const dl of Array.from(lists)) {
+      expect(dl.querySelector(".whitespace-nowrap, .truncate")).toBeNull()
+    }
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
   })
 })
