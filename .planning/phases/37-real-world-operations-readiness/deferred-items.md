@@ -688,3 +688,17 @@ where it must be resolved.
   (`fetchAllProducts` already returns `shopId`), and say in the form why a shop-less product is not listed ("assign it
   a shop first"). Not fixed in 37-40 (scope boundary: no frontend file is in the plan, and the refusal is the plan's
   intended behaviour). The 37-E gate's live run should place a dashboard order to confirm nothing it seeds is shop-less.
+
+## From 37-41 (edge pass-through of the sync contract)
+
+- **A line-pinned citation in the k8s env-contract gate points at the wrong lines of `handlers.go` (found in 37-41, open).**
+  status: open
+  **What:** `k8s/scripts/check-env-contract.sh:210` justifies omitting `WHATSAPP_APP_SECRET` by citing
+  `edge-go/cmd/edge/handlers.go:249-255` as the fail-closed 503 + Retry-After refusal. It was already wrong before
+  37-41: on `e528a1ed` those lines are the explanatory comment and the refusal starts at line 267
+  (`if appSecret == ""`). 37-41 added the sync pass-through to the same file, so the refusal is now at lines 304-310.
+  The citation is inside a reviewed-omission string, which `scripts/check-doc-citations.sh` does not read (it passed
+  rc 0 at 37-41: 29 verified, 7 uncheckable). The claim itself is still true; only the line numbers are stale.
+  **Suggested owner:** the next plan that edits `k8s/scripts/check-env-contract.sh`, or the phase-PR doc sweep.
+  Cite the symbol (`WhatsAppWebhook`, the `appSecret == ""` branch) instead of a line range, so the next edit to the
+  file cannot make it stale again. Not fixed in 37-41: it was stale before 37-41, and the file is outside the plan.
