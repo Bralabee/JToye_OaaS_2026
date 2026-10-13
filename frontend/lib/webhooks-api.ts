@@ -129,6 +129,21 @@ export const EVENT_TYPE_ORDER: WebhookEventType[] = [
   "PAYMENT_EVENT",
 ]
 
+// --- The show-once signing-secret copy (COMMS-06) ---------------------------
+
+/**
+ * What the shared SecretRevealDialog says for a webhook signing secret. The wording is the
+ * COMMS-06 dialog's, unchanged by its 37-46 generalisation; both webhook call sites (the list and
+ * the detail page) spread this one object, so they cannot drift.
+ */
+export const SIGNING_SECRET_COPY = {
+  title: "Copy your signing secret",
+  description: "Use this secret to verify the HMAC signature on every delivery.",
+  warning:
+    "This is the only time we’ll show this secret. Store it securely — you need it to verify webhook signatures. If you lose it, rotate to generate a new one.",
+  secretLabel: "signing secret",
+} as const
+
 // --- Idempotency key (reused verbatim from RefundDialog — WR-07 contract) ---
 
 /**

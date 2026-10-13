@@ -38,6 +38,7 @@ import {
   extractErrorDetail,
   makeIdempotencyKey,
   EVENT_TYPE_META,
+  SIGNING_SECRET_COPY,
   type WebhookSubscription,
   type WebhookDelivery,
   type DeliveryStatus,
@@ -47,7 +48,7 @@ import {
   DeliveryStatusBadge,
   ReplayTag,
 } from "@/components/dashboard/webhooks/status-badge"
-import { SecretRevealDialog } from "@/components/dashboard/webhooks/SecretRevealDialog"
+import { SecretRevealDialog } from "@/components/dashboard/secret-reveal-dialog"
 import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialog"
 
 const PAGE_SIZE = 20
@@ -605,6 +606,7 @@ export default function WebhookDetailPage() {
           setSecretOpen(o)
           if (!o) setSecret(null)
         }}
+        {...SIGNING_SECRET_COPY}
         secret={secret}
       />
 
