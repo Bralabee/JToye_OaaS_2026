@@ -75,6 +75,29 @@ public class ProductDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Integer mayContainMask;
 
+    /**
+     * Phase 37-42 (RWO-040 / UXT-040): the DECLARED allergens in words, in catalogue (bit) order, e.g.
+     * {@code ["Gluten", "Milk"]} for {@code allergenMask} 65. Empty when the mask is 0 (the vendor
+     * declared none of the 14).
+     *
+     * <p>Derived, never stored: {@code ProductMapper} fills it from {@code allergenMask} through
+     * {@link uk.jtoye.core.product.AllergenCatalog#namesFor(int)}, the one Java catalogue, so an agent or
+     * client reads names without carrying a third copy of the 14 (the TypeScript copy in
+     * {@code frontend/types/api.ts} is bound to the Java one by the parity test; the MCP server keeps
+     * none). It names the declaration only: {@code mayContainMask} and {@code allergenWarnings} are never
+     * folded into it (D-16). The mask itself is unchanged and stays the legally operative value.
+     *
+     * <p>{@code NON_NULL}: every mapped DTO carries a list; a DTO built by hand without one, such as Phase
+     * 38's Boot-3.5 golden {@code ProductDto} sample, keeps its exact wire form (31.1-01 route (a)).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @io.swagger.v3.oas.annotations.media.ArraySchema(
+            arraySchema = @io.swagger.v3.oas.annotations.media.Schema(description = "The declared allergens "
+                    + "in words, in UK FSA catalogue order (from allergenMask). Empty when allergenMask is 0. "
+                    + "Never includes the may-contain (cross-contact) allergens."),
+            schema = @io.swagger.v3.oas.annotations.media.Schema(example = "Gluten"))
+    private List<String> allergens;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public String getSku() { return sku; }
@@ -125,4 +148,6 @@ public class ProductDto {
     public void setAllergenWarnings(List<ProductAllergenWarning> allergenWarnings) { this.allergenWarnings = allergenWarnings; }
     public Integer getMayContainMask() { return mayContainMask; }
     public void setMayContainMask(Integer mayContainMask) { this.mayContainMask = mayContainMask; }
+    public List<String> getAllergens() { return allergens; }
+    public void setAllergens(List<String> allergens) { this.allergens = allergens; }
 }

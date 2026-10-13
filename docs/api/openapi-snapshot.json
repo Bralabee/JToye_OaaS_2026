@@ -881,6 +881,11 @@
           "shopId" : {
             "format" : "uuid",
             "type" : "string"
+          },
+          "submit" : {
+            "description" : "Submit the order on creation. true: the order is created and moved DRAFT -> PENDING in the same transaction, so it appears in the kitchen's New lane for the vendor to accept (it is never confirmed automatically). Absent or false: the order is created as a DRAFT, to be submitted later with POST /api/v1/orders/{id}/submit.",
+            "example" : true,
+            "type" : "boolean"
           }
         },
         "required" : [
@@ -3626,6 +3631,14 @@
           "allergenWarnings" : {
             "items" : {
               "$ref" : "#/components/schemas/ProductAllergenWarning"
+            },
+            "type" : "array"
+          },
+          "allergens" : {
+            "description" : "The declared allergens in words, in UK FSA catalogue order (from allergenMask). Empty when allergenMask is 0. Never includes the may-contain (cross-contact) allergens.",
+            "items" : {
+              "example" : "Gluten",
+              "type" : "string"
             },
             "type" : "array"
           },
@@ -9841,7 +9854,7 @@
     },
     "/api/v1/products" : {
       "get" : {
-        "description" : "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop).",
+        "description" : "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop). Optional availableOnly=true lists only products on sale, filtered in the query so totalElements counts only those. Each product carries allergens, its declared allergens in words, beside allergenMask.",
         "operationId" : "list_3",
         "parameters" : [
           {
@@ -9852,6 +9865,15 @@
             "schema" : {
               "format" : "uuid",
               "type" : "string"
+            }
+          },
+          {
+            "description" : "Optional: true lists only products on sale (available). Absent or false lists every product, as before.",
+            "in" : "query",
+            "name" : "availableOnly",
+            "required" : false,
+            "schema" : {
+              "type" : "boolean"
             }
           }
         ],

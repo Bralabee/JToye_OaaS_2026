@@ -218,8 +218,23 @@ public class ProductService {
      */
     @Transactional(readOnly = true)
     public Page<ProductDto> getAllProducts(Pageable pageable) {
-        log.debug("Fetching all products with pagination: page={}, size={}",
-                pageable.getPageNumber(), pageable.getPageSize());
+        return listProducts(pageable, false);
+    }
+
+    /**
+     * As {@link #getAllProducts(Pageable)}, only products on sale ({@code available = true}), filtered in
+     * the query (Phase 37-42, RWO-040 / UXT-040: {@code GET /products?availableOnly=true}, the MCP
+     * {@code list_products} filter). The same read scope: GROUP_ADMIN the tenant, a scoped user their
+     * granted shops plus legacy tenant-wide products, an ungranted user nothing.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductDto> getAvailableProducts(Pageable pageable) {
+        return listProducts(pageable, true);
+    }
+
+    private Page<ProductDto> listProducts(Pageable pageable, boolean availableOnly) {
+        log.debug("Fetching all products with pagination: page={}, size={}, availableOnly={}",
+                pageable.getPageNumber(), pageable.getPageSize(), availableOnly);
         // VSA-02 (D-01): read-scope to the caller's grant set at the QUERY. GROUP_ADMIN
         // sees the whole tenant; a scoped user sees granted-shop products PLUS legacy
         // tenant-wide (shop_id IS NULL) products (WR-08 read half, plan 23-10); a
@@ -227,7 +242,7 @@ public class ProductService {
         // is deliberately kept so the null-shop policy did NOT widen to "everyone sees
         // tenant-wide products").
         if (shopAccessService.isGroupAdmin()) {
-            return productRepository.findAll(pageable)
+            return (availableOnly ? productRepository.findByAvailableTrue(pageable) : productRepository.findAll(pageable))
                     .map(productMapper::toDto)
                     .map(this::resolveAssetFirst);
         }
@@ -237,7 +252,9 @@ public class ProductService {
         }
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
-        return productRepository.findTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable)
+        return (availableOnly
+                        ? productRepository.findAvailableTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable)
+                        : productRepository.findTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable))
                 .map(productMapper::toDto)
                 .map(this::resolveAssetFirst);
     }
@@ -257,10 +274,25 @@ public class ProductService {
      */
     @Transactional(readOnly = true)
     public Page<ProductDto> getProductsByShop(UUID shopId, Pageable pageable) {
-        log.debug("Fetching products for shop {} with pagination: page={}, size={}",
-                shopId, pageable.getPageNumber(), pageable.getPageSize());
+        return listProductsByShop(shopId, pageable, false);
+    }
+
+    /**
+     * As {@link #getProductsByShop(UUID, Pageable)}, only products on sale, filtered in the query (Phase
+     * 37-42, RWO-040 / UXT-040: "show me one shop's menu"). Same STAFF gate on the shop.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductDto> getAvailableProductsByShop(UUID shopId, Pageable pageable) {
+        return listProductsByShop(shopId, pageable, true);
+    }
+
+    private Page<ProductDto> listProductsByShop(UUID shopId, Pageable pageable, boolean availableOnly) {
+        log.debug("Fetching products for shop {} with pagination: page={}, size={}, availableOnly={}",
+                shopId, pageable.getPageNumber(), pageable.getPageSize(), availableOnly);
         shopAccessService.require(shopId, ShopRole.STAFF);
-        return productRepository.findByShopId(shopId, pageable)
+        return (availableOnly
+                        ? productRepository.findByShopIdAndAvailableTrue(shopId, pageable)
+                        : productRepository.findByShopId(shopId, pageable))
                 .map(productMapper::toDto)
                 .map(this::resolveAssetFirst);
     }

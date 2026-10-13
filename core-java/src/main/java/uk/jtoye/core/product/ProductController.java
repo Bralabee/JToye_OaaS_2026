@@ -57,7 +57,7 @@ public class ProductController {
     }
 
     @GetMapping
-    @Operation(summary = "List products", description = "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop).")
+    @Operation(summary = "List products", description = "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop). Optional availableOnly=true lists only products on sale, filtered in the query so totalElements counts only those. Each product carries allergens, its declared allergens in words, beside allergenMask.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved products"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT"),
@@ -66,12 +66,21 @@ public class ProductController {
     public Page<ProductDto> list(
             @Parameter(description = "Optional shop to narrow the list to")
             @RequestParam(required = false) UUID shopId,
+            @Parameter(description = "Optional: true lists only products on sale (available). Absent or false lists every product, as before.")
+            @RequestParam(required = false) Boolean availableOnly,
             @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         // RLS ensures we only see current tenant rows; shopId narrows within the tenant
         // at the QUERY (WR-04 / issue #280) rather than in the browser over one page.
-        return shopId != null
-                ? productService.getProductsByShop(shopId, pageable)
+        // 37-42 (UXT-040): availableOnly narrows at the query too, so the MCP list_products stays a forwarder.
+        boolean onSaleOnly = Boolean.TRUE.equals(availableOnly);
+        if (shopId != null) {
+            return onSaleOnly
+                    ? productService.getAvailableProductsByShop(shopId, pageable)
+                    : productService.getProductsByShop(shopId, pageable);
+        }
+        return onSaleOnly
+                ? productService.getAvailableProducts(pageable)
                 : productService.getAllProducts(pageable);
     }
 

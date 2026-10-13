@@ -119,6 +119,56 @@ class ProductControllerShopFilterTest {
     }
 
     @Test
+    @DisplayName("37-42: GET /products?shopId=...&availableOnly=true delegates to the shop's on-sale query")
+    void list_withShopIdAndAvailableOnly_delegatesToAvailableShopQuery() throws Exception {
+        when(productService.getAvailableProductsByShop(eq(SHOP_ID), any(Pageable.class)))
+                .thenAnswer(inv -> singlePage(inv.getArgument(1)));
+
+        mockMvc.perform(get("/api/v1/products").param("shopId", SHOP_ID.toString()).param("availableOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].sku").value("WR04-SKU"));
+
+        verify(productService).getAvailableProductsByShop(eq(SHOP_ID), any(Pageable.class));
+        verify(productService, never()).getProductsByShop(any(UUID.class), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("37-42: GET /products?availableOnly=true without a shop delegates to the tenant's on-sale query")
+    void list_availableOnlyWithoutShop_delegatesToAvailableQuery() throws Exception {
+        when(productService.getAvailableProducts(any(Pageable.class)))
+                .thenAnswer(inv -> singlePage(inv.getArgument(0)));
+
+        mockMvc.perform(get("/api/v1/products").param("availableOnly", "true"))
+                .andExpect(status().isOk());
+
+        verify(productService).getAvailableProducts(any(Pageable.class));
+        verify(productService, never()).getAllProducts(any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("37-42: availableOnly=false keeps the unfiltered list")
+    void list_availableOnlyFalse_keepsTheUnfilteredList() throws Exception {
+        when(productService.getProductsByShop(eq(SHOP_ID), any(Pageable.class)))
+                .thenAnswer(inv -> singlePage(inv.getArgument(1)));
+
+        mockMvc.perform(get("/api/v1/products").param("shopId", SHOP_ID.toString()).param("availableOnly", "false"))
+                .andExpect(status().isOk());
+
+        verify(productService).getProductsByShop(eq(SHOP_ID), any(Pageable.class));
+        verify(productService, never()).getAvailableProductsByShop(any(UUID.class), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("37-42: a non-boolean availableOnly is a 400 before any service call")
+    void list_malformedAvailableOnly_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/products").param("availableOnly", "sometimes"))
+                .andExpect(status().isBadRequest());
+
+        verify(productService, never()).getAllProducts(any(Pageable.class));
+        verify(productService, never()).getAvailableProducts(any(Pageable.class));
+    }
+
+    @Test
     @DisplayName("GET /products?shopId=not-a-uuid is rejected with 400 before any service call")
     void list_malformedShopId_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/products").param("shopId", "not-a-uuid"))

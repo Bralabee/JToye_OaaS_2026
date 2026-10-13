@@ -63,7 +63,8 @@ class ProductControllerTest {
 
         // When
         // WR-04 (#280): list() gained an optional shopId; null keeps the tenant-wide path.
-        Page<ProductDto> result = productController.list(null, PageRequest.of(0, 20));
+        // 37-42 (UXT-040): and an optional availableOnly; null keeps the unfiltered list.
+        Page<ProductDto> result = productController.list(null, null, PageRequest.of(0, 20));
 
         // Then
         assertThat(result.getContent()).hasSize(1);

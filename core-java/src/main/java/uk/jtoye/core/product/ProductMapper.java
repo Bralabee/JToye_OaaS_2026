@@ -25,7 +25,21 @@ public interface ProductMapper {
     // #787 (D-09): derived from title, mask and ingredients in fillAllergenWarnings below,
     // never copied from a stored value.
     @Mapping(target = "allergenWarnings", ignore = true)
+    // 37-42 (UXT-040): derived from allergenMask in fillAllergenNames below.
+    @Mapping(target = "allergens", ignore = true)
     ProductDto toDto(Product product);
+
+    /**
+     * Phase 37-42 (RWO-040 / UXT-040): the declared allergens in words, from the ONE catalogue
+     * ({@link AllergenCatalog#namesFor(int)}), in bit order, so no consumer needs its own copy of the 14
+     * names. The declaration only: may-contain and the reconciliation warnings stay separate (D-16). A
+     * null mask (not recorded) gives no list rather than an invented empty one.
+     */
+    @AfterMapping
+    default void fillAllergenNames(Product product, @MappingTarget ProductDto dto) {
+        Integer mask = product.getAllergenMask();
+        dto.setAllergens(mask == null ? null : AllergenCatalog.namesFor(mask));
+    }
 
     /**
      * #787 (D-09): every product response says when the ingredients text emphasises an
