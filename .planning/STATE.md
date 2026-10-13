@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-43 complete (43/53); sub-theme 37-E in progress (37-44 next, wave 34). 37-43 closed 2026-10-13 (RWO-038 / UXT-038; UI-SPEC E2; tdd): webhook auto-pause counts failed DELIVERIES (3 consecutive events each exhausting 8 attempts; webhook.delivery.auto-pause-after-failed-deliveries, default 3; the old auto-pause-threshold key removed and refused by WebhookPropertiesBindingTest); while auto-paused, deliveries (and events fanned out during the pause) are HELD, resume re-queues them with fresh attempts, revoke fails them; one plain-text email to the tenant contact per auto-pause after commit; subscription DTO heldCount; dashboard Held badge + filter, E2 banner 'Resume and deliver held events'; the delivery log no longer crashes on an unknown status. Unit 1804/0, full integration 1197/0 (on 2bf59cf4), jest 2761/237, build + full tsc rc 0, metrics 5837. Ship 37-43 Tasks 2 and 3 together (the backend alone crashes the old detail page on HELD). Runtime still the 37-C build (d060d0af); the 37-E gate must check live: 3 dead events pause, a 4th is Held, Mailhog gets the email (dev tenant may need contact_email), Resume delivers. UAT: held only on pause (revoke fails), manual-pause events not recorded, fresh 8 attempts on resume, button copy with nothing held, email time format."
-last_updated: "2026-10-13T04:20:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-44 complete (44/53); sub-theme 37-E in progress (37-45 next, wave 35). 37-44 closed 2026-10-13 (RWO-035 core seam; D-22; tdd): KeycloakAdminClient createClient (service-account client with a hardcoded tenant_id mapper and aud=core-api, requested scopes only; post-create fallback strips unrequested default/optional scopes, re-adds a missing mapper, deletes a half-made client), findClientUuid, getServiceAccountUserId, getClientSecret, regenerateClientSecret, deleteClient; typed KeycloakClientExistsException (409) and KeycloakClientNotFoundException (404); no secret in any exception or log (leak arm proven with an input-quoting mapper). Proven by request content against a mock Keycloak only; unit 1821/0, Keycloak package 48/0, integrationTest not run (production change confined to the keycloak package), metrics 5854. For 37-45: retry once on a taken clientId; credential tokens carry no preferred_username/email/realm_access, so core must accept them; an orphaned client after a failed UUID lookup can only be swept by clientId. For 37-47: read the INFO 'honoured' / WARN 'did not honour' line on real Keycloak 24.0.5 and decode a minted token for tenant_id, aud, scope. Runtime still the 37-C build (d060d0af)."
+last_updated: "2026-10-13T04:40:00.000Z"
 last_activity: 2026-10-13
-state_head: fa271b5f
+state_head: e57ced8d
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 228
+  completed_plans: 229
   percent: 65
 ---
 
@@ -1310,6 +1310,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-42 (executor, 2026-10-13): availableOnly is filtered in the repository query, never post-filtered over a fetched page (PageImpl rewrites the total on a short page)
 - [Phase 37]: 37-43 (executor, 2026-10-13): auto-pause is delivery-level (N consecutive dead deliveries, default 3) and a paused endpoint HOLDS its events (including events fanned out while paused); resume re-queues with fresh attempts, revoke fails them; the owner gets one email per auto-pause
 - [Phase 37]: 37-43 (executor, 2026-10-13): the dashboard delivery log renders an unknown status raw instead of crashing the page (the shipped log crashed on HELD)
+- [Phase 37]: 37-44 (executor, 2026-10-13): a credential client is verified after create and repaired (unrequested scopes removed, a missing mapper re-added) or deleted if the repair fails, because Keycloak may ignore an inline representation; which path real Keycloak 24.0.5 takes is proven at the 37-47 gate
 
 ### Pending Todos
 
@@ -1383,8 +1384,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-13T04:20:00.000Z
-Stopped at: Completed 37-43-PLAN.md (honest webhook auto-pause: delivery-level, HELD events, owner email, Held badge and banner). Next: 37-44 (wave 34, Keycloak admin calls for integrator credentials).
+Last session: 2026-10-13T04:40:00.000Z
+Stopped at: Completed 37-44-PLAN.md (Keycloak admin calls for integrator credential clients, by-content tests). Next: 37-45 (wave 35, scoped API credentials issue/rotate/revoke; takes reserved V82).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
