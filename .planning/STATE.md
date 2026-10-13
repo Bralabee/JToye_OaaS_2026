@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-45 complete (45/53); sub-theme 37-E in progress (37-46 next, wave 36). 37-45 closed 2026-10-13 (RWO-035 core; D-22..D-24; tdd): V82 integration_credential (ENABLE+FORCE RLS via current_tenant_id(), NOSUPERUSER-proven, idempotency_key column, applies out of order after V84); a Group admin issues/lists/rotates/revokes a credential = a Keycloak service-account client whose service account gets an ordinary OPERATOR shop grant (limited like a person); the secret is shown once (Cache-Control exactly no-store) and never stored; last_used_at recorded by a filter; a revoked credential's still-valid token gets 403 credential-revoked; a failure after Keycloak made the client deletes it again; HumanCallerGuard: credential and staff mutations only from tokens whose azp is in ACCESS_HUMAN_CLIENT_IDS (k8s reads the SAME app-config key keycloak.client-id the frontend signs in with, so the two cannot drift; compose/application.yml default core-api); a staff grant to a credential's service account is 409 staff-target-is-credential. Unit 1821/0, full integration 1219/0 on 478faff2 (covers 37-39..37-44 incl. the 37-44 Keycloak client), metrics 5876. Next free migration V85 (V83 reserved for 37-48). 37-46 must render eight problem types and decide how the Staff page shows credential service accounts (today Staff can revoke a credential's grant, leaving it ACTIVE with no access). 37-47 owes: a real minted token accepted without preferred_username/email/realm_access, and after revoke a 403 on a minted token and a failed new mint. Untested: the grant half of the rollback cleanup. Runtime still the 37-C build (d060d0af)."
-last_updated: "2026-10-13T06:20:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-46 complete (46/53); sub-theme 37-E code complete (37-47 next: the 37-E gate, wave 37, autonomous:false). 37-46 closed 2026-10-13 (RWO-035 UI; UI-SPEC E1; tdd): /dashboard/developers for Group admins (the first Group-admin-gated nav item; also in the mobile More menu) lists ACTIVE credentials and creates, rotates and deletes them; the generalised SecretRevealDialog shows a secret exactly once (no close button until acknowledged, never in storage) and the webhooks page uses it too; CredentialDto gains serviceAccountUserId (additive OpenAPI); the Staff page shows a credential's service account as 'Integration: {name}' linking to Developers, and the Staff API now refuses to REVOKE a credential's grant (409 staff-target-is-credential, matching 37-45's grant refusal) so a credential can never be ACTIVE with no access. Jest 2790/240, build + full tsc rc 0, eslint 0 errors, unit 1821/0, full integration 1221/0 (on 6b9d2ad4), metrics 5907. The 37-47 gate owes the live proof on rebuilt images and real Keycloak: create/show-once/rotate/delete with no secret in DOM or storage, the Staff Integration row and 409, the two new nightly a11y scans, the long-text check (60-char name, six scope chips at 375 and 640 px; the table may scroll inside its own region, the page must not), plus the 37-39..37-45 items recorded in their SUMMARYs."
+last_updated: "2026-10-13T07:25:00.000Z"
 last_activity: 2026-10-13
-state_head: 6d0cca77
+state_head: 87eacd0e
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 230
+  completed_plans: 231
   percent: 65
 ---
 
@@ -1315,6 +1315,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-45 (executor, 2026-10-13): a revoked credential's still-valid token is refused 403 credential-revoked at once, not only when the grant is gone
 - [Phase 37]: 37-45 (orchestrator, 2026-10-13): owner question 1 (is staging/production keycloak.client-id the real dashboard client) is answered by construction: ACCESS_HUMAN_CLIENT_IDS reads the same app-config key the frontend uses as its OIDC client_id, so a person's azp equals it wherever sign-in works
 - [Phase 37]: 37-45 (OWNER QUESTION, open): turn off serviceAccountsEnabled on core-api in the dev realm? Its service-account token carries azp core-api and passes the human-only guard (still needs a GROUP_ADMIN grant). Researched: no in-repo consumer of core-api client_credentials (edge uses edge-api, MCP uses integration-*); recommended: turn it off
+- [Phase 37]: 37-46 (executor, 2026-10-13): the 37-45 open choice resolved as the only option that cannot leave a credential ACTIVE with no access: the Staff API refuses to revoke a credential's grant (409 staff-target-is-credential) and the Staff page shows the row as Integration: {name} linking to Developers
 
 ### Pending Todos
 
@@ -1388,8 +1389,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-13T06:20:00.000Z
-Stopped at: Completed 37-45-PLAN.md (scoped, revocable integrator credentials, V82, human-only guard). Next: 37-46 (wave 36, Developers page).
+Last session: 2026-10-13T07:25:00.000Z
+Stopped at: Completed 37-46-PLAN.md (Developers page: create, show once, rotate, delete; Staff Integration rows). Next: 37-47 (wave 37, the 37-E gate, autonomous:false).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
