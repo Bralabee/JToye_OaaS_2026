@@ -29,7 +29,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Forwards an opaque list of domain items to the Core Java\nAPI's /api/v1/sync/batch endpoint, wrapped in a circuit\nbreaker so edge degrades gracefully when Core is down. The\ncaller must present a Keycloak JWT — the tenant_id claim\nis extracted and used to scope the write.\n\nRate-limited per tenant AFTER authentication, keyed on the\ntoken's tenant_id (RATE_LIMIT_TENANT_RPS / _BURST), beneath a\nper-replica pre-auth valve (RATE_LIMIT_RPS / _BURST) that only\nguards against floods. A 429 from either layer is\napplication/problem+json with type\nhttps://jtoye.uk/errors/rate-limited and code RATE_LIMITED;\nwait Retry-After seconds, then retry the same request.",
+                "description": "Forwards an opaque list of domain items to the Core Java\nAPI's /api/v1/sync/batch endpoint, wrapped in a circuit\nbreaker so edge degrades gracefully when Core is down. The\ncaller must present a Keycloak JWT — the tenant_id claim\nis extracted and used to scope the write.\n\nRate-limited per tenant AFTER authentication, keyed on the\ntoken's tenant_id (RATE_LIMIT_TENANT_RPS / _BURST), beneath a\nper-replica pre-auth valve (RATE_LIMIT_RPS / _BURST) that only\nguards against floods. A 429 from either layer is\napplication/problem+json with type\nhttps://jtoye.uk/errors/rate-limited and code RATE_LIMITED;\nwait Retry-After seconds, then retry the same request.\n\nCore's answer is passed through. A batch core processed is\n200 with core's status (SUCCESS, PARTIAL or REJECTED),\nprocessed_count and one result per item, in request order,\neach CREATED, UPDATED or REJECTED with a stable code. A\npartially refused batch is still 200: read status and\nresults, never the HTTP status alone. A 4xx refusal from\ncore (application/problem+json) is relayed verbatim: same\nstatus, content type and body, Retry-After kept. A core\noutage, an open circuit breaker or any core 5xx is the\nedge's own 502.",
                 "consumes": [
                     "application/json"
                 ],
@@ -52,22 +52,34 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "Core processed the batch: status, processed_count and per-item results",
+                        "schema": {
+                            "$ref": "#/definitions/main.SyncBatchResponse"
+                        }
+                    },
                     "202": {
-                        "description": "Batch accepted by Core",
+                        "description": "Core accepted the batch (a core that predates per-item results; no results)",
                         "schema": {
                             "$ref": "#/definitions/main.SyncBatchResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid body or missing tenant_id claim",
+                        "description": "The edge's own refusal: invalid body or missing tenant_id claim (application/json). Core's batch validation refusal is relayed verbatim as application/problem+json (see CoreProblem)",
                         "schema": {
                             "$ref": "#/definitions/main.ErrorResponse"
                         }
                     },
                     "401": {
-                        "description": "Missing or malformed Bearer token",
+                        "description": "The edge's own refusal: missing or malformed Bearer token (application/json). Core's refusal of an expired or invalid token is relayed verbatim as application/problem+json (see CoreProblem)",
                         "schema": {
                             "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Core's refusal, relayed verbatim (application/problem+json): the token lacks catalog:write (errors/forbidden) or the caller holds no grant on the target shop (errors/shop-access-denied)",
+                        "schema": {
+                            "$ref": "#/definitions/main.CoreProblem"
                         }
                     },
                     "429": {
@@ -95,7 +107,7 @@ const docTemplate = `{
                         }
                     },
                     "502": {
-                        "description": "Core API unreachable or tripped the circuit breaker",
+                        "description": "Core API unreachable, the circuit breaker is open, or core failed (5xx); core's body is never relayed",
                         "schema": {
                             "$ref": "#/definitions/main.ErrorResponse"
                         }
@@ -244,6 +256,36 @@ const docTemplate = `{
                 }
             }
         },
+        "main.CoreProblem": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "description": "Human-readable explanation specific to this occurrence.",
+                    "type": "string",
+                    "example": "You have no access to this shop"
+                },
+                "instance": {
+                    "description": "The request path core refused.",
+                    "type": "string",
+                    "example": "/api/v1/sync/batch"
+                },
+                "status": {
+                    "description": "HTTP status code, repeated in the body.",
+                    "type": "integer",
+                    "example": 403
+                },
+                "title": {
+                    "description": "Short human-readable summary of the problem type.",
+                    "type": "string",
+                    "example": "Forbidden"
+                },
+                "type": {
+                    "description": "Stable problem type URI, e.g. https://jtoye.uk/errors/shop-access-denied.",
+                    "type": "string",
+                    "example": "https://jtoye.uk/errors/shop-access-denied"
+                }
+            }
+        },
         "main.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -347,14 +389,83 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "processed_count": {
-                    "description": "Number of items Core accepted for processing.",
+                    "description": "Number of items written (CREATED plus UPDATED).",
                     "type": "integer",
-                    "example": 42
+                    "example": 1
+                },
+                "results": {
+                    "description": "One result per request item, in request order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/main.SyncItemResult"
+                    }
                 },
                 "status": {
-                    "description": "Processing status. \"accepted\" when Core queued the batch.",
+                    "description": "SUCCESS when every item was written (or the batch was empty); PARTIAL\nwhen some were written and some rejected; REJECTED when none was\nwritten. Never SUCCESS when any item was refused: read results.",
                     "type": "string",
-                    "example": "accepted"
+                    "enum": [
+                        "SUCCESS",
+                        "PARTIAL",
+                        "REJECTED"
+                    ],
+                    "example": "PARTIAL"
+                }
+            }
+        },
+        "main.SyncItemResult": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Why the item was rejected (absent unless REJECTED).",
+                    "type": "string",
+                    "enum": [
+                        "UNKNOWN_TYPE",
+                        "SKU_REQUIRED",
+                        "NAME_REQUIRED",
+                        "SHOP_REQUIRED",
+                        "SHOP_MISMATCH",
+                        "SHOP_ACCESS_DENIED",
+                        "SHOP_NOT_FOUND",
+                        "INVALID_FIELDS",
+                        "WRITE_CONFLICT",
+                        "WRITE_FAILED"
+                    ],
+                    "example": "SHOP_REQUIRED"
+                },
+                "id": {
+                    "description": "Id of the product or shop written (absent when REJECTED).",
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "index": {
+                    "description": "Position of the item in the request's items array (0-based).",
+                    "type": "integer",
+                    "example": 1
+                },
+                "key": {
+                    "description": "The item's upsert key: the sku for a product, the name for a shop.",
+                    "type": "string",
+                    "example": "PLANTAIN-1"
+                },
+                "message": {
+                    "description": "Human-readable detail for a rejection (absent unless REJECTED).",
+                    "type": "string",
+                    "example": "shopId is required on every product item"
+                },
+                "outcome": {
+                    "description": "What happened to the item.",
+                    "type": "string",
+                    "enum": [
+                        "CREATED",
+                        "UPDATED",
+                        "REJECTED"
+                    ],
+                    "example": "REJECTED"
+                },
+                "type": {
+                    "description": "The item's type as sent.",
+                    "type": "string",
+                    "example": "product"
                 }
             }
         },

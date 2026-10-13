@@ -188,3 +188,19 @@ regexTarget = "secret"
 regexes = [
   '''^(missing|reprice|mixed)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
 ]
+
+[[allowlists]]
+description = "Phase 37-40 RED-arm evidence (evidence/37-40-red-task3.json): OrderShopLessProductIntegrationTest sends Idempotency-Key 37-40-<uuid>, and IdempotencyService's `Idempotency reserve+complete: … key=…` DEBUG line carries it inside the captured test log the arm recorded. A client-supplied order de-duplication key, the 37-27/37-33 shape with this plan's one literal prefix; the tail must be a well-formed lower-case UUID (gitleaks 8.30.1 generic-api-key; 3 hits over the 37-40 range, 0 after; another plan prefix and a non-UUID tail still fire)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^37-40-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
+]
+
+[[allowlists]]
+description = "Phase 37-42 RED-arm evidence (evidence/37-42-red-task1.json): OrderCreateSubmitIntegrationTest sends Idempotency-Key 37-42-<uuid>, and IdempotencyService's `Idempotency reserve+complete: … key=…` DEBUG line carries it inside the captured test log the arm recorded. A client-supplied order de-duplication key, the 37-27/37-33/37-40 shape with this plan's one literal prefix; the tail must be a well-formed lower-case UUID (gitleaks 8.30.1 generic-api-key; 6 hits in the record before, 0 after; another plan prefix and a non-UUID tail still fire)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^37-42-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
+]

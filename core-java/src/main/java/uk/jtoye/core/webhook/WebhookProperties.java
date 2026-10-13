@@ -43,8 +43,13 @@ public class WebhookProperties {
         private long backoffBaseMs = 1000;
         /** Exponential-backoff cap (ms) — default 1 hour. */
         private long backoffCapMs = 3_600_000;
-        /** Consecutive-failure count at which a subscription auto-pauses. */
-        private int autoPauseThreshold = 10;
+        /**
+         * Consecutive failed DELIVERIES (each one having exhausted {@link #maxAttempts}) at which a
+         * subscription auto-pauses (UXT-038, 37-43). A delivered event resets the count. This
+         * replaced an attempt-count threshold of 10, which paused a healthy endpoint after two
+         * flaky events: a failed attempt that is later retried successfully is not a failing endpoint.
+         */
+        private int autoPauseAfterFailedDeliveries = 3;
         /** webhook_delivery retention window (days) — rows older than this are pruned. */
         private int retentionDays = 30;
         /** Retention-cleanup tick (ms) — default daily. */
@@ -94,12 +99,12 @@ public class WebhookProperties {
             this.backoffCapMs = backoffCapMs;
         }
 
-        public int getAutoPauseThreshold() {
-            return autoPauseThreshold;
+        public int getAutoPauseAfterFailedDeliveries() {
+            return autoPauseAfterFailedDeliveries;
         }
 
-        public void setAutoPauseThreshold(int autoPauseThreshold) {
-            this.autoPauseThreshold = autoPauseThreshold;
+        public void setAutoPauseAfterFailedDeliveries(int autoPauseAfterFailedDeliveries) {
+            this.autoPauseAfterFailedDeliveries = autoPauseAfterFailedDeliveries;
         }
 
         public int getRetentionDays() {

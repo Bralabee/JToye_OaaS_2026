@@ -1,11 +1,16 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sort"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -421,4 +426,164 @@ func rawKeys(m map[string]json.RawMessage) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// --- 37-41: core's sync contract passes through the client intact ---------
+
+// coreSyncPartialBody is core's 37-40 wire shape for a batch where one item
+// was written and one refused, hand-written as core-java serialises it (absent
+// fields omitted, as Jackson NON_NULL does). Encoding the edge's own struct
+// here would let the round-trip agree with itself (issue #337).
+const coreSyncPartialBody = `{"status":"PARTIAL","processedCount":1,"results":[` +
+	`{"index":0,"type":"product","key":"YAM-5KG","outcome":"CREATED","id":"6f1c2d3e-0000-4000-8000-000000000001"},` +
+	`{"index":1,"type":"product","key":"PLANTAIN-1","outcome":"REJECTED","code":"SHOP_REQUIRED","message":"shopId is required on every product item"}]}`
+
+// coreShopDeniedProblem is a core 403 refusal body, with an extension member
+// (shopId) the edge has no struct for: it must survive byte for byte.
+const coreShopDeniedProblem = `{"type":"https://jtoye.uk/errors/shop-access-denied","title":"Forbidden","status":403,` +
+	`"detail":"You have no access to this shop","instance":"/api/v1/sync/batch","shopId":"8f14e45f-ceea-467f-a0e6-7c3d1c8a1b2e"}`
+
+func TestClient_SyncBatch_PassesPerItemResultsThrough(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(coreSyncPartialBody))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	resp, err := client.SyncBatch(context.Background(), "test-token", "tenant-123", []map[string]interface{}{{"type": "product"}, {"type": "product"}})
+	if err != nil {
+		t.Fatalf("a 200 PARTIAL from core is a success, got error: %v", err)
+	}
+	if resp.Status != "PARTIAL" || resp.ProcessedCount != 1 {
+		t.Errorf("status/processed_count: got %q/%d, want PARTIAL/1", resp.Status, resp.ProcessedCount)
+	}
+	if resp.HTTPStatus != http.StatusOK {
+		t.Errorf("core answered 200, the client reports %d", resp.HTTPStatus)
+	}
+	want := []SyncItemResult{
+		{Index: 0, Type: "product", Key: "YAM-5KG", Outcome: "CREATED", ID: "6f1c2d3e-0000-4000-8000-000000000001"},
+		{Index: 1, Type: "product", Key: "PLANTAIN-1", Outcome: "REJECTED", Code: "SHOP_REQUIRED", Message: "shopId is required on every product item"},
+	}
+	if !reflect.DeepEqual(resp.Results, want) {
+		t.Errorf("per-item results were not passed through.\n got: %+v\nwant: %+v", resp.Results, want)
+	}
+}
+
+func TestClient_SyncBatch_CoreProblemIsReturnedTyped(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(coreShopDeniedProblem))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+
+	_, err := client.SyncBatch(context.Background(), "test-token", "tenant-123", []map[string]interface{}{{"type": "product"}})
+	var pe *CoreProblemError
+	if !errors.As(err, &pe) {
+		t.Fatalf("a core 403 application/problem+json must come back as *CoreProblemError, got %T: %v", err, err)
+	}
+	if pe.Status != http.StatusForbidden {
+		t.Errorf("status: got %d, want 403", pe.Status)
+	}
+	if pe.ContentType != "application/problem+json" {
+		t.Errorf("content type: got %q, want application/problem+json", pe.ContentType)
+	}
+	if !bytes.Equal(pe.Body, []byte(coreShopDeniedProblem)) {
+		t.Errorf("body is not core's bytes.\n got: %s\nwant: %s", pe.Body, coreShopDeniedProblem)
+	}
+}
+
+// A 4xx that is NOT problem+json is not a typed refusal core stands behind,
+// and a 5xx problem stays internal (T-37-96): both remain generic errors.
+func TestClient_SyncBatch_OnlyClientProblemsAreTyped(t *testing.T) {
+	cases := []struct {
+		name        string
+		status      int
+		contentType string
+	}{
+		{"4xx text/plain", http.StatusNotFound, "text/plain"},
+		{"5xx problem+json", http.StatusInternalServerError, "application/problem+json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(tc.status)
+				w.Write([]byte(`{"type":"https://jtoye.uk/errors/internal","detail":"stack trace here"}`))
+			}))
+			defer server.Close()
+
+			logger, _ := zap.NewProduction()
+			client := NewClient(server.URL, logger)
+			_, err := client.SyncBatch(context.Background(), "test-token", "tenant-123", []map[string]interface{}{{"type": "product"}})
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			var pe *CoreProblemError
+			if errors.As(err, &pe) {
+				t.Errorf("%s must not be relayed as a typed core problem, got %+v", tc.name, pe)
+			}
+		})
+	}
+}
+
+// A refusal core answered on purpose is not a core outage: a run of 4xx
+// problems must not open the breaker and shed every tenant's sync for 60 s.
+func TestClient_SyncBatch_ProblemRefusalsDoNotOpenTheBreaker(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) <= 15 {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(coreShopDeniedProblem))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(coreSyncPartialBody))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+	items := []map[string]interface{}{{"type": "product"}}
+	for i := 0; i < 15; i++ {
+		client.SyncBatch(context.Background(), "test-token", "tenant-123", items)
+	}
+	resp, err := client.SyncBatch(context.Background(), "test-token", "tenant-123", items)
+	if err != nil {
+		t.Fatalf("after 15 core 403 problems the next healthy batch failed (%v); core was reached %d times — refusals tripped the breaker", err, hits.Load())
+	}
+	if resp.Status != "PARTIAL" {
+		t.Errorf("status: got %q, want PARTIAL", resp.Status)
+	}
+}
+
+// A "problem" larger than any core writes is not one the edge vouches for:
+// it is not buffered in full or relayed, and falls back to the generic error.
+func TestClient_SyncBatch_OversizedProblemIsNotRelayed(t *testing.T) {
+	big := `{"type":"https://jtoye.uk/errors/validation","detail":"` + strings.Repeat("x", maxProblemBodyBytes) + `"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(big))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+	_, err := client.SyncBatch(context.Background(), "test-token", "tenant-123", []map[string]interface{}{{"type": "product"}})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	var pe *CoreProblemError
+	if errors.As(err, &pe) {
+		t.Errorf("a %d-byte problem body was relayed; the bound is %d", len(pe.Body), maxProblemBodyBytes)
+	}
 }

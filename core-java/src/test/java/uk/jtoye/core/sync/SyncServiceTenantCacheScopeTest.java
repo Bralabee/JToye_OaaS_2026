@@ -21,10 +21,14 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 import uk.jtoye.core.config.TenantAwareCacheKeyGenerator;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.product.ProductService;
+import uk.jtoye.core.product.dto.CreateProductRequest;
+import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.Shop;
@@ -56,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p><b>Why the #287 fix is the WRONG fix here, and this class proves it.</b> #287 could simply
  * DELETE the eviction, because bulk import is provably create-only — a row that never existed
  * has no cache key to stale. {@code SyncService} genuinely upserts
- * ({@code shopRepository.findByNameAndTenantId(...)} / {@code productRepository.findBySku(...)} then save),
+ * ({@code shopRepository.findByNameAndTenantId(...)} / {@code productRepository.findByTenantIdAndSku(...)} then write),
  * so existing rows really are mutated and an eviction is NECESSARY. Only its RADIUS was wrong.
  * {@link #anUpdatedProductsOwnEntryIsStillInvalidated()} and
  * {@link #anUpdatedShopsOwnEntryIsStillInvalidated()} are the arms that go red if a future
@@ -126,6 +130,16 @@ class SyncServiceTenantCacheScopeTest {
             return Mockito.mock(ProductRepository.class);
         }
 
+        /**
+         * 37-40: SyncService runs each item in its own TransactionTemplate. No database here, so a mock
+         * manager stands in; with no synchronization active, evictEntityAfterCommit evicts at once,
+         * which is what the eviction arms below measure.
+         */
+        @Bean
+        PlatformTransactionManager transactionManager() {
+            return Mockito.mock(PlatformTransactionManager.class);
+        }
+
         @Bean
         CacheProbe cacheProbe() {
             return new CacheProbe();
@@ -169,6 +183,8 @@ class SyncServiceTenantCacheScopeTest {
      */
     @MockitoBean private ShopAccessService shopAccessService;
     @MockitoBean private ShopService shopService;
+    /** 37-40: products are written through ProductService; mocked, so the eviction measured is SyncService's own. */
+    @MockitoBean private ProductService productService;
 
     @Autowired private SyncService syncService;
     @Autowired private CacheManager cacheManager;
@@ -178,6 +194,8 @@ class SyncServiceTenantCacheScopeTest {
 
     private static final UUID TENANT_A = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID TENANT_B = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    /** 37-40: every product item names its shop. */
+    private static final UUID SHOP_OF_B = UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
     @BeforeEach
     void setUp() {
@@ -280,9 +298,11 @@ class SyncServiceTenantCacheScopeTest {
         String existingKey = productKey(TENANT_B, UUID.randomUUID());
         products().put(existingKey, "tenant-B-product-dto");
 
-        Mockito.when(productRepository.findBySku("NEW-SKU")).thenReturn(Optional.empty());
-        Mockito.when(productRepository.save(Mockito.any(Product.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
+        Mockito.when(productRepository.findByTenantIdAndSku(TENANT_B, "NEW-SKU"))
+                .thenReturn(Optional.empty());
+        ProductDto created = new ProductDto();
+        created.setId(UUID.randomUUID());
+        Mockito.when(productService.createProduct(Mockito.any(CreateProductRequest.class))).thenReturn(created);
 
         TenantContext.set(TENANT_B);
         BatchSyncResponse response = syncService.processBatch(batchOf(productItem("NEW-SKU")));
@@ -312,7 +332,7 @@ class SyncServiceTenantCacheScopeTest {
         syncService.processBatch(batchOf(productItem("B-SKU-3")));
 
         assertThat(products().get(keyB))
-                .as("SyncService UPSERTS (findBySku + save), so an existing row really is mutated "
+                .as("SyncService UPSERTS (SKU lookup + update), so an existing row really is mutated "
                         + "and its cached DTO really is stale. This arm passes on the unfixed tree "
                         + "too (allEntries also removes it) — it is not evidence for the fix, it is "
                         + "the guard that stops the fix being 'delete the eviction' as in #287")
@@ -413,9 +433,9 @@ class SyncServiceTenantCacheScopeTest {
         Product existing = new Product();
         ReflectionTestUtils.setField(existing, "id", id);
         existing.setSku(sku);
-        Mockito.when(productRepository.findBySku(sku)).thenReturn(Optional.of(existing));
-        Mockito.when(productRepository.save(Mockito.any(Product.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
+        existing.setShopId(SHOP_OF_B);
+        Mockito.when(productRepository.findByTenantIdAndSku(TENANT_B, sku))
+                .thenReturn(Optional.of(existing));
     }
 
     /** The upsert's UPDATE branch for shops. Every shop arm runs as TENANT_B, and the lookup is tenant-keyed (M1). */
@@ -436,6 +456,7 @@ class SyncServiceTenantCacheScopeTest {
         return SyncItem.builder()
                 .type("product")
                 .sku(sku)
+                .shopId(SHOP_OF_B)
                 .title("Synced " + sku)
                 .ingredientsText("Rice, tomatoes")
                 .allergenMask(0)

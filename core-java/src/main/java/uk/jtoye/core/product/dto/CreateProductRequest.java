@@ -103,8 +103,20 @@ public class CreateProductRequest {
     private UUID shopId;
 
     @Min(value = 0, message = "Stock quantity must be non-negative")
-    @Schema(description = "Quantity in stock (null = unlimited/untracked)", example = "50")
+    @Schema(description = "Quantity in stock. A product whose stored quantity is null is not stock-tracked "
+            + "(unlimited). On an edit, omitting it keeps the stored quantity; to stop tracking send "
+            + "trackInventory false.", example = "50")
     private Integer quantityInStock;
+
+    // Phase 37-39 (RWO-016 / UXT-016, P0): the explicit stock-tracking switch. A DTO cannot tell an absent
+    // quantityInStock from an explicit null, so "stop tracking" used to be spelled "send null" — and every
+    // partial PUT that did not mention stock (an EPOS renaming a product) turned tracking off. Now the
+    // intent is its own field and quantityInStock is preserved when omitted (ProductMapper.updateEntity).
+    @Schema(description = "Stock tracking. Omit (or null) to keep the product's current tracking and stock; "
+            + "false stops tracking and clears the stored quantity (quantityInStock must then be omitted); "
+            + "true tracks stock and requires quantityInStock (a 400 errors/validation naming "
+            + "quantityInStock otherwise).", example = "true")
+    private Boolean trackInventory;
 
     // ---- PPDS / Natasha's Law durability (Issue #82 P0-6) ----
     // Both optional on the request, but a COMPLIANT PPDS label REQUIRES them: the
@@ -157,6 +169,8 @@ public class CreateProductRequest {
     public void setShopId(UUID shopId) { this.shopId = shopId; }
     public Integer getQuantityInStock() { return quantityInStock; }
     public void setQuantityInStock(Integer quantityInStock) { this.quantityInStock = quantityInStock; }
+    public Boolean getTrackInventory() { return trackInventory; }
+    public void setTrackInventory(Boolean trackInventory) { this.trackInventory = trackInventory; }
     public Integer getShelfLifeDays() { return shelfLifeDays; }
     public void setShelfLifeDays(Integer shelfLifeDays) { this.shelfLifeDays = shelfLifeDays; }
     public String getDurabilityType() { return durabilityType; }

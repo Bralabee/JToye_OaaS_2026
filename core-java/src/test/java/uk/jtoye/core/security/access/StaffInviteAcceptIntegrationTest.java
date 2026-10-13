@@ -679,6 +679,7 @@ class StaffInviteAcceptIntegrationTest {
 
     RequestPostProcessor adminJwt() {
         return jwt().jwt(j -> j.subject(admin.toString())
+                        .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                         .claim("tenant_id", tenantId.toString())
                         .claim("email", "admin-" + admin + "@example.com")
                         .claim("name", "Ada Admin")

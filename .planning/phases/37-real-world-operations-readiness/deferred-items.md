@@ -674,3 +674,81 @@ where it must be resolved.
   **Suggested owner:** whichever plan next edits the dialog or the spec — wait for the Select content / dialog to
   finish its open animation (e.g. assert `data-state="open"` then a stable bounding box) rather than raising the
   timeout. Not fixed at the gate (scope boundary: a 37-D spec, no 37-C cause).
+
+## From 37-40 (shop-scoped sync, createOrder refuses shop-less products)
+
+- **The dashboard's new-order form offers every tenant product, not only the selected shop's (found in 37-40, open).**
+  status: open
+  **What:** `frontend/app/dashboard/orders/page.tsx` fills the line-item Select from `fetchAllProducts` (the whole
+  tenant catalogue) whatever shop is chosen in the form. Since PR #726 (M2) a product of ANOTHER shop is refused
+  by `OrderService.createOrder` with `404 Product not found`, and since 37-40 a shop-less (shop_id NULL) product is
+  refused the same way (RWO-017 / roadmap SC-5). So a vendor can still pick an item the server will refuse, and is
+  told only "not found". No product was ever correct to order there; the form just never filtered. **Suggested
+  owner:** the 37-E frontend plan or 37.x: narrow the Select to products whose `shopId` equals the selected shop
+  (`fetchAllProducts` already returns `shopId`), and say in the form why a shop-less product is not listed ("assign it
+  a shop first"). Not fixed in 37-40 (scope boundary: no frontend file is in the plan, and the refusal is the plan's
+  intended behaviour). The 37-E gate's live run should place a dashboard order to confirm nothing it seeds is shop-less.
+
+## From 37-41 (edge pass-through of the sync contract)
+
+- **A line-pinned citation in the k8s env-contract gate points at the wrong lines of `handlers.go` (found in 37-41, open).**
+  status: open
+  **What:** `k8s/scripts/check-env-contract.sh:210` justifies omitting `WHATSAPP_APP_SECRET` by citing
+  `edge-go/cmd/edge/handlers.go:249-255` as the fail-closed 503 + Retry-After refusal. It was already wrong before
+  37-41: on `e528a1ed` those lines are the explanatory comment and the refusal starts at line 267
+  (`if appSecret == ""`). 37-41 added the sync pass-through to the same file, so the refusal is now at lines 304-310.
+  The citation is inside a reviewed-omission string, which `scripts/check-doc-citations.sh` does not read (it passed
+  rc 0 at 37-41: 29 verified, 7 uncheckable). The claim itself is still true; only the line numbers are stale.
+  **Suggested owner:** the next plan that edits `k8s/scripts/check-env-contract.sh`, or the phase-PR doc sweep.
+  Cite the symbol (`WhatsAppWebhook`, the `appSecret == ""` branch) instead of a line range, so the next edit to the
+  file cannot make it stale again. Not fixed in 37-41: it was stale before 37-41, and the file is outside the plan.
+
+## From 37-47 (the 37-E gate, Task 1)
+
+- **`check-doc-citations.sh` passes rc 0 while it prints VOID for the YAML register (found in 37-47, open).**
+  status: open
+  **What:** `yaml_citations` calls `void` (exit 2) when `python3 -c` fails, but it runs inside the `citations_in`
+  command substitution, so the exit leaves only that subshell. The main loop sees no rows, reports
+  `docs/ops/terminal-states.yaml citations=0` and the run ends `PASS` rc 0. Locally the python3 shim refuses a bare
+  `python3 -c` with no conda env, so on this machine the YAML half has NOT been checked at any gate. 37-38's
+  "PASS: all 29 verified citation(s)" is this shape: 29 Markdown citations, 0 YAML. Under a conda env with PyYAML
+  the same tree reported 53 citations and one real C-3 failure (`terminal-states.yaml` TS-08 still cited
+  `WebhookDelivery.java:47`, moved to 54 by 37-43's HELD status). That failure was fixed at 37-47. CI parses the
+  register (main run 38310336119 at bfef0f6e logged `terminal-states.yaml citations=17`, total 53), so CI was not
+  blind, but a local run cannot be trusted while this persists.
+  **Same shape, not yet read for the same defect:** `check-terminal-states.sh`, `check-dependency-horizons.sh` and
+  `check-image-supply-chain.sh` VOID (rc 2) under the shim, which is the correct direction for them.
+  **Suggested owner:** the next plan that edits `scripts/check-doc-citations.sh`. Have the main loop exit 2 when
+  `citations_in` failed, for example with a sentinel file or `set -o pipefail` plus a captured status, and show the
+  fail direction with a PATH whose python3 exits 1. Not fixed at the gate: the gate script is outside 37-47's
+  files and changing a gate needs its own break arms.
+
+## From 37-47 (the 37-E gate, Task 3, live)
+
+- **An integrator can order a product the shop has switched off; through MCP it lands PENDING in the kitchen (found in 37-47, open, decide before the 37-E PR merges).**
+  status: open
+  **What:** `OrderService.createOrder` checks stock quantity but not `available`; origin/main has no `getAvailable`
+  check there either, so the vendor/REST DRAFT path has always accepted an unavailable product. Since 37-42 an MCP
+  `create_order` submits, so the order goes straight to the New lane with no vendor review: measured live as
+  `ORD-00000000-20261013-C3D21C40`, 201 PENDING for a product with `available=false` (cancelled). The storefront
+  refuses the same line (37-33), and 37-40's stated intent was that the dashboard, REST API and MCP refuse what the
+  storefront refuses (evidence 37-47 2.7 P2-KYL-P3 and 2.10 item 1).
+  **Suggested fix:** `createOrder` refuses an unavailable product with the same 404 as a shop-less one, at least
+  when `submit` is true, plus an IT with RED first; a review-fix commit on `phase-37-e-integrators`. Not fixed at
+  the gate because it changes what a vendor may order from the dashboard.
+
+- **The Developers page header overflows at 768 px (found in 37-47, open).**
+  status: open
+  **What:** at 768 the dashboard's main column is 512 px. The header row (`sm:flex-row`, no wrap) puts "Create
+  credential" at x 638-815 in a 768 viewport, and `main` scrolls 559 in 512, so the primary action is clipped until
+  the reader scrolls sideways. `/dashboard/webhooks` and `/dashboard/staff` measure 512/512 at the same width, and
+  this page is fine at 1024 and 1280 (evidence 37-47 2.10 item 2, screen `37-47-screens/developers-list-768.png`).
+  **Suggested fix:** `lg:flex-row`, or `flex-wrap` with `min-w-0` on the title block; re-shoot 768 and add the route
+  to a browser overflow check. A 37-46 defect; a candidate review-fix on the PR branch.
+
+- **Revoked credentials stay on the Staff page as "Integration: {name} · No access" (found in 37-47, open, owner's call).**
+  status: open
+  **What:** a credential that made at least one call keeps its `user_directory` row after revoke deletes its
+  Keycloak client and user, so the Staff page lists it indefinitely. 37-47 left four such rows on the dev tenant.
+  Not a breach of any stated contract (`user_directory` is an observation cache); whether revoke should also drop
+  the row, or the Staff page hide revoked integrations, is a product decision.

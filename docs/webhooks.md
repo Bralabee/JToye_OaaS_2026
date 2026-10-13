@@ -40,8 +40,8 @@ again by any other endpoint, including `GET`. Store it before you close the resp
 | `GET /api/v1/webhooks` | list subscriptions (never includes the secret) |
 | `GET /api/v1/webhooks/{id}` | one subscription (never includes the secret) |
 | `POST /api/v1/webhooks/{id}/rotate-secret` | new secret, returned once |
-| `POST /api/v1/webhooks/{id}/pause` | stop delivering (`PAUSED`) |
-| `POST /api/v1/webhooks/{id}/resume` | deliver again, and clear the failure counter |
+| `POST /api/v1/webhooks/{id}/pause` | stop delivering (`PAUSED`); events already queued are kept as `HELD` |
+| `POST /api/v1/webhooks/{id}/resume` | deliver again, deliver every `HELD` event, and clear the failure counter |
 | `POST /api/v1/webhooks/{id}/revoke` | terminal (`REVOKED`) |
 
 Errors are RFC 7807 problem documents, not prose.
@@ -315,18 +315,29 @@ replay of an event you already processed is a no-op — which is the point, but 
 a replay will not re-run a handler that already succeeded. If you need us to re-fire it,
 you need the event to occur again.
 
-A delivery also goes straight to `FAILED`, without retrying, if the subscription is not
-`ACTIVE` when the row is picked up.
+A delivery is not attempted while the subscription is `PAUSED` or `AUTO_PAUSED`: it is
+`HELD`, and `POST /api/v1/webhooks/{id}/resume` delivers it with a fresh set of 8 attempts.
+`GET /api/v1/webhooks/{id}` reports how many are waiting as `heldCount`. Held events are
+pruned with the rest of the log after the retention window (30 days by default). A delivery
+still goes straight to `FAILED`, without retrying, if the subscription is revoked.
 
 ### Auto-pause
 
-The subscription counts **consecutive failed attempts** and flips to `AUTO_PAUSED` at
-**10**. Any success resets the counter to zero.
+The subscription counts **consecutive failed deliveries**: an event counts once it has
+used all 8 of its attempts without a 2xx. At **3** such events in a row
+(`WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES`) the subscription flips to
+`AUTO_PAUSED`. Any delivered event resets the counter to zero.
 
-The counter is per *attempt*, not per event — so a single event exhausting its 8 attempts
-gets you most of the way there, and **two dead events in a row will auto-pause you.**
-While `AUTO_PAUSED`, nothing is delivered. Resume with
-`POST /api/v1/webhooks/{id}/resume`, which also clears the counter.
+A failed attempt that a later retry delivers does not count, so a receiver that is flaky
+for a few minutes is not paused. While `AUTO_PAUSED`, nothing is delivered, but nothing
+is lost either: every event queued for the endpoint, and every event raised while it is
+paused, is `HELD`. The tenant's contact address gets one email per pause ("Your J'Toye
+webhook endpoint was paused", with the number of held events). Fix the endpoint, then resume
+with `POST /api/v1/webhooks/{id}/resume` (Dashboard → Webhooks → "Resume and deliver held
+events"), which clears the counter and delivers what was held.
+
+A manual pause (`PAUSED`) also keeps what was already queued as `HELD`, but events raised
+while you have paused the endpoint yourself are not recorded for it.
 
 ---
 
@@ -354,6 +365,6 @@ While `AUTO_PAUSED`, nothing is delivered. Resume with
 | Vector passes, live deliveries fail | A body-parser middleware is consuming the stream before you capture it. |
 | Your digest equals the "without prefix" row above | You signed the body alone; prepend `t + "."`. |
 | Everything fails after a deploy | Secret rotated without an overlap window (§1). |
-| Deliveries stopped entirely | Subscription is `AUTO_PAUSED` (§5) — check `GET /api/v1/webhooks/{id}`. |
+| Deliveries stopped entirely | Subscription is `AUTO_PAUSED` (§5) — check `GET /api/v1/webhooks/{id}` (`heldCount` says how many events are waiting). |
 | Duplicate processing | Not deduping on `X-JToye-Event-Id` (§6). |
 | Sporadic failures under load | 10s timeout — acknowledge first, process after (§5). |

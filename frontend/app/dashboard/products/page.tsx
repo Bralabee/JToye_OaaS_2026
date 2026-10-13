@@ -496,6 +496,9 @@ export default function ProductsPage() {
         preparationTimeMinutes: prepTimeEl?.value ? parseInt(prepTimeEl.value) : undefined,
         dietaryTags: dietaryTagsEl?.value || undefined,
         shopId: selectedShopId || undefined,
+        // UXT-016 (37-39): the tracking intent is stated, not inferred from a null. The server keeps the
+        // stored stock when trackInventory is absent, so without it unticking would no longer stop tracking.
+        trackInventory,
         quantityInStock: trackInventory ? quantityInStock : null,
       }
 

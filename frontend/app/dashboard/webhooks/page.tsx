@@ -35,11 +35,12 @@ import {
   webhooksApi,
   extractErrorDetail,
   EVENT_TYPE_META,
+  SIGNING_SECRET_COPY,
   type WebhookSubscription,
 } from "@/lib/webhooks-api"
 import { SubscriptionStatusBadge } from "@/components/dashboard/webhooks/status-badge"
 import { WebhookCreateDialog } from "@/components/dashboard/webhooks/WebhookCreateDialog"
-import { SecretRevealDialog } from "@/components/dashboard/webhooks/SecretRevealDialog"
+import { SecretRevealDialog } from "@/components/dashboard/secret-reveal-dialog"
 import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialog"
 
 // Config-injected retention window for the revoke copy (GLOBAL_RULE_6) —
@@ -401,6 +402,7 @@ export default function WebhooksPage() {
           setSecretOpen(o)
           if (!o) setSecret(null)
         }}
+        {...SIGNING_SECRET_COPY}
         secret={secret}
       />
 

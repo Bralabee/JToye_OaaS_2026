@@ -1,6 +1,7 @@
 package uk.jtoye.core.testsupport;
 
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.security.KeycloakRealmRoleConverter;
 
 import java.util.List;
@@ -31,6 +32,14 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
  */
 public final class TenantJwts {
 
+    /**
+     * 37-45 (Q7): the {@code azp} of a token the dashboard obtained, i.e. the NextAuth
+     * {@code KEYCLOAK_CLIENT_ID} ({@code core-api} in every repository runtime) and the default of
+     * {@code jtoye.access.human-client-ids}. Every person-shaped token here carries it, so a test keeps its
+     * meaning under the human-only rule on credential and staff management.
+     */
+    public static final String DASHBOARD_CLIENT_ID = "core-api";
+
     private TenantJwts() {
     }
 
@@ -43,6 +52,7 @@ public final class TenantJwts {
         return jwt().jwt(j -> j
                         .subject(UUID.randomUUID().toString())
                         .claim("tenant_id", tenantId.toString())
+                        .claim("azp", DASHBOARD_CLIENT_ID)
                         .claim("email", "operator@example.com")
                         .claim("realm_access", Map.of("roles", List.of("admin"))))
                 .authorities(new KeycloakRealmRoleConverter());
@@ -59,9 +69,29 @@ public final class TenantJwts {
         return jwt().jwt(j -> j
                         .subject(sub.toString())
                         .claim("tenant_id", tenantId.toString())
+                        .claim("azp", DASHBOARD_CLIENT_ID)
                         .claim("email", "user-" + sub + "@example.com")
                         .claim("realm_access", Map.of("roles", List.of("user"))))
                 .authorities(new KeycloakRealmRoleConverter());
+    }
+
+    /**
+     * 37-45 (D-22, D-23): a token minted by an integrator credential's Keycloak service-account client, in
+     * the shape 37-44's client produces: {@code sub} = the service-account user (the id its {@code shop_staff}
+     * grant is keyed on), {@code azp} = the credential's clientId, a hard-coded {@code tenant_id}, and the
+     * granted scopes in {@code scope}. It carries NO {@code realm_access}, {@code email} or
+     * {@code preferred_username}: the credential client has no roles, profile or email scope (37-44), and
+     * core must accept the token without them. Authorities come from the production
+     * {@link JwtRolesAndScopesConverter}, so {@code scope} becomes {@code SCOPE_*} exactly as it does live.
+     */
+    public static RequestPostProcessor serviceAccountJwt(UUID serviceAccountUserId, UUID tenantId, String clientId,
+                                                         String... scopes) {
+        return jwt().jwt(j -> j
+                        .subject(serviceAccountUserId.toString())
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("azp", clientId)
+                        .claim("scope", String.join(" ", scopes)))
+                .authorities(new JwtRolesAndScopesConverter());
     }
 
     /**
@@ -72,6 +102,7 @@ public final class TenantJwts {
     public static RequestPostProcessor tenantlessAdminJwt() {
         return jwt().jwt(j -> j
                         .subject(UUID.randomUUID().toString())
+                        .claim("azp", DASHBOARD_CLIENT_ID)
                         .claim("email", "operator@example.com")
                         .claim("realm_access", Map.of("roles", List.of("admin"))))
                 .authorities(new KeycloakRealmRoleConverter());

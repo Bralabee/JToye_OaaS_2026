@@ -150,12 +150,15 @@ describe("UXT-046: the VAT rate Select in the product form (UI-SPEC § B6)", () 
     expect("vatRate" in body && body.vatRate !== undefined).toBe(false)
   })
 
-  it("turning stock tracking off still sends quantityInStock null (it must not silently regress)", async () => {
+  // 37-39 (UXT-016): since the server keeps the stored stock when a PUT omits trackInventory, a null
+  // quantity alone no longer stops tracking — the stated trackInventory false is what does.
+  it("turning stock tracking off sends trackInventory false and quantityInStock null (it must not silently regress)", async () => {
     await openEditOf({ ...product, quantityInStock: 5 })
     fireEvent.click(screen.getByRole("checkbox", { name: /track inventory/i }))
     fireEvent.click(screen.getByRole("button", { name: /update product/i }))
     await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))
     const body = mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>
+    expect(body.trackInventory).toBe(false)
     expect(body.quantityInStock).toBeNull()
   })
 })

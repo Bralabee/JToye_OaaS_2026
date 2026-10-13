@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   UserCog,
   Webhook,
+  Code2,
   Images,
   LogOut,
   Moon,
@@ -32,9 +33,23 @@ import { markDeliberateSignOut } from "@/components/dashboard/kitchen/kds-board-
 import { Button } from "@/components/ui/button"
 import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
 import { useDashboardNoAccess } from "@/components/dashboard/dashboard-access"
+import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import type { LucideIcon } from "lucide-react"
 import { useTheme } from "@/hooks/use-theme"
 
-export const navigation = [
+export interface NavItem {
+  name: string
+  href: string
+  icon: LucideIcon
+  /**
+   * Listed only when the server's staff/me answer says the caller is a Group admin (37-46, UI-SPEC
+   * § E1). Before that answer arrives, or outside the dashboard shell, it is not listed: nothing
+   * admin-only is offered on a guess. The page and the server refuse everyone else regardless.
+   */
+  groupAdminOnly?: boolean
+}
+
+export const navigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Shops", href: "/dashboard/shops", icon: Store },
   { name: "Products", href: "/dashboard/products", icon: Package },
@@ -54,11 +69,28 @@ export const navigation = [
   // Machine channel (COMMS-06): vendor-facing webhook subscriptions +
   // delivery-log browser. Falls into the mobile "More" sheet automatically.
   { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
+  // Integrator API credentials (37-46, D-22..D-24): Group admin only, so unlike Staff and Webhooks
+  // the item itself is gated on staff/me (UI-SPEC § E1). The page refuses a direct visit too.
+  { name: "Developers", href: "/dashboard/developers", icon: Code2, groupAdminOnly: true },
   // Image review (IMG-04, Phase 24): rejected uploads + content-flagged images
   // for Keep/Replace. Like the other secondary surfaces, it flows into the
   // mobile "More" sheet automatically (not one of the 4 primary thumb tabs).
   { name: "Image review", href: "/dashboard/media/review", icon: Images },
 ]
+
+/**
+ * True when the shell's staff/me answer has arrived and says Group admin. Null (no provider) or a
+ * pending answer is false: an admin-only item is offered only on the server's word (T-37-113).
+ */
+export function useIsKnownGroupAdmin(): boolean {
+  const switcher = useOptionalShopSwitcherData()
+  return !!switcher && !switcher.loading && switcher.isGroupAdmin
+}
+
+/** The items this caller is shown, in `navigation` order. */
+export function visibleNavigation(items: NavItem[], isGroupAdmin: boolean): NavItem[] {
+  return items.filter((item) => !item.groupAdminOnly || isGroupAdmin)
+}
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -94,6 +126,7 @@ export function Sidebar() {
   // home itself shows the same page), so the links and the shop switcher are
   // hidden. The user block and Sign out stay (UI-SPEC § B3).
   const noAccess = useDashboardNoAccess()
+  const isGroupAdmin = useIsKnownGroupAdmin()
 
   return (
     <div className="hidden md:flex h-full w-64 flex-col bg-slate-900 text-white">
@@ -133,7 +166,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {!noAccess && navigation.map((item) => {
+        {!noAccess && visibleNavigation(navigation, isGroupAdmin).map((item) => {
           const isActive = pathname === item.href
           return (
             <Link

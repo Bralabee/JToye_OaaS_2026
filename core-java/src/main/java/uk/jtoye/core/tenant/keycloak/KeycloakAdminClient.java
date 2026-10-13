@@ -3,6 +3,7 @@ package uk.jtoye.core.tenant.keycloak;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -13,11 +14,15 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -26,8 +31,9 @@ import java.util.UUID;
  * the Java side (the only existing admin caller is the one-shot
  * {@code infra/keycloak/configure-keycloak.sh}, deliberately untouched).
  *
- * <p>Eight operations, mapped to the Keycloak 24 admin REST shape (two added by 31.1-11 for DSAR
- * customer-account deletion, D-03, and two by 37-08 for staff invitations, D-07):
+ * <p>Fifteen operations, mapped to the Keycloak 24 admin REST shape (two added by 31.1-11 for DSAR
+ * customer-account deletion, D-03, two by 37-08 for staff invitations, D-07, and seven by 37-44 for
+ * integrator credentials, D-22):
  * <ul>
  *   <li>{@link #obtainAdminToken()} — master-realm {@code admin-cli} password grant.</li>
  *   <li>{@link #searchUsersByTenant} — paginated user search by the
@@ -40,10 +46,17 @@ import java.util.UUID;
  *   <li>{@link #findVendorUsersByEmail} — 37-08: the exact-email search in the vendor realm, with each
  *       user's {@code tenant_id} attribute.</li>
  *   <li>{@link #createUser} — 37-08: create an invited person with the password they chose.</li>
+ *   <li>{@link #createClient} — 37-44: create a credential as a confidential service-account client with a
+ *       hard-coded {@code tenant_id} claim and {@code aud=core-api}, read back and repaired after create.</li>
+ *   <li>{@link #findClientUuid}, {@link #getServiceAccountUserId} — 37-44: the client's UUID by exact
+ *       clientId, and its service-account user's id (the token {@code sub}).</li>
+ *   <li>{@link #getClientSecret}, {@link #regenerateClientSecret} — 37-44: read the secret once, rotate it.</li>
+ *   <li>{@link #deleteClient} — 37-44: delete the credential; 404 reports "already gone".</li>
+ *   <li>{@link #assignDefaultClientScopes} — 37-44: the by-id default-scope fallback.</li>
  * </ul>
  *
- * <p><b>Security (STRIDE T-kc-01):</b> the bearer token and admin password are
- * NEVER logged. Non-2xx / transport failures are wrapped into
+ * <p><b>Security (STRIDE T-kc-01, T-37-106):</b> the bearer token, the admin password and every
+ * client secret are NEVER logged and never placed in an exception message. Non-2xx / transport failures are wrapped into
  * {@link KeycloakAdminException} carrying realm/operation context only — the
  * client never maps to an HTTP status or swallows a failure; the service layer
  * owns the best-effort availability decision.
@@ -372,6 +385,428 @@ public class KeycloakAdminClient {
     private static String text(ObjectNode node, String field) {
         JsonNode v = node.get(field);
         return v == null || v.isNull() ? null : v.asString();
+    }
+
+    // ---- 37-44 (D-22, RWO-035): integrator credentials are Keycloak service-account clients ----
+
+    /** The audience every credential token must carry, or the #88 AudienceValidator 401s it at decode. */
+    static final String CORE_API_AUDIENCE = "core-api";
+    static final String TENANT_MAPPER_NAME = "tenant-id-mapper";
+    static final String AUDIENCE_MAPPER_NAME = "core-api-audience-mapper";
+
+    /**
+     * 37-44 (D-22): {@code POST /admin/realms/{realm}/clients} — create one integrator credential as a
+     * confidential service-account client, and return its UUID.
+     *
+     * <p>The representation copies {@code integration-orders-rw} in {@code infra/keycloak/realm-export.template.json}
+     * field by field (client-credentials only: no browser flow, no password grant, not public, client-secret
+     * authenticator), with two differences that are the point of a per-tenant credential:
+     * <ul>
+     *   <li>the {@code tenant_id} claim comes from an {@code oidc-hardcoded-claim-mapper} whose value is the
+     *       ISSUING tenant, set here server-side (T-37-104). The template reads a service-account user
+     *       attribute instead, which Keycloak 24 strips when a user is created through the admin API
+     *       ({@code docs/security-scopes.md} §5); a hard-coded claim needs no attribute at all. It goes into
+     *       the access token only;</li>
+     *   <li>the default client scopes are exactly the requested ones and there are no optional scopes, so the
+     *       credential cannot ask for {@code roles}, {@code offline_access} or any profile claim.</li>
+     * </ul>
+     * The {@code oidc-audience-mapper} adding {@code core-api} is the template's own and is mandatory
+     * (T-37-105). No secret is sent: Keycloak generates one for a confidential client.
+     *
+     * <p>The UUID is the last segment of the {@code Location} header; without one it is read back by the
+     * exact clientId. Error messages name the realm only (T-37-106).
+     */
+    public String createClient(String realm, KeycloakClientSpec spec, String token) {
+        ObjectNode rep = clientRepresentation(spec);
+        String uuid;
+        try {
+            ResponseEntity<Void> created = restClient.post()
+                    .uri("/admin/realms/{realm}/clients", realm)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(rep)
+                    .retrieve()
+                    .toBodilessEntity();
+            uuid = idFromLocation(created.getHeaders().getLocation());
+        } catch (HttpClientErrorException.Conflict e) {
+            throw new KeycloakClientExistsException(realm);
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak client create failed for realm=" + realm, e);
+        }
+        if (uuid == null) {
+            uuid = findClientUuid(realm, spec.clientId(), token).orElseThrow(() -> new KeycloakAdminException(
+                    "Keycloak created a client but it could not be found for realm=" + realm));
+        }
+        try {
+            configureAfterCreate(realm, uuid, spec, token);
+        } catch (KeycloakAdminException e) {
+            // Never leave a half-configured credential behind (realm default scopes, no tenant claim).
+            try {
+                deleteClient(realm, uuid, token);
+            } catch (KeycloakAdminException cleanup) {
+                e.addSuppressed(cleanup);
+            }
+            throw e;
+        }
+        return uuid;
+    }
+
+    /**
+     * RESEARCH A2/A4: whether Keycloak 24.0.5 honours inline {@code defaultClientScopes},
+     * {@code optionalClientScopes} and {@code protocolMappers} on {@code POST /clients} is not documented,
+     * so every create READS them back and repairs any difference: requested default scopes that are absent
+     * are assigned by id ({@link #assignDefaultClientScopes}), any other default or optional scope is
+     * removed (the realm's own defaults include {@code roles}, which would put realm roles into the token),
+     * and a missing mapper is added through {@code POST .../protocol-mappers/models}. Which path ran is
+     * logged (realm only); 37-47 re-proves it live by decoding a minted token.
+     */
+    private void configureAfterCreate(String realm, String uuid, KeycloakClientSpec spec, String token) {
+        boolean defaultsInline = reconcileScopes(realm, uuid, "default-client-scopes", spec.scopes(), token);
+        boolean optionalInline = reconcileScopes(realm, uuid, "optional-client-scopes", List.of(), token);
+        boolean mappersInline = ensureMappers(realm, uuid, spec, token);
+        if (defaultsInline && optionalInline && mappersInline) {
+            log.info("Keycloak honoured the inline credential client representation in realm={}", realm);
+        } else {
+            log.warn("Keycloak did not honour the inline credential client representation in realm={} "
+                            + "(defaultScopes inline={}, optionalScopes inline={}, mappers inline={}); "
+                            + "repaired through the client scope and protocol-mapper endpoints",
+                    realm, defaultsInline, optionalInline, mappersInline);
+        }
+    }
+
+    /**
+     * Makes the client's {@code kind} scopes ({@code default-client-scopes} or {@code optional-client-scopes})
+     * exactly {@code wanted}. Returns {@code true} when they already were (the inline list was honoured).
+     */
+    private boolean reconcileScopes(String realm, String uuid, String kind, List<String> wanted, String token) {
+        Map<String, String> present = scopesByName(realm, "/admin/realms/{realm}/clients/{id}/" + kind, token, uuid);
+        List<String> missing = new ArrayList<>();
+        for (String name : wanted) {
+            if (!present.containsKey(name)) {
+                missing.add(name);
+            }
+        }
+        List<String> extraIds = new ArrayList<>();
+        present.forEach((name, id) -> {
+            if (!wanted.contains(name)) {
+                extraIds.add(id);
+            }
+        });
+        if (missing.isEmpty() && extraIds.isEmpty()) {
+            return true;
+        }
+        if (!missing.isEmpty()) {
+            assignScopes(realm, uuid, kind, missing, token);
+        }
+        for (String id : extraIds) {
+            try {
+                restClient.delete()
+                        .uri("/admin/realms/{realm}/clients/{id}/" + kind + "/{scopeId}", realm, uuid, id)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .retrieve()
+                        .toBodilessEntity();
+            } catch (RestClientException e) {
+                throw new KeycloakAdminException("Keycloak client scope removal failed for realm=" + realm, e);
+            }
+        }
+        return false;
+    }
+
+    /** The client-scope representations at {@code uri}, as name to id, in Keycloak's order. */
+    private Map<String, String> scopesByName(String realm, String uri, String token, Object... vars) {
+        Object[] all = new Object[vars.length + 1];
+        all[0] = realm;
+        System.arraycopy(vars, 0, all, 1, vars.length);
+        try {
+            String body = restClient.get()
+                    .uri(uri, all)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode page = jsonMapper.readTree(body == null ? "[]" : body);
+            Map<String, String> byName = new LinkedHashMap<>();
+            if (page.isArray()) {
+                for (JsonNode scope : page.values()) {
+                    if (scope instanceof ObjectNode on && text(on, "name") != null && text(on, "id") != null) {
+                        byName.put(text(on, "name"), text(on, "id"));
+                    }
+                }
+            }
+            return byName;
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new KeycloakClientNotFoundException(realm);
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak client scope read failed for realm=" + realm, e);
+        } catch (Exception e) {
+            throw new KeycloakAdminException("Keycloak client scope response could not be parsed for realm=" + realm, e);
+        }
+    }
+
+    /** Adds each of the two credential mappers the client does not already carry (by name). */
+    private boolean ensureMappers(String realm, String uuid, KeycloakClientSpec spec, String token) {
+        List<String> names = new ArrayList<>();
+        try {
+            String body = restClient.get()
+                    .uri("/admin/realms/{realm}/clients/{id}/protocol-mappers/models", realm, uuid)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode page = jsonMapper.readTree(body == null ? "[]" : body);
+            if (page.isArray()) {
+                for (JsonNode m : page.values()) {
+                    if (m instanceof ObjectNode on && text(on, "name") != null) {
+                        names.add(text(on, "name"));
+                    }
+                }
+            }
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new KeycloakClientNotFoundException(realm);
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak protocol mapper read failed for realm=" + realm, e);
+        } catch (Exception e) {
+            throw new KeycloakAdminException("Keycloak protocol mapper response could not be parsed for realm=" + realm, e);
+        }
+        boolean inline = true;
+        for (ObjectNode mapper : List.of(tenantClaimMapper(spec.tenantId()), audienceMapper())) {
+            if (names.contains(mapper.path("name").asString())) {
+                continue;
+            }
+            inline = false;
+            try {
+                restClient.post()
+                        .uri("/admin/realms/{realm}/clients/{id}/protocol-mappers/models", realm, uuid)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(mapper)
+                        .retrieve()
+                        .toBodilessEntity();
+            } catch (RestClientException e) {
+                throw new KeycloakAdminException("Keycloak protocol mapper create failed for realm=" + realm, e);
+            }
+        }
+        return inline;
+    }
+
+    /**
+     * 37-44: assign realm client scopes, by NAME, as default scopes of a client: the ids come from
+     * {@code GET /admin/realms/{realm}/client-scopes}, then one bodiless
+     * {@code PUT .../clients/{uuid}/default-client-scopes/{scopeId}} each. A name the realm does not define is
+     * refused, never silently dropped. {@link #createClient} uses it only when the inline list was ignored.
+     */
+    public void assignDefaultClientScopes(String realm, String clientUuid, List<String> scopes, String token) {
+        assignScopes(realm, clientUuid, "default-client-scopes", scopes, token);
+    }
+
+    private void assignScopes(String realm, String uuid, String kind, List<String> names, String token) {
+        Map<String, String> realmScopes = scopesByName(realm, "/admin/realms/{realm}/client-scopes", token);
+        for (String name : names) {
+            if (!realmScopes.containsKey(name)) {
+                throw new KeycloakAdminException("Keycloak realm does not define a requested client scope, realm=" + realm);
+            }
+        }
+        for (String name : names) {
+            try {
+                restClient.put()
+                        .uri("/admin/realms/{realm}/clients/{id}/" + kind + "/{scopeId}", realm, uuid, realmScopes.get(name))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .retrieve()
+                        .toBodilessEntity();
+            } catch (RestClientException e) {
+                throw new KeycloakAdminException("Keycloak client scope assignment failed for realm=" + realm, e);
+            }
+        }
+    }
+
+    /** The ClientRepresentation {@link #createClient} posts; see there for why each field is what it is. */
+    private ObjectNode clientRepresentation(KeycloakClientSpec spec) {
+        ObjectNode rep = jsonMapper.createObjectNode();
+        rep.put("clientId", spec.clientId());
+        rep.put("enabled", true);
+        rep.put("protocol", "openid-connect");
+        rep.put("clientAuthenticatorType", "client-secret");
+        rep.put("publicClient", false);
+        rep.put("bearerOnly", false);
+        rep.put("consentRequired", false);
+        rep.put("standardFlowEnabled", false);
+        rep.put("implicitFlowEnabled", false);
+        rep.put("directAccessGrantsEnabled", false);
+        rep.put("serviceAccountsEnabled", true);
+        rep.put("frontchannelLogout", false);
+        rep.put("fullScopeAllowed", true);
+        rep.putArray("redirectUris");
+        rep.putArray("webOrigins");
+        ArrayNode mappers = rep.putArray("protocolMappers");
+        mappers.add(tenantClaimMapper(spec.tenantId()));
+        mappers.add(audienceMapper());
+        ArrayNode defaults = rep.putArray("defaultClientScopes");
+        spec.scopes().forEach(defaults::add);
+        rep.putArray("optionalClientScopes");
+        return rep;
+    }
+
+    /** {@code tenant_id} = the issuing tenant, hard-coded, in the access token only. */
+    private ObjectNode tenantClaimMapper(UUID tenantId) {
+        ObjectNode m = jsonMapper.createObjectNode();
+        m.put("name", TENANT_MAPPER_NAME);
+        m.put("protocol", "openid-connect");
+        m.put("protocolMapper", "oidc-hardcoded-claim-mapper");
+        m.put("consentRequired", false);
+        ObjectNode c = m.putObject("config");
+        c.put("claim.name", "tenant_id");
+        c.put("claim.value", tenantId.toString());
+        c.put("jsonType.label", "String");
+        c.put("access.token.claim", "true");
+        c.put("id.token.claim", "false");
+        c.put("userinfo.token.claim", "false");
+        return m;
+    }
+
+    /** {@code aud=core-api}: the template client's {@code core-api-audience-mapper}, verbatim. */
+    private ObjectNode audienceMapper() {
+        ObjectNode m = jsonMapper.createObjectNode();
+        m.put("name", AUDIENCE_MAPPER_NAME);
+        m.put("protocol", "openid-connect");
+        m.put("protocolMapper", "oidc-audience-mapper");
+        m.put("consentRequired", false);
+        ObjectNode c = m.putObject("config");
+        c.put("included.client.audience", CORE_API_AUDIENCE);
+        c.put("access.token.claim", "true");
+        c.put("id.token.claim", "false");
+        c.put("introspection.token.claim", "true");
+        return m;
+    }
+
+    /**
+     * 37-44: {@code GET /admin/realms/{realm}/clients?clientId={clientId}} — the UUID of the client whose
+     * clientId is EXACTLY the one given (a returned row with any other clientId is ignored), or empty.
+     */
+    public Optional<String> findClientUuid(String realm, String clientId, String token) {
+        try {
+            String body = restClient.get()
+                    .uri("/admin/realms/{realm}/clients?clientId={clientId}", realm, clientId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode page = jsonMapper.readTree(body == null ? "[]" : body);
+            if (page.isArray()) {
+                for (JsonNode c : page.values()) {
+                    if (c instanceof ObjectNode on && clientId.equals(text(on, "clientId")) && text(on, "id") != null) {
+                        return Optional.of(text(on, "id"));
+                    }
+                }
+            }
+            return Optional.empty();
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak client lookup failed for realm=" + realm, e);
+        } catch (Exception e) {
+            throw new KeycloakAdminException("Keycloak client lookup response could not be parsed for realm=" + realm, e);
+        }
+    }
+
+    /**
+     * 37-44 (D-23): {@code GET /admin/realms/{realm}/clients/{uuid}/service-account-user} — the id of the
+     * client's service-account user, which is the {@code sub} of every token the credential mints and the
+     * {@code user_id} its {@code shop_staff} grant is keyed on.
+     */
+    public String getServiceAccountUserId(String realm, String clientUuid, String token) {
+        try {
+            String body = restClient.get()
+                    .uri("/admin/realms/{realm}/clients/{id}/service-account-user", realm, clientUuid)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode user = jsonMapper.readTree(body == null ? "{}" : body);
+            String id = user instanceof ObjectNode on ? text(on, "id") : null;
+            if (id == null || id.isBlank()) {
+                throw new KeycloakAdminException("Keycloak service-account user had no id for realm=" + realm);
+            }
+            return id;
+        } catch (KeycloakAdminException e) {
+            throw e;
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new KeycloakClientNotFoundException(realm);
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak service-account user read failed for realm=" + realm, e);
+        } catch (Exception e) {
+            throw new KeycloakAdminException(
+                    "Keycloak service-account user response could not be parsed for realm=" + realm, e);
+        }
+    }
+
+    /**
+     * 37-44 (D-22): {@code GET /admin/realms/{realm}/clients/{uuid}/client-secret} — the client's current
+     * secret, shown to the issuer ONCE by the credential service and never stored or logged by core.
+     *
+     * @throws KeycloakClientNotFoundException on 404
+     */
+    public String getClientSecret(String realm, String clientUuid, String token) {
+        return secret(realm, clientUuid, HttpMethod.GET, token);
+    }
+
+    /**
+     * 37-44 (D-22): {@code POST /admin/realms/{realm}/clients/{uuid}/client-secret} — rotate: Keycloak
+     * generates a new secret, the old one stops working at once, and the new value is returned.
+     *
+     * @throws KeycloakClientNotFoundException on 404
+     */
+    public String regenerateClientSecret(String realm, String clientUuid, String token) {
+        return secret(realm, clientUuid, HttpMethod.POST, token);
+    }
+
+    /**
+     * Reads the {@code value} of the CredentialRepresentation Keycloak answers both secret calls with.
+     *
+     * <p>T-37-106: a response that cannot be used raises an exception WITHOUT a cause. The parser's own
+     * exception may quote its input, and that input is the secret; attaching it would put the secret into
+     * every log line that prints the chain.
+     */
+    private String secret(String realm, String clientUuid, HttpMethod httpMethod, String token) {
+        String body;
+        try {
+            body = restClient.method(httpMethod)
+                    .uri("/admin/realms/{realm}/clients/{id}/client-secret", realm, clientUuid)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(String.class);
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new KeycloakClientNotFoundException(realm);
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak client secret request failed for realm=" + realm, e);
+        }
+        JsonNode node;
+        try {
+            node = jsonMapper.readTree(body == null ? "{}" : body);
+        } catch (Exception e) {
+            throw new KeycloakAdminException("Keycloak client secret response could not be parsed for realm=" + realm);
+        }
+        JsonNode value = node.get("value");
+        if (value == null || !value.isString() || value.asString().isBlank()) {
+            throw new KeycloakAdminException("Keycloak client secret response had no value for realm=" + realm);
+        }
+        return value.asString();
+    }
+
+    /**
+     * 37-44 (D-22): {@code DELETE /admin/realms/{realm}/clients/{uuid}}. Irreversible: every token the
+     * credential could mint stops being issued, and its service-account user goes with it.
+     *
+     * @return {@code true} when Keycloak deleted the client (2xx); {@code false} on 404, i.e. already gone,
+     *         which is the goal state and not an error
+     * @throws KeycloakAdminException on any other failure, carrying the realm only
+     */
+    public boolean deleteClient(String realm, String clientUuid, String token) {
+        try {
+            restClient.delete()
+                    .uri("/admin/realms/{realm}/clients/{id}", realm, clientUuid)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (HttpClientErrorException.NotFound e) {
+            return false;
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak client delete failed for realm=" + realm, e);
+        }
     }
 
     /** Revokes the user's active sessions ({@code POST .../users/{id}/logout}). */
