@@ -360,6 +360,28 @@ class IntegrationCredentialIntegrationTest {
         assertThat(body(list)).doesNotContain(fixtureSecret);
     }
 
+    @Test
+    @DisplayName("Keycloak fails after it created the client: 503 credential-service-unavailable, the client is "
+            + "deleted again, and nothing is written (no credential row, no grant, no secret anywhere)")
+    void keycloakFailureAfterCreate_deletesTheClientAgain_andWritesNothing() throws Exception {
+        when(keycloak.getClientSecret(REALM, clientUuid.toString(), "tok"))
+                .thenThrow(new uk.jtoye.core.tenant.keycloak.KeycloakAdminException(
+                        "Keycloak client secret request failed for realm=" + REALM));
+
+        MvcResult failed = mockMvc.perform(post(PATH).with(vendorJwt(admin, tenantId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody("Till", List.of("orders:read"), "STAFF", shopA)))
+                .andReturn();
+        assertThat(failed.getResponse().getStatus()).as(body(failed)).isEqualTo(503);
+        assertThat(json(failed).path("type").asString()).isEqualTo("https://jtoye.uk/errors/credential-service-unavailable");
+        assertThat(failed.getResponse().getHeader(HttpHeaders.RETRY_AFTER)).isEqualTo("60");
+        verify(keycloak).deleteClient(REALM, clientUuid.toString(), "tok");
+        assertThat(credentialCount()).isZero();
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", Long.class,
+                tenantId, serviceAccountUser))).isZero();
+    }
+
     // ---- Task 2: rotate, revoke, last used ------------------------------------------------------------
 
     @Test
