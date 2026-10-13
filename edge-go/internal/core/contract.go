@@ -15,7 +15,12 @@ package core
 //  5. every endpoint literal in this package's source is declared here
 //     (so a new core call cannot be added without declaring its contract),
 //     AND every declared path is found in the source (so the scanner is
-//     proven able to see — a scan that finds nothing must never read clean).
+//     proven able to see — a scan that finds nothing must never read clean);
+//  6. for a call whose answer the edge hands to its OWN callers (PassThrough,
+//     RelaysProblems): the Go type decodes EVERY property core declares, the
+//     edge's published route (edge-go/docs/swagger.json) documents each of
+//     them, and every 4xx core declares is a problem the edge relays and
+//     documents (37-41, RESEARCH Pitfall 7).
 //
 // Why a manifest rather than generated client code: the edge deliberately
 // hand-writes these five calls so it can own its own timeouts, breaker and
@@ -65,6 +70,28 @@ type EdgeCoreCall struct {
 
 	// Note records why an entry is unusual. Required when Unrouted is set.
 	Note string
+
+	// PassThrough marks a call whose decoded response the edge returns to
+	// its own callers. The gate then also requires the reverse direction:
+	// Response must decode EVERY property core declares, recursively, and
+	// EdgeRoute's documented success response must carry each of them (a
+	// camelCase core name may be published snake_case). Without it a new
+	// core field — per-item results, a status value — is silently dropped
+	// before the integrator sees it, and the gate stays green because core
+	// returning MORE than the edge reads is otherwise fine.
+	PassThrough bool
+
+	// RelaysProblems marks a call whose 4xx application/problem+json
+	// answers the edge relays verbatim (CoreProblemError). The gate asserts
+	// core declares at least one such answer, that EVERY 4xx core declares
+	// for the operation is problem+json (one that is not would reach the
+	// integrator as a 502), and that EdgeRoute documents each of them.
+	RelaysProblems bool
+
+	// EdgeRoute is the edge's own published operation, "<method> <path>"
+	// in edge-go/docs/swagger.json, that hands this call's answer to the
+	// edge's callers. Required when PassThrough or RelaysProblems is set.
+	EdgeRoute string
 }
 
 // EdgeCoreCalls returns the declared edge→core dependency surface.
@@ -80,6 +107,11 @@ func EdgeCoreCalls() []EdgeCoreCall {
 			Request:        BatchSyncRequest{},
 			Response:       coreBatchSyncResponse{},
 			AcceptedStatus: []int{200, 202},
+			// The handler returns core's status, processed count and
+			// per-item results, and relays core's 4xx problems verbatim.
+			PassThrough:    true,
+			RelaysProblems: true,
+			EdgeRoute:      "post /api/v1/sync/batch",
 		},
 		{
 			Name:           "Client.SearchProducts",
