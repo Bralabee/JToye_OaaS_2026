@@ -58,7 +58,20 @@ const DELIVERY_STATUSES: DeliveryStatus[] = [
   "DELIVERED",
   "RETRYING",
   "FAILED",
+  "HELD",
 ]
+
+/**
+ * The auto-pause banner's held-events sentence (UI-SPEC E2, 37-43). The count is the API's
+ * `heldCount`, never estimated. Singular at 1, and at 0 (or absent) the sentence is omitted rather
+ * than claiming "0 events are held" — the same three forms as the pause email.
+ */
+function heldEventsSentence(heldCount: number | null | undefined): string | null {
+  if (!heldCount || heldCount <= 0) return null
+  return heldCount === 1
+    ? "1 event is held and will be delivered when you resume."
+    : `${heldCount} events are held and will be delivered when you resume.`
+}
 
 type ConfirmKind = "rotate" | "revoke" | null
 
@@ -154,7 +167,9 @@ export default function WebhookDetailPage() {
       toast({
         title: resume ? "Delivery resumed" : "Delivery paused",
         description: resume
-          ? "This endpoint will receive new events again."
+          ? subscription.heldCount > 0
+            ? "This endpoint will receive new events again, and its held events are being delivered."
+            : "This endpoint will receive new events again."
           : "This endpoint will stop receiving new events.",
       })
       await fetchSubscription()
@@ -286,6 +301,7 @@ export default function WebhookDetailPage() {
 
   const isRevoked = subscription.status === "REVOKED"
   const resume = subscription.status !== "ACTIVE"
+  const heldSentence = heldEventsSentence(subscription.heldCount)
 
   return (
     <div data-width-tier="index" className="space-y-6">
@@ -358,7 +374,7 @@ export default function WebhookDetailPage() {
         </Card>
       </m.div>
 
-      {/* Auto-pause amber alert */}
+      {/* Auto-pause amber alert (UI-SPEC E2, 37-43): what happened, what is held, what Resume does. */}
       {subscription.status === "AUTO_PAUSED" && (
         <div
           role="status"
@@ -367,10 +383,13 @@ export default function WebhookDetailPage() {
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div className="space-y-2">
+              <p className="text-sm font-semibold">
+                Deliveries to this endpoint are paused
+              </p>
               <p className="text-sm">
-                Auto-paused after {subscription.consecutiveFailures} consecutive
-                failures. We stopped sending to protect your endpoint. Fix the
-                endpoint, then resume delivery.
+                We paused it after deliveries kept failing.
+                {heldSentence && <> {heldSentence}</>} Fix the endpoint first,
+                then:
               </p>
               {lastFailure && (
                 <p className="text-xs">
@@ -389,7 +408,7 @@ export default function WebhookDetailPage() {
                 disabled={busy}
                 onClick={handlePauseResume}
               >
-                <Play className="mr-1 h-4 w-4" /> Resume delivery
+                <Play className="mr-1 h-4 w-4" /> Resume and deliver held events
               </Button>
             </div>
           </div>

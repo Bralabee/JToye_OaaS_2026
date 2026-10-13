@@ -2,6 +2,7 @@ import * as React from "react"
 import {
   CheckCircle2,
   Pause,
+  PauseCircle,
   AlertTriangle,
   Ban,
   Clock,
@@ -25,6 +26,8 @@ type BadgeConfig = {
   label: string
   className: string
   icon: React.ComponentType<{ className?: string }>
+  /** Outline instead of the tinted fill (UI-SPEC E2: "Held" is an outline badge). */
+  variant?: "outline"
 }
 
 export const subscriptionStatusConfig: Record<SubscriptionStatus, BadgeConfig> = {
@@ -71,6 +74,21 @@ export const deliveryStatusConfig: Record<DeliveryStatus, BadgeConfig> = {
     className: "bg-red-100 text-red-700",
     icon: XCircle,
   },
+  // 37-43 (UXT-038, UI-SPEC E2): kept while the endpoint is paused, delivered on resume.
+  HELD: {
+    label: "Held",
+    className: "text-slate-700",
+    icon: PauseCircle,
+    variant: "outline",
+  },
+}
+
+/**
+ * A status this build does not know yet renders as its raw name in an outline badge. Before 37-43
+ * an unknown value threw inside the map lookup and took the whole delivery log down with it.
+ */
+function unknownDeliveryStatus(status: string): BadgeConfig {
+  return { label: status, className: "text-slate-700", icon: Clock, variant: "outline" }
 }
 
 /** Subscription state badge — tinted bg + lucide icon + text label. */
@@ -97,7 +115,7 @@ export function SubscriptionStatusBadge({
   )
 }
 
-/** Delivery state badge — tinted bg + lucide icon + text label. */
+/** Delivery state badge — tinted bg (or outline) + lucide icon + text label. */
 export function DeliveryStatusBadge({
   status,
   className,
@@ -105,12 +123,17 @@ export function DeliveryStatusBadge({
   status: DeliveryStatus
   className?: string
 }) {
-  const config = deliveryStatusConfig[status]
+  const config = deliveryStatusConfig[status] ?? unknownDeliveryStatus(String(status))
   const Icon = config.icon
+  const outline = config.variant === "outline"
   return (
     <Badge
+      variant={outline ? "outline" : undefined}
+      data-delivery-status={status}
+      data-badge-variant={outline ? "outline" : "filled"}
       className={cn(
-        "w-fit gap-1 border-transparent",
+        "w-fit gap-1",
+        !outline && "border-transparent",
         config.className,
         className
       )}

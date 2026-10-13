@@ -26,15 +26,21 @@ export type WebhookEventType =
 /** Subscription lifecycle (22-03 WebhookSubscription.Status). */
 export type SubscriptionStatus = "ACTIVE" | "PAUSED" | "AUTO_PAUSED" | "REVOKED"
 
-/** Delivery lifecycle (22-05 WebhookDelivery.Status). */
-export type DeliveryStatus = "PENDING" | "DELIVERED" | "RETRYING" | "FAILED"
+/**
+ * Delivery lifecycle (22-05 WebhookDelivery.Status). HELD (37-43, UXT-038): kept, not attempted,
+ * while the endpoint is paused; resuming delivers it.
+ */
+export type DeliveryStatus = "PENDING" | "DELIVERED" | "RETRYING" | "FAILED" | "HELD"
 
 export interface WebhookSubscription {
   id: string
   targetUrl: string
   eventTypes: WebhookEventType[]
   status: SubscriptionStatus
+  /** Consecutive deliveries that used all their attempts (37-43: deliveries, not attempts). */
   consecutiveFailures: number
+  /** Events held for this endpoint while it is paused, counted by the server (37-43). */
+  heldCount: number
   createdAt: string
   updatedAt: string
 }
