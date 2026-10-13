@@ -219,12 +219,14 @@ export default function DevelopersPage() {
    */
   return (
     <div data-width-tier="index" className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
+      {/* 37-E review: one row only from lg. At md the sidebar leaves main 512 px, too narrow for the title,
+          the subtitle and both actions: "Create credential" ended at x=815 in a 768 viewport. */}
+      <div className="flex flex-col items-start justify-between gap-4 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">
           <h1 className="text-4xl font-semibold text-slate-900">{DEVELOPERS_COPY.title}</h1>
           <p className="mt-2 text-sm text-slate-600">{DEVELOPERS_COPY.subtitle}</p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <Button asChild variant="link" className="h-11 justify-start px-0 sm:px-4">
             <Link href="/dashboard/webhooks">{DEVELOPERS_COPY.webhooksLink}</Link>
           </Button>
