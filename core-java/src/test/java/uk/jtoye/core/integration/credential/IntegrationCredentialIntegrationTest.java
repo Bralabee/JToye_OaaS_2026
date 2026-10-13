@@ -595,6 +595,41 @@ class IntegrationCredentialIntegrationTest {
         assertThat(viaDashboard.getResponse().getStatus()).as(body(viaDashboard)).isEqualTo(201);
     }
 
+    @Test
+    @DisplayName("Q7 / assumption-delta invariant: once a credential has called the API (its service account is now in "
+            + "the staff directory), a Group admin still cannot grant it any staff access: 409 and no GROUP_ADMIN row")
+    void staffGrant_toACredentialServiceAccount_isRefused() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:read"), "STAFF", shopA);
+        callAsCredential(clientIdOf(credentialId));
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM user_directory WHERE tenant_id = ? AND user_id = ?", Long.class,
+                tenantId, serviceAccountUser)))
+                .as("PRECONDITION: the credential's call put its service account in the grant-target directory")
+                .isEqualTo(1L);
+
+        for (String grant : List.of(
+                "{\"userId\":\"" + serviceAccountUser + "\",\"shopId\":null,\"role\":\"GROUP_ADMIN\"}",
+                "{\"userId\":\"" + serviceAccountUser + "\",\"shopId\":\"" + shopB + "\",\"role\":\"SHOP_MANAGER\"}")) {
+            MvcResult refused = mockMvc.perform(post("/api/v1/staff/grant").with(vendorJwt(admin, tenantId))
+                    .contentType(MediaType.APPLICATION_JSON).content(grant)).andReturn();
+            assertThat(refused.getResponse().getStatus()).as(body(refused)).isEqualTo(409);
+            assertThat(json(refused).path("type").asString())
+                    .isEqualTo("https://jtoye.uk/errors/staff-target-is-credential");
+        }
+        // The invariant the plan's assumption delta asks for, read straight from the tables.
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff s JOIN integration_credential c "
+                        + "ON c.tenant_id = s.tenant_id AND c.service_account_user_id = s.user_id "
+                        + "WHERE s.tenant_id = ? AND s.role = 'GROUP_ADMIN'", Long.class, tenantId)))
+                .as("no credential's service account holds GROUP_ADMIN")
+                .isZero();
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", Long.class,
+                tenantId, serviceAccountUser)))
+                .as("the credential still holds exactly its one issued grant")
+                .isEqualTo(1L);
+    }
+
     void expectHumanOnly(org.springframework.test.web.servlet.RequestBuilder request) throws Exception {
         MvcResult refused = mockMvc.perform(request).andReturn();
         assertThat(refused.getResponse().getStatus()).as("%s %s -> %s", refused.getRequest().getMethod(),
