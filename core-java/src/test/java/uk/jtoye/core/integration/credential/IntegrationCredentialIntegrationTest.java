@@ -153,9 +153,13 @@ class IntegrationCredentialIntegrationTest {
                         .content(createBody("Till", List.of("catalog:read", "orders:write"), "SHOP_MANAGER", shopA)))
                 .andReturn();
         assertThat(created.getResponse().getStatus()).as(body(created)).isEqualTo(201);
+        // Exactly no-store, set by the endpoint itself. A contains("no-store") check could not fail: Spring
+        // Security's default header writer stamps "no-cache, no-store, max-age=0, must-revalidate" on every
+        // authenticated response, and the check stayed green with the endpoint's own header removed (arm A).
+        // The exact value proves the endpoint does not rely on a global default someone may turn off.
         assertThat(created.getResponse().getHeader(HttpHeaders.CACHE_CONTROL))
-                .as("a response carrying a secret must never be cached")
-                .contains("no-store");
+                .as("a response carrying a secret must never be cached, by the endpoint's own header")
+                .isEqualTo("no-store");
 
         JsonNode json = json(created);
         String clientId = json.path("clientId").asString();
