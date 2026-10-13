@@ -36,6 +36,10 @@ import java.util.UUID;
  * NOT in {@code SecurityConfig}'s permitAll list, so {@code anyRequest().authenticated()}
  * applies.
  *
+ * <p><b>Human-only mutations (37-45, Q7):</b> grant and revoke call
+ * {@link HumanCallerGuard#requireHuman()} first, so no integrator credential or machine client can give
+ * anyone access (typed 403 {@code human-only-action}). The reads are unchanged.
+ *
  * <p><b>Path:</b> hard-mapped at {@code /api/v1/staff} (the {@code security.access}
  * package is deliberately NOT in {@code WebConfig.API_V1_PACKAGES} — same precedent
  * as {@code RefundController} / {@code TenantAdminController} / the webhook surface).
@@ -47,9 +51,11 @@ import java.util.UUID;
 public class StaffController {
 
     private final StaffManagementService staffManagementService;
+    private final HumanCallerGuard humanCallerGuard;
 
-    public StaffController(StaffManagementService staffManagementService) {
+    public StaffController(StaffManagementService staffManagementService, HumanCallerGuard humanCallerGuard) {
         this.staffManagementService = staffManagementService;
+        this.humanCallerGuard = humanCallerGuard;
     }
 
     @GetMapping
@@ -89,10 +95,12 @@ public class StaffController {
             @ApiResponse(responseCode = "201", description = "New grant created"),
             @ApiResponse(responseCode = "200", description = "Idempotent replay of an existing grant"),
             @ApiResponse(responseCode = "400", description = "Invalid request (e.g. shop-scoped GROUP_ADMIN)"),
-            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied), or the "
+                    + "token was not issued to the dashboard client (human-only-action)"),
             @ApiResponse(responseCode = "409", description = "Would downgrade the last GROUP_ADMIN (last-group-admin)")
     })
     public ResponseEntity<StaffMemberDto> grant(@Valid @RequestBody GrantStaffRequest request) {
+        humanCallerGuard.requireHuman();
         GrantResult result = staffManagementService.grant(request.userId(), request.shopId(), request.role());
         return ResponseEntity
                 .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
@@ -105,11 +113,13 @@ public class StaffController {
                     + "(membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Grant revoked"),
-            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied), or the "
+                    + "token was not issued to the dashboard client (human-only-action)"),
             @ApiResponse(responseCode = "404", description = "Grant not found (or another tenant's)"),
             @ApiResponse(responseCode = "409", description = "Would remove the last GROUP_ADMIN (last-group-admin)")
     })
     public ResponseEntity<Void> revoke(@PathVariable UUID id) {
+        humanCallerGuard.requireHuman();
         staffManagementService.revoke(id);
         return ResponseEntity.noContent().build();
     }

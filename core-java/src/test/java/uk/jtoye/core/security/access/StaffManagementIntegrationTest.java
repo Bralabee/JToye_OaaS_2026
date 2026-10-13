@@ -146,6 +146,7 @@ class StaffManagementIntegrationTest {
         Jwt jwt = Jwt.withTokenValue("test-token")
                 .header("alg", "none")
                 .subject(sub.toString())
+                .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                 .claim("email", "user-" + sub + "@example.com")
                 .claim("name", "Test User " + sub)
                 .build();
@@ -1060,6 +1061,7 @@ class StaffManagementIntegrationTest {
 
         private RequestPostProcessor vendorJwt(UUID sub) {
             return jwt().jwt(j -> j.subject(sub.toString())
+                            .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                             .claim("tenant_id", tenant.toString())
                             .claim("email", "user-" + sub + "@example.com")
                             .claim("realm_access", Map.of("roles", List.of("user")))

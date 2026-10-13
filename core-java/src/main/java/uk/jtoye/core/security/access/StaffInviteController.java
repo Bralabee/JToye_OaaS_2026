@@ -31,6 +31,10 @@ import java.util.UUID;
  * <p>Hard-mapped at {@code /api/v1/staff/invites}: the {@code security.access} package is not in
  * {@code WebConfig.API_V1_PACKAGES}. No MCP tool, by recorded reason: an agent must not mint human
  * staff (RESEARCH 37-B.3).
+ *
+ * <p>Human-only mutations (37-45, Q7): issue, resend and cancel call {@link HumanCallerGuard#requireHuman()}
+ * first, so no integrator credential or machine client can invite anyone (typed 403
+ * {@code human-only-action}). The list is unchanged.
  */
 @RestController
 @RequestMapping("/api/v1/staff/invites")
@@ -39,9 +43,11 @@ import java.util.UUID;
 public class StaffInviteController {
 
     private final StaffInviteService staffInviteService;
+    private final HumanCallerGuard humanCallerGuard;
 
-    public StaffInviteController(StaffInviteService staffInviteService) {
+    public StaffInviteController(StaffInviteService staffInviteService, HumanCallerGuard humanCallerGuard) {
         this.staffInviteService = staffInviteService;
+        this.humanCallerGuard = humanCallerGuard;
     }
 
     @PostMapping
@@ -55,10 +61,12 @@ public class StaffInviteController {
             @ApiResponse(responseCode = "201", description = "Invitation created and emailed"),
             @ApiResponse(responseCode = "200", description = "Idempotent replay of the open invitation for the same triple; no email"),
             @ApiResponse(responseCode = "400", description = "Invalid request (a shop-scoped GROUP_ADMIN, or not one valid email address)"),
-            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied), or the "
+                    + "token was not issued to the dashboard client (human-only-action)"),
             @ApiResponse(responseCode = "404", description = "The shop is not a shop of this business")
     })
     public ResponseEntity<StaffInviteDto> issueInvite(@Valid @RequestBody CreateStaffInviteRequest request) {
+        humanCallerGuard.requireHuman();
         IssueResult result = staffInviteService.issue(request);
         return ResponseEntity
                 .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
@@ -86,10 +94,12 @@ public class StaffInviteController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "New invitation created and emailed"),
             @ApiResponse(responseCode = "400", description = "The invitation was already accepted"),
-            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied), or the "
+                    + "token was not issued to the dashboard client (human-only-action)"),
             @ApiResponse(responseCode = "404", description = "No invitation of this business has that id")
     })
     public ResponseEntity<StaffInviteDto> resendInvite(@PathVariable UUID id) {
+        humanCallerGuard.requireHuman();
         return ResponseEntity.status(HttpStatus.CREATED).body(staffInviteService.resend(id));
     }
 
@@ -99,10 +109,12 @@ public class StaffInviteController {
                     + "changes nothing and still returns 204.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Cancelled (or already cancelled / accepted)"),
-            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied), or the "
+                    + "token was not issued to the dashboard client (human-only-action)"),
             @ApiResponse(responseCode = "404", description = "No invitation of this business has that id")
     })
     public ResponseEntity<Void> cancelInvite(@PathVariable UUID id) {
+        humanCallerGuard.requireHuman();
         staffInviteService.cancel(id);
         return ResponseEntity.noContent().build();
     }

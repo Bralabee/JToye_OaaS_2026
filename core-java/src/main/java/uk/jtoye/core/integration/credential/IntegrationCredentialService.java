@@ -176,7 +176,7 @@ public class IntegrationCredentialService {
             clientUuid = createClient(realm, new KeycloakClientSpec(clientId, tenantId, scopes), token);
         } catch (KeycloakClientExistsException collision) {
             // 60 random bits make this a retried create rather than chance; one fresh id, then give up.
-            log.warn("event=credential_client_id_collision realm={} retrying once with a new clientId", realm);
+            log.warn("event=integration_client_id_collision realm={} retrying once with a new clientId", realm);
             clientId = newClientId();
             try {
                 clientUuid = createClient(realm, new KeycloakClientSpec(clientId, tenantId, scopes), token);
@@ -207,7 +207,7 @@ public class IntegrationCredentialService {
         staffManagementService.persistNewGrant(tenantId, serviceAccountUser, request.shopId(), request.role(), issuer);
         shopAccessService.evictMembershipAfterCommit(serviceAccountUser);
 
-        log.info("event=credential_issued tenant={} id={} clientId={} role={} shop={} scopes={} by={}",
+        log.info("event=integration_client_issued tenant={} id={} clientId={} role={} shop={} scopes={} by={}",
                 tenantId, credential.getId(), clientId, request.role(), request.shopId(), scopes, issuer);
         return CredentialSecretDto.shown(credential, secret, tokenEndpoint);
     }
@@ -266,7 +266,7 @@ public class IntegrationCredentialService {
         }
         credential.rotated(caller, OffsetDateTime.now(ZoneOffset.UTC));
         repository.saveAndFlush(credential);
-        log.info("event=credential_rotated tenant={} id={} clientId={} by={}",
+        log.info("event=integration_client_rotated tenant={} id={} clientId={} by={}",
                 tenantId, credential.getId(), credential.getKcClientId(), caller);
         return CredentialSecretDto.shown(credential, secret, tokenEndpoint);
     }
@@ -309,7 +309,7 @@ public class IntegrationCredentialService {
         } catch (KeycloakAdminException e) {
             throw unavailable("revoke", e);
         }
-        log.info("event=credential_revoked tenant={} id={} clientId={} grantsRemoved={} keycloakClient={} by={}",
+        log.info("event=integration_client_revoked tenant={} id={} clientId={} grantsRemoved={} keycloakClient={} by={}",
                 tenantId, credential.getId(), credential.getKcClientId(), grants.size(),
                 deleted ? "deleted" : "already-gone", caller);
     }
@@ -365,7 +365,7 @@ public class IntegrationCredentialService {
             String token = keycloak.obtainAdminToken();
             keycloak.findClientUuid(realm, clientId, token).ifPresent(uuid -> keycloak.deleteClient(realm, uuid, token));
         } catch (RuntimeException e) {
-            log.error("event=credential_orphan_sweep_failed realm={} clientId={} cause={} — delete it in Keycloak by hand",
+            log.error("event=integration_client_orphan_sweep_failed realm={} clientId={} cause={} — delete it in Keycloak by hand",
                     realm, clientId, e.getClass().getSimpleName());
         }
     }
@@ -379,7 +379,7 @@ public class IntegrationCredentialService {
     }
 
     private CredentialServiceUnavailableException unavailable(String operation, KeycloakAdminException e) {
-        log.warn("event=credential_keycloak_unavailable operation={} cause={} message={}",
+        log.warn("event=integration_client_keycloak_unavailable operation={} cause={} message={}",
                 operation, e.getClass().getSimpleName(), e.getMessage());
         return new CredentialServiceUnavailableException(e);
     }
@@ -425,9 +425,9 @@ public class IntegrationCredentialService {
             }
             try {
                 keycloak.deleteClient(realm, clientUuid, keycloak.obtainAdminToken());
-                log.warn("event=credential_create_rolled_back realm={} keycloak client deleted again", realm);
+                log.warn("event=integration_client_create_rolled_back realm={} keycloak client deleted again", realm);
             } catch (RuntimeException e) {
-                log.error("event=credential_create_cleanup_failed realm={} clientUuid={} cause={} — delete it in "
+                log.error("event=integration_client_create_cleanup_failed realm={} clientUuid={} cause={} — delete it in "
                         + "Keycloak by hand", realm, clientUuid, e.getClass().getSimpleName());
             }
             if (serviceAccountUser == null) {
@@ -440,7 +440,7 @@ public class IntegrationCredentialService {
                 });
                 shopAccessService.evictMembership(serviceAccountUser);
             } catch (RuntimeException e) {
-                log.error("event=credential_create_grant_cleanup_failed tenant={} user={} cause={}",
+                log.error("event=integration_client_create_grant_cleanup_failed tenant={} user={} cause={}",
                         tenantId, serviceAccountUser, e.getClass().getSimpleName());
             }
         }

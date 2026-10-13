@@ -101,7 +101,7 @@ public class CredentialLastUsedRecorder extends OncePerRequestFilter {
         }
         Optional<Use> use = lookup(tenant.get(), clientId);
         if (use.isPresent() && use.get().revoked()) {
-            log.info("event=credential_revoked_token_refused tenant={} clientId={}", tenant.get(), clientId);
+            log.info("event=integration_client_revoked_refused tenant={} clientId={}", tenant.get(), clientId);
             writeRevoked(response);
             return;
         }
@@ -114,7 +114,7 @@ public class CredentialLastUsedRecorder extends OncePerRequestFilter {
             return requiresNewReadOnly.execute(status -> repository.findByTenantIdAndKcClientId(tenantId, clientId)
                     .map(c -> new Use(c.getId(), c.isRevoked(), c.getLastUsedAt())));
         } catch (RuntimeException e) {
-            log.warn("event=credential_lookup_skipped tenant={} clientId={} cause={}",
+            log.warn("event=integration_client_lookup_skipped tenant={} clientId={} cause={}",
                     tenantId, clientId, e.getClass().getSimpleName());
             return Optional.empty();
         }
@@ -129,7 +129,7 @@ public class CredentialLastUsedRecorder extends OncePerRequestFilter {
         try {
             requiresNew.executeWithoutResult(status -> repository.touchLastUsed(tenantId, use.id(), now, cutoff));
         } catch (RuntimeException e) {
-            log.warn("event=credential_last_used_skipped tenant={} clientId={} cause={}",
+            log.warn("event=integration_client_last_used_skipped tenant={} clientId={} cause={}",
                     tenantId, clientId, e.getClass().getSimpleName());
         }
     }

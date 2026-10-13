@@ -30,6 +30,7 @@ import uk.jtoye.core.exception.BasketChangedException;
 import uk.jtoye.core.exception.BasketConfirmationRequiredException;
 import uk.jtoye.core.exception.DsarExportUnavailableException;
 import uk.jtoye.core.exception.DsarRateLimitExceededException;
+import uk.jtoye.core.exception.HumanOnlyActionException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
@@ -1213,6 +1214,20 @@ public class GlobalExceptionHandler {
         problem.setTitle("Credential client missing");
         problem.setType(URI.create("https://jtoye.uk/errors/credential-client-missing"));
         problem.setProperty("code", "CREDENTIAL_CLIENT_MISSING");
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (Q7, T-37-107) — credential and staff management called by a token that was not issued to
+     * the dashboard client (an integrator credential or a machine client). 403 with its own type, distinct
+     * from {@code shop-access-denied}: the caller's kind, not its rank, is refused.
+     */
+    @ExceptionHandler(HumanOnlyActionException.class)
+    public ProblemDetail handleHumanOnlyAction(HumanOnlyActionException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problem.setTitle("Human only");
+        problem.setType(URI.create("https://jtoye.uk/errors/human-only-action"));
+        problem.setProperty("code", "HUMAN_ONLY_ACTION");
         return problem;
     }
 

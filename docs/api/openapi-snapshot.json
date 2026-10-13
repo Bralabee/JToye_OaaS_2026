@@ -765,6 +765,55 @@
         ],
         "type" : "object"
       },
+      "CreateCredentialRequest" : {
+        "properties" : {
+          "name" : {
+            "description" : "A name the business recognises, e.g. 'Till' or 'Stock sync'",
+            "example" : "Till",
+            "maxLength" : 100,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "role" : {
+            "description" : "The shop role the credential holds: STAFF or SHOP_MANAGER. GROUP_ADMIN is refused.",
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "example" : "SHOP_MANAGER",
+            "type" : "string"
+          },
+          "scopes" : {
+            "description" : "The #206 client scopes the credential's tokens carry; a subset of catalog:read, catalog:write, orders:read, orders:write, customers:read, customers:write",
+            "example" : [
+              "catalog:read",
+              "orders:write"
+            ],
+            "items" : {
+              "minLength" : 1,
+              "type" : "string"
+            },
+            "maxItems" : 6,
+            "minItems" : 0,
+            "type" : "array"
+          },
+          "shopId" : {
+            "description" : "The one shop the role applies to; null means every shop of the business",
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required" : [
+          "name",
+          "role",
+          "scopes"
+        ],
+        "type" : "object"
+      },
       "CreateCustomerRequest" : {
         "description" : "Customer creation request",
         "properties" : {
@@ -1363,6 +1412,190 @@
           "eventTypes",
           "targetUrl"
         ],
+        "type" : "object"
+      },
+      "CredentialDto" : {
+        "properties" : {
+          "clientId" : {
+            "description" : "The Keycloak clientId: the client_id of the client-credentials grant and the azp of every token the credential mints",
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "createdBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "lastUsedAt" : {
+            "description" : "Best-effort and throttled: never more precise than lastUsedIntervalMinutes. Null means never used.",
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "revokedAt" : {
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "revokedBy" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "role" : {
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : "string"
+          },
+          "rotatedAt" : {
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "rotatedBy" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "scopes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "shopId" : {
+            "description" : "The shop the role applies to; null means every shop of the business",
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "status" : {
+            "enum" : [
+              "ACTIVE",
+              "REVOKED"
+            ],
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CredentialListResponse" : {
+        "properties" : {
+          "credentials" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CredentialDto"
+            },
+            "type" : "array"
+          },
+          "lastUsedIntervalMinutes" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CredentialSecretDto" : {
+        "properties" : {
+          "clientId" : {
+            "type" : "string"
+          },
+          "clientSecret" : {
+            "description" : "The client secret. Present only on the response that created or rotated it; null on an Idempotency-Key replay. Store it now: it is never shown again.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "createdBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "role" : {
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : "string"
+          },
+          "rotatedAt" : {
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "rotatedBy" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "scopes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "secretShown" : {
+            "description" : "True when this response carries the secret; false on a replay",
+            "type" : "boolean"
+          },
+          "shopId" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "status" : {
+            "enum" : [
+              "ACTIVE",
+              "REVOKED"
+            ],
+            "type" : "string"
+          },
+          "tokenEndpoint" : {
+            "description" : "The Keycloak token endpoint for the client-credentials grant",
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "CustomerDto" : {
@@ -6686,6 +6919,309 @@
         "summary" : "Update announcement",
         "tags" : [
           "Announcements"
+        ]
+      }
+    },
+    "/api/v1/credentials" : {
+      "get" : {
+        "description" : "Every credential of the business, newest first, revoked ones included: name, scopes, shop, role, who issued, rotated and revoked it and when, and lastUsedAt, which is best-effort and never more precise than lastUsedIntervalMinutes. Never carries a secret.",
+        "operationId" : "listCredentials",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialListResponse"
+                }
+              }
+            },
+            "description" : "The credentials"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List integrator credentials",
+        "tags" : [
+          "Credentials"
+        ]
+      },
+      "post" : {
+        "description" : "Creates a Keycloak client-credentials client for this business with exactly the given #206 scopes, and grants its service account the given role (STAFF or SHOP_MANAGER) on one shop or on every shop, so it is limited exactly like a person. The client secret is returned ONCE, with Cache-Control: no-store, and is never stored by J'Toye. With an Idempotency-Key, a same-key replay returns 200 with the credential, secretShown false and no secret.",
+        "operationId" : "createCredential",
+        "parameters" : [
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateCredentialRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialSecretDto"
+                }
+              }
+            },
+            "description" : "Idempotency-Key replay: the credential, without its secret"
+          },
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialSecretDto"
+                }
+              }
+            },
+            "description" : "Credential issued; the secret is in this response only"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Invalid request: a scope outside the six (credential-scope-invalid), GROUP_ADMIN (credential-role-invalid), or the Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The shop is not a shop of this business"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Keycloak did not answer (credential-service-unavailable); nothing was changed"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Issue an integrator credential",
+        "tags" : [
+          "Credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/{id}" : {
+      "delete" : {
+        "description" : "Deletes the Keycloak client (no new token can be minted), removes its service account's shop grant (its next request is refused) and records who revoked it and when. The credential stays in the list as REVOKED. Repeatable: revoking a revoked credential returns 204.",
+        "operationId" : "revokeCredential",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "204" : {
+            "description" : "Revoked (or already revoked)"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No credential of this business has that id"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Keycloak did not answer (credential-service-unavailable); nothing was changed"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Revoke a credential",
+        "tags" : [
+          "Credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/{id}/rotate" : {
+      "post" : {
+        "description" : "Keycloak generates a new secret and the old one stops working at once. The new secret is returned ONCE, with Cache-Control: no-store; who rotated it and when are recorded. Not idempotent: every call produces a new secret.",
+        "operationId" : "rotateCredential",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialSecretDto"
+                }
+              }
+            },
+            "description" : "Rotated; the new secret is in this response only"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No credential of this business has that id"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The credential is revoked (credential-revoked), or its Keycloak client no longer exists (credential-client-missing)"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Keycloak did not answer (credential-service-unavailable); nothing was changed"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Rotate a credential's secret",
+        "tags" : [
+          "Credentials"
         ]
       }
     },
@@ -13179,7 +13715,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "409" : {
             "content" : {
@@ -13294,7 +13830,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -13345,7 +13881,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -13413,7 +13949,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -13491,7 +14027,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -14892,6 +15428,10 @@
     {
       "description" : "Announcement management endpoints",
       "name" : "Announcements"
+    },
+    {
+      "description" : "Integrator API credentials: issue, list, rotate, revoke (Group admin only)",
+      "name" : "Credentials"
     },
     {
       "description" : "Customer relationship management endpoints",
