@@ -630,6 +630,55 @@ class IntegrationCredentialIntegrationTest {
                 .isEqualTo(1L);
     }
 
+    // ---- 37-46: what the Staff page needs to show a credential as an integration -------------------
+
+    @Test
+    @DisplayName("37-46: GET carries each credential's serviceAccountUserId, so the Staff page can name the row of "
+            + "its service account 'Integration: {name}' instead of an anonymous account")
+    void list_namesEachCredentialsServiceAccountUser() throws Exception {
+        createCredential("Till", List.of("catalog:read"), "STAFF", shopA);
+
+        MvcResult list = mockMvc.perform(get(PATH).with(vendorJwt(admin, tenantId))).andReturn();
+        assertThat(list.getResponse().getStatus()).as(body(list)).isEqualTo(200);
+        JsonNode c = nodes(json(list).path("credentials")).get(0);
+        assertThat(c.path("serviceAccountUserId").asString())
+                .as("the list names the service-account user its grant belongs to: %s", body(list))
+                .isEqualTo(serviceAccountUser.toString());
+    }
+
+    @Test
+    @DisplayName("37-46: the Staff API cannot revoke a credential's grant (409 staff-target-is-credential), so a "
+            + "credential can never be left ACTIVE with no access; a person's grant still revokes (204)")
+    void staffRevoke_ofACredentialsGrant_isRefused_andAPersonsStillRevokes() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:read"), "STAFF", shopA);
+        UUID grantId = inTenant(() -> jdbc.queryForObject(
+                "SELECT id FROM shop_staff WHERE tenant_id = ? AND user_id = ?", UUID.class,
+                tenantId, serviceAccountUser));
+
+        MvcResult refused = mockMvc.perform(delete("/api/v1/staff/" + grantId).with(vendorJwt(admin, tenantId)))
+                .andReturn();
+        assertThat(refused.getResponse().getStatus()).as(body(refused)).isEqualTo(409);
+        assertThat(json(refused).path("type").asString())
+                .isEqualTo("https://jtoye.uk/errors/staff-target-is-credential");
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE id = ?", Long.class, grantId)))
+                .as("the credential keeps the grant it was issued with")
+                .isEqualTo(1L);
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT revoked_at IS NULL FROM integration_credential WHERE id = ?", Boolean.class, credentialId)))
+                .as("and stays ACTIVE: its access is changed on the Developers page, by deleting it")
+                .isTrue();
+
+        // POSITIVE CONTROL: the refusal is about the credential, not about revoking in this tenant.
+        UUID person = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenantId, person, shopA, "STAFF", "person-" + person + "@example.com");
+        UUID personGrant = inTenant(() -> jdbc.queryForObject(
+                "SELECT id FROM shop_staff WHERE tenant_id = ? AND user_id = ?", UUID.class, tenantId, person));
+        MvcResult revoked = mockMvc.perform(delete("/api/v1/staff/" + personGrant).with(vendorJwt(admin, tenantId)))
+                .andReturn();
+        assertThat(revoked.getResponse().getStatus()).as(body(revoked)).isEqualTo(204);
+    }
+
     void expectHumanOnly(org.springframework.test.web.servlet.RequestBuilder request) throws Exception {
         MvcResult refused = mockMvc.perform(request).andReturn();
         assertThat(refused.getResponse().getStatus()).as("%s %s -> %s", refused.getRequest().getMethod(),
