@@ -15,4 +15,15 @@ export const DEVELOPERS_COPY = {
     "Give these to the system that will call J'Toye. It exchanges them for an access token at the token endpoint.",
   revealWarning:
     "This is the only time we'll show this secret. Store it somewhere safe. If you lose it, rotate it to get a new one; the old one stops working.",
+  emptyTitle: "No API credentials yet",
+  emptyBody:
+    "Create a credential to let your till, website or an AI agent read your menu or place orders, without sharing your password.",
+  notConfigured: "API credentials aren't available on this installation yet.",
+  notGroupAdmin: "Only a Group admin can manage API credentials.",
+  rotateTitle: (name: string) => `Rotate the secret for "${name}"?`,
+  rotateBody:
+    "The current secret stops working immediately. Anything using it will fail until you give it the new secret.",
+  deleteTitle: (name: string) => `Delete "${name}"?`,
+  deleteBody:
+    "It stops working immediately and can't be restored. To connect again you'd create a new credential.",
 } as const

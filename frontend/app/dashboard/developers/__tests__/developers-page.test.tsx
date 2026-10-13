@@ -94,10 +94,14 @@ beforeEach(() => {
   }) as never)
 })
 
-/** Open the create dialog from the page header. */
+/**
+ * Open the create dialog from the page header. The header button is disabled until the page knows
+ * creation is available (the list has loaded), so wait for that before pressing it.
+ */
 async function openCreate(): Promise<HTMLElement> {
   render(<DevelopersPage />)
   const buttons = await screen.findAllByRole("button", { name: "Create credential" })
+  await waitFor(() => expect(buttons[0]).toBeEnabled())
   fireEvent.click(buttons[0])
   return screen.findByRole("dialog")
 }
@@ -270,6 +274,17 @@ function problem(status: number, type: string, detail?: string, headers: Record<
   })
 }
 
+/**
+ * The loaded table. The loading skeleton carries the same region name and headers (by design, so
+ * nothing shifts), so "loaded" means the skeleton rows are gone and the region is still there.
+ */
+async function loadedTable(): Promise<HTMLElement> {
+  await waitFor(() =>
+    expect(document.querySelector('[data-testid="credential-skeleton-row"]')).toBeNull()
+  )
+  return screen.findByRole("region", { name: "API credentials table" })
+}
+
 /** The sm+ table region and the below-sm card list. */
 function tableRegion(): HTMLElement {
   return screen.getByRole("region", { name: "API credentials table" })
@@ -285,7 +300,7 @@ describe("Developers page: the credentials list and every page state (Task 2)", 
   it("lists each active credential with what it can do, its shop, role, last use and creator", async () => {
     listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
     render(<DevelopersPage />)
-    await screen.findByRole("region", { name: "API credentials table" })
+    await loadedTable()
 
     const heads = within(tableRegion())
       .getAllByRole("columnheader")
@@ -346,7 +361,7 @@ describe("Developers page: the credentials list and every page state (Task 2)", 
       return Promise.reject(new Error(`unexpected POST ${url}`))
     }) as never)
     render(<DevelopersPage />)
-    await screen.findByRole("region", { name: "API credentials table" })
+    await loadedTable()
 
     fireEvent.click(within(rowOf("Till system")).getByRole("button", { name: /^Rotate secret/ }))
     const confirm = await screen.findByRole("dialog", { name: 'Rotate the secret for "Till system"?' })
@@ -367,9 +382,18 @@ describe("Developers page: the credentials list and every page state (Task 2)", 
 
   it("deletes after a destructive confirm, removes the row and confirms with a toast", async () => {
     listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
-    mockedApiClient.delete.mockResolvedValue({ status: 204 } as never)
+    // As the server does (37-45): the credential stays in the list, as REVOKED.
+    mockedApiClient.delete.mockImplementation((async () => {
+      listBody = {
+        ...listBody,
+        credentials: listBody.credentials.map((c) =>
+          (c as { id: string }).id === CREDENTIAL_ID ? { ...(c as object), status: "REVOKED" } : c
+        ),
+      }
+      return { status: 204 }
+    }) as never)
     render(<DevelopersPage />)
-    await screen.findByRole("region", { name: "API credentials table" })
+    await loadedTable()
 
     fireEvent.click(within(rowOf("Till system")).getByRole("button", { name: /^Delete credential/ }))
     const confirm = await screen.findByRole("dialog", { name: 'Delete "Till system"?' })
@@ -393,7 +417,7 @@ describe("Developers page: the credentials list and every page state (Task 2)", 
       problem(409, "credential-client-missing", "The Keycloak client behind this credential no longer exists. Delete the credential and issue a new one.") as never
     )
     render(<DevelopersPage />)
-    await screen.findByRole("region", { name: "API credentials table" })
+    await loadedTable()
     fireEvent.click(within(rowOf("Till system")).getByRole("button", { name: /^Rotate secret/ }))
     const confirm = await screen.findByRole("dialog", { name: 'Rotate the secret for "Till system"?' })
     await act(async () => {
@@ -475,7 +499,7 @@ describe("Developers page: the credentials list and every page state (Task 2)", 
   it("below sm each credential is a <dl> card; from sm the table keeps its focusable region", async () => {
     listBody = { credentials: populated(), lastUsedIntervalMinutes: 15 }
     const { container } = render(<DevelopersPage />)
-    const region = await screen.findByRole("region", { name: "API credentials table" })
+    const region = await loadedTable()
     expect(region).toHaveAttribute("tabindex", "0")
 
     const table = container.querySelector('[data-testid="credentials-table"]')
