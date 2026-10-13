@@ -290,6 +290,15 @@ jtoye:
       # a request: a link built from an attacker-supplied Host header would hand a live invitation to a
       # collector. Every runtime supplies its own web origin (compose, .env.example, k8s app-config).
       accept-base-url: ${STAFF_INVITE_ACCEPT_BASE_URL:http://localhost:3000/invite}
+  # Phase 37-45 (D-22..D-24) — integrator credentials. Config KEYS, not secrets. A credential is a Keycloak
+  # service-account client, so the feature needs the jtoye.keycloak.admin seam; with it off every
+  # /api/v1/credentials call is the typed 400 credentials-not-configured.
+  credentials:
+    # How coarse a credential's last_used_at is: CredentialLastUsedRecorder writes it at most once per
+    # interval per credential (best-effort, its own transaction, never failing the request). The list
+    # response states the interval, so the Developers page can say "used within the last 15 minutes"
+    # rather than imply a precision the column does not have. ISO-8601 duration.
+    last-used-interval: ${CREDENTIAL_LAST_USED_INTERVAL:PT15M}
   # Phase 31 (LGL-01, D-16/D-17) — the consumer data-subject-request desk. Config KEYS, not
   # secrets. 31-05 owns the intake, 31-09 the verification gate and the background fan-out.
   gdpr:

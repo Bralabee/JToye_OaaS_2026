@@ -43,6 +43,10 @@ import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderCapExceededException;
 import uk.jtoye.core.exception.BulkCancelTooLargeException;
+import uk.jtoye.core.exception.CredentialRoleInvalidException;
+import uk.jtoye.core.exception.CredentialScopeInvalidException;
+import uk.jtoye.core.exception.CredentialServiceUnavailableException;
+import uk.jtoye.core.exception.CredentialsNotConfiguredException;
 import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
@@ -1126,6 +1130,63 @@ public class GlobalExceptionHandler {
         problem.setTitle("Account service unavailable");
         problem.setType(URI.create("https://jtoye.uk/errors/staff-invite-account-service-unavailable"));
         problem.setProperty("code", "STAFF_INVITE_ACCOUNT_SERVICE_UNAVAILABLE");
+        problem.setProperty("retryAfterSeconds", 60);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "60")
+                .cacheControl(CacheControl.noStore())
+                .body(problem);
+    }
+
+    /**
+     * Phase 37-45 (D-22) — integrator credentials need the Keycloak admin seam, and it is not configured.
+     * 400 with its own type, the #102 deprovision precedent; the Developers page hides creation on it.
+     */
+    @ExceptionHandler(CredentialsNotConfiguredException.class)
+    public ProblemDetail handleCredentialsNotConfigured(CredentialsNotConfiguredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Credentials not configured");
+        problem.setType(URI.create("https://jtoye.uk/errors/credentials-not-configured"));
+        problem.setProperty("code", "CREDENTIALS_NOT_CONFIGURED");
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (D-22, Q7) — a credential scope outside the six #206 scopes. 400 naming the refused scopes
+     * and the allowed list, so a client corrects the request from the body alone.
+     */
+    @ExceptionHandler(CredentialScopeInvalidException.class)
+    public ProblemDetail handleCredentialScopeInvalid(CredentialScopeInvalidException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Credential scope not allowed");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-scope-invalid"));
+        problem.setProperty("code", "CREDENTIAL_SCOPE_INVALID");
+        problem.setProperty("invalidScopes", ex.getInvalidScopes());
+        problem.setProperty("allowedScopes", ex.getAllowedScopes());
+        return problem;
+    }
+
+    /** Phase 37-45 (D-23, Q7, T-37-107) — a credential can never hold GROUP_ADMIN. 400 naming the allowed roles. */
+    @ExceptionHandler(CredentialRoleInvalidException.class)
+    public ProblemDetail handleCredentialRoleInvalid(CredentialRoleInvalidException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Credential role not allowed");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-role-invalid"));
+        problem.setProperty("code", "CREDENTIAL_ROLE_INVALID");
+        problem.setProperty("allowedRoles", CredentialRoleInvalidException.ALLOWED_ROLES);
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (D-22) — Keycloak did not answer a credential operation. 503 with Retry-After; nothing was
+     * changed. The cause is logged by type only where it is raised.
+     */
+    @ExceptionHandler(CredentialServiceUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleCredentialServiceUnavailable(CredentialServiceUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+                CredentialServiceUnavailableException.DETAIL);
+        problem.setTitle("Account service unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-service-unavailable"));
+        problem.setProperty("code", "CREDENTIAL_SERVICE_UNAVAILABLE");
         problem.setProperty("retryAfterSeconds", 60);
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .header(HttpHeaders.RETRY_AFTER, "60")
