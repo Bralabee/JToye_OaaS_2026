@@ -484,6 +484,204 @@ class KeycloakAdminClientTest {
                 new VendorRealmUser(id2, "staff@x.test", null));
     }
 
+    // ---- 37-44 (D-22, RWO-035): integrator credentials are Keycloak service-account clients ------
+
+    static final UUID CRED_TENANT = UUID.fromString("6f1c2b8e-4a5d-4e7f-9b0a-1c2d3e4f5a6b");
+    static final KeycloakClientSpec CRED_SPEC = new KeycloakClientSpec(
+            "jtoye-int-k3x9q2", CRED_TENANT, List.of("orders:write", "catalog:read"));
+
+    /**
+     * The create is asserted BY CONTENT, field by field AND as a whole: a dropped audience mapper (the
+     * #88 AudienceValidator then 401s every token), a tenant claim with the wrong value or not in the
+     * access token (T-37-104: a credential acting for another tenant), an enabled browser or password
+     * flow, a public client, or a Jackson-2 node written as a bean each fail here. The UUID comes from
+     * the Location header.
+     */
+    @Test
+    void createClient_postsAServiceAccountClient_withTenantAndAudienceMappers_byContent_andReturnsTheUuidFromLocation() {
+        Fixture f = newFixture();
+        String uuid = UUID.randomUUID().toString();
+        AtomicReference<String> postBody = new AtomicReference<>();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/clients"))
+                .andExpect(method(org.springframework.http.HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(request -> postBody.set(((MockClientHttpRequest) request).getBodyAsString()))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .location(java.net.URI.create(BASE + "/admin/realms/jtoye-dev/clients/" + uuid)));
+
+        String created = f.client().createClient(VENDOR_REALM, CRED_SPEC, "tok");
+
+        assertClientBodyByContent(postBody.get(), CRED_SPEC);
+        assertThat(created).as("the client UUID is the Location header's last segment").isEqualTo(uuid);
+        f.server().verify();
+    }
+
+    /** Shared so the audience-mapper break arm runs the very same assertion. */
+    static void assertClientBodyByContent(String body, KeycloakClientSpec spec) {
+        assertThat(body).as("captured POST /clients body").isNotBlank();
+        JsonNode node = J3.readTree(body);
+        assertThat(node.isObject()).as("POST body must be a JSON object: %s", body).isTrue();
+        assertThat(node.propertyNames()).as("not a JsonNode serialized as a bean: %s", body)
+                .doesNotContainAnyElementsOf(GARBAGE_KEYS);
+
+        // integration-orders-rw's wiring (infra/keycloak/realm-export.template.json), field by field.
+        assertThat(node.path("clientId").asString()).isEqualTo(spec.clientId());
+        assertThat(node.path("serviceAccountsEnabled").booleanValue()).as("serviceAccountsEnabled").isTrue();
+        assertThat(node.path("standardFlowEnabled").isBoolean() && !node.path("standardFlowEnabled").booleanValue())
+                .as("standardFlowEnabled false: no browser login").isTrue();
+        assertThat(node.path("directAccessGrantsEnabled").isBoolean()
+                && !node.path("directAccessGrantsEnabled").booleanValue())
+                .as("directAccessGrantsEnabled false: no password grant").isTrue();
+        assertThat(node.path("publicClient").isBoolean() && !node.path("publicClient").booleanValue())
+                .as("publicClient false: a confidential client").isTrue();
+        assertThat(node.path("clientAuthenticatorType").asString()).isEqualTo("client-secret");
+        assertThat(node.has("secret")).as("Keycloak generates the secret; core never sends one").isFalse();
+
+        // The requested scopes, and nothing else, are the default client scopes.
+        List<String> scopes = new java.util.ArrayList<>();
+        node.path("defaultClientScopes").values().forEach(s -> scopes.add(s.asString()));
+        assertThat(scopes).as("defaultClientScopes").containsExactlyElementsOf(spec.scopes());
+
+        // T-37-104: the tenant claim is HARD-CODED to the issuing tenant, in the access token only.
+        JsonNode tenant = mapperNamed(node, "tenant-id-mapper");
+        assertThat(tenant.path("protocol").asString()).isEqualTo("openid-connect");
+        assertThat(tenant.path("protocolMapper").asString()).isEqualTo("oidc-hardcoded-claim-mapper");
+        JsonNode tc = tenant.path("config");
+        assertThat(tc.path("claim.name").asString()).isEqualTo("tenant_id");
+        assertThat(tc.path("claim.value").asString()).as("claim.value = the issuing tenant")
+                .isEqualTo(spec.tenantId().toString());
+        assertThat(tc.path("jsonType.label").asString()).isEqualTo("String");
+        assertThat(tc.path("access.token.claim").asString()).isEqualTo("true");
+        assertThat(tc.path("id.token.claim").asString()).isEqualTo("false");
+        assertThat(tc.path("userinfo.token.claim").asString()).isEqualTo("false");
+
+        // T-37-105: aud=core-api is mandatory, or the #88 AudienceValidator 401s every token.
+        JsonNode aud = mapperNamed(node, "core-api-audience-mapper");
+        assertThat(aud.path("protocol").asString()).isEqualTo("openid-connect");
+        assertThat(aud.path("protocolMapper").asString()).isEqualTo("oidc-audience-mapper");
+        assertThat(aud.path("config").path("included.client.audience").asString()).isEqualTo("core-api");
+        assertThat(aud.path("config").path("access.token.claim").asString()).isEqualTo("true");
+
+        assertThat(node).as("the whole representation, nothing more").isEqualTo(expectedClientRep(spec));
+    }
+
+    private static JsonNode mapperNamed(JsonNode rep, String name) {
+        JsonNode mappers = rep.path("protocolMappers");
+        assertThat(mappers.isArray()).as("protocolMappers must be a JSON array").isTrue();
+        for (JsonNode m : mappers.values()) {
+            if (name.equals(m.path("name").asString())) {
+                return m;
+            }
+        }
+        throw new AssertionError("no protocol mapper named " + name + " in " + mappers);
+    }
+
+    /** The exact representation: integration-orders-rw's flags, the two mappers, the scopes. */
+    static ObjectNode expectedClientRep(KeycloakClientSpec spec) {
+        ObjectNode rep = J3.createObjectNode();
+        rep.put("clientId", spec.clientId());
+        rep.put("enabled", true);
+        rep.put("protocol", "openid-connect");
+        rep.put("clientAuthenticatorType", "client-secret");
+        rep.put("publicClient", false);
+        rep.put("bearerOnly", false);
+        rep.put("consentRequired", false);
+        rep.put("standardFlowEnabled", false);
+        rep.put("implicitFlowEnabled", false);
+        rep.put("directAccessGrantsEnabled", false);
+        rep.put("serviceAccountsEnabled", true);
+        rep.put("frontchannelLogout", false);
+        rep.put("fullScopeAllowed", true);
+        rep.putArray("redirectUris");
+        rep.putArray("webOrigins");
+        ArrayNode mappers = rep.putArray("protocolMappers");
+        ObjectNode tenant = mappers.addObject();
+        tenant.put("name", "tenant-id-mapper");
+        tenant.put("protocol", "openid-connect");
+        tenant.put("protocolMapper", "oidc-hardcoded-claim-mapper");
+        tenant.put("consentRequired", false);
+        ObjectNode tc = tenant.putObject("config");
+        tc.put("claim.name", "tenant_id");
+        tc.put("claim.value", spec.tenantId().toString());
+        tc.put("jsonType.label", "String");
+        tc.put("access.token.claim", "true");
+        tc.put("id.token.claim", "false");
+        tc.put("userinfo.token.claim", "false");
+        ObjectNode aud = mappers.addObject();
+        aud.put("name", "core-api-audience-mapper");
+        aud.put("protocol", "openid-connect");
+        aud.put("protocolMapper", "oidc-audience-mapper");
+        aud.put("consentRequired", false);
+        ObjectNode ac = aud.putObject("config");
+        ac.put("included.client.audience", "core-api");
+        ac.put("access.token.claim", "true");
+        ac.put("id.token.claim", "false");
+        ac.put("introspection.token.claim", "true");
+        ArrayNode defaults = rep.putArray("defaultClientScopes");
+        spec.scopes().forEach(defaults::add);
+        rep.putArray("optionalClientScopes");
+        return rep;
+    }
+
+    /** Keycloak normally answers 201 + Location; without one the UUID is read back by clientId. */
+    @Test
+    void createClient_withoutLocation_readsTheUuidBackByClientId() {
+        Fixture f = newFixture();
+        String uuid = UUID.randomUUID().toString();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/clients"))
+                .andExpect(method(org.springframework.http.HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CREATED));
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/clients?clientId=jtoye-int-k3x9q2"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess("[{\"id\":\"" + uuid + "\",\"clientId\":\"jtoye-int-k3x9q2\"}]",
+                        MediaType.APPLICATION_JSON));
+
+        String created = f.client().createClient(VENDOR_REALM, CRED_SPEC, "tok");
+
+        assertThat(created).as("the UUID read back by the exact clientId").isEqualTo(uuid);
+        f.server().verify();
+    }
+
+    /**
+     * Keycloak's {@code ?clientId=} is an exact match by default, but a row whose clientId differs is
+     * still never returned: only the exact clientId's id counts, and none is an empty result.
+     */
+    @Test
+    void findClientUuid_returnsOnlyTheExactClientIdsUuid_andEmptyWhenNone() {
+        Fixture f = newFixture();
+        String uuid = UUID.randomUUID().toString();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/clients?clientId=jtoye-int-k3x9q2"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess("[{\"id\":\"" + UUID.randomUUID() + "\",\"clientId\":\"jtoye-int-k3x9q2-other\"},"
+                        + "{\"id\":\"" + uuid + "\",\"clientId\":\"jtoye-int-k3x9q2\"}]", MediaType.APPLICATION_JSON));
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/clients?clientId=jtoye-int-absent"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        assertThat(f.client().findClientUuid(VENDOR_REALM, "jtoye-int-k3x9q2", "tok")).contains(uuid);
+        assertThat(f.client().findClientUuid(VENDOR_REALM, "jtoye-int-absent", "tok")).isEmpty();
+        f.server().verify();
+    }
+
+    /** D-23: the service-account user's id is the token {@code sub} the shop_staff grant is keyed on. */
+    @Test
+    void getServiceAccountUserId_readsTheServiceAccountUsersId() {
+        Fixture f = newFixture();
+        String clientUuid = UUID.randomUUID().toString();
+        String saUserId = UUID.randomUUID().toString();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-dev/clients/" + clientUuid + "/service-account-user"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess("{\"id\":\"" + saUserId + "\",\"username\":\"service-account-jtoye-int-k3x9q2\","
+                        + "\"enabled\":true}", MediaType.APPLICATION_JSON));
+
+        assertThat(f.client().getServiceAccountUserId(VENDOR_REALM, clientUuid, "tok")).isEqualTo(saUserId);
+        f.server().verify();
+    }
+
     @Test
     void serverError_propagatesAsKeycloakAdminException() {
         Fixture f = newFixture();

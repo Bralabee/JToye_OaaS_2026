@@ -374,6 +374,20 @@ public class KeycloakAdminClient {
         return v == null || v.isNull() ? null : v.asString();
     }
 
+    // ---- 37-44 (D-22): integrator credential clients. RED stubs, implemented in the GREEN commit. ----
+
+    public String createClient(String realm, KeycloakClientSpec spec, String token) {
+        return null;
+    }
+
+    public java.util.Optional<String> findClientUuid(String realm, String clientId, String token) {
+        return java.util.Optional.empty();
+    }
+
+    public String getServiceAccountUserId(String realm, String clientUuid, String token) {
+        return null;
+    }
+
     /** Revokes the user's active sessions ({@code POST .../users/{id}/logout}). */
     public void logoutUser(String realm, String userId, String token) {
         try {
