@@ -12,6 +12,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
+import uk.jtoye.core.exception.CredentialClientMissingException;
+import uk.jtoye.core.exception.CredentialRevokedException;
 import uk.jtoye.core.exception.CredentialRoleInvalidException;
 import uk.jtoye.core.exception.CredentialScopeInvalidException;
 import uk.jtoye.core.exception.CredentialServiceUnavailableException;
@@ -32,6 +34,7 @@ import uk.jtoye.core.tenant.keycloak.KeycloakAdminClient;
 import uk.jtoye.core.tenant.keycloak.KeycloakAdminException;
 import uk.jtoye.core.tenant.keycloak.KeycloakAdminProperties;
 import uk.jtoye.core.tenant.keycloak.KeycloakClientExistsException;
+import uk.jtoye.core.tenant.keycloak.KeycloakClientNotFoundException;
 import uk.jtoye.core.tenant.keycloak.KeycloakClientSpec;
 
 import java.security.SecureRandom;
@@ -204,7 +207,7 @@ public class IntegrationCredentialService {
         staffManagementService.persistNewGrant(tenantId, serviceAccountUser, request.shopId(), request.role(), issuer);
         shopAccessService.evictMembershipAfterCommit(serviceAccountUser);
 
-        log.info("event=credential_issued tenant={} credential={} clientId={} role={} shop={} scopes={} by={}",
+        log.info("event=credential_issued tenant={} id={} clientId={} role={} shop={} scopes={} by={}",
                 tenantId, credential.getId(), clientId, request.role(), request.shopId(), scopes, issuer);
         return CredentialSecretDto.shown(credential, secret, tokenEndpoint);
     }
@@ -232,8 +235,93 @@ public class IntegrationCredentialService {
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Rotate
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Rotates the secret (D-22): Keycloak generates a new one and the old one stops working at once. The new
+     * secret is returned once; who and when are stamped (D-24). A revoked credential is 409
+     * {@code credential-revoked}.
+     *
+     * <p>Keycloak first, then the stamp: if the stamp then fails, the secret has still rotated and the caller
+     * rotates again, which is safe. The other order could stamp a rotation that never happened.
+     */
+    public CredentialSecretDto rotate(UUID id) {
+        requireConfigured();
+        shopAccessService.requireGroupAdmin();
+        UUID tenantId = currentTenantId();
+        UUID caller = currentCaller();
+        IntegrationCredential credential = find(id, tenantId);
+        if (credential.isRevoked()) {
+            throw new CredentialRevokedException();
+        }
+        String realm = keycloakProperties.getVendorRealm();
+        String secret;
+        try {
+            secret = keycloak.regenerateClientSecret(realm, credential.getKcClientUuid().toString(), adminToken());
+        } catch (KeycloakClientNotFoundException e) {
+            throw new CredentialClientMissingException();
+        } catch (KeycloakAdminException e) {
+            throw unavailable("rotate", e);
+        }
+        credential.rotated(caller, OffsetDateTime.now(ZoneOffset.UTC));
+        repository.saveAndFlush(credential);
+        log.info("event=credential_rotated tenant={} id={} clientId={} by={}",
+                tenantId, credential.getId(), credential.getKcClientId(), caller);
+        return CredentialSecretDto.shown(credential, secret, tokenEndpoint);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Revoke
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Revokes the credential (D-22, D-24): its service account's grant is deleted and its membership evicted
+     * after commit, so its next request is refused; who and when are stamped; and the Keycloak client is
+     * deleted, so it can mint no new token. Repeatable: revoking a revoked credential changes nothing.
+     *
+     * <p>The database writes are flushed first and Keycloak is called last, inside the transaction: a
+     * Keycloak failure rolls the revocation back (a 503, nothing changed), and a Keycloak success followed by
+     * a failed commit leaves a client that is already gone, which the next revoke finishes ({@code false}
+     * from {@code deleteClient} is the goal state).
+     */
+    public void revoke(UUID id) {
+        requireConfigured();
+        shopAccessService.requireGroupAdmin();
+        UUID tenantId = currentTenantId();
+        UUID caller = currentCaller();
+        IntegrationCredential credential = find(id, tenantId);
+        if (credential.isRevoked()) {
+            return;
+        }
+        UUID serviceAccountUser = credential.getServiceAccountUserId();
+        List<ShopStaff> grants = shopStaffRepository.findByTenantIdAndUserId(tenantId, serviceAccountUser);
+        shopStaffRepository.deleteAll(grants);
+        shopStaffRepository.flush();
+        shopAccessService.evictMembershipAfterCommit(serviceAccountUser);
+        credential.revoke(caller, OffsetDateTime.now(ZoneOffset.UTC));
+        repository.saveAndFlush(credential);
+
+        String realm = keycloakProperties.getVendorRealm();
+        boolean deleted;
+        try {
+            deleted = keycloak.deleteClient(realm, credential.getKcClientUuid().toString(), adminToken());
+        } catch (KeycloakAdminException e) {
+            throw unavailable("revoke", e);
+        }
+        log.info("event=credential_revoked tenant={} id={} clientId={} grantsRemoved={} keycloakClient={} by={}",
+                tenantId, credential.getId(), credential.getKcClientId(), grants.size(),
+                deleted ? "deleted" : "already-gone", caller);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    private IntegrationCredential find(UUID id, UUID tenantId) {
+        return repository.findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Credential not found: " + id));
+    }
 
     private void requireConfigured() {
         if (!keycloakProperties.configured()) {

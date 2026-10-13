@@ -43,6 +43,8 @@ import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderCapExceededException;
 import uk.jtoye.core.exception.BulkCancelTooLargeException;
+import uk.jtoye.core.exception.CredentialClientMissingException;
+import uk.jtoye.core.exception.CredentialRevokedException;
 import uk.jtoye.core.exception.CredentialRoleInvalidException;
 import uk.jtoye.core.exception.CredentialScopeInvalidException;
 import uk.jtoye.core.exception.CredentialServiceUnavailableException;
@@ -1192,6 +1194,26 @@ public class GlobalExceptionHandler {
                 .header(HttpHeaders.RETRY_AFTER, "60")
                 .cacheControl(CacheControl.noStore())
                 .body(problem);
+    }
+
+    /** Phase 37-45 (D-22, D-24) — a revoked credential cannot be rotated. 409; issue a new credential instead. */
+    @ExceptionHandler(CredentialRevokedException.class)
+    public ProblemDetail handleCredentialRevoked(CredentialRevokedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Credential revoked");
+        problem.setType(URI.create(CredentialRevokedException.TYPE));
+        problem.setProperty("code", "CREDENTIAL_REVOKED");
+        return problem;
+    }
+
+    /** Phase 37-45 (D-22) — the credential's Keycloak client was deleted outside J'Toye. 409; delete and reissue. */
+    @ExceptionHandler(CredentialClientMissingException.class)
+    public ProblemDetail handleCredentialClientMissing(CredentialClientMissingException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Credential client missing");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-client-missing"));
+        problem.setProperty("code", "CREDENTIAL_CLIENT_MISSING");
+        return problem;
     }
 
     @ExceptionHandler(Exception.class)

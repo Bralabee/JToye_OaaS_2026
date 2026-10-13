@@ -10,7 +10,9 @@ import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -20,6 +22,8 @@ import uk.jtoye.core.common.idempotency.Idempotent;
 import uk.jtoye.core.integration.credential.IntegrationCredentialService.CredentialListResponse;
 import uk.jtoye.core.integration.credential.dto.CreateCredentialRequest;
 import uk.jtoye.core.integration.credential.dto.CredentialSecretDto;
+
+import java.util.UUID;
 
 /**
  * Integrator credentials (D-22, D-23, D-24; RWO-035): a Group admin issues a scoped API credential instead of
@@ -72,6 +76,43 @@ public class IntegrationCredentialController {
         return ResponseEntity.status(credential.secretShown() ? HttpStatus.CREATED : HttpStatus.OK)
                 .cacheControl(CacheControl.noStore())
                 .body(credential);
+    }
+
+    @PostMapping("/{id}/rotate")
+    @Operation(summary = "Rotate a credential's secret",
+            description = "Keycloak generates a new secret and the old one stops working at once. The new secret "
+                    + "is returned ONCE, with Cache-Control: no-store; who rotated it and when are recorded. Not "
+                    + "idempotent: every call produces a new secret.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Rotated; the new secret is in this response only"),
+            @ApiResponse(responseCode = "400", description = "The Keycloak admin connection is not configured (credentials-not-configured)"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a Group admin (shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "No credential of this business has that id"),
+            @ApiResponse(responseCode = "409", description = "The credential is revoked (credential-revoked), or its "
+                    + "Keycloak client no longer exists (credential-client-missing)"),
+            @ApiResponse(responseCode = "503", description = "Keycloak did not answer (credential-service-unavailable); nothing was changed")
+    })
+    public ResponseEntity<CredentialSecretDto> rotate(@PathVariable UUID id) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(credentialService.rotate(id));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Revoke a credential",
+            description = "Deletes the Keycloak client (no new token can be minted), removes its service account's "
+                    + "shop grant (its next request is refused) and records who revoked it and when. The credential "
+                    + "stays in the list as REVOKED. Repeatable: revoking a revoked credential returns 204.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Revoked (or already revoked)"),
+            @ApiResponse(responseCode = "400", description = "The Keycloak admin connection is not configured (credentials-not-configured)"),
+            @ApiResponse(responseCode = "403", description = "Caller is not a Group admin (shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "No credential of this business has that id"),
+            @ApiResponse(responseCode = "503", description = "Keycloak did not answer (credential-service-unavailable); nothing was changed")
+    })
+    public ResponseEntity<Void> revoke(@PathVariable UUID id) {
+        credentialService.revoke(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping
