@@ -77,8 +77,39 @@ type BatchSyncRequest struct {
 // edge-go/docs/swagger.json. Its snake_case names are a published contract
 // and are deliberately NOT changed to match core.
 type BatchSyncResponse struct {
-	Status         string `json:"status"`
-	ProcessedCount int    `json:"processed_count"`
+	Status         string           `json:"status"`
+	ProcessedCount int              `json:"processed_count"`
+	Results        []SyncItemResult `json:"results"`
+
+	// HTTPStatus is the success status core answered with (200, or 202
+	// from an older core). Not part of the body.
+	HTTPStatus int `json:"-"`
+}
+
+// SyncItemResult is the outcome of one batch item, exactly as core reports
+// it (core-java uk.jtoye.core.sync.dto.SyncItemResult). Every name is a
+// single word, so core's wire names and the edge's published names are the
+// same and one type serves both directions.
+type SyncItemResult struct {
+	Index   int    `json:"index"`
+	Type    string `json:"type"`
+	Key     string `json:"key"`
+	Outcome string `json:"outcome"`
+	ID      string `json:"id,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// CoreProblemError is a 4xx application/problem+json refusal from core.
+type CoreProblemError struct {
+	Status      int
+	ContentType string
+	RetryAfter  string
+	Body        []byte
+}
+
+func (e *CoreProblemError) Error() string {
+	return fmt.Sprintf("core refused the request: %d %s", e.Status, e.ContentType)
 }
 
 // coreBatchSyncResponse is core's wire shape for the same payload.
