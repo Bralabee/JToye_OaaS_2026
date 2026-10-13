@@ -722,3 +722,33 @@ where it must be resolved.
   `citations_in` failed, for example with a sentinel file or `set -o pipefail` plus a captured status, and show the
   fail direction with a PATH whose python3 exits 1. Not fixed at the gate: the gate script is outside 37-47's
   files and changing a gate needs its own break arms.
+
+## From 37-47 (the 37-E gate, Task 3, live)
+
+- **An integrator can order a product the shop has switched off; through MCP it lands PENDING in the kitchen (found in 37-47, open, decide before the 37-E PR merges).**
+  status: open
+  **What:** `OrderService.createOrder` checks stock quantity but not `available`; origin/main has no `getAvailable`
+  check there either, so the vendor/REST DRAFT path has always accepted an unavailable product. Since 37-42 an MCP
+  `create_order` submits, so the order goes straight to the New lane with no vendor review: measured live as
+  `ORD-00000000-20261013-C3D21C40`, 201 PENDING for a product with `available=false` (cancelled). The storefront
+  refuses the same line (37-33), and 37-40's stated intent was that the dashboard, REST API and MCP refuse what the
+  storefront refuses (evidence 37-47 2.7 P2-KYL-P3 and 2.10 item 1).
+  **Suggested fix:** `createOrder` refuses an unavailable product with the same 404 as a shop-less one, at least
+  when `submit` is true, plus an IT with RED first; a review-fix commit on `phase-37-e-integrators`. Not fixed at
+  the gate because it changes what a vendor may order from the dashboard.
+
+- **The Developers page header overflows at 768 px (found in 37-47, open).**
+  status: open
+  **What:** at 768 the dashboard's main column is 512 px. The header row (`sm:flex-row`, no wrap) puts "Create
+  credential" at x 638-815 in a 768 viewport, and `main` scrolls 559 in 512, so the primary action is clipped until
+  the reader scrolls sideways. `/dashboard/webhooks` and `/dashboard/staff` measure 512/512 at the same width, and
+  this page is fine at 1024 and 1280 (evidence 37-47 2.10 item 2, screen `37-47-screens/developers-list-768.png`).
+  **Suggested fix:** `lg:flex-row`, or `flex-wrap` with `min-w-0` on the title block; re-shoot 768 and add the route
+  to a browser overflow check. A 37-46 defect; a candidate review-fix on the PR branch.
+
+- **Revoked credentials stay on the Staff page as "Integration: {name} · No access" (found in 37-47, open, owner's call).**
+  status: open
+  **What:** a credential that made at least one call keeps its `user_directory` row after revoke deletes its
+  Keycloak client and user, so the Staff page lists it indefinitely. 37-47 left four such rows on the dev tenant.
+  Not a breach of any stated contract (`user_directory` is an observation cache); whether revoke should also drop
+  the row, or the Staff page hide revoked integrations, is a product decision.
