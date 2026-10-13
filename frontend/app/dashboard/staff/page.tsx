@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import { formatDistanceToNow } from "date-fns"
 import { ShieldCheck, UserPlus, Users, AlertTriangle, Mail } from "lucide-react"
 import {
@@ -39,6 +40,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { describeLoadError } from "@/lib/human-error"
 import { fetchMyShops } from "@/lib/shops-api"
+import { CREDENTIAL_PROBLEMS, listCredentials } from "@/lib/credentials-api"
 import {
   cancelStaffInvite,
   fetchStaff,
@@ -79,6 +81,20 @@ import type { Shop } from "@/types/api"
  * form below it still serves people who already have. "Pending invitations" sits last
  * and is not rendered when no link is open or re-sendable (UI-SPEC § B1).
  */
+
+/** Axios error → its RFC 7807 problem `type`, or undefined. */
+function problemType(err: unknown): string | undefined {
+  if (err && typeof err === "object" && "response" in err) {
+    const t = (err as { response?: { data?: { type?: unknown } } }).response?.data?.type
+    return typeof t === "string" ? t : undefined
+  }
+  return undefined
+}
+
+/** True for the server's refusal to grant to, or revoke from, a credential's service account (37-45/46). */
+function isCredentialTarget(err: unknown): boolean {
+  return !!problemType(err)?.endsWith(`/${CREDENTIAL_PROBLEMS.staffTargetIsCredential}`)
+}
 
 /** Axios error → HTTP status, or undefined for a non-HTTP failure. */
 function httpStatus(err: unknown): number | undefined {
@@ -130,6 +146,19 @@ const PEOPLE_DESCRIPTION =
 
 /** A grant holder with no directory row: a service account (UI-SPEC § B1 rows). */
 const INTEGRATION_ACCOUNT = "Integration account"
+
+/**
+ * 37-46 (UI-SPEC § B1 rows): a credential's service account, named by the credential it belongs to
+ * when the Developers list knows it. Its row offers no Remove access and no Grant access: removing
+ * its grant would leave the credential working with no access (the Developers page would then
+ * overstate what it can do), and the server refuses both anyway (409 staff-target-is-credential).
+ * Its access is changed on the Developers page, by deleting it and creating a new one.
+ */
+const integrationName = (credentialName: string) => `Integration: ${credentialName}`
+const CREDENTIAL_ROW_LINK = "Manage on the Developers page"
+const CREDENTIAL_TARGET_COPY =
+  "This is an API credential, not a person, so its access can't be changed here. Delete it on the " +
+  "Developers page and create a new one."
 
 /**
  * Field labels, shared by the form and by its loading counterpart — the labels
@@ -301,8 +330,13 @@ function lastSeenLabel(lastSeen: string | null): string {
   return `Last seen ${formatDistanceToNow(parsed, { addSuffix: true })}`
 }
 
-/** The name a person is shown by: display name, else masked email, else integration. */
-function personName(p: StaffPerson): string {
+/**
+ * The name a person is shown by: the credential it belongs to (37-46), else display name, else
+ * masked email, else "Integration account" (a grant holder nobody has named).
+ */
+function personName(p: StaffPerson, credentialBySa?: Map<string, string>): string {
+  const credential = credentialBySa?.get(p.userId)
+  if (credential) return integrationName(credential)
   return p.displayName || p.maskedEmail || INTEGRATION_ACCOUNT
 }
 
@@ -333,6 +367,12 @@ export default function StaffPage() {
   /** The caller's own Keycloak `sub` (from GET /api/v1/staff/me via fetchMyShops),
    *  the server-authoritative identity for the self-revoke warning (WR-12). */
   const [myUserId, setMyUserId] = useState<string | null>(null)
+  /**
+   * Credential name by its service-account user id (37-46), read only for a Group admin. Empty when
+   * the list could not be read or credentials are off here: rows are then named as before, and the
+   * server still refuses any change to a credential's grant.
+   */
+  const [credentialBySa, setCredentialBySa] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   /** A non-403 load failure: the list is UNKNOWN, which must not render as empty. */
@@ -387,6 +427,7 @@ export default function StaffPage() {
       setPeople(staff.people)
       setShops(myShops.shops)
       setMyUserId(myShops.userId)
+      setCredentialBySa(myShops.isGroupAdmin ? await credentialNames() : new Map())
       setForbidden(false)
       setLoadError(null)
     } catch (error: unknown) {
@@ -402,6 +443,20 @@ export default function StaffPage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  /** Best-effort: a failed or switched-off credential list names nothing, and decides nothing. */
+  const credentialNames = async (): Promise<Map<string, string>> => {
+    try {
+      const { credentials } = await listCredentials()
+      const map = new Map<string, string>()
+      credentials.forEach((c) => {
+        if (c.serviceAccountUserId) map.set(c.serviceAccountUserId, c.name)
+      })
+      return map
+    } catch {
+      return new Map()
     }
   }
 
@@ -431,7 +486,8 @@ export default function StaffPage() {
    * person, so the pre-fill always names a real option.
    */
   const pickerOptions = useMemo(() => {
-    const options = directory.map((d) => ({
+    // A credential's service account is never a grant target (37-46; the server refuses it, 409).
+    const options = directory.filter((d) => !credentialBySa.has(d.userId)).map((d) => ({
       userId: d.userId,
       // #290: `(displayName || email) + " (" + email + ")"` printed the masked email
       // TWICE for anyone without a display name. The email is only a disambiguator
@@ -440,10 +496,10 @@ export default function StaffPage() {
     }))
     if (targetUserId && !options.some((o) => o.userId === targetUserId)) {
       const p = rows.find((r) => r.userId === targetUserId)
-      if (p) options.push({ userId: p.userId, label: personName(p) })
+      if (p) options.push({ userId: p.userId, label: personName(p, credentialBySa) })
     }
     return options
-  }, [directory, rows, targetUserId])
+  }, [directory, rows, targetUserId, credentialBySa])
 
   // WR-12: self-identification is on the Keycloak `sub` (the `userId` carried by
   // both the grant rows and MyAccessDto), NOT an email round-trip. The old
@@ -486,7 +542,9 @@ export default function StaffPage() {
       toast({ title: "Access granted" })
     } catch (error: unknown) {
       const status = httpStatus(error)
-      if (status === 409) {
+      if (isCredentialTarget(error)) {
+        setNotice(CREDENTIAL_TARGET_COPY)
+      } else if (status === 409) {
         // IN-02: a 409 on the GRANT path is a DOWNGRADE refusal (D-11), not a
         // removal — the copy must match the action the operator just took.
         setNotice(
@@ -518,7 +576,9 @@ export default function StaffPage() {
       toast({ title: "Access removed" })
     } catch (error: unknown) {
       const status = httpStatus(error)
-      if (status === 409) {
+      if (isCredentialTarget(error)) {
+        setNotice(CREDENTIAL_TARGET_COPY)
+      } else if (status === 409) {
         // D-11: the server refuses to strand the tenant with no group admin.
         setNotice(
           "You cannot remove the last group admin. Grant someone else group-admin access first, then retry."
@@ -601,7 +661,7 @@ export default function StaffPage() {
 
   const removeTitle = (grant: StaffMember, person: StaffPerson): string => {
     const role = ROLE_LABELS[grant.role] ?? grant.role
-    return `Remove ${role} at ${shopLabel(grant.shopId)} for ${personName(person)}?`
+    return `Remove ${role} at ${shopLabel(grant.shopId)} for ${personName(person, credentialBySa)}?`
   }
 
   /** "After this they'll have: …" from the server's access minus this grant. */
@@ -816,10 +876,11 @@ export default function StaffPage() {
             </TableHeader>
             <TableBody>
               {rows.map((p) => {
-                const name = personName(p)
+                const name = personName(p, credentialBySa)
                 const showEmail = !!p.maskedEmail && p.maskedEmail !== name
                 const personGrants = grantsByUserId.get(p.userId) ?? []
                 const hasNoAccess = p.effectiveAccess?.level === "NONE"
+                const isCredential = credentialBySa.has(p.userId)
                 return (
                   <TableRow key={p.userId} className={ROW_CLASS}>
                     <TableCell className={CELL_CLASS}>
@@ -850,7 +911,11 @@ export default function StaffPage() {
                     </TableCell>
                     <TableCell className={CELL_CLASS}>
                       <div className="flex flex-col gap-2 sm:items-end">
-                        {hasNoAccess ? (
+                        {isCredential ? (
+                          <Button asChild variant="link" className="h-11 justify-start px-0 sm:justify-end">
+                            <Link href="/dashboard/developers">{CREDENTIAL_ROW_LINK}</Link>
+                          </Button>
+                        ) : hasNoAccess ? (
                           <Button
                             className="h-11 w-full sm:w-auto"
                             disabled={submitting}

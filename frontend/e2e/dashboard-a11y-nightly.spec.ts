@@ -52,6 +52,56 @@ const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]
  */
 const KEY_ROUTES = ["/dashboard", "/dashboard/orders", "/dashboard/products"]
 
+/**
+ * 37-46: two Phase 37 surfaces scanned with a NON-VACUITY CONTROL each. A scan of a page that did
+ * not render its surface (a refusal, a redirect, a still-loading shell) reports "0 violations" about
+ * a surface nobody saw, which reads exactly like a clean result. So each entry names the surface,
+ * waits for it to be visible first, and when it is not, records "control failed" INSTEAD of a
+ * result, never a 0. `include` narrows the scan to the surface when it is a region of a larger page.
+ *
+ * - /dashboard/developers (UI-SPEC § E1): the "Developers" h1 plus one of the card's real states
+ *   (the credentials table, the empty state, or the feature-off sentence). The nightly vendor is a
+ *   Group admin; a refusal here is itself a finding and is reported as a failed control.
+ * - the kitchen New lane (UI-SPEC § K1): the lane region and its "New orders" heading, scanned on
+ *   its own so a finding names the lane rather than the whole board.
+ */
+interface ControlledRoute {
+  route: string
+  /** What must be on screen before the scan means anything. */
+  control: string
+  ready: (page: Page) => Promise<void>
+  /** CSS selector the scan is limited to; the whole page when absent. */
+  include?: string
+}
+
+const CONTROLLED_ROUTES: ControlledRoute[] = [
+  {
+    route: "/dashboard/developers",
+    control: "the Developers h1 and the API credentials card in a loaded state",
+    ready: async (page) => {
+      await page.getByRole("heading", { level: 1, name: "Developers" }).waitFor({ state: "visible", timeout: 15_000 })
+      await page
+        .getByRole("region", { name: "API credentials table" })
+        .or(page.getByText("No API credentials yet"))
+        .or(page.getByText("API credentials aren't available on this installation yet."))
+        .first()
+        .waitFor({ state: "visible", timeout: 15_000 })
+      // The table region also frames the loading skeleton: wait for its rows to go.
+      await page.locator('[data-testid="credential-skeleton-row"]').first().waitFor({ state: "detached", timeout: 15_000 })
+    },
+  },
+  {
+    route: "/dashboard/kitchen",
+    control: "the kitchen New lane region and its 'New orders' heading",
+    ready: async (page) => {
+      const lane = page.locator('[data-testid="kds-new-lane"]')
+      await lane.waitFor({ state: "visible", timeout: 15_000 })
+      await lane.getByRole("heading", { name: "New orders" }).waitFor({ state: "visible", timeout: 15_000 })
+    },
+    include: '[data-testid="kds-new-lane"]',
+  },
+]
+
 /** Mirrors `dashboard-mobile.spec.ts`'s `vendorLogin`, duplicated rather than
  * imported: importing another `.spec.ts` file executes its module body and
  * re-registers every `test.describe` in it (see `public-a11y.spec.ts`'s own
@@ -144,6 +194,47 @@ test.describe("Vendor dashboard — REPORT-ONLY nightly axe sweep (A11Y-5)", () 
           description: `${route}: scan did not complete — ${String(err)}`,
         })
         console.log(`[dashboard-a11y-nightly] ${route}: scan error — ${String(err)}`)
+      }
+    }
+
+    for (const { route, control, ready, include } of CONTROLLED_ROUTES) {
+      const label = include ? `${route} (${include})` : route
+      try {
+        await page.goto(`${BASE}${route}`, { waitUntil: "domcontentloaded" })
+        try {
+          await ready(page)
+        } catch (err) {
+          // The control failed: whatever axe would say now is about a surface that is not there.
+          testInfo.annotations.push({
+            type: "dashboard-a11y-nightly",
+            description: `${label}: control failed, NOT scanned (${control} not visible) — ${String(err)}`,
+          })
+          console.log(`[dashboard-a11y-nightly] ${label}: control failed, not scanned — ${String(err)}`)
+          continue
+        }
+
+        let builder = new AxeBuilder({ page }).withTags(WCAG_TAGS)
+        if (include) builder = builder.include(include)
+        const results = await builder.analyze()
+        const summary = results.violations
+          .map((v) => `${v.id} [${v.impact ?? "n/a"}] x${v.nodes.length}`)
+          .join("; ")
+        testInfo.annotations.push({
+          type: "dashboard-a11y-nightly",
+          description:
+            results.violations.length === 0
+              ? `${label}: 0 WCAG 2.1 AA violations (control: ${control}; ${results.passes.length} rules passed)`
+              : `${label}: ${results.violations.length} violation rule(s) — ${summary}`,
+        })
+        console.log(
+          `[dashboard-a11y-nightly] ${label}: ${results.violations.length} violation rule(s)${summary ? ` — ${summary}` : ""}`
+        )
+      } catch (err) {
+        testInfo.annotations.push({
+          type: "dashboard-a11y-nightly",
+          description: `${label}: scan did not complete — ${String(err)}`,
+        })
+        console.log(`[dashboard-a11y-nightly] ${label}: scan error — ${String(err)}`)
       }
     }
   })

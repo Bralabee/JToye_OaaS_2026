@@ -111,13 +111,15 @@ public class StaffController {
     @DeleteMapping("/{id}")
     @Operation(summary = "Revoke a grant",
             description = "Deletes a shop_staff grant by id; the target loses access on their next request "
-                    + "(membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409).")
+                    + "(membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409), and "
+                    + "so is revoking an integrator credential's grant (409): delete the credential instead.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Grant revoked"),
             @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied), or the "
                     + "token was not issued to the dashboard client (human-only-action)"),
             @ApiResponse(responseCode = "404", description = "Grant not found (or another tenant's)"),
-            @ApiResponse(responseCode = "409", description = "Would remove the last GROUP_ADMIN (last-group-admin)")
+            @ApiResponse(responseCode = "409", description = "Would remove the last GROUP_ADMIN (last-group-admin), or "
+                    + "the grant belongs to an integrator credential's service account (staff-target-is-credential)")
     })
     public ResponseEntity<Void> revoke(@PathVariable UUID id) {
         humanCallerGuard.requireHuman();

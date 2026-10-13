@@ -31,11 +31,14 @@ public record CredentialDto(
         @Schema(nullable = true) OffsetDateTime revokedAt,
         @Schema(description = "Best-effort and throttled: never more precise than lastUsedIntervalMinutes. "
                 + "Null means never used.", nullable = true)
-        OffsetDateTime lastUsedAt) {
+        OffsetDateTime lastUsedAt,
+        @Schema(description = "The Keycloak user behind the credential's service account: the userId its staff "
+                + "grant and its staff-directory entry carry, so a client can show that entry as this credential")
+        UUID serviceAccountUserId) {
 
     public static CredentialDto from(IntegrationCredential c) {
         return new CredentialDto(c.getId(), c.getName(), c.getKcClientId(), c.getScopes(), c.getShopId(),
                 c.getRole(), c.status(), c.getCreatedBy(), c.getCreatedAt(), c.getRotatedBy(), c.getRotatedAt(),
-                c.getRevokedBy(), c.getRevokedAt(), c.getLastUsedAt());
+                c.getRevokedBy(), c.getRevokedAt(), c.getLastUsedAt(), c.getServiceAccountUserId());
     }
 }

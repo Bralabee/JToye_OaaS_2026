@@ -1485,6 +1485,11 @@
             },
             "type" : "array"
           },
+          "serviceAccountUserId" : {
+            "description" : "The Keycloak user behind the credential's service account: the userId its staff grant and its staff-directory entry carry, so a client can show that entry as this credential",
+            "format" : "uuid",
+            "type" : "string"
+          },
           "shopId" : {
             "description" : "The shop the role applies to; null means every shop of the business",
             "format" : "uuid",
@@ -14002,7 +14007,7 @@
     },
     "/api/v1/staff/{id}" : {
       "delete" : {
-        "description" : "Deletes a shop_staff grant by id; the target loses access on their next request (membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409).",
+        "description" : "Deletes a shop_staff grant by id; the target loses access on their next request (membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409), and so is revoking an integrator credential's grant (409): delete the credential instead.",
         "operationId" : "revoke_1",
         "parameters" : [
           {
@@ -14047,7 +14052,7 @@
                 }
               }
             },
-            "description" : "Would remove the last GROUP_ADMIN (last-group-admin)"
+            "description" : "Would remove the last GROUP_ADMIN (last-group-admin), or the grant belongs to an integrator credential's service account (staff-target-is-credential)"
           }
         },
         "security" : [

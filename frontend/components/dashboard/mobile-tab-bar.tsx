@@ -13,7 +13,11 @@ import { cn } from "@/lib/utils"
 import { Menu, LogOut, Moon, Sun } from "lucide-react"
 // Single source of truth: the SAME navigation array the desktop sidebar renders.
 // Do NOT re-declare it here — both bars must never drift (see 19-UI-SPEC Surface D).
-import { navigation } from "@/components/dashboard/sidebar"
+import {
+  navigation,
+  useIsKnownGroupAdmin,
+  visibleNavigation,
+} from "@/components/dashboard/sidebar"
 import { useTheme } from "@/hooks/use-theme"
 import { useBottomChromeHeight } from "@/hooks/use-bottom-chrome-height"
 import {
@@ -42,7 +46,7 @@ const primaryTabs: NavItem[] = PRIMARY_ORDER.map((href) =>
   navigation.find((item) => item.href === href)
 ).filter((item): item is NavItem => Boolean(item))
 
-const moreItems: NavItem[] = navigation.filter(
+const moreNavigation: NavItem[] = navigation.filter(
   (item) => !PRIMARY_ORDER.includes(item.href as (typeof PRIMARY_ORDER)[number])
 )
 
@@ -69,6 +73,9 @@ export function MobileTabBar({ className }: { className?: string }) {
   // is observed by the other with no reload and regardless of which mounted
   // first.
   const { dark, toggle } = useTheme()
+  // The same staff/me gate the sidebar applies (37-46): an admin-only item is listed only on the
+  // server's word, so a shop manager's "More" sheet never offers Developers.
+  const moreItems = visibleNavigation(moreNavigation, useIsKnownGroupAdmin())
   // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
   // notice sits ABOVE it rather than under it. This bar is `md:hidden` rather
   // than conditionally rendered, so the ref is always attached and the height

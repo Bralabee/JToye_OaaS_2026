@@ -327,6 +327,14 @@ public class StaffManagementService {
         ShopStaff row = shopStaffRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Staff grant not found: " + id));
 
+        // 37-46: a credential's grant is the access it was issued with. Removing it here would leave the
+        // credential ACTIVE with no access, which the Developers page would then overstate; its access is
+        // changed by deleting the credential (IntegrationCredentialService.revoke, which removes the grant
+        // through the repository and does not pass here). Same refusal, same type, as grant() above.
+        if (integrationCredentialRepository.existsByTenantIdAndServiceAccountUserId(tenantId, row.getUserId())) {
+            throw new StaffTargetIsCredentialException();
+        }
+
         if (row.getRole() == ShopRole.GROUP_ADMIN) {
             // Serialize the check-then-act (CR-06): lock the tenant's GROUP_ADMIN rows
             // BEFORE counting so a concurrent revoke blocks, then re-reads the true
