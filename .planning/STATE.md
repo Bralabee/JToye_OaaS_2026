@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-41 complete (41/53); sub-theme 37-E in progress (37-42 next, wave 33). 37-40 closed 2026-10-13 (RWO-017, RWO-037 core; tdd): /sync/batch product items carry shopId (required to create, must match on update), available, quantityInStock, trackInventory and are written through ProductService (allergen-span parse runs); every item is reported in results[{index, sku|name, outcome CREATED|UPDATED|REJECTED, code, message}] with status SUCCESS|PARTIAL|REJECTED (nothing written = REJECTED); per-item shop gate gives REJECTED SHOP_ACCESS_DENIED, another shop's SKU SHOP_MISMATCH, a create missing a field INVALID_FIELDS (was a whole-batch 403/400); OrderService.createOrder refuses shop-less products with the non-disclosing 404 on every writer. Unit 1787/0, full integration 1178/0 (re-run by the orchestrator on e528a1ed after the executor's last fixture fix), metrics 5776. 37-41 closed 2026-10-13 (RWO-017, RWO-037 edge; tdd): the edge returns core's 200 with results (was 202 with results null) and relays core 4xx problem+json byte-identical with Retry-After (was an untyped 502); core 4xx no longer counts as a breaker failure (10 refusals had opened the breaker for every tenant); problem bodies over 64 KiB answer 502; swag docs + contract gate updated. Go 135/135, metrics 5785. Runtime still the 37-C build (d060d0af), behind the branch; the 37-E gate must rebuild and replay a mixed batch, an ungranted-shop batch and a no-catalog:write token through the edge."
-last_updated: "2026-10-13T01:45:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-42 complete (42/53); sub-theme 37-E in progress (37-43 and 37-44 next, wave 34). 37-42 closed 2026-10-13 (RWO-036, RWO-040; D-13; tdd): CreateOrderRequest.submit (NON_NULL, fingerprint golden untouched) makes an agent-created order land PENDING through the shared transition (outbox event emitted), so MCP create_order reaches the kitchen New lane; the dashboard new-order form still creates DRAFT; ProductDto carries allergens in words (NON_NULL); GET /products takes availableOnly counted in the query (page-0 size-1 arm guards the PageImpl total recompute); MCP list_products takes shopId and availableOnly. Unit 1796/0, full integration 1189/0 (on 5882822d), vitest 70/70, metrics 5814. Runtime still the 37-C build (d060d0af), behind the branch; the 37-E gate must check live: MCP create_order in the New lane and Accept -> CONFIRMED, list_products {shopId, availableOnly} on-sale only with names, dashboard form still DRAFT. Earlier: 37-39 stock semantics + narrow PATCH, 37-40 shop-scoped sync with per-item outcomes, 37-41 edge pass-through."
+last_updated: "2026-10-13T03:10:00.000Z"
 last_activity: 2026-10-13
-state_head: 585bce5e
+state_head: 4e880c1b
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 226
+  completed_plans: 227
   percent: 65
 ---
 
@@ -1306,6 +1306,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-40 (executor, 2026-10-13): a refused sync item is a 200 with outcome REJECTED and a code (was a whole-batch 403 or 400); a product item without shopId is refused, so an admin can no longer mint a tenant-wide product through sync
 - [Phase 37]: 37-40 (executor, 2026-10-13): SyncItem also carries trackInventory under the 37-39 rule; a create missing a required field is an INVALID_FIELDS item, not a batch 400
 - [Phase 37]: 37-41 (executor, 2026-10-13): core 4xx problems are relayed outside the edge circuit breaker, so one integrator's refusals cannot open the breaker for every tenant; Retry-After is relayed; a problem body over 64 KiB answers 502
+- [Phase 37]: 37-42 (executor, 2026-10-13): an order created with submit=true (MCP create_order) enters PENDING through the shared state transition so the outbox event fires; submit is NON_NULL so the orders.create idempotency fingerprint golden is unchanged; the dashboard form omits it and still creates DRAFT
+- [Phase 37]: 37-42 (executor, 2026-10-13): availableOnly is filtered in the repository query, never post-filtered over a fetched page (PageImpl rewrites the total on a short page)
 
 ### Pending Todos
 
@@ -1379,8 +1381,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-13T01:45:00.000Z
-Stopped at: Completed 37-41-PLAN.md (edge passes core per-item sync results and typed 4xx refusals through; 37-40 shop-scoped sync with per-item outcomes recorded with it). Next: 37-42 (wave 33, 37-E MCP order reaches the kitchen, per-shop menu with readable allergens).
+Last session: 2026-10-13T03:10:00.000Z
+Stopped at: Completed 37-42-PLAN.md (MCP orders land PENDING on the kitchen board; per-shop on-sale menu with allergen names for agents). Next: 37-43 and 37-44 (wave 34, 37-E webhook auto-pause and Keycloak admin calls).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
