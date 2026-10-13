@@ -459,7 +459,7 @@ Ready for 37-46, the Developers page, against these endpoints and problem types.
 
 ## Self-Check: PASSED
 
-- All 24 created files exist on disk. That is 18 production and test sources, V82 and the four RED records; this SUMMARY is the 24th.
+- All 25 created files exist on disk (checked with `[ -f ]` over `git diff --diff-filter=A b31b4f64..HEAD`). They are 8 exception classes, 8 credential classes, `HumanCallerGuard`, V82, 2 test classes, 4 RED records and this SUMMARY.
 - All 12 plan commits are ancestors of HEAD on `phase-37-ops-readiness`, from `980ce74f` to `478faff2`.
 - Acceptance criteria re-run on the final tree:
   - Task 1: RED then GREEN; Cache-Control is exactly no-store; the SQL scan finds no secret.
