@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-44 complete (44/53); sub-theme 37-E in progress (37-45 next, wave 35). 37-44 closed 2026-10-13 (RWO-035 core seam; D-22; tdd): KeycloakAdminClient createClient (service-account client with a hardcoded tenant_id mapper and aud=core-api, requested scopes only; post-create fallback strips unrequested default/optional scopes, re-adds a missing mapper, deletes a half-made client), findClientUuid, getServiceAccountUserId, getClientSecret, regenerateClientSecret, deleteClient; typed KeycloakClientExistsException (409) and KeycloakClientNotFoundException (404); no secret in any exception or log (leak arm proven with an input-quoting mapper). Proven by request content against a mock Keycloak only; unit 1821/0, Keycloak package 48/0, integrationTest not run (production change confined to the keycloak package), metrics 5854. For 37-45: retry once on a taken clientId; credential tokens carry no preferred_username/email/realm_access, so core must accept them; an orphaned client after a failed UUID lookup can only be swept by clientId. For 37-47: read the INFO 'honoured' / WARN 'did not honour' line on real Keycloak 24.0.5 and decode a minted token for tenant_id, aud, scope. Runtime still the 37-C build (d060d0af)."
-last_updated: "2026-10-13T04:40:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-45 complete (45/53); sub-theme 37-E in progress (37-46 next, wave 36). 37-45 closed 2026-10-13 (RWO-035 core; D-22..D-24; tdd): V82 integration_credential (ENABLE+FORCE RLS via current_tenant_id(), NOSUPERUSER-proven, idempotency_key column, applies out of order after V84); a Group admin issues/lists/rotates/revokes a credential = a Keycloak service-account client whose service account gets an ordinary OPERATOR shop grant (limited like a person); the secret is shown once (Cache-Control exactly no-store) and never stored; last_used_at recorded by a filter; a revoked credential's still-valid token gets 403 credential-revoked; a failure after Keycloak made the client deletes it again; HumanCallerGuard: credential and staff mutations only from tokens whose azp is in ACCESS_HUMAN_CLIENT_IDS (k8s reads the SAME app-config key keycloak.client-id the frontend signs in with, so the two cannot drift; compose/application.yml default core-api); a staff grant to a credential's service account is 409 staff-target-is-credential. Unit 1821/0, full integration 1219/0 on 478faff2 (covers 37-39..37-44 incl. the 37-44 Keycloak client), metrics 5876. Next free migration V85 (V83 reserved for 37-48). 37-46 must render eight problem types and decide how the Staff page shows credential service accounts (today Staff can revoke a credential's grant, leaving it ACTIVE with no access). 37-47 owes: a real minted token accepted without preferred_username/email/realm_access, and after revoke a 403 on a minted token and a failed new mint. Untested: the grant half of the rollback cleanup. Runtime still the 37-C build (d060d0af)."
+last_updated: "2026-10-13T06:20:00.000Z"
 last_activity: 2026-10-13
-state_head: e57ced8d
+state_head: 6d0cca77
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 229
+  completed_plans: 230
   percent: 65
 ---
 
@@ -1311,6 +1311,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-43 (executor, 2026-10-13): auto-pause is delivery-level (N consecutive dead deliveries, default 3) and a paused endpoint HOLDS its events (including events fanned out while paused); resume re-queues with fresh attempts, revoke fails them; the owner gets one email per auto-pause
 - [Phase 37]: 37-43 (executor, 2026-10-13): the dashboard delivery log renders an unknown status raw instead of crashing the page (the shipped log crashed on HELD)
 - [Phase 37]: 37-44 (executor, 2026-10-13): a credential client is verified after create and repaired (unrequested scopes removed, a missing mapper re-added) or deleted if the repair fails, because Keycloak may ignore an inline representation; which path real Keycloak 24.0.5 takes is proven at the 37-47 gate
+- [Phase 37]: 37-45 (executor, 2026-10-13): a staff grant to a credential's service account is refused 409 staff-target-is-credential (after its first call the account appears in user_directory and could otherwise be raised to GROUP_ADMIN)
+- [Phase 37]: 37-45 (executor, 2026-10-13): a revoked credential's still-valid token is refused 403 credential-revoked at once, not only when the grant is gone
+- [Phase 37]: 37-45 (orchestrator, 2026-10-13): owner question 1 (is staging/production keycloak.client-id the real dashboard client) is answered by construction: ACCESS_HUMAN_CLIENT_IDS reads the same app-config key the frontend uses as its OIDC client_id, so a person's azp equals it wherever sign-in works
+- [Phase 37]: 37-45 (OWNER QUESTION, open): turn off serviceAccountsEnabled on core-api in the dev realm? Its service-account token carries azp core-api and passes the human-only guard (still needs a GROUP_ADMIN grant). Researched: no in-repo consumer of core-api client_credentials (edge uses edge-api, MCP uses integration-*); recommended: turn it off
 
 ### Pending Todos
 
@@ -1384,8 +1388,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-13T04:40:00.000Z
-Stopped at: Completed 37-44-PLAN.md (Keycloak admin calls for integrator credential clients, by-content tests). Next: 37-45 (wave 35, scoped API credentials issue/rotate/revoke; takes reserved V82).
+Last session: 2026-10-13T06:20:00.000Z
+Stopped at: Completed 37-45-PLAN.md (scoped, revocable integrator credentials, V82, human-only guard). Next: 37-46 (wave 36, Developers page).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
