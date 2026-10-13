@@ -881,7 +881,8 @@ webhook:
     max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}
     backoff-base-ms: ${WEBHOOK_DELIVERY_BACKOFF_BASE_MS:1000}
     backoff-cap-ms: ${WEBHOOK_DELIVERY_BACKOFF_CAP_MS:3600000}
-    auto-pause-threshold: ${WEBHOOK_DELIVERY_AUTO_PAUSE_THRESHOLD:10}
+    # 37-43 (UXT-038): consecutive failed DELIVERIES (each exhausted max-attempts), not attempts.
+    auto-pause-after-failed-deliveries: ${WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES:3}
     retention-days: ${WEBHOOK_DELIVERY_RETENTION_DAYS:30}
     retention-interval-ms: ${WEBHOOK_DELIVERY_RETENTION_INTERVAL_MS:86400000}
     timeout-seconds: ${WEBHOOK_DELIVERY_TIMEOUT_SECONDS:10}

@@ -36,10 +36,11 @@ import java.util.UUID;
  * <ul>
  *   <li>2xx → {@code DELIVERED} + reset the subscription's consecutive-failure counter;</li>
  *   <li>failure → {@code RETRYING} with {@code next_attempt_at} pushed out by
- *       bounded exponential backoff, or {@code FAILED} at {@code max-attempts};
- *       the subscription's consecutive-failure counter increments and, at
- *       {@code auto-pause-threshold}, the subscription flips to {@code AUTO_PAUSED}
- *       (subsequent claims for it are dropped in {@link #attemptDelivery}).</li>
+ *       bounded exponential backoff, or {@code FAILED} at {@code max-attempts}.
+ *       Only a delivery that exhausts its attempts increments the subscription's
+ *       consecutive-failure counter (UXT-038, 37-43: failed DELIVERIES, not attempts);
+ *       at {@code auto-pause-after-failed-deliveries} the subscription flips to
+ *       {@code AUTO_PAUSED} (subsequent claims for it are dropped in {@link #attemptDelivery}).</li>
  * </ul>
  *
  * <p>The RLS tenant GUC + {@link TenantContext} are pinned per tenant before each
@@ -234,20 +235,11 @@ public class WebhookDeliveryWorker {
         delivery.setLastHttpStatus(statusCode);
         delivery.setLastError(truncate(error));
 
-        int failures = sub.getConsecutiveFailures() + 1;
-        sub.setConsecutiveFailures(failures);
-        if (failures >= properties.getDelivery().getAutoPauseThreshold()
-                && sub.getStatus() == WebhookSubscription.Status.ACTIVE) {
-            sub.setStatus(WebhookSubscription.Status.AUTO_PAUSED);
-            log.warn("event=webhook_subscription_auto_paused subscription={} consecutiveFailures={}",
-                    sub.getId(), failures);
-        }
-        subscriptionRepository.save(sub);
-
         if (attempts >= properties.getDelivery().getMaxAttempts()) {
             delivery.setStatus(WebhookDelivery.Status.FAILED);
             log.warn("event=webhook_delivery_failed delivery={} attempts={} http={}",
                     delivery.getId(), attempts, statusCode);
+            recordExhaustedDelivery(sub);
         } else {
             delivery.setStatus(WebhookDelivery.Status.RETRYING);
             long backoff = computeBackoffMillis(attempts,
@@ -256,6 +248,24 @@ public class WebhookDeliveryWorker {
             delivery.setNextAttemptAt(OffsetDateTime.now().plusNanos(backoff * 1_000_000L));
         }
         deliveryRepository.save(delivery);
+    }
+
+    /**
+     * UXT-038: the auto-pause counter counts DELIVERIES that exhausted their attempts, never single
+     * attempts. A failed attempt that a later retry delivers says nothing about the endpoint; three
+     * events in a row that could not be delivered at all do. A delivered event resets the count
+     * ({@link #recordSuccess}).
+     */
+    private void recordExhaustedDelivery(WebhookSubscription sub) {
+        int failedDeliveries = sub.getConsecutiveFailures() + 1;
+        sub.setConsecutiveFailures(failedDeliveries);
+        if (failedDeliveries >= properties.getDelivery().getAutoPauseAfterFailedDeliveries()
+                && sub.getStatus() == WebhookSubscription.Status.ACTIVE) {
+            sub.setStatus(WebhookSubscription.Status.AUTO_PAUSED);
+            log.warn("event=webhook_subscription_auto_paused subscription={} consecutiveFailedDeliveries={}",
+                    sub.getId(), failedDeliveries);
+        }
+        subscriptionRepository.save(sub);
     }
 
     private static String truncate(String s) {

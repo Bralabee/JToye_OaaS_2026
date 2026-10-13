@@ -320,12 +320,13 @@ A delivery also goes straight to `FAILED`, without retrying, if the subscription
 
 ### Auto-pause
 
-The subscription counts **consecutive failed attempts** and flips to `AUTO_PAUSED` at
-**10**. Any success resets the counter to zero.
+The subscription counts **consecutive failed deliveries**: an event counts once it has
+used all 8 of its attempts without a 2xx. At **3** such events in a row
+(`WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES`) the subscription flips to
+`AUTO_PAUSED`. Any delivered event resets the counter to zero.
 
-The counter is per *attempt*, not per event — so a single event exhausting its 8 attempts
-gets you most of the way there, and **two dead events in a row will auto-pause you.**
-While `AUTO_PAUSED`, nothing is delivered. Resume with
+A failed attempt that a later retry delivers does not count, so a receiver that is flaky
+for a few minutes is not paused. While `AUTO_PAUSED`, nothing is delivered. Resume with
 `POST /api/v1/webhooks/{id}/resume`, which also clears the counter.
 
 ---
