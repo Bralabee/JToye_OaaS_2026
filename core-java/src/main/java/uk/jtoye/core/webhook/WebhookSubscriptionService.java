@@ -11,9 +11,13 @@ import uk.jtoye.core.webhook.dto.CreateWebhookSubscriptionRequest;
 import uk.jtoye.core.webhook.dto.WebhookSubscriptionDto;
 
 import java.security.SecureRandom;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -51,13 +55,16 @@ public class WebhookSubscriptionService {
     private final WebhookSubscriptionRepository repository;
     private final WebhookUrlValidator urlValidator;
     private final ShopAccessService shopAccessService;
+    private final WebhookDeliveryRepository deliveryRepository;
 
     public WebhookSubscriptionService(WebhookSubscriptionRepository repository,
                                       WebhookUrlValidator urlValidator,
-                                      ShopAccessService shopAccessService) {
+                                      ShopAccessService shopAccessService,
+                                      WebhookDeliveryRepository deliveryRepository) {
         this.repository = repository;
         this.urlValidator = urlValidator;
         this.shopAccessService = shopAccessService;
+        this.deliveryRepository = deliveryRepository;
     }
 
     public WebhookSubscriptionDto.WithSecret create(CreateWebhookSubscriptionRequest request) {
@@ -90,8 +97,13 @@ public class WebhookSubscriptionService {
     @Transactional(readOnly = true)
     public List<WebhookSubscriptionDto> list() {
         shopAccessService.requireGroupAdmin();
-        return repository.findByTenantId(currentTenant()).stream()
-                .map(this::toDto)
+        UUID tenantId = currentTenant();
+        Map<UUID, Long> held = new HashMap<>();
+        for (Object[] row : deliveryRepository.countByStatusPerSubscription(tenantId, WebhookDelivery.Status.HELD)) {
+            held.put((UUID) row[0], (Long) row[1]);
+        }
+        return repository.findByTenantId(tenantId).stream()
+                .map(e -> toDto(e, held.getOrDefault(e.getId(), 0L)))
                 .toList();
     }
 
@@ -121,8 +133,13 @@ public class WebhookSubscriptionService {
         WebhookSubscription entity = require(id);
         ensureNotRevoked(entity);
         entity.setStatus(WebhookSubscription.Status.PAUSED);
-        log.info("Paused webhook subscription {}", id);
-        return toDto(repository.save(entity));
+        entity = repository.save(entity);
+        // UXT-038: what is queued is kept for resume, never thrown away by the pause.
+        int held = deliveryRepository.holdQueued(entity.getTenantId(), id,
+                EnumSet.of(WebhookDelivery.Status.PENDING, WebhookDelivery.Status.RETRYING),
+                WebhookDelivery.Status.HELD, OffsetDateTime.now());
+        log.info("Paused webhook subscription {} ({} queued deliveries held)", id, held);
+        return toDto(entity);
     }
 
     public WebhookSubscriptionDto resume(UUID id) {
@@ -131,16 +148,24 @@ public class WebhookSubscriptionService {
         ensureNotRevoked(entity);
         entity.setStatus(WebhookSubscription.Status.ACTIVE);
         entity.setConsecutiveFailures(0); // a manual resume clears the failure trip
-        log.info("Resumed webhook subscription {}", id);
-        return toDto(repository.save(entity));
+        entity = repository.save(entity);
+        // UXT-038: "Resume and deliver held events" — every held row is due again, fresh attempt budget.
+        int requeued = deliveryRepository.requeueHeld(entity.getTenantId(), id,
+                WebhookDelivery.Status.HELD, WebhookDelivery.Status.PENDING, OffsetDateTime.now());
+        log.info("Resumed webhook subscription {} ({} held deliveries re-queued)", id, requeued);
+        return toDto(entity);
     }
 
     public WebhookSubscriptionDto revoke(UUID id) {
         shopAccessService.requireGroupAdmin();
         WebhookSubscription entity = require(id);
         entity.setStatus(WebhookSubscription.Status.REVOKED); // terminal
-        log.info("Revoked webhook subscription {}", id);
-        return toDto(repository.save(entity));
+        entity = repository.save(entity);
+        // A revoked endpoint can never be delivered to, so nothing stays held for it.
+        int failed = deliveryRepository.failHeld(entity.getTenantId(), id, WebhookDelivery.Status.HELD,
+                WebhookDelivery.Status.FAILED, "subscription not active: REVOKED", OffsetDateTime.now());
+        log.info("Revoked webhook subscription {} ({} held deliveries failed)", id, failed);
+        return toDto(entity);
     }
 
     private WebhookSubscription require(UUID id) {
@@ -173,7 +198,13 @@ public class WebhookSubscriptionService {
         return names;
     }
 
+    /** Single-subscription read: one count query for the held deliveries. */
     private WebhookSubscriptionDto toDto(WebhookSubscription e) {
+        return toDto(e, deliveryRepository.countByTenantIdAndSubscriptionIdAndStatus(
+                e.getTenantId(), e.getId(), WebhookDelivery.Status.HELD));
+    }
+
+    private WebhookSubscriptionDto toDto(WebhookSubscription e, long heldCount) {
         List<WebhookEventType> types = new ArrayList<>();
         if (e.getEventTypes() != null) {
             for (String name : e.getEventTypes()) {
@@ -186,6 +217,7 @@ public class WebhookSubscriptionService {
                 types,
                 e.getStatus().name(),
                 e.getConsecutiveFailures(),
+                heldCount,
                 e.getCreatedAt(),
                 e.getUpdatedAt());
     }

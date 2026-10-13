@@ -9,15 +9,21 @@ import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
+import uk.jtoye.core.notification.EmailNotificationService;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.tenant.Tenant;
+import uk.jtoye.core.tenant.TenantRepository;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,6 +49,14 @@ import java.util.UUID;
  *       {@code AUTO_PAUSED} (subsequent claims for it are dropped in {@link #attemptDelivery}).</li>
  * </ul>
  *
+ * <p><b>Held, not lost (UXT-038, 37-43).</b> A row claimed while its subscription is
+ * {@code PAUSED} or {@code AUTO_PAUSED} becomes {@code HELD} (it was terminally {@code FAILED}
+ * before, so every event queued for a paused endpoint was thrown away). On the transition to
+ * {@code AUTO_PAUSED} every other queued row of that subscription is held in the same
+ * transaction, and the tenant's contact address is sent ONE plain-text email after commit
+ * ({@link EmailNotificationService#sendWebhookPaused}); a tenant with no contact address is a WARN,
+ * never a worker failure. Only a revoked or missing subscription still fails its rows.
+ *
  * <p>The RLS tenant GUC + {@link TenantContext} are pinned per tenant before each
  * claim; a {@code TransactionTemplate} (not a {@code @Transactional} private
  * method) avoids the Spring self-invocation NULL-tenant trap. Logs status only,
@@ -64,6 +78,12 @@ public class WebhookDeliveryWorker {
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
     private final WebClient webClient;
+    private final TenantRepository tenantRepository;
+    private final EmailNotificationService emailNotificationService;
+
+    /** The rows a pause holds: everything still waiting to be attempted. */
+    private static final EnumSet<WebhookDelivery.Status> QUEUED =
+            EnumSet.of(WebhookDelivery.Status.PENDING, WebhookDelivery.Status.RETRYING);
 
     public WebhookDeliveryWorker(WebhookDeliveryRepository deliveryRepository,
                                  WebhookSubscriptionRepository subscriptionRepository,
@@ -72,7 +92,9 @@ public class WebhookDeliveryWorker {
                                  WebhookProperties properties,
                                  EntityManager entityManager,
                                  PlatformTransactionManager transactionManager,
-                                 WebClient webhookDeliveryWebClient) {
+                                 WebClient webhookDeliveryWebClient,
+                                 TenantRepository tenantRepository,
+                                 EmailNotificationService emailNotificationService) {
         this.deliveryRepository = deliveryRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.signer = signer;
@@ -84,6 +106,8 @@ public class WebhookDeliveryWorker {
         // resolver connects to the SAME address it validates, closing the
         // DNS-rebinding TOCTOU (T-22-05-03). Never the app-wide WebClient.Builder.
         this.webClient = webhookDeliveryWebClient;
+        this.tenantRepository = tenantRepository;
+        this.emailNotificationService = emailNotificationService;
     }
 
     /**
@@ -161,11 +185,17 @@ public class WebhookDeliveryWorker {
 
     private void attemptDelivery(WebhookDelivery delivery) {
         WebhookSubscription sub = subscriptionRepository.findById(delivery.getSubscriptionId()).orElse(null);
-        if (sub == null || sub.getStatus() != WebhookSubscription.Status.ACTIVE) {
-            // Paused / auto-paused / revoked / gone — stop attempting this row so a
-            // paused subscription's backlog does not churn forever.
+        if (sub == null || sub.getStatus() == WebhookSubscription.Status.REVOKED) {
+            // Revoked (terminal) or gone: this row can never be delivered.
             delivery.setStatus(WebhookDelivery.Status.FAILED);
             delivery.setLastError("subscription not active: " + (sub == null ? "missing" : sub.getStatus()));
+            deliveryRepository.save(delivery);
+            return;
+        }
+        if (sub.getStatus() != WebhookSubscription.Status.ACTIVE) {
+            // Paused or auto-paused (UXT-038): keep the event for resume, do not attempt it.
+            // The last real attempt's outcome stays on the row.
+            delivery.setStatus(WebhookDelivery.Status.HELD);
             deliveryRepository.save(delivery);
             return;
         }
@@ -259,13 +289,51 @@ public class WebhookDeliveryWorker {
     private void recordExhaustedDelivery(WebhookSubscription sub) {
         int failedDeliveries = sub.getConsecutiveFailures() + 1;
         sub.setConsecutiveFailures(failedDeliveries);
-        if (failedDeliveries >= properties.getDelivery().getAutoPauseAfterFailedDeliveries()
-                && sub.getStatus() == WebhookSubscription.Status.ACTIVE) {
+        boolean pausesNow = failedDeliveries >= properties.getDelivery().getAutoPauseAfterFailedDeliveries()
+                && sub.getStatus() == WebhookSubscription.Status.ACTIVE;
+        if (pausesNow) {
             sub.setStatus(WebhookSubscription.Status.AUTO_PAUSED);
-            log.warn("event=webhook_subscription_auto_paused subscription={} consecutiveFailedDeliveries={}",
-                    sub.getId(), failedDeliveries);
         }
         subscriptionRepository.save(sub);
+        if (pausesNow) {
+            autoPaused(sub, failedDeliveries);
+        }
+    }
+
+    /**
+     * The ACTIVE -> AUTO_PAUSED transition, run once per pause (a paused subscription cannot pause
+     * again until it is resumed, T-37-103): hold the subscription's queued rows and schedule the
+     * owner's email for after commit, so a rolled-back tick sends nothing.
+     */
+    private void autoPaused(WebhookSubscription sub, int failedDeliveries) {
+        OffsetDateTime pausedAt = OffsetDateTime.now();
+        int held = deliveryRepository.holdQueued(sub.getTenantId(), sub.getId(), QUEUED,
+                WebhookDelivery.Status.HELD, pausedAt);
+        log.warn("event=webhook_subscription_auto_paused subscription={} consecutiveFailedDeliveries={} held={}",
+                sub.getId(), failedDeliveries, held);
+
+        String contact = tenantRepository.findById(sub.getTenantId())
+                .map(Tenant::getContactEmail)
+                .filter(e -> !e.isBlank())
+                .orElse(null);
+        if (contact == null) {
+            // Never the URL or an address in a log line (T-22-05-06).
+            log.warn("event=webhook_pause_email_skipped reason=no_contact_email subscription={} tenant={}",
+                    sub.getId(), sub.getTenantId());
+            return;
+        }
+        String targetUrl = sub.getTargetUrl();
+        Runnable send = () -> emailNotificationService.sendWebhookPaused(contact, targetUrl, pausedAt, held);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    send.run();
+                }
+            });
+        } else {
+            send.run();
+        }
     }
 
     private static String truncate(String s) {

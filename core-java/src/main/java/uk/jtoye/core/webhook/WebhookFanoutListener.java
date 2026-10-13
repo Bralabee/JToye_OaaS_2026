@@ -26,7 +26,9 @@ import java.util.UUID;
 /**
  * Consumes the {@code webhook.deliveries} fanout queue (declared by 22-04, bound
  * to all four lifecycle families) and, for EACH matching ACTIVE subscription,
- * synchronously INSERTs one {@code PENDING} {@link WebhookDelivery} row carrying
+ * synchronously INSERTs one {@code PENDING} {@link WebhookDelivery} row (a {@code HELD}
+ * row for an {@code AUTO_PAUSED} subscription, UXT-038, so an event raised while the
+ * platform has paused an endpoint is delivered when the vendor resumes it) carrying
  * the versioned {@link WebhookEventEnvelope} serialized ONCE to a stable string
  * (COMMS-05, RESEARCH Pattern 2).
  *
@@ -137,8 +139,12 @@ public class WebhookFanoutListener {
                                    OffsetDateTime occurredAt, Object data) {
         pinTenantGuc(tenantId);
 
+        // ACTIVE subscriptions get a PENDING row; AUTO_PAUSED ones a HELD row (UXT-038: the platform
+        // paused the endpoint, the vendor did not ask to miss events). A MANUAL pause and a revoked
+        // subscription receive nothing, as before: pausing by hand is the vendor's own choice.
         List<WebhookSubscription> matching = subscriptionRepository.findByTenantId(tenantId).stream()
-                .filter(s -> s.getStatus() == WebhookSubscription.Status.ACTIVE)
+                .filter(s -> s.getStatus() == WebhookSubscription.Status.ACTIVE
+                        || s.getStatus() == WebhookSubscription.Status.AUTO_PAUSED)
                 .filter(s -> s.getEventTypes() != null && s.getEventTypes().contains(family.name()))
                 .toList();
         if (matching.isEmpty()) {
@@ -169,7 +175,9 @@ public class WebhookFanoutListener {
             delivery.setEventId(eventId);
             delivery.setEventType(type);
             delivery.setPayload(payload);
-            delivery.setStatus(WebhookDelivery.Status.PENDING);
+            delivery.setStatus(sub.getStatus() == WebhookSubscription.Status.AUTO_PAUSED
+                    ? WebhookDelivery.Status.HELD
+                    : WebhookDelivery.Status.PENDING);
             deliveryRepository.save(delivery);
         }
         log.info("event=webhook_fanout tenant={} type={} subscriptions={}",

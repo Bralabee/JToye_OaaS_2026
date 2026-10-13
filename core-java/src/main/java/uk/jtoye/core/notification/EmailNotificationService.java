@@ -309,6 +309,77 @@ public class EmailNotificationService {
         }
     }
 
+    // ---- Webhook auto-pause (UXT-038, 37-43) ------------------------------------------------------
+
+    /** UI-SPEC § Copywriting E1/E2, "Pause email". */
+    public static final String WEBHOOK_PAUSED_SUBJECT = "Your J'Toye webhook endpoint was paused";
+    static final String WEBHOOK_PAUSED_FIX_LINE = "Fix the endpoint, then resume it in J'Toye: Dashboard → Webhooks.";
+
+    /** "14:32 on 13 October 2026": the pause time as a person in the UK reads it. */
+    static final DateTimeFormatter WEBHOOK_PAUSED_AT_FORMAT =
+            DateTimeFormatter.ofPattern("HH:mm 'on' d MMMM yyyy", Locale.UK);
+
+    /**
+     * The held-events sentence (37-43 assumptions for the UI-SPEC's unresolved E2 rows): "1 event is
+     * held" for one, "{n} events are held" for more, and null at 0, when the sentence is omitted
+     * rather than claiming "0 events are held". The dashboard banner uses the same three forms.
+     */
+    static String webhookHeldSentence(long heldCount) {
+        if (heldCount <= 0) {
+            return null;
+        }
+        return (heldCount == 1 ? "1 event is held" : heldCount + " events are held")
+                + ". They'll be delivered when you resume the endpoint.";
+    }
+
+    /**
+     * The webhook auto-pause notice (UXT-038, UI-SPEC § Copywriting E1/E2 "Pause email"): plain text,
+     * sent once per ACTIVE -> AUTO_PAUSED transition, after that transition commits, to the tenant's
+     * contact address. Sent from J'Toye itself (no shop Reply-To): it is about the vendor's own
+     * integration, not an order.
+     *
+     * <p>The endpoint URL is vendor-supplied, so it passes {@link #sanitise} before it reaches the body:
+     * a control character cannot forge a line. <b>Logging:</b> neither the recipient nor the URL (a
+     * receiver URL can carry a token in its query) is ever logged, only the event name and, on failure,
+     * the exception class.
+     *
+     * @param heldCount the deliveries held at the moment of the pause, counted by the database
+     */
+    @Async
+    public void sendWebhookPaused(String recipientEmail, String targetUrl, OffsetDateTime pausedAt, long heldCount) {
+        if (!emailEnabled) {
+            log.debug("event=webhook_paused_email_skipped reason=email_disabled");
+            return;
+        }
+        String url = sanitise(targetUrl);
+        if (recipientEmail == null || recipientEmail.isBlank() || url == null || pausedAt == null) {
+            log.warn("event=webhook_paused_email_skipped reason=incomplete");
+            return;
+        }
+        String at = pausedAt.atZoneSameInstant(ClockConfig.UK_ZONE).format(WEBHOOK_PAUSED_AT_FORMAT);
+        StringBuilder body = new StringBuilder()
+                .append("We paused deliveries to ").append(url).append(" at ").append(at)
+                .append(" (UK time) because they kept failing.\n\n");
+        String held = webhookHeldSentence(heldCount);
+        if (held != null) {
+            body.append(held).append("\n\n");
+        }
+        body.append(WEBHOOK_PAUSED_FIX_LINE).append('\n');
+        try {
+            MimeMessage mime = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
+            helper.setFrom(new InternetAddress(fromAddress, PLATFORM_NAME, "UTF-8"));
+            helper.setTo(new InternetAddress(recipientEmail, true));
+            helper.setSubject(WEBHOOK_PAUSED_SUBJECT);
+            helper.setText(body.toString(), false);
+            mailSender.send(mime);
+            log.info("event=webhook_paused_email_sent");
+        } catch (MailException | MessagingException | UnsupportedEncodingException e) {
+            // The exception class only: a mail exception's message can quote the recipient (V7).
+            log.error("event=webhook_paused_email_failed error={}", e.getClass().getSimpleName());
+        }
+    }
+
     // ---- Body ------------------------------------------------------------------------------------
 
     /**

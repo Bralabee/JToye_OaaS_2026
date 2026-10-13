@@ -1,5 +1,6 @@
 package uk.jtoye.core.webhook.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import uk.jtoye.core.webhook.WebhookEventType;
 
 import java.time.OffsetDateTime;
@@ -18,7 +19,13 @@ public record WebhookSubscriptionDto(
         String targetUrl,
         List<WebhookEventType> eventTypes,
         String status,
+        @Schema(description = "Consecutive deliveries that used all their attempts without a 2xx (37-43: deliveries, "
+                + "not attempts). At webhook.delivery.auto-pause-after-failed-deliveries (default 3) the "
+                + "subscription becomes AUTO_PAUSED; a delivered event resets it to 0.")
         int consecutiveFailures,
+        @Schema(description = "Events kept for this endpoint while it is paused (delivery status HELD), counted by "
+                + "the server. Resuming re-queues and delivers every one of them.")
+        long heldCount,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {

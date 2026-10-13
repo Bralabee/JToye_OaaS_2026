@@ -5860,6 +5860,7 @@
       "WebhookSubscriptionDto" : {
         "properties" : {
           "consecutiveFailures" : {
+            "description" : "Consecutive deliveries that used all their attempts without a 2xx (37-43: deliveries, not attempts). At webhook.delivery.auto-pause-after-failed-deliveries (default 3) the subscription becomes AUTO_PAUSED; a delivered event resets it to 0.",
             "format" : "int32",
             "type" : "integer"
           },
@@ -5878,6 +5879,11 @@
               "type" : "string"
             },
             "type" : "array"
+          },
+          "heldCount" : {
+            "description" : "Events kept for this endpoint while it is paused (delivery status HELD), counted by the server. Resuming re-queues and delivers every one of them.",
+            "format" : "int64",
+            "type" : "integer"
           },
           "id" : {
             "format" : "uuid",
@@ -14003,7 +14009,8 @@
                 "PENDING",
                 "DELIVERED",
                 "RETRYING",
-                "FAILED"
+                "FAILED",
+                "HELD"
               ],
               "type" : "string"
             }

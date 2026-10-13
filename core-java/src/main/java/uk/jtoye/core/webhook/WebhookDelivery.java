@@ -39,12 +39,20 @@ public class WebhookDelivery {
      * the worker flips it to {@link #DELIVERED} on 2xx, {@link #RETRYING} on a
      * transient failure (with {@link #nextAttemptAt} pushed out by backoff), or
      * {@link #FAILED} once {@code attemptCount} reaches the configured max.
+     *
+     * <p>{@link #HELD} (UXT-038, 37-43): the event is kept, not attempted, while its
+     * subscription is {@code PAUSED} or {@code AUTO_PAUSED}. Pausing holds every queued
+     * ({@code PENDING}/{@code RETRYING}) row, an event raised while auto-paused is written
+     * HELD, and resuming re-queues every HELD row as {@code PENDING} with a fresh attempt
+     * budget. Revoking (terminal) fails what is held. The claim query never selects HELD.
+     * There is no CHECK constraint on the column (V56), so no migration is needed.
      */
     public enum Status {
         PENDING,
         DELIVERED,
         RETRYING,
-        FAILED
+        FAILED,
+        HELD
     }
 
     @Id
