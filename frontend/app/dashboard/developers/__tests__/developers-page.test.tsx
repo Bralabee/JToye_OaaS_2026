@@ -302,6 +302,10 @@ describe("Developers page: the credentials list and every page state (Task 2)", 
     render(<DevelopersPage />)
     await loadedTable()
 
+    // Headings descend in order (axe heading-order): h1 page, h2 card.
+    expect(screen.getByRole("heading", { level: 1, name: "Developers" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 2, name: "API credentials" })).toBeInTheDocument()
+
     const heads = within(tableRegion())
       .getAllByRole("columnheader")
       .map((h) => h.textContent?.replace("*", "").trim())
@@ -431,7 +435,7 @@ describe("Developers page: the credentials list and every page state (Task 2)", 
 
   it("empty: 'No API credentials yet' with its body and a Create credential button", async () => {
     render(<DevelopersPage />)
-    expect(await screen.findByText("No API credentials yet")).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { level: 3, name: "No API credentials yet" })).toBeInTheDocument()
     expect(
       screen.getByText(
         "Create a credential to let your till, website or an AI agent read your menu or place orders, without sharing your password."

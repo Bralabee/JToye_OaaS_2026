@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle, KeyRound, Plus, ShieldCheck } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialog"
@@ -253,7 +253,11 @@ export default function DevelopersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base font-semibold">{DEVELOPERS_COPY.cardTitle}</CardTitle>
+          {/* An h2, not CardTitle's h3: the page's headings descend in order (h1, h2, then the
+              empty state's h3), which axe's heading-order rule checks. */}
+          <h2 className="text-base font-semibold leading-none tracking-tight text-slate-900">
+            {DEVELOPERS_COPY.cardTitle}
+          </h2>
         </CardHeader>
         <CardContent>
           {state.kind === "loading" && <CredentialsTableSkeleton />}
@@ -276,7 +280,7 @@ export default function DevelopersPage() {
           {state.kind === "ready" && active.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <KeyRound className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
-              <h4 className="mb-2 text-base font-semibold text-slate-900">{DEVELOPERS_COPY.emptyTitle}</h4>
+              <h3 className="mb-2 text-base font-semibold text-slate-900">{DEVELOPERS_COPY.emptyTitle}</h3>
               <p className="mb-4 max-w-md text-sm text-slate-600">{DEVELOPERS_COPY.emptyBody}</p>
               <Button className="h-11 gap-2" onClick={() => setCreateOpen(true)}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
