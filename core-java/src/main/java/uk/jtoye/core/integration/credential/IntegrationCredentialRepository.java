@@ -24,6 +24,13 @@ public interface IntegrationCredentialRepository extends JpaRepository<Integrati
     /** The credential an Idempotency-Key created, for a same-key replay. */
     Optional<IntegrationCredential> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
 
+    /**
+     * Whether {@code userId} is the service-account user of any credential of the tenant, active or revoked.
+     * {@code StaffManagementService.grant} refuses such a target (Q7): a credential's access is set when it is
+     * issued and the Staff API must never widen it.
+     */
+    boolean existsByTenantIdAndServiceAccountUserId(UUID tenantId, UUID serviceAccountUserId);
+
     /** The credential a token's {@code azp} names, within the token's own tenant. */
     Optional<IntegrationCredential> findByTenantIdAndKcClientId(UUID tenantId, String kcClientId);
 

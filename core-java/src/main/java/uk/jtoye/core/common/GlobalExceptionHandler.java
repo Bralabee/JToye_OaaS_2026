@@ -54,6 +54,7 @@ import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
 import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
+import uk.jtoye.core.exception.StaffTargetIsCredentialException;
 import uk.jtoye.core.exception.StaffInviteEmailTakenException;
 import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
 import uk.jtoye.core.exception.StaffInviteUnavailableException;
@@ -1228,6 +1229,19 @@ public class GlobalExceptionHandler {
         problem.setTitle("Human only");
         problem.setType(URI.create("https://jtoye.uk/errors/human-only-action"));
         problem.setProperty("code", "HUMAN_ONLY_ACTION");
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (Q7) — a staff grant named an integrator credential's service account. 409: its access is set
+     * when it is issued; revoke it and issue a new credential instead.
+     */
+    @ExceptionHandler(StaffTargetIsCredentialException.class)
+    public ProblemDetail handleStaffTargetIsCredential(StaffTargetIsCredentialException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Target is a credential");
+        problem.setType(URI.create("https://jtoye.uk/errors/staff-target-is-credential"));
+        problem.setProperty("code", "STAFF_TARGET_IS_CREDENTIAL");
         return problem;
     }
 

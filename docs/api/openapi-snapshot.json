@@ -13725,7 +13725,7 @@
                 }
               }
             },
-            "description" : "Would downgrade the last GROUP_ADMIN (last-group-admin)"
+            "description" : "Would downgrade the last GROUP_ADMIN (last-group-admin), or the user is an integrator credential's service account (staff-target-is-credential)"
           }
         },
         "security" : [

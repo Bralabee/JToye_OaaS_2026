@@ -97,7 +97,8 @@ public class StaffController {
             @ApiResponse(responseCode = "400", description = "Invalid request (e.g. shop-scoped GROUP_ADMIN)"),
             @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied), or the "
                     + "token was not issued to the dashboard client (human-only-action)"),
-            @ApiResponse(responseCode = "409", description = "Would downgrade the last GROUP_ADMIN (last-group-admin)")
+            @ApiResponse(responseCode = "409", description = "Would downgrade the last GROUP_ADMIN (last-group-admin), or "
+                    + "the user is an integrator credential's service account (staff-target-is-credential)")
     })
     public ResponseEntity<StaffMemberDto> grant(@Valid @RequestBody GrantStaffRequest request) {
         humanCallerGuard.requireHuman();
