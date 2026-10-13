@@ -138,6 +138,26 @@ class ProductListAvailableOnlyIntegrationTest {
     }
 
     @Test
+    @DisplayName("The PAGE is filtered, not one fetched page: page 0 of size 1 is the on-sale product although newer sold-out ones sort first")
+    void thePageItselfIsFilteredInTheQuery() throws Exception {
+        // A filter applied to one already-fetched page cannot be told from a query filter by
+        // totalElements alone on a short page: PageImpl recomputes the total from the content when
+        // offset + size exceeds it (measured, break arm B6). Two NEWER sold-out products sort ahead of
+        // the on-sale one under the default createdAt DESC, so a post-filter of page 0 is empty.
+        UUID newerSoldOut1 = seedProduct(shopA, false, 0);
+        UUID newerSoldOut2 = seedProduct(shopA, false, 0);
+        jdbc.update("UPDATE products SET created_at = now() + interval '1 hour' WHERE id IN (?, ?)",
+                newerSoldOut1, newerSoldOut2);
+
+        JsonNode page = list(admin(), "shopId", shopA.toString(), "availableOnly", "true", "size", "1", "page", "0");
+        JsonNode control = list(admin(), "shopId", shopA.toString(), "size", "1", "page", "0");
+
+        assertThat(ids(control)).as("control: the newest product sorts first").containsAnyOf(newerSoldOut1, newerSoldOut2);
+        assertThat(ids(page)).containsExactly(aOnSale);
+        assertThat(page.path("totalElements").asLong()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("Without availableOnly the shop list is unchanged: sold-out products are still listed for the vendor")
     void withoutTheFlagTheShopListIsUnchanged() throws Exception {
         JsonNode page = list(admin(), "shopId", shopA.toString());
@@ -190,9 +210,14 @@ class ProductListAvailableOnlyIntegrationTest {
     // ---- helpers ----
 
     private JsonNode list(RequestPostProcessor caller, String... params) throws Exception {
-        MockHttpServletRequestBuilder request = get("/api/v1/products").param("size", "100").with(caller);
+        MockHttpServletRequestBuilder request = get("/api/v1/products").with(caller);
+        boolean sized = false;
         for (int i = 0; i < params.length; i += 2) {
             request = request.param(params[i], params[i + 1]);
+            sized |= "size".equals(params[i]);
+        }
+        if (!sized) {
+            request = request.param("size", "100");
         }
         MvcResult result = mockMvc.perform(request).andReturn();
         assertThat(result.getResponse().getStatus())
