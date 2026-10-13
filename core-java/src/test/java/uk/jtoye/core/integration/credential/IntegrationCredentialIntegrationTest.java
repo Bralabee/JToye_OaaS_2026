@@ -89,6 +89,8 @@ class IntegrationCredentialIntegrationTest {
     static final String SHOP_ACCESS_DENIED = "https://jtoye.uk/errors/shop-access-denied";
     static final String CREDENTIAL_REVOKED = "https://jtoye.uk/errors/credential-revoked";
     static final String NOT_FOUND = "https://jtoye.uk/errors/not-found";
+    static final String HUMAN_ONLY = "https://jtoye.uk/errors/human-only-action";
+    static final String MACHINE_CLIENT = "it-machine-client";
     static final List<String> SIX_SCOPES = List.of("catalog:read", "catalog:write", "orders:read",
             "orders:write", "customers:read", "customers:write");
 
@@ -100,6 +102,9 @@ class IntegrationCredentialIntegrationTest {
         registry.add("jtoye.keycloak.admin.base-url", () -> "http://keycloak.invalid:8080");
         registry.add("jtoye.keycloak.admin.password", () -> "not-a-real-admin-password");
         registry.add("jtoye.keycloak.admin.vendor-realm", () -> REALM);
+        // A declared machine client (CR-03): a non-UUID subject whose azp is allowlisted is an implicit Group
+        // admin for the shop gate. The human-only arms prove it still cannot manage credentials or staff.
+        registry.add("jtoye.access.machine-client-ids", () -> MACHINE_CLIENT);
     }
 
     @MockitoBean private KeycloakAdminClient keycloak;
@@ -512,6 +517,89 @@ class IntegrationCredentialIntegrationTest {
         java.time.OffsetDateTime aged = lastUsed(credentialId);
         callAsCredential(clientId);
         assertThat(lastUsed(credentialId)).as("a call after the interval is recorded again").isAfter(aged);
+    }
+
+    // ---- Task 3: only humans manage credentials and staff (Q7, T-37-107) ------------------------------
+
+    @Test
+    @DisplayName("Q7: a credential's own token is refused 403 human-only-action on every credential endpoint and every "
+            + "staff grant, revoke and invite mutation; nothing is written and Keycloak is never called again")
+    void credentialToken_cannotManageCredentialsOrStaff() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:write"), "SHOP_MANAGER", shopA);
+        String clientId = clientIdOf(credentialId);
+        var machine = serviceAccountJwt(serviceAccountUser, tenantId, clientId, "orders:write");
+        UUID staffGrant = ShopGrants.grantOperator(jdbc, tenantId, UUID.randomUUID(), shopA, "STAFF", "s@example.com");
+
+        expectHumanOnly(post(PATH).with(machine).contentType(MediaType.APPLICATION_JSON)
+                .content(createBody("Minted by a machine", List.of("orders:read"), "STAFF", shopA)));
+        expectHumanOnly(get(PATH).with(machine));
+        expectHumanOnly(post(PATH + "/" + credentialId + "/rotate").with(machine));
+        expectHumanOnly(delete(PATH + "/" + credentialId).with(machine));
+        expectHumanOnly(post("/api/v1/staff/grant").with(machine).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":\"" + serviceAccountUser + "\",\"shopId\":\"" + shopB + "\",\"role\":\"SHOP_MANAGER\"}"));
+        expectHumanOnly(delete("/api/v1/staff/" + staffGrant).with(machine));
+        expectHumanOnly(post("/api/v1/staff/invites").with(machine).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"new.person@example.com\",\"role\":\"STAFF\",\"shopId\":\"" + shopA + "\"}"));
+
+        verify(keycloak, times(1)).createClient(anyString(), any(), anyString());
+        verify(keycloak, never()).regenerateClientSecret(anyString(), anyString(), anyString());
+        verify(keycloak, never()).deleteClient(anyString(), anyString(), anyString());
+        assertThat(credentialCount()).isEqualTo(1);
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", Long.class,
+                tenantId, serviceAccountUser))).as("the credential did not widen its own grant").isEqualTo(1L);
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE id = ?", Long.class, staffGrant))).isEqualTo(1L);
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM staff_invite WHERE tenant_id = ?", Long.class, tenantId))).isZero();
+    }
+
+    @Test
+    @DisplayName("Q7: a declared machine client (implicit Group admin for the shop gate) is refused human-only-action "
+            + "on staff grant and on credentials")
+    void declaredMachineClient_cannotManageStaffOrCredentials() throws Exception {
+        UUID person = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenantId, person, shopA, "STAFF", "person-" + person + "@example.com");
+        var machine = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
+                .jwt(j -> j.subject("service-account-" + MACHINE_CLIENT)
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("azp", MACHINE_CLIENT));
+
+        expectHumanOnly(post("/api/v1/staff/grant").with(machine).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"userId\":\"" + person + "\",\"shopId\":null,\"role\":\"GROUP_ADMIN\"}"));
+        expectHumanOnly(post(PATH).with(machine).contentType(MediaType.APPLICATION_JSON)
+                .content(createBody("Minted by a machine", List.of("orders:read"), "STAFF", shopA)));
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ? AND role = 'GROUP_ADMIN'",
+                Long.class, tenantId, person))).as("no machine made anyone a Group admin").isZero();
+        verify(keycloak, never()).createClient(anyString(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("Q7: a Group admin whose token was issued to another client (azp integration-orders-rw) is refused; "
+            + "the same person through the dashboard client passes")
+    void groupAdminOutsideTheDashboardClient_isRefused_andThroughItPasses() throws Exception {
+        UUID person = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenantId, person, shopA, "STAFF", "person-" + person + "@example.com");
+        var viaIntegrationClient = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
+                .jwt(j -> j.subject(admin.toString())
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("azp", "integration-orders-rw"));
+        String grant = "{\"userId\":\"" + person + "\",\"shopId\":\"" + shopB + "\",\"role\":\"STAFF\"}";
+
+        expectHumanOnly(post("/api/v1/staff/grant").with(viaIntegrationClient)
+                .contentType(MediaType.APPLICATION_JSON).content(grant));
+
+        MvcResult viaDashboard = mockMvc.perform(post("/api/v1/staff/grant").with(vendorJwt(admin, tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content(grant)).andReturn();
+        assertThat(viaDashboard.getResponse().getStatus()).as(body(viaDashboard)).isEqualTo(201);
+    }
+
+    void expectHumanOnly(org.springframework.test.web.servlet.RequestBuilder request) throws Exception {
+        MvcResult refused = mockMvc.perform(request).andReturn();
+        assertThat(refused.getResponse().getStatus()).as("%s %s -> %s", refused.getRequest().getMethod(),
+                refused.getRequest().getRequestURI(), body(refused)).isEqualTo(403);
+        assertThat(json(refused).path("type").asString()).as(body(refused)).isEqualTo(HUMAN_ONLY);
     }
 
     // ---- helpers --------------------------------------------------------------------------------------

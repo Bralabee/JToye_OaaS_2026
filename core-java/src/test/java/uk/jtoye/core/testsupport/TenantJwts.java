@@ -32,6 +32,14 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
  */
 public final class TenantJwts {
 
+    /**
+     * 37-45 (Q7): the {@code azp} of a token the dashboard obtained, i.e. the NextAuth
+     * {@code KEYCLOAK_CLIENT_ID} ({@code core-api} in every repository runtime) and the default of
+     * {@code jtoye.access.human-client-ids}. Every person-shaped token here carries it, so a test keeps its
+     * meaning under the human-only rule on credential and staff management.
+     */
+    public static final String DASHBOARD_CLIENT_ID = "core-api";
+
     private TenantJwts() {
     }
 
@@ -44,6 +52,7 @@ public final class TenantJwts {
         return jwt().jwt(j -> j
                         .subject(UUID.randomUUID().toString())
                         .claim("tenant_id", tenantId.toString())
+                        .claim("azp", DASHBOARD_CLIENT_ID)
                         .claim("email", "operator@example.com")
                         .claim("realm_access", Map.of("roles", List.of("admin"))))
                 .authorities(new KeycloakRealmRoleConverter());
@@ -60,6 +69,7 @@ public final class TenantJwts {
         return jwt().jwt(j -> j
                         .subject(sub.toString())
                         .claim("tenant_id", tenantId.toString())
+                        .claim("azp", DASHBOARD_CLIENT_ID)
                         .claim("email", "user-" + sub + "@example.com")
                         .claim("realm_access", Map.of("roles", List.of("user"))))
                 .authorities(new KeycloakRealmRoleConverter());
@@ -92,6 +102,7 @@ public final class TenantJwts {
     public static RequestPostProcessor tenantlessAdminJwt() {
         return jwt().jwt(j -> j
                         .subject(UUID.randomUUID().toString())
+                        .claim("azp", DASHBOARD_CLIENT_ID)
                         .claim("email", "operator@example.com")
                         .claim("realm_access", Map.of("roles", List.of("admin"))))
                 .authorities(new KeycloakRealmRoleConverter());
