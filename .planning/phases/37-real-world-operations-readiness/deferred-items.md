@@ -702,3 +702,23 @@ where it must be resolved.
   **Suggested owner:** the next plan that edits `k8s/scripts/check-env-contract.sh`, or the phase-PR doc sweep.
   Cite the symbol (`WhatsAppWebhook`, the `appSecret == ""` branch) instead of a line range, so the next edit to the
   file cannot make it stale again. Not fixed in 37-41: it was stale before 37-41, and the file is outside the plan.
+
+## From 37-47 (the 37-E gate, Task 1)
+
+- **`check-doc-citations.sh` passes rc 0 while it prints VOID for the YAML register (found in 37-47, open).**
+  status: open
+  **What:** `yaml_citations` calls `void` (exit 2) when `python3 -c` fails, but it runs inside the `citations_in`
+  command substitution, so the exit leaves only that subshell. The main loop sees no rows, reports
+  `docs/ops/terminal-states.yaml citations=0` and the run ends `PASS` rc 0. Locally the python3 shim refuses a bare
+  `python3 -c` with no conda env, so on this machine the YAML half has NOT been checked at any gate. 37-38's
+  "PASS: all 29 verified citation(s)" is this shape: 29 Markdown citations, 0 YAML. Under a conda env with PyYAML
+  the same tree reported 53 citations and one real C-3 failure (`terminal-states.yaml` TS-08 still cited
+  `WebhookDelivery.java:47`, moved to 54 by 37-43's HELD status). That failure was fixed at 37-47. CI parses the
+  register (main run 38310336119 at bfef0f6e logged `terminal-states.yaml citations=17`, total 53), so CI was not
+  blind, but a local run cannot be trusted while this persists.
+  **Same shape, not yet read for the same defect:** `check-terminal-states.sh`, `check-dependency-horizons.sh` and
+  `check-image-supply-chain.sh` VOID (rc 2) under the shim, which is the correct direction for them.
+  **Suggested owner:** the next plan that edits `scripts/check-doc-citations.sh`. Have the main loop exit 2 when
+  `citations_in` failed, for example with a sentinel file or `set -o pipefail` plus a captured status, and show the
+  fail direction with a PATH whose python3 exits 1. Not fixed at the gate: the gate script is outside 37-47's
+  files and changing a gate needs its own break arms.
