@@ -674,3 +674,17 @@ where it must be resolved.
   **Suggested owner:** whichever plan next edits the dialog or the spec — wait for the Select content / dialog to
   finish its open animation (e.g. assert `data-state="open"` then a stable bounding box) rather than raising the
   timeout. Not fixed at the gate (scope boundary: a 37-D spec, no 37-C cause).
+
+## From 37-40 (shop-scoped sync, createOrder refuses shop-less products)
+
+- **The dashboard's new-order form offers every tenant product, not only the selected shop's (found in 37-40, open).**
+  status: open
+  **What:** `frontend/app/dashboard/orders/page.tsx` fills the line-item Select from `fetchAllProducts` (the whole
+  tenant catalogue) whatever shop is chosen in the form. Since PR #726 (M2) a product of ANOTHER shop is refused
+  by `OrderService.createOrder` with `404 Product not found`, and since 37-40 a shop-less (shop_id NULL) product is
+  refused the same way (RWO-017 / roadmap SC-5). So a vendor can still pick an item the server will refuse, and is
+  told only "not found". No product was ever correct to order there; the form just never filtered. **Suggested
+  owner:** the 37-E frontend plan or 37.x: narrow the Select to products whose `shopId` equals the selected shop
+  (`fetchAllProducts` already returns `shopId`), and say in the form why a shop-less product is not listed ("assign it
+  a shop first"). Not fixed in 37-40 (scope boundary: no frontend file is in the plan, and the refusal is the plan's
+  intended behaviour). The 37-E gate's live run should place a dashboard order to confirm nothing it seeds is shop-less.
