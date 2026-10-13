@@ -68,9 +68,13 @@ class KeycloakAdminClientTest {
     private record Fixture(MockRestServiceServer server, KeycloakAdminClient client) {}
 
     private static Fixture newFixture() {
+        return newFixture(MAPPER);
+    }
+
+    private static Fixture newFixture(JsonMapper mapper) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakAdminClient client = new KeycloakAdminClient(builder, testProps(), MAPPER);
+        KeycloakAdminClient client = new KeycloakAdminClient(builder, testProps(), mapper);
         return new Fixture(server, client);
     }
 
@@ -925,10 +929,17 @@ class KeycloakAdminClientTest {
      * T-37-106: a secret response that cannot be used (no value, or not JSON) fails with a message that
      * names the realm, and NOTHING in the exception chain carries the secret: a parser error quoting its
      * input would otherwise put the secret into every log line that prints the cause.
+     *
+     * <p>The client is built with a mapper that QUOTES its input in error locations
+     * ({@code INCLUDE_SOURCE_IN_LOCATION}). Jackson 3's default redacts the source, and with that mapper a
+     * regression that attaches the parser's exception as the cause stayed green here (37-44 arm C1): the
+     * test only proves the chain carries no secret when the parser WOULD have put it there. Any
+     * application that turns the feature on gets exactly this mapper.
      */
     @Test
     void secretResponse_unusable_neverPutsTheSecretInTheExceptionChain() {
-        Fixture f = newFixture();
+        Fixture f = newFixture(JsonMapper.builder()
+                .enable(tools.jackson.core.StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION).build());
         String uuid = UUID.randomUUID().toString();
         f.server().expect(requestTo(CLIENT_PATH + uuid + "/client-secret"))
                 .andExpect(method(org.springframework.http.HttpMethod.GET))
