@@ -47,6 +47,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static uk.jtoye.core.testsupport.TenantJwts.serviceAccountJwt;
@@ -86,6 +87,8 @@ class IntegrationCredentialIntegrationTest {
     static final String ROLE_INVALID = "https://jtoye.uk/errors/credential-role-invalid";
     static final String NOT_CONFIGURED = "https://jtoye.uk/errors/credentials-not-configured";
     static final String SHOP_ACCESS_DENIED = "https://jtoye.uk/errors/shop-access-denied";
+    static final String CREDENTIAL_REVOKED = "https://jtoye.uk/errors/credential-revoked";
+    static final String NOT_FOUND = "https://jtoye.uk/errors/not-found";
     static final List<String> SIX_SCOPES = List.of("catalog:read", "catalog:write", "orders:read",
             "orders:write", "customers:read", "customers:write");
 
@@ -114,6 +117,7 @@ class IntegrationCredentialIntegrationTest {
     private String fixtureSecret;
     private UUID clientUuid;
     private UUID serviceAccountUser;
+    private String rotatedSecret;
 
     @BeforeEach
     void setUp() {
@@ -135,6 +139,9 @@ class IntegrationCredentialIntegrationTest {
         when(keycloak.getServiceAccountUserId(REALM, clientUuid.toString(), "tok"))
                 .thenReturn(serviceAccountUser.toString());
         when(keycloak.getClientSecret(REALM, clientUuid.toString(), "tok")).thenReturn(fixtureSecret);
+        rotatedSecret = "fixture-only-rotated-credential-secret-" + tenantId.toString().substring(0, 8);
+        when(keycloak.regenerateClientSecret(REALM, clientUuid.toString(), "tok")).thenReturn(rotatedSecret);
+        when(keycloak.deleteClient(REALM, clientUuid.toString(), "tok")).thenReturn(true);
     }
 
     @AfterEach
@@ -353,7 +360,165 @@ class IntegrationCredentialIntegrationTest {
         assertThat(body(list)).doesNotContain(fixtureSecret);
     }
 
+    // ---- Task 2: rotate, revoke, last used ------------------------------------------------------------
+
+    @Test
+    @DisplayName("D-22/D-24: rotate returns the NEW secret once (no-store), stamps who and when, and stores no secret")
+    void rotate_returnsTheNewSecretOnce_andStampsWhoAndWhen() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:read"), "STAFF", shopA);
+
+        MvcResult rotated = mockMvc.perform(post(PATH + "/" + credentialId + "/rotate").with(vendorJwt(admin, tenantId)))
+                .andReturn();
+        assertThat(rotated.getResponse().getStatus()).as(body(rotated)).isEqualTo(200);
+        assertThat(rotated.getResponse().getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store");
+        JsonNode json = json(rotated);
+        assertThat(json.path("clientSecret").asString()).isEqualTo(rotatedSecret);
+        assertThat(json.path("secretShown").asBoolean()).isTrue();
+        assertThat(json.path("rotatedBy").asString()).isEqualTo(admin.toString());
+        assertThat(json.path("rotatedAt").isNull()).isFalse();
+        verify(keycloak).regenerateClientSecret(REALM, clientUuid.toString(), "tok");
+
+        Map<String, Object> row = inTenant(() -> jdbc.queryForMap(
+                "SELECT rotated_by, rotated_at, ic::text AS row_text FROM integration_credential ic WHERE id = ?",
+                credentialId));
+        assertThat(row.get("rotated_by")).isEqualTo(admin);
+        assertThat(row.get("rotated_at")).isNotNull();
+        assertThat((String) row.get("row_text")).as("POSITIVE CONTROL").contains(credentialId.toString());
+        assertThat((String) row.get("row_text")).doesNotContain(rotatedSecret).doesNotContain(fixtureSecret);
+    }
+
+    @Test
+    @DisplayName("D-22/D-24: delete removes the Keycloak client and the grant, stamps who and when, repeats as 204, "
+            + "and the credential's next call is refused")
+    void delete_revokesEverywhere_andTheNextCallIsRefused() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:read"), "SHOP_MANAGER", shopA);
+        String clientId = clientIdOf(credentialId);
+        mockMvc.perform(get("/api/v1/orders/shop/" + shopA)
+                        .with(serviceAccountJwt(serviceAccountUser, tenantId, clientId, "orders:read")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+
+        MvcResult deleted = mockMvc.perform(delete(PATH + "/" + credentialId).with(vendorJwt(admin, tenantId)))
+                .andReturn();
+        assertThat(deleted.getResponse().getStatus()).as(body(deleted)).isEqualTo(204);
+        verify(keycloak).deleteClient(REALM, clientUuid.toString(), "tok");
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", Long.class,
+                tenantId, serviceAccountUser)))
+                .as("the service account's grant is gone")
+                .isZero();
+        Map<String, Object> row = inTenant(() -> jdbc.queryForMap(
+                "SELECT revoked_by, revoked_at FROM integration_credential WHERE id = ?", credentialId));
+        assertThat(row.get("revoked_by")).isEqualTo(admin);
+        assertThat(row.get("revoked_at")).isNotNull();
+
+        MvcResult again = mockMvc.perform(delete(PATH + "/" + credentialId).with(vendorJwt(admin, tenantId)))
+                .andReturn();
+        assertThat(again.getResponse().getStatus()).as("a repeated delete: %s", body(again)).isEqualTo(204);
+        verify(keycloak, times(1)).deleteClient(anyString(), anyString(), anyString());
+
+        MvcResult refused = mockMvc.perform(get("/api/v1/orders/shop/" + shopA)
+                        .with(serviceAccountJwt(serviceAccountUser, tenantId, clientId, "orders:read")))
+                .andReturn();
+        assertThat(refused.getResponse().getStatus()).as(body(refused)).isEqualTo(403);
+        assertThat(json(refused).path("type").asString()).isEqualTo(CREDENTIAL_REVOKED);
+
+        MvcResult listed = mockMvc.perform(get(PATH).with(vendorJwt(admin, tenantId))).andReturn();
+        JsonNode c = nodes(json(listed).path("credentials")).get(0);
+        assertThat(c.path("status").asString()).isEqualTo("REVOKED");
+        assertThat(c.path("revokedBy").asString()).isEqualTo(admin.toString());
+    }
+
+    @Test
+    @DisplayName("A revoked credential cannot be rotated (409 credential-revoked); an unknown id is 404 for rotate and delete")
+    void rotateRevoked_is409_andUnknownIs404() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:read"), "STAFF", shopA);
+        mockMvc.perform(delete(PATH + "/" + credentialId).with(vendorJwt(admin, tenantId)));
+
+        MvcResult rotateRevoked = mockMvc.perform(post(PATH + "/" + credentialId + "/rotate")
+                .with(vendorJwt(admin, tenantId))).andReturn();
+        assertThat(rotateRevoked.getResponse().getStatus()).as(body(rotateRevoked)).isEqualTo(409);
+        assertThat(json(rotateRevoked).path("type").asString()).isEqualTo(CREDENTIAL_REVOKED);
+        verify(keycloak, never()).regenerateClientSecret(anyString(), anyString(), anyString());
+
+        UUID unknown = UUID.randomUUID();
+        MvcResult rotateUnknown = mockMvc.perform(post(PATH + "/" + unknown + "/rotate")
+                .with(vendorJwt(admin, tenantId))).andReturn();
+        assertThat(rotateUnknown.getResponse().getStatus()).as(body(rotateUnknown)).isEqualTo(404);
+        assertThat(json(rotateUnknown).path("type").asString()).isEqualTo(NOT_FOUND);
+        MvcResult deleteUnknown = mockMvc.perform(delete(PATH + "/" + unknown)
+                .with(vendorJwt(admin, tenantId))).andReturn();
+        assertThat(deleteUnknown.getResponse().getStatus()).as(body(deleteUnknown)).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("Only a Group admin rotates or deletes: a SHOP_MANAGER gets the typed 403 and nothing changes")
+    void rotateAndDelete_byNonGroupAdmin_areRefused() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:read"), "STAFF", shopA);
+        UUID manager = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenantId, manager, shopA, "SHOP_MANAGER", "manager-" + manager + "@example.com");
+
+        MvcResult rotate = mockMvc.perform(post(PATH + "/" + credentialId + "/rotate")
+                .with(vendorJwt(manager, tenantId))).andReturn();
+        assertThat(rotate.getResponse().getStatus()).as(body(rotate)).isEqualTo(403);
+        MvcResult remove = mockMvc.perform(delete(PATH + "/" + credentialId)
+                .with(vendorJwt(manager, tenantId))).andReturn();
+        assertThat(remove.getResponse().getStatus()).as(body(remove)).isEqualTo(403);
+        verify(keycloak, never()).regenerateClientSecret(anyString(), anyString(), anyString());
+        verify(keycloak, never()).deleteClient(anyString(), anyString(), anyString());
+        assertThat(inTenant(() -> jdbc.queryForObject(
+                "SELECT revoked_at IS NULL AND rotated_at IS NULL FROM integration_credential WHERE id = ?",
+                Boolean.class, credentialId))).isTrue();
+    }
+
+    @Test
+    @DisplayName("last_used_at: two calls within the interval write it once; a call after the interval writes it again")
+    void lastUsed_isWrittenAtMostOncePerInterval() throws Exception {
+        UUID credentialId = createCredentialId("Till", List.of("orders:read"), "STAFF", shopA);
+        String clientId = clientIdOf(credentialId);
+        assertThat(lastUsed(credentialId)).as("never used yet").isNull();
+
+        callAsCredential(clientId);
+        java.time.OffsetDateTime first = lastUsed(credentialId);
+        assertThat(first).as("the first call is recorded").isNotNull();
+
+        callAsCredential(clientId);
+        assertThat(lastUsed(credentialId)).as("a second call inside the interval writes nothing").isEqualTo(first);
+
+        inTenant(() -> jdbc.update(
+                "UPDATE integration_credential SET last_used_at = now() - interval '16 minutes' WHERE id = ?",
+                credentialId));
+        java.time.OffsetDateTime aged = lastUsed(credentialId);
+        callAsCredential(clientId);
+        assertThat(lastUsed(credentialId)).as("a call after the interval is recorded again").isAfter(aged);
+    }
+
     // ---- helpers --------------------------------------------------------------------------------------
+
+    UUID createCredentialId(String name, List<String> scopes, String role, UUID shopId) throws Exception {
+        MvcResult created = mockMvc.perform(post(PATH).with(vendorJwt(admin, tenantId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(name, scopes, role, shopId)))
+                .andReturn();
+        assertThat(created.getResponse().getStatus()).as(body(created)).isEqualTo(201);
+        return UUID.fromString(json(created).path("id").asString());
+    }
+
+    String clientIdOf(UUID credentialId) {
+        return inTenant(() -> jdbc.queryForObject(
+                "SELECT kc_client_id FROM integration_credential WHERE id = ?", String.class, credentialId));
+    }
+
+    java.time.OffsetDateTime lastUsed(UUID credentialId) {
+        return inTenant(() -> jdbc.queryForObject(
+                "SELECT last_used_at FROM integration_credential WHERE id = ?", java.time.OffsetDateTime.class,
+                credentialId));
+    }
+
+    void callAsCredential(String clientId) throws Exception {
+        mockMvc.perform(get("/api/v1/orders/shop/" + shopA)
+                        .with(serviceAccountJwt(serviceAccountUser, tenantId, clientId, "orders:read")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+    }
 
     String createCredential(String name, List<String> scopes, String role, UUID shopId) throws Exception {
         MvcResult created = mockMvc.perform(post(PATH).with(vendorJwt(admin, tenantId))
