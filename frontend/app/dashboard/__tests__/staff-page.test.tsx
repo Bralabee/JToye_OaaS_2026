@@ -1049,6 +1049,73 @@ describe("Staff page: API credentials are integrations, not people (37-46, UI-SP
     expect(alert).not.toHaveTextContent(/last group admin/i)
   })
 
+  // 37-E review: revoking deletes the service account's grant but not its directory row, so a
+  // revoked credential used to stay listed as "Integration: {name} · No access" for ever, a row on
+  // which nothing can be done. The Developers page lists only working credentials, and the server
+  // keeps the record of who revoked it and when.
+  describe("a revoked credential", () => {
+    const SA_OLD = "5a5a5a5a-0000-0000-0000-000000000003"
+    const revoked = {
+      ...credentialList.credentials[0],
+      id: "c0c0c0c0-0000-0000-0000-000000000003",
+      name: "Old till",
+      clientId: "jtoye-int-old-till-1b2c",
+      status: "REVOKED",
+      revokedBy: USER_GA,
+      revokedAt: "2026-10-12T09:00:00Z",
+      serviceAccountUserId: SA_OLD,
+    }
+    const revokedPerson = {
+      userId: SA_OLD,
+      maskedEmail: null,
+      displayName: "service-account-jtoye-int-old-till-1b2c",
+      lastSeen: "2026-10-12T08:55:00Z",
+      effectiveAccess: access(SA_OLD, "NONE"),
+    }
+    const serve = (staff: unknown, credentials: unknown) =>
+      mockedApiClient.get.mockImplementation(((url: string) => {
+        if (url === "/api/v1/staff") return Promise.resolve({ data: staff })
+        if (url === "/api/v1/staff/invites") return Promise.resolve({ data: [] })
+        if (url === "/api/v1/credentials") return credentials
+        return Promise.reject(new Error(`unexpected GET ${url}`))
+      }) as never)
+
+    it("is not listed once its grant is gone; an active credential and the people still are", async () => {
+      serve(
+        { ...staffWithIntegrations, people: [...staffWithIntegrations.people, revokedPerson] },
+        Promise.resolve({ data: { ...credentialList, credentials: [...credentialList.credentials, revoked] } })
+      )
+      render(<StaffPage />)
+      expect(await screen.findByText("Integration: Till system")).toBeInTheDocument()
+      expect(screen.getByText("Sam Cook")).toBeInTheDocument()
+      expect(screen.queryByText("Integration: Old till")).toBeNull()
+      expect(screen.queryByText(revokedPerson.displayName)).toBeNull()
+    })
+
+    it("stays listed while the server still reports a grant for it, so no access is ever hidden", async () => {
+      const lingering = { ...integrationGrant("77777777-0000-0000-0000-000000000003", SA_OLD) }
+      serve(
+        {
+          ...staffWithIntegrations,
+          grants: [...staffWithIntegrations.grants, lingering],
+          people: [...staffWithIntegrations.people, integration(SA_OLD)],
+        },
+        Promise.resolve({ data: { ...credentialList, credentials: [...credentialList.credentials, revoked] } })
+      )
+      render(<StaffPage />)
+      expect(await screen.findByText("Integration: Old till")).toBeInTheDocument()
+    })
+
+    it("is listed as before when the credential list cannot be read: nothing is hidden on a guess", async () => {
+      serve(
+        { ...staffWithIntegrations, people: [...staffWithIntegrations.people, revokedPerson] },
+        Promise.reject(new Error("credentials down"))
+      )
+      render(<StaffPage />)
+      expect(await screen.findByText(revokedPerson.displayName)).toBeInTheDocument()
+    })
+  })
+
   it("does not ask for credentials when the caller is not a Group admin", async () => {
     mockedFetchMyShops.mockResolvedValue({ shops: shops as never, isGroupAdmin: false, userId: USER_SAM } as never)
     render(<StaffPage />)

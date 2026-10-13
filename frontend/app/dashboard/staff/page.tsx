@@ -155,6 +155,13 @@ const INTEGRATION_ACCOUNT = "Integration account"
  * Its access is changed on the Developers page, by deleting it and creating a new one.
  */
 const integrationName = (credentialName: string) => `Integration: ${credentialName}`
+
+/** Credential service accounts by name, and which of them are revoked (37-E review). */
+interface CredentialAccounts {
+  names: Map<string, string>
+  revoked: Set<string>
+}
+const NO_CREDENTIALS: CredentialAccounts = { names: new Map(), revoked: new Set() }
 const CREDENTIAL_ROW_LINK = "Manage on the Developers page"
 const CREDENTIAL_TARGET_COPY =
   "This is an API credential, not a person, so its access can't be changed here. Delete it on the " +
@@ -373,6 +380,13 @@ export default function StaffPage() {
    * server still refuses any change to a credential's grant.
    */
   const [credentialBySa, setCredentialBySa] = useState<Map<string, string>>(new Map())
+  /**
+   * Service accounts of REVOKED credentials (37-E review). Revoking deletes the grant but not the
+   * directory row, so without this each one stayed listed as "No access" for ever, a row nothing can
+   * act on. The Developers page already lists only working credentials; the server keeps the record
+   * (who revoked it, when). Empty when the list could not be read: then nothing is hidden.
+   */
+  const [revokedSa, setRevokedSa] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   /** A non-403 load failure: the list is UNKNOWN, which must not render as empty. */
@@ -427,7 +441,9 @@ export default function StaffPage() {
       setPeople(staff.people)
       setShops(myShops.shops)
       setMyUserId(myShops.userId)
-      setCredentialBySa(myShops.isGroupAdmin ? await credentialNames() : new Map())
+      const credentials = myShops.isGroupAdmin ? await credentialNames() : NO_CREDENTIALS
+      setCredentialBySa(credentials.names)
+      setRevokedSa(credentials.revoked)
       setForbidden(false)
       setLoadError(null)
     } catch (error: unknown) {
@@ -447,16 +463,19 @@ export default function StaffPage() {
   }
 
   /** Best-effort: a failed or switched-off credential list names nothing, and decides nothing. */
-  const credentialNames = async (): Promise<Map<string, string>> => {
+  const credentialNames = async (): Promise<CredentialAccounts> => {
     try {
       const { credentials } = await listCredentials()
-      const map = new Map<string, string>()
+      const names = new Map<string, string>()
+      const revoked = new Set<string>()
       credentials.forEach((c) => {
-        if (c.serviceAccountUserId) map.set(c.serviceAccountUserId, c.name)
+        if (!c.serviceAccountUserId) return
+        names.set(c.serviceAccountUserId, c.name)
+        if (c.status === "REVOKED") revoked.add(c.serviceAccountUserId)
       })
-      return map
+      return { names, revoked }
     } catch {
-      return new Map()
+      return NO_CREDENTIALS
     }
   }
 
@@ -472,13 +491,21 @@ export default function StaffPage() {
     return map
   }, [shops])
 
-  const rows = useMemo(() => peopleRows(people, directory), [people, directory])
-
   const grantsByUserId = useMemo(() => {
     const map = new Map<string, StaffMember[]>()
     grants.forEach((g) => map.set(g.userId, [...(map.get(g.userId) ?? []), g]))
     return map
   }, [grants])
+
+  // A revoked credential's account is left out only while the server reports no grant for it, so
+  // access that still exists is never hidden.
+  const rows = useMemo(
+    () =>
+      peopleRows(people, directory).filter(
+        (p) => !(revokedSa.has(p.userId) && !grantsByUserId.get(p.userId)?.length)
+      ),
+    [people, directory, revokedSa, grantsByUserId]
+  )
 
   /**
    * The picker offers the people who have signed in (the directory), plus — when
