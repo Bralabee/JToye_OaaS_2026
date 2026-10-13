@@ -110,7 +110,16 @@
 # only passing is exactly the thing this engine exists to distrust.
 set -uo pipefail
 
-VERSION="1.1.1"   # bump on any behaviour change; install.sh stamps it into vendored copies
+VERSION="1.1.2"   # bump on any behaviour change; gates/version-lock.sh enforces it.
+#                  install.sh copies the engine whole and only READS this line, to
+#                  label --check-all drift; the content hash is what detects drift.
+#                  1.1.2 (2026-10-13): records #300 (2026-10-04), which shipped a
+#                  behaviour change under 1.1.1. The engine finds a PCRE grep as
+#                  `grep` or `ggrep`, so a macOS host with only Homebrew's ggrep
+#                  runs instead of VOIDing. Unbumped, --check-all reported that
+#                  change as "DRIFT (vendored v1.1.1, canonical v1.1.1)", the
+#                  false-alarm wording 1.1.0's entry below says the version exists
+#                  to prevent.
 #                  1.1.1 (2026-08-25): a pattern beginning with `-` was unwritable —
 #                  grep parsed it as options, VOIDed, and the rule could never be used.
 #                  1.1.0 (2026-08-25): kind=count. The bump matters for a reason the
@@ -140,7 +149,14 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; FAIL=1; }
 
 # ── preflight: a missing tool is VOID, never a silent skip ───────────────────────────
 command -v jq >/dev/null 2>&1 || { void "jq is not installed"; exit 2; }
-printf 'x' | grep -qP 'x' 2>/dev/null || { void "grep does not support -P (PCRE)"; exit 2; }
+# PCRE grep under either name (issue #200): macOS's /usr/bin/grep has no -P, and
+# `brew install grep` ships GNU grep as `ggrep` unless its gnubin leads PATH. Same
+# resolution as hooks/lib/cmdline.sh; every PCRE call below goes through $GREP_P.
+GREP_P=""
+for _c in grep ggrep; do
+	if printf 'x' | command "$_c" -qP 'x' 2>/dev/null; then GREP_P="$_c"; break; fi
+done
+[ -n "$GREP_P" ] || { void "no PCRE-capable grep (grep -P or ggrep -P; on macOS: brew install grep)"; exit 2; }
 
 if [ -z "$ROOT" ]; then
 	ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || ROOT=""
@@ -174,7 +190,7 @@ src_index() { # <name> -> echoes index or empty
 shape_ok() { # <value> <shape>
 	case "$2" in
 		int)    case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac ;;
-		semver) printf '%s' "$1" | grep -qP '^[0-9]+\.[0-9]+\.[0-9]+$' ;;
+		semver) printf '%s' "$1" | command "$GREP_P" -qP '^[0-9]+\.[0-9]+\.[0-9]+$' ;;
 		any)    [ -n "$1" ] ;;
 		*)      return 1 ;;
 	esac
@@ -227,7 +243,7 @@ while IFS= read -r raw || [ -n "$raw" ]; do
 				# `set -o pipefail` above happens to make the pipeline's rc grep's, so
 				# the old form worked — but only by depending on an option set far away
 				# from here. Relax pipefail and the check silently becomes dead code.
-				v=$(grep -ohP -e "$extract" -- "$sfile" 2>/dev/null); grc=$?
+				v=$(command "$GREP_P" -ohP -e "$extract" -- "$sfile" 2>/dev/null); grc=$?
 				v=$(printf '%s\n' "$v" | head -1)
 				if [ "$grc" -gt 1 ]; then
 					void "source '$name': grep -P errored (rc=$grc) on extractor: $extract"
@@ -248,7 +264,7 @@ while IFS= read -r raw || [ -n "$raw" ]; do
 				# non-zero, so the rc is read BEFORE deciding — a bare `|| void` here
 				# would report an uncompilable PCRE as "matched nothing", which is the
 				# wrong reason and sends the reader to the wrong file.
-				v=$(grep -cP -e "$extract" -- "$sfile" 2>/dev/null); grc=$?
+				v=$(command "$GREP_P" -cP -e "$extract" -- "$sfile" 2>/dev/null); grc=$?
 				if [ "$grc" -gt 1 ]; then
 					void "source '$name': grep -P errored (rc=$grc) on extractor: $extract"
 				elif [ -z "$v" ] || [ "$v" = "0" ]; then
@@ -351,7 +367,7 @@ while IFS= read -r raw || [ -n "$raw" ]; do
 		*)
 			# -e / -- for the same reason as the source extractor above: a claim whose
 			# pattern legitimately starts with `-` must be expressible.
-			found=$(grep -ohP -e "$pat" -- "$doc" 2>/dev/null)
+			found=$(command "$GREP_P" -ohP -e "$pat" -- "$doc" 2>/dev/null)
 			grc=$?
 			if [ "$grc" -gt 1 ]; then
 				void "$doc [$label]: grep -P errored (rc=$grc) on pattern: $pat"
