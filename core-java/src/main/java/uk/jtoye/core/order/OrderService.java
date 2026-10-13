@@ -351,6 +351,17 @@ public class OrderService {
         log.info("Created order {} with {} items, total: {} pennies",
                 order.getOrderNumber(), order.getItems().size(), order.getTotalAmountPennies());
 
+        // Phase 37-42 (D-13, RWO-036 / UXT-036): submit on creation. The persona run's MCP orders stayed
+        // DRAFT, and the kitchen board lists PENDING..READY, so no agent order ever reached the kitchen.
+        // With submit=true the order takes the SAME SUBMIT transition the dashboard's Submit button takes
+        // (state machine, shop gate, save, the DRAFT -> PENDING outbox row the storefront cash path also
+        // writes), inside THIS transaction: a failure there rolls the whole create back, and an
+        // Idempotency-Key replay returns the stored PENDING order without a second event. PENDING is the
+        // end of it; the vendor still accepts every order (D-11, T-37-98). Absent or false keeps the draft.
+        if (Boolean.TRUE.equals(request.getSubmit())) {
+            return transitionOrder(order.getId(), OrderEvent.SUBMIT);
+        }
+
         return orderMapper.toDto(order);
     }
 

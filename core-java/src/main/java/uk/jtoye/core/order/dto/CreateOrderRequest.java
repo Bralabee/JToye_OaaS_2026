@@ -1,5 +1,6 @@
 package uk.jtoye.core.order.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -59,6 +60,29 @@ public class CreateOrderRequest {
     @NotEmpty
     @Valid
     private List<OrderItemRequest> items;
+
+    /**
+     * Submit the order on creation (Phase 37-42, decision D-13, RWO-036).
+     *
+     * <p>{@code true} creates the order and moves it DRAFT -> PENDING in the same transaction, through the
+     * same SUBMIT transition the dashboard's Submit button uses, recording the same DRAFT -> PENDING state
+     * change a storefront cash order records. The order then appears in the kitchen's New lane, where the
+     * vendor still accepts it: PENDING is as far as this goes, never CONFIRMED (no auto-confirm, D-11).
+     * The MCP {@code create_order} tool always sends it, so an agent's order reaches the kitchen.
+     *
+     * <p>Absent or {@code false} is the unchanged dashboard flow: a DRAFT the vendor submits later.
+     *
+     * <p>{@code NON_NULL} because {@code orders.create} is a fingerprinted Idempotency-Key adopter: an
+     * absent flag must serialise exactly as before this field existed, so a retry in flight across the
+     * deploy keeps its fingerprint ({@code IdempotencyFingerprintGoldenTest}).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Submit the order on creation. true: the order is created and moved DRAFT -> "
+            + "PENDING in the same transaction, so it appears in the kitchen's New lane for the vendor to "
+            + "accept (it is never confirmed automatically). Absent or false: the order is created as a "
+            + "DRAFT, to be submitted later with POST /api/v1/orders/{id}/submit.",
+            example = "true")
+    private Boolean submit;
 
     public UUID getShopId() {
         return shopId;
@@ -154,5 +178,13 @@ public class CreateOrderRequest {
 
     public void setItems(List<OrderItemRequest> items) {
         this.items = items;
+    }
+
+    public Boolean getSubmit() {
+        return submit;
+    }
+
+    public void setSubmit(Boolean submit) {
+        this.submit = submit;
     }
 }
