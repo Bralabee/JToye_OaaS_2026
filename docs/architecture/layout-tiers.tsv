@@ -82,6 +82,7 @@ frontend/app/dashboard/kitchen/page.tsx	index
 frontend/app/dashboard/staff/page.tsx	index
 frontend/app/dashboard/onboarding/approvals/page.tsx	index
 frontend/app/dashboard/webhooks/page.tsx	index
+frontend/app/dashboard/developers/page.tsx	index
 # A [id] DETAIL route deliberately tiered INDEX. Tiered by CONTENT shape, not route
 # shape: the reason to open it is a wide, timestamp-heavy delivery log with its own
 # horizontal scroll region, and capping it to 1100 would make it scroll MORE than it does
