@@ -105,6 +105,7 @@ class OrderControllerIntegrationTest {
         productA.setTitle("Product A");
         productA.setIngredientsText("Ingredients A");
         productA.setAllergenMask(0);
+        productA.setShopId(shopAId); // 37-40 (RWO-017): createOrder refuses a shop-less product
         productA = productRepository.save(productA);
         productAId = productA.getId();
 

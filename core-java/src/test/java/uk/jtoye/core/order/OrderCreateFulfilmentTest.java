@@ -130,6 +130,7 @@ class OrderCreateFulfilmentTest {
         product.setSku("JOLLOF-1");
         product.setTitle("Jollof Rice");
         product.setPricePennies(899L);
+        product.setShopId(shopId); // 37-40 (RWO-017): createOrder refuses a shop-less product
 
         lenient().when(shopRepository.findById(shopId)).thenReturn(Optional.of(shop));
         lenient().when(productRepository.findById(productId)).thenReturn(Optional.of(product));

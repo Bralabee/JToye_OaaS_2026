@@ -174,6 +174,7 @@ class ScheduledCleanupServiceIntegrationTest {
             product.setIngredientsText("Ingredients");
             product.setAllergenMask(0);
             product.setPricePennies(1000L);
+            product.setShopId(shop.getId()); // 37-40 (RWO-017): createOrder refuses a shop-less product
             product = productRepository.save(product);
 
             CreateOrderRequest request = new CreateOrderRequest();

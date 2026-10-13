@@ -507,12 +507,29 @@
         "type" : "object"
       },
       "BatchSyncResponse" : {
+        "description" : "What the batch did, item by item",
         "properties" : {
           "processedCount" : {
+            "description" : "Number of items written (CREATED plus UPDATED)",
+            "example" : 3,
             "format" : "int32",
             "type" : "integer"
           },
+          "results" : {
+            "description" : "One result per request item, in request order",
+            "items" : {
+              "$ref" : "#/components/schemas/SyncItemResult"
+            },
+            "type" : "array"
+          },
           "status" : {
+            "description" : "SUCCESS when every item was written (or the batch was empty); PARTIAL when some were written and some rejected; REJECTED when none was written. Never SUCCESS when any item was refused.",
+            "enum" : [
+              "SUCCESS",
+              "PARTIAL",
+              "REJECTED"
+            ],
+            "example" : "SUCCESS",
             "type" : "string"
           }
         },
@@ -5299,6 +5316,11 @@
             "minimum" : 0,
             "type" : "integer"
           },
+          "available" : {
+            "description" : "Whether the product is on sale. Optional; omitted keeps the current value (true on create).",
+            "example" : true,
+            "type" : "boolean"
+          },
           "ingredientsText" : {
             "description" : "Full ingredients list (Natasha's Law)",
             "example" : "Wheat flour, **milk**, sugar",
@@ -5321,6 +5343,19 @@
             "minimum" : 0,
             "type" : "integer"
           },
+          "quantityInStock" : {
+            "description" : "Quantity in stock. Optional; omitted keeps the stored quantity. Sending a number tracks stock at that count. Same rules as PUT /products/{id}.",
+            "example" : 12,
+            "format" : "int32",
+            "minimum" : 0,
+            "type" : "integer"
+          },
+          "shopId" : {
+            "description" : "Shop the product belongs to. REQUIRED on every product item: a product with no shop would be listed and orderable at every shop of the tenant, so an item without one is REJECTED with code SHOP_REQUIRED. On an update it must be the shop the SKU already belongs to (otherwise REJECTED with code SHOP_MISMATCH). The caller needs SHOP_MANAGER on it.",
+            "example" : "8f14e45f-ceea-467f-a0e6-7c3d1c8a1b2e",
+            "format" : "uuid",
+            "type" : "string"
+          },
           "sku" : {
             "description" : "Stock Keeping Unit (unique per tenant) — the product upsert key",
             "example" : "YAM-5KG",
@@ -5335,8 +5370,69 @@
             "minLength" : 1,
             "type" : "string"
           },
+          "trackInventory" : {
+            "description" : "Stock tracking, as on PUT /products/{id}: omit to keep the current tracking; false stops tracking (quantityInStock must then be omitted); true requires quantityInStock. A contradiction is REJECTED with code INVALID_FIELDS.",
+            "example" : true,
+            "type" : "boolean"
+          },
           "type" : {
             "description" : "Item kind, case-insensitive: `shop` or `product`",
+            "example" : "product",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "SyncItemResult" : {
+        "description" : "The outcome of one batch item. Exactly one per item, in request order.",
+        "properties" : {
+          "code" : {
+            "description" : "Why the item was rejected (absent unless REJECTED)",
+            "enum" : [
+              "UNKNOWN_TYPE",
+              "SKU_REQUIRED",
+              "NAME_REQUIRED",
+              "SHOP_REQUIRED",
+              "SHOP_MISMATCH",
+              "SHOP_ACCESS_DENIED",
+              "SHOP_NOT_FOUND",
+              "INVALID_FIELDS",
+              "WRITE_CONFLICT",
+              "WRITE_FAILED"
+            ],
+            "type" : "string"
+          },
+          "id" : {
+            "description" : "Id of the product or shop written (absent when REJECTED)",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "index" : {
+            "description" : "Position of the item in the request's items array (0-based)",
+            "example" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "key" : {
+            "description" : "The item's upsert key: the sku for a product, the name for a shop",
+            "example" : "YAM-5KG",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "Human-readable detail for a rejection (absent unless REJECTED)",
+            "type" : "string"
+          },
+          "outcome" : {
+            "description" : "CREATED, UPDATED or REJECTED",
+            "enum" : [
+              "CREATED",
+              "UPDATED",
+              "REJECTED"
+            ],
+            "type" : "string"
+          },
+          "type" : {
+            "description" : "The item's type as sent",
             "example" : "product",
             "type" : "string"
           }

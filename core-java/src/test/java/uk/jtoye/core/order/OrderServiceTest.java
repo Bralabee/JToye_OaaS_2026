@@ -155,6 +155,9 @@ class OrderServiceTest {
         testProduct.setSku("TEST-001");
         testProduct.setTitle("Test Product");
         testProduct.setPricePennies(1000L); // £10.00
+        // 37-40 (RWO-017): createOrder refuses a shop-less product, so the fixture product belongs to
+        // the ordered shop; the shop-less arm clears it explicitly.
+        testProduct.setShopId(shopId);
 
         // Create test order (using reflection to set auto-generated fields)
         testOrder = new Order();
@@ -403,6 +406,7 @@ class OrderServiceTest {
         Product product2 = new Product();
         setField(product2, "id", productId2);
         product2.setPricePennies(2000L); // £20.00
+        product2.setShopId(shopId); // 37-40 (RWO-017): createOrder refuses a shop-less product
 
         OrderItemRequest item1 = new OrderItemRequest();
         item1.setProductId(productId);
