@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -72,16 +73,28 @@ public class CredentialLastUsedRecorder extends OncePerRequestFilter {
     private final JsonMapper jsonMapper;
     private final Duration interval;
 
-    public CredentialLastUsedRecorder(IntegrationCredentialRepository repository,
-                                      PlatformTransactionManager transactionManager,
+    /**
+     * The repository and the transaction manager are resolved through {@link ObjectProvider}, the
+     * {@code JwtTenantFilter} precedent: a filter bean is part of every {@code @WebMvcTest} slice, which has no
+     * JPA. Without both the filter passes every request through untouched; in the application both are always
+     * present.
+     */
+    public CredentialLastUsedRecorder(ObjectProvider<IntegrationCredentialRepository> repository,
+                                      ObjectProvider<PlatformTransactionManager> transactionManager,
                                       JsonMapper jsonMapper,
                                       @Value("${jtoye.credentials.last-used-interval:PT15M}") Duration interval) {
-        this.repository = repository;
-        this.requiresNew = new TransactionTemplate(transactionManager);
-        this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        this.requiresNewReadOnly = new TransactionTemplate(transactionManager);
-        this.requiresNewReadOnly.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        this.requiresNewReadOnly.setReadOnly(true);
+        this.repository = repository.getIfAvailable();
+        PlatformTransactionManager tm = transactionManager.getIfAvailable();
+        if (tm != null) {
+            this.requiresNew = new TransactionTemplate(tm);
+            this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            this.requiresNewReadOnly = new TransactionTemplate(tm);
+            this.requiresNewReadOnly.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            this.requiresNewReadOnly.setReadOnly(true);
+        } else {
+            this.requiresNew = null;
+            this.requiresNewReadOnly = null;
+        }
         this.jsonMapper = jsonMapper;
         this.interval = interval;
     }
@@ -95,7 +108,7 @@ public class CredentialLastUsedRecorder extends OncePerRequestFilter {
             throws ServletException, IOException {
         String clientId = credentialClientId();
         Optional<UUID> tenant = TenantContext.get();
-        if (clientId == null || tenant.isEmpty()) {
+        if (clientId == null || tenant.isEmpty() || repository == null || requiresNew == null) {
             chain.doFilter(request, response);
             return;
         }
