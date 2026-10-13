@@ -541,6 +541,23 @@ public class KeycloakAdminClient {
         }
     }
 
+    // ---- 37-44 Task 2: RED stubs, implemented in the GREEN commit. ----
+
+    public String getClientSecret(String realm, String clientUuid, String token) {
+        return null;
+    }
+
+    public String regenerateClientSecret(String realm, String clientUuid, String token) {
+        return null;
+    }
+
+    public boolean deleteClient(String realm, String clientUuid, String token) {
+        return false;
+    }
+
+    public void assignDefaultClientScopes(String realm, String clientUuid, List<String> scopes, String token) {
+    }
+
     /** Revokes the user's active sessions ({@code POST .../users/{id}/logout}). */
     public void logoutUser(String realm, String userId, String token) {
         try {
