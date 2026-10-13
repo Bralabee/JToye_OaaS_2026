@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"time"
 
@@ -100,12 +101,39 @@ type SyncItemResult struct {
 	Message string `json:"message,omitempty"`
 }
 
-// CoreProblemError is a 4xx application/problem+json refusal from core.
+// CoreProblemError is a 4xx application/problem+json refusal from core: a
+// typed answer core gives its own callers (shop-access-denied, validation,
+// rate-limited, ...). The edge relays it verbatim instead of flattening it
+// into an untyped 502, so an integrator syncing through the edge reads the
+// same type URI, status and extension members as one calling core directly.
+//
+// Only 4xx is relayed. A 5xx problem stays an ordinary error and the edge's
+// generic 502, because a server-side failure body is internal (T-37-96).
 type CoreProblemError struct {
-	Status      int
+	// Status is core's HTTP status (400..499).
+	Status int
+	// ContentType is core's Content-Type header, verbatim.
 	ContentType string
-	RetryAfter  string
-	Body        []byte
+	// RetryAfter is core's Retry-After header, verbatim ("" when absent).
+	RetryAfter string
+	// Body is core's response body, byte for byte.
+	Body []byte
+}
+
+// maxProblemBodyBytes bounds how much of a core refusal the edge buffers to
+// relay. Core's problem bodies are a few hundred bytes; anything larger is
+// not one the edge will vouch for and falls back to the generic error.
+const maxProblemBodyBytes = 64 << 10
+
+// isClientProblem reports whether a core response is a typed refusal the
+// edge relays: a 4xx whose media type is application/problem+json
+// (parameters such as charset allowed).
+func isClientProblem(resp *http.Response) bool {
+	if resp.StatusCode < 400 || resp.StatusCode > 499 {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return err == nil && mt == "application/problem+json"
 }
 
 func (e *CoreProblemError) Error() string {
@@ -124,8 +152,9 @@ func (e *CoreProblemError) Error() string {
 // contract gate (issue #337); the pre-existing client test could not see it
 // because its stub core encoded the edge's own struct.
 type coreBatchSyncResponse struct {
-	Status         string `json:"status"`
-	ProcessedCount int    `json:"processedCount"`
+	Status         string           `json:"status"`
+	ProcessedCount int              `json:"processedCount"`
+	Results        []SyncItemResult `json:"results"`
 }
 
 // SyncBatch sends a batch sync request to the Core API
@@ -136,6 +165,7 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 	}
 
 	var resp *BatchSyncResponse
+	var problem *CoreProblemError
 	_, err := c.breaker.Execute(func() (interface{}, error) {
 		payload, err := json.Marshal(req)
 		if err != nil {
@@ -165,6 +195,27 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 			return nil, fmt.Errorf("server error: %d", httpResp.StatusCode)
 		}
 
+		if isClientProblem(httpResp) {
+			body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxProblemBodyBytes+1))
+			if err != nil {
+				return nil, fmt.Errorf("failed to read core problem (status %d): %w", httpResp.StatusCode, err)
+			}
+			if len(body) > maxProblemBodyBytes {
+				return nil, fmt.Errorf("core problem (status %d) exceeds %d bytes; not relayed", httpResp.StatusCode, maxProblemBodyBytes)
+			}
+			problem = &CoreProblemError{
+				Status:      httpResp.StatusCode,
+				ContentType: httpResp.Header.Get("Content-Type"),
+				RetryAfter:  httpResp.Header.Get("Retry-After"),
+				Body:        body,
+			}
+			// A refusal core answered on purpose is core WORKING, so it is
+			// returned outside the breaker: counted as a failure, a run of
+			// one integrator's 403s would open the breaker and shed every
+			// tenant's sync for 60 s.
+			return nil, nil
+		}
+
 		if httpResp.StatusCode != http.StatusOK && httpResp.StatusCode != http.StatusAccepted {
 			body, _ := io.ReadAll(httpResp.Body)
 			return nil, fmt.Errorf("unexpected status %d: %s", httpResp.StatusCode, string(body))
@@ -181,6 +232,8 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 		resp = &BatchSyncResponse{
 			Status:         wire.Status,
 			ProcessedCount: wire.ProcessedCount,
+			Results:        wire.Results,
+			HTTPStatus:     httpResp.StatusCode,
 		}
 
 		return resp, nil
@@ -188,6 +241,9 @@ func (c *Client) SyncBatch(ctx context.Context, token, tenantID string, items []
 
 	if err != nil {
 		return nil, err
+	}
+	if problem != nil {
+		return nil, problem
 	}
 
 	return resp, nil

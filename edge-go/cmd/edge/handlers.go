@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -192,12 +193,35 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 
 	resp, err := h.coreClient.SyncBatch(ctx, token, tenantID, payload.Items)
 	if err != nil {
+		// A typed 4xx refusal from core (shop-access-denied, validation,
+		// rate-limited, ...) is core's answer, not a gateway failure: relay
+		// its status, content type, Retry-After and bytes unchanged, so an
+		// integrator syncing through the edge reads exactly what core said
+		// (RESEARCH Pitfall 7). Everything else stays the generic 502, with
+		// no core body (T-37-96).
+		var problem *core.CoreProblemError
+		if errors.As(err, &problem) {
+			h.logger.Info("Core refused batch sync; relaying its problem",
+				zap.Int("status", problem.Status))
+			if problem.RetryAfter != "" {
+				c.Header("Retry-After", problem.RetryAfter)
+			}
+			c.Data(problem.Status, problem.ContentType, problem.Body)
+			return
+		}
 		h.logger.Error("Batch sync failed", zap.Error(err))
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to sync with core API"})
 		return
 	}
 
-	c.JSON(http.StatusAccepted, resp)
+	// Core's own success status: 200 with per-item results (37-40), or 202
+	// from an older core. A partially refused batch is still a 200; the
+	// truth is in status and results, which pass through unchanged.
+	status := resp.HTTPStatus
+	if status != http.StatusOK && status != http.StatusAccepted {
+		status = http.StatusOK
+	}
+	c.JSON(status, resp)
 }
 
 // WhatsAppWebhook godoc

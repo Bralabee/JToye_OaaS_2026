@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -561,5 +562,28 @@ func TestClient_SyncBatch_ProblemRefusalsDoNotOpenTheBreaker(t *testing.T) {
 	}
 	if resp.Status != "PARTIAL" {
 		t.Errorf("status: got %q, want PARTIAL", resp.Status)
+	}
+}
+
+// A "problem" larger than any core writes is not one the edge vouches for:
+// it is not buffered in full or relayed, and falls back to the generic error.
+func TestClient_SyncBatch_OversizedProblemIsNotRelayed(t *testing.T) {
+	big := `{"type":"https://jtoye.uk/errors/validation","detail":"` + strings.Repeat("x", maxProblemBodyBytes) + `"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(big))
+	}))
+	defer server.Close()
+
+	logger, _ := zap.NewProduction()
+	client := NewClient(server.URL, logger)
+	_, err := client.SyncBatch(context.Background(), "test-token", "tenant-123", []map[string]interface{}{{"type": "product"}})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	var pe *CoreProblemError
+	if errors.As(err, &pe) {
+		t.Errorf("a %d-byte problem body was relayed; the bound is %d", len(pe.Body), maxProblemBodyBytes)
 	}
 }
