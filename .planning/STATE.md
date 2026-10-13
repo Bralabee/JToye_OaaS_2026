@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-42 complete (42/53); sub-theme 37-E in progress (37-43 and 37-44 next, wave 34). 37-42 closed 2026-10-13 (RWO-036, RWO-040; D-13; tdd): CreateOrderRequest.submit (NON_NULL, fingerprint golden untouched) makes an agent-created order land PENDING through the shared transition (outbox event emitted), so MCP create_order reaches the kitchen New lane; the dashboard new-order form still creates DRAFT; ProductDto carries allergens in words (NON_NULL); GET /products takes availableOnly counted in the query (page-0 size-1 arm guards the PageImpl total recompute); MCP list_products takes shopId and availableOnly. Unit 1796/0, full integration 1189/0 (on 5882822d), vitest 70/70, metrics 5814. Runtime still the 37-C build (d060d0af), behind the branch; the 37-E gate must check live: MCP create_order in the New lane and Accept -> CONFIRMED, list_products {shopId, availableOnly} on-sale only with names, dashboard form still DRAFT. Earlier: 37-39 stock semantics + narrow PATCH, 37-40 shop-scoped sync with per-item outcomes, 37-41 edge pass-through."
-last_updated: "2026-10-13T03:10:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-43 complete (43/53); sub-theme 37-E in progress (37-44 next, wave 34). 37-43 closed 2026-10-13 (RWO-038 / UXT-038; UI-SPEC E2; tdd): webhook auto-pause counts failed DELIVERIES (3 consecutive events each exhausting 8 attempts; webhook.delivery.auto-pause-after-failed-deliveries, default 3; the old auto-pause-threshold key removed and refused by WebhookPropertiesBindingTest); while auto-paused, deliveries (and events fanned out during the pause) are HELD, resume re-queues them with fresh attempts, revoke fails them; one plain-text email to the tenant contact per auto-pause after commit; subscription DTO heldCount; dashboard Held badge + filter, E2 banner 'Resume and deliver held events'; the delivery log no longer crashes on an unknown status. Unit 1804/0, full integration 1197/0 (on 2bf59cf4), jest 2761/237, build + full tsc rc 0, metrics 5837. Ship 37-43 Tasks 2 and 3 together (the backend alone crashes the old detail page on HELD). Runtime still the 37-C build (d060d0af); the 37-E gate must check live: 3 dead events pause, a 4th is Held, Mailhog gets the email (dev tenant may need contact_email), Resume delivers. UAT: held only on pause (revoke fails), manual-pause events not recorded, fresh 8 attempts on resume, button copy with nothing held, email time format."
+last_updated: "2026-10-13T04:20:00.000Z"
 last_activity: 2026-10-13
-state_head: 4e880c1b
+state_head: fa271b5f
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 227
+  completed_plans: 228
   percent: 65
 ---
 
@@ -1308,6 +1308,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-41 (executor, 2026-10-13): core 4xx problems are relayed outside the edge circuit breaker, so one integrator's refusals cannot open the breaker for every tenant; Retry-After is relayed; a problem body over 64 KiB answers 502
 - [Phase 37]: 37-42 (executor, 2026-10-13): an order created with submit=true (MCP create_order) enters PENDING through the shared state transition so the outbox event fires; submit is NON_NULL so the orders.create idempotency fingerprint golden is unchanged; the dashboard form omits it and still creates DRAFT
 - [Phase 37]: 37-42 (executor, 2026-10-13): availableOnly is filtered in the repository query, never post-filtered over a fetched page (PageImpl rewrites the total on a short page)
+- [Phase 37]: 37-43 (executor, 2026-10-13): auto-pause is delivery-level (N consecutive dead deliveries, default 3) and a paused endpoint HOLDS its events (including events fanned out while paused); resume re-queues with fresh attempts, revoke fails them; the owner gets one email per auto-pause
+- [Phase 37]: 37-43 (executor, 2026-10-13): the dashboard delivery log renders an unknown status raw instead of crashing the page (the shipped log crashed on HELD)
 
 ### Pending Todos
 
@@ -1381,8 +1383,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-13T03:10:00.000Z
-Stopped at: Completed 37-42-PLAN.md (MCP orders land PENDING on the kitchen board; per-shop on-sale menu with allergen names for agents). Next: 37-43 and 37-44 (wave 34, 37-E webhook auto-pause and Keycloak admin calls).
+Last session: 2026-10-13T04:20:00.000Z
+Stopped at: Completed 37-43-PLAN.md (honest webhook auto-pause: delivery-level, HELD events, owner email, Held badge and banner). Next: 37-44 (wave 34, Keycloak admin calls for integrator credentials).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
