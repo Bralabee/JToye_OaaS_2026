@@ -314,3 +314,11 @@ None. No external service configuration is required.
 ---
 *Phase: 37-real-world-operations-readiness*
 *Completed: 2026-10-13*
+
+## Self-Check: PASSED
+
+- 7/7 key files FOUND on disk (SyncItemResult, the two new IT classes, three RED records, this SUMMARY).
+- 8/8 commits FOUND as ancestors of HEAD (8409f68e 667f197a 92bb4b83 f9956a36 4a36808c cfde52e0 f2e713c4 86f54a87).
+- `gsd_run check evaluation-scope --plan 37-40 --commits-only`: status resolved, source plan-subjects, commits on this branch.
+- Must-have artifacts: SyncItemResult contains REJECTED; SyncBatchShopRequiredIntegrationTest contains shopId; SyncService links to productService.
+- Acceptance criteria re-run: Task 1 RED then GREEN with the auth IT's refusal arms kept (16 → 18, none removed); Task 2 break arm B2 reds the PARTIAL arm; Task 3 RED (201) then GREEN (404), B3 reds it again.
