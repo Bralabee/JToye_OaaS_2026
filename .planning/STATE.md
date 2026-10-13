@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-39 complete (39/53); sub-theme 37-E in progress (37-40 next, wave 32). 37-39 closed 2026-10-13 (RWO-016 / UXT-016 P0; tdd): a PUT without quantityInStock keeps stock and tracking (IGNORE-null mapping); CreateProductRequest.trackInventory null = preserve, false = stop and clear (false with a quantity is a typed 400), true needs a quantity (typed 400); PATCH /api/v1/products/{id} accepts only available, quantityInStock, trackInventory and refuses any other property by name (any-setter capture, because Boot disables FAIL_ON_UNKNOWN_PROPERTIES app-wide, so @JsonIgnoreProperties alone silently dropped allergenMask: arm B2), gated SCOPE_catalog:write + SHOP_MANAGER like PUT; new InvalidRequestFieldsException (400 errors/validation keyed by field); the dashboard form sends trackInventory on every create and update. Unit 1783/0, integration 1166/0, jest 2754/236, build rc 0; metrics 5742 -> 5760. Runtime still the 37-C build (d060d0af), behind the branch; OpenAPI live gate RED until the 37-E gate rebuild. No MCP stock tool (37.x candidate)."
-last_updated: "2026-10-12T23:05:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-41 complete (41/53); sub-theme 37-E in progress (37-42 next, wave 33). 37-40 closed 2026-10-13 (RWO-017, RWO-037 core; tdd): /sync/batch product items carry shopId (required to create, must match on update), available, quantityInStock, trackInventory and are written through ProductService (allergen-span parse runs); every item is reported in results[{index, sku|name, outcome CREATED|UPDATED|REJECTED, code, message}] with status SUCCESS|PARTIAL|REJECTED (nothing written = REJECTED); per-item shop gate gives REJECTED SHOP_ACCESS_DENIED, another shop's SKU SHOP_MISMATCH, a create missing a field INVALID_FIELDS (was a whole-batch 403/400); OrderService.createOrder refuses shop-less products with the non-disclosing 404 on every writer. Unit 1787/0, full integration 1178/0 (re-run by the orchestrator on e528a1ed after the executor's last fixture fix), metrics 5776. 37-41 closed 2026-10-13 (RWO-017, RWO-037 edge; tdd): the edge returns core's 200 with results (was 202 with results null) and relays core 4xx problem+json byte-identical with Retry-After (was an untyped 502); core 4xx no longer counts as a breaker failure (10 refusals had opened the breaker for every tenant); problem bodies over 64 KiB answer 502; swag docs + contract gate updated. Go 135/135, metrics 5785. Runtime still the 37-C build (d060d0af), behind the branch; the 37-E gate must rebuild and replay a mixed batch, an ungranted-shop batch and a no-catalog:write token through the edge."
+last_updated: "2026-10-13T01:45:00.000Z"
 last_activity: 2026-10-13
-state_head: b8c1ffb4
+state_head: 585bce5e
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 224
+  completed_plans: 226
   percent: 65
 ---
 
@@ -1303,6 +1303,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-39 (executor, 2026-10-13): PATCH refuses unknown properties by capturing them (any-setter) and naming each in a typed 400, because spring.jackson FAIL_ON_UNKNOWN_PROPERTIES is off app-wide and @JsonIgnoreProperties(ignoreUnknown=false) silently dropped allergenMask (break arm B2)
 - [Phase 37]: 37-39 (executor, 2026-10-13): trackInventory false together with a quantityInStock is a typed 400 on create, PUT and PATCH (contradictory request, not guessed)
 - [Phase 37]: 37-39 (executor, 2026-10-13): InvalidRequestFieldsException added (400 errors/validation with field-keyed errors) for request-shape refusals that name a field
+- [Phase 37]: 37-40 (executor, 2026-10-13): a refused sync item is a 200 with outcome REJECTED and a code (was a whole-batch 403 or 400); a product item without shopId is refused, so an admin can no longer mint a tenant-wide product through sync
+- [Phase 37]: 37-40 (executor, 2026-10-13): SyncItem also carries trackInventory under the 37-39 rule; a create missing a required field is an INVALID_FIELDS item, not a batch 400
+- [Phase 37]: 37-41 (executor, 2026-10-13): core 4xx problems are relayed outside the edge circuit breaker, so one integrator's refusals cannot open the breaker for every tenant; Retry-After is relayed; a problem body over 64 KiB answers 502
 
 ### Pending Todos
 
@@ -1376,8 +1379,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-12T23:05:00.000Z
-Stopped at: Completed 37-39-PLAN.md (explicit trackInventory semantics, IGNORE-null stock mapping, a narrow stock/availability PATCH that cannot touch allergen data, the dashboard form sends trackInventory). Next: 37-40 (wave 32, 37-E sync products belong to a shop).
+Last session: 2026-10-13T01:45:00.000Z
+Stopped at: Completed 37-41-PLAN.md (edge passes core per-item sync results and typed 4xx refusals through; 37-40 shop-scoped sync with per-item outcomes recorded with it). Next: 37-42 (wave 33, 37-E MCP order reaches the kitchen, per-shop menu with readable allergens).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
