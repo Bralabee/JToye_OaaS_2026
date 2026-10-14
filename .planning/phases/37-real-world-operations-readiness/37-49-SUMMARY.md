@@ -278,3 +278,11 @@ None.
 ---
 *Phase: 37-real-world-operations-readiness*
 *Completed: 2026-10-14*
+
+## Self-Check: PASSED
+
+- All 5 key created files exist.
+- All 6 plan commits (a60a8f45, bef53d24, 56040c05, 77356207, f236319e, fea42b2e) are ancestors of HEAD.
+- There are 2 `test(37-49)` and 2 `feat(37-49)` commits, and each RED precedes its GREEN.
+- No commit message carries an attribution line. The one `generated with` hit is "regenerated with scripts/docs-freshness.sh".
+- The working tree is clean.
