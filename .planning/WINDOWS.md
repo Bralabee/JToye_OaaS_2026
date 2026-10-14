@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 16
+open_count: 17
 waived_count: 0
 fixed_count: 28
-total_count: 44
-last_updated: 2026-10-14T11:33:57.563Z
+total_count: 45
+last_updated: 2026-10-14T11:50:46.206Z
 ---
 
 # Broken Windows Ledger
@@ -59,6 +59,7 @@ last_updated: 2026-10-14T11:33:57.563Z
 | 42 | 37 | todo | infra/keycloak/realm-export.template.json | 9 | DEFERRED (orchestrator revision 2026-10-10, recorded for the owner): refresh-token rotation stays off (revokeRefreshToken false). A per-process single-flight cannot protect the 3 k8s frontend replicas (nor middleware.ts, which runs auth in another runtime). Turning it on needs a shared guard (a Redis-backed single-flight keyed by refresh token, or sticky sessions proven) or a Keycloak refreshTokenMaxReuse policy, then its own ruling | open |  | 2026-10-10T18:48:49.557Z |  |
 | 43 | 37 | unmet-truth | frontend/app/shop/[slug]/shop-detail-client.tsx |  | 37-36 truth 3 / UI-SPEC C4: the review-form notice was not shipped because the frontend has no review form (reviews are API-only); see 37 deferred-items | open |  | 2026-10-12T16:10:54.367Z |  |
 | 44 | 37 | unrun-verify | core-java/src/main/resources/db/migration/V83__shop_fulfilment_offered.sql |  | 37-48 V83 (offers_delivery/offers_collection), the four shop DTO fields, 422 fulfilment-not-offered on both writers, the slug-keep rule and 409 shop-slug-taken are proven in Testcontainers and jest only; the compose core-java predates them. Owed at 37-50 after rebuilding ALL images: V83 applied out of order, a vendor sets fee 299 and threshold 3000 and the storefront charges them, a collection-only shop refuses DELIVERY on the storefront and the vendor API, a shop edit keeps /shop/{slug}, check-openapi-snapshot-fresh green | open |  | 2026-10-14T11:33:57.563Z |  |
+| 45 | 37 | unrun-verify | frontend/app/shop/[slug]/shop-detail-client.tsx |  | 37-49: G1/G2 visual and live proof owed to 37-50 - the Collection only chip and the wrapped status row at a real 375px render, the web-address row and create preview at 375/768/1280, and a collection-only shop set in the live dialog then ordered at checkout on rebuilt images | open |  | 2026-10-14T11:50:46.206Z |  |
 
 ````json
 [
@@ -631,6 +632,19 @@ last_updated: 2026-10-14T11:33:57.563Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T11:33:57.563Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 45,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/app/shop/[slug]/shop-detail-client.tsx",
+    "line": null,
+    "description": "37-49: G1/G2 visual and live proof owed to 37-50 - the Collection only chip and the wrapped status row at a real 375px render, the web-address row and create preview at 375/768/1280, and a collection-only shop set in the live dialog then ordered at checkout on rebuilt images",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T11:50:46.206Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
