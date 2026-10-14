@@ -17,9 +17,11 @@ import {
   CREDENTIAL_PROBLEMS,
   CREDENTIAL_ROLES,
   CREDENTIAL_SCOPES,
+  createAttemptKey,
   createCredential,
   credentialActionError,
   credentialProblem,
+  type CreateAttempt,
   type CredentialRole,
   type CredentialScope,
   type CredentialSecret,
@@ -94,8 +96,13 @@ export function CredentialCreateDialog({
   const [submitting, setSubmitting] = useState(false)
   const inFlight = useRef(false)
   const nameRef = useRef<HTMLInputElement>(null)
+  // The last create attempt and its Idempotency-Key, kept until a create succeeds or the form is
+  // reset, so pressing Create again after a lost response replays instead of issuing a second
+  // credential.
+  const attempt = useRef<CreateAttempt | null>(null)
 
   const reset = () => {
+    attempt.current = null
     setName("")
     setScopes([])
     setRole("STAFF")
@@ -139,12 +146,14 @@ export function CredentialCreateDialog({
     inFlight.current = true
     setSubmitting(true)
     try {
-      const created = await createCredential({
+      const input = {
         name: trimmed,
         scopes,
         role,
         shopId: shopId === ALL_SHOPS_VALUE ? null : shopId,
-      })
+      }
+      attempt.current = createAttemptKey(attempt.current, input)
+      const created = await createCredential(input, attempt.current.key)
       inFlight.current = false
       reset()
       onCreated(created)

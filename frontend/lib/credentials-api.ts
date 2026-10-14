@@ -116,15 +116,33 @@ export async function listCredentials(): Promise<CredentialList> {
 }
 
 /**
- * POST /api/v1/credentials. The Idempotency-Key is generated per submit: the api-client's own 5xx
- * retry re-sends the same config, so a retried create replays (200, `secretShown` false) instead
- * of issuing a second credential.
+ * POST /api/v1/credentials under the caller's Idempotency-Key. The caller keeps one key per
+ * intended credential (see {@link createAttemptKey}): the api-client's own 5xx/network retry
+ * re-sends the same config, and a Create pressed again after those retries are exhausted must
+ * send the same key too, so core replays (200, `secretShown` false) instead of issuing a second
+ * working credential whose secret nobody holds (37-E review).
  */
-export async function createCredential(input: CreateCredentialInput): Promise<CredentialSecret> {
+export async function createCredential(
+  input: CreateCredentialInput,
+  idempotencyKey: string
+): Promise<CredentialSecret> {
   const res = await apiClient.post<CredentialSecret>(CREDENTIALS_PATH, input, {
-    headers: { "Idempotency-Key": makeIdempotencyKey() },
+    headers: { "Idempotency-Key": idempotencyKey },
   })
   return res.data
+}
+
+/** The last create attempt: its body, as sent, and the key it was sent under. */
+export type CreateAttempt = { body: string; key: string }
+
+/**
+ * The key for this create: the previous attempt's when the body is unchanged (a retry of the same
+ * credential), a fresh one when anything changed (a different credential; re-using the key would
+ * earn a 422 idempotency-payload-mismatch).
+ */
+export function createAttemptKey(previous: CreateAttempt | null, input: CreateCredentialInput): CreateAttempt {
+  const body = JSON.stringify(input)
+  return previous && previous.body === body ? previous : { body, key: makeIdempotencyKey() }
 }
 
 /** POST /api/v1/credentials/{id}/rotate: the old secret stops working at once; the new one is returned once. */
