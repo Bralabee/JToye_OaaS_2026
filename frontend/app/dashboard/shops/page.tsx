@@ -57,10 +57,17 @@ const PAGE_SIZE = 20
 // 37-49: the server refuses a negative amount (@Min(0) on both fields); the form says so before sending.
 const AMOUNT_MESSAGE = "Enter an amount of £0.00 or more."
 
+/**
+ * 37-G review: pounds as TYPED, checked strictly: digits with an optional point and at most two decimals
+ * ("30", "30.5", "2.99", ".5"). The fields are text, not `type="number"`, because a number input reports a
+ * malformed entry ("1e", "3-0") as value "" and this check then read it as an EMPTY field, so the form
+ * sent the threshold as null (the server clears it) and the fee as 0; Chromium also read "30,00" as 3000.
+ */
+const POUNDS_PATTERN = /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/
+
 function isPoundsOrEmpty(value: string | undefined): boolean {
   if (value === undefined || value.trim() === "") return true
-  const n = Number(value)
-  return Number.isFinite(n) && n >= 0
+  return POUNDS_PATTERN.test(value.trim())
 }
 
 /** Pounds as typed -> whole pennies, or null for an empty field. */
@@ -883,10 +890,9 @@ export default function ShopsPage() {
                   <Label htmlFor="deliveryFeePounds">Delivery fee (£)</Label>
                   <Input
                     id="deliveryFeePounds"
-                    type="number"
+                    type="text"
                     inputMode="decimal"
-                    step="0.01"
-                    min="0"
+                    autoComplete="off"
                     placeholder="0.00"
                     className="h-11"
                     aria-invalid={errors.deliveryFeePounds ? true : undefined}
@@ -901,10 +907,9 @@ export default function ShopsPage() {
                   <Label htmlFor="freeDeliveryThresholdPounds">Free delivery over (£)</Label>
                   <Input
                     id="freeDeliveryThresholdPounds"
-                    type="number"
+                    type="text"
                     inputMode="decimal"
-                    step="0.01"
-                    min="0"
+                    autoComplete="off"
                     className="h-11"
                     aria-invalid={errors.freeDeliveryThresholdPounds ? true : undefined}
                     aria-describedby={
