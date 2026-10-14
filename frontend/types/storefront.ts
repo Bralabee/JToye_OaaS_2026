@@ -77,6 +77,13 @@ export interface PublicShop {
   legacyAlwaysOpen?: boolean
   /** Where the hours came from. NEEDS_REVIEW: some original text could not be read (D-25). */
   hoursSource?: HoursSource | null
+  /**
+   * 37-48/37-49 (RWO-023 / UXT-023, UI-SPEC G1): which fulfilment types the shop takes. Always booleans
+   * from the 37-48 server; optional for old-backend tolerance, where ABSENT reads as offered (the
+   * behaviour before the flags existed). Read them through `lib/fulfilment-offered.ts`.
+   */
+  offersDelivery?: boolean
+  offersCollection?: boolean
 }
 
 /** One structured opening window (backend `OpeningSchedule.TimeWindow`). `close <= open` = closes the next day. */

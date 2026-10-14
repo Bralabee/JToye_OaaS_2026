@@ -37,6 +37,12 @@ import { minimumShortfallPennies } from "@/lib/minimum-order"
 // COR-2 / PR #726 low (b): the delivery-fee preview lives in the lib and ONLY there. This file
 // used to carry a byte-identical second body; the cart page already imported the lib.
 import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
+import {
+  fulfilmentNotOfferedCopy,
+  onlyOfferedType,
+  readFulfilmentNotOfferedProblem,
+  SINGLE_OPTION_COPY,
+} from "@/lib/fulfilment-offered"
 import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout-idempotency"
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
@@ -766,7 +772,13 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     publicApiClient
       .get<PublicShop>(`/public/shops/${slug}`)
       .then((res) => {
-        if (!cancelled) setShop(res.data)
+        if (cancelled) return
+        setShop(res.data)
+        // 37-49 (UI-SPEC G1): a shop that takes one type is ordered as that type. The control is then a
+        // static row, so there is nothing for the customer to switch, and the fee preview and the body
+        // both follow it. A shop taking both leaves the customer's choice alone (a re-read included).
+        const only = onlyOfferedType(res.data)
+        if (only) setFulfilmentType(only)
       })
       .catch(() => {
         /* Preview falls back to £0 delivery; server recomputes the real fee. */
@@ -1101,6 +1113,21 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       // page. 37-20 refuses with a typed 409 shop-closed BEFORE any write or idempotency
       // reservation, so no order exists, and nothing on this path touches the basket: it is saved,
       // and the copy says so. Recognised by type before the generic path, like the stale-allergen 409.
+      // 37-49 (UI-SPEC G1, UXT-023): the shop does not take the type this order asked for (37-48 refuses
+      // it with a typed 422 before pricing or any reservation, so no order exists). The copy is built
+      // from the typed members, and the page adopts the server's `offered` list: with one type left the
+      // control becomes that type's static row and the order switches to it, so the next tap continues.
+      const notOffered = readFulfilmentNotOfferedProblem(err)
+      if (notOffered) {
+        setError(fulfilmentNotOfferedCopy(notOffered))
+        if (notOffered.offered.length > 0) {
+          const offersDelivery = notOffered.offered.includes("DELIVERY")
+          const offersCollection = notOffered.offered.includes("COLLECTION")
+          setShop((prev) => (prev ? { ...prev, offersDelivery, offersCollection } : prev))
+          if (notOffered.offered.length === 1) setFulfilmentType(notOffered.offered[0])
+        }
+        return
+      }
       const shopClosed = readShopClosedProblem(err)
       if (shopClosed) {
         setError(shopClosedRaceCopy(shop?.name ?? "This shop", shopClosed))
@@ -1308,6 +1335,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     }))
   )
   const vatPreviewPennies = vatFromGross(previewTotalPennies, basketVatRate)
+  // 37-49 (UI-SPEC G1): the one type this shop takes, or null when it takes both (lib/fulfilment-offered).
+  const onlyType = onlyOfferedType(shop)
   const inputBase =
     "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400"
 
@@ -1331,7 +1360,22 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       )}
 
       <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
-        {/* Fulfilment toggle — bespoke 2-button segmented control (no new dep) */}
+        {/* 37-49 (UI-SPEC G1, zero-one-many): a shop that takes ONE type gets a static row naming it;
+            one that takes both keeps the segmented control. Zero is refused when the vendor saves. */}
+        {onlyType ? (
+          <div
+            data-testid="fulfilment-single-option"
+            className="flex items-center gap-2 rounded-xl bg-white border border-cream-100 px-4 py-2.5 shadow-sm text-sm font-semibold text-slate-900"
+          >
+            {onlyType === "COLLECTION" ? (
+              <Store className="h-4 w-4 flex-shrink-0 text-oxblood" aria-hidden="true" />
+            ) : (
+              <Bike className="h-4 w-4 flex-shrink-0 text-oxblood" aria-hidden="true" />
+            )}
+            <span>{SINGLE_OPTION_COPY[onlyType]}</span>
+          </div>
+        ) : (
+        /* Fulfilment toggle — bespoke 2-button segmented control (no new dep) */
         <div className="grid grid-cols-2 gap-2 rounded-xl bg-white border border-cream-100 p-1.5 shadow-sm">
           <button
             type="button"
@@ -1360,6 +1404,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             Collection
           </button>
         </div>
+        )}
 
         {/* Conditional UK delivery address — only for DELIVERY */}
         {fulfilmentType === "DELIVERY" && (

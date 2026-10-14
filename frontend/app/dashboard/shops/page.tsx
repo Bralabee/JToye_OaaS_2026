@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button"
 import { IconButton } from "@/components/ui/icon-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -53,6 +54,26 @@ import { formatDistanceToNow } from "date-fns"
 
 const PAGE_SIZE = 20
 
+// 37-49: the server refuses a negative amount (@Min(0) on both fields); the form says so before sending.
+const AMOUNT_MESSAGE = "Enter an amount of £0.00 or more."
+
+function isPoundsOrEmpty(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === "") return true
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0
+}
+
+/** Pounds as typed -> whole pennies, or null for an empty field. */
+function poundsToPennies(value: string | undefined): number | null {
+  if (value === undefined || value.trim() === "") return null
+  return Math.round(Number(value) * 100)
+}
+
+/** Stored pennies -> the pounds the field shows ("2.50"), or "" when there is no value. */
+function penniesToPounds(pennies: number | null | undefined): string {
+  return pennies == null ? "" : (pennies / 100).toFixed(2)
+}
+
 const shopSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name too long"),
   address: z.string().max(255, "Address too long").optional().or(z.literal("")),
@@ -64,6 +85,9 @@ const shopSchema = z.object({
   deliveryInfo: z.string().max(500).optional().or(z.literal("")),
   tags: z.string().max(500).optional().or(z.literal("")),
   minimumOrderPounds: z.string().optional().or(z.literal("")),
+  // 37-49 (UI-SPEC G1): pounds as typed. Empty fee = no fee; empty threshold = no free-delivery threshold.
+  deliveryFeePounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
+  freeDeliveryThresholdPounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
 })
 
 type ShopFormData = z.infer<typeof shopSchema>
@@ -123,6 +147,12 @@ export default function ShopsPage() {
   const [slugDraft, setSlugDraft] = useState("")
   const [slugTouched, setSlugTouched] = useState(false)
   const [slugError, setSlugError] = useState<string | null>(null)
+  // 37-49 (UI-SPEC G1, UXT-023): which fulfilment types the shop takes. Both by default (today's
+  // behaviour); neither is refused before anything is sent, with the alert under the fieldset.
+  const [offersDelivery, setOffersDelivery] = useState(true)
+  const [offersCollection, setOffersCollection] = useState(true)
+  const neitherOffered = !offersDelivery && !offersCollection
+  const deliveryOptionRef = useRef<HTMLButtonElement>(null)
   // Re-mounts the editor on every open, so it always starts from the shop being edited.
   const [editorSession, setEditorSession] = useState(0)
   const scheduleEditorRef = useRef<OpeningScheduleEditorHandle>(null)
@@ -212,8 +242,10 @@ export default function ShopsPage() {
 
   const openCreateDialog = () => {
     setEditingShop(null)
-    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "" })
+    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "", deliveryFeePounds: "", freeDeliveryThresholdPounds: "" })
     setPublished(false)
+    setOffersDelivery(true)
+    setOffersCollection(true)
     setScheduleDraft(null)
     resetSlugControl("")
     setEditorSession((n) => n + 1)
@@ -239,6 +271,11 @@ export default function ShopsPage() {
     setValue("deliveryInfo", shop.deliveryInfo || "")
     setValue("tags", shop.tags || "")
     setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
+    setValue("deliveryFeePounds", penniesToPounds(shop.deliveryFeePennies))
+    setValue("freeDeliveryThresholdPounds", penniesToPounds(shop.freeDeliveryThresholdPennies))
+    // An absent flag reads as offered: that is what the shop did before the flags existed.
+    setOffersDelivery(shop.offersDelivery !== false)
+    setOffersCollection(shop.offersCollection !== false)
     setPublished(shop.published || false)
     setScheduleDraft(null)
     resetSlugControl(shop.slug || "")
@@ -296,6 +333,13 @@ export default function ShopsPage() {
   // K4: the hours are checked before anything is sent; the editor shows the error and takes focus.
   // Only when they were touched: untouched hours are not sent, so there is nothing to refuse.
   const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+    // G1: a shop that takes neither type could take no order at all. The alert is already on screen
+    // (it renders whenever both are unticked); refuse here and put focus on the first option.
+    if (neitherOffered) {
+      event.preventDefault()
+      deliveryOptionRef.current?.focus()
+      return
+    }
     if (scheduleDraft !== null && scheduleEditorRef.current && !scheduleEditorRef.current.validate()) {
       event.preventDefault()
       return
@@ -322,6 +366,13 @@ export default function ShopsPage() {
         deliveryInfo: data.deliveryInfo || undefined,
         tags: data.tags || undefined,
         minimumOrderPennies: data.minimumOrderPounds ? Math.round(parseFloat(data.minimumOrderPounds) * 100) : 0,
+        // 37-49 (UI-SPEC G1, UXT-023). An empty fee is no fee (0), like the minimum order above. The
+        // threshold key is ALWAYS sent: 37-48 keeps the stored threshold when the key is absent and
+        // clears it on an explicit null, so an emptied field must reach the server as null.
+        deliveryFeePennies: poundsToPennies(data.deliveryFeePounds) ?? 0,
+        freeDeliveryThresholdPennies: poundsToPennies(data.freeDeliveryThresholdPounds),
+        offersDelivery,
+        offersCollection,
         published,
         // 37-48 (UXT-028): no slug unless the vendor edited the web address. The server keeps the slug when a
         // request carries none, so an ordinary save (hours, phone, a rename) never moves the shop. This
@@ -784,13 +835,91 @@ export default function ShopsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="deliveryInfo">Delivery Info</Label>
-                  <Input id="deliveryInfo" placeholder="Free delivery over £30" {...register("deliveryInfo")} />
+                  {/* 37-49 (UI-SPEC G1): kept as vendor data, but its placeholder no longer imitates the
+                      structured threshold below, which it could contradict. */}
+                  <Input id="deliveryInfo" placeholder="e.g. Delivery within 3 miles" {...register("deliveryInfo")} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="minimumOrderPounds">Minimum Order (£)</Label>
                   <Input id="minimumOrderPounds" type="number" step="0.01" min="0" placeholder="0.00" {...register("minimumOrderPounds")} />
                 </div>
               </div>
+              {/* 37-49 (UI-SPEC G1, UXT-023): what delivery costs, as the server charges it. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="deliveryFeePounds">Delivery fee (£)</Label>
+                  <Input
+                    id="deliveryFeePounds"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className="h-11"
+                    aria-invalid={errors.deliveryFeePounds ? true : undefined}
+                    aria-describedby={errors.deliveryFeePounds ? "deliveryFeePounds-error" : undefined}
+                    {...register("deliveryFeePounds")}
+                  />
+                  {errors.deliveryFeePounds && (
+                    <p id="deliveryFeePounds-error" className="text-sm text-red-600">{errors.deliveryFeePounds.message}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="freeDeliveryThresholdPounds">Free delivery over (£)</Label>
+                  <Input
+                    id="freeDeliveryThresholdPounds"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    className="h-11"
+                    aria-invalid={errors.freeDeliveryThresholdPounds ? true : undefined}
+                    aria-describedby={
+                      errors.freeDeliveryThresholdPounds
+                        ? "freeDeliveryThreshold-hint freeDeliveryThresholdPounds-error"
+                        : "freeDeliveryThreshold-hint"
+                    }
+                    {...register("freeDeliveryThresholdPounds")}
+                  />
+                  <p id="freeDeliveryThreshold-hint" className="text-sm text-slate-600">
+                    Leave empty if you don&apos;t offer free delivery.
+                  </p>
+                  {errors.freeDeliveryThresholdPounds && (
+                    <p id="freeDeliveryThresholdPounds-error" className="text-sm text-red-600">
+                      {errors.freeDeliveryThresholdPounds.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <fieldset className="space-y-1" aria-describedby={neitherOffered ? "fulfilment-offered-error" : undefined}>
+                <legend className="text-sm font-semibold text-slate-900">How customers get their order</legend>
+                <div className="flex flex-wrap gap-x-6">
+                  <label htmlFor="offersDelivery" className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <Checkbox
+                      id="offersDelivery"
+                      ref={deliveryOptionRef}
+                      checked={offersDelivery}
+                      aria-invalid={neitherOffered ? true : undefined}
+                      onCheckedChange={(checked) => setOffersDelivery(checked === true)}
+                    />
+                    Delivery
+                  </label>
+                  <label htmlFor="offersCollection" className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <Checkbox
+                      id="offersCollection"
+                      checked={offersCollection}
+                      aria-invalid={neitherOffered ? true : undefined}
+                      onCheckedChange={(checked) => setOffersCollection(checked === true)}
+                    />
+                    Collection
+                  </label>
+                </div>
+                {neitherOffered && (
+                  <p id="fulfilment-offered-error" role="alert" className="text-sm text-red-600">
+                    Choose at least one: delivery or collection.
+                  </p>
+                )}
+              </fieldset>
             </div>
 
             {/* Opening hours (37-21, UI-SPEC K4): structured, what the server enforces. */}
