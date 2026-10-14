@@ -123,14 +123,14 @@ function sentBody(): Record<string, unknown> {
 }
 
 describe("the shop form's delivery fields (UI-SPEC G1, UXT-023)", () => {
-  it("has 'Delivery fee (£)' and 'Free delivery over (£)' (number, step 0.01, min 0, h-11) with the empty-threshold hint", async () => {
+  it("has 'Delivery fee (£)' and 'Free delivery over (£)' (text with a decimal keypad, h-11) with the empty-threshold hint", async () => {
     stubShops(KITCHEN)
     const dialog = await openEdit("Rosie's Kitchen")
     for (const label of ["Delivery fee (£)", "Free delivery over (£)"]) {
       const input = within(dialog).getByLabelText(label) as HTMLInputElement
-      expect(input).toHaveAttribute("type", "number")
-      expect(input).toHaveAttribute("step", "0.01")
-      expect(input).toHaveAttribute("min", "0")
+      // 37-G review: text, not number, so a malformed entry is validated rather than silently emptied.
+      expect(input).toHaveAttribute("type", "text")
+      expect(input).toHaveAttribute("inputmode", "decimal")
       expect(input).toHaveClass("h-11")
     }
     const threshold = within(dialog).getByLabelText("Free delivery over (£)")
@@ -182,6 +182,100 @@ describe("the shop form's delivery fields (UI-SPEC G1, UXT-023)", () => {
     const info = within(dialog).getByLabelText("Delivery Info")
     expect(info).toHaveAttribute("placeholder", "e.g. Delivery within 3 miles")
     expect(within(dialog).queryByPlaceholderText("Free delivery over £30")).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * 37-G review round 1: a malformed amount must not save as "no threshold". As `type="number"` the
+ * browser reported "1e" or "3-0" as value "" (validity.badInput), which the form read as an EMPTY
+ * field: the threshold was sent as null (the server CLEARS it) and the fee as 0. Chromium also read
+ * "30,00" as 3000. The fields are text with a decimal keypad, and the typed text is validated strictly.
+ */
+describe("the delivery amounts refuse malformed entries (37-G review)", () => {
+  const FIELDS = ["Delivery fee (£)", "Free delivery over (£)"] as const
+
+  async function settle() {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+    })
+  }
+
+  // A literal it.each table, not a loop around it(): the docs-freshness counter and the jest test-count
+  // oracle must count the same tests.
+  it.each([
+    ["Delivery fee (£)", "1e"],
+    ["Delivery fee (£)", "30,00"],
+    ["Delivery fee (£)", "abc"],
+    ["Delivery fee (£)", "-1"],
+    ["Delivery fee (£)", "3-0"],
+    ["Delivery fee (£)", "2.999"],
+    ["Free delivery over (£)", "1e"],
+    ["Free delivery over (£)", "30,00"],
+    ["Free delivery over (£)", "abc"],
+    ["Free delivery over (£)", "-1"],
+    ["Free delivery over (£)", "3-0"],
+    ["Free delivery over (£)", "2.999"],
+  ])(
+    "'%s' = %j shows the amount message and sends nothing",
+    async (label, entry) => {
+      stubShops(KITCHEN)
+      const dialog = await openEdit("Rosie's Kitchen")
+      const input = within(dialog).getByLabelText(label) as HTMLInputElement
+      await type(input, entry)
+      // The field keeps exactly what was typed; nothing is silently emptied.
+      expect(input.value).toBe(entry)
+      await click(screen.getByRole("button", { name: "Update Shop" }))
+      await settle()
+      expect(mockPut).toHaveBeenCalledTimes(0)
+      expect(within(dialog).getByText("Enter an amount of £0.00 or more.")).toBeInTheDocument()
+      expect(input).toHaveAttribute("aria-invalid", "true")
+    }
+  )
+
+  it("the two amount fields are text with a decimal keypad, so the browser never empties a bad entry", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+    for (const label of FIELDS) {
+      const input = within(dialog).getByLabelText(label)
+      expect(input).toHaveAttribute("type", "text")
+      expect(input).toHaveAttribute("inputmode", "decimal")
+    }
+  })
+
+  it.each([
+    ["30", 3000],
+    ["30.5", 3050],
+    ["2.99", 299],
+  ])("CONTROL: a well-formed threshold %s is sent as %i pennies", async (entry, pennies) => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+    await type(within(dialog).getByLabelText("Free delivery over (£)"), entry)
+    await click(screen.getByRole("button", { name: "Update Shop" }))
+    expect(sentBody().freeDeliveryThresholdPennies).toBe(pennies)
+  })
+
+  it.each([
+    ["30", 3000],
+    ["30.5", 3050],
+    ["2.99", 299],
+  ])("CONTROL: a well-formed fee %s is sent as %i pennies", async (entry, pennies) => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+    await type(within(dialog).getByLabelText("Delivery fee (£)"), entry)
+    await click(screen.getByRole("button", { name: "Update Shop" }))
+    expect(sentBody().deliveryFeePennies).toBe(pennies)
+  })
+
+  it("CONTROL: both fields empty still send threshold null and fee 0", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+    await type(within(dialog).getByLabelText("Delivery fee (£)"), "")
+    await type(within(dialog).getByLabelText("Free delivery over (£)"), "")
+    await click(screen.getByRole("button", { name: "Update Shop" }))
+    const body = sentBody()
+    expect(body.deliveryFeePennies).toBe(0)
+    expect(body).toHaveProperty("freeDeliveryThresholdPennies")
+    expect(body.freeDeliveryThresholdPennies).toBeNull()
   })
 })
 
