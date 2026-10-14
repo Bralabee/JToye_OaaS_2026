@@ -119,10 +119,19 @@ function ShellFrame({ children }: { children: ReactNode }) {
           className={cn(
             "mx-auto",
             WIDTH_TIER_CLASS.shell,
-            "p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100"
+            "p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100",
+            // The band is at least the visible height of <main> (less the h-14
+            // mobile top bar), so the legal footer is painted at the bottom of
+            // the viewport from the first frame instead of directly under a
+            // still-loading page and then pushed down when its data arrives:
+            // that jump alone was a CLS of 0.09 on /dashboard/webhooks at the
+            // throttled mobile profile (nightly #683).
+            "flex min-h-[calc(100%-3.5rem)] flex-col md:min-h-full"
           )}
         >
-          <DashboardAccessContent>{children}</DashboardAccessContent>
+          <div className="flex-1">
+            <DashboardAccessContent>{children}</DashboardAccessContent>
+          </div>
           <footer className="mt-10 border-t border-slate-200 pt-4 dark:border-slate-800">
             <CompanyLegalLine />
           </footer>

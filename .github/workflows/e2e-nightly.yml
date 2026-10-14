@@ -212,6 +212,16 @@ jobs:
             echo "SMTP_STARTTLS=false"
           } >> .env
 
+          # The same trap for the Keycloak admin seam. .env.example ships
+          # KC_ADMIN_ENABLED=false (a real deployment opts in), which overrides
+          # compose's `${KC_ADMIN_ENABLED:-true}`. With the seam off, every
+          # staff-invite preview and accept answers 503
+          # `staff-invite-account-service-unavailable` by design, so
+          # staff-invite.spec.ts read "We couldn't check your invitation" every
+          # night from its first run (2026-10-12, #683). A developer .env omits
+          # the key and gets compose's true, which is why it passed locally.
+          echo "KC_ADMIN_ENABLED=true" >> .env
+
           # KC_SEED_USER_PASSWORD is imported into the realm as a USER PASSWORD
           # (infra/keycloak/realm-export.template.json), so it must satisfy that
           # realm's own passwordPolicy:
