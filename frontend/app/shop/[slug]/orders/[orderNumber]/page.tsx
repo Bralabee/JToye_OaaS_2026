@@ -66,6 +66,20 @@ const STEPS = [
 /** Statuses no further update can follow — the poller stops on these (INT-8). */
 const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "REFUNDED"]
 
+/**
+ * 37-51 (UI-SPEC F1, UXT-081): what the status region says when a poll finds the order has MOVED
+ * ON — "Order update: {label}. {description}." The tracker's own words for the five steps, plus the
+ * two terminal states the tracker does not draw (they get their own panels below). Any other status
+ * (an enum value this page does not know) announces nothing rather than an invented sentence.
+ */
+function statusUpdateAnnouncement(status: string): string | null {
+  const step = STEPS.find((s) => s.key === status)
+  if (step) return `Order update: ${step.label}. ${step.desc}.`
+  if (status === "CANCELLED") return "Order update: Cancelled. This order was cancelled."
+  if (status === "REFUNDED") return "Order update: Refunded. This order was refunded."
+  return null
+}
+
 function getStepIndex(status: string): number {
   const idx = STEPS.findIndex((s) => s.key === status)
   return idx >= 0 ? idx : -1
@@ -155,6 +169,14 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
     }
   }, [slug])
 
+  // 37-51 (F1): the last status a tracking read returned, and what the status region says about a
+  // CHANGE. The first read only sets the baseline (loading is not a change, so it is not announced);
+  // a read with the same status writes nothing, so the region's DOM is untouched and a screen reader
+  // hears nothing; a failed read never reaches here and leaves both as they were (F1 error,
+  // planner assumption: the visible error copy stays outside the region).
+  const lastStatusRef = useRef<string | null>(null)
+  const [statusUpdate, setStatusUpdate] = useState("")
+
   const fetchStatus = useCallback(async () => {
     if (!email) {
       setLoading(false)
@@ -165,6 +187,12 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         `/public/orders/${orderNumber}`,
         { params: { email } }
       )
+      const previous = lastStatusRef.current
+      lastStatusRef.current = res.data.status
+      if (previous !== null && previous !== res.data.status) {
+        const update = statusUpdateAnnouncement(res.data.status)
+        if (update) setStatusUpdate(update)
+      }
       setOrder(res.data)
       setError(null)
     } catch {
@@ -263,9 +291,11 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       ? `Order confirmed, ${orderNumber}`
       : `Order placed, ${orderNumber}`
     : ""
+  // F1 (37-51): the same region carries each status CHANGE. The C3 first-view message stays its
+  // first message until the order actually moves on; there is never a second region.
   const statusRegion = (
     <div role="status" aria-live="polite" className="sr-only">
-      {announcement}
+      {statusUpdate || announcement}
     </div>
   )
 
@@ -413,7 +443,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       {/* Progress tracker */}
       {order && !isCancelled && !isRefunded && (
         <div className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm mb-6">
-          <div className="space-y-0">
+          {/* F1 (37-51): an ordered list of the steps, the current one marked aria-current="step".
+              F6 (UXT-080): labels wrap — min-w-0 lets the label column shrink, and nothing here
+              truncates, so a 130% root text size at 360px breaks lines instead of clipping. */}
+          <ol aria-label="Order progress" className="space-y-0">
             {STEPS.map((step, i) => {
               const isActive = i === currentStep
               const isComplete = i < currentStep
@@ -422,9 +455,14 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
               const Icon = step.icon
 
               return (
-                <div key={step.key} className="flex gap-3">
+                <li
+                  key={step.key}
+                  data-tracker-step={step.key}
+                  aria-current={isActive ? "step" : undefined}
+                  className="flex gap-3"
+                >
                   {/* Vertical line + circle */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center" aria-hidden="true">
                     {/* Keyed on reach so a newly reached step remounts and
                         springs in; the active dot pulses finitely. */}
                     <m.div
@@ -458,7 +496,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                   </div>
 
                   {/* Label */}
-                  <div className="pb-6">
+                  <div className="min-w-0 flex-1 pb-6 [overflow-wrap:anywhere]">
                     <p
                       className={`text-sm font-medium ${
                         isComplete || isActive ? "text-slate-900" : "text-slate-600"
@@ -472,10 +510,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                         : step.desc}
                     </p>
                   </div>
-                </div>
+                </li>
               )
             })}
-          </div>
+          </ol>
         </div>
       )}
 
