@@ -406,8 +406,9 @@ class CacheSerializerTypeAllowlistTest {
     }
 
     /**
-     * Jackson-2-era entries live under {@code {region}::…}. Every Boot-4 region reads and writes under
-     * {@code v4:{region}::…} instead, so an old entry is never read: it expires by its TTL. The prefix
+     * Jackson-2-era entries live under {@code {region}::…}, and pre-37-G entries (a {@code ShopDto}
+     * without the four 37-48 fields) under {@code v4:{region}::…}. Every region now reads and writes
+     * under {@code v5:{region}::…} instead, so neither is ever read: each expires by its TTL. The prefix
      * sits on the DEFAULT configuration, so a region added later inherits it without anyone
      * remembering to. The TTLs are pinned too: they are what bounds how long an old entry survives.
      */
@@ -422,14 +423,14 @@ class CacheSerializerTypeAllowlistTest {
         for (Map.Entry<String, java.time.Duration> region : ttls.entrySet()) {
             RedisCacheConfiguration config = ((RedisCache) manager.getCache(region.getKey())).getCacheConfiguration();
             assertThat(config.getKeyPrefixFor(region.getKey())).as("key prefix of %s", region.getKey())
-                    .isEqualTo("v4:" + region.getKey() + "::");
+                    .isEqualTo("v5:" + region.getKey() + "::");
             assertThat(config.getTtlFunction().getTimeToLive("k", "v")).as("TTL of %s", region.getKey())
                     .isEqualTo(region.getValue());
         }
         RedisCache later = (RedisCache) manager.getCache("aRegionAddedLater");
         assertThat(later.getCacheConfiguration().getKeyPrefixFor("aRegionAddedLater"))
                 .as("a region nobody configured inherits the prefix from the defaults")
-                .isEqualTo("v4:aRegionAddedLater::");
+                .isEqualTo("v5:aRegionAddedLater::");
     }
 
     /** The cache family of the 38-01 MANIFEST: exactly the files this class feeds below. */

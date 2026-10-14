@@ -157,40 +157,45 @@ public class TenantCacheEvictor {
         // as Boot 3.5's evict did, so a failure surfaces to the caller exactly as it did on 3.5.
         cache.evictIfPresent(key);
         log.debug("Evicted cache entry {}::{}", cacheName, key);
-        evictLegacyBoot35Key(cache, key);
+        evictOtherGenerationKey(cache, CacheConfig.legacyBoot35CacheKey(cache.getName(), key), "Boot-3.5");
+        evictOtherGenerationKey(cache, CacheConfig.previousFormatCacheKey(cache.getName(), key),
+                "previous-format (" + CacheConfig.PREVIOUS_CACHE_KEY_FORMAT_VERSION + ")");
     }
 
     /**
-     * TRANSITIONAL (Phase 38 review WR-01): also delete the key a Boot-3.5 pod caches this entity
-     * under, so a write handled by a Boot-4 pod reaches the Boot-3.5 generation too — during the
-     * rolling deploy and after a rollback. Without it the two generations' evictions never meet and a
-     * revoked {@code shopMembership} grant stays cached on the other generation for its TTL. See
-     * {@link CacheConfig#CACHE_KEY_FORMAT_VERSION} for the direction this cannot cover (a write on a
-     * Boot-3.5 pod) and the operator step that does; remove under the condition on
-     * {@link CacheConfig#legacyBoot35CacheKey}.
+     * TRANSITIONAL: also delete the key an OLDER pod generation caches this entity under, so a write
+     * handled by a pod on this version reaches that generation too, during the rolling deploy and after
+     * a rollback. Without it the generations' evictions never meet and a revoked {@code shopMembership}
+     * grant stays cached on the other generation for its TTL. Two generations are reached:
+     * <ul>
+     *   <li>Boot 3.5 ({@link CacheConfig#legacyBoot35CacheKey}, Phase 38 review WR-01);</li>
+     *   <li>the previous key format version ({@link CacheConfig#previousFormatCacheKey}, 37-G review:
+     *       the pre-37-G image reads and writes {@code v4:} keys).</li>
+     * </ul>
+     * See {@link CacheConfig#CACHE_KEY_FORMAT_VERSION} for the direction this cannot cover (a write on an
+     * older pod) and the operator step that does; each key is removed under its own condition.
      *
-     * <p>Only a Redis-backed cache has a legacy generation: the check is on the native cache, so a
+     * <p>Only a Redis-backed cache has another generation: the check is on the native cache, so a
      * {@code ConcurrentMapCache} (or any other provider) is skipped and a decorator around a Redis cache
      * is still reached. The delete is BEST-EFFORT: the primary eviction above has already been issued, so a
      * failure here is WARN-logged with the region and key and never fails the caller's write.
      */
-    private void evictLegacyBoot35Key(Cache cache, String key) {
-        String legacyKey = CacheConfig.legacyBoot35CacheKey(cache.getName(), key);
+    private void evictOtherGenerationKey(Cache cache, String otherKey, String generation) {
         try {
             if (!(cache.getNativeCache() instanceof RedisCacheWriter writer)) {
                 return;
             }
-            // Boot 3.5 serialized keys with StringRedisSerializer, i.e. UTF-8. evictIfPresent, NOT
-            // evict: Spring Data Redis 4's DefaultRedisCacheWriter.evict is fire-and-forget when
+            // Both older generations serialized keys with StringRedisSerializer, i.e. UTF-8. evictIfPresent,
+            // NOT evict: Spring Data Redis 4's DefaultRedisCacheWriter.evict is fire-and-forget when
             // asynchronous writes are on (its default), so the DEL could land after this method
             // returned and its failure would never reach the catch below. evictIfPresent issues a
             // synchronous DEL, as Boot 3.5's evict did. Measured: with evict, the real-Redis arm in
             // CacheFormatIsolationIntegrationTest still found the legacy key in 3 runs of 8.
-            writer.evictIfPresent(cache.getName(), legacyKey.getBytes(StandardCharsets.UTF_8));
-            log.debug("Evicted legacy Boot-3.5 cache entry {}", legacyKey);
+            writer.evictIfPresent(cache.getName(), otherKey.getBytes(StandardCharsets.UTF_8));
+            log.debug("Evicted {} cache entry {}", generation, otherKey);
         } catch (RuntimeException e) {
-            log.warn("Legacy Boot-3.5 cache eviction failed (region={}, key={}); the entry expires by its "
-                    + "TTL instead: {}", cache.getName(), legacyKey, e.toString());
+            log.warn("{} cache eviction failed (region={}, key={}); the entry expires by its "
+                    + "TTL instead: {}", generation, cache.getName(), otherKey, e.toString());
         }
     }
 }
