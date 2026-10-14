@@ -817,8 +817,8 @@ where it must be resolved.
 
 ## From 37-53 (the 37-F gate, Task 1)
 
-- **A source comment in the accessibility statement module still says the first Tab lands on the skip link everywhere (found in 37-52, recorded in 37-53, open, comment only).**
-  status: open
+- **A source comment in the accessibility statement module still says the first Tab lands on the skip link everywhere (found in 37-52, recorded in 37-53, comment only). RESOLVED in 37-53 Task 3:** the comment was reworded as suggested below, because the gate's cut carries frontend changes anyway (the two a11y spec fixes). Comment only: the `ACCESSIBILITY_STATEMENT` data, tests and counts are unchanged.
+  status: resolved
   **What:** `frontend/lib/accessibility-statement.ts` lines 205-211 (the comment above
   `required-fields-marked-visually-only`) says that on every listed surface "the first Tab … lands on
   'Skip to main content'" and that "the axe gate now asserts that on every surface it scans". Since 37-52
