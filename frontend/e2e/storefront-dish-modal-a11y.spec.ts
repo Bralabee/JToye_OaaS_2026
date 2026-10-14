@@ -436,6 +436,12 @@ test.describe("Dish modal allergen section (31.1-21)", () => {
       ingredientsText: "rice, butter (MILK), pepper",
       allergenMask: 1 << GLUTEN_BIT,
       mayContainMask: 1 << SESAME_BIT,
+      // A complete product for the ALLERGEN_DATA_COMPLETE onboarding gate, which counts hidden
+      // products too. Without these the fixture failed that gate on mama-ades-kitchen, the shop
+      // onboarding-blocked-flow applies with, so on the nightly's fresh volume that spec stayed in
+      // "Action required" and never reached manual review (nightly #683, from 2026-10-08).
+      durabilityType: "USE_BY",
+      shelfLifeDays: 2,
       pricePennies: 100,
       category: "Mains",
       displayOrder: 9999,

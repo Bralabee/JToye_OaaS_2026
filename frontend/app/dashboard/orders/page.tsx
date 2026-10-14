@@ -380,11 +380,16 @@ function OrdersPageInner() {
   // Real-time updates via SSE (#92): the shared hook owns the auth header,
   // keep-alive-friendly connection, capped exponential-backoff reconnect, and
   // reconnect-after-server-recycle — this page no longer gives up on error.
-  useOrderEvents(() => fetchData())
+  //
+  // A live event refreshes IN PLACE (quiet): the full-page spinner unmounts everything below it,
+  // so an event arriving while a dialog is open threw the dialog away. The bulk reject emits one
+  // event per order it cancels, which replaced its own result summary with "Reject 0 orders?"
+  // (nightly #683, abuse-bounds.spec.ts on mobile). The rows are kept until the new page arrives.
+  useOrderEvents(() => fetchData({ quiet: true }))
 
-  const fetchData = async () => {
+  const fetchData = async ({ quiet = false }: { quiet?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (!quiet) setLoading(true)
       // Issue #95: /orders/customer/{id} is paginated now (Page response, same
       // shape as /orders) — the old bare-array special case is gone.
       // VSA-03: outside the All-shops context the collection list narrows
@@ -741,7 +746,7 @@ function OrdersPageInner() {
               <LoadErrorPanel
                 subject="orders"
                 message={loadErrorMessage}
-                onRetry={fetchData}
+                onRetry={() => fetchData()}
               />
             ) : filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">

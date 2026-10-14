@@ -39,6 +39,7 @@ import {
   VENDOR_PASSWORD,
   skipWithoutVendorPassword,
 } from "./vendor-credentials"
+import { cancelOrdersByNumber, uniqueContact, vendorShopId, vendorToken } from "./order-cleanup"
 
 // No local BASE_URL constant on purpose: every navigation below is RELATIVE, so
 // Playwright resolves it against the config's `baseURL`. That makes the config
@@ -48,6 +49,9 @@ import {
 // Keycloak dev-realm vendor. `admin-user` is the live jtoye-dev account, mapping
 // to tenant 00000000-…-000000000001 via the realm's tenant_id attribute. The
 // credential comes from e2e/vendor-credentials.ts (never committed).
+
+const DRAFT_API = process.env.PLAYWRIGHT_API_URL || "http://localhost:9090"
+const DRAFT_SHOP_SLUG = "mama-ades-kitchen"
 
 async function vendorLogin(page: import("@playwright/test").Page) {
   skipWithoutVendorPassword()
@@ -178,34 +182,52 @@ test.describe("Phase 17 — vendor refund flow", () => {
     })
   })
 
-  test("Issue refund button is hidden on a DRAFT order", async ({ page }) => {
-    await vendorLogin(page)
+  test("Issue refund button is hidden on a DRAFT order", async ({ page, request }) => {
+    // The DRAFT this test needs is its OWN, created through the vendor API and opened by id. It
+    // used to look for a DRAFT row on page 1 of the orders list (the newest 20), and by the time
+    // the desktop project ran, the orders the 37-C/37-D specs place had pushed the seeded DRAFT
+    // off that page: a skip on every nightly since 2026-10-12, over the declared skip budget
+    // (nightly #683). A vendor/REST order is created as DRAFT; it is cancelled afterwards.
+    const token = await vendorToken(request)
+    test.skip(
+      token === null,
+      "No vendor token — set E2E_VENDOR_PASSWORD (or source .env for KC_SEED_USER_PASSWORD) and KEYCLOAK_CLIENT_SECRET"
+    )
+    const auth = { Authorization: `Bearer ${token}` }
+    const shopId = await vendorShopId(request, token as string, DRAFT_SHOP_SLUG)
+    expect(shopId, `the vendor's tenant has no shop ${DRAFT_SHOP_SLUG}`).not.toBeNull()
+    const menuRes = await request.get(`${DRAFT_API}/public/shops/${DRAFT_SHOP_SLUG}/products`)
+    expect(menuRes.status(), "public menu").toBe(200)
+    const product = Object.values((await menuRes.json()) as Record<string, Array<{ id: string }>>).flat()[0]
+    expect(product, `${DRAFT_SHOP_SLUG} has no product on sale`).toBeTruthy()
 
-    await page.goto("/dashboard/orders")
-    // Element-based wait (networkidle never fires with SSE open): the page
-    // is ready when the heading renders; rows may stream in after.
-    await page.waitForLoadState("domcontentloaded")
-    await expect(
-      page.locator("h1, h2").filter({ hasText: /Orders/i }).first()
-    ).toBeVisible({ timeout: 10_000 })
-    // Rows stream in after the heading — give the table a beat before counting.
-    await page.locator("table tbody tr").first().waitFor({ timeout: 8_000 }).catch(() => {})
-    const draftRow = page
-      .locator("table tbody tr")
-      .filter({ hasText: /DRAFT/i })
-      .first()
-    if ((await draftRow.count()) === 0) {
-      test.skip(true, "No DRAFT order seeded — skipping")
-    }
-    // First cell for the same mobile-sidebar interception reason as above.
-    await draftRow.locator("td").first().click()
-    await page.waitForURL(/\/dashboard\/orders\/[0-9a-f-]+$/, {
-      timeout: 5_000,
+    const createRes = await request.post(`${DRAFT_API}/api/v1/orders`, {
+      headers: { ...auth, "Idempotency-Key": crypto.randomUUID() },
+      data: {
+        shopId,
+        customerName: "E2E Draft (refund visibility)",
+        customerEmail: uniqueContact("refund-draft").email,
+        fulfilmentType: "COLLECTION",
+        items: [{ productId: product.id, quantity: 1 }],
+      },
     })
-    // The action panel must not show the Issue refund button on a DRAFT
-    // order (visibility predicate gate from OrderDetailPanel).
-    await expect(
-      page.getByRole("button", { name: /^Issue refund$/i })
-    ).toHaveCount(0)
+    expect(createRes.status(), "the vendor DRAFT order should be created").toBe(201)
+    const draft = (await createRes.json()) as { id: string; orderNumber: string; status: string }
+    expect(draft.status, "a vendor-created order starts as DRAFT").toBe("DRAFT")
+
+    try {
+      await vendorLogin(page)
+      await page.goto(`/dashboard/orders/${draft.id}`)
+      // Positive control: the page is this DRAFT order, so the absence below is a real negative.
+      await expect(page.getByText(draft.orderNumber).first()).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText(/^Draft$/i).first()).toBeVisible({ timeout: 10_000 })
+      // The action panel must not show the Issue refund button on a DRAFT
+      // order (visibility predicate gate from OrderDetailPanel).
+      await expect(
+        page.getByRole("button", { name: /^Issue refund$/i })
+      ).toHaveCount(0)
+    } finally {
+      await cancelOrdersByNumber(request, DRAFT_SHOP_SLUG, [draft.orderNumber])
+    }
   })
 })
