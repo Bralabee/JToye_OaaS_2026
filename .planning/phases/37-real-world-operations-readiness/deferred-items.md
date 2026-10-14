@@ -774,3 +774,30 @@ where it must be resolved.
   misleading 409 "Duplicate Entry", measured with the merged check removed).
 - **Live proof owed at 37-50.** V83, the four DTO fields, `fulfilment-not-offered` and `shop-slug-taken` are
   proven in Testcontainers and jest only; the compose core-java predates them (WINDOWS entry added by 37-48).
+
+## From 37-50 (the 37-G gate, Task 3, live)
+
+- **A collection-only shop still advertises delivery on the shop directory card and the basket page (found in 37-50, open, decide before the 37-G PR merges).**
+  status: open
+  **What:** with Brixton Village Grill set collection-only (offersDelivery false, fee 299, threshold 3000), the
+  `/shop` directory card reads "Delivery £2.99 Free over £30.00" and `/shop/brixton-village-grill/cart` reads
+  "Delivery from £2.99. Added at checkout, where collection is free and delivery is free over £30.00." The header
+  chip, the details bar and the checkout are right ("Collection only", no "Free delivery", the static row, 422 on
+  DELIVERY). UI-SPEC G1 names `/dashboard/shops`, `/shop/[slug]` and checkout only, so 37-49 never covered these
+  two surfaces; before 37-G no shop could be collection-only, so they were truthful until now (evidence 37-50 2.9
+  item 2, screens `goods-list-390.png`, `goods-basket-brixton-collection-only-390.png`).
+  **Suggested fix:** `shop-discovery-client.tsx` and the cart page read `onlyOfferedType(shop)` and, for
+  COLLECTION, show the chip copy instead of the fee line. A candidate review-fix on the PR branch, with screens.
+
+- **After a deploy, `GET /shops/{id}` can serve the pre-deploy ShopDto shape for up to 15 minutes (found in 37-50, open).**
+  status: open
+  **What:** the `shops` Redis region (TTL 15 min, key prefix `v4:`) survives a core-java restart. A GET made on the
+  old runtime at 16:22:29Z cached Brixton without the four 37-48 fields; the rebuilt core (started 16:24:41Z)
+  returned that body at 16:26:00Z (fee/offer keys: none) while Mama Ade's, never cached before, returned all four.
+  A PUT evicted it and the next GET was complete. The dashboard list uses the uncached `GET /shops`, but the
+  `?edit={id}` deep link uses `GET /shops/{id}`: a vendor saving that dialog inside the window would send
+  `deliveryFeePennies: 0` and `freeDeliveryThresholdPennies: null`, silently zeroing the fee and clearing the
+  threshold. `CacheConfig`'s standing procedure bumps `CACHE_KEY_FORMAT_VERSION` only when old bytes cannot be
+  read into the DTO, which does not cover an additive field whose absence the client misreads.
+  **Suggested fix:** bump `v4` to `v5` in the 37-G PR (and widen the procedure's wording to additive fields a
+  client depends on), or evict the `shops` region on startup. Evidence 37-50 2.9 item 1.
