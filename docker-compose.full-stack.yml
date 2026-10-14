@@ -279,6 +279,12 @@ services:
       # reachable on demand by exceeding the widened budget.
       RATE_LIMIT_PUBLIC_PER_MINUTE: ${RATE_LIMIT_PUBLIC_PER_MINUTE:-600}
       RATE_LIMIT_PUBLIC_BURST: ${RATE_LIMIT_PUBLIC_BURST:-120}
+      # The per-TENANT bucket (rate-limiting.default-limit; capacity = this + burst-capacity),
+      # passed through so the nightly can size it for a whole E2E suite running as ONE tenant.
+      # The default is application.yml's own 100, so no developer stack changes. The burst
+      # key is deliberately NOT passed: its env name, RATE_LIMIT_BURST, is the edge valve's
+      # (400 in .env.example) and would silently become core's tenant burst too.
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-100}
       # 37-24 (D-19, RWO-006): the proxies whose X-Forwarded-For core believes, as a CIDR list.
       # EMPTY HERE ON PURPOSE = trust none. In this stack the browser calls core directly
       # (NEXT_PUBLIC_API_URL) and no proxy appends the header, so every client is its socket

@@ -222,6 +222,14 @@ jobs:
           # the key and gets compose's true, which is why it passed locally.
           echo "KC_ADMIN_ENABLED=true" >> .env
 
+          # The whole suite runs as ONE tenant against core's per-tenant bucket (100 a
+          # minute, capacity 120). Run 38539157660 on the fix branch passed 386 tests and
+          # failed one on `POST /api/v1/onboarding -> 429 rate-limited` (retry 18 s), right
+          # after a burst of earlier specs. No spec depends on this limiter firing for real
+          # (kitchen-flow injects its 429s; the order caps are a different mechanism), so
+          # the nightly sizes it for a suite, not for one vendor's traffic.
+          echo "RATE_LIMIT_PER_MINUTE=1000" >> .env
+
           # KC_SEED_USER_PASSWORD is imported into the realm as a USER PASSWORD
           # (infra/keycloak/realm-export.template.json), so it must satisfy that
           # realm's own passwordPolicy:
