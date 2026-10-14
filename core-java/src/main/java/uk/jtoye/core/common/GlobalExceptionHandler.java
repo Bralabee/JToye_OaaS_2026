@@ -30,6 +30,7 @@ import uk.jtoye.core.exception.BasketChangedException;
 import uk.jtoye.core.exception.BasketConfirmationRequiredException;
 import uk.jtoye.core.exception.DsarExportUnavailableException;
 import uk.jtoye.core.exception.DsarRateLimitExceededException;
+import uk.jtoye.core.exception.HumanOnlyActionException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
@@ -43,10 +44,18 @@ import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderCapExceededException;
 import uk.jtoye.core.exception.BulkCancelTooLargeException;
+import uk.jtoye.core.exception.CredentialClientMissingException;
+import uk.jtoye.core.exception.CredentialRevokedException;
+import uk.jtoye.core.exception.CredentialRoleInvalidException;
+import uk.jtoye.core.exception.CredentialScopeInvalidException;
+import uk.jtoye.core.exception.CredentialServiceUnavailableException;
+import uk.jtoye.core.exception.CredentialsNotConfiguredException;
 import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
+import uk.jtoye.core.exception.ProductUnavailableException;
 import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
+import uk.jtoye.core.exception.StaffTargetIsCredentialException;
 import uk.jtoye.core.exception.StaffInviteEmailTakenException;
 import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
 import uk.jtoye.core.exception.StaffInviteUnavailableException;
@@ -58,6 +67,7 @@ import uk.jtoye.core.exception.ReviewOrderShopMismatchException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.exception.ShopClosedException;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
+import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
@@ -289,6 +299,21 @@ public class GlobalExceptionHandler {
         if (ex.getAvailable() != null) {
             problem.setProperty("available", ex.getAvailable());
         }
+        return problem;
+    }
+
+    /**
+     * 37-E review: an order line names a product its shop has switched off. 409, not the
+     * shop-mismatch 404: the caller can already list this shop's products, so naming it discloses
+     * nothing, and a 404 would tell an integrator the id is wrong when it is not.
+     */
+    @ExceptionHandler(ProductUnavailableException.class)
+    public ProblemDetail handleProductUnavailable(ProductUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Product Unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/product-unavailable"));
+        problem.setProperty("productId", ex.getProductId());
+        problem.setProperty("productName", ex.getProductName());
         return problem;
     }
 
@@ -871,6 +896,21 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    /**
+     * Phase 37-39 (RWO-016 / UXT-016): a field refused by a rule bean validation cannot express (a
+     * {@code trackInventory}/{@code quantityInStock} combination, or a property {@code PATCH /products/{id}}
+     * does not accept). The same type, title and {@code errors} shape as {@link #handleValidationErrors}, keyed
+     * by the field, so an integrator handles it like any validation failure and learns which field to fix.
+     */
+    @ExceptionHandler(InvalidRequestFieldsException.class)
+    public ProblemDetail handleInvalidRequestFields(InvalidRequestFieldsException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        problem.setTitle("Validation Error");
+        problem.setType(URI.create("https://jtoye.uk/errors/validation"));
+        problem.setProperty("errors", new java.util.TreeMap<>(ex.getErrors()));
+        return problem;
+    }
+
     @ExceptionHandler(ShopClosedException.class)
     public ProblemDetail handleShopClosed(ShopClosedException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
@@ -1115,6 +1155,110 @@ public class GlobalExceptionHandler {
                 .header(HttpHeaders.RETRY_AFTER, "60")
                 .cacheControl(CacheControl.noStore())
                 .body(problem);
+    }
+
+    /**
+     * Phase 37-45 (D-22) — integrator credentials need the Keycloak admin seam, and it is not configured.
+     * 400 with its own type, the #102 deprovision precedent; the Developers page hides creation on it.
+     */
+    @ExceptionHandler(CredentialsNotConfiguredException.class)
+    public ProblemDetail handleCredentialsNotConfigured(CredentialsNotConfiguredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Credentials not configured");
+        problem.setType(URI.create("https://jtoye.uk/errors/credentials-not-configured"));
+        problem.setProperty("code", "CREDENTIALS_NOT_CONFIGURED");
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (D-22, Q7) — a credential scope outside the six #206 scopes. 400 naming the refused scopes
+     * and the allowed list, so a client corrects the request from the body alone.
+     */
+    @ExceptionHandler(CredentialScopeInvalidException.class)
+    public ProblemDetail handleCredentialScopeInvalid(CredentialScopeInvalidException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Credential scope not allowed");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-scope-invalid"));
+        problem.setProperty("code", "CREDENTIAL_SCOPE_INVALID");
+        problem.setProperty("invalidScopes", ex.getInvalidScopes());
+        problem.setProperty("allowedScopes", ex.getAllowedScopes());
+        return problem;
+    }
+
+    /** Phase 37-45 (D-23, Q7, T-37-107) — a credential can never hold GROUP_ADMIN. 400 naming the allowed roles. */
+    @ExceptionHandler(CredentialRoleInvalidException.class)
+    public ProblemDetail handleCredentialRoleInvalid(CredentialRoleInvalidException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Credential role not allowed");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-role-invalid"));
+        problem.setProperty("code", "CREDENTIAL_ROLE_INVALID");
+        problem.setProperty("allowedRoles", CredentialRoleInvalidException.ALLOWED_ROLES);
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (D-22) — Keycloak did not answer a credential operation. 503 with Retry-After; nothing was
+     * changed. The cause is logged by type only where it is raised.
+     */
+    @ExceptionHandler(CredentialServiceUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleCredentialServiceUnavailable(CredentialServiceUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+                CredentialServiceUnavailableException.DETAIL);
+        problem.setTitle("Account service unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-service-unavailable"));
+        problem.setProperty("code", "CREDENTIAL_SERVICE_UNAVAILABLE");
+        problem.setProperty("retryAfterSeconds", 60);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "60")
+                .cacheControl(CacheControl.noStore())
+                .body(problem);
+    }
+
+    /** Phase 37-45 (D-22, D-24) — a revoked credential cannot be rotated. 409; issue a new credential instead. */
+    @ExceptionHandler(CredentialRevokedException.class)
+    public ProblemDetail handleCredentialRevoked(CredentialRevokedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Credential revoked");
+        problem.setType(URI.create(CredentialRevokedException.TYPE));
+        problem.setProperty("code", "CREDENTIAL_REVOKED");
+        return problem;
+    }
+
+    /** Phase 37-45 (D-22) — the credential's Keycloak client was deleted outside J'Toye. 409; delete and reissue. */
+    @ExceptionHandler(CredentialClientMissingException.class)
+    public ProblemDetail handleCredentialClientMissing(CredentialClientMissingException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Credential client missing");
+        problem.setType(URI.create("https://jtoye.uk/errors/credential-client-missing"));
+        problem.setProperty("code", "CREDENTIAL_CLIENT_MISSING");
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (Q7, T-37-107) — credential and staff management called by a token that was not issued to
+     * the dashboard client (an integrator credential or a machine client). 403 with its own type, distinct
+     * from {@code shop-access-denied}: the caller's kind, not its rank, is refused.
+     */
+    @ExceptionHandler(HumanOnlyActionException.class)
+    public ProblemDetail handleHumanOnlyAction(HumanOnlyActionException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problem.setTitle("Human only");
+        problem.setType(URI.create("https://jtoye.uk/errors/human-only-action"));
+        problem.setProperty("code", "HUMAN_ONLY_ACTION");
+        return problem;
+    }
+
+    /**
+     * Phase 37-45 (Q7) — a staff grant named an integrator credential's service account. 409: its access is set
+     * when it is issued; revoke it and issue a new credential instead.
+     */
+    @ExceptionHandler(StaffTargetIsCredentialException.class)
+    public ProblemDetail handleStaffTargetIsCredential(StaffTargetIsCredentialException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Target is a credential");
+        problem.setType(URI.create("https://jtoye.uk/errors/staff-target-is-credential"));
+        problem.setProperty("code", "STAFF_TARGET_IS_CREDENTIAL");
+        return problem;
     }
 
     @ExceptionHandler(Exception.class)

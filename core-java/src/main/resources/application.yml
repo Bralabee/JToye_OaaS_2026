@@ -274,6 +274,14 @@ jtoye:
     # EMPTY default = fail-closed: every non-UUID-subject token is denied by default.
     # Comma-separated list, e.g. ACCESS_MACHINE_CLIENT_IDS=mcp-server,batch-worker.
     machine-client-ids: ${ACCESS_MACHINE_CLIENT_IDS:}
+    # Phase 37-45 (Q7, T-37-107): the Keycloak client(s) whose tokens are PEOPLE, i.e. the dashboard's
+    # authorization-code client (the NextAuth KEYCLOAK_CLIENT_ID). Managing integrator credentials and
+    # staff access (grant, revoke, invite) is refused 403 human-only-action to every token whose azp is not
+    # listed here, so no credential or machine client can mint credentials or give anyone access.
+    # Config KEY, not a secret. Default core-api: the dashboard client in compose, .env.example and
+    # k8s/local. Staging and production inject it from app-config keycloak.client-id, the SAME key the
+    # frontend's KEYCLOAK_CLIENT_ID reads, so the two cannot drift. Comma-separated. Empty = nobody.
+    human-client-ids: ${ACCESS_HUMAN_CLIENT_IDS:core-api}
   # Phase 37-07 (D-07) — staff invitations. Config KEYS, not secrets.
   staff:
     invite:
@@ -290,6 +298,15 @@ jtoye:
       # a request: a link built from an attacker-supplied Host header would hand a live invitation to a
       # collector. Every runtime supplies its own web origin (compose, .env.example, k8s app-config).
       accept-base-url: ${STAFF_INVITE_ACCEPT_BASE_URL:http://localhost:3000/invite}
+  # Phase 37-45 (D-22..D-24) — integrator credentials. Config KEYS, not secrets. A credential is a Keycloak
+  # service-account client, so the feature needs the jtoye.keycloak.admin seam; with it off every
+  # /api/v1/credentials call is the typed 400 credentials-not-configured.
+  credentials:
+    # How coarse a credential's last_used_at is: CredentialLastUsedRecorder writes it at most once per
+    # interval per credential (best-effort, its own transaction, never failing the request). The list
+    # response states the interval, so the Developers page can say "used within the last 15 minutes"
+    # rather than imply a precision the column does not have. ISO-8601 duration.
+    last-used-interval: ${CREDENTIAL_LAST_USED_INTERVAL:PT15M}
   # Phase 31 (LGL-01, D-16/D-17) — the consumer data-subject-request desk. Config KEYS, not
   # secrets. 31-05 owns the intake, 31-09 the verification gate and the background fan-out.
   gdpr:
@@ -881,7 +898,8 @@ webhook:
     max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}
     backoff-base-ms: ${WEBHOOK_DELIVERY_BACKOFF_BASE_MS:1000}
     backoff-cap-ms: ${WEBHOOK_DELIVERY_BACKOFF_CAP_MS:3600000}
-    auto-pause-threshold: ${WEBHOOK_DELIVERY_AUTO_PAUSE_THRESHOLD:10}
+    # 37-43 (UXT-038): consecutive failed DELIVERIES (each exhausted max-attempts), not attempts.
+    auto-pause-after-failed-deliveries: ${WEBHOOK_DELIVERY_AUTO_PAUSE_AFTER_FAILED_DELIVERIES:3}
     retention-days: ${WEBHOOK_DELIVERY_RETENTION_DAYS:30}
     retention-interval-ms: ${WEBHOOK_DELIVERY_RETENTION_INTERVAL_MS:86400000}
     timeout-seconds: ${WEBHOOK_DELIVERY_TIMEOUT_SECONDS:10}

@@ -26,6 +26,33 @@ the proof runs on this branch then exposed a fourth, timing-dependent one.
   orders?". Live events now refresh the list in place, and the summary describes the orders as
   submitted.
 
+### Phase 37-E: The integrator surface (#920) — 2026-10-14
+
+The fifth of Phase 37's sub-theme pull requests (plans 37-39 to 37-47 of 53): a business connects an
+EPOS, a sync client or an AI agent without sharing the owner's password, and what those integrations
+send or receive is what the platform does. One migration, V82 `integration_credential`, which
+applies out of order after V84 (V83 stays reserved for 37-48).
+
+- **Explicit stock intent.** `trackInventory` on the product request says what a PUT means for stock
+  (null keeps, false clears, true needs a quantity), so a PUT that omits stock no longer turns
+  tracking off; `PATCH /api/v1/products/{id}` changes availability and stock only and refuses every
+  other property by name.
+- **Shop-scoped sync with per-item results.** `POST /sync/batch` needs a `shopId` per product, runs
+  each item in its own transaction and answers `CREATED | UPDATED | REJECTED` per item with a derived
+  `SUCCESS | PARTIAL | REJECTED`; the edge relays core's results and its 4xx problems byte-identical,
+  outside the circuit breaker. A shop-less product is refused on every order route.
+- **Agents.** MCP `create_order` lands PENDING in the kitchen's New lane; `list_products` takes
+  `shopId` and `availableOnly` and every product carries `allergens` in words. A product its shop
+  has switched off is refused on the vendor/REST/MCP order route with a typed 409
+  `product-unavailable`.
+- **Honest webhook auto-pause.** Pause only after three consecutive events exhaust all 8 attempts;
+  events are HELD while paused and delivered on resume; one owner email per pause.
+- **Scoped, revocable credentials (D-22..D-24).** A Group admin issues, rotates and revokes a
+  Keycloak service-account credential on `/dashboard/developers`, with a hard-coded tenant and
+  audience, a `shop_staff` grant like a person's, the secret shown once and never stored, and
+  `credential-revoked` for a token minted before a delete. V82 holds the register, FORCE RLS, no
+  secret column.
+
 ### Phase 37-C: Checkout integrity (#918) — 2026-10-12
 
 The fourth of Phase 37's sub-theme pull requests (plans 37-32 to 37-38 of 53): the order a customer

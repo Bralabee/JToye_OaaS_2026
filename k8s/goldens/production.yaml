@@ -637,6 +637,11 @@ spec:
             configMapKeyRef:
               key: access.strict-scoping
               name: app-config
+        - name: ACCESS_HUMAN_CLIENT_IDS
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.client-id
+              name: app-config
         - name: TRUSTED_PROXY_CIDRS
           valueFrom:
             configMapKeyRef:

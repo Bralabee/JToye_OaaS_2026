@@ -7,6 +7,29 @@ definitions:
         example: true
         type: boolean
     type: object
+  main.CoreProblem:
+    properties:
+      detail:
+        description: Human-readable explanation specific to this occurrence.
+        example: You have no access to this shop
+        type: string
+      instance:
+        description: The request path core refused.
+        example: /api/v1/sync/batch
+        type: string
+      status:
+        description: HTTP status code, repeated in the body.
+        example: 403
+        type: integer
+      title:
+        description: Short human-readable summary of the problem type.
+        example: Forbidden
+        type: string
+      type:
+        description: Stable problem type URI, e.g. https://jtoye.uk/errors/shop-access-denied.
+        example: https://jtoye.uk/errors/shop-access-denied
+        type: string
+    type: object
   main.ErrorResponse:
     properties:
       error:
@@ -81,12 +104,71 @@ definitions:
   main.SyncBatchResponse:
     properties:
       processed_count:
-        description: Number of items Core accepted for processing.
-        example: 42
+        description: Number of items written (CREATED plus UPDATED).
+        example: 1
         type: integer
+      results:
+        description: One result per request item, in request order.
+        items:
+          $ref: '#/definitions/main.SyncItemResult'
+        type: array
       status:
-        description: Processing status. "accepted" when Core queued the batch.
-        example: accepted
+        description: |-
+          SUCCESS when every item was written (or the batch was empty); PARTIAL
+          when some were written and some rejected; REJECTED when none was
+          written. Never SUCCESS when any item was refused: read results.
+        enum:
+        - SUCCESS
+        - PARTIAL
+        - REJECTED
+        example: PARTIAL
+        type: string
+    type: object
+  main.SyncItemResult:
+    properties:
+      code:
+        description: Why the item was rejected (absent unless REJECTED).
+        enum:
+        - UNKNOWN_TYPE
+        - SKU_REQUIRED
+        - NAME_REQUIRED
+        - SHOP_REQUIRED
+        - SHOP_MISMATCH
+        - SHOP_ACCESS_DENIED
+        - SHOP_NOT_FOUND
+        - INVALID_FIELDS
+        - WRITE_CONFLICT
+        - WRITE_FAILED
+        example: SHOP_REQUIRED
+        type: string
+      id:
+        description: Id of the product or shop written (absent when REJECTED).
+        format: uuid
+        type: string
+      index:
+        description: Position of the item in the request's items array (0-based).
+        example: 1
+        type: integer
+      key:
+        description: 'The item''s upsert key: the sku for a product, the name for
+          a shop.'
+        example: PLANTAIN-1
+        type: string
+      message:
+        description: Human-readable detail for a rejection (absent unless REJECTED).
+        example: shopId is required on every product item
+        type: string
+      outcome:
+        description: What happened to the item.
+        enum:
+        - CREATED
+        - UPDATED
+        - REJECTED
+        example: REJECTED
+        type: string
+      type:
+        description: The item's type as sent.
+        example: product
         type: string
     type: object
   main.WebhookAck:
@@ -127,6 +209,17 @@ paths:
         application/problem+json with type
         https://jtoye.uk/errors/rate-limited and code RATE_LIMITED;
         wait Retry-After seconds, then retry the same request.
+
+        Core's answer is passed through. A batch core processed is
+        200 with core's status (SUCCESS, PARTIAL or REJECTED),
+        processed_count and one result per item, in request order,
+        each CREATED, UPDATED or REJECTED with a stable code. A
+        partially refused batch is still 200: read status and
+        results, never the HTTP status alone. A 4xx refusal from
+        core (application/problem+json) is relayed verbatim: same
+        status, content type and body, Retry-After kept. A core
+        outage, an open circuit breaker or any core 5xx is the
+        edge's own 502.
       parameters:
       - description: Batch payload
         in: body
@@ -137,18 +230,34 @@ paths:
       produces:
       - application/json
       responses:
+        "200":
+          description: 'Core processed the batch: status, processed_count and per-item
+            results'
+          schema:
+            $ref: '#/definitions/main.SyncBatchResponse'
         "202":
-          description: Batch accepted by Core
+          description: Core accepted the batch (a core that predates per-item results;
+            no results)
           schema:
             $ref: '#/definitions/main.SyncBatchResponse'
         "400":
-          description: Invalid body or missing tenant_id claim
+          description: 'The edge''s own refusal: invalid body or missing tenant_id
+            claim (application/json). Core''s batch validation refusal is relayed
+            verbatim as application/problem+json (see CoreProblem)'
           schema:
             $ref: '#/definitions/main.ErrorResponse'
         "401":
-          description: Missing or malformed Bearer token
+          description: 'The edge''s own refusal: missing or malformed Bearer token
+            (application/json). Core''s refusal of an expired or invalid token is
+            relayed verbatim as application/problem+json (see CoreProblem)'
           schema:
             $ref: '#/definitions/main.ErrorResponse'
+        "403":
+          description: 'Core''s refusal, relayed verbatim (application/problem+json):
+            the token lacks catalog:write (errors/forbidden) or the caller holds no
+            grant on the target shop (errors/shop-access-denied)'
+          schema:
+            $ref: '#/definitions/main.CoreProblem'
         "429":
           description: 'Rate limit exceeded: the caller''s tenant bucket or this replica''s
             pre-auth valve is empty. application/problem+json, type https://jtoye.uk/errors/rate-limited,
@@ -171,7 +280,8 @@ paths:
           schema:
             $ref: '#/definitions/main.ProblemDetail'
         "502":
-          description: Core API unreachable or tripped the circuit breaker
+          description: Core API unreachable, the circuit breaker is open, or core
+            failed (5xx); core's body is never relayed
           schema:
             $ref: '#/definitions/main.ErrorResponse'
       security:

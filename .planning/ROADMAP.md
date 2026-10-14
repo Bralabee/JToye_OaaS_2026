@@ -356,7 +356,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
-| 37. Real-world operations readiness | v2.3 | 37/53 | In Progress | — |
+| 37. Real-world operations readiness | v2.3 | 46/53 | In Progress | — |
 | 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -995,7 +995,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
   7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end on the delivered runtime. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
   8. **Catalogue & shop admin (37-G).** Vendors can set a delivery fee, a free-delivery threshold and collection-only, enforced on every writer, and editing a shop keeps its public address.
 
-**Plans:** 37/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
+**Plans:** 46/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
 
 Plans:
 **Wave 1**
@@ -1094,27 +1094,27 @@ Plans:
 - [x] 37-37-PLAN.md — 37-C: cash confirmation on its own announced route
 
 **Wave 30** *(blocked on Wave 29 completion)*
-- [ ] 37-38-PLAN.md — 37-C gate
+- [x] 37-38-PLAN.md — 37-C gate
 
 **Wave 31** *(blocked on Wave 30 completion)*
-- [ ] 37-39-PLAN.md — 37-E: partial update keeps stock tracking; narrow product PATCH
+- [x] 37-39-PLAN.md — 37-E: partial update keeps stock tracking; narrow product PATCH
 
 **Wave 32** *(blocked on Wave 31 completion)*
-- [ ] 37-40-PLAN.md — 37-E: sync requires a shop, reports per item; shop-less products unorderable
+- [x] 37-40-PLAN.md — 37-E: sync requires a shop, reports per item; shop-less products unorderable
 
 **Wave 33** *(blocked on Wave 32 completion)*
-- [ ] 37-41-PLAN.md — 37-E: edge passes sync results and core refusals through
-- [ ] 37-42-PLAN.md — 37-E: MCP orders land PENDING; list_products shop filter and allergen names
+- [x] 37-41-PLAN.md — 37-E: edge passes sync results and core refusals through
+- [x] 37-42-PLAN.md — 37-E: MCP orders land PENDING; list_products shop filter and allergen names
 
 **Wave 34** *(blocked on Wave 33 completion)*
-- [ ] 37-43-PLAN.md — 37-E: webhook auto-pause on failed deliveries, HELD events, owner email
-- [ ] 37-44-PLAN.md — 37-E: Keycloak client-management calls for credentials
+- [x] 37-43-PLAN.md — 37-E: webhook auto-pause on failed deliveries, HELD events, owner email
+- [x] 37-44-PLAN.md — 37-E: Keycloak client-management calls for credentials
 
 **Wave 35** *(blocked on Wave 34 completion)*
-- [ ] 37-45-PLAN.md — 37-E: scoped, revocable integrator credentials, human-only management (V82)
+- [x] 37-45-PLAN.md — 37-E: scoped, revocable integrator credentials, human-only management (V82)
 
 **Wave 36** *(blocked on Wave 35 completion)*
-- [ ] 37-46-PLAN.md — 37-E: Developers page with show-once secrets
+- [x] 37-46-PLAN.md — 37-E: Developers page with show-once secrets
 
 **Wave 37** *(blocked on Wave 36 completion)*
 - [ ] 37-47-PLAN.md — 37-E gate with the live Keycloak credential lifecycle

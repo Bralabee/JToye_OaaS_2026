@@ -14,6 +14,11 @@ import java.util.UUID;
 public interface ProductRepository extends JpaRepository<Product, UUID> {
     Optional<Product> findBySku(String sku);
 
+    // Phase 37-40 (RWO-017): the sync upsert looks a SKU up within the caller's tenant (unique per tenant,
+    // V3) and then compares its shop. The tenant predicate is explicit, not RLS-only, as in
+    // findTenantScopedInGrantSetOrTenantWide below.
+    Optional<Product> findByTenantIdAndSku(UUID tenantId, String sku);
+
     // Vendor-scoped access (Phase 23, VSA-02 / D-01; WR-08 read half, plan 23-10): read-scope
     // the product list to the caller's GRANT SET at the QUERY, ALSO admitting legacy
     // tenant-wide rows whose shop_id IS NULL (an `IN (:ids)` list never matches NULL, which is
@@ -37,6 +42,15 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             @Param("shopIds") Collection<UUID> shopIds, Pageable pageable);
 
     Page<Product> findByAvailableTrue(Pageable pageable);
+
+    // Phase 37-42 (RWO-040 / UXT-040): the scoped caller's list narrowed to products on sale, in the
+    // QUERY so the page and its total describe only what is on sale. Same explicit tenant predicate and
+    // load-bearing parentheses as findTenantScopedInGrantSetOrTenantWide above, with the availability
+    // predicate outside them: tenant AND (granted shop OR tenant-wide) AND available.
+    @Query("SELECT p FROM Product p WHERE p.tenantId = :tenantId "
+            + "AND (p.shopId IN :shopIds OR p.shopId IS NULL) AND p.available = true")
+    Page<Product> findAvailableTenantScopedInGrantSetOrTenantWide(@Param("tenantId") UUID tenantId,
+            @Param("shopIds") Collection<UUID> shopIds, Pageable pageable);
 
     @Query("SELECT p FROM Product p WHERE p.available = true ORDER BY p.category NULLS LAST, p.displayOrder ASC, p.title ASC")
     List<Product> findAvailableOrderedByCategory();
@@ -64,6 +78,9 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     // precisely that reason), and the caller has already passed
     // shopAccessService.require(shopId, STAFF), which 403s on a shop outside the caller's grants.
     Page<Product> findByShopId(UUID shopId, Pageable pageable);
+
+    // Phase 37-42 (RWO-040 / UXT-040): the single-shop narrow, on sale only (`?shopId=&availableOnly=true`).
+    Page<Product> findByShopIdAndAvailableTrue(UUID shopId, Pageable pageable);
 
     // WR-04 (issue #280, plan 23-18): single-shop FTS variant. Same UNION/ts_rank logic as
     // searchFullText, narrowed by shop_id so search obeys the shop switcher — without it the

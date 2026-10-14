@@ -507,12 +507,29 @@
         "type" : "object"
       },
       "BatchSyncResponse" : {
+        "description" : "What the batch did, item by item",
         "properties" : {
           "processedCount" : {
+            "description" : "Number of items written (CREATED plus UPDATED)",
+            "example" : 3,
             "format" : "int32",
             "type" : "integer"
           },
+          "results" : {
+            "description" : "One result per request item, in request order",
+            "items" : {
+              "$ref" : "#/components/schemas/SyncItemResult"
+            },
+            "type" : "array"
+          },
           "status" : {
+            "description" : "SUCCESS when every item was written (or the batch was empty); PARTIAL when some were written and some rejected; REJECTED when none was written. Never SUCCESS when any item was refused.",
+            "enum" : [
+              "SUCCESS",
+              "PARTIAL",
+              "REJECTED"
+            ],
+            "example" : "SUCCESS",
             "type" : "string"
           }
         },
@@ -748,6 +765,55 @@
         ],
         "type" : "object"
       },
+      "CreateCredentialRequest" : {
+        "properties" : {
+          "name" : {
+            "description" : "A name the business recognises, e.g. 'Till' or 'Stock sync'",
+            "example" : "Till",
+            "maxLength" : 100,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "role" : {
+            "description" : "The shop role the credential holds: STAFF or SHOP_MANAGER. GROUP_ADMIN is refused.",
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "example" : "SHOP_MANAGER",
+            "type" : "string"
+          },
+          "scopes" : {
+            "description" : "The #206 client scopes the credential's tokens carry; a subset of catalog:read, catalog:write, orders:read, orders:write, customers:read, customers:write",
+            "example" : [
+              "catalog:read",
+              "orders:write"
+            ],
+            "items" : {
+              "minLength" : 1,
+              "type" : "string"
+            },
+            "maxItems" : 6,
+            "minItems" : 0,
+            "type" : "array"
+          },
+          "shopId" : {
+            "description" : "The one shop the role applies to; null means every shop of the business",
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required" : [
+          "name",
+          "role",
+          "scopes"
+        ],
+        "type" : "object"
+      },
       "CreateCustomerRequest" : {
         "description" : "Customer creation request",
         "properties" : {
@@ -864,6 +930,11 @@
           "shopId" : {
             "format" : "uuid",
             "type" : "string"
+          },
+          "submit" : {
+            "description" : "Submit the order on creation. true: the order is created and moved DRAFT -> PENDING in the same transaction, so it appears in the kitchen's New lane for the vendor to accept (it is never confirmed automatically). Absent or false: the order is created as a DRAFT, to be submitted later with POST /api/v1/orders/{id}/submit.",
+            "example" : true,
+            "type" : "boolean"
           }
         },
         "required" : [
@@ -959,7 +1030,7 @@
             "type" : "integer"
           },
           "quantityInStock" : {
-            "description" : "Quantity in stock (null = unlimited/untracked)",
+            "description" : "Quantity in stock. A product whose stored quantity is null is not stock-tracked (unlimited). On an edit, omitting it keeps the stored quantity; to stop tracking send trackInventory false.",
             "example" : 50,
             "format" : "int32",
             "minimum" : 0,
@@ -990,6 +1061,11 @@
             "maxLength" : 255,
             "minLength" : 1,
             "type" : "string"
+          },
+          "trackInventory" : {
+            "description" : "Stock tracking. Omit (or null) to keep the product's current tracking and stock; false stops tracking and clears the stored quantity (quantityInStock must then be omitted); true tracks stock and requires quantityInStock (a 400 errors/validation naming quantityInStock otherwise).",
+            "example" : true,
+            "type" : "boolean"
           },
           "vatRate" : {
             "default" : "STANDARD",
@@ -1336,6 +1412,195 @@
           "eventTypes",
           "targetUrl"
         ],
+        "type" : "object"
+      },
+      "CredentialDto" : {
+        "properties" : {
+          "clientId" : {
+            "description" : "The Keycloak clientId: the client_id of the client-credentials grant and the azp of every token the credential mints",
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "createdBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "lastUsedAt" : {
+            "description" : "Best-effort and throttled: never more precise than lastUsedIntervalMinutes. Null means never used.",
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "revokedAt" : {
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "revokedBy" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "role" : {
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : "string"
+          },
+          "rotatedAt" : {
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "rotatedBy" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "scopes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "serviceAccountUserId" : {
+            "description" : "The Keycloak user behind the credential's service account: the userId its staff grant and its staff-directory entry carry, so a client can show that entry as this credential",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "shopId" : {
+            "description" : "The shop the role applies to; null means every shop of the business",
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "status" : {
+            "enum" : [
+              "ACTIVE",
+              "REVOKED"
+            ],
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CredentialListResponse" : {
+        "properties" : {
+          "credentials" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CredentialDto"
+            },
+            "type" : "array"
+          },
+          "lastUsedIntervalMinutes" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CredentialSecretDto" : {
+        "properties" : {
+          "clientId" : {
+            "type" : "string"
+          },
+          "clientSecret" : {
+            "description" : "The client secret. Present only on the response that created or rotated it; null on an Idempotency-Key replay. Store it now: it is never shown again.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "createdBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "role" : {
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : "string"
+          },
+          "rotatedAt" : {
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "rotatedBy" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "scopes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "secretShown" : {
+            "description" : "True when this response carries the secret; false on a replay",
+            "type" : "boolean"
+          },
+          "shopId" : {
+            "format" : "uuid",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "status" : {
+            "enum" : [
+              "ACTIVE",
+              "REVOKED"
+            ],
+            "type" : "string"
+          },
+          "tokenEndpoint" : {
+            "description" : "The Keycloak token endpoint for the client-credentials grant",
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "CustomerDto" : {
@@ -3607,6 +3872,14 @@
             },
             "type" : "array"
           },
+          "allergens" : {
+            "description" : "The declared allergens in words, in UK FSA catalogue order (from allergenMask). Empty when allergenMask is 0. Never includes the may-contain (cross-contact) allergens.",
+            "items" : {
+              "example" : "Gluten",
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "available" : {
             "type" : "boolean"
           },
@@ -3687,6 +3960,30 @@
               "EXEMPT"
             ],
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductPatchRequest" : {
+        "additionalProperties" : false,
+        "description" : "Stock and availability patch for one product. Accepts only available, quantityInStock and trackInventory; any other property (allergen, ingredient, price, ...) is refused with a 400 errors/validation naming it, and nothing is changed. Omitted fields keep their stored value.",
+        "properties" : {
+          "available" : {
+            "description" : "Whether the product can be ordered. Omit to keep the current value.",
+            "example" : false,
+            "type" : "boolean"
+          },
+          "quantityInStock" : {
+            "description" : "Absolute quantity in stock; setting it tracks stock. Omit to keep the stored quantity.",
+            "example" : 12,
+            "format" : "int32",
+            "minimum" : 0,
+            "type" : "integer"
+          },
+          "trackInventory" : {
+            "description" : "Stock tracking. Omit (or null) to keep the current tracking; false stops tracking and clears the stored quantity (quantityInStock must then be omitted); true requires quantityInStock.",
+            "example" : true,
+            "type" : "boolean"
           }
         },
         "type" : "object"
@@ -5270,6 +5567,11 @@
             "minimum" : 0,
             "type" : "integer"
           },
+          "available" : {
+            "description" : "Whether the product is on sale. Optional; omitted keeps the current value (true on create).",
+            "example" : true,
+            "type" : "boolean"
+          },
           "ingredientsText" : {
             "description" : "Full ingredients list (Natasha's Law)",
             "example" : "Wheat flour, **milk**, sugar",
@@ -5292,6 +5594,19 @@
             "minimum" : 0,
             "type" : "integer"
           },
+          "quantityInStock" : {
+            "description" : "Quantity in stock. Optional; omitted keeps the stored quantity. Sending a number tracks stock at that count. Same rules as PUT /products/{id}.",
+            "example" : 12,
+            "format" : "int32",
+            "minimum" : 0,
+            "type" : "integer"
+          },
+          "shopId" : {
+            "description" : "Shop the product belongs to. REQUIRED on every product item: a product with no shop would be listed and orderable at every shop of the tenant, so an item without one is REJECTED with code SHOP_REQUIRED. On an update it must be the shop the SKU already belongs to (otherwise REJECTED with code SHOP_MISMATCH). The caller needs SHOP_MANAGER on it.",
+            "example" : "8f14e45f-ceea-467f-a0e6-7c3d1c8a1b2e",
+            "format" : "uuid",
+            "type" : "string"
+          },
           "sku" : {
             "description" : "Stock Keeping Unit (unique per tenant) — the product upsert key",
             "example" : "YAM-5KG",
@@ -5306,8 +5621,69 @@
             "minLength" : 1,
             "type" : "string"
           },
+          "trackInventory" : {
+            "description" : "Stock tracking, as on PUT /products/{id}: omit to keep the current tracking; false stops tracking (quantityInStock must then be omitted); true requires quantityInStock. A contradiction is REJECTED with code INVALID_FIELDS.",
+            "example" : true,
+            "type" : "boolean"
+          },
           "type" : {
             "description" : "Item kind, case-insensitive: `shop` or `product`",
+            "example" : "product",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "SyncItemResult" : {
+        "description" : "The outcome of one batch item. Exactly one per item, in request order.",
+        "properties" : {
+          "code" : {
+            "description" : "Why the item was rejected (absent unless REJECTED)",
+            "enum" : [
+              "UNKNOWN_TYPE",
+              "SKU_REQUIRED",
+              "NAME_REQUIRED",
+              "SHOP_REQUIRED",
+              "SHOP_MISMATCH",
+              "SHOP_ACCESS_DENIED",
+              "SHOP_NOT_FOUND",
+              "INVALID_FIELDS",
+              "WRITE_CONFLICT",
+              "WRITE_FAILED"
+            ],
+            "type" : "string"
+          },
+          "id" : {
+            "description" : "Id of the product or shop written (absent when REJECTED)",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "index" : {
+            "description" : "Position of the item in the request's items array (0-based)",
+            "example" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "key" : {
+            "description" : "The item's upsert key: the sku for a product, the name for a shop",
+            "example" : "YAM-5KG",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "Human-readable detail for a rejection (absent unless REJECTED)",
+            "type" : "string"
+          },
+          "outcome" : {
+            "description" : "CREATED, UPDATED or REJECTED",
+            "enum" : [
+              "CREATED",
+              "UPDATED",
+              "REJECTED"
+            ],
+            "type" : "string"
+          },
+          "type" : {
+            "description" : "The item's type as sent",
             "example" : "product",
             "type" : "string"
           }
@@ -5722,6 +6098,7 @@
       "WebhookSubscriptionDto" : {
         "properties" : {
           "consecutiveFailures" : {
+            "description" : "Consecutive deliveries that used all their attempts without a 2xx (37-43: deliveries, not attempts). At webhook.delivery.auto-pause-after-failed-deliveries (default 3) the subscription becomes AUTO_PAUSED; a delivered event resets it to 0.",
             "format" : "int32",
             "type" : "integer"
           },
@@ -5740,6 +6117,11 @@
               "type" : "string"
             },
             "type" : "array"
+          },
+          "heldCount" : {
+            "description" : "Events kept for this endpoint while it is paused (delivery status HELD), counted by the server. Resuming re-queues and delivers every one of them.",
+            "format" : "int64",
+            "type" : "integer"
           },
           "id" : {
             "format" : "uuid",
@@ -6542,6 +6924,309 @@
         "summary" : "Update announcement",
         "tags" : [
           "Announcements"
+        ]
+      }
+    },
+    "/api/v1/credentials" : {
+      "get" : {
+        "description" : "Every credential of the business, newest first, revoked ones included: name, scopes, shop, role, who issued, rotated and revoked it and when, and lastUsedAt, which is best-effort and never more precise than lastUsedIntervalMinutes. Never carries a secret.",
+        "operationId" : "listCredentials",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialListResponse"
+                }
+              }
+            },
+            "description" : "The credentials"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List integrator credentials",
+        "tags" : [
+          "Credentials"
+        ]
+      },
+      "post" : {
+        "description" : "Creates a Keycloak client-credentials client for this business with exactly the given #206 scopes, and grants its service account the given role (STAFF or SHOP_MANAGER) on one shop or on every shop, so it is limited exactly like a person. The client secret is returned ONCE, with Cache-Control: no-store, and is never stored by J'Toye. With an Idempotency-Key, a same-key replay returns 200 with the credential, secretShown false and no secret.",
+        "operationId" : "createCredential",
+        "parameters" : [
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateCredentialRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialSecretDto"
+                }
+              }
+            },
+            "description" : "Idempotency-Key replay: the credential, without its secret"
+          },
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialSecretDto"
+                }
+              }
+            },
+            "description" : "Credential issued; the secret is in this response only"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Invalid request: a scope outside the six (credential-scope-invalid), GROUP_ADMIN (credential-role-invalid), or the Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The shop is not a shop of this business"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Keycloak did not answer (credential-service-unavailable); nothing was changed"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Issue an integrator credential",
+        "tags" : [
+          "Credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/{id}" : {
+      "delete" : {
+        "description" : "Deletes the Keycloak client (no new token can be minted), removes its service account's shop grant (its next request is refused) and records who revoked it and when. The credential stays in the list as REVOKED. Repeatable: revoking a revoked credential returns 204.",
+        "operationId" : "revokeCredential",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "204" : {
+            "description" : "Revoked (or already revoked)"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No credential of this business has that id"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Keycloak did not answer (credential-service-unavailable); nothing was changed"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Revoke a credential",
+        "tags" : [
+          "Credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/{id}/rotate" : {
+      "post" : {
+        "description" : "Keycloak generates a new secret and the old one stops working at once. The new secret is returned ONCE, with Cache-Control: no-store; who rotated it and when are recorded. Not idempotent: every call produces a new secret.",
+        "operationId" : "rotateCredential",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialSecretDto"
+                }
+              }
+            },
+            "description" : "Rotated; the new secret is in this response only"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The Keycloak admin connection is not configured (credentials-not-configured)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a Group admin (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No credential of this business has that id"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The credential is revoked (credential-revoked), or its Keycloak client no longer exists (credential-client-missing)"
+          },
+          "503" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Keycloak did not answer (credential-service-unavailable); nothing was changed"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Rotate a credential's secret",
+        "tags" : [
+          "Credentials"
         ]
       }
     },
@@ -8425,7 +9110,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is still in flight (errors/idempotency-conflict), or the generated order number collided with an existing order's under the order-number uniqueness constraints (uq_orders_tenant_number / uk_orders_order_number) - a retry mints a fresh number (errors/duplicate)"
+            "description" : "A request with this Idempotency-Key is still in flight (errors/idempotency-conflict), or the generated order number collided with an existing order's under the order-number uniqueness constraints (uq_orders_tenant_number / uk_orders_order_number) - a retry mints a fresh number (errors/duplicate), or a line names a product its shop has switched off, with productId and productName (errors/product-unavailable)"
           },
           "422" : {
             "content" : {
@@ -9716,7 +10401,7 @@
     },
     "/api/v1/products" : {
       "get" : {
-        "description" : "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop).",
+        "description" : "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop). Optional availableOnly=true lists only products on sale, filtered in the query so totalElements counts only those. Each product carries allergens, its declared allergens in words, beside allergenMask.",
         "operationId" : "list_3",
         "parameters" : [
           {
@@ -9727,6 +10412,15 @@
             "schema" : {
               "format" : "uuid",
               "type" : "string"
+            }
+          },
+          {
+            "description" : "Optional: true lists only products on sale (available). Absent or false lists every product, as before.",
+            "in" : "query",
+            "name" : "availableOnly",
+            "required" : false,
+            "schema" : {
+              "type" : "boolean"
             }
           }
         ],
@@ -10262,6 +10956,106 @@
           }
         ],
         "summary" : "Get product by ID",
+        "tags" : [
+          "Products"
+        ]
+      },
+      "patch" : {
+        "description" : "Changes only available, quantityInStock and trackInventory, for EPOS and agent integrations that must never touch allergen or ingredient data. Any other property is refused with a 400 naming it and nothing is changed. Omitted fields keep their stored value; values are absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's shop, like PUT.",
+        "operationId" : "patch",
+        "parameters" : [
+          {
+            "description" : "Product ID",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProductPatchRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProductDto"
+                }
+              }
+            },
+            "description" : "Product patched; the full product is returned"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "errors/validation: a property other than available, quantityInStock and trackInventory (named in errors), trackInventory true without quantityInStock or false with one, or a negative quantityInStock; errors/unreadable-request: the body is not JSON"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the product's shop (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Product not found (errors/not-found)"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The product changed concurrently; re-read and retry (errors/concurrent-modification)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Patch product stock and availability",
         "tags" : [
           "Products"
         ]
@@ -12926,7 +13720,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "409" : {
             "content" : {
@@ -12936,7 +13730,7 @@
                 }
               }
             },
-            "description" : "Would downgrade the last GROUP_ADMIN (last-group-admin)"
+            "description" : "Would downgrade the last GROUP_ADMIN (last-group-admin), or the user is an integrator credential's service account (staff-target-is-credential)"
           }
         },
         "security" : [
@@ -13041,7 +13835,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -13092,7 +13886,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -13160,7 +13954,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -13213,7 +14007,7 @@
     },
     "/api/v1/staff/{id}" : {
       "delete" : {
-        "description" : "Deletes a shop_staff grant by id; the target loses access on their next request (membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409).",
+        "description" : "Deletes a shop_staff grant by id; the target loses access on their next request (membership cache evicted after commit). Revoking the last GROUP_ADMIN is blocked (409), and so is revoking an integrator credential's grant (409): delete the credential instead.",
         "operationId" : "revoke_1",
         "parameters" : [
           {
@@ -13238,7 +14032,7 @@
                 }
               }
             },
-            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied)"
+            "description" : "Caller is not a GROUP_ADMIN (shop-access-denied), or the token was not issued to the dashboard client (human-only-action)"
           },
           "404" : {
             "content" : {
@@ -13258,7 +14052,7 @@
                 }
               }
             },
-            "description" : "Would remove the last GROUP_ADMIN (last-group-admin)"
+            "description" : "Would remove the last GROUP_ADMIN (last-group-admin), or the grant belongs to an integrator credential's service account (staff-target-is-credential)"
           }
         },
         "security" : [
@@ -13756,7 +14550,8 @@
                 "PENDING",
                 "DELIVERED",
                 "RETRYING",
-                "FAILED"
+                "FAILED",
+                "HELD"
               ],
               "type" : "string"
             }
@@ -14638,6 +15433,10 @@
     {
       "description" : "Announcement management endpoints",
       "name" : "Announcements"
+    },
+    {
+      "description" : "Integrator API credentials: issue, list, rotate, revoke (Group admin only)",
+      "name" : "Credentials"
     },
     {
       "description" : "Customer relationship management endpoints",

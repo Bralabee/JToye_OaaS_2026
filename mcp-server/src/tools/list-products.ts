@@ -9,7 +9,9 @@ import { toToolError } from "../errors.js";
  * list-products.ts — the `list_products` read tool.
  *
  * Thin forwarding posture (analog: edge-go/internal/core/client.go): build the
- * path from an allow-listed template (page/size only → SSRF-safe, T-20-04),
+ * path from an allow-listed template (page, size, shopId, availableOnly only →
+ * SSRF-safe, T-20-04; shopId must parse as a UUID and availableOnly as a
+ * boolean, so no caller text can add a key or a path segment, T-37-99),
  * forward the caller's Bearer via coreGet, wrap the JSON on success, delegate
  * error shaping to toToolError. We log ONLY the tool name + core status —
  * never the Bearer or the response body (order/customer PII, T-20-01).
@@ -20,11 +22,25 @@ const logger = pino({ name: "jtoye-mcp" });
 export const listProductsInputSchema = {
   page: z.number().int().min(0).optional().describe("0-based page index"),
   size: z.number().int().min(1).max(100).optional().describe("page size (max 100)"),
+  // Phase 37-42 (RWO-040 / UXT-040). Before these two keys existed the SDK's Zod parse stripped an
+  // agent's shopId silently, so "show me this shop's menu" returned the tenant's whole catalogue.
+  // Both filter in CORE (?shopId= since WR-04, ?availableOnly= since 37-42): this tool forwards.
+  shopId: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Only this shop's products (UUID, optional). Needs at least STAFF on the shop."),
+  availableOnly: z
+    .boolean()
+    .optional()
+    .describe("true: only products on sale. Omitted or false: every product, sold out included."),
 };
 
 interface ListProductsArgs {
   page?: number;
   size?: number;
+  shopId?: string;
+  availableOnly?: boolean;
 }
 
 /**
@@ -36,6 +52,8 @@ export function listProductsHandler(bearer: string) {
     const qs = new URLSearchParams();
     if (args.page !== undefined) qs.set("page", String(args.page));
     if (args.size !== undefined) qs.set("size", String(args.size));
+    if (args.shopId !== undefined) qs.set("shopId", args.shopId);
+    if (args.availableOnly !== undefined) qs.set("availableOnly", String(args.availableOnly));
     const query = qs.toString();
     const path = query ? `/api/v1/products?${query}` : "/api/v1/products";
 
@@ -62,7 +80,11 @@ export function registerListProducts(server: McpServer, bearer: string): void {
     "list_products",
     {
       title: "List products",
-      description: "List the calling tenant's product catalogue (RLS-scoped by the token).",
+      description:
+        "List the calling tenant's product catalogue (RLS-scoped by the token). Pass shopId for " +
+        "one shop's menu and availableOnly: true for only what is on sale. Each product carries " +
+        "allergens, its declared allergens in words (e.g. [\"Gluten\", \"Milk\"]), beside the " +
+        "allergenMask integer.",
       inputSchema: listProductsInputSchema,
     },
     listProductsHandler(bearer),

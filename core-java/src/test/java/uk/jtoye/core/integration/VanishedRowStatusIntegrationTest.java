@@ -387,6 +387,7 @@ class VanishedRowStatusIntegrationTest {
         ShopGrants.grantOperator(jdbc, tenant, subject, null, role,
                 "customer-" + role.toLowerCase() + "-" + subject + "@example.com");
         return jwt().jwt(j -> j.subject(subject.toString())
+                        .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                         .claim("tenant_id", tenant.toString()))
                 .authorities(new SimpleGrantedAuthority("SCOPE_customers:write"));
     }
@@ -394,6 +395,7 @@ class VanishedRowStatusIntegrationTest {
     /** A realm admin — the D-03 implicit-GROUP_ADMIN bridge the staff endpoints gate on. */
     private static RequestPostProcessor groupAdmin(UUID tenant) {
         return jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+                        .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                         .claim("tenant_id", tenant.toString()))
                 .authorities(new SimpleGrantedAuthority("ROLE_admin"));
     }

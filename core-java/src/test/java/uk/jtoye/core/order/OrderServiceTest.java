@@ -155,6 +155,9 @@ class OrderServiceTest {
         testProduct.setSku("TEST-001");
         testProduct.setTitle("Test Product");
         testProduct.setPricePennies(1000L); // £10.00
+        // 37-40 (RWO-017): createOrder refuses a shop-less product, so the fixture product belongs to
+        // the ordered shop; the shop-less arm clears it explicitly.
+        testProduct.setShopId(shopId);
 
         // Create test order (using reflection to set auto-generated fields)
         testOrder = new Order();
@@ -330,12 +333,15 @@ class OrderServiceTest {
     }
 
     /**
-     * M2's deliberate null arm: a {@code shop_id IS NULL} product is tenant-wide by design (V20)
-     * and must stay orderable from any of the tenant's shops.
+     * Phase 37-40 (RWO-017 / UXT-017, roadmap SC-5): M2's null arm is gone. A {@code shop_id IS NULL}
+     * product used to be "tenant-wide by design (V20)" and orderable from any shop, which put an allergen
+     * picture nobody at the ordering shop had declared on its order (the persona run: a shop-less synced
+     * product with mask 0 on another shop's order). It is now refused with the SAME 404 as another
+     * shop's product, and nothing is saved. RED on the pre-37-40 tree: the order saves.
      */
     @Test
-    @DisplayName("createOrder - A tenant-wide product (shopId == null) is still accepted")
-    void testCreateOrder_TenantWideProduct_isAccepted() {
+    @DisplayName("createOrder - A shop-less product (shopId == null) is not-found and nothing is saved")
+    void testCreateOrder_ShopLessProduct_isNotFound() {
         // Given
         CreateOrderRequest request = new CreateOrderRequest();
         request.setShopId(shopId);
@@ -345,22 +351,18 @@ class OrderServiceTest {
         itemRequest.setQuantity(2);
         request.setItems(List.of(itemRequest));
 
-        assertNull(testProduct.getShopId(), "fixture precondition: the product is tenant-wide");
+        testProduct.setShopId(null);
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
-            Order order = invocation.getArgument(0);
-            setField(order, "id", orderId);
-            return order;
-        });
 
-        // When
-        OrderDto result = orderService.createOrder(request);
+        // When & Then
+        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class,
+                () -> orderService.createOrder(request));
 
-        // Then
-        assertNotNull(result);
-        assertEquals(2000L, result.getTotalAmountPennies());
-        verify(orderRepository).saveAndFlush(any(Order.class));
+        assertEquals("Product not found: " + productId, exception.getMessage(),
+                "the same shape as another shop's product: no title, no shop id");
+        verify(orderRepository, never()).saveAndFlush(any(Order.class));
+        verify(orderRepository, never()).save(any(Order.class));
     }
 
     /** M2's allow arm: a product homed on the SAME shop is accepted (the guard is scoped, not a wall). */
@@ -404,6 +406,7 @@ class OrderServiceTest {
         Product product2 = new Product();
         setField(product2, "id", productId2);
         product2.setPricePennies(2000L); // £20.00
+        product2.setShopId(shopId); // 37-40 (RWO-017): createOrder refuses a shop-less product
 
         OrderItemRequest item1 = new OrderItemRequest();
         item1.setProductId(productId);
