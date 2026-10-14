@@ -391,15 +391,35 @@ describe("the web address (UI-SPEC G2, UXT-028)", () => {
     expect(within(dialog).getByText("/shop/rosies-kitchen-019835a3")).toBeInTheDocument()
   })
 
-  it("saving the edit dialog with the fee fields changed but the address untouched sends no slug", async () => {
+  it("saving the edit dialog with the fee fields changed but the address untouched re-sends the CURRENT slug", async () => {
+    // 37-G review: a pre-37-48 core-java (rolling overlap, core-only rollback) regenerates the slug on a save
+    // without one; the 37-48 server keeps a slug equal to the current one.
     stubShops(KITCHEN)
     const dialog = await openEdit("Rosie's Kitchen")
     await type(within(dialog).getByLabelText("Delivery fee (£)"), "1.99")
     await click(collectionBox())
     await click(screen.getByRole("button", { name: "Update Shop" }))
     const body = sentBody()
-    expect(body).not.toHaveProperty("slug")
+    expect(body.slug).toBe("rosies-kitchen-019835a3")
     expect(body.deliveryFeePennies).toBe(199)
+  })
+
+  it("an edited web address is sent instead of the current one", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+    await click(within(dialog).getByRole("button", { name: "Change web address" }))
+    await type(within(dialog).getByLabelText("New web address"), "rosies-new-place")
+    await click(screen.getByRole("button", { name: "Update Shop" }))
+    expect(sentBody().slug).toBe("rosies-new-place")
+  })
+
+  it("creating a shop sends no slug (the server generates one)", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openCreate()
+    await type(within(dialog).getByLabelText("Shop Name *"), "New Place")
+    await click(screen.getByRole("button", { name: "Create Shop" }))
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1))
+    expect(mockPost.mock.calls[0][1]).not.toHaveProperty("slug")
   })
 
   it("long-text and overflow (planner assumption): the read-only address breaks anywhere and the link sits on its own line below sm", async () => {
