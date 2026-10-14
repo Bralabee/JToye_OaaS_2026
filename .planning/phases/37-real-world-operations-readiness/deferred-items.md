@@ -778,7 +778,7 @@ where it must be resolved.
 ## From 37-50 (the 37-G gate, Task 3, live)
 
 - **A collection-only shop still advertises delivery on the shop directory card and the basket page (found in 37-50, open, decide before the 37-G PR merges).**
-  status: open
+  status: resolved 2026-10-14 by 8caa6e0f (owner: fix on the PR branch; evidence 37-50 2.11)
   **What:** with Brixton Village Grill set collection-only (offersDelivery false, fee 299, threshold 3000), the
   `/shop` directory card reads "Delivery £2.99 Free over £30.00" and `/shop/brixton-village-grill/cart` reads
   "Delivery from £2.99. Added at checkout, where collection is free and delivery is free over £30.00." The header
@@ -790,7 +790,7 @@ where it must be resolved.
   COLLECTION, show the chip copy instead of the fee line. A candidate review-fix on the PR branch, with screens.
 
 - **After a deploy, `GET /shops/{id}` can serve the pre-deploy ShopDto shape for up to 15 minutes (found in 37-50, open).**
-  status: open
+  status: resolved 2026-10-14 by 5b037e1b (owner: bump to v5 on the PR branch; evidence 37-50 2.11)
   **What:** the `shops` Redis region (TTL 15 min, key prefix `v4:`) survives a core-java restart. A GET made on the
   old runtime at 16:22:29Z cached Brixton without the four 37-48 fields; the rebuilt core (started 16:24:41Z)
   returned that body at 16:26:00Z (fee/offer keys: none) while Mama Ade's, never cached before, returned all four.
