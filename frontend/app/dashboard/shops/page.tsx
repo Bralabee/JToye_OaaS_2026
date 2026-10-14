@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
@@ -108,6 +108,22 @@ function slugifyAsTyped(value: string): string {
     .slice(0, 100)
 }
 
+/**
+ * 37-49 (UI-SPEC G2): the address a NEW shop will get, as far as the browser can know it. Mirrors
+ * `ShopService.generateSlug` step for step (lower-case; drop all but a-z, 0-9, Java's whitespace set and
+ * hyphens; whitespace runs to one hyphen; hyphen runs collapsed; one leading and trailing hyphen
+ * trimmed). The server then appends "-" and a random 8-character code, which the preview shows as an
+ * ellipsis rather than inventing one. Empty when the name has no usable characters.
+ */
+function generatedSlugBase(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9 \t\n\x0B\f\r-]/g, "")
+    .replace(/[ \t\n\x0B\f\r]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
 function finalSlug(value: string): string {
   return value.replace(/-+$/, "")
 }
@@ -175,9 +191,13 @@ export default function ShopsPage() {
     formState: { errors },
     reset,
     setValue,
+    control,
   } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
   })
+
+  // 37-49 (UI-SPEC G2): the create dialog previews the address the name will produce.
+  const createPreviewBase = generatedSlugBase(useWatch({ control, name: "name" }) ?? "")
 
   const fetchShops = async () => {
     try {
@@ -732,6 +752,19 @@ export default function ShopsPage() {
                       {slugError}
                     </p>
                   )}
+                </div>
+              )}
+              {!editingShop && createPreviewBase && (
+                <div className="space-y-1.5">
+                  {/* 37-49 (UI-SPEC G2): the create dialog keeps auto-generation and previews the result.
+                      The same row shape as the edit dialog's read-only address above. */}
+                  <p className="text-sm font-medium leading-none">Web address</p>
+                  <span data-testid="web-address-preview" className="block break-all font-mono text-sm text-slate-900">
+                    /shop/{createPreviewBase}-<span className="text-slate-500">…</span>
+                  </span>
+                  <p className="text-sm text-slate-600">
+                    A short code is added to the end when the shop is created, so no two shops share an address.
+                  </p>
                 </div>
               )}
               <div className="space-y-1.5">
