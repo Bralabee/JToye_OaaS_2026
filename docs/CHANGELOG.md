@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Nightly E2E green again: dashboard footer CLS, a complete fixture product, the admin seam on (#921) — 2026-10-14
+### Nightly E2E green again: dashboard footer CLS, a complete fixture product, the admin seam on, a kept reject summary (#921) — 2026-10-14
 
-The scheduled full-stack run (#683) was red every night from 2026-10-08, on three causes, none flaky.
+The scheduled full-stack run (#683) was red every night from 2026-10-08, on three causes, none flaky;
+the proof runs on this branch then exposed a fourth, timing-dependent one.
 
 - **Dashboard footer layout shift.** The platform-identity footer was painted under the still-loading
   page and pushed down when its data arrived (CLS 0.1039 on `/dashboard/webhooks`, budget 0.1); the
@@ -20,6 +21,10 @@ The scheduled full-stack run (#683) was red every night from 2026-10-08, on thre
 - **The Keycloak admin seam on in the nightly.** Copying `.env.example` set `KC_ADMIN_ENABLED=false`,
   so every staff-invite preview answered 503; the workflow appends `KC_ADMIN_ENABLED=true`, as a
   developer `.env` gets from compose's default.
+- **A bulk reject keeps its summary.** A live order event re-ran the orders page's full load, whose
+  spinner unmounted the open dialog; the reject's own events replaced "3 rejected." with "Reject 0
+  orders?". Live events now refresh the list in place, and the summary describes the orders as
+  submitted.
 
 ### Phase 37-C: Checkout integrity (#918) — 2026-10-12
 
