@@ -53,6 +53,7 @@ import uk.jtoye.core.exception.CredentialsNotConfiguredException;
 import uk.jtoye.core.exception.OrderLimitExceededException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
+import uk.jtoye.core.exception.ProductUnavailableException;
 import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
 import uk.jtoye.core.exception.StaffTargetIsCredentialException;
 import uk.jtoye.core.exception.StaffInviteEmailTakenException;
@@ -298,6 +299,21 @@ public class GlobalExceptionHandler {
         if (ex.getAvailable() != null) {
             problem.setProperty("available", ex.getAvailable());
         }
+        return problem;
+    }
+
+    /**
+     * 37-E review: an order line names a product its shop has switched off. 409, not the
+     * shop-mismatch 404: the caller can already list this shop's products, so naming it discloses
+     * nothing, and a 404 would tell an integrator the id is wrong when it is not.
+     */
+    @ExceptionHandler(ProductUnavailableException.class)
+    public ProblemDetail handleProductUnavailable(ProductUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Product Unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/product-unavailable"));
+        problem.setProperty("productId", ex.getProductId());
+        problem.setProperty("productName", ex.getProductName());
         return problem;
     }
 

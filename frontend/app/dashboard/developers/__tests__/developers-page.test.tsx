@@ -170,6 +170,58 @@ describe("Developers page: create a credential and see its secret once (Task 1)"
     expect(stored(window.sessionStorage)).not.toContain(SECRET)
   })
 
+  it("a Create pressed again after a lost response re-sends the same Idempotency-Key, so the server replays instead of issuing a second credential", async () => {
+    // The first create reached core but its answer never came back (the api-client's own retries
+    // exhausted on a network error). A different key on the second press would make core issue a
+    // SECOND working credential and leave the first live with a secret nobody holds (37-E review).
+    mockedApiClient.post
+      .mockImplementationOnce((() => Promise.reject(Object.assign(new Error("Network Error"), { isAxiosError: true }))) as never)
+      .mockImplementationOnce((() => Promise.resolve({ status: 200, data: created({ secretShown: false, clientSecret: null }) })) as never)
+    const dialog = await openCreate()
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Till system" } })
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Read your menu/ }))
+    const press = async () =>
+      act(async () => {
+        fireEvent.click(within(dialog).getByRole("button", { name: "Create credential" }))
+      })
+    await press()
+    await waitFor(() => expect(mockedApiClient.post).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toBeInTheDocument())
+    await press()
+    await waitFor(() => expect(mockedApiClient.post).toHaveBeenCalledTimes(2))
+    const keyOf = (i: number) =>
+      (mockedApiClient.post.mock.calls[i][2] as { headers?: Record<string, string> } | undefined)?.headers?.[
+        "Idempotency-Key"
+      ]
+    expect(keyOf(0)).toMatch(/^[0-9a-f-]{36}$/)
+    // The retried create must replay the first, not mint a new credential.
+    expect(keyOf(1)).toBe(keyOf(0))
+  })
+
+  it("a changed form after a failed create is a new request with a new Idempotency-Key", async () => {
+    mockedApiClient.post
+      .mockImplementationOnce((() => Promise.reject(Object.assign(new Error("Network Error"), { isAxiosError: true }))) as never)
+      .mockImplementationOnce((() => Promise.resolve({ status: 201, data: created({ name: "Website" }) })) as never)
+    const dialog = await openCreate()
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Till system" } })
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Read your menu/ }))
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Create credential" }))
+    })
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toBeInTheDocument())
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Website" } })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Create credential" }))
+    })
+    await waitFor(() => expect(mockedApiClient.post).toHaveBeenCalledTimes(2))
+    const keyOf = (i: number) =>
+      (mockedApiClient.post.mock.calls[i][2] as { headers?: Record<string, string> } | undefined)?.headers?.[
+        "Idempotency-Key"
+      ]
+    // Re-using the key for a different body would earn a 422 idempotency-payload-mismatch.
+    expect(keyOf(1)).not.toBe(keyOf(0))
+  })
+
   it("refuses inline with no scope ticked and sends nothing", async () => {
     const dialog = await openCreate()
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Till system" } })

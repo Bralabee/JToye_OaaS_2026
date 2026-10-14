@@ -19,6 +19,7 @@ import uk.jtoye.core.exception.BulkCancelTooLargeException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.OrderNotVoidableException;
+import uk.jtoye.core.exception.ProductUnavailableException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransaction;
 import uk.jtoye.core.finance.FinancialTransactionService;
@@ -278,6 +279,15 @@ public class OrderService {
             if (!shop.getId().equals(product.getShopId())) {
                 throw new ResourceNotFoundException(
                         "Product not found: " + itemRequest.getProductId());
+            }
+
+            // 37-E review: a product its shop has switched off is not orderable on this route either.
+            // The storefront drops such a line as UNAVAILABLE (37-33); this route (dashboard, REST API,
+            // MCP create_order) never checked, and since 37-42 an MCP order lands PENDING in the kitchen.
+            // Checked before stock so the refusal names the real reason. Same test as the storefront's:
+            // only TRUE is on sale.
+            if (!Boolean.TRUE.equals(product.getAvailable())) {
+                throw new ProductUnavailableException(product.getId(), product.getTitle());
             }
 
             // Validate stock availability
