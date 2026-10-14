@@ -64,14 +64,14 @@ function ShellFrame({ children }: { children: ReactNode }) {
           sequential-focus start point to the fragment target (probe 22b). */}
       <a href="#main" className="sr-only z-50 rounded-full bg-oxblood px-4 py-3 text-sm font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to main content</a>
       <Sidebar />
-      <main id="main" className="flex-1 overflow-y-auto">
+      <main id="main" className="flex flex-1 flex-col overflow-y-auto">
         {/* Mobile-only top bar — brand chrome once the sidebar is gone. The
             shop-context switcher (VSA-03) rides here next to the wordmark; it is
             width-capped + truncating so it adds no horizontal overflow at 375px
             (MOBL-01, RESEARCH §7). */}
         <div
           data-testid="mobile-topbar"
-          className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-slate-200 bg-white px-4 md:hidden dark:border-slate-800 dark:bg-slate-900"
+          className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4 md:hidden dark:border-slate-800 dark:bg-slate-900"
         >
           <Store className="h-6 w-6 shrink-0 text-blue-500" aria-hidden="true" />
           <span className="shrink-0 font-bold text-slate-900 dark:text-slate-100">J&apos;Toye</span>
@@ -120,19 +120,28 @@ function ShellFrame({ children }: { children: ReactNode }) {
             "mx-auto",
             WIDTH_TIER_CLASS.shell,
             "p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100",
-            // The band is at least the visible height of <main> (less the h-14
-            // mobile top bar), so the legal footer is painted at the bottom of
-            // the viewport from the first frame instead of directly under a
-            // still-loading page and then pushed down when its data arrives:
-            // that jump alone was a CLS of 0.09 on /dashboard/webhooks at the
-            // throttled mobile profile (nightly #683).
-            "flex min-h-[calc(100%-3.5rem)] flex-col md:min-h-full"
+            // A flex item of <main>'s column, so it fills the visible height and
+            // the legal footer below it is painted at the bottom of the viewport
+            // from the first frame, instead of directly under a still-loading
+            // page and then pushed down when its data arrives: that jump alone
+            // was a CLS of 0.09 on /dashboard/webhooks at the throttled mobile
+            // profile (nightly #683). w-full keeps this mx-auto + max-width
+            // item at min(main, tier) as it was as a block; its children are
+            // untouched, so the page root's parent is still this padded band.
+            // shrink-0 on it, the top bar and the footer container: in a column
+            // that overflows, flex items otherwise shrink below their content
+            // (the top bar to 37px, the footer to 0; CLS 0.28 on a long page)
+            // instead of <main> scrolling as it did when it was a block.
+            "w-full grow shrink-0"
           )}
         >
-          <div className="flex-1">
-            <DashboardAccessContent>{children}</DashboardAccessContent>
-          </div>
-          <footer className="mt-10 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <DashboardAccessContent>{children}</DashboardAccessContent>
+        </div>
+        {/* The footer sits OUTSIDE the band (so nothing is inserted between the
+            band and the page root) in a container of the same tier and padding,
+            so it lines up with the content above it. */}
+        <div className={cn("mx-auto w-full shrink-0", WIDTH_TIER_CLASS.shell, "px-4 pb-20 sm:px-8 sm:pb-20 md:pb-8")}>
+          <footer className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <CompanyLegalLine />
           </footer>
         </div>
