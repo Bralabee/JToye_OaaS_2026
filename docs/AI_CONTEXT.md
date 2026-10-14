@@ -253,7 +253,7 @@ Redis Caching with Tenant Isolation
   - **Shops**: 15-minute TTL (very stable data, location/contact info rarely changes)
 - **NOT Cached**: Orders, Customers, FinancialTransactions (change too frequently)
 - **Tenant-Aware Keys**: `TenantAwareCacheKeyGenerator` includes tenant ID in every cache key
-  - Format: `v4:{region}::tenant:{tenantId}:{method}:{params}` (e.g. `v4:products::tenant:<tenantId>:getProductById:<productId>`). The `v4:` format version comes from `CacheConfig.CACHE_KEY_FORMAT_VERSION` (Phase 38), the rest from `TenantAwareCacheKeyGenerator`
+  - Format: `v5:{region}::tenant:{tenantId}:{method}:{params}` (e.g. `v5:products::tenant:<tenantId>:getProductById:<productId>`). The `v5:` format version comes from `CacheConfig.CACHE_KEY_FORMAT_VERSION` (`v4` in Phase 38, `v5` since the 37-G review: an ADDITIVE field on a cached DTO is a format change too, because old bytes read back silently with the field null), the rest from `TenantAwareCacheKeyGenerator`. `TenantCacheEvictor` also deletes the previous-version (`v4:`) and Boot-3.5 (`{region}::`) keys on every eviction, so a rollback target never serves what a newer write evicted
   - Prevents cross-tenant data leakage (critical for security)
 - **Cache Annotations**:
   - `@Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator")` on `getProductById()`

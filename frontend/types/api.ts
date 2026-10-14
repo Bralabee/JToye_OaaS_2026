@@ -50,6 +50,17 @@ export interface Shop {
   ordersPausedUntil?: string
   /** Storefront orders are paused until the vendor resumes them. */
   ordersPausedIndefinitely?: boolean
+  /**
+   * 37-48 (RWO-023 / UXT-023): the delivery fee in pennies, charged on a DELIVERY order below the
+   * free-delivery threshold. ABSENT on a DTO that never set it (the server writes ShopDto NON_NULL).
+   */
+  deliveryFeePennies?: number
+  /** A DELIVERY order whose items reach this subtotal (inclusive) pays no fee. Absent: no threshold. */
+  freeDeliveryThresholdPennies?: number
+  /** The shop takes DELIVERY orders. Absent reads as true (a shop takes both until told otherwise). */
+  offersDelivery?: boolean
+  /** The shop takes COLLECTION orders. Absent reads as true. */
+  offersCollection?: boolean
 }
 
 export interface CreateShopRequest {
@@ -73,6 +84,16 @@ export interface CreateShopRequest {
    * source; `{}` saves closed every day. Any save makes the hours STRUCTURED (ends the legacy state).
    */
   openingSchedule?: Record<string, OpeningWindow[]>
+  /** 37-48: pennies, >= 0. Absent keeps the stored fee (a new shop charges 0). */
+  deliveryFeePennies?: number
+  /**
+   * 37-48: pennies, >= 0. ABSENT keeps the stored threshold; an explicit `null` CLEARS it (no free
+   * delivery). The shop form always sends the key, so an emptied field clears the threshold.
+   */
+  freeDeliveryThresholdPennies?: number | null
+  /** 37-48: at least one of the two must be true (400 under `fulfilmentOffered` otherwise). */
+  offersDelivery?: boolean
+  offersCollection?: boolean
 }
 
 // Media asset types (Phase 24 IMG-04) — mirror the backend

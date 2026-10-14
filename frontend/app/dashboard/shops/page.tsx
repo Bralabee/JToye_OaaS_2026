@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button"
 import { IconButton } from "@/components/ui/icon-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -53,6 +54,33 @@ import { formatDistanceToNow } from "date-fns"
 
 const PAGE_SIZE = 20
 
+// 37-49: the server refuses a negative amount (@Min(0) on both fields); the form says so before sending.
+const AMOUNT_MESSAGE = "Enter an amount of £0.00 or more."
+
+/**
+ * 37-G review: pounds as TYPED, checked strictly: digits with an optional point and at most two decimals
+ * ("30", "30.5", "2.99", ".5"). The fields are text, not `type="number"`, because a number input reports a
+ * malformed entry ("1e", "3-0") as value "" and this check then read it as an EMPTY field, so the form
+ * sent the threshold as null (the server clears it) and the fee as 0; Chromium also read "30,00" as 3000.
+ */
+const POUNDS_PATTERN = /^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/
+
+function isPoundsOrEmpty(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === "") return true
+  return POUNDS_PATTERN.test(value.trim())
+}
+
+/** Pounds as typed -> whole pennies, or null for an empty field. */
+function poundsToPennies(value: string | undefined): number | null {
+  if (value === undefined || value.trim() === "") return null
+  return Math.round(Number(value) * 100)
+}
+
+/** Stored pennies -> the pounds the field shows ("2.50"), or "" when there is no value. */
+function penniesToPounds(pennies: number | null | undefined): string {
+  return pennies == null ? "" : (pennies / 100).toFixed(2)
+}
+
 const shopSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name too long"),
   address: z.string().max(255, "Address too long").optional().or(z.literal("")),
@@ -64,9 +92,71 @@ const shopSchema = z.object({
   deliveryInfo: z.string().max(500).optional().or(z.literal("")),
   tags: z.string().max(500).optional().or(z.literal("")),
   minimumOrderPounds: z.string().optional().or(z.literal("")),
+  // 37-49 (UI-SPEC G1): pounds as typed. Empty fee = no fee; empty threshold = no free-delivery threshold.
+  deliveryFeePounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
+  freeDeliveryThresholdPounds: z.string().optional().or(z.literal("")).refine(isPoundsOrEmpty, AMOUNT_MESSAGE),
 })
 
 type ShopFormData = z.infer<typeof shopSchema>
+
+/**
+ * 37-48 (UXT-028, UI-SPEC G2): the web address as the vendor types it, in the server's slug shape (lower-case
+ * letters, digits and single hyphens). Apostrophes and other characters are dropped like the server's own
+ * generator drops them; spaces and underscores become hyphens. A trailing hyphen is kept while typing (so
+ * "new-" can become "new-place") and trimmed by {@link finalSlug} before sending.
+ */
+function slugifyAsTyped(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-/, "")
+    .slice(0, 100)
+}
+
+/**
+ * 37-49 (UI-SPEC G2): the address a NEW shop will get, as far as the browser can know it. Mirrors
+ * `ShopService.generateSlug` step for step (lower-case; drop all but a-z, 0-9, Java's whitespace set and
+ * hyphens; whitespace runs to one hyphen; hyphen runs collapsed; one leading and trailing hyphen
+ * trimmed). The server then appends "-" and a random 8-character code, which the preview shows as an
+ * ellipsis rather than inventing one. Empty when the name has no usable characters.
+ */
+function generatedSlugBase(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9 \t\n\x0B\f\r-]/g, "")
+    .replace(/[ \t\n\x0B\f\r]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
+function finalSlug(value: string): string {
+  return value.replace(/-+$/, "")
+}
+
+/** `CreateShopRequest.slug`'s @Pattern (non-blank arm) and @Size(max = 100). */
+const SERVER_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/**
+ * 37-G review: the stored slug an ordinary save re-sends, or null when the server's own request validation
+ * would refuse it (a name with no usable characters gets "-" + a code from ShopService.generateSlug). Such a
+ * slug is left out, so the save is not refused 400; the 37-48 server keeps the slug when none is sent.
+ */
+function resendableSlug(slug: string | null | undefined): string | null {
+  return slug && slug.length <= 100 && SERVER_SLUG_PATTERN.test(slug) ? slug : null
+}
+
+/** True when a save failure is the server refusing the requested web address (taken, reserved or malformed). */
+function slugRefusal(error: unknown): string | null {
+  const data = (error as { response?: { data?: { type?: string; detail?: string; errors?: Record<string, string> } } })
+    ?.response?.data
+  if (!data) return null
+  if (data.type === "https://jtoye.uk/errors/shop-slug-taken" || data.type === "https://jtoye.uk/errors/reserved-shop-slug") {
+    return data.detail?.trim() || "This web address can't be used. Choose a different one."
+  }
+  return data.errors?.slug?.trim() || null
+}
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
@@ -86,6 +176,18 @@ export default function ShopsPage() {
   // The seven free-text inputs that wrote `openingHours` are gone: that text decides nothing since
   // 37-20, and the original stays readable as ShopDto.legacyOpeningHours for the needs-review notice.
   const [scheduleDraft, setScheduleDraft] = useState<OpeningScheduleMap | null>(null)
+  // 37-48 (UI-SPEC G2): the web address is read-only until "Change web address". An edit save sends the EDITED
+  // value, or else the current one for old-server compatibility (see onSubmit); the server keeps an equal slug.
+  const [slugEditing, setSlugEditing] = useState(false)
+  const [slugDraft, setSlugDraft] = useState("")
+  const [slugTouched, setSlugTouched] = useState(false)
+  const [slugError, setSlugError] = useState<string | null>(null)
+  // 37-49 (UI-SPEC G1, UXT-023): which fulfilment types the shop takes. Both by default (today's
+  // behaviour); neither is refused before anything is sent, with the alert under the fieldset.
+  const [offersDelivery, setOffersDelivery] = useState(true)
+  const [offersCollection, setOffersCollection] = useState(true)
+  const neitherOffered = !offersDelivery && !offersCollection
+  const deliveryOptionRef = useRef<HTMLButtonElement>(null)
   // Re-mounts the editor on every open, so it always starts from the shop being edited.
   const [editorSession, setEditorSession] = useState(0)
   const scheduleEditorRef = useRef<OpeningScheduleEditorHandle>(null)
@@ -108,9 +210,13 @@ export default function ShopsPage() {
     formState: { errors },
     reset,
     setValue,
+    control,
   } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
   })
+
+  // 37-49 (UI-SPEC G2): the create dialog previews the address the name will produce.
+  const createPreviewBase = generatedSlugBase(useWatch({ control, name: "name" }) ?? "")
 
   const fetchShops = async () => {
     try {
@@ -175,11 +281,21 @@ export default function ShopsPage() {
 
   const openCreateDialog = () => {
     setEditingShop(null)
-    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "" })
+    reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "", deliveryFeePounds: "", freeDeliveryThresholdPounds: "" })
     setPublished(false)
+    setOffersDelivery(true)
+    setOffersCollection(true)
     setScheduleDraft(null)
+    resetSlugControl("")
     setEditorSession((n) => n + 1)
     setDialogOpen(true)
+  }
+
+  const resetSlugControl = (slug: string) => {
+    setSlugEditing(false)
+    setSlugDraft(slug)
+    setSlugTouched(false)
+    setSlugError(null)
   }
 
   const openEditDialog = (shop: Shop) => {
@@ -194,8 +310,14 @@ export default function ShopsPage() {
     setValue("deliveryInfo", shop.deliveryInfo || "")
     setValue("tags", shop.tags || "")
     setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
+    setValue("deliveryFeePounds", penniesToPounds(shop.deliveryFeePennies))
+    setValue("freeDeliveryThresholdPounds", penniesToPounds(shop.freeDeliveryThresholdPennies))
+    // An absent flag reads as offered: that is what the shop did before the flags existed.
+    setOffersDelivery(shop.offersDelivery !== false)
+    setOffersCollection(shop.offersCollection !== false)
     setPublished(shop.published || false)
     setScheduleDraft(null)
+    resetSlugControl(shop.slug || "")
     setEditorSession((n) => n + 1)
     setDialogOpen(true)
   }
@@ -250,6 +372,13 @@ export default function ShopsPage() {
   // K4: the hours are checked before anything is sent; the editor shows the error and takes focus.
   // Only when they were touched: untouched hours are not sent, so there is nothing to refuse.
   const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+    // G1: a shop that takes neither type could take no order at all. The alert is already on screen
+    // (it renders whenever both are unticked); refuse here and put focus on the first option.
+    if (neitherOffered) {
+      event.preventDefault()
+      deliveryOptionRef.current?.focus()
+      return
+    }
     if (scheduleDraft !== null && scheduleEditorRef.current && !scheduleEditorRef.current.validate()) {
       event.preventDefault()
       return
@@ -258,8 +387,14 @@ export default function ShopsPage() {
   }
 
   const onSubmit = async (data: ShopFormData) => {
+    const editedSlug = finalSlug(slugDraft)
+    // A web address the vendor changed on purpose; only this one can be refused inline as taken/reserved.
+    const sentSlug =
+      editingShop && slugTouched && editedSlug && editedSlug !== editingShop.slug ? editedSlug : null
+    const payloadSlug = sentSlug ?? (editingShop ? resendableSlug(editingShop.slug) : null)
     try {
       setSubmitting(true)
+      setSlugError(null)
 
       const payload: CreateShopRequest = {
         name: data.name,
@@ -272,12 +407,21 @@ export default function ShopsPage() {
         deliveryInfo: data.deliveryInfo || undefined,
         tags: data.tags || undefined,
         minimumOrderPennies: data.minimumOrderPounds ? Math.round(parseFloat(data.minimumOrderPounds) * 100) : 0,
+        // 37-49 (UI-SPEC G1, UXT-023). An empty fee is no fee (0), like the minimum order above. The
+        // threshold key is ALWAYS sent: 37-48 keeps the stored threshold when the key is absent and
+        // clears it on an explicit null, so an emptied field must reach the server as null.
+        deliveryFeePennies: poundsToPennies(data.deliveryFeePounds) ?? 0,
+        freeDeliveryThresholdPennies: poundsToPennies(data.freeDeliveryThresholdPounds),
+        offersDelivery,
+        offersCollection,
         published,
-        // 37-21: ShopService.updateShop regenerates the slug (name + a random suffix) whenever a request
-        // carries none, so without this every save, an hours save included, moved the shop to a new
-        // storefront address. Kept unless the name changed: the server's regeneration is meant for a
-        // rename, and that behaviour stays as it was.
-        ...(editingShop && editingShop.slug && data.name === editingShop.name ? { slug: editingShop.slug } : {}),
+        // 37-48 (UXT-028): an edit sends the web address the vendor typed, or else the CURRENT one; a create
+        // sends none and the server generates it. The 37-48 server keeps a slug that is absent or equal to the
+        // current one, so an ordinary save (hours, phone, a rename) never moves the shop. Re-sending the current
+        // slug is for OLD-SERVER COMPATIBILITY (37-G review): a pre-37-48 core-java, during a rolling deploy's
+        // overlap or after a core-only rollback, regenerates the slug on any save that carries none, which
+        // breaks every printed QR code and shared link for good (no old-slug redirect until Phase 39).
+        ...(payloadSlug ? { slug: payloadSlug } : {}),
         // Absent keeps the stored hours; {} saves closed every day; any save makes them STRUCTURED.
         // The key is left out entirely (not sent as undefined) while the editor is untouched.
         ...(scheduleDraft !== null ? { openingSchedule: scheduleDraft } : {}),
@@ -304,6 +448,12 @@ export default function ShopsPage() {
       if (currentPage === 0) fetchShops()
       else setCurrentPage(0)
     } catch (error: unknown) {
+      // 37-48 (UI-SPEC G2): a refused web address is shown inline beside the field, not as a toast.
+      const refusedSlug = sentSlug ? slugRefusal(error) : null
+      if (refusedSlug) {
+        setSlugError(refusedSlug)
+        return
+      }
       // A11Y-2 (#688): an axios error IS an Error whose .message is transport
       // text — classify it so an RFC 7807 detail wins and raw strings never show.
       const errorMessage = describeLoadError(
@@ -581,6 +731,66 @@ export default function ShopsPage() {
                   <Input id="address" placeholder="e.g., 123 High St, London" {...register("address")} />
                 </div>
               </div>
+              {editingShop && (
+                <div className="space-y-1.5">
+                  {/* 37-48 (UXT-028, UI-SPEC G2): read-only until changed on purpose. */}
+                  <p className="text-sm font-medium leading-none">Web address</p>
+                  <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="break-all font-mono text-sm text-slate-900">/shop/{editingShop.slug}</span>
+                    {!slugEditing && (
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0"
+                        onClick={() => setSlugEditing(true)}
+                      >
+                        Change web address
+                      </Button>
+                    )}
+                  </div>
+                  {slugEditing && (
+                    <div className="space-y-1.5 pt-1">
+                      <Label htmlFor="slug">New web address</Label>
+                      <Input
+                        id="slug"
+                        value={slugDraft}
+                        maxLength={100}
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-invalid={slugError ? true : undefined}
+                        aria-describedby={slugError ? "slug-warning slug-error" : "slug-warning"}
+                        onChange={(e) => {
+                          setSlugDraft(slugifyAsTyped(e.target.value))
+                          setSlugTouched(true)
+                          setSlugError(null)
+                        }}
+                        className="font-mono"
+                      />
+                      <p id="slug-warning" className="text-sm text-amber-800">
+                        Changing the web address breaks links customers have saved or shared. Old links won&apos;t redirect.
+                      </p>
+                    </div>
+                  )}
+                  {slugError && (
+                    <p id="slug-error" role="alert" className="text-sm text-red-600">
+                      {slugError}
+                    </p>
+                  )}
+                </div>
+              )}
+              {!editingShop && createPreviewBase && (
+                <div className="space-y-1.5">
+                  {/* 37-49 (UI-SPEC G2): the create dialog keeps auto-generation and previews the result.
+                      The same row shape as the edit dialog's read-only address above. */}
+                  <p className="text-sm font-medium leading-none">Web address</p>
+                  <span data-testid="web-address-preview" className="block break-all font-mono text-sm text-slate-900">
+                    /shop/{createPreviewBase}-<span className="text-slate-500">…</span>
+                  </span>
+                  <p className="text-sm text-slate-600">
+                    A short code is added to the end when the shop is created, so no two shops share an address.
+                  </p>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="description">Description</Label>
                 <textarea
@@ -682,13 +892,89 @@ export default function ShopsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="deliveryInfo">Delivery Info</Label>
-                  <Input id="deliveryInfo" placeholder="Free delivery over £30" {...register("deliveryInfo")} />
+                  {/* 37-49 (UI-SPEC G1): kept as vendor data, but its placeholder no longer imitates the
+                      structured threshold below, which it could contradict. */}
+                  <Input id="deliveryInfo" placeholder="e.g. Delivery within 3 miles" {...register("deliveryInfo")} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="minimumOrderPounds">Minimum Order (£)</Label>
                   <Input id="minimumOrderPounds" type="number" step="0.01" min="0" placeholder="0.00" {...register("minimumOrderPounds")} />
                 </div>
               </div>
+              {/* 37-49 (UI-SPEC G1, UXT-023): what delivery costs, as the server charges it. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="deliveryFeePounds">Delivery fee (£)</Label>
+                  <Input
+                    id="deliveryFeePounds"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="0.00"
+                    className="h-11"
+                    aria-invalid={errors.deliveryFeePounds ? true : undefined}
+                    aria-describedby={errors.deliveryFeePounds ? "deliveryFeePounds-error" : undefined}
+                    {...register("deliveryFeePounds")}
+                  />
+                  {errors.deliveryFeePounds && (
+                    <p id="deliveryFeePounds-error" className="text-sm text-red-600">{errors.deliveryFeePounds.message}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="freeDeliveryThresholdPounds">Free delivery over (£)</Label>
+                  <Input
+                    id="freeDeliveryThresholdPounds"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    className="h-11"
+                    aria-invalid={errors.freeDeliveryThresholdPounds ? true : undefined}
+                    aria-describedby={
+                      errors.freeDeliveryThresholdPounds
+                        ? "freeDeliveryThreshold-hint freeDeliveryThresholdPounds-error"
+                        : "freeDeliveryThreshold-hint"
+                    }
+                    {...register("freeDeliveryThresholdPounds")}
+                  />
+                  <p id="freeDeliveryThreshold-hint" className="text-sm text-slate-600">
+                    Leave empty if you don&apos;t offer free delivery.
+                  </p>
+                  {errors.freeDeliveryThresholdPounds && (
+                    <p id="freeDeliveryThresholdPounds-error" className="text-sm text-red-600">
+                      {errors.freeDeliveryThresholdPounds.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <fieldset className="space-y-1" aria-describedby={neitherOffered ? "fulfilment-offered-error" : undefined}>
+                <legend className="text-sm font-semibold text-slate-900">How customers get their order</legend>
+                <div className="flex flex-wrap gap-x-6">
+                  <label htmlFor="offersDelivery" className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <Checkbox
+                      id="offersDelivery"
+                      ref={deliveryOptionRef}
+                      checked={offersDelivery}
+                      aria-invalid={neitherOffered ? true : undefined}
+                      onCheckedChange={(checked) => setOffersDelivery(checked === true)}
+                    />
+                    Delivery
+                  </label>
+                  <label htmlFor="offersCollection" className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <Checkbox
+                      id="offersCollection"
+                      checked={offersCollection}
+                      aria-invalid={neitherOffered ? true : undefined}
+                      onCheckedChange={(checked) => setOffersCollection(checked === true)}
+                    />
+                    Collection
+                  </label>
+                </div>
+                {neitherOffered && (
+                  <p id="fulfilment-offered-error" role="alert" className="text-sm text-red-600">
+                    Choose at least one: delivery or collection.
+                  </p>
+                )}
+              </fieldset>
             </div>
 
             {/* Opening hours (37-21, UI-SPEC K4): structured, what the server enforces. */}

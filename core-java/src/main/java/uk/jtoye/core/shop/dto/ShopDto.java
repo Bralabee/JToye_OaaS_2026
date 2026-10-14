@@ -59,6 +59,27 @@ public class ShopDto {
 
     private String deliveryInfo;
     private Long minimumOrderPennies;
+
+    // 37-48 (RWO-023 / UXT-023): the fee, the threshold and the offered types the dashboard edits. NON_NULL, like
+    // the 37-20 fields above, so a DTO that never set them (the 38-01 golden ShopDto) serializes as before.
+
+    @Schema(description = "Delivery fee in pennies, charged on a DELIVERY order below the free-delivery threshold.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Long deliveryFeePennies;
+
+    @Schema(description = "A DELIVERY order whose items reach this subtotal (pennies, inclusive) pays no fee. "
+            + "Absent: no free-delivery threshold.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Long freeDeliveryThresholdPennies;
+
+    @Schema(description = "The shop takes DELIVERY orders.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean offersDelivery;
+
+    @Schema(description = "The shop takes COLLECTION orders.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean offersCollection;
+
     private Boolean published;
     private String tags;
 
@@ -104,6 +125,14 @@ public class ShopDto {
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }
     public void setMinimumOrderPennies(Long minimumOrderPennies) { this.minimumOrderPennies = minimumOrderPennies; }
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+    public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
+    public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
+    public Boolean getOffersDelivery() { return offersDelivery; }
+    public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
+    public Boolean getOffersCollection() { return offersCollection; }
+    public void setOffersCollection(Boolean offersCollection) { this.offersCollection = offersCollection; }
     public Boolean getPublished() { return published; }
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37-G: Catalogue and shop admin (#923) — 2026-10-14
+
+A vendor can now say what delivery costs and whether the shop delivers at all, and every order route
+holds them to it.
+
+- **Delivery fee, free-delivery threshold and offered types.** The shop form sets all four; the vendor
+  API no longer drops them. A shop must offer at least one of delivery and collection (V83, applied out
+  of order after V84; every existing shop keeps both).
+- **Enforced everywhere.** An unoffered type is refused with 422 `fulfilment-not-offered` on the
+  storefront and the vendor/REST/MCP route. The storefront header, directory card, basket and checkout
+  say "Collection only" or "Delivery only", and a checkout left open while the vendor changes it
+  switches to the offered type with a plain explanation.
+- **The web address stays put.** Editing a shop keeps its slug (every save used to change it); a taken
+  slug is a typed 409 `shop-slug-taken`, and the create dialog previews the address.
+- **Cache keys v5.** A cached shop from before this release is never read, so an edit straight after
+  the deploy cannot wipe the new fee fields.
+
 ### Nightly E2E green again: dashboard footer CLS, a complete fixture product, the admin seam on, a kept reject summary (#921) — 2026-10-14
 
 The scheduled full-stack run (#683) was red every night from 2026-10-08, on three causes, none flaky;

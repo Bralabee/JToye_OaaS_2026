@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useId } from "react"
 import Link from "next/link"
 import {
-  MapPin, Clock, Phone, Mail, ArrowLeft, Store,
+  MapPin, Clock, Phone, Mail, ArrowLeft, Store, Bike,
   Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle, AlertCircle,
   Plus as PlusIcon, Minus, UtensilsCrossed, Loader2
 } from "lucide-react"
@@ -16,6 +16,7 @@ import {
 import { DAY_LABELS, DAY_ORDER } from "@/lib/opening-hours"
 import { scheduleRows, type OpeningScheduleMap } from "@/lib/opening-schedule"
 import { headerPillLabel, readShopAvailability } from "@/lib/shop-availability"
+import { ONLY_CHIP_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
 import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } from "@/types/storefront"
 import { lineLimitHintCopy } from "@/components/storefront/product-detail-modal"
 import type { PublicAnnouncement } from "@/types/storefront"
@@ -573,6 +574,9 @@ export function ShopDetailClient({
   const pillLabel = headerPillLabel(availability)
   const isOpen = availability.kind === "open"
   const notTakingOrders = availability.kind === "paused" || availability.kind === "closed"
+  // 37-49 (UI-SPEC G1, UXT-023): the one fulfilment type the shop takes, or null for both (or for an
+  // older payload without the flags). Read by the header chip and the details bar's delivery line.
+  const onlyFulfilment = onlyOfferedType(shop)
 
   return (
     <div>
@@ -623,7 +627,13 @@ export function ShopDetailClient({
               <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
                 {shop.name}
               </h1>
-              <div className="mt-1 flex items-center gap-3 text-sm text-white/80">
+              {/* 37-49: flex-wrap (planner assumption for the UI-SPEC G1 375px overflow row): with the
+                  fulfilment chip beside the open state and the rating, the row wraps under them
+                  instead of pushing past the viewport. */}
+              <div
+                data-testid="shop-header-status"
+                className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/80"
+              >
                 {pillLabel && (
                   <span
                     data-testid="shop-availability-pill"
@@ -640,6 +650,19 @@ export function ShopDetailClient({
                   <span className="inline-flex items-center gap-1 text-xs text-amber-300">
                     <Star className="h-3 w-3 fill-amber-300" />
                     {avgRating} ({reviewCount})
+                  </span>
+                )}
+                {onlyFulfilment && (
+                  <span
+                    data-testid="shop-fulfilment-chip"
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-black/30 px-2 py-1 text-sm font-semibold text-white backdrop-blur-sm"
+                  >
+                    {onlyFulfilment === "COLLECTION" ? (
+                      <Store className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Bike className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {ONLY_CHIP_COPY[onlyFulfilment]}
                   </span>
                 )}
                 {shop.deliveryInfo && (
@@ -681,7 +704,9 @@ export function ShopDetailClient({
             {/* A null fee falls through to "Free delivery" — pre-existing
                 behaviour on this surface, kept as-is when the wire type went
                 nullable (review WR-04 fixed the landing card). */}
-            {shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
+            {/* 37-49: a shop that does not deliver advertises no delivery price at all (it used to
+                fall through to "Free delivery" for a delivery nobody can order). */}
+            {onlyFulfilment === "COLLECTION" ? null : shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
               <span className="text-slate-600">
                 Delivery {formatPrice(shop.deliveryFeePennies)}
                 {shop.freeDeliveryThresholdPennies && (

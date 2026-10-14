@@ -2,6 +2,7 @@ import Link from "next/link"
 import { SafeImage } from "@/components/ui/safe-image"
 import { formatMiles } from "@/lib/distance"
 import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
+import { ONLY_CHIP_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
 import type { PublicShop } from "@/types/storefront"
 
 /**
@@ -79,6 +80,10 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
   // server's field is backed by the same decision checkout enforces; its absence still says nothing.
   const availability = readShopAvailability(shop)
   const badge = cardBadgeLabel(availability)
+  // 37-G (UXT-023): a collection-only shop quotes no delivery fee here. The flags are read through
+  // lib/fulfilment-offered.ts like the /shop directory card and every other customer surface.
+  const collectionOnly = onlyOfferedType(shop) === "COLLECTION"
+  const leadShown = collectionOnly || shop.deliveryFeePennies != null
 
   return (
     <Link
@@ -154,12 +159,19 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
             the discovery listing. The separator belongs to the pair, so it
             only prints when the fee line before it exists. */}
         <div className="mt-2 text-sm font-semibold text-oxblood">
-          {shop.deliveryFeePennies != null && (
-            <>{shop.deliveryFeePennies === 0 ? "Free delivery" : `${pounds(shop.deliveryFeePennies)} delivery`}</>
+          {/* 37-G (UXT-023): a shop that does not deliver says "Collection only" (the shop header's
+              own words) in place of the fee, with no fall-through to "Free delivery". A shop taking
+              both, or a flag-less payload, renders this row exactly as before. */}
+          {collectionOnly ? (
+            <>{ONLY_CHIP_COPY.COLLECTION}</>
+          ) : (
+            shop.deliveryFeePennies != null && (
+              <>{shop.deliveryFeePennies === 0 ? "Free delivery" : `${pounds(shop.deliveryFeePennies)} delivery`}</>
+            )
           )}
           {shop.minimumOrderPennies != null && shop.minimumOrderPennies > 0 && (
             <span className="font-normal text-slate-600">
-              {shop.deliveryFeePennies != null && " · "}min {pounds(shop.minimumOrderPennies)}
+              {leadShown && " · "}min {pounds(shop.minimumOrderPennies)}
             </span>
           )}
         </div>

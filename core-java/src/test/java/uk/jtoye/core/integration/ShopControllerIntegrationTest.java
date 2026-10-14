@@ -171,4 +171,131 @@ class ShopControllerIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Validation Error"));
     }
+
+    // ------------------------------------------------------------------
+    // 37-48 (RWO-028 / UXT-028, owner ruling 2026-10-10): editing a shop keeps its web address. A slug changes
+    // only when one is sent explicitly, and an explicit slug is validated (shape, reserved, taken). Slugs are
+    // read back by SQL, never from the response alone.
+    // ------------------------------------------------------------------
+
+
+    private String createShopReturningId(String name, String slug) throws Exception {
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("name", name);
+        if (slug != null) {
+            body.put("slug", slug);
+        }
+        String json = mockMvc.perform(post("/api/v1/shops")
+                        .with(adminJwt())
+                        .header("X-Tenant-Id", testTenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(json).path("id").asString();
+    }
+
+    private org.springframework.test.web.servlet.ResultActions putShop(String id, java.util.Map<String, Object> body)
+            throws Exception {
+        return mockMvc.perform(put("/api/v1/shops/" + id)
+                .with(adminJwt())
+                .header("X-Tenant-Id", testTenantId.toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)));
+    }
+
+    private String storedSlug(String id) {
+        return jdbcTemplate.queryForObject("SELECT slug FROM shops WHERE id = ?::uuid", String.class, id);
+    }
+
+    private static java.util.Map<String, Object> body(Object... kv) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < kv.length; i += 2) {
+            m.put((String) kv[i], kv[i + 1]);
+        }
+        return m;
+    }
+
+    @Test
+    void uxt028_updateWithoutSlug_keepsTheSlug_evenWhenTheNameChanges() throws Exception {
+        String id = createShopReturningId("Keep Address Kitchen", null);
+        String before = storedSlug(id);
+
+        putShop(id, body("name", "Keep Address Kitchen", "description", "hours saved")).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).as("an ordinary save keeps the slug").isEqualTo(before);
+
+        putShop(id, body("name", "Renamed Kitchen")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value(before));
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).as("a rename keeps the slug too").isEqualTo(before);
+    }
+
+    @Test
+    void uxt028_blankSlug_keepsTheSlug() throws Exception {
+        String id = createShopReturningId("Blank Slug Kitchen", null);
+        String before = storedSlug(id);
+        putShop(id, body("name", "Blank Slug Kitchen", "slug", "")).andExpect(status().isOk());
+        putShop(id, body("name", "Blank Slug Kitchen", "slug", "   ")).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).isEqualTo(before);
+    }
+
+    @Test
+    void uxt028_explicitSlug_changesIt_andTheSameSlugIsANoOp() throws Exception {
+        String id = createShopReturningId("Explicit Slug Kitchen", null);
+        String fresh = "explicit-" + UUID.randomUUID().toString().substring(0, 8);
+        putShop(id, body("name", "Explicit Slug Kitchen", "slug", fresh)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value(fresh));
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).isEqualTo(fresh);
+
+        putShop(id, body("name", "Explicit Slug Kitchen", "slug", fresh)).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).as("its own slug is not 'taken'").isEqualTo(fresh);
+    }
+
+    @Test
+    void uxt028_reservedSlug_isTheExistingTypedRefusal_andChangesNothing() throws Exception {
+        String id = createShopReturningId("Reserved Slug Kitchen", null);
+        String before = storedSlug(id);
+        putShop(id, body("name", "Reserved Slug Kitchen", "slug", "orders"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/reserved-shop-slug"));
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).isEqualTo(before);
+    }
+
+    @Test
+    void uxt028_slugAnotherShopHolds_is409ShopSlugTaken_onUpdateAndCreate() throws Exception {
+        String held = "held-" + UUID.randomUUID().toString().substring(0, 8);
+        createShopReturningId("Holder Kitchen", held);
+        String id = createShopReturningId("Taker Kitchen", null);
+        String before = storedSlug(id);
+
+        putShop(id, body("name", "Taker Kitchen", "slug", held))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/shop-slug-taken"))
+                .andExpect(jsonPath("$.code").value("SHOP_SLUG_TAKEN"))
+                .andExpect(jsonPath("$.slug").value(held));
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).isEqualTo(before);
+
+        mockMvc.perform(post("/api/v1/shops")
+                        .with(adminJwt())
+                        .header("X-Tenant-Id", testTenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body("name", "Second Taker", "slug", held))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/shop-slug-taken"));
+    }
+
+    @Test
+    void uxt028_malformedOrOverlongSlug_is400OnTheSlugField_beforeAnyGate() throws Exception {
+        String id = createShopReturningId("Shape Kitchen", null);
+        String before = storedSlug(id);
+        for (String bad : java.util.List.of("New-Slug", "new_slug", "new--slug", "-new", "new-", "new slug",
+                "orders!", "a".repeat(101))) {
+            putShop(id, body("name", "Shape Kitchen", "slug", bad))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/validation"))
+                    .andExpect(jsonPath("$.errors.slug").exists());
+        }
+        org.assertj.core.api.Assertions.assertThat(storedSlug(id)).isEqualTo(before);
+        // The boundary itself is accepted: exactly 100 lower-case characters.
+        putShop(id, body("name", "Shape Kitchen", "slug", "b".repeat(100))).andExpect(status().isOk());
+    }
 }

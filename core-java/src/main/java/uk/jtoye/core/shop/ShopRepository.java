@@ -16,6 +16,14 @@ import java.util.UUID;
 public interface ShopRepository extends JpaRepository<Shop, UUID> {
     Optional<Shop> findByName(String name);
 
+    // 37-48 (UXT-028, owner ruling 2026-10-10): is an explicitly requested slug held by ANOTHER shop? Slugs are
+    // unique platform-wide (idx_shops_slug). Under RLS this sees the caller's tenant plus every PUBLISHED shop;
+    // another tenant's unpublished shop is invisible here, so ShopService also translates a unique violation on
+    // idx_shops_slug into the same typed 409.
+    boolean existsBySlugAndIdNot(String slug, UUID id);
+
+    boolean existsBySlug(String slug);
+
     // Tenant-scoped reads for the authenticated management plane (QA-council BE-03).
     // The `shops_public_read` RLS policy (V16) permits `published = true`, so a bare
     // findAll()/search() leaks every tenant's PUBLISHED shops into the authenticated

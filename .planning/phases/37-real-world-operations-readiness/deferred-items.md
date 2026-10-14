@@ -328,6 +328,10 @@ where it must be resolved.
   agent) still renames it. Not fixed server-side: no Java in this plan, and whether a rename should move
   the storefront address at all is an owner question (links and SEO break on every rename). Found by
   reading the source before the live run; the pre-fix live fail direction was deliberately not run.
+  **RESOLVED server-side by 37-48 (2026-10-14):** an update without a slug (absent, blank or unchanged) keeps it
+  for every client; RED `b4db4994` (an ordinary save moved `keep-address-kitchen-019835a3` to `-3f4afb31`), GREEN
+  `38a23238`. The 37-21 dialog workaround is removed; the dialog sends a slug only when "Change web address" is
+  edited. Old-slug 301 aliases stay deferred to Phase 39 (below).
 - **A 403 on pause also stops the kitchen board.** The pause endpoint and the board's own read are both
   gated at STAFF on the shop, so a `shop-access-denied` 403 from a pause means the grant is gone, and
   37-18's D-08 listener shows the "access ended" overlay. The K3 refusal copy ("You can't pause orders
@@ -752,3 +756,48 @@ where it must be resolved.
   Keycloak client and user, so the Staff page lists it indefinitely. 37-47 left four such rows on the dev tenant.
   Not a breach of any stated contract (`user_directory` is an observation cache); whether revoke should also drop
   the row, or the Staff page hide revoked integrations, is a product decision.
+
+## From 37-48 (fees, offered fulfilment types, stable slugs)
+
+- **37-49 overlap: the edit dialog's G2 web-address control already exists.** 37-48 item (c) asked for an optional
+  "Storefront address" field; it was built to UI-SPEC G2 (read-only `/shop/{slug}` in 14px monospace with
+  `break-all`, a `variant="link"` "Change web address", the revealed input slugified as typed, the amber warning,
+  the inline `role="alert"` for a taken/reserved/malformed slug, slug sent only when edited), so 37-49 Task 2
+  should verify and extend it (the create-dialog preview, the 375px overflow assumption, its own jest file), not
+  build a second one. The fee/threshold/offered-type form fields, the storefront chip and checkout are untouched.
+- **An explicit `freeDeliveryThresholdPennies: null` clears the threshold; an absent key keeps it.** The shop PUT
+  is a partial update (BE-02, IGNORE-null mapper), so a form whose "Free delivery over" field is emptied must
+  send the key with `null`, not omit it, or the old threshold stays. `CreateShopRequest` records key presence;
+  `FulfilmentOfferedIntegrationTest#threshold_absentKeeps_explicitNullClears` pins both directions.
+- **Offering neither type is refused on the MERGED state.** `{offersCollection:false}` sent to a collection-only
+  shop is a 400 `errors.fulfilmentOffered` (it would otherwise reach `ck_shops_offers_some` and surface as a
+  misleading 409 "Duplicate Entry", measured with the merged check removed).
+- **Live proof owed at 37-50.** V83, the four DTO fields, `fulfilment-not-offered` and `shop-slug-taken` are
+  proven in Testcontainers and jest only; the compose core-java predates them (WINDOWS entry added by 37-48).
+
+## From 37-50 (the 37-G gate, Task 3, live)
+
+- **A collection-only shop still advertises delivery on the shop directory card and the basket page (found in 37-50, open, decide before the 37-G PR merges).**
+  status: resolved 2026-10-14 by 8caa6e0f (owner: fix on the PR branch; evidence 37-50 2.11)
+  **What:** with Brixton Village Grill set collection-only (offersDelivery false, fee 299, threshold 3000), the
+  `/shop` directory card reads "Delivery £2.99 Free over £30.00" and `/shop/brixton-village-grill/cart` reads
+  "Delivery from £2.99. Added at checkout, where collection is free and delivery is free over £30.00." The header
+  chip, the details bar and the checkout are right ("Collection only", no "Free delivery", the static row, 422 on
+  DELIVERY). UI-SPEC G1 names `/dashboard/shops`, `/shop/[slug]` and checkout only, so 37-49 never covered these
+  two surfaces; before 37-G no shop could be collection-only, so they were truthful until now (evidence 37-50 2.9
+  item 2, screens `goods-list-390.png`, `goods-basket-brixton-collection-only-390.png`).
+  **Suggested fix:** `shop-discovery-client.tsx` and the cart page read `onlyOfferedType(shop)` and, for
+  COLLECTION, show the chip copy instead of the fee line. A candidate review-fix on the PR branch, with screens.
+
+- **After a deploy, `GET /shops/{id}` can serve the pre-deploy ShopDto shape for up to 15 minutes (found in 37-50, open).**
+  status: resolved 2026-10-14 by 5b037e1b (owner: bump to v5 on the PR branch; evidence 37-50 2.11)
+  **What:** the `shops` Redis region (TTL 15 min, key prefix `v4:`) survives a core-java restart. A GET made on the
+  old runtime at 16:22:29Z cached Brixton without the four 37-48 fields; the rebuilt core (started 16:24:41Z)
+  returned that body at 16:26:00Z (fee/offer keys: none) while Mama Ade's, never cached before, returned all four.
+  A PUT evicted it and the next GET was complete. The dashboard list uses the uncached `GET /shops`, but the
+  `?edit={id}` deep link uses `GET /shops/{id}`: a vendor saving that dialog inside the window would send
+  `deliveryFeePennies: 0` and `freeDeliveryThresholdPennies: null`, silently zeroing the fee and clearing the
+  threshold. `CacheConfig`'s standing procedure bumps `CACHE_KEY_FORMAT_VERSION` only when old bytes cannot be
+  read into the DTO, which does not cover an additive field whose absence the client misreads.
+  **Suggested fix:** bump `v4` to `v5` in the 37-G PR (and widen the procedure's wording to additive fields a
+  client depends on), or evict the `shops` region on startup. Evidence 37-50 2.9 item 1.

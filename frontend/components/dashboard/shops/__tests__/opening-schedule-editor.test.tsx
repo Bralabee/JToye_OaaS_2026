@@ -486,13 +486,12 @@ describe("shops table notices and the deep link from the dashboard home (37-21 T
   })
 })
 
-describe("saving hours keeps the shop's storefront address (37-21 Rule 1 deviation)", () => {
-  // ShopService.updateShop regenerates the slug (name + a random 8-character suffix) whenever the
-  // request carries none, and the dialog never sent one: every save, an hours save included, moved
-  // the shop to a new /shop/{slug} and broke every link to it. The server's own comment says the
-  // regeneration is meant for a NAME change, so the dialog now sends the current slug unless the
-  // name changed.
-  it("an hours save sends the shop's current slug", async () => {
+describe("the shop keeps its web address (37-48, UXT-028, UI-SPEC G2)", () => {
+  // 37-48 makes the SERVER keep the slug when none is sent, or when the one sent equals the current one.
+  // 37-G review: an ordinary edit save still re-sends the CURRENT slug, because a pre-37-48 core-java
+  // (a rolling deploy's overlap, or a core-only rollback) regenerates the slug on any save without one,
+  // breaking every QR code and link with no redirect until Phase 39. The new server keeps an equal slug.
+  it("an hours save re-sends the current slug, so an older server cannot regenerate it", async () => {
     stubShops(STRUCTURED)
     await openEdit("Rosie's Kitchen")
     await click(closedBox("Tuesday"))
@@ -502,12 +501,21 @@ describe("saving hours keeps the shop's storefront address (37-21 Rule 1 deviati
     expect(sentBody().slug).toBe("s-structured")
   })
 
-  it("a rename leaves the slug out, so the server's rename behaviour is unchanged", async () => {
+  it("a rename re-sends the current slug too: the address does not follow the name", async () => {
     stubShops(STRUCTURED)
     await openEdit("Rosie's Kitchen")
     await act(async () => {
       fireEvent.change(screen.getByLabelText("Shop Name *"), { target: { value: "Rosie's Canteen" } })
     })
+    await save()
+    expect(sentBody().slug).toBe("s-structured")
+  })
+
+  it("a stored slug outside the server's slug shape is not re-sent (it would be refused 400 on every save)", async () => {
+    // ShopService.generateSlug gives "-" + an 8-character code for a name with no usable characters, which
+    // the request's @Pattern refuses; the new server keeps the slug when none is sent.
+    stubShops({ ...STRUCTURED, slug: "-0198a3b4" })
+    await openEdit("Rosie's Kitchen")
     await save()
     expect(sentBody()).not.toHaveProperty("slug")
   })
@@ -523,5 +531,59 @@ describe("saving hours keeps the shop's storefront address (37-21 Rule 1 deviati
     await click(screen.getByRole("button", { name: "Create Shop" }))
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1))
     expect(mockPost.mock.calls[0][1]).not.toHaveProperty("slug")
+  })
+
+  it("the edit dialog shows the web address read-only as /shop/{slug} with a 'Change web address' link and no input", async () => {
+    stubShops(STRUCTURED)
+    const dialog = await openEdit("Rosie's Kitchen")
+    expect(within(dialog).getByText("Web address")).toBeInTheDocument()
+    expect(within(dialog).getByText("/shop/s-structured")).toBeInTheDocument()
+    expect(within(dialog).getByRole("button", { name: "Change web address" })).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText("New web address")).not.toBeInTheDocument()
+  })
+
+  it("'Change web address' reveals the input pre-filled with the slug and the amber warning; revealing it without editing sends the current slug", async () => {
+    stubShops(STRUCTURED)
+    const dialog = await openEdit("Rosie's Kitchen")
+    await click(within(dialog).getByRole("button", { name: "Change web address" }))
+    const input = within(dialog).getByLabelText("New web address") as HTMLInputElement
+    expect(input.value).toBe("s-structured")
+    expect(
+      within(dialog).getByText("Changing the web address breaks links customers have saved or shared. Old links won't redirect.")
+    ).toHaveClass("text-amber-800")
+    await save()
+    expect(sentBody().slug).toBe("s-structured")
+  })
+
+  it("an edited address is slugified as typed and sent; the request then carries exactly that slug", async () => {
+    stubShops(STRUCTURED)
+    const dialog = await openEdit("Rosie's Kitchen")
+    await click(within(dialog).getByRole("button", { name: "Change web address" }))
+    const input = within(dialog).getByLabelText("New web address") as HTMLInputElement
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Rosie's  New_Place!" } })
+    })
+    expect(input.value).toBe("rosies-new-place")
+    await save()
+    expect(sentBody().slug).toBe("rosies-new-place")
+  })
+
+  it("a taken address is refused inline: the server's 409 detail in role=alert, the dialog stays open and no toast", async () => {
+    stubShops(STRUCTURED)
+    const detail = "The web address /shop/taken-place is already used by another shop. Choose a different one."
+    mockPut.mockRejectedValue({
+      response: { status: 409, data: { status: 409, type: "https://jtoye.uk/errors/shop-slug-taken", detail } },
+    })
+    const dialog = await openEdit("Rosie's Kitchen")
+    await click(within(dialog).getByRole("button", { name: "Change web address" }))
+    await act(async () => {
+      fireEvent.change(within(dialog).getByLabelText("New web address"), { target: { value: "taken-place" } })
+    })
+    await save()
+    const alert = await within(dialog).findByRole("alert")
+    expect(alert).toHaveTextContent(detail)
+    expect(within(dialog).getByLabelText("New web address")).toHaveAttribute("aria-invalid", "true")
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    expect(mockToast).not.toHaveBeenCalled()
   })
 })

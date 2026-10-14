@@ -184,3 +184,84 @@ describe("ShopCard availability badge (37-22)", () => {
     expect(badge()!.className.split(/\s+/)).toContain("absolute")
   })
 })
+
+/**
+ * 37-G review round 1 (UXT-023): the landing card reads the fulfilment flags through
+ * `lib/fulfilment-offered.ts`, like the /shop directory card (8caa6e0f), the shop header and checkout.
+ * Before it, the landing page showed "Brixton Village Grill … £3.99 delivery · min £10.00" for a
+ * collection-only shop, a delivery the server refuses 422 `fulfilment-not-offered`.
+ */
+describe("ShopCard — what the card says about delivery (37-G)", () => {
+  const BOTH = makeShop({
+    slug: "mama-ades-kitchen",
+    name: "Mama Ade's Kitchen",
+    minimumOrderPennies: 1000,
+    deliveryFeePennies: 350,
+    freeDeliveryThresholdPennies: 2500,
+    offersDelivery: true,
+    offersCollection: true,
+  })
+  const COLLECTION_ONLY = makeShop({
+    slug: "brixton-village-grill",
+    name: "Brixton Village Grill",
+    minimumOrderPennies: 1000,
+    deliveryFeePennies: 399,
+    freeDeliveryThresholdPennies: 3000,
+    offersDelivery: false,
+    offersCollection: true,
+  })
+
+  const priceRow = (container: HTMLElement) => container.querySelector("div.mt-2")!
+
+  it("a collection-only card says 'Collection only' and quotes no delivery fee", () => {
+    const { container } = render(<ShopCard shop={COLLECTION_ONLY} />)
+    expect(priceRow(container).textContent).toBe("Collection only · min £10.00")
+    expect(container.textContent).not.toMatch(/delivery/i)
+    expect(container.textContent).not.toContain("£3.99")
+  })
+
+  it("a collection-only card with a zero fee does not fall through to 'Free delivery'", () => {
+    const { container } = render(<ShopCard shop={{ ...COLLECTION_ONLY, deliveryFeePennies: 0 }} />)
+    expect(priceRow(container).textContent).toBe("Collection only · min £10.00")
+    expect(screen.queryByText(/Free delivery/)).toBeNull()
+  })
+
+  it("a collection-only card with no minimum prints just 'Collection only'", () => {
+    const { container } = render(<ShopCard shop={{ ...COLLECTION_ONLY, minimumOrderPennies: null }} />)
+    expect(priceRow(container).textContent).toBe("Collection only")
+  })
+
+  it("CONTROL: a delivery-only card keeps its fee and claims nothing about collection", () => {
+    const { container } = render(
+      <ShopCard shop={{ ...COLLECTION_ONLY, offersDelivery: true, offersCollection: false }} />
+    )
+    expect(priceRow(container).textContent).toBe("£3.99 delivery · min £10.00")
+    expect(container.textContent).not.toMatch(/collection/i)
+  })
+
+  // Captured from the unfixed tree (Incremental Betterment): a shop taking both, and a payload with no
+  // flags (an older backend), render the price row exactly as before.
+  const BEFORE_FEE =
+    '<div class="mt-2 text-sm font-semibold text-oxblood">£3.50 delivery<span class="font-normal text-slate-600"> · min £10.00</span></div>'
+  const BEFORE_FREE =
+    '<div class="mt-2 text-sm font-semibold text-oxblood">Free delivery<span class="font-normal text-slate-600"> · min £10.00</span></div>'
+
+  it("CONTROL: a shop offering both renders byte-identically to before the fix", () => {
+    const { container } = render(<ShopCard shop={BOTH} />)
+    expect(priceRow(container).outerHTML).toBe(BEFORE_FEE)
+  })
+
+  it("CONTROL: a shop offering both with a zero fee still says 'Free delivery', byte-identically", () => {
+    const { container } = render(<ShopCard shop={{ ...BOTH, deliveryFeePennies: 0 }} />)
+    expect(priceRow(container).outerHTML).toBe(BEFORE_FREE)
+  })
+
+  it("CONTROL: a payload without the flags renders byte-identically to before the fix", () => {
+    const flagless: PublicShop = { ...BOTH }
+    delete flagless.offersDelivery
+    delete flagless.offersCollection
+    expect(flagless).not.toHaveProperty("offersDelivery")
+    const { container } = render(<ShopCard shop={flagless} />)
+    expect(priceRow(container).outerHTML).toBe(BEFORE_FEE)
+  })
+})
