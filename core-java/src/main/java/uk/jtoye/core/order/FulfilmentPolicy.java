@@ -119,6 +119,13 @@ public final class FulfilmentPolicy {
         return fee;
     }
 
+    /**
+     * 37-48 (UXT-023): refuse a fulfilment type the shop does not offer. RED skeleton: no check yet.
+     */
+    public static void requireOffered(uk.jtoye.core.shop.Shop shop, FulfilmentType fulfilmentType) {
+        // RED skeleton (37-48 Task 1): the rule arrives in the GREEN commit.
+    }
+
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
     }

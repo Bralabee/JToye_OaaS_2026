@@ -3,7 +3,11 @@ package uk.jtoye.core.order;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Locale;
+
+import uk.jtoye.core.exception.FulfilmentNotOfferedException;
+import uk.jtoye.core.shop.Shop;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -128,5 +132,50 @@ class FulfilmentPolicyTest {
     void nullShopFeeIsZero() {
         assertEquals(0L, FulfilmentPolicy.deliveryFeePennies(
                 FulfilmentType.DELIVERY, 100L, null, 2000L));
+    }
+
+    // ---- requireOffered (37-48, UXT-023) ----------------------------------------------------
+
+    private static Shop shopOffering(Boolean delivery, Boolean collection) {
+        Shop shop = new Shop();
+        shop.setOffersDelivery(delivery);
+        shop.setOffersCollection(collection);
+        return shop;
+    }
+
+    @Test
+    @DisplayName("UXT-023: a collection-only shop refuses DELIVERY, naming COLLECTION as what it offers")
+    void collectionOnlyShopRefusesDelivery() {
+        FulfilmentNotOfferedException e = assertThrows(FulfilmentNotOfferedException.class,
+                () -> FulfilmentPolicy.requireOffered(shopOffering(false, true), FulfilmentType.DELIVERY));
+        assertEquals(FulfilmentType.DELIVERY, e.getRequested());
+        assertEquals(List.of(FulfilmentType.COLLECTION), e.getOffered());
+        assertEquals("This shop doesn't offer delivery. Choose collection to continue.", e.getMessage());
+        assertDoesNotThrow(() -> FulfilmentPolicy.requireOffered(shopOffering(false, true), FulfilmentType.COLLECTION));
+    }
+
+    @Test
+    @DisplayName("UXT-023: a delivery-only shop refuses COLLECTION, naming DELIVERY as what it offers")
+    void deliveryOnlyShopRefusesCollection() {
+        FulfilmentNotOfferedException e = assertThrows(FulfilmentNotOfferedException.class,
+                () -> FulfilmentPolicy.requireOffered(shopOffering(true, false), FulfilmentType.COLLECTION));
+        assertEquals(FulfilmentType.COLLECTION, e.getRequested());
+        assertEquals(List.of(FulfilmentType.DELIVERY), e.getOffered());
+        assertEquals("This shop doesn't offer collection. Choose delivery to continue.", e.getMessage());
+        assertDoesNotThrow(() -> FulfilmentPolicy.requireOffered(shopOffering(true, false), FulfilmentType.DELIVERY));
+    }
+
+    @Test
+    @DisplayName("UXT-023: a shop offering both (every shop before V83) accepts both types")
+    void shopOfferingBothAcceptsBoth() {
+        assertDoesNotThrow(() -> FulfilmentPolicy.requireOffered(shopOffering(true, true), FulfilmentType.DELIVERY));
+        assertDoesNotThrow(() -> FulfilmentPolicy.requireOffered(shopOffering(true, true), FulfilmentType.COLLECTION));
+    }
+
+    @Test
+    @DisplayName("UXT-023: a null flag reads as offered (the V83 default), never as a silent refusal")
+    void nullFlagReadsAsOffered() {
+        assertDoesNotThrow(() -> FulfilmentPolicy.requireOffered(shopOffering(null, null), FulfilmentType.DELIVERY));
+        assertDoesNotThrow(() -> FulfilmentPolicy.requireOffered(shopOffering(null, false), FulfilmentType.DELIVERY));
     }
 }
