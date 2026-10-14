@@ -265,3 +265,35 @@ describe("ShopCard — what the card says about delivery (37-G)", () => {
     expect(priceRow(container).outerHTML).toBe(BEFORE_FEE)
   })
 })
+
+/**
+ * 37-52 (UI-SPEC F2, UXT-082): the landing row's card is a link wrapping the whole card, so its name
+ * was the concatenated card text ("Peckham Jollof Co. logo Open 0.7 miles away Peckham Jollof Co. ...").
+ * The name is now the shop through aria-labelledby; open state and distance are the description.
+ */
+describe("ShopCard — the link is named by its shop (UXT-082)", () => {
+  it("names the link with the shop-name element through aria-labelledby", () => {
+    render(<ShopCard shop={makeShop({ openNow: true, distanceKm: 1.2 })} />)
+    const link = screen.getByRole("link", { name: "Peckham Jollof Co." })
+    const nameId = link.getAttribute("aria-labelledby")
+
+    expect(nameId).toBeTruthy()
+    expect(document.getElementById(nameId!)?.textContent).toBe("Peckham Jollof Co.")
+  })
+
+  it("describes the link with the open state and the distance", () => {
+    render(<ShopCard shop={makeShop({ openNow: true, distanceKm: 1.2 })} />)
+    const link = screen.getByRole("link", { name: "Peckham Jollof Co." })
+    const ids = (link.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean)
+    const text = ids.map((id) => (document.getElementById(id)?.textContent || "").replace(/\s+/g, " ").trim())
+
+    expect(text).toEqual(["Open", "0.7 miles away"])
+  })
+
+  it("CONTROL: no badge and no distance means no aria-describedby at all", () => {
+    render(<ShopCard shop={makeShop()} />)
+    const link = screen.getByRole("link", { name: "Peckham Jollof Co." })
+
+    expect(link.hasAttribute("aria-describedby")).toBe(false)
+  })
+})
