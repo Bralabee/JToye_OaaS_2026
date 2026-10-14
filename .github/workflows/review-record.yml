@@ -10,7 +10,8 @@
 #
 # Fail-closed: a VOID verdict fails the job WITHOUT posting a status, and a missing
 # required status blocks the merge. Waives are HEAD-SCOPED (a comment beginning
-# `Review-Record: WAIVED sha=<head12>`, posted by the wrapper): CI stays required —
+# `Review-Record: WAIVED sha=<the full head sha>`, posted by the wrapper; #307 ended the
+# 12-hex prefix form): CI stays required —
 # the deliberate alternative to an --admin bypass, which would skip CI too.
 #
 # WHICH COPY OF THIS FILE RUNS (#269 item 3, #291 review finding 2). This file holds
