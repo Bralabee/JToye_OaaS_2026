@@ -68,6 +68,37 @@ const shopSchema = z.object({
 
 type ShopFormData = z.infer<typeof shopSchema>
 
+/**
+ * 37-48 (UXT-028, UI-SPEC G2): the web address as the vendor types it, in the server's slug shape (lower-case
+ * letters, digits and single hyphens). Apostrophes and other characters are dropped like the server's own
+ * generator drops them; spaces and underscores become hyphens. A trailing hyphen is kept while typing (so
+ * "new-" can become "new-place") and trimmed by {@link finalSlug} before sending.
+ */
+function slugifyAsTyped(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-/, "")
+    .slice(0, 100)
+}
+
+function finalSlug(value: string): string {
+  return value.replace(/-+$/, "")
+}
+
+/** True when a save failure is the server refusing the requested web address (taken, reserved or malformed). */
+function slugRefusal(error: unknown): string | null {
+  const data = (error as { response?: { data?: { type?: string; detail?: string; errors?: Record<string, string> } } })
+    ?.response?.data
+  if (!data) return null
+  if (data.type === "https://jtoye.uk/errors/shop-slug-taken" || data.type === "https://jtoye.uk/errors/reserved-shop-slug") {
+    return data.detail?.trim() || "This web address can't be used. Choose a different one."
+  }
+  return data.errors?.slug?.trim() || null
+}
+
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
@@ -86,6 +117,12 @@ export default function ShopsPage() {
   // The seven free-text inputs that wrote `openingHours` are gone: that text decides nothing since
   // 37-20, and the original stays readable as ShopDto.legacyOpeningHours for the needs-review notice.
   const [scheduleDraft, setScheduleDraft] = useState<OpeningScheduleMap | null>(null)
+  // 37-48 (UI-SPEC G2): the web address is read-only until "Change web address"; only an EDITED value is sent,
+  // because the server keeps the slug whenever a request carries none (UXT-028).
+  const [slugEditing, setSlugEditing] = useState(false)
+  const [slugDraft, setSlugDraft] = useState("")
+  const [slugTouched, setSlugTouched] = useState(false)
+  const [slugError, setSlugError] = useState<string | null>(null)
   // Re-mounts the editor on every open, so it always starts from the shop being edited.
   const [editorSession, setEditorSession] = useState(0)
   const scheduleEditorRef = useRef<OpeningScheduleEditorHandle>(null)
@@ -178,8 +215,16 @@ export default function ShopsPage() {
     reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "" })
     setPublished(false)
     setScheduleDraft(null)
+    resetSlugControl("")
     setEditorSession((n) => n + 1)
     setDialogOpen(true)
+  }
+
+  const resetSlugControl = (slug: string) => {
+    setSlugEditing(false)
+    setSlugDraft(slug)
+    setSlugTouched(false)
+    setSlugError(null)
   }
 
   const openEditDialog = (shop: Shop) => {
@@ -196,6 +241,7 @@ export default function ShopsPage() {
     setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
     setPublished(shop.published || false)
     setScheduleDraft(null)
+    resetSlugControl(shop.slug || "")
     setEditorSession((n) => n + 1)
     setDialogOpen(true)
   }
@@ -258,8 +304,12 @@ export default function ShopsPage() {
   }
 
   const onSubmit = async (data: ShopFormData) => {
+    const editedSlug = finalSlug(slugDraft)
+    const sentSlug =
+      editingShop && slugTouched && editedSlug && editedSlug !== editingShop.slug ? editedSlug : null
     try {
       setSubmitting(true)
+      setSlugError(null)
 
       const payload: CreateShopRequest = {
         name: data.name,
@@ -273,11 +323,10 @@ export default function ShopsPage() {
         tags: data.tags || undefined,
         minimumOrderPennies: data.minimumOrderPounds ? Math.round(parseFloat(data.minimumOrderPounds) * 100) : 0,
         published,
-        // 37-21: ShopService.updateShop regenerates the slug (name + a random suffix) whenever a request
-        // carries none, so without this every save, an hours save included, moved the shop to a new
-        // storefront address. Kept unless the name changed: the server's regeneration is meant for a
-        // rename, and that behaviour stays as it was.
-        ...(editingShop && editingShop.slug && data.name === editingShop.name ? { slug: editingShop.slug } : {}),
+        // 37-48 (UXT-028): no slug unless the vendor edited the web address. The server keeps the slug when a
+        // request carries none, so an ordinary save (hours, phone, a rename) never moves the shop. This
+        // replaces the 37-21 workaround that re-sent the current slug.
+        ...(sentSlug ? { slug: sentSlug } : {}),
         // Absent keeps the stored hours; {} saves closed every day; any save makes them STRUCTURED.
         // The key is left out entirely (not sent as undefined) while the editor is untouched.
         ...(scheduleDraft !== null ? { openingSchedule: scheduleDraft } : {}),
@@ -304,6 +353,12 @@ export default function ShopsPage() {
       if (currentPage === 0) fetchShops()
       else setCurrentPage(0)
     } catch (error: unknown) {
+      // 37-48 (UI-SPEC G2): a refused web address is shown inline beside the field, not as a toast.
+      const refusedSlug = sentSlug ? slugRefusal(error) : null
+      if (refusedSlug) {
+        setSlugError(refusedSlug)
+        return
+      }
       // A11Y-2 (#688): an axios error IS an Error whose .message is transport
       // text — classify it so an RFC 7807 detail wins and raw strings never show.
       const errorMessage = describeLoadError(
@@ -581,6 +636,53 @@ export default function ShopsPage() {
                   <Input id="address" placeholder="e.g., 123 High St, London" {...register("address")} />
                 </div>
               </div>
+              {editingShop && (
+                <div className="space-y-1.5">
+                  {/* 37-48 (UXT-028, UI-SPEC G2): read-only until changed on purpose. */}
+                  <p className="text-sm font-medium leading-none">Web address</p>
+                  <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="break-all font-mono text-sm text-slate-900">/shop/{editingShop.slug}</span>
+                    {!slugEditing && (
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0"
+                        onClick={() => setSlugEditing(true)}
+                      >
+                        Change web address
+                      </Button>
+                    )}
+                  </div>
+                  {slugEditing && (
+                    <div className="space-y-1.5 pt-1">
+                      <Label htmlFor="slug">New web address</Label>
+                      <Input
+                        id="slug"
+                        value={slugDraft}
+                        maxLength={100}
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-invalid={slugError ? true : undefined}
+                        aria-describedby={slugError ? "slug-warning slug-error" : "slug-warning"}
+                        onChange={(e) => {
+                          setSlugDraft(slugifyAsTyped(e.target.value))
+                          setSlugTouched(true)
+                          setSlugError(null)
+                        }}
+                        className="font-mono"
+                      />
+                      <p id="slug-warning" className="text-sm text-amber-800">
+                        Changing the web address breaks links customers have saved or shared. Old links won&apos;t redirect.
+                      </p>
+                    </div>
+                  )}
+                  {slugError && (
+                    <p id="slug-error" role="alert" className="text-sm text-red-600">
+                      {slugError}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="description">Description</Label>
                 <textarea

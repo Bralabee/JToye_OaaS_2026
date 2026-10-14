@@ -6,6 +6,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import uk.jtoye.core.shop.OpeningSchedule;
@@ -22,6 +23,19 @@ public class CreateShopRequest {
     private String name;
 
     private String address;
+
+    /**
+     * The shop's web address, {@code /shop/{slug}} (37-48, UXT-028). Absent or blank on update KEEPS the stored
+     * slug (shared links and QR codes keep working); on create it means "generate one". An explicit value must be
+     * lower-case letters, digits and single hyphens, at most 100 characters (the column), and is then refused if
+     * reserved by a storefront route (422) or held by another shop (409 shop-slug-taken).
+     */
+    @Schema(description = "The shop's web address (/shop/{slug}). Absent or blank keeps the current one on update and "
+            + "generates one on create. Lower-case letters, digits and single hyphens, at most 100 characters.",
+            nullable = true, maxLength = 100)
+    @Size(max = 100, message = "slug must be at most 100 characters")
+    @Pattern(regexp = "^(\\s*|[a-z0-9]+(-[a-z0-9]+)*)$",
+            message = "slug must be lower-case letters, digits and single hyphens")
     private String slug;
     @Size(max = 5000)
     private String description;

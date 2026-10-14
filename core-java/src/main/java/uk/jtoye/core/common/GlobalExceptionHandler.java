@@ -61,6 +61,7 @@ import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
 import uk.jtoye.core.exception.StaffInviteUnavailableException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
+import uk.jtoye.core.exception.ShopSlugTakenException;
 import uk.jtoye.core.exception.FulfilmentNotOfferedException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -660,6 +661,21 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Reserved Shop Slug");
         problem.setType(URI.create("https://jtoye.uk/errors/reserved-shop-slug"));
+        return problem;
+    }
+
+    /**
+     * Phase 37-48 (RWO-028 / UXT-028, owner ruling 2026-10-10): an explicit shop slug is held by another shop.
+     * 409 with its own type, never the generic {@code duplicate}: the shop's web address is a public contract,
+     * and the dashboard shows this detail inline next to the address field. {@code slug} is a typed member.
+     */
+    @ExceptionHandler(ShopSlugTakenException.class)
+    public ProblemDetail handleShopSlugTaken(ShopSlugTakenException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Shop web address taken");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-slug-taken"));
+        problem.setProperty("code", "SHOP_SLUG_TAKEN");
+        problem.setProperty("slug", ex.getSlug());
         return problem;
     }
 
