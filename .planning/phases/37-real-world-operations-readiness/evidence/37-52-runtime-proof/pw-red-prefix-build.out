@@ -1,0 +1,305 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/a11y-storefront.spec.ts --project=mobile --grep-invert @stack-free --reporter=list --output=<proof>/pw-red-results
+
+Running 4 tests using 1 worker
+
+  ✘  1 [mobile] › e2e/a11y-storefront.spec.ts:273:7 › live storefront @mobile-only › F2: Chrome names every /shop card link by its shop; INSTRUMENT: stripped aria-labelledby is caught (642ms)
+  ✘  2 [mobile] › e2e/a11y-storefront.spec.ts:295:7 › live storefront @mobile-only › F3: Add moves focus to '+' and announces the dish once; the last Remove returns focus to Add; INSTRUMENT: no region, no record (11.0s)
+  ✘  3 [mobile] › e2e/a11y-storefront.spec.ts:330:7 › live storefront @mobile-only › F6: at 360px with 130% text the shop name and the basket names wrap; INSTRUMENT: a forced ellipsis is caught (1.1s)
+  ✘  4 [mobile] › e2e/a11y-storefront.spec.ts:359:7 › live storefront on an iPhone 13 @mobile-only › F5: the notice is met first and never covers the focused element in the first 30 tab stops; INSTRUMENT: a notice forced over focus is caught (1.2s)
+
+
+  1) [mobile] › e2e/a11y-storefront.spec.ts:273:7 › live storefront @mobile-only › F2: Chrome names every /shop card link by its shop; INSTRUMENT: stripped aria-labelledby is caught 
+
+    Error: Chrome's name for the card link /shop/mama-ades-kitchen
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Mama Ade's Kitchen"
+    Received: ""
+
+      102 |   for (const l of links) {
+      103 |     expect(l.cardName, `card ${l.href} has no name element to compare with`).not.toBe("")
+    > 104 |     expect(l.name, `Chrome's name for the card link ${l.href}`).toBe(l.cardName)
+          |                                                                 ^
+      105 |   }
+      106 | }
+      107 |
+        at expectCardsNamedByShop (/home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:104:65)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:278:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-878ba-d-aria-labelledby-is-caught-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-878ba-d-aria-labelledby-is-caught-mobile/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-878ba-d-aria-labelledby-is-caught-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-878ba-d-aria-labelledby-is-caught-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [mobile] › e2e/a11y-storefront.spec.ts:295:7 › live storefront @mobile-only › F3: Add moves focus to '+' and announces the dish once; the last Remove returns focus to Add; INSTRUMENT: no region, no record 
+
+    Error: focus after Add
+
+    focus after Add
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Add one more Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw"
+    Received: "BODY"
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      300 |     await page.locator(`button[aria-label="${addLabel}"]`).first().focus()
+      301 |     await page.keyboard.press("Enter")
+    > 302 |     await soft.poll(() => focusedLabel(page), { message: "focus after Add", timeout: 5_000 }).toBe(`Add one more ${dish}`)
+          |                                                                                               ^
+      303 |     await soft
+      304 |       .poll(async () => (await recordedAnnouncements(page)).includes(`${dish} added. 1 item in basket.`), { timeout: 5_000 })
+      305 |       .toBe(true)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:302:95
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      303 |     await soft
+      304 |       .poll(async () => (await recordedAnnouncements(page)).includes(`${dish} added. 1 item in basket.`), { timeout: 5_000 })
+    > 305 |       .toBe(true)
+          |        ^
+      306 |     expectBasketAnnounced(await recordedAnnouncements(page), `${dish} added. 1 item in basket.`)
+      307 |
+      308 |     // Back one stop to the stepper's remove control (the keyboard path), then remove the last unit.
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:305:8
+
+    Error: no live-region announcement was exactly "Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw added. 1 item in basket."; recorded: ["11 item in basket"]
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      153 |     records.some((r) => r === expected),
+      154 |     `no live-region announcement was exactly "${expected}"; recorded: ${JSON.stringify(records)}`,
+    > 155 |   ).toBe(true)
+          |     ^
+      156 |   const doubled = records.filter((r) => /\b(\d+)\s+\1 items? in basket/.test(r))
+      157 |   expect(doubled, "an announcement said the basket count twice").toEqual([])
+      158 | }
+        at expectBasketAnnounced (/home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:155:5)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:306:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-4e262-TRUMENT-no-region-no-record-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-4e262-TRUMENT-no-region-no-record-mobile/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-4e262-TRUMENT-no-region-no-record-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-4e262-TRUMENT-no-region-no-record-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [mobile] › e2e/a11y-storefront.spec.ts:330:7 › live storefront @mobile-only › F6: at 360px with 130% text the shop name and the basket names wrap; INSTRUMENT: a forced ellipsis is caught 
+
+    Error: the storefront <h1>
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 5
+
+    - Array []
+    + Array [
+    +   "\"Mama Ade's Kitchen\" text-overflow ellipsis",
+    +   "\"Mama Ade's Kitchen\" white-space nowrap",
+    +   "\"Mama Ade's Kitchen\" scrollWidth 262 > clientWidth 214",
+    + ]
+
+      337 |
+      338 |     await largeTextNarrow(page)
+    > 339 |     soft(await clippedText(page, "h1", [SHOP_NAME]), "the storefront <h1>").toEqual([])
+          |                                                                             ^
+      340 |
+      341 |     await page.goto(`/shop/${SHOP_SLUG}/cart`)
+      342 |     await largeTextNarrow(page)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:339:77
+
+    Error: the basket item name
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 6
+
+    - Array []
+    + Array [
+    +   "document scrollWidth 362 > clientWidth 360",
+    +   "\"Jollof Rice with Fried Plantain, Peppered Chicken and Colesl\" text-overflow ellipsis",
+    +   "\"Jollof Rice with Fried Plantain, Peppered Chicken and Colesl\" white-space nowrap",
+    +   "\"Jollof Rice with Fried Plantain, Peppered Chicken and Colesl\" scrollWidth 573 > clientWidth 49",
+    + ]
+
+      342 |     await largeTextNarrow(page)
+      343 |     await expect(page.getByRole("heading", { name: dish }).first()).toBeVisible({ timeout: 15_000 })
+    > 344 |     expect(await clippedText(page, "h3", [dish]), "the basket item name").toEqual([])
+          |                                                                           ^
+      345 |
+      346 |     // INSTRUMENT: the same basket name forced to one clipped line is reported.
+      347 |     await page.addStyleTag({ content: "main h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }" })
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:344:75
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-c2fc0-a-forced-ellipsis-is-caught-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-c2fc0-a-forced-ellipsis-is-caught-mobile/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-c2fc0-a-forced-ellipsis-is-caught-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-c2fc0-a-forced-ellipsis-is-caught-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [mobile] › e2e/a11y-storefront.spec.ts:359:7 › live storefront on an iPhone 13 @mobile-only › F5: the notice is met first and never covers the focused element in the first 30 tab stops; INSTRUMENT: a notice forced over focus is caught 
+
+    Error: "Got it" among the first stops; walked: ["Skip to main content","J'Toye home","0 items in basket","Sign in","Open menu","Back","Mains","Grills","Sides","Desserts","Drinks","Add Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw to basket","View details for Jollof Rice with Fried Plantain, Peppered C","Add Egusi Soup with Pounded Yam to basket","View details for Egusi Soup with Pounded Yam","Add Suya Beef Skewers to basket","View details for Suya Beef Skewers","Add Peppered Snail to basket","View details for Peppered Snail","Add Moi Moi to basket","View details for Moi Moi","Add Dodo (Fried Plantain) to basket","View details for Dodo (Fried Plantain)","Add Puff Puff to basket","View details for Puff Puff","Add Chin Chin to basket","View details for Chin Chin","Add Mango Lassi to basket","View details for Mango Lassi","Add Zobo to basket"]
+
+    expect(received).toBeLessThanOrEqual(expected)
+
+    Expected: <= 3
+    Received:    Infinity
+
+      365 |     const stops = await walkTabStops(page, 30)
+      366 |     const gotIt = stops.find((s) => s.label === "Got it")
+    > 367 |     soft(gotIt?.index ?? Infinity, `"Got it" among the first stops; walked: ${JSON.stringify(stops.map((s) => s.label))}`).toBeLessThanOrEqual(3)
+          |                                                                                                                            ^
+      368 |
+      369 |     const obscured = stops.filter((s) => s.obscured)
+      370 |     soft(obscured, `focused element under the notice: ${JSON.stringify(obscured)}`).toEqual([])
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:367:124
+
+    Error: focused element under the notice: [{"index":12,"label":"Add Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw to basket","inNotice":false,"obscured":true,"scrollY":0},{"index":13,"label":"View details for Jollof Rice with Fried Plantain, Peppered C","inNotice":false,"obscured":true,"scrollY":0},{"index":16,"label":"Add Suya Beef Skewers to basket","inNotice":false,"obscured":true,"scrollY":455},{"index":17,"label":"View details for Suya Beef Skewers","inNotice":false,"obscured":true,"scrollY":455},{"index":20,"label":"Add Moi Moi to basket","inNotice":false,"obscured":true,"scrollY":838},{"index":21,"label":"View details for Moi Moi","inNotice":false,"obscured":true,"scrollY":838},{"index":24,"label":"Add Puff Puff to basket","inNotice":false,"obscured":true,"scrollY":1221},{"index":25,"label":"View details for Puff Puff","inNotice":false,"obscured":true,"scrollY":1221},{"index":28,"label":"Add Mango Lassi to basket","inNotice":false,"obscured":true,"scrollY":1604},{"index":29,"label":"View details for Mango Lassi","inNotice":false,"obscured":true,"scrollY":1604}]
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 72
+
+    - Array []
+    + Array [
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 12,
+    +     "label": "Add Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw to basket",
+    +     "obscured": true,
+    +     "scrollY": 0,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 13,
+    +     "label": "View details for Jollof Rice with Fried Plantain, Peppered C",
+    +     "obscured": true,
+    +     "scrollY": 0,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 16,
+    +     "label": "Add Suya Beef Skewers to basket",
+    +     "obscured": true,
+    +     "scrollY": 455,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 17,
+    +     "label": "View details for Suya Beef Skewers",
+    +     "obscured": true,
+    +     "scrollY": 455,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 20,
+    +     "label": "Add Moi Moi to basket",
+    +     "obscured": true,
+    +     "scrollY": 838,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 21,
+    +     "label": "View details for Moi Moi",
+    +     "obscured": true,
+    +     "scrollY": 838,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 24,
+    +     "label": "Add Puff Puff to basket",
+    +     "obscured": true,
+    +     "scrollY": 1221,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 25,
+    +     "label": "View details for Puff Puff",
+    +     "obscured": true,
+    +     "scrollY": 1221,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 28,
+    +     "label": "Add Mango Lassi to basket",
+    +     "obscured": true,
+    +     "scrollY": 1604,
+    +   },
+    +   Object {
+    +     "inNotice": false,
+    +     "index": 29,
+    +     "label": "View details for Mango Lassi",
+    +     "obscured": true,
+    +     "scrollY": 1604,
+    +   },
+    + ]
+
+      368 |
+      369 |     const obscured = stops.filter((s) => s.obscured)
+    > 370 |     soft(obscured, `focused element under the notice: ${JSON.stringify(obscured)}`).toEqual([])
+          |                                                                                     ^
+      371 |     // Non-vacuity: most stops were page content, and the walk went below the fold where the notice is.
+      372 |     expect(stops.filter((s) => !s.inNotice && s.label !== "BODY").length).toBeGreaterThanOrEqual(20)
+      373 |     expect(Math.max(...stops.map((s) => s.scrollY)), "the walk never scrolled, so it never reached the notice's band").toBeGreaterThan(0)
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/a11y-storefront.spec.ts:370:85
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-bbb77-forced-over-focus-is-caught-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-bbb77-forced-over-focus-is-caught-mobile/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-bbb77-forced-over-focus-is-caught-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../..<proof>/pw-red-results/a11y-storefront-live-store-bbb77-forced-over-focus-is-caught-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4 failed
+    [mobile] › e2e/a11y-storefront.spec.ts:273:7 › live storefront @mobile-only › F2: Chrome names every /shop card link by its shop; INSTRUMENT: stripped aria-labelledby is caught 
+    [mobile] › e2e/a11y-storefront.spec.ts:295:7 › live storefront @mobile-only › F3: Add moves focus to '+' and announces the dish once; the last Remove returns focus to Add; INSTRUMENT: no region, no record 
+    [mobile] › e2e/a11y-storefront.spec.ts:330:7 › live storefront @mobile-only › F6: at 360px with 130% text the shop name and the basket names wrap; INSTRUMENT: a forced ellipsis is caught 
+    [mobile] › e2e/a11y-storefront.spec.ts:359:7 › live storefront on an iPhone 13 @mobile-only › F5: the notice is met first and never covers the focused element in the first 30 tab stops; INSTRUMENT: a notice forced over focus is caught 

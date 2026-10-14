@@ -262,6 +262,13 @@ async function firstAddableDish(page: Page): Promise<{ dish: string; addLabel: s
 
 // ─── The live storefront (run in 37-53) ───────────────────────────────────────────────────────
 
+/**
+ * Soft where a defect would otherwise hide the next one: on the pre-fix tree focus falls to <body>
+ * AND the announcement is wrong, the shop name AND the basket names are clipped, and the notice is
+ * both last in tab order AND over the focused element. A RED run reports every one of them.
+ */
+const soft = expect.configure({ soft: true })
+
 test.describe("live storefront @mobile-only", () => {
   test("F2: Chrome names every /shop card link by its shop; INSTRUMENT: stripped aria-labelledby is caught", async ({ page }) => {
     await page.goto("/shop")
@@ -292,13 +299,16 @@ test.describe("live storefront @mobile-only", () => {
 
     await page.locator(`button[aria-label="${addLabel}"]`).first().focus()
     await page.keyboard.press("Enter")
-    await expect.poll(() => focusedLabel(page), { message: "focus after Add" }).toBe(`Add one more ${dish}`)
-    await expect.poll(async () => (await recordedAnnouncements(page)).includes(`${dish} added. 1 item in basket.`)).toBe(true)
+    await soft.poll(() => focusedLabel(page), { message: "focus after Add", timeout: 5_000 }).toBe(`Add one more ${dish}`)
+    await soft
+      .poll(async () => (await recordedAnnouncements(page)).includes(`${dish} added. 1 item in basket.`), { timeout: 5_000 })
+      .toBe(true)
     expectBasketAnnounced(await recordedAnnouncements(page), `${dish} added. 1 item in basket.`)
 
-    // Back one stop to the stepper's remove control, then remove the last unit.
+    // Back one stop to the stepper's remove control (the keyboard path), then remove the last unit.
     await page.keyboard.press("Shift+Tab")
-    expect(await focusedLabel(page)).toBe(`Remove ${dish} from basket`)
+    soft(await focusedLabel(page), "Shift+Tab from '+' reaches the remove control").toBe(`Remove ${dish} from basket`)
+    await page.locator(`button[aria-label="Remove ${dish} from basket"]`).first().focus()
     await page.keyboard.press("Enter")
     await expect.poll(() => focusedLabel(page), { message: "focus after the last Remove" }).toBe(addLabel)
     await expect.poll(async () => (await recordedAnnouncements(page)).includes(`${dish} removed. Basket is empty.`)).toBe(true)
@@ -321,15 +331,17 @@ test.describe("live storefront @mobile-only", () => {
     await page.goto(`/shop/${SHOP_SLUG}`)
     const { dish, addLabel } = await firstAddableDish(page)
     await page.locator(`button[aria-label="${addLabel}"]`).first().click()
-    await expect(page.getByRole("button", { name: `Add one more ${dish}` }).first()).toBeVisible()
+    // The stepper's remove control is named the same before and after 37-52, so this waits on the
+    // basket, not on F3's renamed "+".
+    await expect(page.locator(`button[aria-label="Remove ${dish} from basket"]`).first()).toBeVisible()
 
     await largeTextNarrow(page)
-    expect(await clippedText(page, "h1", [SHOP_NAME])).toEqual([])
+    soft(await clippedText(page, "h1", [SHOP_NAME]), "the storefront <h1>").toEqual([])
 
     await page.goto(`/shop/${SHOP_SLUG}/cart`)
     await largeTextNarrow(page)
     await expect(page.getByRole("heading", { name: dish }).first()).toBeVisible({ timeout: 15_000 })
-    expect(await clippedText(page, "h3", [dish])).toEqual([])
+    expect(await clippedText(page, "h3", [dish]), "the basket item name").toEqual([])
 
     // INSTRUMENT: the same basket name forced to one clipped line is reported.
     await page.addStyleTag({ content: "main h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }" })
@@ -352,11 +364,10 @@ test.describe("live storefront on an iPhone 13 @mobile-only", () => {
 
     const stops = await walkTabStops(page, 30)
     const gotIt = stops.find((s) => s.label === "Got it")
-    expect(gotIt, `"Got it" not reached in 30 stops: ${JSON.stringify(stops.map((s) => s.label))}`).toBeTruthy()
-    expect(gotIt!.index, "the notice's control is among the first stops").toBeLessThanOrEqual(3)
+    soft(gotIt?.index ?? Infinity, `"Got it" among the first stops; walked: ${JSON.stringify(stops.map((s) => s.label))}`).toBeLessThanOrEqual(3)
 
     const obscured = stops.filter((s) => s.obscured)
-    expect(obscured, `focused element under the notice: ${JSON.stringify(obscured)}`).toEqual([])
+    soft(obscured, `focused element under the notice: ${JSON.stringify(obscured)}`).toEqual([])
     // Non-vacuity: most stops were page content, and the walk went below the fold where the notice is.
     expect(stops.filter((s) => !s.inNotice && s.label !== "BODY").length).toBeGreaterThanOrEqual(20)
     expect(Math.max(...stops.map((s) => s.scrollY)), "the walk never scrolled, so it never reached the notice's band").toBeGreaterThan(0)

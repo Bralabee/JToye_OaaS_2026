@@ -1,0 +1,15 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/a11y-storefront.spec.ts --project=mobile --reporter=list --output=<proof>/pw-green-results
+
+Running 8 tests using 1 worker
+
+  ✓  1 [mobile] › e2e/a11y-storefront.spec.ts:273:7 › live storefront @mobile-only › F2: Chrome names every /shop card link by its shop; INSTRUMENT: stripped aria-labelledby is caught (550ms)
+  ✓  2 [mobile] › e2e/a11y-storefront.spec.ts:295:7 › live storefront @mobile-only › F3: Add moves focus to '+' and announces the dish once; the last Remove returns focus to Add; INSTRUMENT: no region, no record (563ms)
+  ✓  3 [mobile] › e2e/a11y-storefront.spec.ts:330:7 › live storefront @mobile-only › F6: at 360px with 130% text the shop name and the basket names wrap; INSTRUMENT: a forced ellipsis is caught (835ms)
+  ✓  4 [mobile] › e2e/a11y-storefront.spec.ts:359:7 › live storefront on an iPhone 13 @mobile-only › F5: the notice is met first and never covers the focused element in the first 30 tab stops; INSTRUMENT: a notice forced over focus is caught (819ms)
+  ✓  5 [mobile] › e2e/a11y-storefront.spec.ts:406:7 › instruments can fail @stack-free › CDP name probe: a labelled card link reads as its shop; an unlabelled <a><article> does not (71ms)
+  ✓  6 [mobile] › e2e/a11y-storefront.spec.ts:420:7 › instruments can fail @stack-free › recorder and announcement assertion: the new sentence passes; the old doubled count and silence fail (72ms)
+  ✓  7 [mobile] › e2e/a11y-storefront.spec.ts:448:7 › instruments can fail @stack-free › overlap probe: a fixed notice over the focused element is reported; a clear one is not (106ms)
+  ✓  8 [mobile] › e2e/a11y-storefront.spec.ts:466:7 › instruments can fail @stack-free › large-text probe: a wrapping name passes; truncate, nowrap and a sideways-scrolling page fail (92ms)
+
+  8 passed (3.9s)
