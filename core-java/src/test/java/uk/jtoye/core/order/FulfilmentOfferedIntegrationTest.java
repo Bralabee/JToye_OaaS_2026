@@ -38,7 +38,9 @@ import java.util.concurrent.ThreadLocalRandom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 /**
  * Phase 37-48 (RWO-023 / UXT-023): a shop says which fulfilment types it offers, and EVERY order writer
@@ -191,6 +193,142 @@ class FulfilmentOfferedIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // Task 2: the vendor sets the fee, the threshold and the offered types through the shop API, and the
+    // storefront charges and enforces what was set. Every PUT echoes the shop's slug, so these arms do not
+    // depend on the slug rule Task 3 changes.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("UXT-023: a vendor PUT of fee 299 and threshold 3000 is stored and published; a DELIVERY order of 2500 is charged 299 (2799) and one of 3000 is charged 0 (3000), read by SQL")
+    void vendorSetsFeeAndThreshold_andTheStorefrontChargesThem() throws Exception {
+        Fixture f = seedShop("fee");
+        UUID fifteen = seedProduct(f.shopId, "Puff Puff", 1500L);
+
+        MvcResult put = putShop(f, Map.of("deliveryFeePennies", 299, "freeDeliveryThresholdPennies", 3000));
+        String text = responseText(put);
+        assertThat(put.getResponse().getStatus()).as(text).isEqualTo(200);
+        JsonNode dto = jsonMapper.readTree(put.getResponse().getContentAsString());
+        assertThat(dto.path("deliveryFeePennies").asLong()).as(text).isEqualTo(299L);
+        assertThat(dto.path("freeDeliveryThresholdPennies").asLong()).as(text).isEqualTo(3000L);
+        assertThat(feeAndThreshold(f.shopId)).as("stored").containsExactly(299L, 3000L);
+
+        JsonNode pub = publicShop(f);
+        assertThat(pub.path("deliveryFeePennies").asLong()).as(pub.toString()).isEqualTo(299L);
+        assertThat(pub.path("freeDeliveryThresholdPennies").asLong()).as(pub.toString()).isEqualTo(3000L);
+
+        String below = "below-" + UUID.randomUUID() + "@example.com";
+        MvcResult under = perform(post(storefrontUrl(f)),
+                storefrontBody(below, "DELIVERY", List.of(line(f.productId, 1)), 2799L));
+        assertThat(under.getResponse().getStatus()).as(responseText(under)).isEqualTo(201);
+        assertThat(totalAndFee(below)).as("2500 below the 3000 threshold pays the 299 fee").containsExactly(2799L, 299L);
+
+        String at = "at-" + UUID.randomUUID() + "@example.com";
+        MvcResult atThreshold = perform(post(storefrontUrl(f)),
+                storefrontBody(at, "DELIVERY", List.of(line(fifteen, 2)), 3000L));
+        assertThat(atThreshold.getResponse().getStatus()).as(responseText(atThreshold)).isEqualTo(201);
+        assertThat(totalAndFee(at)).as("3000 reaches the threshold (inclusive): no fee").containsExactly(3000L, 0L);
+    }
+
+    @Test
+    @DisplayName("UXT-023: a vendor PUT of offersDelivery false is stored and published; DELIVERY is then 422 on both writers and COLLECTION 201")
+    void vendorSetsCollectionOnly_andBothWritersEnforceIt() throws Exception {
+        Fixture f = seedShop("put-co");
+
+        MvcResult put = putShop(f, Map.of("offersDelivery", false, "offersCollection", true));
+        String text = responseText(put);
+        assertThat(put.getResponse().getStatus()).as(text).isEqualTo(200);
+        JsonNode dto = jsonMapper.readTree(put.getResponse().getContentAsString());
+        assertThat(dto.path("offersDelivery").isBoolean()).as(text).isTrue();
+        assertThat(dto.path("offersDelivery").asBoolean()).as(text).isFalse();
+        assertThat(dto.path("offersCollection").asBoolean()).as(text).isTrue();
+        assertThat(offeredFlags(f.shopId)).as("stored").containsExactly(false, true);
+
+        JsonNode pub = publicShop(f);
+        assertThat(pub.path("offersDelivery").isBoolean()).as(pub.toString()).isTrue();
+        assertThat(pub.path("offersDelivery").asBoolean()).as(pub.toString()).isFalse();
+        assertThat(pub.path("offersCollection").asBoolean()).as(pub.toString()).isTrue();
+
+        String email = "put-co-" + UUID.randomUUID() + "@example.com";
+        assertProblem(perform(post(storefrontUrl(f)),
+                storefrontBody(email, "DELIVERY", List.of(line(f.productId, 1)), null)), 422);
+        assertProblem(performVendor(vendorBody(f, email, "DELIVERY", List.of(line(f.productId, 1)))), 422);
+        assertThat(countOrdersByEmail(email)).isZero();
+        MvcResult collection = perform(post(storefrontUrl(f)),
+                storefrontBody(email, "COLLECTION", List.of(line(f.productId, 1)), null));
+        assertThat(collection.getResponse().getStatus()).as(responseText(collection)).isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("UXT-023: neither type offered is a 400 naming the rule, whether sent together or merged with the stored flag; nothing changes")
+    void neitherOffered_isRefused400_sentOrMerged() throws Exception {
+        Fixture f = seedShop("neither-api");
+
+        MvcResult both = putShop(f, Map.of("offersDelivery", false, "offersCollection", false));
+        assertValidation400(both, "fulfilmentOffered");
+        assertThat(offeredFlags(f.shopId)).containsExactly(true, true);
+
+        setOffered(f.shopId, false, true);
+        MvcResult merged = putShop(f, Map.of("offersCollection", false));
+        assertValidation400(merged, "fulfilmentOffered");
+        assertThat(offeredFlags(f.shopId)).as("the stored collection-only shop is unchanged").containsExactly(false, true);
+
+        MvcResult create = createShop(Map.of("offersDelivery", false, "offersCollection", false));
+        assertValidation400(create, "fulfilmentOffered");
+    }
+
+    @Test
+    @DisplayName("T-37-116: a negative fee or threshold is a 400 naming the field; nothing changes")
+    void negativeFeeOrThreshold_isRefused400() throws Exception {
+        Fixture f = seedShop("negative");
+        assertValidation400(putShop(f, Map.of("deliveryFeePennies", -1)), "deliveryFeePennies");
+        assertValidation400(putShop(f, Map.of("freeDeliveryThresholdPennies", -1)), "freeDeliveryThresholdPennies");
+        assertThat(feeAndThreshold(f.shopId)).containsExactly(0L, null);
+    }
+
+    @Test
+    @DisplayName("UXT-023: an absent threshold keeps the stored one; an explicit null clears it (no free delivery), and the fee then applies above 3000")
+    void threshold_absentKeeps_explicitNullClears() throws Exception {
+        Fixture f = seedShop("clear");
+        assertThat(putShop(f, Map.of("deliveryFeePennies", 299, "freeDeliveryThresholdPennies", 3000))
+                .getResponse().getStatus()).isEqualTo(200);
+
+        assertThat(putShop(f, Map.of()).getResponse().getStatus()).isEqualTo(200);
+        assertThat(feeAndThreshold(f.shopId)).as("absent keeps").containsExactly(299L, 3000L);
+
+        Map<String, Object> clear = new LinkedHashMap<>();
+        clear.put("freeDeliveryThresholdPennies", null);
+        MvcResult cleared = putShop(f, clear);
+        assertThat(cleared.getResponse().getStatus()).as(responseText(cleared)).isEqualTo(200);
+        assertThat(feeAndThreshold(f.shopId)).as("explicit null clears").containsExactly(299L, null);
+
+        UUID fifteen = seedProduct(f.shopId, "Chin Chin", 1500L);
+        String email = "cleared-" + UUID.randomUUID() + "@example.com";
+        MvcResult order = perform(post(storefrontUrl(f)),
+                storefrontBody(email, "DELIVERY", List.of(line(fifteen, 2)), 3299L));
+        assertThat(order.getResponse().getStatus()).as(responseText(order)).isEqualTo(201);
+        assertThat(totalAndFee(email)).containsExactly(3299L, 299L);
+    }
+
+    @Test
+    @DisplayName("UXT-023: a shop created with a fee, a threshold and collection only stores them; one created without them takes both types and charges nothing")
+    void createShop_storesFeeThresholdAndOfferedTypes_withDefaults() throws Exception {
+        MvcResult created = createShop(Map.of("deliveryFeePennies", 199, "freeDeliveryThresholdPennies", 2000,
+                "offersDelivery", false));
+        String text = responseText(created);
+        assertThat(created.getResponse().getStatus()).as(text).isEqualTo(201);
+        UUID id = UUID.fromString(jsonMapper.readTree(created.getResponse().getContentAsString()).path("id").asString());
+        assertThat(feeAndThreshold(id)).containsExactly(199L, 2000L);
+        assertThat(offeredFlags(id)).containsExactly(false, true);
+
+        MvcResult plain = createShop(Map.of());
+        String plainText = responseText(plain);
+        assertThat(plain.getResponse().getStatus()).as(plainText).isEqualTo(201);
+        UUID plainId = UUID.fromString(jsonMapper.readTree(plain.getResponse().getContentAsString()).path("id").asString());
+        assertThat(feeAndThreshold(plainId)).containsExactly(0L, null);
+        assertThat(offeredFlags(plainId)).containsExactly(true, true);
+    }
+
+    // ------------------------------------------------------------------
     // Fixture, request and SQL helpers
     // ------------------------------------------------------------------
 
@@ -216,6 +354,65 @@ class FulfilmentOfferedIntegrationTest {
                     productId, TENANT_ID, "SKU-3748-" + productId, "Jollof Rice", "see label", 2500L, shopId);
             return new Fixture(shopId, slug, productId);
         });
+    }
+
+    private UUID seedProduct(UUID shopId, String title, long pricePennies) {
+        return inTenant(() -> {
+            UUID productId = UUID.randomUUID();
+            jdbcTemplate.update(
+                    "INSERT INTO products (id, tenant_id, created_at, sku, title, ingredients_text, "
+                            + "allergen_mask, price_pennies, display_order, available, featured, "
+                            + "shop_id, quantity_in_stock, vat_rate, version) "
+                            + "VALUES (?, ?, now(), ?, ?, ?, 0, ?, 0, true, false, ?, NULL, 'STANDARD', 0)",
+                    productId, TENANT_ID, "SKU-3748-" + productId, title, "see label", pricePennies, shopId);
+            return productId;
+        });
+    }
+
+    /** PUT /api/v1/shops/{id} with the shop's name and slug plus the given fields (a vendor dashboard save). */
+    private MvcResult putShop(Fixture f, Map<String, Object> fields) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", shopName(f.shopId));
+        body.put("slug", f.slug);
+        body.putAll(fields);
+        return perform(put("/api/v1/shops/" + f.shopId).with(vendorJwt()), body);
+    }
+
+    private MvcResult createShop(Map<String, Object> fields) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", "37-48 created " + UUID.randomUUID());
+        body.putAll(fields);
+        return perform(post("/api/v1/shops").with(vendorJwt()), body);
+    }
+
+    private JsonNode publicShop(Fixture f) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/public/shops/" + f.slug)).andReturn();
+        assertThat(result.getResponse().getStatus()).as(responseText(result)).isEqualTo(200);
+        return jsonMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private void assertValidation400(MvcResult result, String field) throws Exception {
+        String text = responseText(result);
+        assertThat(result.getResponse().getStatus()).as(text).isEqualTo(400);
+        JsonNode problem = jsonMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(problem.path("type").asString()).as(text).isEqualTo("https://jtoye.uk/errors/validation");
+        assertThat(problem.path("errors").has(field)).as(text).isTrue();
+    }
+
+    private String shopName(UUID shopId) {
+        return inTenant(() -> jdbcTemplate.queryForObject("SELECT name FROM shops WHERE id = ?", String.class, shopId));
+    }
+
+    private List<Long> feeAndThreshold(UUID shopId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT delivery_fee_pennies, free_delivery_threshold_pennies FROM shops WHERE id = ?",
+                (rs, n) -> java.util.Arrays.asList(rs.getObject(1, Long.class), rs.getObject(2, Long.class)), shopId));
+    }
+
+    private List<Long> totalAndFee(String email) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT total_amount_pennies, delivery_fee_pennies FROM orders WHERE tenant_id = ? AND customer_email = ?",
+                (rs, n) -> List.of(rs.getLong(1), rs.getLong(2)), TENANT_ID, email));
     }
 
     private void setOffered(UUID shopId, boolean delivery, boolean collection) {
