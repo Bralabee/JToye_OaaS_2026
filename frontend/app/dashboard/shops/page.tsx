@@ -135,6 +135,18 @@ function finalSlug(value: string): string {
   return value.replace(/-+$/, "")
 }
 
+/** `CreateShopRequest.slug`'s @Pattern (non-blank arm) and @Size(max = 100). */
+const SERVER_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/**
+ * 37-G review: the stored slug an ordinary save re-sends, or null when the server's own request validation
+ * would refuse it (a name with no usable characters gets "-" + a code from ShopService.generateSlug). Such a
+ * slug is left out, so the save is not refused 400; the 37-48 server keeps the slug when none is sent.
+ */
+function resendableSlug(slug: string | null | undefined): string | null {
+  return slug && slug.length <= 100 && SERVER_SLUG_PATTERN.test(slug) ? slug : null
+}
+
 /** True when a save failure is the server refusing the requested web address (taken, reserved or malformed). */
 function slugRefusal(error: unknown): string | null {
   const data = (error as { response?: { data?: { type?: string; detail?: string; errors?: Record<string, string> } } })
@@ -164,8 +176,8 @@ export default function ShopsPage() {
   // The seven free-text inputs that wrote `openingHours` are gone: that text decides nothing since
   // 37-20, and the original stays readable as ShopDto.legacyOpeningHours for the needs-review notice.
   const [scheduleDraft, setScheduleDraft] = useState<OpeningScheduleMap | null>(null)
-  // 37-48 (UI-SPEC G2): the web address is read-only until "Change web address"; only an EDITED value is sent,
-  // because the server keeps the slug whenever a request carries none (UXT-028).
+  // 37-48 (UI-SPEC G2): the web address is read-only until "Change web address". An edit save sends the EDITED
+  // value, or else the current one for old-server compatibility (see onSubmit); the server keeps an equal slug.
   const [slugEditing, setSlugEditing] = useState(false)
   const [slugDraft, setSlugDraft] = useState("")
   const [slugTouched, setSlugTouched] = useState(false)
@@ -376,8 +388,10 @@ export default function ShopsPage() {
 
   const onSubmit = async (data: ShopFormData) => {
     const editedSlug = finalSlug(slugDraft)
+    // A web address the vendor changed on purpose; only this one can be refused inline as taken/reserved.
     const sentSlug =
       editingShop && slugTouched && editedSlug && editedSlug !== editingShop.slug ? editedSlug : null
+    const payloadSlug = sentSlug ?? (editingShop ? resendableSlug(editingShop.slug) : null)
     try {
       setSubmitting(true)
       setSlugError(null)
@@ -401,10 +415,13 @@ export default function ShopsPage() {
         offersDelivery,
         offersCollection,
         published,
-        // 37-48 (UXT-028): no slug unless the vendor edited the web address. The server keeps the slug when a
-        // request carries none, so an ordinary save (hours, phone, a rename) never moves the shop. This
-        // replaces the 37-21 workaround that re-sent the current slug.
-        ...(sentSlug ? { slug: sentSlug } : {}),
+        // 37-48 (UXT-028): an edit sends the web address the vendor typed, or else the CURRENT one; a create
+        // sends none and the server generates it. The 37-48 server keeps a slug that is absent or equal to the
+        // current one, so an ordinary save (hours, phone, a rename) never moves the shop. Re-sending the current
+        // slug is for OLD-SERVER COMPATIBILITY (37-G review): a pre-37-48 core-java, during a rolling deploy's
+        // overlap or after a core-only rollback, regenerates the slug on any save that carries none, which
+        // breaks every printed QR code and shared link for good (no old-slug redirect until Phase 39).
+        ...(payloadSlug ? { slug: payloadSlug } : {}),
         // Absent keeps the stored hours; {} saves closed every day; any save makes them STRUCTURED.
         // The key is left out entirely (not sent as undefined) while the editor is untouched.
         ...(scheduleDraft !== null ? { openingSchedule: scheduleDraft } : {}),
