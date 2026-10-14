@@ -308,7 +308,11 @@ test.describe("live storefront @mobile-only", () => {
     // Back one stop to the stepper's remove control (the keyboard path), then remove the last unit.
     await page.keyboard.press("Shift+Tab")
     soft(await focusedLabel(page), "Shift+Tab from '+' reaches the remove control").toBe(`Remove ${dish} from basket`)
-    await page.locator(`button[aria-label="Remove ${dish} from basket"]`).first().focus()
+    // The remove control of the SAME card. A featured dish renders twice, the Popular rail first, and
+    // the two steppers share their labels (only the rail's Add carries " (featured)"), so `.first()`
+    // is the RAIL copy: pressing it returned focus, correctly, to the rail's own Add and failed this
+    // assertion at the 37-53 gate. `firstAddableDish` pressed the menu copy, which comes after the rail.
+    await page.locator(`button[aria-label="Remove ${dish} from basket"]`).last().focus()
     await page.keyboard.press("Enter")
     await expect.poll(() => focusedLabel(page), { message: "focus after the last Remove" }).toBe(addLabel)
     await expect.poll(async () => (await recordedAnnouncements(page)).includes(`${dish} removed. Basket is empty.`)).toBe(true)

@@ -203,6 +203,19 @@ test.describe("live tracking journey @mobile-only", () => {
     // INSTRUMENT: the title assertion can fail — a wrong expected title is refused.
     await expect(expect(page).toHaveTitle(`Basket · Not ${SHOP_NAME} — J'Toye`, { timeout: 1_000 })).rejects.toThrow()
 
+    // Mama Ade's minimum order is £10.00 and one unit of a dish does not reach it, so with a single
+    // unit "Place order" stays disabled ("Minimum order £10.00 — add … more") and no order can be
+    // placed (measured at the 37-53 gate, the first live run of this spec). Raise the line on the
+    // basket page, the way a customer would, until checkout opens: below the minimum the basket
+    // renders a disabled "Proceed to checkout" BUTTON, at or above it a LINK. Bounded, so a broken
+    // stepper fails here instead of looping.
+    const belowMinimum = page.getByRole("button", { name: /Proceed to checkout/ })
+    for (let i = 0; i < 8 && (await belowMinimum.count()) > 0; i++) {
+      await page.getByRole("button", { name: /^Increase quantity of / }).first().click()
+      await page.waitForTimeout(250)
+    }
+    await expect(page.getByRole("link", { name: /Proceed to checkout/ }), "the basket reached the shop's minimum").toBeVisible()
+
     await page.goto(`/shop/${SHOP_SLUG}/checkout`)
     await expect(page.getByRole("heading", { level: 1, name: "Checkout" })).toBeVisible()
     await expect(page).toHaveTitle(`Checkout · ${SHOP_NAME} — J'Toye`)
