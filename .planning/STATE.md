@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-47 complete (47/53); sub-theme 37-E GATED (37-47 closed 2026-10-13 on the owner's proceed): every image rebuilt, freshness PASS 4/4, V82 live, OpenAPI live gate PASS, every live proof RED on the 37-C images and GREEN after, the full Keycloak credential lifecycle proven against jtoye-dev (secret recorded as length + sha256 prefix only), specs 66/0; tag cut/phase-37-e-integrators = 1a481448, PR branch phase-37-e-integrators = b0f26126 (one squash on origin/main bfef0f6e, tree-equal to the tag). Next: owner opens the 37-E PR and runs the D3 series; then 37-48 (37-G)."
-last_updated: "2026-10-13T07:55:00.000Z"
-last_activity: 2026-10-13
-state_head: 54af1b72
+stopped_at: "Phase 37 executing: 37-01..37-48 complete (48/53); sub-theme 37-G in progress (37-49 next: shop-form delivery/collection controls and the customer-facing offered types, wave 39). 37-48 closed 2026-10-14 (RWO-023, RWO-028; tdd): V83 adds shops.offers_delivery/offers_collection (NOT NULL DEFAULT true, ck_shops_offers_some, shops_aud mirrors, no backfill); FulfilmentPolicy.requireOffered refuses an unoffered type on BOTH writers with 422 fulfilment-not-offered (a vendor/MCP order with no type defaults to collection, so a delivery-only shop refuses it); ShopDto/CreateShopRequest carry deliveryFeePennies, freeDeliveryThresholdPennies (explicit null clears, absent keeps), offersDelivery, offersCollection; PublicShopDto exposes the offered types; an edit keeps the slug, and a taken slug is a typed 409 shop-slug-taken on create and update (a slug-exists query had been flushing the new slug into the unique index). Unit 1827/0, integration 1242/0, jest 2801/240, tsc rc 0, lint 0 errors, metrics 5945. The 37-50 gate owes the live proof on rebuilt images (V83 out of order after V84, fees charged, collection-only refused on both writers, edit keeps /shop/{slug}, OpenAPI live gate)."
+last_updated: "2026-10-14T11:40:00.000Z"
+last_activity: 2026-10-14
+state_head: da260cab
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 232
+  completed_plans: 233
   percent: 65
 ---
 
@@ -1319,6 +1319,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-47 (owner, 2026-10-13): proceed on the shared compose stack, including creating, rotating and deleting test credential clients in the jtoye-dev realm; core-api serviceAccountsEnabled left unchanged (still open)
 - [Phase 37]: 37-47 (OWNER QUESTION, before the 37-E PR merges): an integrator can order a product the shop switched off (createOrder never checked available, and since 37-42 an MCP order lands PENDING in the kitchen with no vendor review); recommended: refuse with the 404 a shop-less product gets, at least when submit is true, as a review-fix commit on the PR branch
 - [Phase 37]: 37-47 (OWNER QUESTION): revoked credentials stay on the Staff page as Integration rows with No access indefinitely; the Developers page header clips Create credential at 768 px (review-fix candidate)
+- [Phase 37]: 37-48 (executor, 2026-10-14): V83 records no new statement (DEFAULT true: every shop took both types before); the 'neither offered' rule is checked against the stored values too, so a partial update gets a typed 422 instead of the constraint's generic 409
+- [Phase 37]: 37-48 (executor, 2026-10-14): freeDeliveryThresholdPennies: explicit null clears the threshold, an absent key keeps it; 37-49 must send null for an emptied field
+- [Phase 37]: 37-48 (executor, 2026-10-14): slug kept on edit; a taken slug is 409 shop-slug-taken on create and update, with a unique-index backstop for slugs the access-scoped pre-check cannot see (another tenant's unpublished shop); old-slug 301 aliases stay deferred to Phase 39 (owner ruling 2026-10-10)
 
 ### Pending Todos
 
@@ -1392,8 +1395,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-13T07:55:00.000Z
-Stopped at: Completed 37-47-PLAN.md (the 37-E gate; PR branch phase-37-e-integrators cut, not yet opened). Next: the owner opens the 37-E PR by hand and runs the D3 review series; then 37-48 (37-G, V83).
+Last session: 2026-10-14T11:40:00.000Z
+Stopped at: Completed 37-48-PLAN.md (fees, threshold and offered fulfilment types on every writer; stable slug; V83). Next: 37-49 (37-G UI, wave 39), then the 37-G gate 37-50.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
