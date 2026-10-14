@@ -223,6 +223,10 @@ const FEE_SHOP = {
   tags: null,
 }
 
+/** 37-50 finding 2.9 item 2: the same shop, collection-only and delivery-only (UXT-023). */
+const COLLECTION_ONLY_SHOP = { ...FEE_SHOP, offersDelivery: false, offersCollection: true }
+const DELIVERY_ONLY_SHOP = { ...FEE_SHOP, offersDelivery: true, offersCollection: false }
+
 function seedBasket(pricePennies: number, quantity = 1) {
   localStorage.setItem(
     STORAGE_KEY,
@@ -517,5 +521,85 @@ describe("Shop cart page — each line's own allergens (#860)", () => {
     // Control: the slot is the one the provider reads (a wrong key would compare null to null).
     expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
     expect(localStorage.getItem(STORAGE_KEY)).toBe(seeded)
+  })
+})
+
+/**
+ * 37-50 finding 2.9 item 2 (review-fix, UXT-023): the basket reads the fulfilment flags through
+ * `lib/fulfilment-offered.ts`, the same reader as the shop header and checkout. Before it, a
+ * collection-only shop's basket read "Delivery from £3.50. Added at checkout, where collection is free
+ * and delivery is free over £25.00." for a delivery the server refuses, and a delivery-only shop's
+ * basket promised a free collection it does not offer.
+ */
+describe("Shop cart page — which fulfilment the shop takes (UXT-023)", () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  function summary(): HTMLElement {
+    return screen.getByText(/^subtotal$/i).closest("div.rounded-xl") as HTMLElement
+  }
+
+  it("a collection-only basket says so in checkout's words and quotes no delivery fee or threshold", async () => {
+    mockedGet.mockResolvedValue({ data: COLLECTION_ONLY_SHOP })
+    seedBasket(300)
+    renderCart()
+    await screen.findByText("Zobo")
+
+    expect(
+      await screen.findByText("Collection only. This shop doesn't deliver.")
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/^delivery$/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/from £3\.50/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/added at checkout/i)).not.toBeInTheDocument()
+    expect(summary().textContent).not.toContain("£25.00")
+  })
+
+  it("a collection-only basket over the threshold does not say delivery is Free", async () => {
+    mockedGet.mockResolvedValue({ data: COLLECTION_ONLY_SHOP })
+    seedBasket(2600)
+    renderCart()
+    await screen.findByText("Zobo")
+
+    expect(
+      await screen.findByText("Collection only. This shop doesn't deliver.")
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/^free$/i)).not.toBeInTheDocument()
+  })
+
+  it("a delivery-only basket keeps its fee and threshold but does not promise a free collection", async () => {
+    mockedGet.mockResolvedValue({ data: DELIVERY_ONLY_SHOP })
+    seedBasket(300)
+    renderCart()
+    await screen.findByText("Zobo")
+
+    expect(await screen.findByText(/from £3\.50/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText("Added at checkout, where delivery is free over £25.00.")
+    ).toBeInTheDocument()
+    expect(summary().textContent).not.toMatch(/collection/i)
+  })
+
+  it("a delivery-only basket with no threshold says only that delivery is added at checkout", async () => {
+    mockedGet.mockResolvedValue({ data: { ...DELIVERY_ONLY_SHOP, freeDeliveryThresholdPennies: null } })
+    seedBasket(300)
+    renderCart()
+    await screen.findByText("Zobo")
+
+    expect(await screen.findByText("Added at checkout.")).toBeInTheDocument()
+    expect(summary().textContent).not.toMatch(/collection/i)
+  })
+
+  it("CONTROL: a shop offering both renders the summary byte-identically to before the fix", async () => {
+    mockedGet.mockResolvedValue({ data: { ...FEE_SHOP, offersDelivery: true, offersCollection: true } })
+    seedBasket(300)
+    renderCart()
+    await screen.findByText("Zobo")
+    await screen.findByText(/^Added at checkout/)
+
+    // Captured from the unfixed tree (Incremental Betterment: Mama Ade's basket text stays as it was).
+    expect(summary().outerHTML).toBe(
+      '<div class="mt-6 rounded-xl bg-white border border-cream-100 p-4 shadow-sm"><div class="flex items-center justify-between text-sm"><span class="text-slate-600">Subtotal</span><span class="font-semibold text-slate-900">£3.00</span></div><div class="mt-2 flex items-center justify-between text-sm"><span class="text-slate-600">Delivery</span><span class="font-semibold text-slate-900">from £3.50</span></div><p class="mt-1 text-xs text-slate-600">Added at checkout, where collection is free and delivery is free over £25.00.</p></div>'
+    )
   })
 })

@@ -8,6 +8,7 @@ import { SafeImage } from "@/components/ui/safe-image"
 import { BasketLineAllergens, useCatalogueIndex } from "@/components/storefront/basket-line-allergens"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
 import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
+import { SINGLE_OPTION_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
 import publicApiClient from "@/lib/public-api-client"
 import type { PublicShop } from "@/types/storefront"
 
@@ -80,6 +81,10 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
   // a shop that has never set one renders no delivery line at all rather than a
   // confident "£0.00".
   const deliveryFeeKnown = shop != null && shop.deliveryFeePennies != null
+  // 37-50 (2.9 item 2, UXT-023): the one type the shop takes, read as the header and checkout read it.
+  // Collection-only: no delivery line at all, checkout's single-option sentence instead. Delivery-only:
+  // the fee line stays, without the promise of a free collection the shop does not offer.
+  const onlyFulfilment = onlyOfferedType(shop)
   // The same arithmetic the floating bar and checkout call (#718 F-3), so the
   // three screens cannot quote three different shortfalls for one basket.
   const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
@@ -198,7 +203,10 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
           <span className="text-slate-600">Subtotal</span>
           <span className="font-semibold text-slate-900">{formatPrice(totalPennies)}</span>
         </div>
-        {deliveryFeeKnown && (
+        {onlyFulfilment === "COLLECTION" && (
+          <p className="mt-2 text-xs text-slate-600">{SINGLE_OPTION_COPY.COLLECTION}</p>
+        )}
+        {deliveryFeeKnown && onlyFulfilment !== "COLLECTION" && (
           <>
             <div className="mt-2 flex items-center justify-between text-sm">
               <span className="text-slate-600">Delivery</span>
@@ -212,11 +220,23 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             </div>
             {previewedDeliveryPennies > 0 && (
               <p className="mt-1 text-xs text-slate-600">
-                Added at checkout, where collection is free
-                {shop?.freeDeliveryThresholdPennies != null
-                  ? ` and delivery is free over ${formatPrice(shop.freeDeliveryThresholdPennies)}`
-                  : ""}
-                .
+                {onlyFulfilment === "DELIVERY" ? (
+                  <>
+                    Added at checkout
+                    {shop?.freeDeliveryThresholdPennies != null
+                      ? `, where delivery is free over ${formatPrice(shop.freeDeliveryThresholdPennies)}`
+                      : ""}
+                    .
+                  </>
+                ) : (
+                  <>
+                    Added at checkout, where collection is free
+                    {shop?.freeDeliveryThresholdPennies != null
+                      ? ` and delivery is free over ${formatPrice(shop.freeDeliveryThresholdPennies)}`
+                      : ""}
+                    .
+                  </>
+                )}
               </p>
             )}
           </>

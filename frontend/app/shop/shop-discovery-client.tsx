@@ -15,6 +15,7 @@ import {
 } from "@/lib/public-fetch-retry"
 import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
 import { formatMiles } from "@/lib/distance"
+import { ONLY_CHIP_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
 import {
   PROXIMITY_EXCLUSION_NOTE,
   SEARCH_INTERPRETATION_HEADER,
@@ -162,7 +163,13 @@ function ShopCard({ shop }: { shop: PublicShop }) {
                 behaviour on this surface, kept as-is when the wire type went
                 nullable (review WR-04 fixed the landing card; this listing's
                 null-as-free rendering is its own recorded question). */}
-            {shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
+            {/* 37-50 (2.9 item 2, UXT-023): a shop that does not deliver quotes no delivery fee or
+                threshold here, and says "Collection only" in the shop header's own words. The flags are
+                read through lib/fulfilment-offered.ts like every other customer surface; a shop taking
+                both (or a flag-less payload) renders the fee line exactly as before. */}
+            {onlyOfferedType(shop) === "COLLECTION" ? (
+              <span className="text-slate-600">{ONLY_CHIP_COPY.COLLECTION}</span>
+            ) : shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
               <span className="text-slate-600">
                 Delivery {formatPennies(shop.deliveryFeePennies)}
                 {shop.freeDeliveryThresholdPennies && (
