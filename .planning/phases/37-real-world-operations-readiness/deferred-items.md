@@ -729,8 +729,8 @@ where it must be resolved.
 
 ## From 37-47 (the 37-E gate, Task 3, live)
 
-- **An integrator can order a product the shop has switched off; through MCP it lands PENDING in the kitchen (found in 37-47, open, decide before the 37-E PR merges).**
-  status: open
+- **An integrator can order a product the shop has switched off; through MCP it lands PENDING in the kitchen (found in 37-47). RESOLVED, measured at the 37-53 gate:** on the rebuilt runtime a vendor `POST /api/v1/orders` with a switched-off product answers `409 errors/product-unavailable` ("Product '…' is switched off at this shop and cannot be ordered") and MCP `create_order` returns `isError` with `core 409 Product Unavailable`; 0 orders written either way, and the same MCP call with an available product creates a PENDING order (the control, cancelled). `ProductUnavailableException` arrived with PR 920 (`d6c3d308`). Evidence `37-53-goods-40.md` (P2-KYL-P3).
+  status: resolved
   **What:** `OrderService.createOrder` checks stock quantity but not `available`; origin/main has no `getAvailable`
   check there either, so the vendor/REST DRAFT path has always accepted an unavailable product. Since 37-42 an MCP
   `create_order` submits, so the order goes straight to the New lane with no vendor review: measured live as
@@ -832,3 +832,39 @@ where it must be resolved.
   **Suggested fix:** reword the comment to "the first Tab lands on 'Got it' while the cookie notice shows, and on
   'Skip to main content' otherwise; the axe gate asserts the first link outside the notice host is the skip link".
   Comment only; no statement text, test or count changes.
+
+## From 37-53 (the 37-F gate, Task 3, live)
+
+- **Signed out, the storefront header scrolls 4 px sideways at 360 px with 130% text, and the F6 document check passes only by timing (found in 37-53, open).**
+  status: open
+  **What:** at 360x740 with `html{font-size:130%}` (the UXT-080 / Grace condition) a signed-OUT customer's
+  storefront pages measure `document.scrollWidth/clientWidth` **364/360** on the menu, the basket and checkout. The
+  offender is the header row: logo, basket link (43 px), "Sign in" (96 px) and "Open menu" (52 px) at 130%; the
+  fixed cookie notice and toast list only follow the widened document. Signed IN (a profile control instead of
+  "Sign in") the same pages measure 360/360, which is why the persona good P2-GRA-24 (Grace was signed in) holds.
+  37-52's `a11y-storefront.spec.ts` F6 test calls its `clippedText` document check immediately after
+  `largeTextNarrow`, while the basket link is still mid-`transition-all` (33 px, 43 px once settled): at that
+  moment the document reads 360/360, 300 ms later 364/360, measured twice. A customer whose phone font is large
+  loads the page at 130% from the first paint and sees the settled 364. The only 37-F change to that row is
+  37-52's `sr-only` live region, which is absolutely positioned and takes no flex space; and the overflow is
+  MEASURED to predate 37-F: the frontend built at `b68f0505` (main + 37-G, before 37-51) and run on a side port
+  reads the same 364/360 on the menu, basket and checkout, signed out. Not a 37-F regression. UI-SPEC F6 asks for no horizontal
+  overflow on the basket and the shop header at this condition (RWO-080 / UXT-080). Evidence
+  `37-53-gate-37F.md` 2.9.
+  **Suggested fix:** let the header row fit at 360/130 (for example a smaller gap and padding below `sm`, or an
+  icon-only "Sign in" with its accessible name kept), and make `largeTextNarrow` wait for the layout to settle
+  (`document.getAnimations()` finished, or a frame after `transitionend`) so the F6 document check is RED before the
+  fix and GREEN after; screens at 360/390 signed out and signed in.
+
+- **REGRESSION from 37-51: at the default text size `/track`'s step labels break mid-word on 360 and 390 px phones (found in 37-53, open, decide before the 37-F PR merges).**
+  status: open
+  **What:** 37-51 (`2fcdd468`) added `min-w-0` to each tracker column and `hyphens-auto [overflow-wrap:anywhere]`
+  to each label, so 130% text fits at 360 px. `overflow-wrap:anywhere` shrinks each label's minimum width to one
+  character, so at the DEFAULT size "Confirmed" and "Completed" break across two lines at 390 px ("Preparing" too at
+  360); at 130% all four long labels break. With the pre-37-51 label behaviour restored by CSS, no label breaks at
+  the default size and the page is 423 px wide at 130% (Grace's P2-GRA-10 reading, so the A/B reproduces the
+  original defect). The F6 probe checks overflow and ellipsis, not broken words, so it is green. Evidence
+  `37-53-gate-37F.md` 2.9 item 0, screen `37-53-screens/goods-uk-midnight-track-390.png`.
+  **Suggested fix:** wrap between words only and change the layout (vertical, as the order page's tracker, or two
+  rows) or the label size below the width where one-word labels stop fitting; assert "no single-word label spans two
+  lines" at 360/390 default and 130%, red first.
