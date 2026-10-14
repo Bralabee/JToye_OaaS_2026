@@ -201,11 +201,17 @@ export function RejectOrdersDialog({
   const [failure, setFailure] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>("confirm")
   const [counts, setCounts] = useState<RejectCounts | null>(null)
+  // The orders as submitted. The summary describes THESE: the caller's list refreshes live while
+  // the summary is open (each rejection is an order event), so its selection soon holds no
+  // PENDING order and the heading would read "Reject 0 orders?" above "2 rejected." (#683).
+  const [submitted, setSubmitted] = useState<ReadonlyArray<RejectableOrder> | null>(null)
   const reasonId = useId()
   const reasonLabelId = useId()
-  const count = orders.length
+  const shown = phase === "summary" && submitted ? submitted : orders
+  const count = shown.length
 
   const reset = () => {
+    setSubmitted(null)
     setReason("")
     setFailure(null)
     setPhase("confirm")
@@ -236,6 +242,7 @@ export function RejectOrdersDialog({
     if (!reason || pending || count === 0) return
     setPending(true)
     setFailure(null)
+    setSubmitted(orders)
     try {
       const res = await apiClient.post<BulkCancelResponse>(BULK_CANCEL_ENDPOINT, {
         orderIds: orders.map((o) => o.id),
@@ -256,7 +263,7 @@ export function RejectOrdersDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{rejectTitleCopy(orders)}</DialogTitle>
+          <DialogTitle>{rejectTitleCopy(shown)}</DialogTitle>
           <DialogDescription>{rejectBodyCopy(count)}</DialogDescription>
         </DialogHeader>
 

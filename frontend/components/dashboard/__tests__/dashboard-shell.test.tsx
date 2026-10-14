@@ -212,13 +212,30 @@ describe("DashboardShell — the Shell width tier", () => {
     expect(renderBand()).toHaveClass(kept)
   })
 
-  it("keeps the footer and its legal line inside the band", () => {
+  /**
+   * The footer moved OUT of the band (nightly #683): inside it, it was painted under a
+   * still-loading page and pushed down when the data arrived (CLS 0.09), and a wrapper
+   * around the children instead would have made the page root's parent unpadded, which
+   * layout-width-contract's Index check exists to catch. The good the ledger kept, a legal
+   * footer at the band's width and padding, is kept by a twin container directly after it.
+   */
+  it("keeps the footer and its legal line in a container of the band's tier, directly after it", () => {
     const band = renderBand()
-    const footer = band.querySelector("footer")
-    expect(footer).not.toBeNull()
-    expect(
-      within(band).getByRole("link", { name: /legal & company information/i })
-    ).toBeInTheDocument()
+    expect(band.querySelector("footer")).toBeNull()
+    const twin = band.nextElementSibling as HTMLElement | null
+    expect(twin).not.toBeNull()
+    expect(twin).toHaveClass("mx-auto", "w-full", WIDTH_TIER_CLASS.shell, "px-4", "sm:px-8", "pb-20", "md:pb-8")
+    expect(twin!.querySelector("footer")).not.toBeNull()
+    expect(within(twin!).getByRole("link", { name: /legal & company information/i })).toBeInTheDocument()
+  })
+
+  it("fills <main>'s visible height, so the footer starts at the viewport bottom (nightly #683)", () => {
+    const band = renderBand()
+    expect(band).toHaveClass("grow", "shrink-0", "w-full")
+    expect(band.nextElementSibling).toHaveClass("shrink-0")
+    expect(screen.getByTestId("mobile-topbar")).toHaveClass("shrink-0")
+    expect(band.parentElement).toHaveAttribute("id", "main")
+    expect(band.parentElement).toHaveClass("flex", "flex-col")
   })
 
   it("renders its children inside the band, not beside it", () => {

@@ -20,6 +20,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import OrdersPage from "@/app/dashboard/orders/page"
 import apiClient from "@/lib/api-client"
+import { useOrderEvents } from "@/hooks/use-order-events"
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -224,6 +225,44 @@ describe("Orders page: rejecting the selection through RejectOrdersDialog (SC-4)
     expect(listReadsAfter).toBe(listReadsBefore + 1)
     await screen.findByText("ORD-p1")
     expect(bar()).toBeNull()
+  })
+
+  it("a live order event while the summary is open refreshes the list in place: the summary stays and no spinner replaces the page (nightly #683)", async () => {
+    // The bulk reject itself emits one order event per cancelled order on the SSE stream. The
+    // event handler used to run the full fetchData, whose spinner unmounted the page and the
+    // dialog with it; the dialog came back in its confirm phase over a selection now filtered to
+    // nothing ("Reject 0 orders?"), so the summary was lost (abuse-bounds.spec.ts on mobile).
+    let onEvent: (() => void) | undefined
+    ;(useOrderEvents as jest.Mock).mockImplementation((cb: () => void) => {
+      onEvent = cb
+    })
+    stubList([orderRow("p1", "PENDING"), orderRow("p2", "PENDING")])
+    mockedApiClient.post.mockResolvedValue({
+      data: { results: [{ orderId: "p1", outcome: "REJECTED" }, { orderId: "p2", outcome: "REJECTED" }] },
+    })
+    render(<OrdersPage />)
+    await screen.findByText("ORD-p1")
+    fireEvent.click(selectAll() as HTMLElement)
+    fireEvent.click(within(bar() as HTMLElement).getByRole("button", { name: "Reject 2 orders" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "SUSPECTED_FAKE" } })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Reject 2 orders" }))
+    })
+    await within(dialog).findByRole("status")
+
+    // The stream now reports the two cancellations; the server list says so too.
+    stubList([orderRow("p1", "CANCELLED"), orderRow("p2", "CANCELLED")])
+    expect(onEvent).toBeDefined()
+    await act(async () => {
+      onEvent!()
+    })
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent("2 rejected.")
+    expect(screen.queryByText("Reject 0 orders?")).toBeNull()
+    // The list behind it was re-read and still rendered (no spinner swap).
+    expect(screen.getByText("ORD-p1")).toBeInTheDocument()
   })
 
   it("ticking a row's checkbox never opens the order (the row click is for the row, not the box)", async () => {
