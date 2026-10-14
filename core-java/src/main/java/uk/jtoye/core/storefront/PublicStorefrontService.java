@@ -1030,6 +1030,9 @@ public class PublicStorefrontService {
         // enum string; an unknown value is a 400, not a silent DELIVERY.
         FulfilmentType fulfilmentType = parseFulfilmentType(request.getFulfilmentType());
         order.setFulfilmentType(fulfilmentType);
+        // 37-48 (UXT-023): refuse a type the shop does not offer (422 fulfilment-not-offered), before pricing.
+        // Thrown inside the reserved idempotency work, so the reservation rolls back with the order.
+        FulfilmentPolicy.requireOffered(shop, fulfilmentType);
         // Conditional-required: a delivery order MUST carry a UK address. COR-1 moved the
         // check itself into FulfilmentPolicy so the vendor/REST/MCP path raises the identical
         // message; the message text is unchanged.

@@ -240,6 +240,9 @@ public class OrderService {
         FulfilmentType fulfilmentType =
                 FulfilmentPolicy.resolve(request.getFulfilmentType(), FulfilmentType.COLLECTION);
         order.setFulfilmentType(fulfilmentType);
+        // 37-48 (UXT-023): a type the shop does not offer is a typed 422 here exactly as on the storefront.
+        // Checked after resolve, so the COLLECTION fallback is refused by a delivery-only shop too.
+        FulfilmentPolicy.requireOffered(shop, fulfilmentType);
         FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
                 request.getAddressCity(), request.getAddressPostcode());
         if (fulfilmentType == FulfilmentType.DELIVERY) {

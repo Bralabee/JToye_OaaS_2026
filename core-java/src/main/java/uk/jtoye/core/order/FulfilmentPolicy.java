@@ -1,5 +1,10 @@
 package uk.jtoye.core.order;
 
+import uk.jtoye.core.exception.FulfilmentNotOfferedException;
+import uk.jtoye.core.shop.Shop;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -9,6 +14,7 @@ import java.util.Locale;
  * <p>Modelled on {@link uk.jtoye.core.finance.VatCalculator} — the project's established shape for
  * "single source of truth for a money rule": a final class of pure static functions, no state, no
  * dependencies, so both order-creation paths can reach it and neither can drift from the other.
+ * 37-48 added the fourth rule, {@link #requireOffered}: which fulfilment types the shop takes.
  *
  * <h2>Why this exists</h2>
  *
@@ -120,10 +126,32 @@ public final class FulfilmentPolicy {
     }
 
     /**
-     * 37-48 (UXT-023): refuse a fulfilment type the shop does not offer. RED skeleton: no check yet.
+     * Refuse a fulfilment type the shop does not offer (Phase 37-48, RWO-023 / UXT-023). Both writers call
+     * this right after {@link #resolve}, so a collection-only shop refuses DELIVERY on the storefront AND on
+     * the vendor / REST / MCP path; a check on one door only is the gap this exists to close.
+     *
+     * <p>A null flag reads as OFFERED: it is the V83 default (every shop took both types before V83), and an
+     * unset flag must never become a silent refusal. The database keeps at least one flag true
+     * ({@code ck_shops_offers_some}), so the offered list in the refusal is never empty in practice.
+     *
+     * @throws FulfilmentNotOfferedException (422 {@code fulfilment-not-offered}) naming the offered types
      */
-    public static void requireOffered(uk.jtoye.core.shop.Shop shop, FulfilmentType fulfilmentType) {
-        // RED skeleton (37-48 Task 1): the rule arrives in the GREEN commit.
+    public static void requireOffered(Shop shop, FulfilmentType fulfilmentType) {
+        if (offers(shop, fulfilmentType)) {
+            return;
+        }
+        List<FulfilmentType> offered = new ArrayList<>();
+        for (FulfilmentType type : FulfilmentType.values()) {
+            if (offers(shop, type)) {
+                offered.add(type);
+            }
+        }
+        throw new FulfilmentNotOfferedException(fulfilmentType, offered);
+    }
+
+    private static boolean offers(Shop shop, FulfilmentType type) {
+        Boolean flag = type == FulfilmentType.DELIVERY ? shop.getOffersDelivery() : shop.getOffersCollection();
+        return !Boolean.FALSE.equals(flag);
     }
 
     private static boolean isBlank(String s) {
