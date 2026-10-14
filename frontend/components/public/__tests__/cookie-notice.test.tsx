@@ -22,6 +22,7 @@ import { axe, toHaveNoViolations } from "jest-axe"
 
 import { CookieNotice } from "@/components/public/cookie-notice"
 import { ConsentBanner } from "@/components/public/consent-banner"
+import { BOTTOM_NOTICE_HOST_ATTR } from "@/components/public/bottom-notice-shell"
 import { BOTTOM_CHROME_VAR } from "@/hooks/use-bottom-chrome-height"
 import {
   COOKIE_NOTICE_ACK_KEY,
@@ -299,14 +300,14 @@ describe("the dormant consent banner", () => {
     // two copies and only one got fixed". So this asserts the thing that
     // actually prevents recurrence: both surfaces resolve to the same wrapper
     // contract. A future edit to one alone reds here.
-    const noticeWrapper = render(<CookieNotice />).container.querySelector(
-      '[aria-label="Cookie notice"]'
-    )
+    // 37-52: both surfaces now portal to a host at the start of <body> (F5), so they are found in the
+    // document rather than in each render's container.
+    render(<CookieNotice />)
+    const noticeWrapper = document.querySelector('[aria-label="Cookie notice"]')
     const unregister = register(FIXTURE)
     try {
-      const bannerWrapper = render(<ConsentBanner />).container.querySelector(
-        '[aria-label="Cookie choices"]'
-      )
+      render(<ConsentBanner />)
+      const bannerWrapper = document.querySelector('[aria-label="Cookie choices"]')
       expect(noticeWrapper).not.toBeNull()
       expect(bannerWrapper).not.toBeNull()
       expect(bannerWrapper!.className).toBe(noticeWrapper!.className)
@@ -369,7 +370,11 @@ describe("the dormant consent banner", () => {
 
 describe("accessibility", () => {
   it("reports zero axe violations, with a non-vacuity control asserted first", async () => {
-    const { container } = render(<CookieNotice />)
+    render(<CookieNotice />)
+    // 37-52 (F5): the notice is portalled into a host at the start of <body>; the scan runs over that
+    // host, which holds the notice and nothing else.
+    const container = document.querySelector(`[${BOTTOM_NOTICE_HOST_ATTR}]`) as HTMLElement
+    expect(container).not.toBeNull()
 
     // NON-VACUITY CONTROL. A clean axe run over a tree that never mounted is
     // the historical false zero this project has already paid for once. Prove

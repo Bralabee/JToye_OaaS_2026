@@ -1,6 +1,7 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { m } from "framer-motion"
 
 import { cn } from "@/lib/utils"
@@ -57,6 +58,27 @@ import { BOTTOM_CHROME_VAR } from "@/hooks/use-bottom-chrome-height"
  * (4) as a CLASS" and that was stronger than the mechanism.
  */
 
+/**
+ * ── FOCUS IS NEVER HIDDEN BEHIND IT (37-52, UI-SPEC F5, UXT-085, WCAG 2.2 SC 2.4.11) ──────────────
+ * Mounted at the end of the root layout, the notice was the LAST thing in the document: on a phone a
+ * keyboard customer tabbed through the whole page BEHIND the card and reached "Got it" at the 32nd
+ * stop. So the shell now does two things for every bottom notice:
+ *
+ *  - DOM ORDER. The section is portalled into a host PREPENDED to <body>, so it is the first thing a
+ *    keyboard or a screen reader meets wherever the notice is mounted (the GOV.UK cookie-banner
+ *    position, before the skip link). `fixed` keeps the VISUAL position exactly as before, and still
+ *    out of flow, so the zero-CLS property is untouched. The host is created after mount and removed
+ *    with the notice; neither caller renders on the server.
+ *  - SCROLL PADDING. While the notice shows, `scroll-padding-bottom` on the document equals the band
+ *    it covers (viewport bottom up to the notice's top edge, so the published bottom-chrome offset
+ *    is included), and the browser scrolls a focused element clear of it. Re-measured by a
+ *    ResizeObserver on the notice, on window resize, when the entrance animation settles, and when
+ *    the bottom-chrome offset changes; removed (the previous inline value restored) when it goes.
+ */
+
+/** Marks the host element the notice is portalled into (first child of <body>). */
+export const BOTTOM_NOTICE_HOST_ATTR = "data-bottom-notice-host"
+
 /** The positioning wrapper: full-bleed, transparent to the pointer. */
 export const BOTTOM_NOTICE_WRAPPER_CLASS = "fixed inset-x-0 z-40 pointer-events-none"
 
@@ -87,8 +109,55 @@ export function BottomNoticeShell({
   cardClassName?: string
   children: ReactNode
 }) {
-  return (
+  // The host <body>'s first child. Created after mount: the notice never server-renders, and the
+  // host must not outlive it.
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    const el = document.createElement("div")
+    el.setAttribute(BOTTOM_NOTICE_HOST_ATTR, "")
+    document.body.prepend(el)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the host exists only after mount (DOM API)
+    setHost(el)
+    return () => el.remove()
+  }, [])
+
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const measureRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    const section = sectionRef.current
+    if (!host || !section) return
+    const root = document.documentElement
+    const previous = root.style.scrollPaddingBottom
+    const measure = () => {
+      const band = Math.max(0, Math.ceil(window.innerHeight - section.getBoundingClientRect().top))
+      const next = `${band}px`
+      // Written only on a change: the style-attribute observer below would otherwise re-fire on
+      // its own write.
+      if (root.style.scrollPaddingBottom !== next) root.style.scrollPaddingBottom = next
+    }
+    measureRef.current = measure
+    measure()
+    const resize = new ResizeObserver(measure)
+    resize.observe(section)
+    // The bottom-chrome offset (the cart bar, the tab bar) is published on <html>'s style and moves
+    // the notice without resizing it.
+    const offset = new MutationObserver(measure)
+    offset.observe(root, { attributes: true, attributeFilter: ["style"] })
+    window.addEventListener("resize", measure)
+    return () => {
+      measureRef.current = () => {}
+      resize.disconnect()
+      offset.disconnect()
+      window.removeEventListener("resize", measure)
+      root.style.scrollPaddingBottom = previous
+    }
+  }, [host])
+
+  if (!host) return null
+
+  return createPortal(
     <m.section
+      ref={sectionRef}
       aria-label={label}
       // 200ms fade + 8px translate-Y. framer-motion rather than a CSS
       // transition because `MotionConfig reducedMotion="user"`
@@ -98,10 +167,14 @@ export function BottomNoticeShell({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
+      // The entrance slide is a transform, which a ResizeObserver does not see: measure once more
+      // when it settles so the padding is the band at rest.
+      onAnimationComplete={() => measureRef.current()}
       className={BOTTOM_NOTICE_WRAPPER_CLASS}
       style={{ bottom: `var(${BOTTOM_CHROME_VAR}, 0px)` }}
     >
       <div className={cn(BOTTOM_NOTICE_CARD_CLASS, cardClassName)}>{children}</div>
-    </m.section>
+    </m.section>,
+    host
   )
 }

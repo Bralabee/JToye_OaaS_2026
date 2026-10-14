@@ -656,7 +656,10 @@ export function ShopDetailClient({
               />
             </div>
             <div className="min-w-0 pb-1">
-              <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
+              {/* 37-52 (UI-SPEC F6, UXT-080): the shop's name wraps (breaking a long word if it must)
+                  instead of ending in an ellipsis at 360px with 130% text. The overlay is anchored
+                  to the banner's bottom edge, so extra lines grow upward into the banner. */}
+              <h1 className="text-xl sm:text-2xl font-bold text-white break-words">
                 {shop.name}
               </h1>
               {/* 37-49: flex-wrap (planner assumption for the UI-SPEC G1 375px overflow row): with the
