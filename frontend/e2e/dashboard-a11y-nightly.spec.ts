@@ -94,7 +94,12 @@ const CONTROLLED_ROUTES: ControlledRoute[] = [
     route: "/dashboard/kitchen",
     control: "the kitchen New lane region and its 'New orders' heading",
     ready: async (page) => {
-      const lane = page.locator('[data-testid="kds-new-lane"]')
+      // `visible: true`: while the board streams in, React keeps a second copy of the lane in a
+      // hidden staging div (`<div hidden id="S:0">`, 0x0, gone within ~300 ms). A bare locator then
+      // resolves to 2 elements, strict mode throws, and the lane is reported "control failed, not
+      // scanned" on every run (measured at the 37-53 gate, both projects). Only the visible copy is
+      // the lane a person sees; axe's `include` below runs after it, when the staging copy is gone.
+      const lane = page.locator('[data-testid="kds-new-lane"]').filter({ visible: true })
       await lane.waitFor({ state: "visible", timeout: 15_000 })
       await lane.getByRole("heading", { name: "New orders" }).waitFor({ state: "visible", timeout: 15_000 })
     },
