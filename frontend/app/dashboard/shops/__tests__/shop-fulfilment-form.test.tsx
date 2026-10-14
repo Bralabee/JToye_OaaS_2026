@@ -262,3 +262,63 @@ describe("'How customers get their order' (UI-SPEC G1, zero-one-many)", () => {
     expect(deliveryBox()).toHaveClass("h-6", "w-6")
   })
 })
+
+describe("the web address (UI-SPEC G2, UXT-028)", () => {
+  it("the create dialog previews the address the server will generate from the name, before anything is saved", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openCreate()
+    // No name yet: nothing to preview, so no invented address.
+    expect(within(dialog).queryByTestId("web-address-preview")).not.toBeInTheDocument()
+    await type(within(dialog).getByLabelText("Shop Name *"), "Rosie's  Kitchen & Bar!")
+    const preview = within(dialog).getByTestId("web-address-preview")
+    // ShopService.generateSlug: lower-case, drop everything but [a-z0-9 whitespace -], whitespace runs
+    // to one hyphen, then a random 8-character code the browser cannot know.
+    expect(preview).toHaveTextContent("/shop/rosies-kitchen-bar-")
+    expect(preview).toHaveClass("font-mono", "text-sm", "break-all")
+    expect(
+      within(dialog).getByText("A short code is added to the end when the shop is created, so no two shops share an address.")
+    ).toBeInTheDocument()
+    // The create dialog keeps auto-generation: no change control, no input.
+    expect(within(dialog).queryByRole("button", { name: "Change web address" })).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText("New web address")).not.toBeInTheDocument()
+  })
+
+  it("a name with no usable characters shows no preview", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openCreate()
+    await type(within(dialog).getByLabelText("Shop Name *"), "!!!")
+    expect(within(dialog).queryByTestId("web-address-preview")).not.toBeInTheDocument()
+  })
+
+  it("the edit dialog has no create preview; it shows the stored address read-only", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+    expect(within(dialog).queryByTestId("web-address-preview")).not.toBeInTheDocument()
+    expect(within(dialog).getByText("/shop/rosies-kitchen-019835a3")).toBeInTheDocument()
+  })
+
+  it("saving the edit dialog with the fee fields changed but the address untouched sends no slug", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+    await type(within(dialog).getByLabelText("Delivery fee (£)"), "1.99")
+    await click(collectionBox())
+    await click(screen.getByRole("button", { name: "Update Shop" }))
+    const body = sentBody()
+    expect(body).not.toHaveProperty("slug")
+    expect(body.deliveryFeePennies).toBe(199)
+  })
+
+  it("long-text and overflow (planner assumption): the read-only address breaks anywhere and the link sits on its own line below sm", async () => {
+    const longSlug = "the-very-long-named-west-african-kitchen-and-grill-on-coldharbour-lane-brixton-0198a3b4"
+    stubShops({ ...KITCHEN, slug: longSlug })
+    const dialog = await openEdit("Rosie's Kitchen")
+    const address = within(dialog).getByText(`/shop/${longSlug}`)
+    expect(address).toHaveClass("break-all", "font-mono", "text-sm")
+    const row = address.parentElement as HTMLElement
+    // flex-col below sm puts "Change web address" under the address; sm:flex-row restores one line.
+    expect(row).toHaveClass("flex-col", "sm:flex-row")
+    expect(row).toContainElement(within(dialog).getByRole("button", { name: "Change web address" }))
+    // No truncation anywhere up the row: the whole address stays readable.
+    expect(address.className).not.toMatch(/truncate|whitespace-nowrap/)
+  })
+})
