@@ -220,11 +220,11 @@ that mints these IDs) declares all 35 and is omitted from the traceability rows.
 **37-F Accessibility (P2, kept in by D-05)**
 
 - [ ] **RWO-080**: #849 — At 130% root text on a 360 px viewport the basket, tracker and shop header wrap rather than truncate or overflow.
-- [ ] **RWO-081**: #850 — Tracking pages announce each status change through a live region, mark the current step with `aria-current="step"`, and label the copy button and the lookup field.
-- [ ] **RWO-082**: #851 — Every shop card link on the kitchen list has an accessible name in Chrome's accessibility tree.
-- [ ] **RWO-083**: #852 — After Add or Remove, focus moves to the stepper (or back to Add), and the basket announcement names the item once with the correct count.
-- [ ] **RWO-084**: #853 — Basket, checkout, confirmation and tracking each have their own page title naming the step (and the shop).
-- [ ] **RWO-085**: #854 — On mobile the cookie banner never covers the focused element and is reachable early in the tab order, not as the 32nd tab stop.
+- [x] **RWO-081**: #850 — Tracking pages announce each status change through a live region, mark the current step with `aria-current="step"`, and label the copy button and the lookup field.
+- [x] **RWO-082**: #851 — Every shop card link on the kitchen list has an accessible name in Chrome's accessibility tree.
+- [x] **RWO-083**: #852 — After Add or Remove, focus moves to the stepper (or back to Add), and the basket announcement names the item once with the correct count.
+- [x] **RWO-084**: #853 — Basket, checkout, confirmation and tracking each have their own page title naming the step (and the shop).
+- [x] **RWO-085**: #854 — On mobile the cookie banner never covers the focused element and is reachable early in the tab order, not as the 32nd tab stop.
 
 **Recorded, not planned (D-01):** UXT-049 (a double-tap skips a status; roadmap SC-1's clause moves with it), UXT-050 (mute
 survives sign-out), UXT-052 (unanswered orders pending forever) and every other P2/P3 37-x cluster go to a 37.x follow-up
