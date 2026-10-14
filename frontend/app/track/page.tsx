@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState, useEffect, useRef } from "react"
+import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { m } from "framer-motion"
@@ -13,6 +13,7 @@ import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import { ORDER_STATUS_COPY, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
 /**
@@ -41,12 +42,14 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
   updatedAt: string
 }
 
+// Step labels from the shared copy (37-51), the same words the per-shop order page and the status
+// region use.
 const STEPS = [
-  { key: "PENDING", label: "Received", icon: Clock },
-  { key: "CONFIRMED", label: "Confirmed", icon: CircleDot },
-  { key: "PREPARING", label: "Preparing", icon: ChefHat },
-  { key: "READY", label: "Ready", icon: Package },
-  { key: "COMPLETED", label: "Completed", icon: CheckCircle2 },
+  { key: "PENDING", label: ORDER_STATUS_COPY.PENDING.label, icon: Clock },
+  { key: "CONFIRMED", label: ORDER_STATUS_COPY.CONFIRMED.label, icon: CircleDot },
+  { key: "PREPARING", label: ORDER_STATUS_COPY.PREPARING.label, icon: ChefHat },
+  { key: "READY", label: ORDER_STATUS_COPY.READY.label, icon: Package },
+  { key: "COMPLETED", label: ORDER_STATUS_COPY.COMPLETED.label, icon: CheckCircle2 },
 ]
 
 /** Statuses that are still in flight — what a shopper actually came here for. */
@@ -138,6 +141,26 @@ function TrackOrderContent() {
   })
 
   const [order, setOrder] = useState<OrderStatus | null>(null)
+  // 37-51 (UI-SPEC F1, UXT-081): the one status region's text, and the last order + status a read
+  // returned. Every read that puts an order on screen goes through showOrder, which announces only
+  // when the SAME order comes back with a DIFFERENT status. Looking an order up (or switching to
+  // another one) is not a change: it sets the baseline and clears a message about a previous order.
+  // A failed read never reaches showOrder, so it announces nothing (F1 error, planner assumption).
+  const [statusUpdate, setStatusUpdate] = useState("")
+  const lastSeen = useRef<{ orderNumber: string; status: string } | null>(null)
+  const showOrder = useCallback((next: OrderStatus) => {
+    const previous = lastSeen.current
+    lastSeen.current = { orderNumber: next.orderNumber, status: next.status }
+    if (previous && previous.orderNumber === next.orderNumber) {
+      if (previous.status !== next.status) {
+        const update = statusUpdateAnnouncement(next.status)
+        if (update) setStatusUpdate(update)
+      }
+    } else {
+      setStatusUpdate("")
+    }
+    setOrder(next)
+  }, [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // True once the page has opened itself on one of the signed-in customer's own
@@ -194,7 +217,7 @@ function TrackOrderContent() {
           return
         }
         if (trackedByNumber.current !== picked.orderNumber) {
-          setOrder(picked)
+          showOrder(picked)
           setOrderFromList(true)
         }
         setOrderNumber(picked.orderNumber)
@@ -235,7 +258,7 @@ function TrackOrderContent() {
         { params: { email: email.trim() } }
       )
       trackedByNumber.current = res.data.orderNumber
-      setOrder(res.data)
+      showOrder(res.data)
       setOrderFromList(false)
     } catch {
       setError("Order not found. Check your order number and email address.")
@@ -268,12 +291,12 @@ function TrackOrderContent() {
           { params: { email: email.trim() } }
         )
         trackedByNumber.current = res.data.orderNumber
-        setOrder(res.data)
+        showOrder(res.data)
         setOrderFromList(false)
-      } catch { /* silently fail on refresh */ }
+      } catch { /* silently fail on refresh — and announce nothing (F1) */ }
     }, 15000)
     return () => clearInterval(interval)
-  }, [order, email])
+  }, [order, email, showOrder])
 
   // 31.1-18: the customer asked for what the kitchen recorded on a list-sourced order. Same number +
   // email endpoint as the guest lookup (the email is still the proof of ownership), and only on an
@@ -287,7 +310,7 @@ function TrackOrderContent() {
         { params: { email: email.trim() } }
       )
       trackedByNumber.current = res.data.orderNumber
-      setOrder(res.data)
+      showOrder(res.data)
       setOrderFromList(false)
     } catch {
       /* keep the list entry; the NOT LOADED line and its action stay on screen */
@@ -311,6 +334,11 @@ function TrackOrderContent() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
+      {/* F1 (37-51): ONE status region, on the page from the first render (a region added together
+          with its text is often not announced), written only when the tracked order changes. */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {statusUpdate}
+      </div>
       {/* The heading belongs to whichever block is carrying the message. When
           an order was found this row states it; when there is none, the card
           below is the <h1> and this row shrinks to just the escape hatch —
@@ -496,15 +524,24 @@ function TrackOrderContent() {
           {/* Progress */}
           {!isCancelled && !isRefunded && (
             <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-1">
+              {/* F1 (37-51): an ordered list, the current step aria-current="step". F6 (UXT-080): each
+                  column may shrink (min-w-0) and its label breaks (hyphens, then anywhere), so 130%
+                  text at 360px wraps inside the card instead of pushing the row wider than it. */}
+              <ol aria-label="Order progress" className="flex items-start justify-between gap-1">
                 {STEPS.map((step, i) => {
                   const isComplete = i <= currentStep
                   const isActive = i === currentStep
                   return (
-                    <div key={step.key} className="flex flex-col items-center flex-1">
+                    <li
+                      key={step.key}
+                      data-tracker-step={step.key}
+                      aria-current={isActive ? "step" : undefined}
+                      className="flex min-w-0 flex-1 flex-col items-center"
+                    >
                       {/* Keyed on completion so a step newly reaching complete
                           remounts and springs in; active step pulses finitely. */}
                       <m.div
+                        aria-hidden="true"
                         key={`${step.key}-${isComplete}`}
                         initial={{ scale: 0.6 }}
                         animate={{ scale: isActive ? [1, 1.08, 1] : 1 }}
@@ -519,13 +556,17 @@ function TrackOrderContent() {
                       >
                         <step.icon className="h-3.5 w-3.5" />
                       </m.div>
-                      <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-900" : "text-slate-600"}`}>
+                      <p
+                        className={`mt-1 max-w-full text-center text-xs font-medium hyphens-auto [overflow-wrap:anywhere] ${
+                          isComplete ? "text-slate-900" : "text-slate-600"
+                        }`}
+                      >
                         {step.label}
                       </p>
-                    </div>
+                    </li>
                   )
                 })}
-              </div>
+              </ol>
               {/* Progress bar — scaleX from the left, animated on status change */}
               <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
                 <m.div

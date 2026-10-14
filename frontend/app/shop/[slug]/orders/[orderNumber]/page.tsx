@@ -15,6 +15,7 @@ import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-s
 import { SellerBlock } from "@/components/storefront/seller-block"
 import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { consumeJustPlaced } from "@/lib/just-placed"
+import { ORDER_STATUS_COPY, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import { asVatRate, vatRateLabel } from "@/lib/vat"
 import type { FulfilmentType } from "@/types/api"
 import type { PublicOrderAllergenRecord, PublicShop } from "@/types/storefront"
@@ -55,30 +56,18 @@ interface OrderStatus extends PublicOrderAllergenRecord {
   updatedAt: string
 }
 
+// The step words live in lib/order-status-announcement.ts, shared with /track and the status
+// region (37-51), so the tracker and the announcement can never name a step differently.
 const STEPS = [
-  { key: "PENDING", label: "Received", icon: Clock, desc: "Order sent to shop" },
-  { key: "CONFIRMED", label: "Confirmed", icon: CircleDot, desc: "Shop accepted your order" },
-  { key: "PREPARING", label: "Preparing", icon: ChefHat, desc: "Being prepared now" },
-  { key: "READY", label: "Ready", icon: Package, desc: "Ready for collection" },
-  { key: "COMPLETED", label: "Completed", icon: CheckCircle2, desc: "Order complete" },
+  { key: "PENDING", ...ORDER_STATUS_COPY.PENDING, icon: Clock },
+  { key: "CONFIRMED", ...ORDER_STATUS_COPY.CONFIRMED, icon: CircleDot },
+  { key: "PREPARING", ...ORDER_STATUS_COPY.PREPARING, icon: ChefHat },
+  { key: "READY", ...ORDER_STATUS_COPY.READY, icon: Package },
+  { key: "COMPLETED", ...ORDER_STATUS_COPY.COMPLETED, icon: CheckCircle2 },
 ]
 
 /** Statuses no further update can follow — the poller stops on these (INT-8). */
 const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "REFUNDED"]
-
-/**
- * 37-51 (UI-SPEC F1, UXT-081): what the status region says when a poll finds the order has MOVED
- * ON — "Order update: {label}. {description}." The tracker's own words for the five steps, plus the
- * two terminal states the tracker does not draw (they get their own panels below). Any other status
- * (an enum value this page does not know) announces nothing rather than an invented sentence.
- */
-function statusUpdateAnnouncement(status: string): string | null {
-  const step = STEPS.find((s) => s.key === status)
-  if (step) return `Order update: ${step.label}. ${step.desc}.`
-  if (status === "CANCELLED") return "Order update: Cancelled. This order was cancelled."
-  if (status === "REFUNDED") return "Order update: Refunded. This order was refunded."
-  return null
-}
 
 function getStepIndex(status: string): number {
   const idx = STEPS.findIndex((s) => s.key === status)

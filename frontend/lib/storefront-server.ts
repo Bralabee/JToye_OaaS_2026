@@ -200,6 +200,22 @@ export const loadShopDetail = cache(async function loadShopDetail(
 })
 
 /**
+ * The public shop record ALONE — one upstream read — for callers that need the shop's name and
+ * nothing else: the per-step titles of the basket, checkout and order routes (37-51, UI-SPEC F4).
+ *
+ * Deliberately NOT `loadShopDetail`: that is four upstream calls (shop, menu, reviews,
+ * announcements) on public, per-client rate-limited endpoints, and a title needs one. Wrapped in
+ * `react.cache` for the same reason as `loadShopDetail` (per request, never across visitors).
+ * Same three-valued result: `notfound` only for a real 404, `defer` for anything that is not an
+ * authoritative answer.
+ */
+export const loadPublicShop = cache(async function loadPublicShop(
+  slug: string
+): Promise<StorefrontLoad<PublicShop>> {
+  return getJson<PublicShop>(`/public/shops/${encodeURIComponent(slug)}`)
+})
+
+/**
  * Slugs for the sitemap. Deliberately separate from `loadShopList` so the
  * sitemap can ask for a larger page without changing what the index page
  * fetches, and so a sitemap failure is a distinguishable empty array rather
