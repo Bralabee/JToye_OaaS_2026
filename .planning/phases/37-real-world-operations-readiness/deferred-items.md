@@ -801,3 +801,16 @@ where it must be resolved.
   read into the DTO, which does not cover an additive field whose absence the client misreads.
   **Suggested fix:** bump `v4` to `v5` in the 37-G PR (and widen the procedure's wording to additive fields a
   client depends on), or evict the `shops` region on startup. Evidence 37-50 2.9 item 1.
+
+- **A dish modal for a long-named dish scrolls with no focusable content on desktop (found in 37-52, open, not this plan's change).**
+  status: open
+  **What:** in 37-52's stub-backed goods run, with a 62-character first dish ("Jollof Rice with Fried Plantain,
+  Peppered Chicken and Coleslaw"), `public-a11y.spec.ts` "the dish detail modal has no WCAG 2.2 AA violations"
+  failed on the desktop project only with axe `scrollable-region-focusable [serious]` on the modal's
+  `.overflow-y-auto`. Identical on the pre-37-52 build (d9661e86), and gone with an 11-character name, so it is
+  content-dependent and predates this plan. The seeded demo dishes are short, which is why the live gate is green.
+  Separately, `storefront-dish-modal-a11y.spec.ts` reads at most 60 characters of the focused element's text
+  (`dialogState().activeName`), so its two focus-return arms fail on any build for a dish named over 60 characters
+  (an instrument limit, not a product defect). Evidence: `evidence/37-52-runtime-proof/run.sh`.
+  **Suggested fix:** make the modal's scroll container focusable (`tabIndex={0}` with a label) or let it hold a
+  focusable element at every length; compare full names in the spec instead of a 60-character slice.
