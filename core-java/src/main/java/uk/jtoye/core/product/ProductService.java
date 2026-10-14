@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.SqlStateExtractor;
@@ -24,6 +25,7 @@ import uk.jtoye.core.product.dto.CopyProductsRequest;
 import uk.jtoye.core.product.dto.CopyProductsResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
+import uk.jtoye.core.product.dto.ProductPatchRequest;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
@@ -34,6 +36,7 @@ import uk.jtoye.core.storage.StorageService;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -132,6 +135,8 @@ public class ProductService {
         // (body shopId). Additive to the controller's @PreAuthorize SCOPE_catalog:write.
         // STAFF is read + order-state only — a STAFF caller is denied here.
         shopAccessService.require(request.getShopId(), ShopRole.SHOP_MANAGER);
+        // 37-39 (UXT-016): refuse a contradictory trackInventory/quantityInStock pair before anything is built.
+        validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
 
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
@@ -213,8 +218,23 @@ public class ProductService {
      */
     @Transactional(readOnly = true)
     public Page<ProductDto> getAllProducts(Pageable pageable) {
-        log.debug("Fetching all products with pagination: page={}, size={}",
-                pageable.getPageNumber(), pageable.getPageSize());
+        return listProducts(pageable, false);
+    }
+
+    /**
+     * As {@link #getAllProducts(Pageable)}, only products on sale ({@code available = true}), filtered in
+     * the query (Phase 37-42, RWO-040 / UXT-040: {@code GET /products?availableOnly=true}, the MCP
+     * {@code list_products} filter). The same read scope: GROUP_ADMIN the tenant, a scoped user their
+     * granted shops plus legacy tenant-wide products, an ungranted user nothing.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductDto> getAvailableProducts(Pageable pageable) {
+        return listProducts(pageable, true);
+    }
+
+    private Page<ProductDto> listProducts(Pageable pageable, boolean availableOnly) {
+        log.debug("Fetching all products with pagination: page={}, size={}, availableOnly={}",
+                pageable.getPageNumber(), pageable.getPageSize(), availableOnly);
         // VSA-02 (D-01): read-scope to the caller's grant set at the QUERY. GROUP_ADMIN
         // sees the whole tenant; a scoped user sees granted-shop products PLUS legacy
         // tenant-wide (shop_id IS NULL) products (WR-08 read half, plan 23-10); a
@@ -222,7 +242,7 @@ public class ProductService {
         // is deliberately kept so the null-shop policy did NOT widen to "everyone sees
         // tenant-wide products").
         if (shopAccessService.isGroupAdmin()) {
-            return productRepository.findAll(pageable)
+            return (availableOnly ? productRepository.findByAvailableTrue(pageable) : productRepository.findAll(pageable))
                     .map(productMapper::toDto)
                     .map(this::resolveAssetFirst);
         }
@@ -232,7 +252,9 @@ public class ProductService {
         }
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
-        return productRepository.findTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable)
+        return (availableOnly
+                        ? productRepository.findAvailableTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable)
+                        : productRepository.findTenantScopedInGrantSetOrTenantWide(tenantId, granted, pageable))
                 .map(productMapper::toDto)
                 .map(this::resolveAssetFirst);
     }
@@ -252,10 +274,25 @@ public class ProductService {
      */
     @Transactional(readOnly = true)
     public Page<ProductDto> getProductsByShop(UUID shopId, Pageable pageable) {
-        log.debug("Fetching products for shop {} with pagination: page={}, size={}",
-                shopId, pageable.getPageNumber(), pageable.getPageSize());
+        return listProductsByShop(shopId, pageable, false);
+    }
+
+    /**
+     * As {@link #getProductsByShop(UUID, Pageable)}, only products on sale, filtered in the query (Phase
+     * 37-42, RWO-040 / UXT-040: "show me one shop's menu"). Same STAFF gate on the shop.
+     */
+    @Transactional(readOnly = true)
+    public Page<ProductDto> getAvailableProductsByShop(UUID shopId, Pageable pageable) {
+        return listProductsByShop(shopId, pageable, true);
+    }
+
+    private Page<ProductDto> listProductsByShop(UUID shopId, Pageable pageable, boolean availableOnly) {
+        log.debug("Fetching products for shop {} with pagination: page={}, size={}, availableOnly={}",
+                shopId, pageable.getPageNumber(), pageable.getPageSize(), availableOnly);
         shopAccessService.require(shopId, ShopRole.STAFF);
-        return productRepository.findByShopId(shopId, pageable)
+        return (availableOnly
+                        ? productRepository.findByShopIdAndAvailableTrue(shopId, pageable)
+                        : productRepository.findByShopId(shopId, pageable))
                 .map(productMapper::toDto)
                 .map(this::resolveAssetFirst);
     }
@@ -363,9 +400,13 @@ public class ProductService {
         // VSA-02 (D-02): parent-lookup — catalogue update requires SHOP_MANAGER on the
         // product's owning shop.
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
+        // 37-39 (UXT-016): refused before the mapper touches the entity, so a 400 changes nothing.
+        validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
 
-        // Update all fields via mapper (handles both core and storefront fields)
+        // Update all fields via mapper (handles both core and storefront fields). quantityInStock is
+        // IGNORE-null like every other field; the explicit tracking switch is applied after it.
         productMapper.updateEntity(request, product);
+        applyStockTracking(request.getTrackInventory(), product);
 
         // Re-parse the (possibly edited) ingredients_text and refresh the cached
         // allergen spans (PPDS, Issue #82) — keeps the persisted cache in step with
@@ -381,6 +422,80 @@ public class ProductService {
                 product.getId(), product.getSku(), product.getPricePennies());
 
         return resolveDetail(productMapper.toDto(product));
+    }
+
+    /**
+     * Phase 37-39 (RWO-016 / UXT-016, P0): {@code PATCH /products/{id}} — change stock and availability only.
+     *
+     * <p>The same gate as {@link #updateProduct} (SHOP_MANAGER on the product's own shop; the controller adds
+     * {@code SCOPE_catalog:write}). Every property other than {@code available}, {@code quantityInStock} and
+     * {@code trackInventory} is refused by name before anything is applied, and the entity is changed field by
+     * field here — never through {@link ProductMapper#updateEntity} — so no path from this body reaches the
+     * allergen mask, the emphasis spans, the may-contain mask or the ingredients. The spans are not re-parsed:
+     * the ingredients cannot have changed.
+     */
+    public ProductDto patchProduct(UUID productId, ProductPatchRequest request) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
+
+        if (!request.getUnknownProperties().isEmpty()) {
+            Map<String, String> refused = new LinkedHashMap<>();
+            for (String name : request.getUnknownProperties()) {
+                refused.put(name, "Not accepted by PATCH /products/{id}, which changes only available, "
+                        + "quantityInStock and trackInventory; use PUT to change other fields");
+            }
+            throw new InvalidRequestFieldsException(refused);
+        }
+        validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
+
+        if (request.getAvailable() != null) {
+            product.setAvailable(request.getAvailable());
+        }
+        if (request.getQuantityInStock() != null) {
+            product.setQuantityInStock(request.getQuantityInStock());
+        }
+        applyStockTracking(request.getTrackInventory(), product);
+
+        product = productRepository.saveAndFlush(product);
+        cacheEvictor.evictEntity("products", "getProductById", productId);
+
+        log.info("Patched product {} (SKU '{}'): available={}, quantityInStock={}",
+                product.getId(), product.getSku(), product.getAvailable(), product.getQuantityInStock());
+        return resolveDetail(productMapper.toDto(product));
+    }
+
+    /**
+     * Phase 37-39 (RWO-016 / UXT-016, P0): the explicit stock-tracking rule, shared by create, PUT and PATCH.
+     * A product is stock-tracked exactly when its stored {@code quantityInStock} is non-null.
+     * <ul>
+     *   <li>{@code trackInventory} null: no statement about tracking — a sent quantity sets the count, an
+     *       omitted one keeps it;</li>
+     *   <li>{@code false}: stop tracking; a quantity sent beside it contradicts the request (typed 400);</li>
+     *   <li>{@code true}: track; the quantity is required (typed 400 when absent).</li>
+     * </ul>
+     * Both refusals name {@code quantityInStock} in the {@code errors/validation} body.
+     */
+    static void validateStockTracking(Boolean trackInventory, Integer quantityInStock) {
+        if (Boolean.TRUE.equals(trackInventory) && quantityInStock == null) {
+            throw new InvalidRequestFieldsException(Map.of("quantityInStock",
+                    "quantityInStock is required when trackInventory is true"));
+        }
+        if (Boolean.FALSE.equals(trackInventory) && quantityInStock != null) {
+            throw new InvalidRequestFieldsException(Map.of("quantityInStock",
+                    "quantityInStock must be omitted when trackInventory is false (stopping tracking clears it)"));
+        }
+    }
+
+    /**
+     * Applies {@code trackInventory} after the stock count has been mapped: {@code false} clears the stored
+     * quantity (tracking off). {@code true} and null need nothing more — a true request carries its quantity
+     * ({@link #validateStockTracking}), and null keeps whatever the mapping left.
+     */
+    private static void applyStockTracking(Boolean trackInventory, Product product) {
+        if (Boolean.FALSE.equals(trackInventory)) {
+            product.setQuantityInStock(null);
+        }
     }
 
     // NOTE (Phase 24 / 24-03): `uploadImage(...)` (the synchronous store-image + return-DTO

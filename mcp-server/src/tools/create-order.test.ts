@@ -24,6 +24,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { corePost } from "../core-client.js";
 import { createOrderHandler, createOrderSchema, registerCreateOrder } from "./create-order.js";
+import { buildServer } from "../server.js";
 
 const CUSTOMER_EMAIL = "walk-in-victim@example.com";
 
@@ -44,7 +45,7 @@ const created201 = {
   ok: true as const,
   status: 201,
   contentType: "application/json",
-  body: { id: "O1", status: "DRAFT", customerEmail: CUSTOMER_EMAIL },
+  body: { id: "O1", status: "PENDING", customerEmail: CUSTOMER_EMAIL },
 };
 
 /**
@@ -83,6 +84,15 @@ describe("create_order handler", () => {
       shopId: "7f000001-0000-4000-8000-000000000002",
       items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 2 }],
     });
+  });
+
+  it("D-13 / UXT-036: always sends submit: true, so core creates the order PENDING for the kitchen", async () => {
+    vi.mocked(corePost).mockResolvedValue(created201);
+
+    await createOrderHandler("tok")(validArgs());
+
+    const [, , body] = vi.mocked(corePost).mock.calls[0]!;
+    expect(body).toHaveProperty("submit", true);
   });
 
   it("COR-1: forwards fulfilmentType + the address block verbatim in the body", async () => {
@@ -376,6 +386,42 @@ describe("create_order registered tool (in-memory MCP round trip)", () => {
     );
     // The cross-field rule does NOT promote the address to unconditionally required.
     expect(tool!.inputSchema.required).not.toContain("addressLine1");
+    await client.close();
+    await server.close();
+  });
+
+  it("D-13: the tool description states the resulting status and the kitchen lane", async () => {
+    // The REAL server factory, so "no submit_order tool" is asked of everything an agent is offered.
+    const server = buildServer("tok");
+    const client = new Client({ name: "c", version: "0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).toContain("create_order");
+    const tool = tools.find((t) => t.name === "create_order");
+    expect(tool!.description).toContain(
+      "The order is created as PENDING and appears in the kitchen's New lane",
+    );
+    // There is no separate submit step for an agent to forget (D-13: no submit_order tool).
+    expect(tools.map((t) => t.name)).not.toContain("submit_order");
+    // submit is not an agent input: the tool decides it, so it is not in the published schema.
+    expect(Object.keys(tool!.inputSchema.properties as Record<string, unknown>)).not.toContain("submit");
+    await client.close();
+    await server.close();
+  });
+
+  it("D-13: an agent cannot ask for a DRAFT - a submit: false argument is dropped and core gets submit: true", async () => {
+    const { client, server } = await connect();
+    vi.mocked(corePost).mockResolvedValue(created201);
+
+    const result = await client.callTool({
+      name: "create_order",
+      arguments: { ...validArgs(), submit: false },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const [, , body] = vi.mocked(corePost).mock.calls[0]!;
+    expect(body).toHaveProperty("submit", true);
     await client.close();
     await server.close();
   });

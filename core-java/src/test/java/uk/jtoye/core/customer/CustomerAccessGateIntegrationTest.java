@@ -640,6 +640,7 @@ class CustomerAccessGateIntegrationTest {
             authorities.add(new SimpleGrantedAuthority("ROLE_admin"));
         }
         return jwt().jwt(j -> j.subject(sub.toString())
+                        .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                         .claim("tenant_id", tenant.toString())
                         .claim("email", "user-" + sub + "@example.com"))
                 .authorities(authorities);

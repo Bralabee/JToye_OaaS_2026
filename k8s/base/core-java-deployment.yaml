@@ -601,6 +601,19 @@ spec:
             configMapKeyRef:
               name: app-config
               key: access.strict-scoping
+        # --- Human-only management (37-45, Q7 / T-37-107) ---
+        # Credential and staff management (grant, revoke, invite) is refused to every
+        # token whose azp is not the dashboard's own Keycloak client. That client is the
+        # frontend's KEYCLOAK_CLIENT_ID, so this reads the SAME app-config key the
+        # frontend Deployment does (keycloak.client-id): the two cannot drift. The
+        # application.yml default (core-api) is the local/compose client; staging and
+        # production run the frontend as `frontend`, and without this injection every
+        # person in those environments would be refused staff management.
+        - name: ACCESS_HUMAN_CLIENT_IDS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.client-id
         # --- Trusted proxies (37-24, D-19 / RWO-006) ---
         # The CIDR ranges whose X-Forwarded-For core-java believes -> application.yml
         # jtoye.security.trusted-proxies. Wired here so the overlay value (the ingress

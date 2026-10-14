@@ -146,7 +146,13 @@ interface CreateOrderArgs {
 export function createOrderHandler(bearer: string) {
   return async (args: CreateOrderArgs): Promise<CallToolResult> => {
     // Split the tool-only key OUT of the body → header (D-05): no non-idempotent path.
-    const { idempotencyKey, ...body } = args;
+    const { idempotencyKey, ...fields } = args;
+    // D-13 (Phase 37-42, UXT-036): an agent's order goes to the kitchen. `submit: true` makes core
+    // create it PENDING through the same SUBMIT transition the dashboard uses, so it lands in the
+    // New lane and emits the same state change as a storefront order. It is set HERE, after the
+    // args, and is not a tool input: an agent cannot leave an order stranded as a DRAFT nobody sees
+    // (the persona run's MCP orders never reached the kitchen). There is no submit_order tool.
+    const body = { ...fields, submit: true };
 
     try {
       const res = await corePost(CREATE_ORDER_PATH, bearer, body, {
@@ -176,7 +182,9 @@ export function registerCreateOrder(server: McpServer, bearer: string): void {
       title: "Create order",
       description:
         "Create an order for the calling tenant (RLS-scoped by the token) at a shop you " +
-        "manage. Requires a stable idempotencyKey — REUSE the same key on any retry so a " +
+        "manage. The order is created as PENDING and appears in the kitchen's New lane, where " +
+        "the vendor accepts it (it is never confirmed automatically). " +
+        "Requires a stable idempotencyKey — REUSE the same key on any retry so a " +
         "replay returns the original order, never a duplicate. fulfilmentType is optional and " +
         "defaults to COLLECTION; pass DELIVERY with addressLine1/addressCity/addressPostcode to " +
         "place a delivery order, which is priced with the shop's delivery fee.",

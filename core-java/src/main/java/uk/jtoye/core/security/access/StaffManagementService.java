@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.StaffTargetIsCredentialException;
+import uk.jtoye.core.integration.credential.IntegrationCredentialRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.dto.DirectoryEntryDto;
 import uk.jtoye.core.security.access.dto.MyAccessDto;
@@ -94,19 +96,23 @@ public class StaffManagementService {
      * {@code REQUIRES_NEW} propagation actually takes effect.
      */
     private final ObjectProvider<StaffManagementService> selfProvider;
+    /** 37-45 (Q7): tells a credential's service-account user from a person, so a grant can never widen it. */
+    private final IntegrationCredentialRepository integrationCredentialRepository;
 
     public StaffManagementService(ShopStaffRepository shopStaffRepository,
                                   UserDirectoryRepository userDirectoryRepository,
                                   ShopRepository shopRepository,
                                   ShopAccessService shopAccessService,
                                   TenantRepository tenantRepository,
-                                  ObjectProvider<StaffManagementService> selfProvider) {
+                                  ObjectProvider<StaffManagementService> selfProvider,
+                                  IntegrationCredentialRepository integrationCredentialRepository) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.shopRepository = shopRepository;
         this.shopAccessService = shopAccessService;
         this.tenantRepository = tenantRepository;
         this.selfProvider = selfProvider;
+        this.integrationCredentialRepository = integrationCredentialRepository;
     }
 
     /**
@@ -237,6 +243,14 @@ public class StaffManagementService {
                     "GROUP_ADMIN is a tenant-wide role; shopId must be null for a GROUP_ADMIN grant");
         }
 
+        // 37-45 (Q7, T-37-107): an integrator credential's service account is not a person. Its access is what
+        // the credential was issued with (never GROUP_ADMIN); after its first call it sits in user_directory like
+        // a person, so without this check a Group admin could widen it here, up to GROUP_ADMIN. Refused before
+        // any other check or write. (persistNewGrant, the credential service's own writer, does not pass here.)
+        if (integrationCredentialRepository.existsByTenantIdAndServiceAccountUserId(tenantId, userId)) {
+            throw new StaffTargetIsCredentialException();
+        }
+
         // WR-05 (Task 1): validate the grant's inputs HERE — after requireGroupAdmin() and
         // the tenant-wide-GROUP_ADMIN rule, but BEFORE the D-11 downgrade guard and any
         // write — so an invalid request never reaches the row lock or the insert. Both
@@ -312,6 +326,14 @@ public class StaffManagementService {
         // RLS scopes this find to the caller's tenant; a cross-tenant id is a 404.
         ShopStaff row = shopStaffRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Staff grant not found: " + id));
+
+        // 37-46: a credential's grant is the access it was issued with. Removing it here would leave the
+        // credential ACTIVE with no access, which the Developers page would then overstate; its access is
+        // changed by deleting the credential (IntegrationCredentialService.revoke, which removes the grant
+        // through the repository and does not pass here). Same refusal, same type, as grant() above.
+        if (integrationCredentialRepository.existsByTenantIdAndServiceAccountUserId(tenantId, row.getUserId())) {
+            throw new StaffTargetIsCredentialException();
+        }
 
         if (row.getRole() == ShopRole.GROUP_ADMIN) {
             // Serialize the check-then-act (CR-06): lock the tenant's GROUP_ADMIN rows

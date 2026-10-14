@@ -26,6 +26,7 @@ import uk.jtoye.core.product.dto.CopyProductsRequest;
 import uk.jtoye.core.product.dto.CopyProductsResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
+import uk.jtoye.core.product.dto.ProductPatchRequest;
 
 import java.net.URI;
 import java.time.LocalDate;
@@ -56,7 +57,7 @@ public class ProductController {
     }
 
     @GetMapping
-    @Operation(summary = "List products", description = "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop).")
+    @Operation(summary = "List products", description = "Returns a paginated list of products for the authenticated tenant. All products include mandatory allergen and ingredient information per Natasha's Law. Optional shopId query param narrows to one shop of the tenant, server-side (requires at least STAFF on that shop). Optional availableOnly=true lists only products on sale, filtered in the query so totalElements counts only those. Each product carries allergens, its declared allergens in words, beside allergenMask.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Successfully retrieved products"),
             @ApiResponse(responseCode = "401", description = "Unauthorized - missing or invalid JWT"),
@@ -65,12 +66,21 @@ public class ProductController {
     public Page<ProductDto> list(
             @Parameter(description = "Optional shop to narrow the list to")
             @RequestParam(required = false) UUID shopId,
+            @Parameter(description = "Optional: true lists only products on sale (available). Absent or false lists every product, as before.")
+            @RequestParam(required = false) Boolean availableOnly,
             @Parameter(description = "Pagination parameters", hidden = true)
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         // RLS ensures we only see current tenant rows; shopId narrows within the tenant
         // at the QUERY (WR-04 / issue #280) rather than in the browser over one page.
-        return shopId != null
-                ? productService.getProductsByShop(shopId, pageable)
+        // 37-42 (UXT-040): availableOnly narrows at the query too, so the MCP list_products stays a forwarder.
+        boolean onSaleOnly = Boolean.TRUE.equals(availableOnly);
+        if (shopId != null) {
+            return onSaleOnly
+                    ? productService.getAvailableProductsByShop(shopId, pageable)
+                    : productService.getProductsByShop(shopId, pageable);
+        }
+        return onSaleOnly
+                ? productService.getAvailableProducts(pageable)
                 : productService.getAllProducts(pageable);
     }
 
@@ -269,6 +279,36 @@ public class ProductController {
             @Parameter(description = "Product update request") @Valid @RequestBody CreateProductRequest req) {
         // issue #500: no local catch — GlobalExceptionHandler owns the RFC 7807 404 body.
         return ResponseEntity.ok(productService.updateProduct(id, req));
+    }
+
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // 37-39: the same scope as PUT
+    @PatchMapping("/{id}")
+    @Operation(summary = "Patch product stock and availability",
+            description = "Changes only available, quantityInStock and trackInventory, for EPOS and agent integrations "
+                    + "that must never touch allergen or ingredient data. Any other property is refused with a 400 "
+                    + "naming it and nothing is changed. Omitted fields keep their stored value; values are "
+                    + "absolute, so repeating the same PATCH is idempotent. Requires SHOP_MANAGER on the product's "
+                    + "shop, like PUT.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Product patched; the full product is returned"),
+            @ApiResponse(responseCode = "400",
+                    description = "errors/validation: a property other than available, quantityInStock and "
+                            + "trackInventory (named in errors), trackInventory true without quantityInStock or "
+                            + "false with one, or a negative quantityInStock; errors/unreadable-request: the body is "
+                            + "not JSON"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no "
+                            + "SHOP_MANAGER grant on the product's shop (errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Product not found (errors/not-found)"),
+            @ApiResponse(responseCode = "409",
+                    description = "The product changed concurrently; re-read and retry (errors/concurrent-modification)")
+    })
+    public ResponseEntity<ProductDto> patch(
+            @Parameter(description = "Product ID") @PathVariable UUID id,
+            @Valid @RequestBody ProductPatchRequest req) {
+        return ResponseEntity.ok(productService.patchProduct(id, req));
     }
 
     // NOTE (Phase 24 / 24-03): the synchronous `POST /{id}/image` upload+AI-suggest handler

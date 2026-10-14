@@ -411,6 +411,7 @@ class StaffInviteIntegrationTest {
         UUID otherAdmin = UUID.randomUUID();
         ShopGrants.grantOperator(jdbc, otherTenant, otherAdmin, null, "GROUP_ADMIN", "oa-" + otherAdmin + "@example.com");
         RequestPostProcessor otherJwt = jwt().jwt(j -> j.subject(otherAdmin.toString())
+                        .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                         .claim("tenant_id", otherTenant.toString())
                         .claim("realm_access", Map.of("roles", List.of("user"))))
                 .authorities(new KeycloakRealmRoleConverter());
@@ -473,6 +474,7 @@ class StaffInviteIntegrationTest {
 
     RequestPostProcessor userJwt(UUID sub, String name) {
         return jwt().jwt(j -> j.subject(sub.toString())
+                        .claim("azp", "core-api") // 37-45: the dashboard client (human-only rule)
                         .claim("tenant_id", tenantId.toString())
                         .claim("email", "user-" + sub + "@example.com")
                         .claim("name", name)

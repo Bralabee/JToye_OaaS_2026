@@ -26,15 +26,21 @@ export type WebhookEventType =
 /** Subscription lifecycle (22-03 WebhookSubscription.Status). */
 export type SubscriptionStatus = "ACTIVE" | "PAUSED" | "AUTO_PAUSED" | "REVOKED"
 
-/** Delivery lifecycle (22-05 WebhookDelivery.Status). */
-export type DeliveryStatus = "PENDING" | "DELIVERED" | "RETRYING" | "FAILED"
+/**
+ * Delivery lifecycle (22-05 WebhookDelivery.Status). HELD (37-43, UXT-038): kept, not attempted,
+ * while the endpoint is paused; resuming delivers it.
+ */
+export type DeliveryStatus = "PENDING" | "DELIVERED" | "RETRYING" | "FAILED" | "HELD"
 
 export interface WebhookSubscription {
   id: string
   targetUrl: string
   eventTypes: WebhookEventType[]
   status: SubscriptionStatus
+  /** Consecutive deliveries that used all their attempts (37-43: deliveries, not attempts). */
   consecutiveFailures: number
+  /** Events held for this endpoint while it is paused, counted by the server (37-43). */
+  heldCount: number
   createdAt: string
   updatedAt: string
 }
@@ -122,6 +128,21 @@ export const EVENT_TYPE_ORDER: WebhookEventType[] = [
   "ONBOARDING_STATE_CHANGED",
   "PAYMENT_EVENT",
 ]
+
+// --- The show-once signing-secret copy (COMMS-06) ---------------------------
+
+/**
+ * What the shared SecretRevealDialog says for a webhook signing secret. The wording is the
+ * COMMS-06 dialog's, unchanged by its 37-46 generalisation; both webhook call sites (the list and
+ * the detail page) spread this one object, so they cannot drift.
+ */
+export const SIGNING_SECRET_COPY = {
+  title: "Copy your signing secret",
+  description: "Use this secret to verify the HMAC signature on every delivery.",
+  warning:
+    "This is the only time we’ll show this secret. Store it securely — you need it to verify webhook signatures. If you lose it, rotate to generate a new one.",
+  secretLabel: "signing secret",
+} as const
 
 // --- Idempotency key (reused verbatim from RefundDialog — WR-07 contract) ---
 

@@ -344,6 +344,10 @@ services:
       # and needs an owner ruling, never a config edit; scripts/check-strict-scoping-default.sh
       # fails CI if this default says false.
       ACCESS_STRICT_SCOPING: ${ACCESS_STRICT_SCOPING:-true}
+      # Human-only management (37-45, Q7): only tokens issued to the dashboard client may manage
+      # integrator credentials and staff. The dashboard client is the frontend's KEYCLOAK_CLIENT_ID,
+      # read from the same .env value, so the two cannot drift.
+      ACCESS_HUMAN_CLIENT_IDS: ${KEYCLOAK_CLIENT_ID:-core-api}
       # Keycloak admin seam — ON BY DEFAULT in this stack (31.1 D-22, owner ruling).
       # Turning it on has TWO effects, and both are intended here:
       #   1. DSAR erasure (D-03, #777): after a verified erasure has anonymised the

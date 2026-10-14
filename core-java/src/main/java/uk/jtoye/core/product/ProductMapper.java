@@ -25,7 +25,21 @@ public interface ProductMapper {
     // #787 (D-09): derived from title, mask and ingredients in fillAllergenWarnings below,
     // never copied from a stored value.
     @Mapping(target = "allergenWarnings", ignore = true)
+    // 37-42 (UXT-040): derived from allergenMask in fillAllergenNames below.
+    @Mapping(target = "allergens", ignore = true)
     ProductDto toDto(Product product);
+
+    /**
+     * Phase 37-42 (RWO-040 / UXT-040): the declared allergens in words, from the ONE catalogue
+     * ({@link AllergenCatalog#namesFor(int)}), in bit order, so no consumer needs its own copy of the 14
+     * names. The declaration only: may-contain and the reconciliation warnings stay separate (D-16). A
+     * null mask (not recorded) gives no list rather than an invented empty one.
+     */
+    @AfterMapping
+    default void fillAllergenNames(Product product, @MappingTarget ProductDto dto) {
+        Integer mask = product.getAllergenMask();
+        dto.setAllergens(mask == null ? null : AllergenCatalog.namesFor(mask));
+    }
 
     /**
      * #787 (D-09): every product response says when the ingredients text emphasises an
@@ -65,10 +79,14 @@ public interface ProductMapper {
     // ShopMapper.updateEntity's existing @BeanMapping for QA-council BE-02 (same failure mode,
     // same fix).
     //
-    // quantityInStock is the ONE deliberate exception: the frontend always sends it explicitly
-    // (`trackInventory ? qty : null`) and reconstructs "is tracking on" from whether it is null,
-    // so under blanket IGNORE a vendor could never turn tracking off again. SET_TO_NULL overrides
-    // the bean-level IGNORE for this field alone, so an explicit null still clears it.
+    // quantityInStock follows the same IGNORE rule as every other field (Phase 37-39, RWO-016 /
+    // UXT-016, P0). It used to be the one SET_TO_NULL exception, because the dashboard spelled "stop
+    // tracking" as an explicit null — and a DTO cannot tell that null from an absent field, so every
+    // integrator's partial PUT that did not mention stock silently turned tracking OFF. Stopping
+    // tracking is now its own field, CreateProductRequest.trackInventory, applied by
+    // ProductService.applyStockTracking AFTER this mapping: null keeps stock and tracking, false
+    // clears the stored quantity, true requires a quantity. trackInventory has no Product property,
+    // so MapStruct never maps it.
     //
     // mayContainMask (#861, D-16) maps by name on toDto, toEntity and here, under the bean-level
     // IGNORE: an edit form that does not render it keeps the stored value, and 0 is the explicit
@@ -80,7 +98,5 @@ public interface ProductMapper {
     @Mapping(target = "additionalImageUrls", ignore = true)
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "allergenSpans", ignore = true)
-    @Mapping(target = "quantityInStock",
-            nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.SET_TO_NULL)
     void updateEntity(CreateProductRequest request, @MappingTarget Product product);
 }

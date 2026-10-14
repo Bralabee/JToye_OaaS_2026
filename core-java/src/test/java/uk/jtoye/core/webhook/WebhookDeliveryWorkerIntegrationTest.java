@@ -91,9 +91,13 @@ class WebhookDeliveryWorkerIntegrationTest {
         // Hermetic: skip DNS resolution; HTTPS scheme is still enforced at egress.
         registry.add("webhook.target.block-private-ranges", () -> "false");
         // Small + aligned so a single failing delivery both FAILS (max-attempts)
-        // and AUTO_PAUSES the subscription (auto-pause-threshold) on the same tick.
+        // and AUTO_PAUSES the subscription on the same tick. 37-43 (UXT-038): the
+        // pause rule counts exhausted DELIVERIES, not attempts, so "one dead delivery
+        // pauses" is now auto-pause-after-failed-deliveries=1 (it was the attempt
+        // threshold 3 == max-attempts 3). The default rule (3 deliveries) is proven
+        // in WebhookAutoPauseIntegrationTest.
         registry.add("webhook.delivery.max-attempts", () -> "3");
-        registry.add("webhook.delivery.auto-pause-threshold", () -> "3");
+        registry.add("webhook.delivery.auto-pause-after-failed-deliveries", () -> "1");
         registry.add("webhook.delivery.backoff-base-ms", () -> "1");
         registry.add("webhook.delivery.backoff-cap-ms", () -> "10");
         registry.add("webhook.delivery.batch-size", () -> "50");

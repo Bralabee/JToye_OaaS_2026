@@ -142,7 +142,7 @@ states:
   - id: TS-08
     name: webhook_delivery FAILED
     kind: entity_status
-    locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java:47"
+    locator: "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java:54"
     subject: "FAILED"
     covers:
       - "core-java/src/main/java/uk/jtoye/core/webhook/WebhookDelivery.java#FAILED"

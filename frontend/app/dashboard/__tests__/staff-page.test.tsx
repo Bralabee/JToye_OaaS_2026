@@ -14,7 +14,7 @@
  * derives no access value: a person whose server value is missing reads "Not
  * recorded", never a level reconstructed from grant rows (T-37-12).
  */
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import StaffPage from "../staff/page"
 import apiClient from "@/lib/api-client"
 import { fetchMyShops } from "@/lib/shops-api"
@@ -939,5 +939,190 @@ describe("staff width tier (UIX-08)", () => {
     await screen.findByTestId("load-error-panel")
 
     expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+})
+
+// --- 37-46: credential service accounts read as integrations ----------------------------------------
+
+describe("Staff page: API credentials are integrations, not people (37-46, UI-SPEC § B1 rows)", () => {
+  const SA_TILL = "5a5a5a5a-0000-0000-0000-000000000001"
+  const SA_UNKNOWN = "5a5a5a5a-0000-0000-0000-000000000002"
+  const GRANT_TILL = "77777777-0000-0000-0000-000000000001"
+  const GRANT_UNKNOWN = "77777777-0000-0000-0000-000000000002"
+
+  /** A grant holder with no directory row: how a credential's service account arrives (37-05). */
+  const integration = (userId: string) => ({
+    userId,
+    maskedEmail: null,
+    displayName: null,
+    lastSeen: null,
+    effectiveAccess: access(userId, "SHOP_ROLES", { perShopRole: { [SHOP_A]: "STAFF" } }),
+  })
+  const integrationGrant = (id: string, userId: string) => ({
+    id,
+    userId,
+    shopId: SHOP_A,
+    role: "STAFF",
+    grantSource: "OPERATOR",
+    createdAt: "2026-10-01T09:00:00Z",
+    createdBy: USER_GA,
+  })
+
+  const staffWithIntegrations = {
+    directory,
+    grants: [...grants, integrationGrant(GRANT_TILL, SA_TILL), integrationGrant(GRANT_UNKNOWN, SA_UNKNOWN)],
+    people: [...people, integration(SA_TILL), integration(SA_UNKNOWN)],
+  }
+  const credentialList = {
+    credentials: [
+      {
+        id: "c0c0c0c0-0000-0000-0000-000000000001",
+        name: "Till system",
+        clientId: "jtoye-int-till-system-7f3a",
+        scopes: ["orders:read"],
+        shopId: SHOP_A,
+        role: "STAFF",
+        status: "ACTIVE",
+        createdBy: USER_GA,
+        createdAt: "2026-10-01T09:00:00Z",
+        lastUsedAt: null,
+        serviceAccountUserId: SA_TILL,
+      },
+    ],
+    lastUsedIntervalMinutes: 15,
+  }
+
+  beforeEach(() => {
+    mockedApiClient.get.mockImplementation(((url: string) => {
+      if (url === "/api/v1/staff") return Promise.resolve({ data: staffWithIntegrations })
+      if (url === "/api/v1/staff/invites") return Promise.resolve({ data: [] })
+      if (url === "/api/v1/credentials") return Promise.resolve({ data: credentialList })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    }) as never)
+  })
+
+  it("names a credential's service account 'Integration: {credential name}'; an unknown one stays 'Integration account'", async () => {
+    render(<StaffPage />)
+    expect(await screen.findByText("Integration: Till system")).toBeInTheDocument()
+    expect(mockedApiClient.get).toHaveBeenCalledWith("/api/v1/credentials")
+
+    expect(
+      within(rowOf("Integration: Till system")).getByText("Staff · Peckham Kitchen")
+    ).toBeInTheDocument()
+    expect(within(rowOf("Integration account")).getByText("Staff · Peckham Kitchen")).toBeInTheDocument()
+  })
+
+  it("offers no Remove access on a credential's row (it would leave the credential working with no access) and points to Developers", async () => {
+    render(<StaffPage />)
+    await screen.findByText("Integration: Till system")
+    const row = rowOf("Integration: Till system")
+
+    expect(within(row).queryByRole("button", { name: /remove/i })).toBeNull()
+    expect(within(row).queryByRole("button", { name: /grant access/i })).toBeNull()
+    const manage = within(row).getByRole("link", { name: /Developers page/ })
+    expect(manage).toHaveAttribute("href", "/dashboard/developers")
+
+    // Nor can it be picked as a grant target: the server refuses that anyway (409).
+    const picker = screen.getByLabelText(/team member/i) as HTMLSelectElement
+    expect(Array.from(picker.options).map((o) => o.value)).not.toContain(SA_TILL)
+
+    // Control: a person's row on the same page still offers Remove access.
+    expect(within(rowOf("Sam Cook")).getByRole("button", { name: /remove/i })).toBeInTheDocument()
+  })
+
+  it("explains the server's staff-target-is-credential 409 instead of the last-group-admin copy", async () => {
+    mockedApiClient.delete.mockRejectedValueOnce(httpError(409, "https://jtoye.uk/errors/staff-target-is-credential") as never)
+    render(<StaffPage />)
+    await screen.findByText("Integration: Till system")
+
+    // The credential list did not know this one, so its row still offers removal; the server refuses.
+    fireEvent.click(within(rowOf("Integration account")).getByRole("button", { name: /remove/i }))
+    const dialog = await screen.findByRole("dialog")
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Remove access" }))
+    })
+
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent(
+      "This is an API credential, not a person, so its access can't be changed here. Delete it on the Developers page and create a new one."
+    )
+    expect(alert).not.toHaveTextContent(/last group admin/i)
+  })
+
+  // 37-E review: revoking deletes the service account's grant but not its directory row, so a
+  // revoked credential used to stay listed as "Integration: {name} · No access" for ever, a row on
+  // which nothing can be done. The Developers page lists only working credentials, and the server
+  // keeps the record of who revoked it and when.
+  describe("a revoked credential", () => {
+    const SA_OLD = "5a5a5a5a-0000-0000-0000-000000000003"
+    const revoked = {
+      ...credentialList.credentials[0],
+      id: "c0c0c0c0-0000-0000-0000-000000000003",
+      name: "Old till",
+      clientId: "jtoye-int-old-till-1b2c",
+      status: "REVOKED",
+      revokedBy: USER_GA,
+      revokedAt: "2026-10-12T09:00:00Z",
+      serviceAccountUserId: SA_OLD,
+    }
+    const revokedPerson = {
+      userId: SA_OLD,
+      maskedEmail: null,
+      displayName: "service-account-jtoye-int-old-till-1b2c",
+      lastSeen: "2026-10-12T08:55:00Z",
+      effectiveAccess: access(SA_OLD, "NONE"),
+    }
+    const serve = (staff: unknown, credentials: unknown) =>
+      mockedApiClient.get.mockImplementation(((url: string) => {
+        if (url === "/api/v1/staff") return Promise.resolve({ data: staff })
+        if (url === "/api/v1/staff/invites") return Promise.resolve({ data: [] })
+        if (url === "/api/v1/credentials") return credentials
+        return Promise.reject(new Error(`unexpected GET ${url}`))
+      }) as never)
+
+    it("is not listed once its grant is gone; an active credential and the people still are", async () => {
+      serve(
+        { ...staffWithIntegrations, people: [...staffWithIntegrations.people, revokedPerson] },
+        Promise.resolve({ data: { ...credentialList, credentials: [...credentialList.credentials, revoked] } })
+      )
+      render(<StaffPage />)
+      expect(await screen.findByText("Integration: Till system")).toBeInTheDocument()
+      expect(screen.getByText("Sam Cook")).toBeInTheDocument()
+      expect(screen.queryByText("Integration: Old till")).toBeNull()
+      expect(screen.queryByText(revokedPerson.displayName)).toBeNull()
+    })
+
+    it("stays listed while the server still reports a grant for it, so no access is ever hidden", async () => {
+      const lingering = { ...integrationGrant("77777777-0000-0000-0000-000000000003", SA_OLD) }
+      serve(
+        {
+          ...staffWithIntegrations,
+          grants: [...staffWithIntegrations.grants, lingering],
+          people: [...staffWithIntegrations.people, integration(SA_OLD)],
+        },
+        Promise.resolve({ data: { ...credentialList, credentials: [...credentialList.credentials, revoked] } })
+      )
+      render(<StaffPage />)
+      expect(await screen.findByText("Integration: Old till")).toBeInTheDocument()
+    })
+
+    it("is listed as before when the credential list cannot be read: nothing is hidden on a guess", async () => {
+      serve(
+        { ...staffWithIntegrations, people: [...staffWithIntegrations.people, revokedPerson] },
+        Promise.reject(new Error("credentials down"))
+      )
+      render(<StaffPage />)
+      expect(await screen.findByText(revokedPerson.displayName)).toBeInTheDocument()
+    })
+  })
+
+  it("does not ask for credentials when the caller is not a Group admin", async () => {
+    mockedFetchMyShops.mockResolvedValue({ shops: shops as never, isGroupAdmin: false, userId: USER_SAM } as never)
+    render(<StaffPage />)
+    await screen.findByText("Sam Cook")
+    expect(mockedApiClient.get).not.toHaveBeenCalledWith("/api/v1/credentials")
+    // Without the list nothing is named, and nothing is guessed.
+    expect(screen.queryByText("Integration: Till system")).toBeNull()
+    expect(screen.getAllByText("Integration account")).toHaveLength(2)
   })
 })

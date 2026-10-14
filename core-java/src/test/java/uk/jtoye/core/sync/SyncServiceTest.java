@@ -9,10 +9,14 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.product.ProductService;
+import uk.jtoye.core.product.dto.CreateProductRequest;
+import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
@@ -20,9 +24,11 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
+import uk.jtoye.core.shop.dto.ShopDto;
 import uk.jtoye.core.sync.dto.BatchSyncRequest;
 import uk.jtoye.core.sync.dto.BatchSyncResponse;
 import uk.jtoye.core.sync.dto.SyncItem;
+import uk.jtoye.core.sync.dto.SyncItemResult;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -30,15 +36,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,8 +67,8 @@ class SyncServiceTest {
 
     /**
      * QA-council 20260902 Cluster A (SEC-5 / #648): the per-shop write gate. Mocked so this class
-     * can pin WHERE the gate is consulted (on the resolved product's owning shop, BEFORE any
-     * setter runs) and that a denial saves nothing; the real decision against Postgres is
+     * can pin WHERE the gate is consulted (on the item's shop, BEFORE the SKU lookup and any write)
+     * and that a denial writes nothing; the real decision against Postgres is
      * {@code SyncBatchAuthorizationIntegrationTest}.
      */
     @Mock
@@ -72,13 +78,23 @@ class SyncServiceTest {
     @Mock
     private ShopService shopService;
 
+    /** 37-40 (RWO-017): products are written through the dashboard's own create/update path. */
+    @Mock
+    private ProductService productService;
+
+    /** 37-40 (RWO-037): one transaction per item. A mock manager lets the tests count them. */
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
     private SyncService syncService;
 
     private final UUID tenantId = UUID.randomUUID();
+    private final UUID shopA = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        syncService = new SyncService(shopRepository, productRepository, cacheEvictor, shopAccessService, shopService);
+        syncService = new SyncService(shopRepository, productRepository, cacheEvictor, shopAccessService,
+                shopService, productService, transactionManager);
         TenantContext.set(tenantId);
     }
 
@@ -96,6 +112,8 @@ class SyncServiceTest {
 
         // M1: the lookup is (name, tenant) — never name alone
         when(shopRepository.findByNameAndTenantId("New Shop", tenantId)).thenReturn(Optional.empty());
+        UUID newShopId = UUID.randomUUID();
+        when(shopService.createShop(any(CreateShopRequest.class))).thenReturn(shopDto(newShopId));
 
         // Act
         BatchSyncResponse response = syncService.processBatch(request);
@@ -103,6 +121,11 @@ class SyncServiceTest {
         // Assert
         assertThat(response.getStatus()).isEqualTo("SUCCESS");
         assertThat(response.getProcessedCount()).isEqualTo(1);
+        assertThat(response.getResults()).singleElement().satisfies(r -> {
+            assertThat(r.getOutcome()).isEqualTo(SyncItemResult.Outcome.CREATED);
+            assertThat(r.getId()).isEqualTo(newShopId);
+            assertThat(r.getKey()).isEqualTo("New Shop");
+        });
 
         ArgumentCaptor<CreateShopRequest> captor = ArgumentCaptor.forClass(CreateShopRequest.class);
         verify(shopService).createShop(captor.capture());
@@ -126,6 +149,7 @@ class SyncServiceTest {
                 .build());
 
         assertThat(response.getProcessedCount()).isEqualTo(1);
+        assertThat(response.getResults().get(0).getOutcome()).isEqualTo(SyncItemResult.Outcome.UPDATED);
         InOrder inOrder = inOrder(shopAccessService, shopRepository);
         inOrder.verify(shopAccessService).require(shopId, ShopRole.SHOP_MANAGER);
         inOrder.verify(shopRepository).save(existing);
@@ -134,131 +158,166 @@ class SyncServiceTest {
         verify(shopService, never()).createShop(any());
     }
 
+    /**
+     * 37-40 (UXT-017): a new SKU is created through ProductService.createProduct, in the shop the item
+     * names, after the gate on that shop.
+     */
     @Test
-    void testProcessBatch_UpsertProduct() {
-        // Arrange
-        BatchSyncRequest request = BatchSyncRequest.builder()
-                .items(Collections.singletonList(productItem("SKU123", "Cool Product", "Water, Sugar", 1, 500L)))
-                .build();
+    void testProcessBatch_CreateProduct_goesThroughProductServiceInTheItemsShop() {
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU123")).thenReturn(Optional.empty());
+        UUID newId = UUID.randomUUID();
+        when(productService.createProduct(any(CreateProductRequest.class))).thenReturn(productDto(newId));
 
-        when(productRepository.findBySku("SKU123")).thenReturn(Optional.empty());
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Collections.singletonList(productItem("SKU123", shopA, "Cool Product", "Water, **milk**", 1, 500L)))
+                .build());
 
-        // Act
-        BatchSyncResponse response = syncService.processBatch(request);
-
-        // Assert
         assertThat(response.getStatus()).isEqualTo("SUCCESS");
         assertThat(response.getProcessedCount()).isEqualTo(1);
+        assertThat(response.getResults().get(0).getOutcome()).isEqualTo(SyncItemResult.Outcome.CREATED);
+        assertThat(response.getResults().get(0).getId()).isEqualTo(newId);
 
-        ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
-        verify(productRepository).save(productCaptor.capture());
-
-        Product savedProduct = productCaptor.getValue();
-        assertThat(savedProduct.getSku()).isEqualTo("SKU123");
-        assertThat(savedProduct.getTitle()).isEqualTo("Cool Product");
-        assertThat(savedProduct.getPricePennies()).isEqualTo(500L);
-        assertThat(savedProduct.getTenantId()).isEqualTo(tenantId);
-        // a CREATE has no owning shop: it is a tenant-wide resource, gated GROUP_ADMIN-only (CR-04)
-        verify(shopAccessService).require(isNull(), org.mockito.ArgumentMatchers.eq(ShopRole.SHOP_MANAGER));
+        ArgumentCaptor<CreateProductRequest> captor = ArgumentCaptor.forClass(CreateProductRequest.class);
+        InOrder inOrder = inOrder(shopAccessService, productRepository, productService);
+        inOrder.verify(shopAccessService).require(shopA, ShopRole.SHOP_MANAGER);
+        inOrder.verify(productRepository).findByTenantIdAndSku(tenantId, "SKU123");
+        inOrder.verify(productService).createProduct(captor.capture());
+        CreateProductRequest sent = captor.getValue();
+        assertThat(sent.getShopId()).isEqualTo(shopA);
+        assertThat(sent.getSku()).isEqualTo("SKU123");
+        assertThat(sent.getTitle()).isEqualTo("Cool Product");
+        assertThat(sent.getIngredientsText()).isEqualTo("Water, **milk**");
+        assertThat(sent.getAllergenMask()).isEqualTo(1);
+        assertThat(sent.getPricePennies()).isEqualTo(500L);
+        // never a direct repository write: the create rules (spans, defaults, stock) live in ProductService
+        verify(productRepository, never()).save(any(Product.class));
     }
 
     /**
-     * SEC-5 / #648: the gate is consulted on the RESOLVED product's owning shop, and it runs
-     * before any setter — the order is what makes "denied" mean "untouched".
+     * SEC-5 / #648: the gate is consulted on the item's shop, and it runs before the write — the order is
+     * what makes "denied" mean "untouched". The update goes through ProductService.updateProduct and the
+     * cached DTO is evicted after commit.
      */
     @Test
-    void testProcessBatch_UpdateProduct_isGatedOnTheOwningShopBeforeTheWrite() {
-        UUID shopId = UUID.randomUUID();
+    void testProcessBatch_UpdateProduct_isGatedOnTheShopBeforeTheWrite() {
         UUID productId = UUID.randomUUID();
-        Product existing = new Product();
-        ReflectionTestUtils.setField(existing, "id", productId);
-        existing.setSku("SKU-B");
-        existing.setShopId(shopId);
-        existing.setTitle("Original");
-        when(productRepository.findBySku("SKU-B")).thenReturn(Optional.of(existing));
+        Product existing = existingProduct(productId, "SKU-B", shopA);
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-B")).thenReturn(Optional.of(existing));
 
-        syncService.processBatch(BatchSyncRequest.builder()
-                .items(Collections.singletonList(productItem("SKU-B", "Renamed", "Rice", 2, 700L)))
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Collections.singletonList(productItem("SKU-B", shopA, "Renamed", "Rice", 2, 700L)))
                 .build());
 
-        InOrder inOrder = inOrder(shopAccessService, productRepository);
-        inOrder.verify(shopAccessService).require(shopId, ShopRole.SHOP_MANAGER);
-        inOrder.verify(productRepository).save(existing);
-        assertThat(existing.getTitle()).isEqualTo("Renamed");
+        assertThat(response.getResults().get(0).getOutcome()).isEqualTo(SyncItemResult.Outcome.UPDATED);
+        ArgumentCaptor<CreateProductRequest> captor = ArgumentCaptor.forClass(CreateProductRequest.class);
+        InOrder inOrder = inOrder(shopAccessService, productService);
+        inOrder.verify(shopAccessService).require(shopA, ShopRole.SHOP_MANAGER);
+        inOrder.verify(productService).updateProduct(eq(productId), captor.capture());
+        assertThat(captor.getValue().getTitle()).isEqualTo("Renamed");
         verify(cacheEvictor).evictEntityAfterCommit("products", "getProductById", productId);
     }
 
-    /** A denial propagates as the typed shop-access exception and NOTHING is saved or evicted. */
+    /**
+     * 37-40 (RWO-017): the SKU exists in another shop (or in none). Refused SHOP_MISMATCH after the gate,
+     * and nothing is written: sync never moves a product between shops.
+     */
     @Test
-    void testProcessBatch_DeniedProductWrite_savesNothing() {
+    void testProcessBatch_SkuOfAnotherShop_isRejectedShopMismatch() {
         UUID shopB = UUID.randomUUID();
-        Product foreign = new Product();
-        ReflectionTestUtils.setField(foreign, "id", UUID.randomUUID());
-        foreign.setSku("B-SKU");
-        foreign.setShopId(shopB);
-        foreign.setTitle("Untouched");
-        when(productRepository.findBySku("B-SKU")).thenReturn(Optional.of(foreign));
+        Product other = existingProduct(UUID.randomUUID(), "SKU-X", shopB);
+        Product legacy = existingProduct(UUID.randomUUID(), "SKU-L", null);
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-X")).thenReturn(Optional.of(other));
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-L")).thenReturn(Optional.of(legacy));
+
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Arrays.asList(productItem("SKU-X", shopA, "Moved", "Rice", 0, 1L),
+                        productItem("SKU-L", shopA, "Adopted", "Rice", 0, 1L)))
+                .build());
+
+        assertThat(response.getResults()).extracting(SyncItemResult::getCode)
+                .containsExactly(SyncItemResult.Code.SHOP_MISMATCH, SyncItemResult.Code.SHOP_MISMATCH);
+        assertThat(response.getResults().get(1).getMessage()).contains("no shop");
+        assertThat(response.getStatus()).isEqualTo("REJECTED");
+        verify(shopAccessService, times(2)).require(shopA, ShopRole.SHOP_MANAGER);
+        verifyNoInteractions(productService);
+        assertThat(other.getTitle()).isEqualTo("Original");
+    }
+
+    /** A denial is reported for that item, nothing is looked up, written or evicted, and its transaction rolls back. */
+    @Test
+    void testProcessBatch_DeniedProductWrite_isRejectedAndWritesNothing() {
+        UUID shopB = UUID.randomUUID();
         doThrow(new ShopAccessDeniedException(shopB, ShopRole.SHOP_MANAGER))
                 .when(shopAccessService).require(shopB, ShopRole.SHOP_MANAGER);
 
-        assertThatThrownBy(() -> syncService.processBatch(BatchSyncRequest.builder()
-                .items(Collections.singletonList(productItem("B-SKU", "PWNED", "x", 1, 1L)))
-                .build()))
-                .isInstanceOf(ShopAccessDeniedException.class);
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Collections.singletonList(productItem("B-SKU", shopB, "PWNED", "x", 1, 1L)))
+                .build());
 
-        assertThat(foreign.getTitle()).isEqualTo("Untouched");
-        verify(productRepository, never()).save(any(Product.class));
+        assertThat(response.getResults()).singleElement().satisfies(r -> {
+            assertThat(r.getOutcome()).isEqualTo(SyncItemResult.Outcome.REJECTED);
+            assertThat(r.getCode()).isEqualTo(SyncItemResult.Code.SHOP_ACCESS_DENIED);
+        });
+        assertThat(response.getProcessedCount()).isZero();
+        verify(productRepository, never()).findByTenantIdAndSku(any(), anyString());
+        verifyNoInteractions(productService);
         verify(cacheEvictor, never()).evictEntityAfterCommit(anyString(), anyString(), any(UUID.class));
+        verify(transactionManager).rollback(any());
+    }
+
+    /** 37-40 (UXT-017): a product item without a shop is refused before the gate or any lookup. */
+    @Test
+    void testProcessBatch_ProductWithoutShop_isRejectedShopRequired() {
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Collections.singletonList(productItem("NO-SHOP", null, "Title", "Rice", 0, 100L)))
+                .build());
+
+        assertThat(response.getResults().get(0).getCode()).isEqualTo(SyncItemResult.Code.SHOP_REQUIRED);
+        assertThat(response.getResults().get(0).getKey()).isEqualTo("NO-SHOP");
+        verifyNoInteractions(shopAccessService, productService, productRepository);
     }
 
     /**
-     * PR #726 review M7: every {@link SyncItem} field is optional on the wire, but the UPDATE
-     * branch set title and ingredientsText UNCONDITIONALLY while allergenMask and pricePennies
-     * were already guarded — so an item that only carried a new price wiped both to null
-     * (title then dies on products.title NOT NULL; the Natasha's Law ingredients text silently
-     * blanks). RED on the unfixed tree: title/ingredients are null after the batch.
+     * PR #726 review M7: every {@link SyncItem} field is optional on the wire, and on an UPDATE an absent
+     * title/ingredientsText means "unchanged". The update request carries nulls for them, which
+     * ProductService.updateProduct maps IGNORE-null (ProductMapper.updateEntity).
      */
     @Test
     void testProcessBatch_UpdateProduct_absentTitleAndIngredientsAreLeftAlone() {
         UUID productId = UUID.randomUUID();
-        Product existing = new Product();
-        ReflectionTestUtils.setField(existing, "id", productId);
-        existing.setSku("SKU-P");
-        existing.setTitle("Keep Me");
-        existing.setIngredientsText("Rice, tomatoes");
-        existing.setPricePennies(500L);
-        when(productRepository.findBySku("SKU-P")).thenReturn(Optional.of(existing));
+        Product existing = existingProduct(productId, "SKU-P", shopA);
+        when(productRepository.findByTenantIdAndSku(tenantId, "SKU-P")).thenReturn(Optional.of(existing));
 
         syncService.processBatch(BatchSyncRequest.builder()
                 .items(Collections.singletonList(
-                        SyncItem.builder().type("product").sku("SKU-P").pricePennies(750L).build()))
+                        SyncItem.builder().type("product").sku("SKU-P").shopId(shopA).pricePennies(750L).build()))
                 .build());
 
-        assertThat(existing.getTitle()).as("an absent title means 'unchanged', not 'clear it'").isEqualTo("Keep Me");
-        assertThat(existing.getIngredientsText()).isEqualTo("Rice, tomatoes");
-        assertThat(existing.getPricePennies()).isEqualTo(750L);
-        verify(productRepository).save(existing);
+        ArgumentCaptor<CreateProductRequest> captor = ArgumentCaptor.forClass(CreateProductRequest.class);
+        verify(productService).updateProduct(eq(productId), captor.capture());
+        assertThat(captor.getValue().getTitle()).as("an absent title means 'unchanged', not 'clear it'").isNull();
+        assertThat(captor.getValue().getIngredientsText()).isNull();
+        assertThat(captor.getValue().getPricePennies()).isEqualTo(750L);
     }
 
     /**
-     * M7, the CREATE half: a brand-new SKU with no title has nothing to persist under
-     * products.title NOT NULL. Reject it as the 400 the service already uses elsewhere
-     * (IllegalArgumentException -> errors/invalid-argument) BEFORE the write, instead of letting
-     * the constraint surface as a 500/409 after the batch has half-run. RED on the unfixed tree:
-     * no exception, save() is reached with a null title.
+     * M7, the CREATE half: a brand-new SKU must carry every field CreateProductRequest requires. It is
+     * refused for that item, naming the fields, before anything is written.
      */
     @Test
-    void testProcessBatch_CreateProduct_withoutTitleIs400_andSavesNothing() {
-        when(productRepository.findBySku("NEW-NO-TITLE")).thenReturn(Optional.empty());
+    void testProcessBatch_CreateProduct_withoutRequiredFieldsIsRejected_andWritesNothing() {
+        when(productRepository.findByTenantIdAndSku(tenantId, "NEW-NO-TITLE")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> syncService.processBatch(BatchSyncRequest.builder()
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
                 .items(Collections.singletonList(
-                        SyncItem.builder().type("product").sku("NEW-NO-TITLE").pricePennies(100L).build()))
-                .build()))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("title");
+                        SyncItem.builder().type("product").sku("NEW-NO-TITLE").shopId(shopA).pricePennies(100L).build()))
+                .build());
 
-        verify(productRepository, never()).save(any(Product.class));
+        SyncItemResult result = response.getResults().get(0);
+        assertThat(result.getCode()).isEqualTo(SyncItemResult.Code.INVALID_FIELDS);
+        assertThat(result.getMessage()).contains("title").contains("ingredientsText").contains("allergenMask")
+                .doesNotContain("pricePennies");
+        verify(productService, never()).createProduct(any());
     }
 
     @Test
@@ -267,21 +326,51 @@ class SyncServiceTest {
         BatchSyncRequest request = BatchSyncRequest.builder()
                 .items(Arrays.asList(
                         shopItem("Shop 1", null),
-                        // a CREATE needs a title (M7); the other fields stay absent to prove they are optional
-                        SyncItem.builder().type("product").sku("SKU1").title("Product 1").build(),
+                        productItem("SKU1", shopA, "Product 1", "Rice", 0, 100L),
                         SyncItem.builder().type("unknown").build()))
                 .build();
 
         when(shopRepository.findByNameAndTenantId(anyString(), any(UUID.class))).thenReturn(Optional.empty());
-        when(productRepository.findBySku(anyString())).thenReturn(Optional.empty());
+        when(shopService.createShop(any(CreateShopRequest.class))).thenReturn(shopDto(UUID.randomUUID()));
+        when(productRepository.findByTenantIdAndSku(any(), anyString())).thenReturn(Optional.empty());
+        when(productService.createProduct(any(CreateProductRequest.class))).thenReturn(productDto(UUID.randomUUID()));
 
         // Act
         BatchSyncResponse response = syncService.processBatch(request);
 
-        // Assert — the unknown type is skipped, the shop create goes through ShopService, the product is saved
+        // Assert — the unknown type is REPORTED, not skipped, and the batch says so
         assertThat(response.getProcessedCount()).isEqualTo(2);
+        assertThat(response.getStatus()).isEqualTo("PARTIAL");
+        assertThat(response.getResults()).extracting(SyncItemResult::getIndex).containsExactly(0, 1, 2);
+        assertThat(response.getResults().get(2).getCode()).isEqualTo(SyncItemResult.Code.UNKNOWN_TYPE);
         verify(shopService, times(1)).createShop(any(CreateShopRequest.class));
-        verify(productRepository, times(1)).save(any(Product.class));
+        verify(productService, times(1)).createProduct(any(CreateProductRequest.class));
+        // one transaction per shop/product item; the unknown type never opens one
+        verify(transactionManager, times(2)).getTransaction(any());
+    }
+
+    /** UXT-037: a batch in which no item was written says REJECTED, never SUCCESS or PARTIAL. */
+    @Test
+    void testProcessBatch_NothingWritten_isRejected() {
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
+                .items(Arrays.asList(
+                        SyncItem.builder().type("unknown").build(),
+                        productItem("NO-SHOP", null, "T", "Rice", 0, 1L)))
+                .build());
+
+        assertThat(response.getStatus()).isEqualTo("REJECTED");
+        assertThat(response.getProcessedCount()).isZero();
+        assertThat(response.getResults()).hasSize(2);
+    }
+
+    /** An empty batch refused nothing and wrote nothing: SUCCESS with no results (nothing was skipped). */
+    @Test
+    void testProcessBatch_Empty_isSuccessWithNoResults() {
+        BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder().items(java.util.List.of()).build());
+
+        assertThat(response.getStatus()).isEqualTo("SUCCESS");
+        assertThat(response.getResults()).isEmpty();
+        verifyNoInteractions(transactionManager);
     }
 
     // ---- item builders (the typed SyncItem replaces the old Map<String,Object>; API-2) ----
@@ -290,8 +379,29 @@ class SyncServiceTest {
         return SyncItem.builder().type("shop").name(name).address(address).build();
     }
 
-    private static SyncItem productItem(String sku, String title, String ingredients, int mask, long price) {
-        return SyncItem.builder().type("product").sku(sku).title(title)
+    private static SyncItem productItem(String sku, UUID shopId, String title, String ingredients, int mask, long price) {
+        return SyncItem.builder().type("product").sku(sku).shopId(shopId).title(title)
                 .ingredientsText(ingredients).allergenMask(mask).pricePennies(price).build();
+    }
+
+    private static Product existingProduct(UUID id, String sku, UUID shopId) {
+        Product existing = new Product();
+        ReflectionTestUtils.setField(existing, "id", id);
+        existing.setSku(sku);
+        existing.setShopId(shopId);
+        existing.setTitle("Original");
+        return existing;
+    }
+
+    private static ShopDto shopDto(UUID id) {
+        ShopDto dto = new ShopDto();
+        dto.setId(id);
+        return dto;
+    }
+
+    private static ProductDto productDto(UUID id) {
+        ProductDto dto = new ProductDto();
+        dto.setId(id);
+        return dto;
     }
 }

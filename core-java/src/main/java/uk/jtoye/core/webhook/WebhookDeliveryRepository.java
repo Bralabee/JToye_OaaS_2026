@@ -3,11 +3,13 @@ package uk.jtoye.core.webhook;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -69,4 +71,72 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
 
     /** Fetch a delivery scoped to its owning subscription (replay lookup). */
     Optional<WebhookDelivery> findByIdAndSubscriptionId(UUID id, UUID subscriptionId);
+
+    // ---- HELD (UXT-038, 37-43). Each carries an explicit tenant predicate on top of RLS: the
+    // Testcontainers bootstrap role bypasses FORCE RLS, and a bulk UPDATE must never reach
+    // another tenant's rows even then.
+
+    /**
+     * Hold every queued ({@code from}) row of one subscription: status becomes {@code HELD}.
+     * {@code flushAutomatically} writes the caller's pending changes first (the delivery that
+     * just exhausted its attempts is FAILED in the database before this runs, so it is not held).
+     * No {@code clearAutomatically}: the worker still holds managed rows from its claimed batch.
+     *
+     * @return how many rows are now held by this call
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            UPDATE WebhookDelivery d
+               SET d.status = :held, d.updatedAt = :now
+             WHERE d.tenantId = :tenantId
+               AND d.subscriptionId = :subscriptionId
+               AND d.status IN :from
+            """)
+    int holdQueued(@Param("tenantId") UUID tenantId,
+                   @Param("subscriptionId") UUID subscriptionId,
+                   @Param("from") Collection<WebhookDelivery.Status> from,
+                   @Param("held") WebhookDelivery.Status held,
+                   @Param("now") OffsetDateTime now);
+
+    /** Resume: every HELD row of the subscription back to PENDING, due now, with a fresh attempt budget. */
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            UPDATE WebhookDelivery d
+               SET d.status = :pending, d.attemptCount = 0, d.nextAttemptAt = :now, d.updatedAt = :now
+             WHERE d.tenantId = :tenantId
+               AND d.subscriptionId = :subscriptionId
+               AND d.status = :held
+            """)
+    int requeueHeld(@Param("tenantId") UUID tenantId,
+                    @Param("subscriptionId") UUID subscriptionId,
+                    @Param("held") WebhookDelivery.Status held,
+                    @Param("pending") WebhookDelivery.Status pending,
+                    @Param("now") OffsetDateTime now);
+
+    /** Revoke (terminal): a held row can never be delivered, so it is FAILED with the reason. */
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            UPDATE WebhookDelivery d
+               SET d.status = :failed, d.lastError = :reason, d.updatedAt = :now
+             WHERE d.tenantId = :tenantId
+               AND d.subscriptionId = :subscriptionId
+               AND d.status = :held
+            """)
+    int failHeld(@Param("tenantId") UUID tenantId,
+                 @Param("subscriptionId") UUID subscriptionId,
+                 @Param("held") WebhookDelivery.Status held,
+                 @Param("failed") WebhookDelivery.Status failed,
+                 @Param("reason") String reason,
+                 @Param("now") OffsetDateTime now);
+
+    long countByTenantIdAndSubscriptionIdAndStatus(UUID tenantId, UUID subscriptionId, WebhookDelivery.Status status);
+
+    /** One grouped count for the subscription list (rows: subscriptionId, count), never one query per row. */
+    @Query("""
+            SELECT d.subscriptionId, count(d) FROM WebhookDelivery d
+             WHERE d.tenantId = :tenantId AND d.status = :status
+             GROUP BY d.subscriptionId
+            """)
+    List<Object[]> countByStatusPerSubscription(@Param("tenantId") UUID tenantId,
+                                                @Param("status") WebhookDelivery.Status status);
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -145,20 +146,33 @@ func (h *edgeHandlers) Ready(c *gin.Context) {
 // @Description application/problem+json with type
 // @Description https://jtoye.uk/errors/rate-limited and code RATE_LIMITED;
 // @Description wait Retry-After seconds, then retry the same request.
+// @Description
+// @Description Core's answer is passed through. A batch core processed is
+// @Description 200 with core's status (SUCCESS, PARTIAL or REJECTED),
+// @Description processed_count and one result per item, in request order,
+// @Description each CREATED, UPDATED or REJECTED with a stable code. A
+// @Description partially refused batch is still 200: read status and
+// @Description results, never the HTTP status alone. A 4xx refusal from
+// @Description core (application/problem+json) is relayed verbatim: same
+// @Description status, content type and body, Retry-After kept. A core
+// @Description outage, an open circuit breaker or any core 5xx is the
+// @Description edge's own 502.
 // @Tags        sync
 // @Security    BearerAuth
 // @Accept      json
 // @Produce     json
 // @Param       payload body     SyncBatchRequest  true "Batch payload"
-// @Success     202     {object} SyncBatchResponse "Batch accepted by Core"
-// @Failure     400     {object} ErrorResponse     "Invalid body or missing tenant_id claim"
-// @Failure     401     {object} ErrorResponse     "Missing or malformed Bearer token"
+// @Success     200     {object} SyncBatchResponse "Core processed the batch: status, processed_count and per-item results"
+// @Success     202     {object} SyncBatchResponse "Core accepted the batch (a core that predates per-item results; no results)"
+// @Failure     400     {object} ErrorResponse     "The edge's own refusal: invalid body or missing tenant_id claim (application/json). Core's batch validation refusal is relayed verbatim as application/problem+json (see CoreProblem)"
+// @Failure     401     {object} ErrorResponse     "The edge's own refusal: missing or malformed Bearer token (application/json). Core's refusal of an expired or invalid token is relayed verbatim as application/problem+json (see CoreProblem)"
+// @Failure     403     {object} CoreProblem       "Core's refusal, relayed verbatim (application/problem+json): the token lacks catalog:write (errors/forbidden) or the caller holds no grant on the target shop (errors/shop-access-denied)"
 // @Failure     429     {object} ProblemDetail     "Rate limit exceeded: the caller's tenant bucket or this replica's pre-auth valve is empty. application/problem+json, type https://jtoye.uk/errors/rate-limited, code RATE_LIMITED. Wait Retry-After seconds."
 // @Header      429     {integer} Retry-After           "Whole seconds to wait before retrying (at least 1); equals retryAfterSeconds in the body"
 // @Header      429     {integer} X-RateLimit-Limit     "Capacity of the bucket that refused: the per-tenant burst, or the valve's burst"
 // @Header      429     {integer} X-RateLimit-Remaining "Tokens left in that bucket (always 0 on a 429)"
 // @Header      429     {integer} X-RateLimit-Reset     "Unix epoch second at which that bucket is full again"
-// @Failure     502     {object} ErrorResponse     "Core API unreachable or tripped the circuit breaker"
+// @Failure     502     {object} ErrorResponse     "Core API unreachable, the circuit breaker is open, or core failed (5xx); core's body is never relayed"
 // @Router      /api/v1/sync/batch [post]
 func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 	var payload struct {
@@ -192,12 +206,35 @@ func (h *edgeHandlers) SyncBatch(c *gin.Context) {
 
 	resp, err := h.coreClient.SyncBatch(ctx, token, tenantID, payload.Items)
 	if err != nil {
+		// A typed 4xx refusal from core (shop-access-denied, validation,
+		// rate-limited, ...) is core's answer, not a gateway failure: relay
+		// its status, content type, Retry-After and bytes unchanged, so an
+		// integrator syncing through the edge reads exactly what core said
+		// (RESEARCH Pitfall 7). Everything else stays the generic 502, with
+		// no core body (T-37-96).
+		var problem *core.CoreProblemError
+		if errors.As(err, &problem) {
+			h.logger.Info("Core refused batch sync; relaying its problem",
+				zap.Int("status", problem.Status))
+			if problem.RetryAfter != "" {
+				c.Header("Retry-After", problem.RetryAfter)
+			}
+			c.Data(problem.Status, problem.ContentType, problem.Body)
+			return
+		}
 		h.logger.Error("Batch sync failed", zap.Error(err))
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to sync with core API"})
 		return
 	}
 
-	c.JSON(http.StatusAccepted, resp)
+	// Core's own success status: 200 with per-item results (37-40), or 202
+	// from an older core. A partially refused batch is still a 200; the
+	// truth is in status and results, which pass through unchanged.
+	status := resp.HTTPStatus
+	if status != http.StatusOK && status != http.StatusAccepted {
+		status = http.StatusOK
+	}
+	c.JSON(status, resp)
 }
 
 // WhatsAppWebhook godoc

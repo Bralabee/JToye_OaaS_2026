@@ -68,6 +68,25 @@ func TestEdgeCoreContract(t *testing.T) {
 		}
 	})
 
+	// 37-41 (RESEARCH Pitfall 7): for a call whose answer the edge hands to
+	// its own callers, "the edge reads a subset of core" is not enough. The
+	// edge must decode everything core declares, publish it, and relay and
+	// publish every typed 4xx core declares.
+	t.Run("pass-through calls deliver what core declares, and the edge publishes it", func(t *testing.T) {
+		edge := loadEdgeSpec(t)
+		checked := 0
+		for _, call := range calls {
+			if !call.PassThrough && !call.RelaysProblems {
+				continue
+			}
+			checked++
+			checkRelay(t, spec, edge, call)
+		}
+		if checked == 0 {
+			t.Fatal("VOID: no call is declared PassThrough or RelaysProblems — the sync relay has nothing checking it")
+		}
+	})
+
 	// The completeness pair. Both directions run every time: source→manifest
 	// catches an undeclared new call, manifest→source proves the scanner can
 	// see at all, so a scanner that silently stops matching cannot read clean.
@@ -137,6 +156,26 @@ func loadCoreSnapshot(t *testing.T) map[string]any {
 	paths, _ := spec["paths"].(map[string]any)
 	if len(paths) == 0 {
 		t.Fatalf("VOID: %s declares no paths — an empty spec would make every check below vacuous", path)
+	}
+	return spec
+}
+
+// loadEdgeSpec reads the edge's own published document (swag output). It is
+// the contract an integrator syncing through the edge reads.
+func loadEdgeSpec(t *testing.T) map[string]any {
+	t.Helper()
+	path := filepath.Join(repoRootFromHere(t), "edge-go", "docs", "swagger.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("VOID: cannot read the edge's published spec at %s: %v\n"+
+			"Regenerate with: cd edge-go && swag init -g cmd/edge/main.go -o ./docs", path, err)
+	}
+	var spec map[string]any
+	if err := json.Unmarshal(b, &spec); err != nil {
+		t.Fatalf("VOID: %s is not parseable JSON: %v", path, err)
+	}
+	if paths, _ := spec["paths"].(map[string]any); len(paths) == 0 {
+		t.Fatalf("VOID: %s declares no paths", path)
 	}
 	return spec
 }
@@ -278,6 +317,213 @@ func responseSchema(op map[string]any, accepted []int) map[string]any {
 		}
 	}
 	return nil
+}
+
+// checkRelay is check 6: the call's answer reaches the edge's own callers.
+func checkRelay(t *testing.T, spec, edge map[string]any, call EdgeCoreCall) {
+	t.Helper()
+	method, path, ok := strings.Cut(call.EdgeRoute, " ")
+	if !ok || method == "" || path == "" {
+		t.Errorf("%s: PassThrough/RelaysProblems needs EdgeRoute as \"<method> <path>\", got %q", call.Name, call.EdgeRoute)
+		return
+	}
+	edgePaths, _ := edge["paths"].(map[string]any)
+	edgeItem, _ := edgePaths[path].(map[string]any)
+	edgeOp, ok := edgeItem[method].(map[string]any)
+	if !ok {
+		t.Errorf("%s: the edge's published spec has no %s %s (EdgeRoute)", call.Name, strings.ToUpper(method), path)
+		return
+	}
+	edgeResponses, _ := edgeOp["responses"].(map[string]any)
+
+	corePaths, _ := spec["paths"].(map[string]any)
+	coreItem, _ := corePaths[call.Path].(map[string]any)
+	coreOp, ok := coreItem[call.Method].(map[string]any)
+	if !ok {
+		return // checkCall already names the missing operation
+	}
+
+	if call.PassThrough {
+		coreSchema := responseSchema(coreOp, call.AcceptedStatus)
+		if coreSchema == nil {
+			t.Errorf("%s: PassThrough, but core declares no response schema for %v", call.Name, call.AcceptedStatus)
+		} else {
+			where := call.Name + " response (pass-through)"
+			complete(t, spec, where, reflect.TypeOf(call.Response), coreSchema)
+
+			var edgeSchema map[string]any
+			for _, code := range call.AcceptedStatus {
+				if r, ok := edgeResponses[strconv.Itoa(code)].(map[string]any); ok {
+					if s, ok := r["schema"].(map[string]any); ok {
+						edgeSchema = s
+						break
+					}
+				}
+			}
+			if edgeSchema == nil {
+				t.Errorf("%s: the edge's %s documents none of %v with a schema, so an integrator cannot read what core answers (documents: %v)",
+					call.Name, call.EdgeRoute, call.AcceptedStatus, sortedKeys(edgeResponses))
+			} else {
+				published(t, spec, edge, call.EdgeRoute+" success", coreSchema, edgeSchema)
+			}
+		}
+	}
+
+	if call.RelaysProblems {
+		coreResponses, _ := coreOp["responses"].(map[string]any)
+		relayed := 0
+		for code, raw := range coreResponses {
+			n, err := strconv.Atoi(code)
+			if err != nil || n < 400 || n > 499 {
+				continue
+			}
+			r, _ := raw.(map[string]any)
+			content, _ := r["content"].(map[string]any)
+			if _, ok := content["application/problem+json"]; !ok {
+				t.Errorf("%s: core declares %s for %s %s as %v, not application/problem+json — the edge relays only problems, so this one would reach the integrator as a 502",
+					call.Name, code, strings.ToUpper(call.Method), call.Path, sortedKeys(content))
+				continue
+			}
+			relayed++
+			if _, ok := edgeResponses[code]; !ok {
+				t.Errorf("%s: core answers %s application/problem+json, which the edge relays verbatim, but the edge's %s does not document %s (documents: %v)",
+					call.Name, code, call.EdgeRoute, code, sortedKeys(edgeResponses))
+			}
+		}
+		if relayed == 0 {
+			t.Errorf("VOID: %s declares RelaysProblems, but core declares no 4xx application/problem+json for %s %s",
+				call.Name, strings.ToUpper(call.Method), call.Path)
+		}
+	}
+}
+
+// complete is the reverse of compare's response direction: every property
+// core declares must be decoded by the Go type, recursively.
+func complete(t *testing.T, spec map[string]any, where string, goType reflect.Type, schema map[string]any) {
+	t.Helper()
+	for goType.Kind() == reflect.Pointer {
+		goType = goType.Elem()
+	}
+	schema = resolveRef(t, spec, where, schema)
+	if schema == nil {
+		return
+	}
+	if goType.Kind() == reflect.Slice || goType.Kind() == reflect.Array {
+		if items, ok := schema["items"].(map[string]any); ok {
+			complete(t, spec, where+"[]", goType.Elem(), items)
+		}
+		return
+	}
+	if goType.Kind() != reflect.Struct {
+		return
+	}
+	props, _ := schema["properties"].(map[string]any)
+	if len(props) == 0 {
+		t.Errorf("VOID: %s: core's schema declares no properties, so completeness cannot be checked", where)
+		return
+	}
+	goFields := map[string]reflect.StructField{}
+	for i := 0; i < goType.NumField(); i++ {
+		if name, skip := jsonName(goType.Field(i)); !skip {
+			goFields[name] = goType.Field(i)
+		}
+	}
+	for _, name := range sortedKeys(props) {
+		f, ok := goFields[name]
+		if !ok {
+			t.Errorf("%s: core declares %q, but %s has no field tagged json:%q.\n"+
+				"  The edge returns this answer to its own callers, so the property is silently dropped before the integrator sees it.",
+				where, name, goType.Name(), name)
+			continue
+		}
+		sub, _ := props[name].(map[string]any)
+		ft := f.Type
+		for ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		if ft.Kind() == reflect.Struct || ((ft.Kind() == reflect.Slice || ft.Kind() == reflect.Array) && ft.Elem().Kind() == reflect.Struct) {
+			complete(t, spec, where+"."+name, ft, sub)
+		}
+	}
+}
+
+// published checks the edge's documented schema carries every property
+// core declares (names compared case- and underscore-insensitively, since
+// the edge publishes processed_count for core's processedCount), with every
+// enum value core declares, recursively.
+func published(t *testing.T, spec, edge map[string]any, where string, coreSchema, edgeSchema map[string]any) {
+	t.Helper()
+	coreSchema = resolveRef(t, spec, where, coreSchema)
+	edgeSchema = resolveEdgeRef(t, edge, where, edgeSchema)
+	if coreSchema == nil || edgeSchema == nil {
+		return
+	}
+	if coreItems, ok := coreSchema["items"].(map[string]any); ok {
+		edgeItems, ok := edgeSchema["items"].(map[string]any)
+		if !ok {
+			t.Errorf("%s: core declares an array, the edge documents %v", where, sortedKeys(edgeSchema))
+			return
+		}
+		published(t, spec, edge, where+"[]", coreItems, edgeItems)
+		return
+	}
+	coreProps, _ := coreSchema["properties"].(map[string]any)
+	if len(coreProps) == 0 {
+		return // a scalar: nothing named to compare
+	}
+	edgeProps, _ := edgeSchema["properties"].(map[string]any)
+	byNorm := map[string]map[string]any{}
+	for name, v := range edgeProps {
+		m, _ := v.(map[string]any)
+		byNorm[normWire(name)] = m
+	}
+	for _, name := range sortedKeys(coreProps) {
+		coreProp, _ := coreProps[name].(map[string]any)
+		edgeProp, ok := byNorm[normWire(name)]
+		if !ok {
+			t.Errorf("%s: core declares %q, which the edge's published spec does not document (documents: %v)",
+				where, name, sortedKeys(edgeProps))
+			continue
+		}
+		if enum, ok := coreProp["enum"].([]any); ok {
+			have := map[string]bool{}
+			if e, ok := edgeProp["enum"].([]any); ok {
+				for _, v := range e {
+					have[fmt.Sprint(v)] = true
+				}
+			}
+			for _, v := range enum {
+				if !have[fmt.Sprint(v)] {
+					t.Errorf("%s.%s: core can answer %v, which the edge's published enum does not list (lists: %v)",
+						where, name, v, edgeProp["enum"])
+				}
+			}
+		}
+		published(t, spec, edge, where+"."+name, coreProp, edgeProp)
+	}
+}
+
+// resolveEdgeRef follows a Swagger 2.0 "#/definitions/..." $ref in the
+// edge's published spec.
+func resolveEdgeRef(t *testing.T, edge map[string]any, where string, schema map[string]any) map[string]any {
+	t.Helper()
+	ref, ok := schema["$ref"].(string)
+	if !ok {
+		return schema
+	}
+	const prefix = "#/definitions/"
+	defs, _ := edge["definitions"].(map[string]any)
+	next, ok := defs[strings.TrimPrefix(ref, prefix)].(map[string]any)
+	if !strings.HasPrefix(ref, prefix) || !ok {
+		t.Errorf("VOID: %s: the edge's published spec has a dangling or unsupported $ref %q", where, ref)
+		return nil
+	}
+	return next
+}
+
+// normWire compares a core camelCase name with an edge snake_case one.
+func normWire(name string) string {
+	return strings.ToLower(strings.ReplaceAll(name, "_", ""))
 }
 
 // --- Go type vs OpenAPI schema --------------------------------------------
