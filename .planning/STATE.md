@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-49 complete (49/53); sub-theme 37-G code complete (37-50 next: the 37-G gate, wave 40). 37-49 closed 2026-10-14 (RWO-023, RWO-028 UI; UI-SPEC G1, G2): the shop form sets delivery fee, Free delivery over (emptied sends null) and Offers delivery/collection (neither ticked = inline alert, no request); the storefront header shows a Collection only / Delivery only chip and a collection-only shop no longer advertises Free delivery; checkout offers only the shop types and on 422 fulfilment-not-offered shows the refusal built from its fields and switches to the offered type; the create dialog previews the web address with the server slug rule. Jest 2834/243, build + full tsc rc 0, lint 0 errors, metrics 5978. The 37-50 gate owes the live proof (WINDOWS #44 and #45): rebuild every image, then collection-only end to end, fee preview vs server at 20 and 30 pounds, threshold clear, the mid-checkout untick, slug kept on edit, the create preview, and 375/768/1280 renders of the chip and dialogs."
-last_updated: "2026-10-14T12:55:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-50 complete (50/53); sub-theme 37-G gated, PR branch phase-37-g-shop-admin (2a870c9f, one squash on origin/main fc1f0ab8, tag cut/phase-37-g-shop-admin = c355ae16) cut locally, not yet pushed. 37-50 closed 2026-10-14 (owner answered the stack checkpoint "proceed", no demo restore): every image rebuilt, freshness 4/4, V83 applied out of order after V84, OpenAPI gate green; RED on old images then GREEN for fees (299 at 16 and 20 pounds, 0 at 30), threshold clear, the live mid-checkout untick, collection-only refused 422 on both writers, slug kept on edit and 409 on a taken slug; 25 screens at 375/390/768/1280; goods hold, Playwright 64/0. Two findings for the owner before the 37-G PR merges: the /shop directory card and basket page still advertise delivery for a collection-only shop (RWO-023 left unticked until decided), and a pre-deploy Redis shop entry without the four fields can let an edit wipe fee and threshold for up to 15 min (suggested: CACHE_KEY_FORMAT_VERSION v4 -> v5). Brixton Village Grill left collection-only, fee 299, threshold 3000 (originals in evidence 2.10). Next: owner decision on the two findings, push and open the 37-G PR, D3 series, merge, merge main back; then 37-51."
+last_updated: "2026-10-14T16:45:00.000Z"
 last_activity: 2026-10-14
-state_head: 249e7794
+state_head: be20c041
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 234
+  completed_plans: 235
   percent: 65
 ---
 
@@ -1324,6 +1324,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-48 (executor, 2026-10-14): slug kept on edit; a taken slug is 409 shop-slug-taken on create and update, with a unique-index backstop for slugs the access-scoped pre-check cannot see (another tenant's unpublished shop); old-slug 301 aliases stay deferred to Phase 39 (owner ruling 2026-10-10)
 - [Phase 37]: 37-49 (executor, 2026-10-14): frontend/lib/fulfilment-offered.ts is the one reader of offersDelivery/offersCollection for the shop page and checkout; a collection-only shop shows no delivery price (it had shown Free delivery)
 - [Phase 37]: 37-49 (executor, 2026-10-14): three copy choices made without a UI-SPEC line (the amount error, the web-address preview hint, the chip style); listed in 37-49-SUMMARY for the owner
+- [Phase 37]: 37-50 (owner, 2026-10-14): the 37-G gate may take the shared compose stack ("proceed"); demo shop settings are not restored afterwards
+- [Phase 37]: 37-50 (executor, 2026-10-14): two defects found live and deferred to the owner, not fixed in the gate: collection-only shops still advertise delivery on the /shop card and basket page; a cached pre-deploy ShopDto lets an edit clear fee and threshold (cache key version bump suggested)
 
 ### Pending Todos
 
@@ -1397,8 +1399,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-14T12:55:00.000Z
-Stopped at: Completed 37-49-PLAN.md (shop-form fees and offered types, storefront chip, offered-only checkout, create-dialog web-address preview). Next: 37-50 (the 37-G gate, wave 40).
+Last session: 2026-10-14T16:45:00.000Z
+Stopped at: Completed 37-50-PLAN.md (the 37-G gate; PR branch phase-37-g-shop-admin cut locally). Next: owner decision on the two 37-50 findings, then open the 37-G PR and run D3; then 37-51.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.

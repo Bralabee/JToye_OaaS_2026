@@ -215,7 +215,7 @@ that mints these IDs) declares all 35 and is omitted from the traceability rows.
 **37-G Catalogue & shop admin**
 
 - [ ] **RWO-023**: #798 — The shop form sets the delivery fee, the free-delivery threshold and whether the shop offers delivery and/or collection (defaults preserve today's "both"), enforced for every writer through `FulfilmentPolicy`, and the storefront shows "Collection only" where it applies.
-- [ ] **RWO-028**: #801 — Updating a shop keeps its public slug unless a new slug is explicitly sent and validated, so shared links and QR codes keep working.
+- [x] **RWO-028**: #801 — Updating a shop keeps its public slug unless a new slug is explicitly sent and validated, so shared links and QR codes keep working.
 
 **37-F Accessibility (P2, kept in by D-05)**
 
