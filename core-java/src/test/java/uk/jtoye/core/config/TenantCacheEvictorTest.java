@@ -233,7 +233,7 @@ class TenantCacheEvictorTest {
     }
 
     @Test
-    @DisplayName("evictEntity - Redis cache: deletes the v4 key AND the legacy Boot-3.5 key, same tenant only")
+    @DisplayName("evictEntity - Redis cache: deletes the v5 key, the previous-format v4 key AND the legacy Boot-3.5 key")
     void testEvictEntity_RedisCacheAlsoEvictsLegacyBoot35Key() {
         RedisCacheWriter writer = mock(RedisCacheWriter.class);
         TenantCacheEvictor redisEvictor = redisBackedEvictor(writer);
@@ -244,16 +244,18 @@ class TenantCacheEvictorTest {
         TenantContext.set(tenant);
         redisEvictor.evictEntity("shops", "getShopById", shopId);
 
-        // BOTH deletes are the SYNCHRONOUS evictIfPresent: Spring Data Redis 4's evict may be
-        // fire-and-forget, which would let either key outlive the caller's write (PR #898 round 1
-        // for the v4 key, WR-01 for the Boot-3.5 key). verifyNoMoreInteractions fails on any evict.
+        // EVERY delete is the SYNCHRONOUS evictIfPresent: Spring Data Redis 4's evict may be
+        // fire-and-forget, which would let a key outlive the caller's write (PR #898 round 1 for the
+        // versioned key, WR-01 for the Boot-3.5 key). verifyNoMoreInteractions fails on any evict.
+        // Literals, not the constants: this pins the actual key bytes each generation reads.
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
         verifyNoMoreInteractions(writer);
     }
 
     @Test
-    @DisplayName("evictEntity - A failing legacy delete is logged, not propagated, and the v4 eviction stands")
+    @DisplayName("evictEntity - A failing legacy delete is logged, not propagated, and the other evictions stand")
     void testEvictEntity_LegacyDeleteFailureDoesNotPropagate() {
         RedisCacheWriter writer = mock(RedisCacheWriter.class);
         UUID tenant = UUID.randomUUID();
@@ -267,8 +269,29 @@ class TenantCacheEvictorTest {
         assertDoesNotThrow(() -> redisEvictor.evictEntity("shops", "getShopById", shopId),
                 "the legacy delete is best-effort: it must never fail the caller's write");
 
-        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+    }
+
+    @Test
+    @DisplayName("evictEntity - A failing previous-format (v4) delete is logged, not propagated, and the other evictions stand")
+    void testEvictEntity_PreviousFormatDeleteFailureDoesNotPropagate() {
+        RedisCacheWriter writer = mock(RedisCacheWriter.class);
+        UUID tenant = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        String suffix = "tenant:" + tenant + ":getShopById:" + shopId;
+        doThrow(new RedisConnectionFailureException("simulated: v4 delete refused"))
+                .when(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        TenantCacheEvictor redisEvictor = redisBackedEvictor(writer);
+
+        TenantContext.set(tenant);
+        assertDoesNotThrow(() -> redisEvictor.evictEntity("shops", "getShopById", shopId),
+                "the previous-format delete is best-effort: it must never fail the caller's write");
+
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v5:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
     }
 
     @Test

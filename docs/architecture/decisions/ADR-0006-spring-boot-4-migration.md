@@ -182,6 +182,12 @@ gate: 0 clean, 1 bad key, 2 VOID (`ev:38-11-config-keys.txt`).
   `MismatchedInputException` and the error counter moves from 0 to 1 (`ev:38-09-cache.txt`). The SEC-4
   polymorphic-type allowlist was re-derived from the bytes Jackson 3 writes and **narrowed** to
   `uk.jtoye.`, `java.util.` and `java.math.` (`ev:38-09-cache.txt`).
+- **Later bump (37-G review, 2026-10-14): the current version is `v5`.** 37-48 added four fields to
+  `ShopDto`; a pre-deploy `v4:` entry read back without them and was served for up to 15 minutes. An
+  additive field on a cached DTO is now a format change (`CacheConfig.CACHE_KEY_FORMAT_VERSION` Javadoc).
+  `TenantCacheEvictor` deletes the `v4:` key as well as the `v5:` and Boot-3.5 keys, so the pre-37-G
+  image stays a safe rollback target. In the notes below, read "Boot 4" as "the current version" and
+  "Boot 3.5" as "an older generation"; for the 37-G deploy the post-rollout cleanup pattern is `v5:*`.
 - **Evictions during the rolling deploy (review WR-01).** Separate keys also mean separate evictions:
   an eviction only reaches the evicting pod's own key generation. Two measures, and the residual:
   - *Boot-4 writes reach both generations (code, transitional).* `TenantCacheEvictor` also deletes the

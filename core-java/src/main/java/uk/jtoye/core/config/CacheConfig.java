@@ -31,7 +31,7 @@ import java.util.Map;
  * - Tenant-aware caching with TenantAwareCacheKeyGenerator
  * - Per-cache TTL configuration (products: 10min, shops: 15min)
  * - JSON serialization for cache values (Jackson 3, allowlisted polymorphic typing)
- * - Versioned cache keys ({@code v4:{region}::...}, see CACHE_KEY_FORMAT_VERSION)
+ * - Versioned cache keys ({@code v5:{region}::...}, see CACHE_KEY_FORMAT_VERSION)
  * - Disabled for test profile to maintain test isolation
  * 
  * Cache Strategy:
@@ -64,8 +64,8 @@ public class CacheConfig implements CachingConfigurer {
     }
 
     /**
-     * The cache value FORMAT version, carried in every cache key as {@code v4:{region}::…}
-     * (Phase 38, 38-09).
+     * The cache value FORMAT version, carried in every cache key as {@code v5:{region}::…}
+     * (Phase 38, 38-09, as {@code v4}; bumped to {@code v5} by the 37-G review, see "History").
      *
      * <p><b>Why.</b> The Spring Boot 4 move put the cache value serializer on Jackson 3, whose typing
      * scheme writes different bytes: every value a Boot-3.5 pod cached under {@code {region}::…} is
@@ -75,38 +75,75 @@ public class CacheConfig implements CachingConfigurer {
      * equally fail on what a Boot-4 pod wrote. With the version in the key the two formats never meet:
      * a Boot-4 pod neither reads nor overwrites an old entry.
      *
-     * <p><b>No flush for FORMAT reasons.</b> Old entries are never read by a Boot-4 pod and expire by
-     * their region TTL (shopMembership 5 min, products 10 min, shops 15 min; the 10-minute default for
-     * any other region). {@code CacheFormatIsolationIntegrationTest} proves it on a real Redis.
+     * <p><b>No flush for FORMAT reasons.</b> Old entries are never read by a pod on a newer version and
+     * expire by their region TTL (shopMembership 5 min, products 10 min, shops 15 min; the 10-minute
+     * default for any other region). {@code CacheFormatIsolationIntegrationTest} proves it on a real Redis.
      *
      * <p><b>But evictions do not cross generations by themselves (Phase 38 review WR-01).</b> Because
-     * the two generations use different keys, an eviction made by one never reached the other's entry:
+     * the generations use different keys, an eviction made by one never reached the other's entry:
      * during a rolling deploy (or after a rollback) a revoke or edit handled by one generation left the
      * other generation serving its cached value until the TTL, including a {@code shopMembership}
      * grant. Two measures close it, and neither is complete on its own:
      * <ul>
      *   <li><b>Dual eviction (code, transitional).</b> {@link TenantCacheEvictor} also deletes the
-     *       Boot-3.5 key ({@link #legacyBoot35CacheKey}) whenever it evicts. That covers a write handled
-     *       by a Boot-4 pod: Boot-3.5 pods still running during the roll-forward, and Boot-3.5 pods after
-     *       a rollback, no longer read an entry a Boot-4 write should have removed.</li>
-     *   <li><b>Post-rollout cleanup (operator).</b> A Boot-3.5 pod cannot be taught to evict a
-     *       {@code v4:} key, so a write it handles during the overlap leaves the Boot-4 entry for that
-     *       entity stale until its TTL. Once every pod runs Boot 4, delete the {@code v4:*} keys (SCAN +
-     *       UNLINK, never KEYS or FLUSHALL); the same step after a re-roll-forward removes {@code v4:}
-     *       entries written before a rollback that the 3.5 pods never evicted. ADR-0006 "Deploy notes"
-     *       and "Rollback notes" carry the procedure and the bound.</li>
+     *       Boot-3.5 key ({@link #legacyBoot35CacheKey}) and the previous-version key
+     *       ({@link #previousFormatCacheKey}) whenever it evicts. That covers a write handled by a pod on
+     *       this version: pods of an older generation still running during the roll-forward, and pods of
+     *       that generation after a rollback, no longer read an entry this write should have removed.</li>
+     *   <li><b>Post-rollout cleanup (operator).</b> An older pod cannot be taught to evict a newer key,
+     *       so a write it handles during the overlap leaves the newer entry for that entity stale until
+     *       its TTL. Once every pod runs the new image, delete the current-version keys (today
+     *       {@code v5:*}; SCAN + UNLINK, never KEYS or FLUSHALL); the same step after a re-roll-forward
+     *       removes entries written before a rollback that the older pods never evicted. ADR-0006
+     *       "Deploy notes" and "Rollback notes" carry the procedure and the bound.</li>
      * </ul>
      *
-     * <p><b>Standing procedure.</b> Any future change to the cache value FORMAT (serializer, typing
-     * scheme, or a DTO change that old bytes cannot be read into) bumps this constant in the same
-     * change. It sits on the default configuration, so every region, including one added later,
-     * inherits it.
+     * <p><b>Standing procedure.</b> Any future change to the cache value FORMAT bumps this constant in
+     * the same change, and moves {@link #PREVIOUS_CACHE_KEY_FORMAT_VERSION} to the value it replaces.
+     * A format change is ANY change to the bytes a cached value is written as or read back into:
+     * <ul>
+     *   <li>the serializer or its typing scheme;</li>
+     *   <li>a DTO change old bytes cannot be read into (a removed, renamed or re-typed field);</li>
+     *   <li><b>an ADDITIVE field on a cached DTO</b> (37-G review, plan 37-50 finding 2.9). Old bytes
+     *       read into the new DTO WITHOUT an error, the new field simply null or defaulted, so nothing
+     *       fails and nothing is counted: the pod serves a pre-deploy value as if it were current for up
+     *       to the region TTL, and a client that edits it saves the missing field back as empty.</li>
+     * </ul>
+     * It sits on the default configuration, so every region, including one added later, inherits it.
+     *
+     * <p><b>History.</b> {@code v4} (Phase 38): the Jackson-3 serializer. {@code v5} (37-G review): 37-48
+     * added {@code deliveryFeePennies}, {@code freeDeliveryThresholdPennies}, {@code offersDelivery} and
+     * {@code offersCollection} to {@code ShopDto}. Measured at the gate: after the core-java restart
+     * {@code GET /shops/{id}} served the pre-deploy {@code v4:} entry without the four fields, and the
+     * vendor edit dialog would then save fee 0 and no threshold.
      */
-    static final String CACHE_KEY_FORMAT_VERSION = "v4";
+    static final String CACHE_KEY_FORMAT_VERSION = "v5";
+
+    /**
+     * TRANSITIONAL (37-G review): the format version {@link #CACHE_KEY_FORMAT_VERSION} replaced. Pods of
+     * the previous image (the rollback target) read and write keys under it, so {@link TenantCacheEvictor}
+     * deletes that key too ({@link #previousFormatCacheKey}): without it a revoke or edit handled by a
+     * {@code v5} pod would leave the {@code v4:} entry a {@code v4} pod serves in place until its TTL, during
+     * the rolling deploy and after a rollback (the WR-01 class, for a {@code shopMembership} grant a revoked
+     * grant still honoured for up to 5 minutes).
+     *
+     * <p><b>Removal condition.</b> Move it forward with the next bump. It may be deleted, with
+     * {@link #previousFormatCacheKey} and its one caller, once no image on the previous version can run
+     * (no rollback to it is still on the table) and 15 minutes have elapsed since the last such pod stopped.
+     */
+    static final String PREVIOUS_CACHE_KEY_FORMAT_VERSION = "v4";
+
+    /**
+     * TRANSITIONAL (37-G review): the Redis key a pod on {@link #PREVIOUS_CACHE_KEY_FORMAT_VERSION} uses for
+     * {@code key} in region {@code cacheName}, the same prefix shape as {@link #cacheManager} computes.
+     */
+    static String previousFormatCacheKey(String cacheName, String key) {
+        return PREVIOUS_CACHE_KEY_FORMAT_VERSION + ":" + cacheName + "::" + key;
+    }
 
     /**
      * TRANSITIONAL (Phase 38 review WR-01): the Redis key a Boot-3.5 pod used for {@code key} in region
-     * {@code cacheName}, so {@link TenantCacheEvictor} can delete it alongside the {@code v4:} key.
+     * {@code cacheName}, so {@link TenantCacheEvictor} can delete it alongside the versioned key.
      *
      * <p>Boot 3.5's cache manager was built from {@code RedisCacheConfiguration.defaultCacheConfig()}
      * with no {@code computePrefixWith}, i.e. Spring Data Redis's {@link CacheKeyPrefix#simple()}
