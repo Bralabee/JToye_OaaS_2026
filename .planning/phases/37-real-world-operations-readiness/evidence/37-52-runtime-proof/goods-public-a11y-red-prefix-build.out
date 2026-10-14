@@ -1,0 +1,39 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/public-a11y.spec.ts --grep /shop has no|a storefront has no|dish detail modal|basket|cart|/ has no|cookies has no|INSTRUMENT --reporter=list --output=<proof>/pw-goods7-3053
+
+Running 18 tests using 1 worker
+
+  ✓   1 [mobile] › e2e/public-a11y.spec.ts:278:9 › public surfaces — WCAG 2.2 AA › / has no WCAG 2.2 AA violations (2.2s)
+  ✓   2 [mobile] › e2e/public-a11y.spec.ts:278:9 › public surfaces — WCAG 2.2 AA › /legal/cookies has no WCAG 2.2 AA violations (2.2s)
+  [control] /shop shop cards = 3
+  ✓   3 [mobile] › e2e/public-a11y.spec.ts:284:7 › public surfaces — WCAG 2.2 AA › /shop has no WCAG 2.2 AA violations (2.0s)
+  [control] /shop/mama-ades-kitchen dish cards = 12
+  ✓   4 [mobile] › e2e/public-a11y.spec.ts:298:7 › public surfaces — WCAG 2.2 AA › a storefront has no WCAG 2.2 AA violations (2.5s)
+  [control] dish modal [role="dialog"] count = 1
+  ✓   5 [mobile] › e2e/public-a11y.spec.ts:319:7 › public surfaces — WCAG 2.2 AA › the dish detail modal has no WCAG 2.2 AA violations (2.4s)
+  [control] checkout seeded line items on page = 1
+  ✓   6 [mobile] › e2e/public-a11y.spec.ts:356:7 › public surfaces — WCAG 2.2 AA › checkout has no WCAG 2.2 AA violations (with a seeded basket) (2.2s)
+  [control] cart seeded line items on page = 1
+  ✓   7 [mobile] › e2e/public-a11y.spec.ts:427:7 › public surfaces — WCAG 2.2 AA › cart has no WCAG 2.2 AA violations (with a seeded basket) (2.1s)
+  [instrument] violations: button-name, color-contrast, image-alt, link-name
+  ✓   8 [mobile] › e2e/public-a11y.spec.ts:816:7 › axe instrument › INSTRUMENT: the scanner reports violations on a deliberately broken fixture (389ms)
+  [instrument] 2.2 violations: target-size
+  ✓   9 [mobile] › e2e/public-a11y.spec.ts:858:7 › axe instrument › INSTRUMENT: the 2.2 tag set reports target-size on undersized adjacent buttons (380ms)
+  ✓  10 [desktop] › e2e/public-a11y.spec.ts:278:9 › public surfaces — WCAG 2.2 AA › / has no WCAG 2.2 AA violations (2.2s)
+  ✓  11 [desktop] › e2e/public-a11y.spec.ts:278:9 › public surfaces — WCAG 2.2 AA › /legal/cookies has no WCAG 2.2 AA violations (2.2s)
+  [control] /shop shop cards = 3
+  ✓  12 [desktop] › e2e/public-a11y.spec.ts:284:7 › public surfaces — WCAG 2.2 AA › /shop has no WCAG 2.2 AA violations (2.1s)
+  [control] /shop/mama-ades-kitchen dish cards = 12
+  ✓  13 [desktop] › e2e/public-a11y.spec.ts:298:7 › public surfaces — WCAG 2.2 AA › a storefront has no WCAG 2.2 AA violations (2.5s)
+  [control] dish modal [role="dialog"] count = 1
+  ✓  14 [desktop] › e2e/public-a11y.spec.ts:319:7 › public surfaces — WCAG 2.2 AA › the dish detail modal has no WCAG 2.2 AA violations (2.6s)
+  [control] checkout seeded line items on page = 1
+  ✓  15 [desktop] › e2e/public-a11y.spec.ts:356:7 › public surfaces — WCAG 2.2 AA › checkout has no WCAG 2.2 AA violations (with a seeded basket) (2.3s)
+  [control] cart seeded line items on page = 1
+  ✓  16 [desktop] › e2e/public-a11y.spec.ts:427:7 › public surfaces — WCAG 2.2 AA › cart has no WCAG 2.2 AA violations (with a seeded basket) (2.2s)
+  [instrument] violations: button-name, color-contrast, image-alt, link-name
+  ✓  17 [desktop] › e2e/public-a11y.spec.ts:816:7 › axe instrument › INSTRUMENT: the scanner reports violations on a deliberately broken fixture (407ms)
+  [instrument] 2.2 violations: target-size
+  ✓  18 [desktop] › e2e/public-a11y.spec.ts:858:7 › axe instrument › INSTRUMENT: the 2.2 tag set reports target-size on undersized adjacent buttons (401ms)
+
+  18 passed (34.6s)

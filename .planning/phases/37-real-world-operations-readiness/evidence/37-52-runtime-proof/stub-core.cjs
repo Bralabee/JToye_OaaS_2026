@@ -15,8 +15,11 @@ const SHOPS = [
   shop("brixton-village-grill", "Brixton Village Grill", { openNow: false, nextOpenAt: "2026-10-15T08:00:00Z" }),
   shop("peckham-jollof-co", "Peckham Jollof Co.", {}),
 ]
+// STUB_SHORT_NAMES=1: the goods run (dish-modal spec's focus-return probe reads at most 60 characters
+// of the focused element's text, so a >60-character first dish fails it on ANY build).
+const LONG_DISH = process.env.STUB_SHORT_NAMES === "1" ? "Jollof Rice" : "Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw"
 const DISHES = [
-  ["Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw", "Mains", 1250],
+  [LONG_DISH, "Mains", 1250],
   ["Egusi Soup with Pounded Yam", "Mains", 1100], ["Suya Beef Skewers", "Grills", 900],
   ["Peppered Snail", "Grills", 1300], ["Moi Moi", "Sides", 450], ["Dodo (Fried Plantain)", "Sides", 350],
   ["Puff Puff", "Desserts", 300], ["Chin Chin", "Desserts", 250], ["Mango Lassi", "Drinks", 350],
