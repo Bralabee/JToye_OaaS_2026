@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-51 complete (51/53); sub-theme 37-G gated, PR branch phase-37-g-shop-admin (2a870c9f, one squash on origin/main fc1f0ab8, tag cut/phase-37-g-shop-admin = c355ae16) cut locally, not yet pushed. 37-50 closed 2026-10-14 (owner answered the stack checkpoint "proceed", no demo restore): every image rebuilt, freshness 4/4, V83 applied out of order after V84, OpenAPI gate green; RED on old images then GREEN for fees (299 at 16 and 20 pounds, 0 at 30), threshold clear, the live mid-checkout untick, collection-only refused 422 on both writers, slug kept on edit and 409 on a taken slug; 25 screens at 375/390/768/1280; goods hold, Playwright 64/0. Two findings fixed on owner approval (2026-10-14): cache key v4 -> v5 with v4 eviction kept for rollback (5b037e1b), and the /shop card and basket show Collection only (8caa6e0f); both proven live (evidence 37-50 2.11), RWO-023 ticked; metrics 5989. Brixton Village Grill left collection-only, fee 299, threshold 3000 (originals in evidence 2.10). 37-G MERGED as PR 923 (squash 94af0d89); main merged back. 37-51 DONE 2026-10-14 (order page and /track announce each status change once via one role=status region; Basket/Checkout/Order step titles carry the shop; trackers wrap at 360px 130%; jest 2899/246, build+tsc+lint rc 0, metrics 6049; live a11y-tracking journey deferred to 37-53). Next: 37-52."
-last_updated: "2026-10-14T20:40:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-52 complete (52/53); sub-theme 37-G gated, PR branch phase-37-g-shop-admin (2a870c9f, one squash on origin/main fc1f0ab8, tag cut/phase-37-g-shop-admin = c355ae16) cut locally, not yet pushed. 37-50 closed 2026-10-14 (owner answered the stack checkpoint "proceed", no demo restore): every image rebuilt, freshness 4/4, V83 applied out of order after V84, OpenAPI gate green; RED on old images then GREEN for fees (299 at 16 and 20 pounds, 0 at 30), threshold clear, the live mid-checkout untick, collection-only refused 422 on both writers, slug kept on edit and 409 on a taken slug; 25 screens at 375/390/768/1280; goods hold, Playwright 64/0. Two findings fixed on owner approval (2026-10-14): cache key v4 -> v5 with v4 eviction kept for rollback (5b037e1b), and the /shop card and basket show Collection only (8caa6e0f); both proven live (evidence 37-50 2.11), RWO-023 ticked; metrics 5989. Brixton Village Grill left collection-only, fee 299, threshold 3000 (originals in evidence 2.10). 37-G MERGED as PR 923 (squash 94af0d89); main merged back. 37-51 DONE 2026-10-14 (order page and /track announce each status change once via one role=status region; Basket/Checkout/Order step titles carry the shop; trackers wrap at 360px 130%; jest 2899/246, build+tsc+lint rc 0, metrics 6049; live a11y-tracking journey deferred to 37-53). 37-52 DONE 2026-10-14 (shop cards named by their shop; Add/Remove keeps focus and announces the dish from cart-provider; cookie notice first in <body>, Got it = tab stop 1, never covers focus; basket names and shop header wrap at 360px 130%; jest 2927/248, build+tsc+lint rc 0, metrics 6085; public-a11y skip-link-first gate narrowed to admit only the notice host ahead of the skip link (3 break arms red) — owner FYI; stale comment at frontend/lib/accessibility-statement.ts:205 for 37-53; live a11y-storefront run deferred to 37-53; RWO-080..085 tick at 37-53). Next: 37-53 (the 37-F gate, blocking-human checkpoint before the shared stack)."
+last_updated: "2026-10-14T21:20:00.000Z"
 last_activity: 2026-10-14
-state_head: 5ec9f670
+state_head: 31ee7b62
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 236
+  completed_plans: 237
   percent: 65
 ---
 
@@ -1401,7 +1401,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 ## Session Continuity
 
 Last session: 2026-10-14T16:45:00.000Z
-Stopped at: 37-G MERGED as PR 923 (squash 94af0d89, 2026-10-14T19:14Z) after the D3 series (round 1: 3 admissible, all fixed; round 2: zero, Review-Record on f10a825d) and CI 30 green / 6 skipped; origin/main merged back (code tree equal to main outside .planning). 37-51 complete (commits 90957ce2..5ec9f670, SUMMARY written). Next: 37-52.
+Stopped at: 37-G MERGED as PR 923 (squash 94af0d89, 2026-10-14T19:14Z) after the D3 series (round 1: 3 admissible, all fixed; round 2: zero, Review-Record on f10a825d) and CI 30 green / 6 skipped; origin/main merged back (code tree equal to main outside .planning). 37-51 complete (commits 90957ce2..5ec9f670, SUMMARY written). 37-52 complete (fd11b187..31ee7b62). Next: 37-53, the 37-F gate.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
