@@ -559,4 +559,30 @@ class ShopServiceTest {
                 () -> shopService.updateShop(shopId, validRequest));
         verify(shopRepository, never()).saveAndFlush(any(Shop.class));
     }
+
+    @Test
+    @DisplayName("37-48 UXT-028: a slug the pre-check could not see (another tenant's unpublished shop under RLS) is still a typed 409 from the unique index")
+    void testUpdateShop_UniqueIndexOnSlug_IsShopSlugTaken() {
+        validRequest.setSlug("hidden-elsewhere");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.saveAndFlush(any(Shop.class))).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "could not execute statement [ERROR: duplicate key value violates unique constraint \"idx_shops_slug\"]"));
+
+        uk.jtoye.core.exception.ShopSlugTakenException ex = assertThrows(
+                uk.jtoye.core.exception.ShopSlugTakenException.class,
+                () -> shopService.updateShop(shopId, validRequest));
+        assertEquals("hidden-elsewhere", ex.getSlug());
+    }
+
+    @Test
+    @DisplayName("37-48: a unique violation on another index is NOT reported as a taken slug")
+    void testUpdateShop_OtherUniqueViolation_IsNotShopSlugTaken() {
+        validRequest.setSlug("fine-slug");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.saveAndFlush(any(Shop.class))).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "duplicate key value violates unique constraint \"idx_shops_tenant_name\""));
+
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> shopService.updateShop(shopId, validRequest));
+    }
 }
