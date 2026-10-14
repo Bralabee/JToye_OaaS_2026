@@ -240,7 +240,11 @@ test.describe("live tracking journey @mobile-only", () => {
     await expect(page).toHaveTitle(`Order ${orderNumber} · ${SHOP_NAME} — J'Toye`)
 
     // ── Order page: exactly one polite status region; the change is announced (F1). ──
-    await expect(page.locator('[role="status"][aria-live="polite"]')).toHaveCount(1)
+    // Counted inside <main>: since 37-52 the storefront header also carries the BASKET's own polite
+    // region (F3), a different region with a different job, which is empty unless the basket changes.
+    // F1's "one region" is the order status's; a second region announcing the status would still be
+    // caught below, where the page-wide recorder must hold exactly one "Order update:" message.
+    await expect(page.locator('main [role="status"][aria-live="polite"]')).toHaveCount(1)
     await expect(page.locator('[aria-current="step"]')).toHaveText(/Received/)
     await expect(page.getByRole("button", { name: "Copy order number" })).toBeVisible()
     await installAnnouncementRecorder(page)
@@ -269,7 +273,7 @@ test.describe("live tracking journey @mobile-only", () => {
     await expect(page).toHaveURL(/\/track\?order=/)
     await expect(page.getByText(orderNumber)).toBeVisible({ timeout: 15_000 })
     await expect(page).toHaveTitle("Track your order — J'Toye")
-    await expect(page.locator('[role="status"][aria-live="polite"]')).toHaveCount(1)
+    await expect(page.locator('main [role="status"][aria-live="polite"]')).toHaveCount(1)
     await expect(page.locator('[aria-current="step"]')).toHaveText(/Confirmed/)
     await installAnnouncementRecorder(page)
     await vendorTransition(request, orderNumber, "start-preparation")
