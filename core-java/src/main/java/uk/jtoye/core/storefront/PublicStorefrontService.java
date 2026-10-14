@@ -1507,6 +1507,9 @@ public class PublicStorefrontService {
         dto.setMinimumOrderPennies(shop.getMinimumOrderPennies());
         dto.setDeliveryFeePennies(shop.getDeliveryFeePennies());
         dto.setFreeDeliveryThresholdPennies(shop.getFreeDeliveryThresholdPennies());
+        // 37-48 (UXT-023): the same reading FulfilmentPolicy.requireOffered enforces (a null flag is offered).
+        dto.setOffersDelivery(!Boolean.FALSE.equals(shop.getOffersDelivery()));
+        dto.setOffersCollection(!Boolean.FALSE.equals(shop.getOffersCollection()));
         dto.setTags(shop.getTags());
         // QA-council FIX-6 (M3): disclose the payment mode BEFORE order
         // commit. Mirrors the exact gate createGuestOrder uses to decide

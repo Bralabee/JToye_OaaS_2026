@@ -102,6 +102,14 @@ public class PublicShopDto {
             + "days stay open until the vendor saves hours (D-25); openNow already accounts for it.", nullable = true)
     private HoursSource hoursSource;
 
+    // ---- 37-48 (RWO-023 / UXT-023): which fulfilment types the shop takes, so checkout offers only those ----
+
+    @Schema(description = "The shop takes DELIVERY orders. When false a DELIVERY order is refused 422 fulfilment-not-offered.")
+    private boolean offersDelivery = true;
+
+    @Schema(description = "The shop takes COLLECTION orders. When false a COLLECTION order is refused 422 fulfilment-not-offered.")
+    private boolean offersCollection = true;
+
     // ---- 37-26 (D-20, theme 6): the server's per-line ceiling, so the basket stepper stops where checkout refuses ----
 
     @Schema(description = "The most units of one product a single order line may carry (jtoye.order-limits.max-line-quantity). "
@@ -160,6 +168,10 @@ public class PublicShopDto {
     public void setLegacyAlwaysOpen(boolean legacyAlwaysOpen) { this.legacyAlwaysOpen = legacyAlwaysOpen; }
     public HoursSource getHoursSource() { return hoursSource; }
     public void setHoursSource(HoursSource hoursSource) { this.hoursSource = hoursSource; }
+    public boolean isOffersDelivery() { return offersDelivery; }
+    public void setOffersDelivery(boolean offersDelivery) { this.offersDelivery = offersDelivery; }
+    public boolean isOffersCollection() { return offersCollection; }
+    public void setOffersCollection(boolean offersCollection) { this.offersCollection = offersCollection; }
     public Integer getMaxLineQuantity() { return maxLineQuantity; }
     public void setMaxLineQuantity(Integer maxLineQuantity) { this.maxLineQuantity = maxLineQuantity; }
 }

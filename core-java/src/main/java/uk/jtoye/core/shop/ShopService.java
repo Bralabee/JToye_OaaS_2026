@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
+import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -138,6 +139,18 @@ public class ShopService {
         if (shop.getMinimumOrderPennies() == null) {
             shop.setMinimumOrderPennies(0L);
         }
+        // 37-48 (UXT-023): the mapper copies an absent request field as null over the entity defaults. A new shop
+        // charges no fee and takes both types (what every shop did before V83) unless the request says otherwise.
+        if (shop.getDeliveryFeePennies() == null) {
+            shop.setDeliveryFeePennies(0L);
+        }
+        if (shop.getOffersDelivery() == null) {
+            shop.setOffersDelivery(true);
+        }
+        if (shop.getOffersCollection() == null) {
+            shop.setOffersCollection(true);
+        }
+        requireSomeFulfilmentOffered(shop);
 
         // #460 link 3a: derive the coordinate from the address BEFORE the row is written,
         // so a shop is never born invisible to every distance query. On create there is no
@@ -275,6 +288,13 @@ public class ShopService {
         }
 
         shopMapper.updateEntity(request, shop);
+        // 37-48 (UXT-023): the mapper ignores nulls (BE-02), so an absent threshold keeps the stored one. An
+        // EXPLICIT null is the vendor clearing it ("no free-delivery threshold"), and only that clears it.
+        if (request.isFreeDeliveryThresholdPenniesSent() && request.getFreeDeliveryThresholdPennies() == null) {
+            shop.setFreeDeliveryThresholdPennies(null);
+        }
+        // A single false merged with the OTHER flag already false offers nothing: refused before anything is saved.
+        requireSomeFulfilmentOffered(shop);
         // 37-20 (D-15/D-25): a sent schedule replaces the stored one and makes the hours STRUCTURED (this ends
         // the LEGACY_ALWAYS_OPEN and NEEDS_REVIEW states); an absent one keeps both. The mapper never copies
         // the schedule, its source or the pause from a request.
@@ -673,6 +693,19 @@ public class ShopService {
                                 + "unreachable at /shop/" + candidate + ". Choose a different slug, or leave it "
                                 + "blank to have one generated.");
             }
+        }
+    }
+
+    /**
+     * 37-48 (UXT-023): a shop must offer at least one fulfilment type, judged on the MERGED state (the request's
+     * flags over the stored ones), so a partial update cannot leave a shop that takes no order. A typed 400 under
+     * the same {@code fulfilmentOffered} key the request-level rule uses; the database's ck_shops_offers_some is
+     * the last line.
+     */
+    private static void requireSomeFulfilmentOffered(Shop shop) {
+        if (Boolean.FALSE.equals(shop.getOffersDelivery()) && Boolean.FALSE.equals(shop.getOffersCollection())) {
+            throw new InvalidRequestFieldsException(
+                    Map.of("fulfilmentOffered", CreateShopRequest.FULFILMENT_OFFERED_MESSAGE));
         }
     }
 
