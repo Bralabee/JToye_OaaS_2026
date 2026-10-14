@@ -99,7 +99,8 @@ async function renderShop(shop: PublicShop) {
   })
 }
 
-const cardPlus = () => screen.getByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+// 37-52 (UI-SPEC F3): the dish card's "+" is named "Add one more {dish}"; the drawer's stays "Increase quantity".
+const cardPlus = () => screen.getByRole("button", { name: "Add one more Peri Peri Chicken" })
 
 beforeEach(() => {
   mockGet.mockReset()
@@ -119,7 +120,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
     seed(2)
     await renderShop({ ...baseShop, maxLineQuantity: 3 })
 
-    const plus = await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    const plus = await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
     expect(plus).toBeEnabled()
     expect(screen.queryByText("Max 3 per order")).toBeNull()
 
@@ -140,7 +141,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
     seed(10)
     await renderShop(baseShop)
 
-    const plus = await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    const plus = await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
     expect(plus).toBeEnabled()
     expect(screen.queryByText(/Max \d+ per order/)).toBeNull()
     fireEvent.click(plus)
@@ -150,7 +151,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
   it("dish modal: '+ one more' disables at the limit with the same hint", async () => {
     seed(3)
     await renderShop({ ...baseShop, maxLineQuantity: 3 })
-    await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
 
     fireEvent.click(screen.getByRole("button", { name: "View details for Peri Peri Chicken" }))
     const dialog = await screen.findByRole("dialog")
@@ -163,7 +164,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
   it("basket drawer: 'Increase quantity' disables at the limit with the same hint", async () => {
     seed(3)
     await renderShop({ ...baseShop, maxLineQuantity: 3 })
-    await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
 
     act(() => {
       window.dispatchEvent(new CustomEvent("jtoye:cart-open"))

@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState, useCallback, useRef } from "react"
+import { Suspense, useEffect, useState, useCallback, useRef, useId } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { MapPin, Search, Store, ChevronRight, Loader2, X, AlertCircle } from "lucide-react"
@@ -41,9 +41,24 @@ function ShopCard({ shop }: { shop: PublicShop }) {
   const badge = cardBadgeLabel(availability)
   const open = availability.kind === "open"
   const tags = shop.tags?.split(",").map((t) => t.trim()).filter(Boolean) || []
+  // 37-52 (UI-SPEC F2, UXT-082): the link wraps an <article>, so without these its name was whatever
+  // the card's content concatenated to (banner alt, logo alt, badge, distance, fee line) and Chrome's
+  // tree gave the persona an unusable link. The NAME is the heading; what a sighted customer reads
+  // beside it (open state, distance) is the DESCRIPTION. Ids per render (useId), never per shop.
+  // There is no rating on PublicShop, so there is no rating to describe.
+  const nameId = useId()
+  const badgeId = useId()
+  const distanceId = useId()
+  const hasDistance = shop.distanceKm != null
+  const describedBy = [badge ? badgeId : null, hasDistance ? distanceId : null].filter(Boolean).join(" ")
 
   return (
-    <Link href={`/shop/${shop.slug}`} className="group block">
+    <Link
+      href={`/shop/${shop.slug}`}
+      className="group block"
+      aria-labelledby={nameId}
+      aria-describedby={describedBy || undefined}
+    >
       <article className="bg-white rounded-2xl overflow-hidden shadow-sm border border-cream-100 transition-all duration-200 group-hover:shadow-md group-hover:border-amber-200 group-hover:-translate-y-0.5">
         {/* Banner */}
         <div className="relative h-36 sm:h-44 bg-gradient-to-br from-amber-300 via-amber-500 to-oxblood-600 overflow-hidden">
@@ -61,6 +76,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
           {badge && (
             <div className="absolute top-3 right-3">
               <span
+                id={badgeId}
                 data-testid="shop-availability-badge"
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${
                   open
@@ -91,7 +107,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
               haversine in the browser is a second answer, and the card could
               then disagree with the position it was given in the list. */}
           {shop.distanceKm != null && (
-            <span className="absolute top-3 left-3 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
+            <span id={distanceId} className="absolute top-3 left-3 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
               {formatMiles(shop.distanceKm)}
               {/* Spelled out rather than abbreviated: a screen reader pronounces
                   a two-letter unit as a word. */}
@@ -114,7 +130,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
         {/* Content */}
         <div className="p-4">
           <div className="flex items-start justify-between gap-2">
-            <h2 className="font-semibold text-slate-900 text-base leading-tight group-hover:text-oxblood transition-colors">
+            <h2 id={nameId} className="font-semibold text-slate-900 text-base leading-tight group-hover:text-oxblood transition-colors">
               {shop.name}
             </h2>
             <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-amber-700 transition-colors flex-shrink-0 mt-0.5" />

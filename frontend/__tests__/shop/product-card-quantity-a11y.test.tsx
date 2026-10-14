@@ -129,8 +129,9 @@ describe("Storefront dish-card quantity stepper accessible names (A11Y-7)", () =
     expect(
       await screen.findByRole("button", { name: "Decrease quantity of Peri Peri Chicken" })
     ).toBeInTheDocument()
+    // 37-52 (UI-SPEC F3): the card's "+" is named for what it does, "Add one more {dish}".
     expect(
-      screen.getByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+      screen.getByRole("button", { name: "Add one more Peri Peri Chicken" })
     ).toBeInTheDocument()
   })
 
