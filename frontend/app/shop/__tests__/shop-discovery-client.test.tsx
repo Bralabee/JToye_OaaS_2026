@@ -773,3 +773,95 @@ describe("ShopDiscoveryClient — the suggestion row is metric-insensitive (FE-3
     expect(row.className).toContain("focus-visible:ring")
   })
 })
+
+/**
+ * 37-50 finding 2.9 item 2 (review-fix, UXT-023): the directory card reads the fulfilment flags through
+ * `lib/fulfilment-offered.ts`, the same reader as the shop header, details bar and checkout. Before it, a
+ * collection-only shop's card advertised "Delivery £2.99 Free over £30.00" for a delivery the server
+ * refuses 422 `fulfilment-not-offered`.
+ */
+describe("ShopDiscoveryClient — what a card says about delivery", () => {
+  const BOTH = shop({
+    slug: "mama-ades-kitchen",
+    name: "Mama Ade's Kitchen",
+    latitude: null,
+    longitude: null,
+    deliveryFeePennies: 350,
+    freeDeliveryThresholdPennies: 2500,
+    offersDelivery: true,
+    offersCollection: true,
+  })
+  const COLLECTION_ONLY = shop({
+    slug: "brixton-village-grill",
+    name: "Brixton Village Grill",
+    deliveryFeePennies: 299,
+    freeDeliveryThresholdPennies: 3000,
+    offersDelivery: false,
+    offersCollection: true,
+  })
+  const DELIVERY_ONLY = shop({
+    slug: "peckham-delivery-kitchen",
+    name: "Peckham Delivery Kitchen",
+    deliveryFeePennies: 299,
+    freeDeliveryThresholdPennies: 3000,
+    offersDelivery: true,
+    offersCollection: false,
+  })
+
+  function card(s: PublicShop): HTMLElement {
+    renderDiscovery({ shops: [s], query: "", interpretation: TEXT })
+    return screen.getByRole("article")
+  }
+
+  it("a collection-only card says 'Collection only' and quotes no delivery fee or threshold", () => {
+    const article = card(COLLECTION_ONLY)
+
+    expect(within(article).getByText("Collection only")).toBeInTheDocument()
+    expect(article.textContent).not.toMatch(/delivery/i)
+    expect(article.textContent).not.toContain("£2.99")
+    expect(article.textContent).not.toContain("£30.00")
+  })
+
+  it("a collection-only card with no fee set does not fall through to 'Free delivery'", () => {
+    const article = card({ ...COLLECTION_ONLY, deliveryFeePennies: 0, freeDeliveryThresholdPennies: null })
+
+    expect(within(article).getByText("Collection only")).toBeInTheDocument()
+    expect(within(article).queryByText("Free delivery")).toBeNull()
+  })
+
+  it("CONTROL: a delivery-only card keeps its fee and threshold and claims nothing about collection", () => {
+    const article = card(DELIVERY_ONLY)
+
+    expect(article.textContent).toContain("Delivery £2.99Free over £30.00")
+    expect(article.textContent).not.toMatch(/collection/i)
+  })
+
+  it("CONTROL: a card for a shop offering both renders byte-identically to before the fix", () => {
+    const article = card(BOTH)
+
+    // Captured from the unfixed tree (Incremental Betterment: Mama Ade's card stays as it was): the
+    // meta row and the delivery row, the only two rows this fix can reach.
+    const rows = article.querySelector("div.p-4")!
+    expect(rows.querySelector("div.mt-3")!.outerHTML).toBe(
+      '<div class="mt-3 flex items-center gap-3 text-xs text-slate-600"><span class="whitespace-nowrap font-medium text-slate-600">Min £10.00</span></div>'
+    )
+    expect(rows.querySelector("div.mt-1\\.5")!.outerHTML).toBe(
+      '<div class="mt-1.5 flex flex-wrap gap-2 text-xs"><span class="text-slate-600">Delivery £3.50<span class="text-emerald-700 ml-1">Free over £25.00</span></span></div>'
+    )
+  })
+
+  it("CONTROL: a payload without the flags (an older backend) reads as both and keeps the fee line", () => {
+    // shop() sets neither flag, so this is the payload an older backend sends.
+    const flagless = shop({
+      slug: "mama-ades-kitchen",
+      name: "Mama Ade's Kitchen",
+      deliveryFeePennies: 350,
+      freeDeliveryThresholdPennies: 2500,
+    })
+    expect("offersDelivery" in flagless || "offersCollection" in flagless).toBe(false)
+    const article = card(flagless)
+
+    expect(article.textContent).toContain("Delivery £3.50Free over £25.00")
+    expect(within(article).queryByText("Collection only")).toBeNull()
+  })
+})
