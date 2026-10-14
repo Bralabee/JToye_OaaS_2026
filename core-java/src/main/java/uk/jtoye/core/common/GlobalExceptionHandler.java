@@ -61,6 +61,8 @@ import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
 import uk.jtoye.core.exception.StaffInviteUnavailableException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
+import uk.jtoye.core.exception.ShopSlugTakenException;
+import uk.jtoye.core.exception.FulfilmentNotOfferedException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ReviewOrderShopMismatchException;
@@ -663,6 +665,21 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Phase 37-48 (RWO-028 / UXT-028, owner ruling 2026-10-10): an explicit shop slug is held by another shop.
+     * 409 with its own type, never the generic {@code duplicate}: the shop's web address is a public contract,
+     * and the dashboard shows this detail inline next to the address field. {@code slug} is a typed member.
+     */
+    @ExceptionHandler(ShopSlugTakenException.class)
+    public ProblemDetail handleShopSlugTaken(ShopSlugTakenException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Shop web address taken");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-slug-taken"));
+        problem.setProperty("code", "SHOP_SLUG_TAKEN");
+        problem.setProperty("slug", ex.getSlug());
+        return problem;
+    }
+
+    /**
      * Issue #771 — a new review's {@code photoUrls} named something other than that review's own
      * photos. 400 like the sibling review refusals, with its own stable type so a machine client can
      * tell it apart. The detail names the index and the required key shape, never the submitted URL.
@@ -908,6 +925,23 @@ public class GlobalExceptionHandler {
         problem.setTitle("Validation Error");
         problem.setType(URI.create("https://jtoye.uk/errors/validation"));
         problem.setProperty("errors", new java.util.TreeMap<>(ex.getErrors()));
+        return problem;
+    }
+
+    /**
+     * Phase 37-48 (RWO-023 / UXT-023): the order asked for a fulfilment type its shop does not offer, on either
+     * writer. 422: the request is well-formed, the type is valid, this shop does not take it. {@code fulfilmentType}
+     * and {@code offered} are typed members, so the checkout can switch to the other option and an agent can
+     * resubmit without parsing the sentence. Nothing was written.
+     */
+    @ExceptionHandler(FulfilmentNotOfferedException.class)
+    public ProblemDetail handleFulfilmentNotOffered(FulfilmentNotOfferedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Fulfilment type not offered");
+        problem.setType(URI.create("https://jtoye.uk/errors/fulfilment-not-offered"));
+        problem.setProperty("code", "FULFILMENT_NOT_OFFERED");
+        problem.setProperty("fulfilmentType", ex.getRequested().name());
+        problem.setProperty("offered", ex.getOffered().stream().map(Enum::name).toList());
         return problem;
     }
 

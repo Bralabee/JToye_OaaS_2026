@@ -4,7 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import uk.jtoye.core.shop.OpeningSchedule;
@@ -21,6 +23,19 @@ public class CreateShopRequest {
     private String name;
 
     private String address;
+
+    /**
+     * The shop's web address, {@code /shop/{slug}} (37-48, UXT-028). Absent or blank on update KEEPS the stored
+     * slug (shared links and QR codes keep working); on create it means "generate one". An explicit value must be
+     * lower-case letters, digits and single hyphens, at most 100 characters (the column), and is then refused if
+     * reserved by a storefront route (422) or held by another shop (409 shop-slug-taken).
+     */
+    @Schema(description = "The shop's web address (/shop/{slug}). Absent or blank keeps the current one on update and "
+            + "generates one on create. Lower-case letters, digits and single hyphens, at most 100 characters.",
+            nullable = true, maxLength = 100)
+    @Size(max = 100, message = "slug must be at most 100 characters")
+    @Pattern(regexp = "^(\\s*|[a-z0-9]+(-[a-z0-9]+)*)$",
+            message = "slug must be lower-case letters, digits and single hyphens")
     private String slug;
     @Size(max = 5000)
     private String description;
@@ -83,6 +98,47 @@ public class CreateShopRequest {
 
     private String deliveryInfo;
     private Long minimumOrderPennies;
+
+    // ---- 37-48 (RWO-023 / UXT-023): what delivery costs and which fulfilment types the shop takes ----
+
+    @Schema(description = "Delivery fee in pennies, charged on a DELIVERY order below the free-delivery threshold. "
+            + "Absent keeps the stored fee (a new shop charges 0).", nullable = true)
+    @Min(value = 0, message = "deliveryFeePennies must not be negative")
+    private Long deliveryFeePennies;
+
+    @Schema(description = "A DELIVERY order whose items reach this subtotal (pennies, inclusive) pays no delivery fee. "
+            + "null means no free-delivery threshold. Absent keeps the stored threshold; an explicit null clears it.",
+            nullable = true)
+    @Min(value = 0, message = "freeDeliveryThresholdPennies must not be negative")
+    private Long freeDeliveryThresholdPennies;
+
+    /** True when the request carried the threshold key at all, null included: an explicit null clears it. */
+    @JsonIgnore
+    private boolean freeDeliveryThresholdPenniesSent;
+
+    @Schema(description = "The shop takes DELIVERY orders. Absent keeps the stored value (a new shop takes both). "
+            + "At least one of offersDelivery and offersCollection must be true.", nullable = true)
+    private Boolean offersDelivery;
+
+    @Schema(description = "The shop takes COLLECTION orders. Absent keeps the stored value (a new shop takes both). "
+            + "At least one of offersDelivery and offersCollection must be true.", nullable = true)
+    private Boolean offersCollection;
+
+    /**
+     * A shop that offers neither type could take no order at all (37-48, UXT-023). This catches both flags sent
+     * false together; a single false merged with the OTHER stored false is refused by ShopService with the same
+     * {@code fulfilmentOffered} key, and the database's {@code ck_shops_offers_some} is the last line. Hidden from
+     * Jackson and springdoc like {@link #isCoordinatePaired()}: a rule, not a field.
+     */
+    @JsonIgnore
+    @AssertTrue(message = FULFILMENT_OFFERED_MESSAGE)
+    public boolean isFulfilmentOffered() {
+        return !(Boolean.FALSE.equals(offersDelivery) && Boolean.FALSE.equals(offersCollection));
+    }
+
+    /** The 400 message for a shop offering neither type (UI-SPEC G1 copy). */
+    public static final String FULFILMENT_OFFERED_MESSAGE = "Choose at least one: delivery or collection.";
+
     private Boolean published;
     private String tags;
 
@@ -114,6 +170,19 @@ public class CreateShopRequest {
     public void setDeliveryInfo(String deliveryInfo) { this.deliveryInfo = deliveryInfo; }
     public Long getMinimumOrderPennies() { return minimumOrderPennies; }
     public void setMinimumOrderPennies(Long minimumOrderPennies) { this.minimumOrderPennies = minimumOrderPennies; }
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+    public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
+    public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) {
+        this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies;
+        this.freeDeliveryThresholdPenniesSent = true;
+    }
+    @JsonIgnore
+    public boolean isFreeDeliveryThresholdPenniesSent() { return freeDeliveryThresholdPenniesSent; }
+    public Boolean getOffersDelivery() { return offersDelivery; }
+    public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
+    public Boolean getOffersCollection() { return offersCollection; }
+    public void setOffersCollection(Boolean offersCollection) { this.offersCollection = offersCollection; }
     public Boolean getPublished() { return published; }
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }

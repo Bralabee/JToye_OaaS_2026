@@ -94,6 +94,18 @@ public class Shop {
     @Column(name = "free_delivery_threshold_pennies")
     private Long freeDeliveryThresholdPennies;
 
+    /**
+     * The shop takes DELIVERY orders (V83, Phase 37-48 UXT-023). Default true: every shop took both types
+     * before V83. Enforced on every order writer by {@code FulfilmentPolicy.requireOffered}; at least one of
+     * the two flags is true ({@code ck_shops_offers_some}).
+     */
+    @Column(name = "offers_delivery", nullable = false)
+    private Boolean offersDelivery = true;
+
+    /** The shop takes COLLECTION orders (V83, Phase 37-48 UXT-023). Default true; see {@link #offersDelivery}. */
+    @Column(name = "offers_collection", nullable = false)
+    private Boolean offersCollection = true;
+
     @Column(nullable = false)
     private Boolean published = false;
 
@@ -156,6 +168,10 @@ public class Shop {
     public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
     public Long getFreeDeliveryThresholdPennies() { return freeDeliveryThresholdPennies; }
     public void setFreeDeliveryThresholdPennies(Long freeDeliveryThresholdPennies) { this.freeDeliveryThresholdPennies = freeDeliveryThresholdPennies; }
+    public Boolean getOffersDelivery() { return offersDelivery; }
+    public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
+    public Boolean getOffersCollection() { return offersCollection; }
+    public void setOffersCollection(Boolean offersCollection) { this.offersCollection = offersCollection; }
     public Boolean getPublished() { return published; }
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }

@@ -7,14 +7,17 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.InvalidOpeningScheduleException;
+import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.ShopSlugTakenException;
 import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
@@ -125,6 +128,10 @@ public class ShopService {
             shop.setSlug(generateSlug(request.getName()));
         } else {
             assertSlugNotReserved(shop.getSlug());
+            // 37-48 (UXT-028): a typed 409, not the generic duplicate from idx_shops_slug.
+            if (shopRepository.existsBySlug(shop.getSlug())) {
+                throw new ShopSlugTakenException(shop.getSlug());
+            }
         }
 
         // Sole-writer invariant (threat T-18-05-T): a brand-new shop is NEVER born
@@ -138,13 +145,25 @@ public class ShopService {
         if (shop.getMinimumOrderPennies() == null) {
             shop.setMinimumOrderPennies(0L);
         }
+        // 37-48 (UXT-023): the mapper copies an absent request field as null over the entity defaults. A new shop
+        // charges no fee and takes both types (what every shop did before V83) unless the request says otherwise.
+        if (shop.getDeliveryFeePennies() == null) {
+            shop.setDeliveryFeePennies(0L);
+        }
+        if (shop.getOffersDelivery() == null) {
+            shop.setOffersDelivery(true);
+        }
+        if (shop.getOffersCollection() == null) {
+            shop.setOffersCollection(true);
+        }
+        requireSomeFulfilmentOffered(shop);
 
         // #460 link 3a: derive the coordinate from the address BEFORE the row is written,
         // so a shop is never born invisible to every distance query. On create there is no
         // prior coordinate to preserve, hence the two nulls.
         applyCoordinate(shop, request, null, null);
 
-        shop = shopRepository.saveAndFlush(shop);
+        shop = saveTranslatingSlugConflict(shop);
 
         log.info("Created shop {} with ID {} for tenant {}", shop.getName(), shop.getId(), tenantId);
 
@@ -244,6 +263,8 @@ public class ShopService {
         // so `published` stays owned solely by ShopService.setPublished (reached only
         // from the onboarding GO_LIVE/SUSPEND/REINSTATE side effect).
         Boolean publishedBeforeUpdate = shop.getPublished();
+        // 37-48 (UXT-028): the slug before the field copy, which the mapper may overwrite with a blank.
+        String slugBeforeUpdate = shop.getSlug();
 
         // #460 link 3a: snapshot the PERSISTED coordinate before the field copy. It is the
         // value applyCoordinate falls back to when a re-geocode misses — an address edit
@@ -275,6 +296,13 @@ public class ShopService {
         }
 
         shopMapper.updateEntity(request, shop);
+        // 37-48 (UXT-023): the mapper ignores nulls (BE-02), so an absent threshold keeps the stored one. An
+        // EXPLICIT null is the vendor clearing it ("no free-delivery threshold"), and only that clears it.
+        if (request.isFreeDeliveryThresholdPenniesSent() && request.getFreeDeliveryThresholdPennies() == null) {
+            shop.setFreeDeliveryThresholdPennies(null);
+        }
+        // A single false merged with the OTHER flag already false offers nothing: refused before anything is saved.
+        requireSomeFulfilmentOffered(shop);
         // 37-20 (D-15/D-25): a sent schedule replaces the stored one and makes the hours STRUCTURED (this ends
         // the LEGACY_ALWAYS_OPEN and NEEDS_REVIEW states); an absent one keeps both. The mapper never copies
         // the schedule, its source or the pause from a request.
@@ -285,14 +313,26 @@ public class ShopService {
         // loosened, `published` still cannot be written from a request body here.
         shop.setPublished(publishedBeforeUpdate);
 
-        // Regenerate slug if name changed and no explicit slug provided. The explicit
-        // branch is guarded for the same reason as createShop: shopMapper.updateEntity
-        // has already copied request.getSlug() onto the entity by this point, so an
-        // unguarded update is just as capable of stranding a shop as an unguarded create.
-        if (request.getSlug() == null || request.getSlug().isBlank()) {
-            shop.setSlug(generateSlug(request.getName()));
-        } else {
-            assertSlugNotReserved(request.getSlug());
+        // 37-48 (RWO-028 / UXT-028, owner ruling 2026-10-10): the slug is the shop's public web address, printed
+        // on menus and QR codes and shared as links, so an edit KEEPS it. Until 37-48 this block said "regenerate
+        // slug if name changed", but it regenerated UNCONDITIONALLY: every save without a slug (an hours save, a
+        // phone number) ran generateSlug(name) with a fresh random suffix, whether or not the name changed, and
+        // broke every link to the shop. Now an absent, blank or unchanged slug keeps the stored one, and only an
+        // explicit, different slug is validated (shape by bean validation; reserved route; held by another shop)
+        // and applied. The mapper has already copied the request slug, so the kept value is restored explicitly.
+        // Old-slug 301 aliases are deferred to Phase 39 (same ruling).
+        //
+        // The kept slug goes back on the entity BEFORE the taken check: the check is a query, and Hibernate
+        // auto-flushes the managed shop before running it, so a requested slug left on the entity would hit
+        // idx_shops_slug inside existsBySlugAndIdNot and surface as the generic duplicate (measured).
+        String requestedSlug = request.getSlug();
+        shop.setSlug(slugBeforeUpdate);
+        if (requestedSlug != null && !requestedSlug.isBlank() && !requestedSlug.equals(slugBeforeUpdate)) {
+            assertSlugNotReserved(requestedSlug);
+            if (shopRepository.existsBySlugAndIdNot(requestedSlug, shopId)) {
+                throw new ShopSlugTakenException(requestedSlug);
+            }
+            shop.setSlug(requestedSlug);
         }
 
         // Re-geocode from the FINAL address (the mapper has already applied any address
@@ -304,7 +344,7 @@ public class ShopService {
         // latitude and longitude.
         applyCoordinate(shop, request, latitudeBeforeUpdate, longitudeBeforeUpdate);
 
-        shop = shopRepository.saveAndFlush(shop);
+        shop = saveTranslatingSlugConflict(shop);
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Updated shop {} with ID {}", shop.getName(), shop.getId());
@@ -673,6 +713,38 @@ public class ShopService {
                                 + "unreachable at /shop/" + candidate + ". Choose a different slug, or leave it "
                                 + "blank to have one generated.");
             }
+        }
+    }
+
+    /**
+     * 37-48 (UXT-023): a shop must offer at least one fulfilment type, judged on the MERGED state (the request's
+     * flags over the stored ones), so a partial update cannot leave a shop that takes no order. A typed 400 under
+     * the same {@code fulfilmentOffered} key the request-level rule uses; the database's ck_shops_offers_some is
+     * the last line.
+     */
+    private static void requireSomeFulfilmentOffered(Shop shop) {
+        if (Boolean.FALSE.equals(shop.getOffersDelivery()) && Boolean.FALSE.equals(shop.getOffersCollection())) {
+            throw new InvalidRequestFieldsException(
+                    Map.of("fulfilmentOffered", CreateShopRequest.FULFILMENT_OFFERED_MESSAGE));
+        }
+    }
+
+    /**
+     * 37-48 (UXT-028): save and flush, reporting a unique violation on {@code idx_shops_slug} as the typed 409
+     * {@code shop-slug-taken}. The pre-checks above cannot see another tenant's UNPUBLISHED shop (RLS), so the
+     * index is the authority; without this a collision there was the generic {@code errors/duplicate}. Any
+     * other integrity violation propagates unchanged to its existing mapping.
+     */
+    private Shop saveTranslatingSlugConflict(Shop shop) {
+        try {
+            return shopRepository.saveAndFlush(shop);
+        } catch (DataIntegrityViolationException e) {
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                if (t.getMessage() != null && t.getMessage().contains("idx_shops_slug")) {
+                    throw new ShopSlugTakenException(shop.getSlug());
+                }
+            }
+            throw e;
         }
     }
 
