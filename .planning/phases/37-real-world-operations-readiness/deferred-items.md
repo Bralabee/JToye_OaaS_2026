@@ -814,3 +814,21 @@ where it must be resolved.
   (an instrument limit, not a product defect). Evidence: `evidence/37-52-runtime-proof/run.sh`.
   **Suggested fix:** make the modal's scroll container focusable (`tabIndex={0}` with a label) or let it hold a
   focusable element at every length; compare full names in the spec instead of a 60-character slice.
+
+## From 37-53 (the 37-F gate, Task 1)
+
+- **A source comment in the accessibility statement module still says the first Tab lands on the skip link everywhere (found in 37-52, recorded in 37-53, open, comment only).**
+  status: open
+  **What:** `frontend/lib/accessibility-statement.ts` lines 205-211 (the comment above
+  `required-fields-marked-visually-only`) says that on every listed surface "the first Tab … lands on
+  'Skip to main content'" and that "the axe gate now asserts that on every surface it scans". Since 37-52
+  (`637e55c4`, `f3e5b246`) a first-time visitor's first Tab lands on the cookie notice's "Got it", which sits
+  ahead of the skip link in DOM order, and the `public-a11y.spec.ts` gate asserts that the first link OUTSIDE the
+  notice host is the skip link. The published statement text is not affected: the comment is not part of the
+  `ACCESSIBILITY_STATEMENT` data, and the only reader of the module, `frontend/e2e/public-a11y.spec.ts:82`, imports
+  the data, not the comment. No static gate or doc check reads this file (`rg -uu -l accessibility-statement
+  scripts k8s/scripts .github frontend/e2e` names only that spec), so per the 37-53 dispatch it is recorded here
+  rather than edited at the gate.
+  **Suggested fix:** reword the comment to "the first Tab lands on 'Got it' while the cookie notice shows, and on
+  'Skip to main content' otherwise; the axe gate asserts the first link outside the notice host is the skip link".
+  Comment only; no statement text, test or count changes.
