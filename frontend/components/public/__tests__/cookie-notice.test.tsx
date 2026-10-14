@@ -384,3 +384,97 @@ describe("accessibility", () => {
     expect(results).toHaveNoViolations()
   }, AXE_TIMEOUT_MS)
 })
+
+/**
+ * 37-52 (UI-SPEC F5, UXT-085; WCAG 2.2 SC 2.4.11 Focus Not Obscured). On a phone the notice is a
+ * fixed card over the bottom of the viewport and it was the LAST thing in the document, so a keyboard
+ * customer tabbed through the whole page underneath it — focus sat behind the card — and reached
+ * "Got it" only at the 32nd tab stop. Two changes, both in the shared shell so the dormant consent
+ * banner inherits them:
+ *
+ *  1. DOM ORDER: the notice is rendered at the START of <body> (a portal into a host prepended to
+ *     body), so it is the first thing a keyboard and a screen reader meet. Visual position unchanged.
+ *  2. SCROLL PADDING: while it shows, the document's scroll-padding-bottom equals the band the notice
+ *     covers (viewport bottom up to its top edge), so a focused element is scrolled clear of it. The
+ *     padding is removed when the notice goes.
+ *
+ * jsdom has no layout, so the measured band is a stubbed getBoundingClientRect on the notice; the
+ * real-geometry proof (iPhone 13, first 30 tab stops, rect intersection) is e2e/a11y-storefront.spec.ts.
+ */
+describe("the notice never hides the focused element (UXT-085)", () => {
+  const BAND = 132
+  let rectSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    document.documentElement.style.scrollPaddingBottom = ""
+    const real = HTMLElement.prototype.getBoundingClientRect
+    rectSpy = jest.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const label = this.getAttribute("aria-label")
+      if (label === "Cookie notice" || label === "Cookie choices") {
+        const top = window.innerHeight - BAND
+        return { top, bottom: window.innerHeight, left: 0, right: 390, width: 390, height: BAND, x: 0, y: top, toJSON() {} } as DOMRect
+      }
+      return real.call(this)
+    })
+  })
+  afterEach(() => {
+    rectSpy.mockRestore()
+    document.documentElement.style.scrollPaddingBottom = ""
+  })
+
+  it("comes BEFORE the page's main content in DOM order, at the start of <body>", () => {
+    render(
+      <>
+        <main>
+          <a href="/somewhere">A link on the page</a>
+        </main>
+        <CookieNotice />
+      </>
+    )
+    const notice = screen.getByRole("region", { name: "Cookie notice" })
+    const main = screen.getByRole("main")
+
+    // The fail direction: rendered where it is mounted, the notice FOLLOWS main.
+    expect(notice.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.body.firstElementChild?.contains(notice)).toBe(true)
+  })
+
+  it("sets scroll-padding-bottom to the band it covers while it shows, and clears it on dismissal", async () => {
+    const user = userEvent.setup()
+    // CONTROL: nothing set before the notice exists.
+    expect(document.documentElement.style.scrollPaddingBottom).toBe("")
+
+    render(<CookieNotice />)
+    expect(document.documentElement.style.scrollPaddingBottom).toBe(`${BAND}px`)
+
+    await user.click(screen.getByRole("button", { name: "Got it" }))
+    expect(screen.queryByRole("region", { name: "Cookie notice" })).not.toBeInTheDocument()
+    expect(document.documentElement.style.scrollPaddingBottom).toBe("")
+  })
+
+  it("the dormant consent banner gets both, through the same shell", () => {
+    const unregister = register(FIXTURE)
+    try {
+      render(
+        <>
+          <main>Page</main>
+          <ConsentBanner />
+        </>
+      )
+      const banner = screen.getByRole("region", { name: "Cookie choices" })
+      expect(banner.compareDocumentPosition(screen.getByRole("main")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(document.documentElement.style.scrollPaddingBottom).toBe(`${BAND}px`)
+    } finally {
+      unregister()
+    }
+  })
+
+  it("adds no storage key: dismissal still writes only the existing acknowledgement", async () => {
+    const user = userEvent.setup()
+    render(<CookieNotice />)
+    await user.click(screen.getByRole("button", { name: "Got it" }))
+
+    expect(Object.keys(window.localStorage)).toEqual([COOKIE_NOTICE_ACK_KEY])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
+  })
+})
