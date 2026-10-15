@@ -6,9 +6,11 @@
  * container (below sm) and a table container (sm+) so nothing overflows at
  * 375px (card-stacking vs horizontal-scroll — cards win on mobile).
  */
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import WebhooksPage from "../page"
 import apiClient from "@/lib/api-client"
+import { useToast } from "@/hooks/use-toast"
+import { WEBHOOKS_ACCESS_REQUIRED_COPY } from "@/lib/webhooks-api"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 
 /**
@@ -148,5 +150,110 @@ describe("Webhook subscriptions list (Surface A)", () => {
 
     expect(container.querySelector(".animate-spin")).not.toBeNull()
     expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+})
+
+/*
+ * G-37-12 (37-54, D-08): a refused read is shown as a refusal, and a list that was
+ * never read is never shown as an empty one (QA-council F2). Measured in the
+ * 2026-10-15 UAT: a Staff user's typed 403 rendered "No webhook endpoints yet" and
+ * two "Add endpoint" buttons.
+ */
+const SHOP_ACCESS_DENIED = {
+  response: {
+    status: 403,
+    data: {
+      type: "https://jtoye.uk/errors/shop-access-denied",
+      title: "Shop access denied",
+      requiredRole: "GROUP_ADMIN",
+    },
+  },
+}
+
+const SERVER_ERROR = { response: { status: 500, data: {} } }
+
+const toastMock = () => useToast().toast as jest.Mock
+
+describe("Webhooks page: refused and unknown reads (G-37-12)", () => {
+  it("renders the Group admin refusal, not the empty state, for the typed shop-access-denied 403", async () => {
+    mockedApiClient.get.mockRejectedValueOnce(SHOP_ACCESS_DENIED)
+
+    const { container } = render(<WebhooksPage />)
+    await screen.findByRole("heading", { level: 1, name: "Webhooks" })
+
+    expect(screen.queryByText("No webhook endpoints yet")).toBeNull()
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Group admin access required" })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "Managing webhook endpoints needs the group-admin role. Ask a group admin in your business for access."
+      )
+    ).toBeInTheDocument()
+    expect(WEBHOOKS_ACCESS_REQUIRED_COPY?.title).toBe("Group admin access required")
+    expect(screen.queryAllByRole("button", { name: /add endpoint/i })).toHaveLength(0)
+    expect(toastMock()).not.toHaveBeenCalled()
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+
+  it("renders the load-error panel with Retry, never the empty state, when the first read fails", async () => {
+    mockedApiClient.get.mockRejectedValueOnce(SERVER_ERROR)
+
+    const { container } = render(<WebhooksPage />)
+    await screen.findByRole("heading", { level: 1, name: "Webhooks" })
+
+    expect(screen.queryByText("No webhook endpoints yet")).toBeNull()
+    const panel = screen.getByTestId("load-error-panel")
+    expect(within(panel).getByText("Couldn't load webhook endpoints")).toBeInTheDocument()
+    expect(screen.queryAllByRole("button", { name: /add endpoint/i })).toHaveLength(0)
+    expect(toastMock()).not.toHaveBeenCalled()
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+
+    // Retry reads again; the next answer is the real list.
+    fireEvent.click(within(panel).getByRole("button", { name: /try again/i }))
+    expect((await screen.findAllByText("https://a.example.com/hooks")).length).toBeGreaterThan(0)
+    expect(screen.getAllByText("https://b.example.com/hooks").length).toBeGreaterThan(0)
+    expect(screen.queryByTestId("load-error-panel")).toBeNull()
+  })
+
+  it("treats a 403 that is not shop-access-denied as a load failure, not as the refusal or the empty state", async () => {
+    mockedApiClient.get.mockRejectedValueOnce({
+      response: { status: 403, data: { type: "https://jtoye.uk/errors/forbidden" } },
+    })
+
+    render(<WebhooksPage />)
+    await screen.findByRole("heading", { level: 1, name: "Webhooks" })
+
+    expect(screen.queryByText("No webhook endpoints yet")).toBeNull()
+    expect(screen.getByTestId("load-error-panel")).toBeInTheDocument()
+    expect(screen.queryByText("Group admin access required")).toBeNull()
+  })
+
+  it("keeps the genuine empty state: an empty list says 'No webhook endpoints yet' with Add endpoint", async () => {
+    mockedApiClient.get.mockResolvedValueOnce({ data: [] })
+
+    render(<WebhooksPage />)
+
+    expect(await screen.findByText("No webhook endpoints yet")).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: /add endpoint/i }).length).toBeGreaterThan(0)
+    expect(screen.queryByTestId("load-error-panel")).toBeNull()
+  })
+
+  it("keeps the list on screen and toasts when a refresh after an action fails", async () => {
+    render(<WebhooksPage />)
+    await screen.findAllByText("https://a.example.com/hooks")
+
+    mockedApiClient.post.mockResolvedValueOnce({ data: subscriptions[0] })
+    mockedApiClient.get.mockRejectedValueOnce(SERVER_ERROR)
+    fireEvent.click(screen.getAllByRole("button", { name: /pause/i })[0])
+
+    await waitFor(() =>
+      expect(toastMock()).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Error loading webhooks" })
+      )
+    )
+    expect(screen.getAllByText("https://a.example.com/hooks").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("https://b.example.com/hooks").length).toBeGreaterThan(0)
+    expect(screen.queryByTestId("load-error-panel")).toBeNull()
   })
 })
