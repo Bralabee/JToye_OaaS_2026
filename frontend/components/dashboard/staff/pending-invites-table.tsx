@@ -41,6 +41,8 @@ export const PENDING_COPY = {
   description: "Invitations that have not been accepted yet. Times are UK time.",
   columns: ["Email", "Access offered", "Expires", "Actions"],
   expired: "Expired",
+  /** Names the expiry in a stacked row, where no column header does (G-37-14). */
+  expiresPrefix: "Expires",
   allShops: "all shops",
   unknownShop: "Unknown shop",
   resend: "Send invitation again",
@@ -85,9 +87,22 @@ export function pendingInvites(invites: StaffInvite[]): StaffInvite[] {
   return invites.filter((i) => i.status === "OPEN" || i.status === "EXPIRED")
 }
 
-/** Mobile (≤640px): rows become blocks, the People table's idiom. */
-const ROW_CLASS = "flex flex-col gap-3 py-4 sm:table-row sm:py-0"
-const CELL_CLASS = "block p-0 align-top sm:table-cell sm:p-4"
+/*
+ * G-37-14 (37-54, D-07): the layout follows the CARD's width, not the viewport. At a
+ * 768px viewport the persistent 256px sidebar leaves this card about 398px, and the
+ * old `sm:` (640px VIEWPORT) switch had already chosen the four-column table there:
+ * words split mid-word and the actions were cut off. The CardContent is a size
+ * container (`[container-type:inline-size]`, the app/track idiom), and rows stack
+ * until the card itself is 60rem wide: email ~250px + access ~275px + expires ~195px
+ * + one stacked-button column ~220px. 37-55 measures the real width in Chrome and
+ * raises the threshold if the table needs more. ONE threshold, written as a complete
+ * literal in every class below: Tailwind emits only class names it reads whole, so an
+ * interpolated variant would never reach the stylesheet.
+ */
+const ROW_CLASS =
+  "flex flex-col gap-3 py-4 [@container_(min-width:60rem)]:table-row [@container_(min-width:60rem)]:py-0"
+const CELL_CLASS =
+  "block p-0 align-top [@container_(min-width:60rem)]:table-cell [@container_(min-width:60rem)]:p-4"
 
 export interface PendingInvitesTableProps {
   invites: StaffInvite[]
@@ -119,9 +134,9 @@ export function PendingInvitesTable({
         </CardTitle>
         <CardDescription>{PENDING_COPY.description}</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="[container-type:inline-size]">
         <Table containerLabel="Pending invitations table">
-          <TableHeader className="hidden sm:table-header-group">
+          <TableHeader className="hidden [@container_(min-width:60rem)]:table-header-group">
             <TableRow>
               {PENDING_COPY.columns.map((head) => (
                 <TableHead key={head}>{head}</TableHead>
@@ -139,7 +154,10 @@ export function PendingInvitesTable({
                 >
                   <TableCell className={CELL_CLASS}>
                     <span
-                      className={`text-sm font-semibold [overflow-wrap:anywhere] ${
+                      // [overflow-wrap:anywhere] is 37-09's safety net for an address wider
+                      // than a phone card; in the table it must not squeeze the address below
+                      // its own width, so break-words takes over at the threshold.
+                      className={`text-sm font-semibold [overflow-wrap:anywhere] [@container_(min-width:60rem)]:break-words ${
                         expired ? "text-slate-600" : "text-slate-900"
                       }`}
                     >
@@ -158,14 +176,23 @@ export function PendingInvitesTable({
                           {PENDING_COPY.expired}
                         </Badge>
                       )}
-                      <span>{formatInviteExpiry(invite.expiresAt)}</span>
+                      <span>
+                        {!expired && (
+                          <span className="[@container_(min-width:60rem)]:hidden">
+                            {PENDING_COPY.expiresPrefix}{" "}
+                          </span>
+                        )}
+                        <span>{formatInviteExpiry(invite.expiresAt)}</span>
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell className={CELL_CLASS}>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    {/* One column of full-width h-11 buttons in both layouts, so the
+                        table's Actions column is one button wide. */}
+                    <div className="flex flex-col gap-2">
                       <Button
                         variant="outline"
-                        className="h-11 w-full sm:w-auto"
+                        className="h-11 w-full"
                         disabled={busy}
                         aria-label={`${PENDING_COPY.resend} to ${invite.email}`}
                         onClick={() => onResend(invite)}
@@ -174,7 +201,7 @@ export function PendingInvitesTable({
                       </Button>
                       <Button
                         variant="outline"
-                        className="h-11 w-full sm:w-auto"
+                        className="h-11 w-full"
                         disabled={busy}
                         aria-label={`${PENDING_COPY.cancel} for ${invite.email}`}
                         onClick={() => setCancelling(invite)}

@@ -33,7 +33,8 @@ export const ROLE_LABELS: Record<ShopRole, string> = {
 /** A login-populated directory entry — the grant-target picker source (D-09). */
 export interface DirectoryEntry {
   userId: string
-  email: string
+  /** Masked (WR-10). Null for a service account, which has no email (G-37-15). */
+  email: string | null
   displayName: string | null
   lastSeen: string | null
 }

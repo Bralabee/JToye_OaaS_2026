@@ -144,6 +144,19 @@ export const SIGNING_SECRET_COPY = {
   secretLabel: "signing secret",
 } as const
 
+// --- The refusal a non-Group-admin sees (G-37-12, D-08) ---------------------
+
+/**
+ * What /dashboard/webhooks shows when the list read answers the typed 403
+ * shop-access-denied. The Staff page's wording for its own refusal, applied to this
+ * page, so the two Group-admin surfaces refuse in the same words. Lives here because
+ * a Next page file may export only Next's page fields.
+ */
+export const WEBHOOKS_ACCESS_REQUIRED_COPY = {
+  title: "Group admin access required",
+  body: "Managing webhook endpoints needs the group-admin role. Ask a group admin in your business for access.",
+} as const
+
 // --- Idempotency key (reused verbatim from RefundDialog — WR-07 contract) ---
 
 /**

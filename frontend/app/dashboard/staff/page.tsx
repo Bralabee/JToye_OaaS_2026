@@ -32,6 +32,8 @@ import {
   INVITE_COPY,
   INVITE_FIELD_LABELS,
   InviteStaffForm,
+  STAFF_FIELD_LABEL_CLASS,
+  STAFF_SELECT_CLASS,
 } from "@/components/dashboard/staff/invite-staff-form"
 import {
   formatInviteExpiry,
@@ -246,7 +248,7 @@ function StaffLoading() {
           <div className="grid gap-4 md:grid-cols-3">
             {Object.values(INVITE_FIELD_LABELS).map((label) => (
               <div key={label} className="space-y-1.5">
-                <span className="block text-sm font-medium text-slate-700">
+                <span className={`block ${STAFF_FIELD_LABEL_CLASS}`}>
                   {label}
                 </span>
                 <Skeleton className="h-11 w-full rounded-md" />
@@ -271,7 +273,7 @@ function StaffLoading() {
           <div className="grid gap-4 md:grid-cols-3">
             {Object.values(FIELD_LABELS).map((label) => (
               <div key={label} className="space-y-1.5">
-                <span className="block text-sm font-medium text-slate-700">
+                <span className={`block ${STAFF_FIELD_LABEL_CLASS}`}>
                   {label}
                 </span>
                 {/* Same h-10 box as the <select> it stands in for. */}
@@ -282,7 +284,7 @@ function StaffLoading() {
           <div className="flex items-center justify-between gap-4">
             {/* Static, so rendered for real — it wraps to five lines at 390px and
                 a one-bar stand-in left an 80px hole under the fields. */}
-            <p className="text-xs text-slate-500">{GRANT_HINT}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{GRANT_HINT}</p>
             {/* The button is NOT rendered: a real one here would look pressable
                 and do nothing. Sized to it instead (h-10, "Grant access"). */}
             <Skeleton className="h-10 w-[121px] shrink-0 rounded-md" />
@@ -519,7 +521,14 @@ export default function StaffPage() {
       // #290: `(displayName || email) + " (" + email + ")"` printed the masked email
       // TWICE for anyone without a display name. The email is only a disambiguator
       // for a name — with no name it IS the label.
-      label: d.displayName ? `${d.displayName} (${d.email})` : d.email,
+      // G-37-15 (D-09): a service account has no email (maskEmail passes a null
+      // through), so the parenthesis printed "(null)". The label says only what the
+      // entry holds: name (email) when both exist, else whichever exists, else
+      // "Integration account".
+      label:
+        d.displayName && d.email
+          ? `${d.displayName} (${d.email})`
+          : d.displayName || d.email || INTEGRATION_ACCOUNT,
     }))
     if (targetUserId && !options.some((o) => o.userId === targetUserId)) {
       const p = rows.find((r) => r.userId === targetUserId)
@@ -799,17 +808,14 @@ export default function StaffPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-1.5">
-              <label
-                htmlFor="staff-user"
-                className="text-sm font-medium text-slate-700"
-              >
+              <label htmlFor="staff-user" className={STAFF_FIELD_LABEL_CLASS}>
                 {FIELD_LABELS.user}
               </label>
               <select
                 id="staff-user"
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
-                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                className={`h-10 ${STAFF_SELECT_CLASS}`}
               >
                 <option value="">Select a person…</option>
                 {pickerOptions.map((o) => (
@@ -821,10 +827,7 @@ export default function StaffPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="staff-shop"
-                className="text-sm font-medium text-slate-700"
-              >
+              <label htmlFor="staff-shop" className={STAFF_FIELD_LABEL_CLASS}>
                 {FIELD_LABELS.shop}
               </label>
               <select
@@ -832,7 +835,7 @@ export default function StaffPage() {
                 ref={shopSelectRef}
                 value={targetShopId}
                 onChange={(e) => setTargetShopId(e.target.value)}
-                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                className={`h-10 ${STAFF_SELECT_CLASS}`}
               >
                 <option value={ALL_SHOPS_VALUE}>All shops / tenant-wide</option>
                 {shops.map((s) => (
@@ -844,17 +847,14 @@ export default function StaffPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="staff-role"
-                className="text-sm font-medium text-slate-700"
-              >
+              <label htmlFor="staff-role" className={STAFF_FIELD_LABEL_CLASS}>
                 {FIELD_LABELS.role}
               </label>
               <select
                 id="staff-role"
                 value={targetRole}
                 onChange={(e) => setTargetRole(e.target.value as ShopRole)}
-                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                className={`h-10 ${STAFF_SELECT_CLASS}`}
               >
                 {ROLE_OPTIONS.map((r) => (
                   <option key={r.value} value={r.value}>
@@ -866,7 +866,7 @@ export default function StaffPage() {
           </div>
 
           <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">{GRANT_HINT}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{GRANT_HINT}</p>
             <Button onClick={handleGrant} disabled={submitting}>
               Grant access
             </Button>
