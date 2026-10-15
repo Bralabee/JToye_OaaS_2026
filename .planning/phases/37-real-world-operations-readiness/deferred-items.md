@@ -856,8 +856,8 @@ where it must be resolved.
   (`document.getAnimations()` finished, or a frame after `transitionend`) so the F6 document check is RED before the
   fix and GREEN after; screens at 360/390 signed out and signed in.
 
-- **REGRESSION from 37-51: at the default text size `/track`'s step labels break mid-word on 360 and 390 px phones (found in 37-53, open, decide before the 37-F PR merges).**
-  status: open
+- **REGRESSION from 37-51: at the default text size `/track`'s step labels break mid-word on 360 and 390 px phones (found in 37-53). RESOLVED in the 37-F PR (owner decision 2026-10-15):** labels wrap between words only; below 23rem of card width (a container query in rem, so 130% text moves it) the tracker is a column, the row of five above it unchanged at desktop. RED 4 of 4 narrow cases on the 37-51 image, GREEN after the rebuild; evidence `37-53-gate-37F.md` "Review fix: /track step labels", screens `37-53-screens/track-fix-*.png`.
+  status: resolved
   **What:** 37-51 (`2fcdd468`) added `min-w-0` to each tracker column and `hyphens-auto [overflow-wrap:anywhere]`
   to each label, so 130% text fits at 360 px. `overflow-wrap:anywhere` shrinks each label's minimum width to one
   character, so at the DEFAULT size "Confirmed" and "Completed" break across two lines at 390 px ("Preparing" too at
