@@ -271,3 +271,65 @@ describe("F1 step semantics and the copy button", () => {
     }
   })
 })
+
+describe("37-F review F2: READY is described for THIS order's fulfilment type", () => {
+  it("a DELIVERY order at READY is announced and shown as ready for delivery, never 'for collection'", async () => {
+    trackingAnswer = { ...ORDER, fulfilmentType: "DELIVERY" }
+    renderOrderPage()
+    await screen.findByRole("heading", { level: 1, name: `Order ${ORDER_NUMBER}` })
+
+    await poll({ ...ORDER, fulfilmentType: "DELIVERY", status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Ready for delivery.")
+    )
+    const current = document.querySelector('[aria-current="step"]')
+    expect(current).toHaveTextContent("Ready for delivery")
+    expect(document.body).not.toHaveTextContent(/ready for collection/i)
+  })
+
+  it("an order whose fulfilment type is not recorded gets the neutral description on both", async () => {
+    trackingAnswer = { ...ORDER, fulfilmentType: null }
+    renderOrderPage()
+    await screen.findByRole("heading", { level: 1, name: `Order ${ORDER_NUMBER}` })
+
+    await poll({ ...ORDER, fulfilmentType: null, status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Your order is ready.")
+    )
+    expect(document.querySelector('[aria-current="step"]')).toHaveTextContent("Your order is ready")
+    expect(document.body).not.toHaveTextContent(/ready for (collection|delivery)/i)
+  })
+})
+
+describe("37-F review F5: only the LATEST read is applied", () => {
+  it("an older PREPARING read landing after a newer READY one does not move the status backwards", async () => {
+    renderOrderPage()
+    await screen.findByRole("heading", { level: 1, name: `Order ${ORDER_NUMBER}` })
+
+    // The older read: issued first, answered last.
+    let releaseOld: () => void = () => {}
+    mockGet.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseOld = () => resolve({ data: { ...ORDER, status: "PREPARING" } })
+        })
+    )
+    let oldRead: unknown
+    act(() => {
+      oldRead = currentPoll()()
+    })
+
+    // The newer read (a Retry, the email effect, the next poll) answers READY first.
+    await poll({ ...ORDER, status: "READY" })
+    await waitFor(() => expect(statusRegion()).toHaveTextContent("Order update: Ready."))
+
+    await act(async () => {
+      releaseOld()
+      await oldRead
+    })
+
+    expect(statusRegion()).toHaveTextContent("Order update: Ready.")
+    expect(statusRegion()).not.toHaveTextContent(/Preparing/)
+    expect(document.querySelector('[aria-current="step"]')).toHaveTextContent("Ready")
+  })
+})

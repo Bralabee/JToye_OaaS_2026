@@ -99,7 +99,8 @@ async function renderShop(shop: PublicShop) {
   })
 }
 
-// 37-52 (UI-SPEC F3): the dish card's "+" is named "Add one more {dish}"; the drawer's stays "Increase quantity".
+// 37-52 (UI-SPEC F3): the dish card's "+" is named "Add one more {dish}"; since the 37-F review (F9,
+// WCAG 3.2.4) the drawer's and the basket page's "+" carry the same name.
 const cardPlus = () => screen.getByRole("button", { name: "Add one more Peri Peri Chicken" })
 
 beforeEach(() => {
@@ -161,7 +162,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
     expect(more).toHaveAttribute("aria-describedby", hint.id)
   })
 
-  it("basket drawer: 'Increase quantity' disables at the limit with the same hint", async () => {
+  it("basket drawer: 'Add one more {dish}' disables at the limit with the same hint", async () => {
     seed(3)
     await renderShop({ ...baseShop, maxLineQuantity: 3 })
     await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
@@ -170,7 +171,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
       window.dispatchEvent(new CustomEvent("jtoye:cart-open"))
     })
     const drawer = await screen.findByRole("dialog")
-    const plus = within(drawer).getByRole("button", { name: "Increase quantity" })
+    const plus = within(drawer).getByRole("button", { name: "Add one more Peri Peri Chicken" })
     expect(plus).toBeDisabled()
     const hint = within(drawer).getByText("Max 3 per order")
     expect(plus).toHaveAttribute("aria-describedby", hint.id)

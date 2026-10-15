@@ -485,7 +485,7 @@ test.describe(`public surfaces — ${CLAIM}`, () => {
         "quantity stepper missing its accessible name (A11Y-7 regression)"
       ).toBeVisible()
       await expect(
-        p.getByRole("button", { name: "Increase quantity of Portrait Dish" }),
+        p.getByRole("button", { name: "Add one more Portrait Dish" }),
         "quantity stepper missing its accessible name (A11Y-7 regression)"
       ).toBeVisible()
 

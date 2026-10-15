@@ -188,7 +188,8 @@ describe("F1 on /track: one status region, announcing changes only", () => {
     await screen.findByText("Ada's Kitchen")
     expect(statusRegion()).toHaveTextContent(/^$/)
 
-    await poll({ ...ORDER, status: "READY" })
+    // F2 (37-F review): "for collection" is said only for an order the response says is one.
+    await poll({ ...ORDER, fulfilmentType: "COLLECTION", status: "READY" })
     await waitFor(() =>
       expect(statusRegion()).toHaveTextContent("Order update: Ready. Ready for collection.")
     )
@@ -220,5 +221,78 @@ describe("F1 / F6 on /track: step semantics and wrapping", () => {
         expect(el.className.toString()).not.toMatch(/\b(truncate|whitespace-nowrap|text-ellipsis|line-clamp-\d)\b/)
       }
     }
+  })
+})
+
+describe("37-F review F2 on /track: READY is described for THIS order's fulfilment type", () => {
+  it("a DELIVERY order is announced as ready for delivery", async () => {
+    trackingAnswer = { ...ORDER, fulfilmentType: "DELIVERY" }
+    await guestLookup()
+    await poll({ ...ORDER, fulfilmentType: "DELIVERY", status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Ready for delivery.")
+    )
+  })
+
+  it("a COLLECTION order is announced as ready for collection", async () => {
+    trackingAnswer = { ...ORDER, fulfilmentType: "COLLECTION" }
+    await guestLookup()
+    await poll({ ...ORDER, fulfilmentType: "COLLECTION", status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Ready for collection.")
+    )
+  })
+
+  it("a response with no fulfilment type gets the neutral description, not an invented one", async () => {
+    await guestLookup()
+    await poll({ ...ORDER, status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Your order is ready.")
+    )
+  })
+})
+
+describe("37-F review F5 on /track: only the LATEST read is applied", () => {
+  it("an older PREPARING poll landing after a newer READY one announces nothing and does not move the status back", async () => {
+    await guestLookup()
+
+    let releaseOld: () => void = () => {}
+    mockGet.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseOld = () => resolve({ data: { ...ORDER, status: "PREPARING" } })
+        })
+    )
+    let oldRead: unknown
+    act(() => {
+      oldRead = currentPoll()()
+    })
+
+    await poll({ ...ORDER, status: "READY" })
+    await waitFor(() => expect(statusRegion()).toHaveTextContent("Order update: Ready."))
+
+    await act(async () => {
+      releaseOld()
+      await oldRead
+    })
+
+    expect(statusRegion()).toHaveTextContent("Order update: Ready.")
+    expect(statusRegion()).not.toHaveTextContent(/Preparing/)
+    expect(document.querySelector('[aria-current="step"]')).toHaveTextContent("Ready")
+  })
+})
+
+
+describe("37-F review F6 on /track: a user-initiated lookup sets a new baseline", () => {
+  it("re-submitting the lookup for the same order after it moved on announces nothing", async () => {
+    await guestLookup()
+    expect(statusRegion()).toHaveTextContent(/^$/)
+
+    trackingAnswer = { ...ORDER, status: "PREPARING" }
+    fireEvent.click(screen.getByRole("button", { name: /track order/i }))
+    await waitFor(() =>
+      expect(document.querySelector('[aria-current="step"]')).toHaveTextContent("Preparing")
+    )
+    expect(statusRegion()).toHaveTextContent(/^$/)
   })
 })

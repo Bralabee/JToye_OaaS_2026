@@ -262,7 +262,7 @@ test.describe("live tracking journey @mobile-only", () => {
     // stepper fails here instead of looping.
     const belowMinimum = page.getByRole("button", { name: /Proceed to checkout/ })
     for (let i = 0; i < 8 && (await belowMinimum.count()) > 0; i++) {
-      await page.getByRole("button", { name: /^Increase quantity of / }).first().click()
+      await page.getByRole("button", { name: /^Add one more / }).first().click()
       await page.waitForTimeout(250)
     }
     await expect(page.getByRole("link", { name: /Proceed to checkout/ }), "the basket reached the shop's minimum").toBeVisible()
