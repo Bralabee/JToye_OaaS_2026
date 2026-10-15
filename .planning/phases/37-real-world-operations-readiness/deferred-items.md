@@ -835,8 +835,8 @@ where it must be resolved.
 
 ## From 37-53 (the 37-F gate, Task 3, live)
 
-- **Signed out, the storefront header scrolls 4 px sideways at 360 px with 130% text, and the F6 document check passes only by timing (found in 37-53, open).**
-  status: open
+- **Signed out, the storefront header scrolls 4 px sideways at 360 px with 130% text, and the F6 document check passes only by timing (found in 37-53). RESOLVED in the 37-F PR (owner approval 2026-10-15):** every header box is sized in rem, so the signed-out row needed 343 px of a 318 px rail; the header row is now a container and below 17.5rem the nav gap is gap-1 and the Sign-in pill drops its decorative icon (px-2). F6 measures the settled layout and a new signed-out case checks menu, basket and checkout: RED 364/360 on all three on the old image, GREEN after the rebuild; 1280 px headers pixel-identical. Evidence `37-53-gate-37F.md` "Gap fix: signed-out header at 130%", screens `37-53-screens/header-fix-*.png`.
+  status: resolved
   **What:** at 360x740 with `html{font-size:130%}` (the UXT-080 / Grace condition) a signed-OUT customer's
   storefront pages measure `document.scrollWidth/clientWidth` **364/360** on the menu, the basket and checkout. The
   offender is the header row: logo, basket link (43 px), "Sign in" (96 px) and "Open menu" (52 px) at 130%; the
