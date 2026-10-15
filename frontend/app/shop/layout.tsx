@@ -72,7 +72,12 @@ export default function StorefrontLayout({
           data-width-tier="marketing"
           className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-4 sm:px-6 lg:px-8`}
         >
-          <div className="flex h-14 items-center justify-between">
+          {/* 37-53 gap fix (RWO-080 / UXT-080): an inline-size container, so StorefrontNav can
+              tighten itself when THIS row is narrow in rem. rem in a container query follows the
+              ROOT font size, so 130% text at 360px moves the switch where a px media query would
+              not (the /track tracker's idiom). Inline-size only: the row's width already comes from
+              the rail, never from its content, so nothing here lays out differently. */}
+          <div className="flex h-14 items-center justify-between [container-type:inline-size]">
             <Link
               href="/"
               aria-label="J'Toye home"

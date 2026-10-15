@@ -134,7 +134,21 @@ export function StorefrontNav() {
     // reader's landmark list exactly as useless as it was. These three storefront
     // navs therefore carry three DIFFERENT names — see the strip in
     // app/shop/[slug]/shop-detail-client.tsx and the sheet below.
-    <nav aria-label="Storefront" className="flex items-center gap-3 sm:gap-4 text-sm">
+    //
+    // 37-53 gap fix (RWO-080 / UXT-080): the COMPACT row. Every box in this header is sized in rem,
+    // so at 360px with a 130% root font (the UXT-080 condition) the signed-out row needed 343px of
+    // a 318px rail: brand 121.5 + basket 46.8 + Sign in 95.5 + menu 57.2 + two 15.6 gaps. The menu
+    // button ended at 364px, past the rail's padding and the screen, and the page scrolled 4px
+    // sideways. When the header row (a container, app/shop/layout.tsx) is narrower than 17.5rem the
+    // gaps drop to 6px-in-rem and the Sign-in pill drops its decorative icon and a little padding,
+    // which gives the row about 9px to spare at 360/130. 17.5rem: the full row needs 16.5rem, so
+    // the switch also covers 375 and 390px phones at 130%, where it fitted with 0-3px to spare.
+    // At the default size a 320px phone's row is 18rem, so every default-size phone, every
+    // tablet and the desktop keep the row exactly as it was; no touch target shrinks.
+    <nav
+      aria-label="Storefront"
+      className="flex items-center gap-3 sm:gap-4 text-sm [@container_(max-width:17.5rem)]:gap-1.5"
+    >
       {/* Desktop links (>=sm) — destination parity with the shared PublicHeader,
           now PERSONA-GATED (#458).
 
@@ -290,9 +304,10 @@ export function StorefrontNav() {
               comes from usePathname() rather than window so it is stable during SSR. */}
           <Link
             href={`/shop/signin?next=${encodeURIComponent(pathname || "/shop")}`}
-            className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors [@container_(max-width:17.5rem)]:px-2.5"
           >
-            <User className="h-3 w-3" />
+            {/* Decorative: the word carries the meaning, so the compact row drops the icon first. */}
+            <User className="h-3 w-3 [@container_(max-width:17.5rem)]:hidden" aria-hidden="true" />
             Sign in
           </Link>
         </div>
