@@ -129,6 +129,12 @@ const SCOPE_COVERAGE: Record<string, string> = {
 const SKIP_LINK_TEXT = "Skip to main content"
 
 /**
+ * The cookie notice's host attribute (components/public/bottom-notice-shell.tsx). Written out rather
+ * than imported: the spec must not pull a "use client" React module into the Playwright runner.
+ */
+const BOTTOM_NOTICE_HOST_ATTR = "data-bottom-notice-host"
+
+/**
  * React's streaming staging buffer (`<div id="S:n" hidden>`) briefly holds a
  * SECOND copy of the server-rendered tree, which would double every landmark
  * count below and make `main === 1` fail for a reason that has nothing to do
@@ -186,19 +192,38 @@ async function scanSurface(
   // this assertion instead, so the defect cannot return without a red PR.
   // Asserted on the DOM, not by pressing Tab: a Tab inside an open modal moves
   // focus within the dialog, not to the top of the page.
-  const skip = await page.evaluate(() => {
-    const first = document.querySelector("a[href]")
+  //
+  // 37-52 (UI-SPEC F5, UXT-085): the cookie notice is now rendered at the START of
+  // <body> (components/public/bottom-notice-shell.tsx), so a keyboard user meets
+  // and can dismiss it first instead of tabbing the whole page behind it. That is
+  // the GOV.UK cookie-banner order (banner, then skip link, then the page). The
+  // ONE thing allowed before the skip link is therefore that notice's own host;
+  // the skip link must still be the first link of everything else, and a host
+  // may hold nothing but the notice itself (so nothing else can slip in ahead of
+  // the skip link under its cover). Not "the host is body's first child": an open
+  // Radix dialog inserts its focus-guard spans at the start of <body>.
+  const skip = await page.evaluate((hostAttr) => {
+    const first = Array.from(document.querySelectorAll("a[href]")).find(
+      (a) => !a.closest(`[${hostAttr}]`)
+    )
     const target = document.getElementById("main")
+    const hosts = Array.from(document.querySelectorAll(`[${hostAttr}]`))
     return {
       text: first?.textContent?.trim() ?? null,
       href: first?.getAttribute("href") ?? null,
       targetTag: target?.tagName ?? null,
+      hostsHoldingMoreThanTheNotice: hosts.filter(
+        (h) =>
+          h.children.length > 1 ||
+          (h.firstElementChild !== null &&
+            !/^Cookie (notice|choices)$/.test(h.firstElementChild.getAttribute("aria-label") ?? ""))
+      ).length,
     }
-  })
+  }, BOTTOM_NOTICE_HOST_ATTR)
   expect(
     skip,
-    `${label}: the first link on the page must be the skip link to the <main> landmark`
-  ).toEqual({ text: SKIP_LINK_TEXT, href: "#main", targetTag: "MAIN" })
+    `${label}: the first link on the page (after the cookie notice, if it shows) must be the skip link to the <main> landmark`
+  ).toEqual({ text: SKIP_LINK_TEXT, href: "#main", targetTag: "MAIN", hostsHoldingMoreThanTheNotice: 0 })
 
   // ── PER-SURFACE CONTROL ──
   await control(page)
@@ -460,7 +485,7 @@ test.describe(`public surfaces — ${CLAIM}`, () => {
         "quantity stepper missing its accessible name (A11Y-7 regression)"
       ).toBeVisible()
       await expect(
-        p.getByRole("button", { name: "Increase quantity of Portrait Dish" }),
+        p.getByRole("button", { name: "Add one more Portrait Dish" }),
         "quantity stepper missing its accessible name (A11Y-7 regression)"
       ).toBeVisible()
 

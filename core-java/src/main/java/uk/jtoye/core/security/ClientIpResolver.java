@@ -58,9 +58,13 @@ import java.util.Optional;
  * <p>Never returns {@code null} or empty: a null bucket key would NPE the Redis bucket build, so
  * a request with no peer address at all keys on the literal {@code "unknown"} sentinel.
  *
- * <p>{@code server.forward-headers-strategy} is deliberately NOT set anywhere: Tomcat's
- * {@code RemoteIpValve} would rewrite {@code getRemoteAddr()} from its own internal-proxy regex,
- * a second, silent trust list that this bean could not see.
+ * <p><b>This must be the only trust list (T-37-59).</b> {@code server.forward-headers-strategy} is
+ * set to {@code none} explicitly in {@code application.yml}. Leaving it unset, as 37-24 did, is NOT
+ * off: Boot 4.1 deduces it from the cloud platform, and on Kubernetes that installed Tomcat's
+ * {@code RemoteIpValve}, which rewrote {@code getRemoteAddr()} (and scheme and host) from its own
+ * every-private-range list before this bean ran. {@link ForwardHeadersGuard} refuses to start the
+ * server if any door re-opens it; {@link TrustedProxyForwardedProtoFilter} restores the one fact the
+ * valve also supplied, the {@code https} scheme behind the ingress, from THIS bean's trusted peers.
  */
 @Component
 public class ClientIpResolver {

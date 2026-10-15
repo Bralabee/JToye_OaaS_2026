@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37-F: Accessibility (#924) — 2026-10-15
+
+A customer using a screen reader, a keyboard or large text can now find a shop, fill a basket, check out
+and follow the order.
+
+- **Status changes are spoken once.** The order page and `/track` announce "Order update: …" only when the
+  status really changes, and mark the current step. Basket, checkout, confirmation and tracking each have
+  their own page title naming the step and the shop.
+- **Shopping by keyboard and screen reader.** Shop cards are named by their shop; Add moves focus to the
+  quantity stepper and the basket names the dish once; the last Remove returns focus to Add. On mobile the
+  cookie notice comes first in the tab order and never covers the focused control.
+- **Large text on small phones.** At 130% text on a 360 px phone, basket and shop names wrap, the tracking
+  steps stand in a column with whole-word labels, and the signed-out header fits without sideways scrolling.
+- **Security (T-37-59).** On Kubernetes, core no longer lets Tomcat take the client address or host from
+  forwarded headers: `server.forward-headers-strategy` is `none`, startup refuses a configuration that turns
+  it back on, and the forwarded scheme is believed only from declared trusted proxies.
+
 ### Phase 37-G: Catalogue and shop admin (#923) — 2026-10-14
 
 A vendor can now say what delivery costs and whether the shop delivers at all, and every order route

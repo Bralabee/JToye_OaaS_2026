@@ -198,7 +198,9 @@ function DrawerItems({
               </div>
 
               <div className="min-w-0 flex-1">
-                <h3 className="truncate text-sm font-semibold text-slate-900">
+                {/* 37-52 (UI-SPEC F6, UXT-080): the same basket as the basket page, so the same rule:
+                    the item name wraps rather than ending in an ellipsis at large text sizes. */}
+                <h3 className="break-words text-sm font-semibold text-slate-900">
                   {item.title}
                 </h3>
                 {item.category && (
@@ -214,8 +216,12 @@ function DrawerItems({
                 <m.button
                   whileTap={{ scale: 0.9 }}
                   onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                  // F9 (37-F review, WCAG 3.2.4): the same names, with the dish, as the dish card and
+                  // the basket page give the same stepper.
                   aria-label={
-                    item.quantity === 1 ? "Remove item" : "Decrease quantity"
+                    item.quantity === 1
+                      ? `Remove ${item.title} from basket`
+                      : `Decrease quantity of ${item.title}`
                   }
                   className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
                 >
@@ -231,7 +237,7 @@ function DrawerItems({
                 <m.button
                   whileTap={{ scale: 0.9 }}
                   onClick={() => updateQuantity(item.productId, item.quantity + 1)}
-                  aria-label="Increase quantity"
+                  aria-label={`Add one more ${item.title}`}
                   aria-describedby={atLineLimit ? hintId : undefined}
                   disabled={atLineLimit}
                   className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-50"

@@ -260,8 +260,8 @@ async function registerCustomer(page, email, returnTo) {
  *    `/i` would only admit names that do not exist.
  *  - Unanchored at the END on purpose: the Popular-rail copy of a featured dish
  *    carries the " (featured)" suffix.
- *  - No collision with the controls beside it: the stepper's `Increase quantity
- *    of ...` / `Decrease quantity of ...` / `Remove ... from basket`, or the dish
+ *  - No collision with the controls beside it: the stepper's `Add one more ...`
+ *    / `Decrease quantity of ...` / `Remove ... from basket`, or the dish
  *    modal's `Add one more ... to cart` ("to cart", not "to basket").
  */
 const ADD_TO_BASKET = /^Add .+ to basket/

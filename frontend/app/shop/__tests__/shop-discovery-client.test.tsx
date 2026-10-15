@@ -865,3 +865,71 @@ describe("ShopDiscoveryClient — what a card says about delivery", () => {
     expect(within(article).queryByText("Collection only")).toBeNull()
   })
 })
+
+/**
+ * 37-52 (UI-SPEC F2, UXT-082, D-05): a screen-reader customer tabbing the directory heard every card
+ * link as an unnamed or run-on link, because the `<a>` wraps an `<article>` and the name was left to
+ * content concatenation (banner alt, logo alt, distance, badge, fee line...). The link's name is now
+ * the shop's name through `aria-labelledby` = the card heading's id, and what a sighted customer reads
+ * beside the name (open state, distance) is the link's DESCRIPTION through `aria-describedby`.
+ *
+ * jsdom's accname (dom-accessibility-api) is NOT the oracle the persona used (Chrome's AX tree, read
+ * in `e2e/a11y-storefront.spec.ts` through CDP). What this file pins is the wiring: the attribute
+ * points at the heading, every described-by id resolves, and the computed name is exactly the shop.
+ * There is no rating on `PublicShop`, so there is no rating to describe (the card prints none).
+ */
+describe("ShopDiscoveryClient — each card link is named by its shop (UXT-082)", () => {
+  const cardLink = (container: HTMLElement, slug: string) =>
+    container.querySelector(`a[href="/shop/${slug}"]`) as HTMLAnchorElement
+
+  it("names the link with the card heading through aria-labelledby, and nothing else", () => {
+    const { container } = renderDiscovery({
+      shops: [{ ...NEAR, openNow: true }],
+      query: "SE22",
+      interpretation: DISTRICT,
+    })
+    const link = cardLink(container, "dulwich-near-kitchen")
+    const heading = screen.getByRole("heading", { name: "Dulwich Near Kitchen" })
+
+    expect(heading.id).not.toBe("")
+    expect(link.getAttribute("aria-labelledby")).toBe(heading.id)
+    // The computed name is the shop name EXACTLY: before the fix it was the concatenated card text.
+    expect(screen.getByRole("link", { name: "Dulwich Near Kitchen" })).toBe(link)
+  })
+
+  it("describes the link with the open state and the distance, each id resolving to its text", () => {
+    const { container } = renderDiscovery({
+      shops: [{ ...NEAR, openNow: true }],
+      query: "SE22",
+      interpretation: DISTRICT,
+    })
+    const link = cardLink(container, "dulwich-near-kitchen")
+    const ids = (link.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean)
+    const described = ids.map((id) => document.getElementById(id))
+
+    expect(described.every(Boolean)).toBe(true)
+    const text = described.map((el) => (el!.textContent || "").replace(/\s+/g, " ").trim())
+    expect(text).toContain("Open")
+    expect(text).toContain("0.7 miles away")
+  })
+
+  it("CONTROL: a card with no badge and no distance carries no dangling aria-describedby", () => {
+    const { container } = renderDiscovery({ shops: [UNPLACED], query: "SE22", interpretation: DISTRICT })
+    const link = cardLink(container, "mama-ades-kitchen")
+
+    expect(link.getAttribute("aria-labelledby")).toBe(
+      screen.getByRole("heading", { name: "Mama Ade's Kitchen" }).id
+    )
+    expect(link.hasAttribute("aria-describedby")).toBe(false)
+  })
+
+  it("gives two cards two different heading ids", () => {
+    const { container } = renderDiscovery({ shops: [NEAR, UNPLACED], query: "SE22", interpretation: DISTRICT })
+    const a = cardLink(container, "dulwich-near-kitchen").getAttribute("aria-labelledby")
+    const b = cardLink(container, "mama-ades-kitchen").getAttribute("aria-labelledby")
+
+    expect(a).toBeTruthy()
+    expect(b).toBeTruthy()
+    expect(a).not.toBe(b)
+  })
+})

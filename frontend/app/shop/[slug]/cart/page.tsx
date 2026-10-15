@@ -150,7 +150,9 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
 
             {/* Details */}
             <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-slate-900 truncate">{item.title}</h3>
+              {/* 37-52 (UI-SPEC F6, UXT-080): wraps, never an ellipsis: at 360px with 130% text the
+                  customer could not read what was in their basket. */}
+              <h3 className="text-sm font-semibold text-slate-900 break-words">{item.title}</h3>
               {item.category && (
                 <p className="text-xs text-slate-600">{item.category}</p>
               )}
@@ -178,7 +180,8 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
               </span>
               <button
                 onClick={() => updateQuantity(item.productId, item.quantity + 1)}
-                aria-label={`Increase quantity of ${item.title}`}
+                // F9 (37-F review, WCAG 3.2.4): the card's and drawer's name for the same "+".
+                aria-label={`Add one more ${item.title}`}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 hover:bg-cream active:scale-95 transition-all"
               >
                 <Plus className="h-3.5 w-3.5" />

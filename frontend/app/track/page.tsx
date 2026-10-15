@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState, useEffect, useRef } from "react"
+import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { m } from "framer-motion"
@@ -13,6 +13,7 @@ import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import { ORDER_STATUS_COPY, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
 /**
@@ -37,16 +38,23 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
    * `itemCount` — the count is simply not rendered when it is not known.
    */
   unitCount?: number | null
+  /**
+   * DELIVERY or COLLECTION (PublicOrderStatus, 37-37). Optional and nullable: an older backend
+   * omits it and a pre-V45 row has none, and then READY is described neutrally (37-F review F2).
+   */
+  fulfilmentType?: string | null
   createdAt: string
   updatedAt: string
 }
 
+// Step labels from the shared copy (37-51), the same words the per-shop order page and the status
+// region use.
 const STEPS = [
-  { key: "PENDING", label: "Received", icon: Clock },
-  { key: "CONFIRMED", label: "Confirmed", icon: CircleDot },
-  { key: "PREPARING", label: "Preparing", icon: ChefHat },
-  { key: "READY", label: "Ready", icon: Package },
-  { key: "COMPLETED", label: "Completed", icon: CheckCircle2 },
+  { key: "PENDING", label: ORDER_STATUS_COPY.PENDING.label, icon: Clock },
+  { key: "CONFIRMED", label: ORDER_STATUS_COPY.CONFIRMED.label, icon: CircleDot },
+  { key: "PREPARING", label: ORDER_STATUS_COPY.PREPARING.label, icon: ChefHat },
+  { key: "READY", label: ORDER_STATUS_COPY.READY.label, icon: Package },
+  { key: "COMPLETED", label: ORDER_STATUS_COPY.COMPLETED.label, icon: CheckCircle2 },
 ]
 
 /** Statuses that are still in flight — what a shopper actually came here for. */
@@ -138,6 +146,31 @@ function TrackOrderContent() {
   })
 
   const [order, setOrder] = useState<OrderStatus | null>(null)
+  // 37-51 (UI-SPEC F1, UXT-081): the one status region's text, and the last order + status a read
+  // returned. Every read that puts an order on screen goes through showOrder, which announces only
+  // when the SAME order comes back with a DIFFERENT status. Looking an order up (or switching to
+  // another one) is not a change: it sets the baseline and clears a message about a previous order.
+  // A failed read never reaches showOrder, so it announces nothing (F1 error, planner assumption).
+  const [statusUpdate, setStatusUpdate] = useState("")
+  const lastSeen = useRef<{ orderNumber: string; status: string } | null>(null)
+  const showOrder = useCallback((next: OrderStatus) => {
+    const previous = lastSeen.current
+    lastSeen.current = { orderNumber: next.orderNumber, status: next.status }
+    if (previous && previous.orderNumber === next.orderNumber) {
+      if (previous.status !== next.status) {
+        const update = statusUpdateAnnouncement(next.status, next.fulfilmentType)
+        if (update) setStatusUpdate(update)
+      }
+    } else {
+      setStatusUpdate("")
+    }
+    setOrder(next)
+  }, [])
+  // F5 (37-F review): a lookup, the 15 s poll and "show what was recorded" can overlap, and their
+  // answers can land out of order. Each read takes a number; only the LATEST read's answer is put
+  // on screen, so an older PREPARING landing after READY neither moves the tracker back nor
+  // announces the order going backwards.
+  const readSeq = useRef(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // True once the page has opened itself on one of the signed-in customer's own
@@ -194,7 +227,7 @@ function TrackOrderContent() {
           return
         }
         if (trackedByNumber.current !== picked.orderNumber) {
-          setOrder(picked)
+          showOrder(picked)
           setOrderFromList(true)
         }
         setOrderNumber(picked.orderNumber)
@@ -225,22 +258,28 @@ function TrackOrderContent() {
     e?.preventDefault()
     if (!orderNumber.trim() || !email.trim()) return
 
+    const seq = ++readSeq.current
     setLoading(true)
     setError(null)
     setOrder(null)
+    // F6 (37-F review): a lookup the customer asked for sets a NEW baseline, even for the order
+    // already on screen — what it returns is the answer to their question, not an update to announce.
+    lastSeen.current = null
 
     try {
       const res = await publicApiClient.get<OrderStatus>(
         `/public/orders/${orderNumber.trim()}`,
         { params: { email: email.trim() } }
       )
+      if (seq !== readSeq.current) return
       trackedByNumber.current = res.data.orderNumber
-      setOrder(res.data)
+      showOrder(res.data)
       setOrderFromList(false)
     } catch {
+      if (seq !== readSeq.current) return
       setError("Order not found. Check your order number and email address.")
     } finally {
-      setLoading(false)
+      if (seq === readSeq.current) setLoading(false)
     }
   }
 
@@ -262,18 +301,20 @@ function TrackOrderContent() {
   useEffect(() => {
     if (!order || TERMINAL_STATUSES.includes(order.status)) return
     const interval = setInterval(async () => {
+      const seq = ++readSeq.current
       try {
         const res = await publicApiClient.get<OrderStatus>(
           `/public/orders/${order.orderNumber}`,
           { params: { email: email.trim() } }
         )
+        if (seq !== readSeq.current) return
         trackedByNumber.current = res.data.orderNumber
-        setOrder(res.data)
+        showOrder(res.data)
         setOrderFromList(false)
-      } catch { /* silently fail on refresh */ }
+      } catch { /* silently fail on refresh — and announce nothing (F1) */ }
     }, 15000)
     return () => clearInterval(interval)
-  }, [order, email])
+  }, [order, email, showOrder])
 
   // 31.1-18: the customer asked for what the kitchen recorded on a list-sourced order. Same number +
   // email endpoint as the guest lookup (the email is still the proof of ownership), and only on an
@@ -281,13 +322,15 @@ function TrackOrderContent() {
   const showRecorded = async () => {
     if (!order || !email.trim()) return
     setLoadingRecorded(true)
+    const seq = ++readSeq.current
     try {
       const res = await publicApiClient.get<OrderStatus>(
         `/public/orders/${order.orderNumber}`,
         { params: { email: email.trim() } }
       )
+      if (seq !== readSeq.current) return
       trackedByNumber.current = res.data.orderNumber
-      setOrder(res.data)
+      showOrder(res.data)
       setOrderFromList(false)
     } catch {
       /* keep the list entry; the NOT LOADED line and its action stay on screen */
@@ -311,6 +354,11 @@ function TrackOrderContent() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
+      {/* F1 (37-51): ONE status region, on the page from the first render (a region added together
+          with its text is often not announced), written only when the tracked order changes. */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {statusUpdate}
+      </div>
       {/* The heading belongs to whichever block is carrying the message. When
           an order was found this row states it; when there is none, the card
           below is the <h1> and this row shrinks to just the escape hatch —
@@ -495,39 +543,80 @@ function TrackOrderContent() {
 
           {/* Progress */}
           {!isCancelled && !isRefunded && (
-            <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-1">
+            <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm [container-type:inline-size]">
+              {/* F1 (37-51): an ordered list, the current step aria-current="step".
+                  F6 (UXT-080) + 37-53 review fix: labels wrap BETWEEN words only (no
+                  overflow-wrap:anywhere, no hyphens:auto), and the layout, not the word, gives way.
+                  The card is a size container, so the switch is measured in the card's own width
+                  and in rem, which a container query resolves against the ROOT font size: a 130%
+                  root text size moves the switch with it, where a px media query would not.
+                  Below 23rem of card width the steps stand in a column (icon, then label, joined
+                  by a rail, as the order page's tracker); at 23rem and wider they sit in the
+                  original row of five. 23rem: the longest label, "Completed", is 66px at 12px text
+                  (5.5em), so five equal columns plus four 4px gaps need 21.6rem; the rest is
+                  margin for a phone's fallback font. Measured: the row fits whole words at a 346px
+                  card and not at 324px (390px phone). At the default size the desktop card is
+                  446px, so desktop keeps the row. */}
+              <ol
+                aria-label="Order progress"
+                className="flex flex-col [@container_(min-width:23rem)]:flex-row [@container_(min-width:23rem)]:items-start [@container_(min-width:23rem)]:justify-between [@container_(min-width:23rem)]:gap-1"
+              >
                 {STEPS.map((step, i) => {
                   const isComplete = i <= currentStep
                   const isActive = i === currentStep
                   return (
-                    <div key={step.key} className="flex flex-col items-center flex-1">
-                      {/* Keyed on completion so a step newly reaching complete
-                          remounts and springs in; active step pulses finitely. */}
-                      <m.div
-                        key={`${step.key}-${isComplete}`}
-                        initial={{ scale: 0.6 }}
-                        animate={{ scale: isActive ? [1, 1.08, 1] : 1 }}
-                        transition={isActive ? { duration: 0.9, repeat: 2 } : springPop}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs ${
-                          isComplete
-                            ? isActive
-                              ? "bg-amber-500 text-oxblood ring-2 ring-amber-200"
-                              : "bg-emerald-500 text-white"
-                            : "bg-slate-100 text-slate-400"
+                    <li
+                      key={step.key}
+                      data-tracker-step={step.key}
+                      aria-current={isActive ? "step" : undefined}
+                      className="flex min-w-0 gap-3 [@container_(min-width:23rem)]:flex-1 [@container_(min-width:23rem)]:flex-col [@container_(min-width:23rem)]:items-center [@container_(min-width:23rem)]:gap-0"
+                    >
+                      <div aria-hidden="true" className="flex flex-col items-center">
+                        {/* Keyed on completion so a step newly reaching complete
+                            remounts and springs in; active step pulses finitely. */}
+                        <m.div
+                          key={`${step.key}-${isComplete}`}
+                          initial={{ scale: 0.6 }}
+                          animate={{ scale: isActive ? [1, 1.08, 1] : 1 }}
+                          transition={isActive ? { duration: 0.9, repeat: 2 } : springPop}
+                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs ${
+                            isComplete
+                              ? isActive
+                                ? "bg-amber-500 text-oxblood ring-2 ring-amber-200"
+                                : "bg-emerald-500 text-white"
+                              : "bg-slate-100 text-slate-400"
+                          }`}
+                        >
+                          <step.icon className="h-3.5 w-3.5" />
+                        </m.div>
+                        {/* The column's rail: the segment below a passed step fills top-down
+                            (the order page's rail). The row has the progress bar instead. */}
+                        {i < STEPS.length - 1 && (
+                          <div className="h-3 w-0.5 overflow-hidden bg-slate-200 [@container_(min-width:23rem)]:hidden">
+                            <m.div
+                              className="h-full w-full bg-emerald-500"
+                              style={{ transformOrigin: "top" }}
+                              initial={false}
+                              animate={{ scaleY: i < currentStep ? 1 : 0 }}
+                              transition={{ duration: 0.5, ease: "easeOut" }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <p
+                        className={`flex min-h-8 min-w-0 items-center text-sm font-medium [@container_(min-width:23rem)]:mt-1 [@container_(min-width:23rem)]:block [@container_(min-width:23rem)]:min-h-0 [@container_(min-width:23rem)]:max-w-full [@container_(min-width:23rem)]:text-center [@container_(min-width:23rem)]:text-xs ${
+                          isComplete ? "text-slate-900" : "text-slate-600"
                         }`}
                       >
-                        <step.icon className="h-3.5 w-3.5" />
-                      </m.div>
-                      <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-900" : "text-slate-600"}`}>
                         {step.label}
                       </p>
-                    </div>
+                    </li>
                   )
                 })}
-              </div>
-              {/* Progress bar — scaleX from the left, animated on status change */}
-              <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
+              </ol>
+              {/* Progress bar — scaleX from the left, animated on status change. The row only:
+                  in the column the rail carries the same progress. */}
+              <div className="mt-3 hidden h-1 overflow-hidden rounded-full bg-slate-100 [@container_(min-width:23rem)]:block">
                 <m.div
                   className="h-full w-full bg-amber-500 rounded-full"
                   style={{ transformOrigin: "left" }}

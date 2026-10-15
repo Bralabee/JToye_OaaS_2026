@@ -99,7 +99,9 @@ async function renderShop(shop: PublicShop) {
   })
 }
 
-const cardPlus = () => screen.getByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+// 37-52 (UI-SPEC F3): the dish card's "+" is named "Add one more {dish}"; since the 37-F review (F9,
+// WCAG 3.2.4) the drawer's and the basket page's "+" carry the same name.
+const cardPlus = () => screen.getByRole("button", { name: "Add one more Peri Peri Chicken" })
 
 beforeEach(() => {
   mockGet.mockReset()
@@ -119,7 +121,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
     seed(2)
     await renderShop({ ...baseShop, maxLineQuantity: 3 })
 
-    const plus = await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    const plus = await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
     expect(plus).toBeEnabled()
     expect(screen.queryByText("Max 3 per order")).toBeNull()
 
@@ -140,7 +142,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
     seed(10)
     await renderShop(baseShop)
 
-    const plus = await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    const plus = await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
     expect(plus).toBeEnabled()
     expect(screen.queryByText(/Max \d+ per order/)).toBeNull()
     fireEvent.click(plus)
@@ -150,7 +152,7 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
   it("dish modal: '+ one more' disables at the limit with the same hint", async () => {
     seed(3)
     await renderShop({ ...baseShop, maxLineQuantity: 3 })
-    await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
 
     fireEvent.click(screen.getByRole("button", { name: "View details for Peri Peri Chicken" }))
     const dialog = await screen.findByRole("dialog")
@@ -160,16 +162,16 @@ describe("Storefront steppers stop at the server's maxLineQuantity (UI-SPEC § D
     expect(more).toHaveAttribute("aria-describedby", hint.id)
   })
 
-  it("basket drawer: 'Increase quantity' disables at the limit with the same hint", async () => {
+  it("basket drawer: 'Add one more {dish}' disables at the limit with the same hint", async () => {
     seed(3)
     await renderShop({ ...baseShop, maxLineQuantity: 3 })
-    await screen.findByRole("button", { name: "Increase quantity of Peri Peri Chicken" })
+    await screen.findByRole("button", { name: "Add one more Peri Peri Chicken" })
 
     act(() => {
       window.dispatchEvent(new CustomEvent("jtoye:cart-open"))
     })
     const drawer = await screen.findByRole("dialog")
-    const plus = within(drawer).getByRole("button", { name: "Increase quantity" })
+    const plus = within(drawer).getByRole("button", { name: "Add one more Peri Peri Chicken" })
     expect(plus).toBeDisabled()
     const hint = within(drawer).getByText("Max 3 per order")
     expect(plus).toHaveAttribute("aria-describedby", hint.id)

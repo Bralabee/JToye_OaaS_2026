@@ -1,0 +1,19 @@
+PASS basket title :: Basket · Mama Ade's Kitchen — J'Toye
+PASS checkout title :: Checkout · Mama Ade's Kitchen — J'Toye
+PASS order title :: Order ORD-3751PROOF-20261014-RUNTIME1 · Mama Ade's Kitchen — J'Toye
+PASS order page: exactly one polite status region :: 1
+PASS order page: aria-current on Received
+PASS order page: CONFIRMED announced :: ["Order update: Confirmed. Shop accepted your order."]
+PASS order page: unchanged poll not re-announced :: ["Order update: Confirmed. Shop accepted your order."]
+PASS order page: aria-current moved to Confirmed
+PASS order page tracker at 360px / 130%: no overflow, no ellipsis :: []
+PASS /track title kept :: Track your order — J'Toye
+PASS /track: exactly one polite status region :: 1
+PASS /track: PREPARING announced :: ["Order update: Preparing. Being prepared now."]
+PASS /track: unchanged poll not re-announced :: ["Order update: Preparing. Being prepared now."]
+PASS /track tracker at 360px / 130%: no overflow, no ellipsis :: []
+PASS INSTRUMENT /track region removed: the stepper moved to Ready
+PASS INSTRUMENT /track region removed: nothing recorded :: []
+PASS INSTRUMENT /track forced ellipsis is flagged :: ["Ready ellipsis","Ready 48>10"]
+
+17/17 checks passed

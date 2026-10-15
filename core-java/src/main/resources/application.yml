@@ -407,8 +407,8 @@ jtoye:
     # fails a rendered overlay carrying /0, a prefix shorter than /8 or a public range: "trust
     # everyone" re-opens UXT-006 exactly. Compose leaves it empty (browsers reach core directly);
     # each k8s overlay declares its ingress controller's pod range (staging/production: an operator
-    # input, see 37-24's user_setup). server.forward-headers-strategy stays UNSET on purpose:
-    # Tomcat's RemoteIpValve would be a second, silent trust list this bean cannot see.
+    # input, see 37-24's user_setup). This list is the ONLY one: server.forward-headers-strategy is
+    # set to `none` below (T-37-59), see the comment there for why unset is not enough.
     trusted-proxies: ${TRUSTED_PROXY_CIDRS:}
     jwt:
       expected-audience: ${JWT_EXPECTED_AUDIENCE:core-api}
@@ -665,6 +665,21 @@ stomp:
 
 server:
   port: ${SERVER_PORT:9090}
+  # T-37-59 (phase 37 security audit): MUST stay `none`, explicitly. Unset is NOT off. In Spring
+  # Boot 4.1 TomcatWebServerFactoryCustomizer.getOrDeduceUseForwardHeaders() returns
+  # CloudPlatform.getActive(env).isUsingForwardHeaders() when this is null, and KUBERNETES
+  # (detected from the KUBERNETES_SERVICE_HOST/PORT variables every pod has) answers true. So on
+  # every k8s overlay an unset strategy installed Tomcat's RemoteIpValve, which trusts every
+  # private and loopback range by default and rewrote getRemoteAddr(), the scheme AND the host
+  # (X-Forwarded-Host) from client-writable headers before ClientIpResolver ran: the resolver's
+  # trust-none default and its jtoye.security.trusted-proxies list decided nothing there (measured
+  # by KubernetesForwardHeadersTest: remote=198.51.100.1, scheme=https, host=evil.example from a
+  # loopback peer). `framework` is no better (ForwardedHeaderFilter believes everyone). The scheme
+  # behind a TLS-terminating ingress is restored by TrustedProxyForwardedProtoFilter, from the
+  # resolver's own trusted peers only. ForwardHeadersGuard refuses to start the server if this is
+  # anything but `none` or if any RemoteIpValve reached the Tomcat pipeline (including through
+  # server.tomcat.remoteip.remote-ip-header / protocol-header, which add the valve on their own).
+  forward-headers-strategy: none
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
