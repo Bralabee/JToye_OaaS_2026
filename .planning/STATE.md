@@ -5,8 +5,8 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-53 complete (53/53). 37-53 (37-F gate) done: every image rebuilt, freshness 4/4, live a11y RED 5/5 on old images then GREEN 84/0 on the rebuild, 40/40 goods hold, RWO-081..085 ticked; RWO-080 HELD on two owner items (the 37-51 /track mid-word label break at 360/390 px, and the pre-37-F signed-out header overflow at 130% text). PR branch phase-37-f-accessibility (ef5326dc, one squash on origin/main 94af0d89, tag cut/phase-37-f-accessibility = 8a25330d) cut locally, not pushed. Next: owner ruling on the /track labels, then push, open the 37-F PR, D3 series, merge, merge main back, phase verification."
-last_updated: "2026-10-15T00:20:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-53 complete (53/53); phase verification human_needed (8/8 SC, 35/35 RWO incl. RWO-080 after the 2026-10-15 gap fix), 37-SECURITY verified (175/175 closed after T-37-59 forward-headers fix), 37-VALIDATION nyquist_compliant, 37-UAT.md holds 11 human checks. 37-F review fixes on phase-37-ops-readiness (owner-approved): /track labels 291fda9d, signed-out header 013acbca/7816464d, T-37-59 85b6e190. Next: re-cut phase-37-f-accessibility, push, open the 37-F PR, D3 series, merge, merge main back; then /gsd-verify-work 37 for the human checks before phase.complete."
+last_updated: "2026-10-15T12:00:00.000Z"
 last_activity: 2026-10-15
 state_head: 31ee7b62
 progress:
@@ -1401,7 +1401,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 ## Session Continuity
 
 Last session: 2026-10-14T16:45:00.000Z
-Stopped at: 37-53 complete (53/53): 37-F gate GREEN on a rebuilt runtime (84/0 live a11y, 40/40 goods); PR branch phase-37-f-accessibility cut locally (ef5326dc on 94af0d89), not pushed; RWO-080 held pending the /track label decision.
+Stopped at: 37-53 complete; phase 37 verification human_needed (35/35 RWO), SECURITY 175/175 closed; 37-F PR branch to be re-cut and opened.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.

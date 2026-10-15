@@ -219,7 +219,7 @@ that mints these IDs) declares all 35 and is omitted from the traceability rows.
 
 **37-F Accessibility (P2, kept in by D-05)**
 
-- [ ] **RWO-080**: #849 — At 130% root text on a 360 px viewport the basket, tracker and shop header wrap rather than truncate or overflow.
+- [x] **RWO-080**: #849 — At 130% root text on a 360 px viewport the basket, tracker and shop header wrap rather than truncate or overflow.
 - [x] **RWO-081**: #850 — Tracking pages announce each status change through a live region, mark the current step with `aria-current="step"`, and label the copy button and the lookup field.
 - [x] **RWO-082**: #851 — Every shop card link on the kitchen list has an accessible name in Chrome's accessibility tree.
 - [x] **RWO-083**: #852 — After Add or Remove, focus moves to the stepper (or back to Add), and the basket announcement names the item once with the correct count.
