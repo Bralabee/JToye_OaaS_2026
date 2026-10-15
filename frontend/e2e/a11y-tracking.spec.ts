@@ -25,6 +25,12 @@
  * slot. Tagged @mobile-only: one real order per run is enough, and the 360px check sets its own
  * viewport.
  *
+ * `/track step labels wrap between words only` — 37-53 review fix, on the real built /track with its
+ * one tracking read stubbed (no order placed): at 360 and 390px, 100% and 130% root text, every word
+ * of every step label is drawn on ONE line (a Range per word, `getClientRects().length === 1`) and
+ * the document is no wider than the viewport; at 1280px the five steps stay one row. RED on the
+ * 37-51 build, whose `overflow-wrap:anywhere` broke "Confirmed" and "Completed" at 390px.
+ *
  * `instruments can fail @stack-free` — the same three probes against hand-built fixtures
  * (page.setContent, no server at all), on every run: a positive control for each probe, then the
  * broken input on which each must fail. This is the `public-a11y.spec.ts` "axe instrument"
@@ -132,6 +138,51 @@ async function overflowOffenders(page: Page, container: string, labels: string):
     },
     { container, labels },
   )
+}
+
+/**
+ * The whole-word probe (37-53 review fix): every word of every step label is drawn on ONE line.
+ * A Range over each word returns one client rect per line box it occupies, so a word broken
+ * across lines (by `overflow-wrap:anywhere`, `break-all` or `hyphens:auto`) returns two or more.
+ * Measured on the rendered text, never on the string: "Confirmed" is the same string whole or
+ * broken. Returns the offenders, so an arm can assert it found one.
+ */
+async function splitWordOffenders(page: Page, container: string, labels: string): Promise<string[]> {
+  return page.evaluate(
+    ({ container, labels }) => {
+      const box = document.querySelector(container)
+      if (!box) return [`no element matches ${container}`]
+      const found = Array.from(box.querySelectorAll(labels))
+      if (found.length === 0) return [`no labels match ${labels}`]
+      const offenders: string[] = []
+      let words = 0
+      found.forEach((el) => {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const text = node.textContent ?? ""
+          for (const m of text.matchAll(/\S+/g)) {
+            const range = document.createRange()
+            range.setStart(node, m.index!)
+            range.setEnd(node, m.index! + m[0].length)
+            const lines = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0)
+            words += 1
+            if (lines.length !== 1) offenders.push(`"${m[0]}" drawn on ${lines.length} lines`)
+          }
+        }
+      })
+      if (words === 0) offenders.push(`labels matching ${labels} hold no words`)
+      return offenders
+    },
+    { container, labels },
+  )
+}
+
+/** The page does not scroll sideways: the document is no wider than the viewport. */
+async function pageOverflow(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const w = document.documentElement.scrollWidth
+    return w > window.innerWidth ? `document scrollWidth ${w} > innerWidth ${window.innerWidth}` : null
+  })
 }
 
 /** 360px wide, root font 130% — the UXT-080 condition. */
@@ -258,9 +309,11 @@ test.describe("live tracking journey @mobile-only", () => {
       "an unchanged poll must not announce again",
     ).toHaveLength(1)
 
-    // ── F6 on the order page's tracker. ──
+    // ── F6 on the order page's tracker: whole words at the default size (390px), then at 360px / 130%. ──
+    expect(await splitWordOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")).toEqual([])
     await largeTextNarrow(page)
     expect(await overflowOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")).toEqual([])
+    expect(await splitWordOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")).toEqual([])
     // INSTRUMENT: force one label to clip, and the probe must see it.
     await page.addStyleTag({
       content: '[data-tracker-step="CONFIRMED"] p:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 2ch; }',
@@ -279,9 +332,10 @@ test.describe("live tracking journey @mobile-only", () => {
     await vendorTransition(request, orderNumber, "start-preparation")
     await awaitAnnouncement(page, "Order update: Preparing. Being prepared now.")
 
-    // ── F6 on /track's horizontal tracker. ──
+    // ── F6 on /track's tracker (a column at this width; the stubbed block below covers 360/390 x 100/130). ──
     await largeTextNarrow(page)
     expect(await overflowOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")).toEqual([])
+    expect(await splitWordOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")).toEqual([])
 
     // ── INSTRUMENT on the real page: with the region removed, a real transition records nothing
     //    and the announcement assertion fails. ──
@@ -292,6 +346,78 @@ test.describe("live tracking journey @mobile-only", () => {
     const afterRemoval = await recordedAnnouncements(page)
     expect(afterRemoval).toEqual([])
     expect(() => expectAnnounced(afterRemoval, "Order update: Ready.")).toThrow()
+  })
+})
+
+// ─── /track's step labels stay whole words (37-53 review fix, live) ───────────────────────────
+
+const TRACK_ORDER = "ORD-E2E3753-TRACK-0001"
+const TRACK_EMAIL = "track-words@example.test"
+
+/**
+ * The real, built /track page, its one tracking read stubbed (no order is placed, so the run holds
+ * no cash-cap slot and needs no vendor password). PREPARING, so the tracker shows reached, current
+ * and future steps together.
+ */
+async function openStubbedTrack(page: Page, width: number, rootPercent: number): Promise<void> {
+  const now = new Date().toISOString()
+  await page.route(`**/public/orders/${TRACK_ORDER}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        orderNumber: TRACK_ORDER,
+        status: "PREPARING",
+        shopName: SHOP_NAME,
+        totalAmountPennies: 1900,
+        itemCount: 1,
+        unitCount: 2,
+        createdAt: now,
+        updatedAt: now,
+        acknowledgedAllergenMask: 0,
+        acknowledgedAllergens: [],
+        recordedAllergens: [],
+        recordedAllergenFlags: [],
+        placedVia: "STOREFRONT",
+        allergyNoteProvided: false,
+        allergyNoteAcknowledgedAt: null,
+      }),
+    }),
+  )
+  await page.setViewportSize({ width, height: 844 })
+  await page.goto(`/track?order=${TRACK_ORDER}&email=${encodeURIComponent(TRACK_EMAIL)}`)
+  await expect(page.locator('ol[aria-label="Order progress"] [data-tracker-step]')).toHaveCount(5, { timeout: 15_000 })
+  if (rootPercent !== 100) {
+    await page.addStyleTag({ content: `html { font-size: ${rootPercent}% !important; }` })
+  }
+  // Two frames, so the probes read the layout after the root size took effect.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+}
+
+test.describe("/track step labels wrap between words only @mobile-only", () => {
+  for (const width of [360, 390]) {
+    for (const rootPercent of [100, 130]) {
+      test(`${width}px at ${rootPercent}% text: no label is split inside a word, and the page does not scroll sideways`, async ({
+        page,
+      }) => {
+        await openStubbedTrack(page, width, rootPercent)
+        // The 37-51 semantics stay: the current step is marked, the status region exists.
+        await expect(page.locator('[aria-current="step"]')).toHaveText(/Preparing/)
+        await expect(page.locator('main [role="status"][aria-live="polite"]')).toHaveCount(1)
+        const split = await splitWordOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")
+        const overflow = await pageOverflow(page)
+        expect({ split, overflow }, `${width}px / ${rootPercent}%`).toEqual({ split: [], overflow: null })
+      })
+    }
+  }
+
+  test("1280px: the desktop tracker stays one row of five steps", async ({ page }) => {
+    await openStubbedTrack(page, 1280, 100)
+    const tops = await page
+      .locator('ol[aria-label="Order progress"] [data-tracker-step]')
+      .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)))
+    expect(new Set(tops).size, `step tops ${JSON.stringify(tops)}`).toBe(1)
+    expect(await splitWordOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")).toEqual([])
   })
 })
 
@@ -358,5 +484,22 @@ test.describe("instruments can fail @stack-free", () => {
     })
     const offenders = await overflowOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")
     expect(offenders.join(" | ")).toMatch(/"Confirmed" (ellipsis|scrollWidth)/)
+  })
+  test("the whole-word probe passes a label wrapping between words and flags one broken inside a word", async ({ page }) => {
+    await page.setContent(FIXTURE)
+    await page.setViewportSize({ width: 360, height: 780 })
+    // Control: a two-word label in a narrow box wraps between its words; each word is one line.
+    await page.evaluate(() => {
+      const p = document.querySelector('[data-tracker-step="PENDING"] p') as HTMLElement
+      p.textContent = "Order received"
+      p.style.width = "8ch"
+    })
+    expect(await splitWordOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")).toEqual([])
+    // Broken input: the 37-51 label CSS in a column narrower than the word.
+    await page.addStyleTag({
+      content: '[data-tracker-step="CONFIRMED"] p { overflow-wrap: anywhere; width: 4ch; }',
+    })
+    const offenders = await splitWordOffenders(page, 'ol[aria-label="Order progress"]', "[data-tracker-step] p")
+    expect(offenders.join(" | ")).toMatch(/"Confirmed" drawn on [2-9] lines/)
   })
 })
