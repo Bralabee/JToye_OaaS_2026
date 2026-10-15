@@ -166,6 +166,11 @@ function TrackOrderContent() {
     }
     setOrder(next)
   }, [])
+  // F5 (37-F review): a lookup, the 15 s poll and "show what was recorded" can overlap, and their
+  // answers can land out of order. Each read takes a number; only the LATEST read's answer is put
+  // on screen, so an older PREPARING landing after READY neither moves the tracker back nor
+  // announces the order going backwards.
+  const readSeq = useRef(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // True once the page has opened itself on one of the signed-in customer's own
@@ -253,6 +258,7 @@ function TrackOrderContent() {
     e?.preventDefault()
     if (!orderNumber.trim() || !email.trim()) return
 
+    const seq = ++readSeq.current
     setLoading(true)
     setError(null)
     setOrder(null)
@@ -262,13 +268,15 @@ function TrackOrderContent() {
         `/public/orders/${orderNumber.trim()}`,
         { params: { email: email.trim() } }
       )
+      if (seq !== readSeq.current) return
       trackedByNumber.current = res.data.orderNumber
       showOrder(res.data)
       setOrderFromList(false)
     } catch {
+      if (seq !== readSeq.current) return
       setError("Order not found. Check your order number and email address.")
     } finally {
-      setLoading(false)
+      if (seq === readSeq.current) setLoading(false)
     }
   }
 
@@ -290,11 +298,13 @@ function TrackOrderContent() {
   useEffect(() => {
     if (!order || TERMINAL_STATUSES.includes(order.status)) return
     const interval = setInterval(async () => {
+      const seq = ++readSeq.current
       try {
         const res = await publicApiClient.get<OrderStatus>(
           `/public/orders/${order.orderNumber}`,
           { params: { email: email.trim() } }
         )
+        if (seq !== readSeq.current) return
         trackedByNumber.current = res.data.orderNumber
         showOrder(res.data)
         setOrderFromList(false)
@@ -309,11 +319,13 @@ function TrackOrderContent() {
   const showRecorded = async () => {
     if (!order || !email.trim()) return
     setLoadingRecorded(true)
+    const seq = ++readSeq.current
     try {
       const res = await publicApiClient.get<OrderStatus>(
         `/public/orders/${order.orderNumber}`,
         { params: { email: email.trim() } }
       )
+      if (seq !== readSeq.current) return
       trackedByNumber.current = res.data.orderNumber
       showOrder(res.data)
       setOrderFromList(false)

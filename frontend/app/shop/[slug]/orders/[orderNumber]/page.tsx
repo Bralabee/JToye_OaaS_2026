@@ -166,7 +166,13 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   const lastStatusRef = useRef<string | null>(null)
   const [statusUpdate, setStatusUpdate] = useState("")
 
+  // F5 (37-F review): the 15 s poll, a Retry and the email-arrival effect can overlap, and their
+  // answers can land out of order. Only the LATEST read's answer is applied, so an older PREPARING
+  // landing after READY can neither move the tracker back nor announce the order going backwards.
+  const readSeqRef = useRef(0)
+
   const fetchStatus = useCallback(async () => {
+    const seq = ++readSeqRef.current
     if (!email) {
       setLoading(false)
       return
@@ -176,6 +182,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         `/public/orders/${orderNumber}`,
         { params: { email } }
       )
+      if (seq !== readSeqRef.current) return
       const previous = lastStatusRef.current
       lastStatusRef.current = res.data.status
       if (previous !== null && previous !== res.data.status) {
@@ -185,9 +192,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       setOrder(res.data)
       setError(null)
     } catch {
+      if (seq !== readSeqRef.current) return
       if (!order) setError("Could not load order status.")
     } finally {
-      setLoading(false)
+      if (seq === readSeqRef.current) setLoading(false)
     }
   }, [orderNumber, email, order])
 

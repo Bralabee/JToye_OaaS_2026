@@ -251,3 +251,34 @@ describe("37-F review F2 on /track: READY is described for THIS order's fulfilme
     )
   })
 })
+
+describe("37-F review F5 on /track: only the LATEST read is applied", () => {
+  it("an older PREPARING poll landing after a newer READY one announces nothing and does not move the status back", async () => {
+    await guestLookup()
+
+    let releaseOld: () => void = () => {}
+    mockGet.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseOld = () => resolve({ data: { ...ORDER, status: "PREPARING" } })
+        })
+    )
+    let oldRead: unknown
+    act(() => {
+      oldRead = currentPoll()()
+    })
+
+    await poll({ ...ORDER, status: "READY" })
+    await waitFor(() => expect(statusRegion()).toHaveTextContent("Order update: Ready."))
+
+    await act(async () => {
+      releaseOld()
+      await oldRead
+    })
+
+    expect(statusRegion()).toHaveTextContent("Order update: Ready.")
+    expect(statusRegion()).not.toHaveTextContent(/Preparing/)
+    expect(document.querySelector('[aria-current="step"]')).toHaveTextContent("Ready")
+  })
+})
+
