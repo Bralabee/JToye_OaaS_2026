@@ -157,7 +157,7 @@ describe("Shop cart page — quantity stepper accessible names (A11Y-7)", () => 
       screen.getByRole("button", { name: "Decrease quantity of Jollof Rice" })
     ).toBeInTheDocument()
     expect(
-      screen.getByRole("button", { name: "Increase quantity of Jollof Rice" })
+      screen.getByRole("button", { name: "Add one more Jollof Rice" })
     ).toBeInTheDocument()
   })
 

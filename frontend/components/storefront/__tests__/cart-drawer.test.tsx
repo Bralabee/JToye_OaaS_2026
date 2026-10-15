@@ -183,7 +183,7 @@ describe("CartDrawer", () => {
     openDrawer()
     expect(screen.getByText("1")).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: /increase quantity/i }))
+    await user.click(screen.getByRole("button", { name: /^Add one more / }))
 
     expect(screen.getByText("2")).toBeInTheDocument()
     // Line total reflows to 850 x 2 = £17.00.
@@ -197,7 +197,7 @@ describe("CartDrawer", () => {
     openDrawer()
     expect(screen.getByText("2")).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: /decrease quantity/i }))
+    await user.click(screen.getByRole("button", { name: /^Decrease quantity of / }))
 
     expect(screen.getByText("1")).toBeInTheDocument()
   })
