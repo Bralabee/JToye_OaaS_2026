@@ -995,7 +995,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
   7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end on the delivered runtime. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
   8. **Catalogue & shop admin (37-G).** Vendors can set a delivery fee, a free-delivery threshold and collection-only, enforced on every writer, and editing a shop keeps its public address.
 
-**Plans:** 53/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
+**Plans:** 53/55 plans executed in 42 waves, plus 2 UAT gap-closure plans (37-54, 37-55; gaps G-37-12..G-37-15 from the 2026-10-15 UAT session). Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
 
 Plans:
 **Wave 1**
@@ -1134,6 +1134,10 @@ Plans:
 
 **Wave 42** *(blocked on Wave 41 completion)*
 - [x] 37-53-PLAN.md — 37-F gate and the 40-goods re-verification (SC-7)
+
+**Gap closure — UAT 2026-10-15 (G-37-12..G-37-15)**
+- [ ] 37-54-PLAN.md — Webhooks typed refusal, Staff-page form controls legible in the dark theme, container-query pending invitations, null-safe picker labels (jest RED/GREEN)
+- [ ] 37-55-PLAN.md — Live Chrome RED/GREEN on the rebuilt runtime (stack checkpoint), parity, doc metrics, PR branch phase-37-uat-gaps
 
 **Cross-cutting constraints:**
 - After the cut, origin/main is merged into phase-37-ops-readiness once more so the next sub-theme starts on current main (D-04)
