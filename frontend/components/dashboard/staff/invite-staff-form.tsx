@@ -57,8 +57,21 @@ export const INVITE_FIELD_LABELS = { email: "Email", role: "Role", shop: "Shop" 
 
 const ALL_SHOPS_VALUE = ""
 
-const SELECT_CLASS =
-  "h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-700"
+/**
+ * G-37-13 (37-54): the select every Staff-page form uses, both cards (no height: each
+ * card keeps its own). The light classes are today's, and `text-foreground` is the
+ * colour the select already inherited in light, so light rendering does not change.
+ * In the dark theme the select was `bg-white` with the inherited near-white text,
+ * about 1.0:1; the dark border and background are the sidebar shop switcher's pair,
+ * and `[color-scheme:dark]` asks the browser for a dark native option list (browser-
+ * rendered, so no instrument here measures it). Every class is a complete literal:
+ * Tailwind emits only class names it can read whole.
+ */
+export const STAFF_SELECT_CLASS =
+  "w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-foreground disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:[color-scheme:dark] dark:disabled:bg-slate-900 dark:disabled:text-slate-400"
+
+/** G-37-13: a Staff-page field label, readable on the dark card (slate-700 was about 1.9:1). */
+export const STAFF_FIELD_LABEL_CLASS = "text-sm font-medium text-slate-700 dark:text-slate-300"
 
 /** Axios error → `{status, type}`, or nothing for a non-HTTP failure. */
 function problemOf(err: unknown): { status?: number; type?: string } {
@@ -163,7 +176,7 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
           )}
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-1.5">
-              <label htmlFor="invite-email" className="text-sm font-medium text-slate-700">
+              <label htmlFor="invite-email" className={STAFF_FIELD_LABEL_CLASS}>
                 {INVITE_FIELD_LABELS.email}
               </label>
               <Input
@@ -181,21 +194,21 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
                 className="h-11"
               />
               {emailError && (
-                <p id={emailErrorId} role="alert" className="text-sm text-red-700">
+                <p id={emailErrorId} role="alert" className="text-sm text-red-700 dark:text-red-400">
                   {emailError}
                 </p>
               )}
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="invite-role" className="text-sm font-medium text-slate-700">
+              <label htmlFor="invite-role" className={STAFF_FIELD_LABEL_CLASS}>
                 {INVITE_FIELD_LABELS.role}
               </label>
               <select
                 id="invite-role"
                 value={role}
                 onChange={(e) => setRole(e.target.value as ShopRole)}
-                className={SELECT_CLASS}
+                className={`h-11 ${STAFF_SELECT_CLASS}`}
               >
                 {ROLE_ORDER.map((r) => (
                   <option key={r} value={r}>
@@ -206,7 +219,7 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="invite-shop" className="text-sm font-medium text-slate-700">
+              <label htmlFor="invite-shop" className={STAFF_FIELD_LABEL_CLASS}>
                 {INVITE_FIELD_LABELS.shop}
               </label>
               <select
@@ -215,7 +228,7 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
                 onChange={(e) => setShopId(e.target.value)}
                 disabled={groupAdmin}
                 aria-describedby={groupAdmin ? shopHintId : undefined}
-                className={SELECT_CLASS}
+                className={`h-11 ${STAFF_SELECT_CLASS}`}
               >
                 <option value={ALL_SHOPS_VALUE}>{INVITE_COPY.allShops}</option>
                 {shops.map((s) => (
@@ -225,7 +238,7 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
                 ))}
               </select>
               {groupAdmin && (
-                <p id={shopHintId} className="text-sm text-slate-600">
+                <p id={shopHintId} className="text-sm text-slate-600 dark:text-slate-400">
                   {INVITE_COPY.groupAdminHint}
                 </p>
               )}

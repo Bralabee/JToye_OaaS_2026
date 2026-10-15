@@ -85,7 +85,12 @@ export default function DevelopersPage() {
     try {
       const staff = await fetchStaff()
       const map = new Map<string, string>()
-      staff.directory.forEach((d) => map.set(d.userId, d.displayName || d.email))
+      // DirectoryEntry.email is nullable (G-37-15): an entry with neither name nor email
+      // names nothing, exactly as before (createdLabel already shows the date alone).
+      staff.directory.forEach((d) => {
+        const name = d.displayName || d.email
+        if (name) map.set(d.userId, name)
+      })
       setNameById(map)
     } catch {
       setNameById(new Map())
