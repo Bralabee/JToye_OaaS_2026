@@ -287,6 +287,11 @@ export function CartProvider({
   // so a page load announces nothing. Reset when the slug changes: another shop's basket is not a
   // previous state of this one.
   const lastPersistedRef = useRef<{ slug: string; items: CartItem[] } | undefined>(undefined)
+  // 37-F review F3: true from one of THIS tab's own add/remove/update calls until the persist that
+  // writes it. Only such a persist names a dish. A sibling tab's write (re-read on `storage`), the
+  // account-switch wipe and the server's basket-changed rewrite clear it, so they still update the
+  // count but are never announced as something this customer just did.
+  const ownEditRef = useRef(false)
   const [items, setItems] = useStoredState<CartItem[]>(
     cartStorageKey(shopSlug),
     EMPTY_ITEMS,
@@ -321,6 +326,8 @@ export function CartProvider({
         if (typeof window === "undefined") return
         const prev = lastPersistedRef.current?.slug === shopSlug ? lastPersistedRef.current.items : undefined
         lastPersistedRef.current = { slug: shopSlug, items: value }
+        const ownEdit = ownEditRef.current
+        ownEditRef.current = false
         window.dispatchEvent(
           new CustomEvent("jtoye:cart-updated", {
             detail: {
@@ -330,9 +337,10 @@ export function CartProvider({
                 (sum, i) => sum + i.pricePennies * i.quantity,
                 0
               ),
-              // The one dish this write changed, or null (hydration, no change, several lines at
+              // The one dish this write changed, or null (hydration, a write this tab did not make —
+              // see ownEditRef — no change, several lines at
               // once). The header's basket region turns it into "{dish} added. {n} items in basket."
-              edit: basketEditOf(prev, value),
+              edit: ownEdit ? basketEditOf(prev, value) : null,
             },
           })
         )
@@ -357,6 +365,7 @@ export function CartProvider({
     const onStorage = (e: StorageEvent) => {
       // e.key === null is localStorage.clear() — everything, including us.
       if (e.key !== null && e.key !== CUSTOMER_ID_KEY && e.key !== key) return
+      ownEditRef.current = false
       setItems((prev) => {
         const next = readCart(shopSlug)
         // Bail out when nothing actually changed. Without this, two tabs on the
@@ -380,12 +389,16 @@ export function CartProvider({
   // basket belonged to is, by construction, not the person here now.
   useEffect(() => {
     if (typeof window === "undefined") return
-    const onCleared = () => setItems(EMPTY_ITEMS)
+    const onCleared = () => {
+      ownEditRef.current = false
+      setItems(EMPTY_ITEMS)
+    }
     window.addEventListener(CARTS_CLEARED_EVENT, onCleared)
     return () => window.removeEventListener(CARTS_CLEARED_EVENT, onCleared)
   }, [setItems])
 
   const addItem = useCallback((item: Omit<CartItem, "quantity">) => {
+    ownEditRef.current = true
     setItems((prev) => {
       const existing = prev.find((i) => i.productId === item.productId)
       if (existing) {
@@ -400,10 +413,12 @@ export function CartProvider({
   }, [setItems])
 
   const removeItem = useCallback((productId: string) => {
+    ownEditRef.current = true
     setItems((prev) => prev.filter((i) => i.productId !== productId))
   }, [setItems])
 
   const updateQuantity = useCallback((productId: string, quantity: number) => {
+    ownEditRef.current = true
     if (quantity <= 0) {
       setItems((prev) => prev.filter((i) => i.productId !== productId))
     } else {
@@ -424,6 +439,7 @@ export function CartProvider({
   // path above — which is what keeps the owner stamp out of this function's hands (F15).
   const applyServerChanges = useCallback(
     (changes: readonly BasketChange[]) => {
+      ownEditRef.current = false
       setItems((prev) => applyBasketChanges(prev, changes))
     },
     [setItems]
