@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -20,6 +21,7 @@ import {
   resolveCartOwner,
 } from "@/lib/cart-identity"
 import type { BasketChange } from "@/types/storefront"
+import { basketEditOf } from "@/lib/basket-announcement"
 
 function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
@@ -279,6 +281,12 @@ export function CartProvider({
   // THIS slug) lives in useStoredState — see the note there for the clobber and
   // the cross-shop leak it closes. Keeping it there rather than here means the
   // next storage-backed piece of state gets it right for free.
+  //
+  // 37-52 (UI-SPEC F3, UXT-083): the basket as it was last persisted, so each broadcast can say WHICH
+  // dish changed. undefined until the first persist, which is hydration (nothing the customer did),
+  // so a page load announces nothing. Reset when the slug changes: another shop's basket is not a
+  // previous state of this one.
+  const lastPersistedRef = useRef<{ slug: string; items: CartItem[] } | undefined>(undefined)
   const [items, setItems] = useStoredState<CartItem[]>(
     cartStorageKey(shopSlug),
     EMPTY_ITEMS,
@@ -311,6 +319,8 @@ export function CartProvider({
       // without subscribing to this context.
       onPersist: (value) => {
         if (typeof window === "undefined") return
+        const prev = lastPersistedRef.current?.slug === shopSlug ? lastPersistedRef.current.items : undefined
+        lastPersistedRef.current = { slug: shopSlug, items: value }
         window.dispatchEvent(
           new CustomEvent("jtoye:cart-updated", {
             detail: {
@@ -320,6 +330,9 @@ export function CartProvider({
                 (sum, i) => sum + i.pricePennies * i.quantity,
                 0
               ),
+              // The one dish this write changed, or null (hydration, no change, several lines at
+              // once). The header's basket region turns it into "{dish} added. {n} items in basket."
+              edit: basketEditOf(prev, value),
             },
           })
         )

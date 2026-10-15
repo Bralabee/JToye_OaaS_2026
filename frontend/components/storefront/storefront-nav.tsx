@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
 import { m } from "framer-motion"
@@ -11,6 +11,7 @@ import { useCartCount } from "@/hooks/use-cart-count"
 import { useCustomerSession } from "@/hooks/use-customer-session"
 import { customerIdpSignOut, customerLogout } from "@/lib/customer-auth"
 import { hasRememberedSignIn } from "@/lib/cart-identity"
+import { basketAnnouncement, basketCountPhrase, type BasketEdit } from "@/lib/basket-announcement"
 
 /**
  * FE-5 — subscribe to the "a sign-in happened here and nobody signed out since"
@@ -86,6 +87,27 @@ export function StorefrontNav() {
   const params = useParams<{ slug?: string }>()
   const slug = params?.slug
   const cartCount = useCartCount(slug)
+  // 37-52 (UI-SPEC F3, UXT-083): the ONE basket live region's sentence. Written only when the cart
+  // provider broadcasts a single-dish edit for this shop ("Mango Lassi added. 1 item in basket."),
+  // never on a page load (the provider's first persist is hydration and carries no edit) and never
+  // for a sibling tab's write (`storage` events do not come through here). The link below is no
+  // longer the live region: it held the visible badge AND the count, so it was read "1 1 item in
+  // basket" and never said what had changed.
+  const [basketMessage, setBasketMessage] = useState("")
+  useEffect(() => {
+    if (!slug) return
+    const onCartUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ slug: string; itemCount: number; edit?: BasketEdit | null }>).detail
+      if (detail?.slug !== slug || !detail.edit) return
+      setBasketMessage(basketAnnouncement(detail.edit, detail.itemCount))
+    }
+    window.addEventListener("jtoye:cart-updated", onCartUpdated)
+    return () => {
+      window.removeEventListener("jtoye:cart-updated", onCartUpdated)
+      // A different shop's page starts with nothing said about this one's basket.
+      setBasketMessage("")
+    }
+  }, [slug])
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
 
@@ -112,7 +134,22 @@ export function StorefrontNav() {
     // reader's landmark list exactly as useless as it was. These three storefront
     // navs therefore carry three DIFFERENT names — see the strip in
     // app/shop/[slug]/shop-detail-client.tsx and the sheet below.
-    <nav aria-label="Storefront" className="flex items-center gap-3 sm:gap-4 text-sm">
+    //
+    // 37-53 gap fix (RWO-080 / UXT-080): the COMPACT row. Every box in this header is sized in rem,
+    // so at 360px with a 130% root font (the UXT-080 condition) the signed-out row needed 343px of
+    // a 318px rail: brand 121.5 + basket 46.8 + Sign in 95.5 + menu 57.2 + two 15.6 gaps. The menu
+    // button ended at 364px, past the rail's padding and the screen, and the page scrolled 4px
+    // sideways. When the header row (a container, app/shop/layout.tsx) is narrower than 17.5rem the
+    // gaps drop to gap-1 and the Sign-in pill drops its decorative icon and goes px-2, which leaves
+    // about 12px between the brand and the basket at 360/130 (measured; with gap-1.5 and px-2.5 it
+    // was 1.3px and the basket glyph sat against the wordmark). 17.5rem: the full row needs 16.5rem, so
+    // the switch also covers 375 and 390px phones at 130%, where it fitted with 0-3px to spare.
+    // At the default size a 320px phone's row is 18rem, so every default-size phone, every
+    // tablet and the desktop keep the row exactly as it was; no touch target shrinks.
+    <nav
+      aria-label="Storefront"
+      className="flex items-center gap-3 sm:gap-4 text-sm [@container_(max-width:17.5rem)]:gap-1"
+    >
       {/* Desktop links (>=sm) — destination parity with the shared PublicHeader,
           now PERSONA-GATED (#458).
 
@@ -180,38 +217,46 @@ export function StorefrontNav() {
       {/* Basket — only on /shop/[slug] routes where a cart exists (all
           viewports). Badge remounts on count change so the spring replays. */}
       {slug && (
-        <Link
-          href={`/shop/${slug}/cart`}
-          aria-live="polite"
-          onClick={(e) => {
-            // Plain left-click opens the slide-over drawer; modified clicks
-            // (new tab/window) and keyboard/AT/JS-off still hit the cart PAGE.
-            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
-            e.preventDefault()
-            window.dispatchEvent(new CustomEvent("jtoye:cart-open"))
-          }}
-          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 active:scale-95 transition-all"
-        >
-          <ShoppingBag className="h-5 w-5" />
-          {cartCount > 0 && (
-            <m.span
-              key={cartCount}
-              initial={{ scale: 0.5 }}
-              animate={{ scale: 1 }}
-              transition={springPop}
-              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-oxblood px-1 text-xs font-bold leading-none text-white"
-            >
-              {cartCount}
-            </m.span>
-          )}
-          {/* Renders to zero pixels, so no screenshot or visible-text assertion
-              can catch a wrong plural here — this announced "1 items in basket"
-              (#272). Same conditional idiom as cart-drawer.tsx and the cart page,
-              which describe the SAME basket. */}
-          <span className="sr-only">
-            {cartCount} item{cartCount !== 1 ? "s" : ""} in basket
+        <>
+          <Link
+            href={`/shop/${slug}/cart`}
+            onClick={(e) => {
+              // Plain left-click opens the slide-over drawer; modified clicks
+              // (new tab/window) and keyboard/AT/JS-off still hit the cart PAGE.
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+              e.preventDefault()
+              window.dispatchEvent(new CustomEvent("jtoye:cart-open"))
+            }}
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 active:scale-95 transition-all"
+          >
+            <ShoppingBag className="h-5 w-5" />
+            {cartCount > 0 && (
+              <m.span
+                key={cartCount}
+                // The count is in the sr-only name below; the badge is the same number for the eye.
+                aria-hidden="true"
+                initial={{ scale: 0.5 }}
+                animate={{ scale: 1 }}
+                transition={springPop}
+                className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-oxblood px-1 text-xs font-bold leading-none text-white"
+              >
+                {cartCount}
+              </m.span>
+            )}
+            {/* Renders to zero pixels, so no screenshot or visible-text assertion
+                can catch a wrong plural here — this announced "1 items in basket"
+                (#272). Same conditional idiom as cart-drawer.tsx and the cart page,
+                which describe the SAME basket. */}
+            <span className="sr-only">{basketCountPhrase(cartCount)}</span>
+          </Link>
+          {/* AFTER the link in DOM order on purpose: the #272 pluralisation checks read the FIRST
+              sr-only span saying "in basket", which must stay the link's own count. Explicit
+              aria-live as well as role=status: Radix's hideOthers keeps `[aria-live]` elements (and
+              so this header) announceable behind a dialog, exactly as it did for the old link. */}
+          <span role="status" aria-live="polite" className="sr-only" data-testid="basket-announcement">
+            {basketMessage}
           </span>
-        </Link>
+        </>
       )}
 
       {profile ? (
@@ -260,9 +305,10 @@ export function StorefrontNav() {
               comes from usePathname() rather than window so it is stable during SSR. */}
           <Link
             href={`/shop/signin?next=${encodeURIComponent(pathname || "/shop")}`}
-            className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors [@container_(max-width:17.5rem)]:px-2"
           >
-            <User className="h-3 w-3" />
+            {/* Decorative: the word carries the meaning, so the compact row drops the icon first. */}
+            <User className="h-3 w-3 [@container_(max-width:17.5rem)]:hidden" aria-hidden="true" />
             Sign in
           </Link>
         </div>

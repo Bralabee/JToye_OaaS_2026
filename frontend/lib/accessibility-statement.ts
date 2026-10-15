@@ -204,10 +204,12 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     // --- Known, on surfaces we DO claim, and not closed by this work --------
     // "storefront-no-skip-link" was removed by phase 31.1 plan 28 (#878): the
     // storefront layout (`app/shop/layout.tsx`) carries the same skip link as
-    // the public shell, and on the built tree the first Tab on /, /shop,
-    // /shop/signin, /track, a storefront, its basket and its seeded checkout
-    // lands on "Skip to main content", whose #main target is the <main>
-    // landmark. The axe gate now asserts that on every surface it scans, so
+    // the public shell. On /, /shop, /shop/signin, /track, a storefront, its
+    // basket and its seeded checkout, the first Tab lands on the cookie
+    // notice's "Got it" while the notice shows (37-52 puts it first in DOM
+    // order), and on "Skip to main content" otherwise; the skip link's #main
+    // target is the <main> landmark. The axe gate asserts on every surface it
+    // scans that the first link outside the notice host is the skip link, so
     // the defect cannot come back without reddening a PR.
     {
       id: "required-fields-marked-visually-only",

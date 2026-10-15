@@ -93,6 +93,28 @@ function ProductCard({
   const lineLimitHintId = useId()
   const atLineLimit = lineLimit != null && quantity >= lineLimit
 
+  // 37-52 (UI-SPEC F3, UXT-083): "Add" and the stepper REPLACE each other, so the button a keyboard
+  // customer just pressed leaves the DOM and focus fell to <body> — their place in the menu was gone.
+  // The card's own controls say where focus goes next; the effect moves it once the new control has
+  // rendered. Only THIS card's controls set it, so the dish modal (which shares the cart handlers)
+  // never has focus pulled out from under it, and a featured dish's second copy is left alone.
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+  const plusButtonRef = useRef<HTMLButtonElement>(null)
+  const minusButtonRef = useRef<HTMLButtonElement>(null)
+  const pendingFocusRef = useRef<"plus" | "add" | null>(null)
+  useEffect(() => {
+    const pending = pendingFocusRef.current
+    if (pending === "plus" && quantity > 0) {
+      pendingFocusRef.current = null
+      // A one-per-order line disables "+" at once; the remove button is then the stepper's live control.
+      const target = plusButtonRef.current && !plusButtonRef.current.disabled ? plusButtonRef.current : minusButtonRef.current
+      target?.focus()
+    } else if (pending === "add" && quantity === 0) {
+      pendingFocusRef.current = null
+      addButtonRef.current?.focus()
+    }
+  }, [quantity])
+
   const images = product.imageUrls?.length > 0 ? product.imageUrls : (product.imageUrl ? [product.imageUrl] : [])
   const primaryImage = images[0] || null
   const hasMultipleImages = images.length > 1
@@ -207,7 +229,11 @@ function ProductCard({
                 </span>
               ) : quantity === 0 ? (
                 <button
-                  onClick={(e) => handleAddToCart(e)}
+                  ref={addButtonRef}
+                  onClick={(e) => {
+                    pendingFocusRef.current = "plus"
+                    handleAddToCart(e)
+                  }}
                   // A11Y-4 (QA council 20260902-134741; WCAG 2.4.6): nine cards on one page
                   // exposed the identical name "Add", and a name-driven actor added the
                   // wrong dish. Visible text stays "Add"; the name says which dish, the
@@ -230,7 +256,11 @@ function ProductCard({
                 // ABOVE the stretched trigger button, and is load-bearing.
                 <div className="relative z-10 inline-flex items-center gap-0 rounded-full bg-amber-500 text-amber-ink">
                   <button
-                    onClick={() => updateQuantity(product.id, quantity - 1)}
+                    ref={minusButtonRef}
+                    onClick={() => {
+                      if (quantity === 1) pendingFocusRef.current = "add"
+                      updateQuantity(product.id, quantity - 1)
+                    }}
                     aria-label={
                       quantity === 1
                         ? `Remove ${product.title} from basket`
@@ -242,8 +272,10 @@ function ProductCard({
                   </button>
                   <span className="min-w-[1.25rem] text-center text-xs font-bold">{quantity}</span>
                   <button
+                    ref={plusButtonRef}
                     onClick={() => updateQuantity(product.id, quantity + 1)}
-                    aria-label={`Increase quantity of ${product.title}`}
+                    // 37-52 (UI-SPEC F3): the control focus lands on after "Add", named as what it does.
+                    aria-label={`Add one more ${product.title}`}
                     aria-describedby={atLineLimit ? lineLimitHintId : undefined}
                     disabled={atLineLimit}
                     className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-50"
@@ -624,7 +656,10 @@ export function ShopDetailClient({
               />
             </div>
             <div className="min-w-0 pb-1">
-              <h1 className="text-xl sm:text-2xl font-bold text-white truncate">
+              {/* 37-52 (UI-SPEC F6, UXT-080): the shop's name wraps (breaking a long word if it must)
+                  instead of ending in an ellipsis at 360px with 130% text. The overlay is anchored
+                  to the banner's bottom edge, so extra lines grow upward into the banner. */}
+              <h1 className="text-xl sm:text-2xl font-bold text-white break-words">
                 {shop.name}
               </h1>
               {/* 37-49: flex-wrap (planner assumption for the UI-SPEC G1 375px overflow row): with the

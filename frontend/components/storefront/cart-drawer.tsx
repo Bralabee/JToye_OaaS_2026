@@ -198,7 +198,9 @@ function DrawerItems({
               </div>
 
               <div className="min-w-0 flex-1">
-                <h3 className="truncate text-sm font-semibold text-slate-900">
+                {/* 37-52 (UI-SPEC F6, UXT-080): the same basket as the basket page, so the same rule:
+                    the item name wraps rather than ending in an ellipsis at large text sizes. */}
+                <h3 className="break-words text-sm font-semibold text-slate-900">
                   {item.title}
                 </h3>
                 {item.category && (

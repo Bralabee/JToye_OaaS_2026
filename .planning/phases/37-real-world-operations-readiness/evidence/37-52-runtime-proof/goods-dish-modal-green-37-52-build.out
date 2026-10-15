@@ -1,0 +1,23 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/storefront-dish-modal-a11y.spec.ts --grep dialog contract|pluralisation --reporter=list --output=<proof>/pw-goods6-3052
+
+Running 16 tests using 1 worker
+
+  ✓   1 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:131:7 › Storefront dish modal — dialog contract › opens as a named modal dialog and inerts the page behind it (464ms)
+  ✓   2 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:170:7 › Storefront dish modal — dialog contract › moves focus into the dialog on open (405ms)
+  ✓   3 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:180:7 › Storefront dish modal — dialog contract › traps Tab inside the dialog (600ms)
+  ✓   4 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:197:7 › Storefront dish modal — dialog contract › Escape closes it and returns focus to the trigger (496ms)
+  ✓   5 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:225:7 › Storefront dish modal — dialog contract › can be opened and closed with the keyboard alone (490ms)
+  ✓   6 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:247:7 › Storefront dish modal — dialog contract › still dismisses on a backdrop click (424ms)
+  ✓   7 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:259:7 › Storefront dish modal — dialog contract › the add-to-cart control inside the dialog is still reachable and works (469ms)
+  ✓   8 [mobile] › e2e/storefront-dish-modal-a11y.spec.ts:274:7 › Storefront basket announcement — pluralisation (#272) › announces '1 item in basket', not '1 items' (453ms)
+  ✓   9 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:131:7 › Storefront dish modal — dialog contract › opens as a named modal dialog and inerts the page behind it (654ms)
+  ✓  10 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:170:7 › Storefront dish modal — dialog contract › moves focus into the dialog on open (571ms)
+  ✓  11 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:180:7 › Storefront dish modal — dialog contract › traps Tab inside the dialog (697ms)
+  ✓  12 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:197:7 › Storefront dish modal — dialog contract › Escape closes it and returns focus to the trigger (575ms)
+  ✓  13 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:225:7 › Storefront dish modal — dialog contract › can be opened and closed with the keyboard alone (590ms)
+  ✓  14 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:247:7 › Storefront dish modal — dialog contract › still dismisses on a backdrop click (519ms)
+  ✓  15 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:259:7 › Storefront dish modal — dialog contract › the add-to-cart control inside the dialog is still reachable and works (653ms)
+  ✓  16 [desktop] › e2e/storefront-dish-modal-a11y.spec.ts:274:7 › Storefront basket announcement — pluralisation (#272) › announces '1 item in basket', not '1 items' (560ms)
+
+  16 passed (9.7s)

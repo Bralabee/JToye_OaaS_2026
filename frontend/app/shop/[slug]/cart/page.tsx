@@ -150,7 +150,9 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
 
             {/* Details */}
             <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-slate-900 truncate">{item.title}</h3>
+              {/* 37-52 (UI-SPEC F6, UXT-080): wraps, never an ellipsis: at 360px with 130% text the
+                  customer could not read what was in their basket. */}
+              <h3 className="text-sm font-semibold text-slate-900 break-words">{item.title}</h3>
               {item.category && (
                 <p className="text-xs text-slate-600">{item.category}</p>
               )}

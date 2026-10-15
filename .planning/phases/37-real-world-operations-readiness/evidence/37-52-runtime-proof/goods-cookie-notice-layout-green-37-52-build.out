@@ -1,0 +1,9 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/cookie-notice-layout.spec.ts --reporter=list --output=<proof>/pw-goods8
+
+Running 2 tests using 1 worker
+
+  ✓  1 [mobile] › e2e/cookie-notice-layout.spec.ts:86:7 › Cookie notice — layout cost › occupies no layout space, with both arms and a positive control (4.1s)
+  ✓  2 [desktop] › e2e/cookie-notice-layout.spec.ts:86:7 › Cookie notice — layout cost › occupies no layout space, with both arms and a positive control (4.2s)
+
+  2 passed (9.2s)
