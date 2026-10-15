@@ -262,6 +262,9 @@ function TrackOrderContent() {
     setLoading(true)
     setError(null)
     setOrder(null)
+    // F6 (37-F review): a lookup the customer asked for sets a NEW baseline, even for the order
+    // already on screen — what it returns is the answer to their question, not an update to announce.
+    lastSeen.current = null
 
     try {
       const res = await publicApiClient.get<OrderStatus>(

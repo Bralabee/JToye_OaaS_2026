@@ -282,3 +282,17 @@ describe("37-F review F5 on /track: only the LATEST read is applied", () => {
   })
 })
 
+
+describe("37-F review F6 on /track: a user-initiated lookup sets a new baseline", () => {
+  it("re-submitting the lookup for the same order after it moved on announces nothing", async () => {
+    await guestLookup()
+    expect(statusRegion()).toHaveTextContent(/^$/)
+
+    trackingAnswer = { ...ORDER, status: "PREPARING" }
+    fireEvent.click(screen.getByRole("button", { name: /track order/i }))
+    await waitFor(() =>
+      expect(document.querySelector('[aria-current="step"]')).toHaveTextContent("Preparing")
+    )
+    expect(statusRegion()).toHaveTextContent(/^$/)
+  })
+})
