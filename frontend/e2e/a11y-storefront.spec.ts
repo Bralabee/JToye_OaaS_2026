@@ -245,10 +245,61 @@ async function clippedText(page: Page, selector: string, texts?: string[]): Prom
   )
 }
 
-/** 360px wide, root font 130% — the UXT-080 condition. */
+/**
+ * Wait until the layout has SETTLED: no finite animation or transition still running (an infinite
+ * one, a spinner or a skeleton pulse, never finishes and is not a layout in motion), then two frames.
+ * 37-53 gap fix (RWO-080): the F6 document check used to run straight after the 130% style landed,
+ * while the header's basket link was still mid `transition-all` (33px on its way to 43px). At that
+ * instant the document read 360/360 and 300ms later 364/360, so the check passed by timing alone; a
+ * customer whose phone font is large loads at 130% from the first paint and only ever sees the
+ * settled layout.
+ */
+async function settled(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      document
+        .getAnimations()
+        .every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity),
+    undefined,
+    { timeout: 10_000 },
+  )
+  await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))))
+}
+
+/** 360px wide, root font 130% — the UXT-080 condition — measured once the layout has settled. */
 async function largeTextNarrow(page: Page): Promise<void> {
   await page.setViewportSize({ width: 360, height: 780 })
   await page.addStyleTag({ content: "html { font-size: 130% !important; }" })
+  await settled(page)
+}
+
+/**
+ * The F6 header probe (37-53 gap fix, RWO-080): the document does not scroll sideways, and every
+ * child of the storefront header row lies inside the row's own box. The second half is the stronger
+ * one: the rail's side padding can absorb a row that is already too wide, so a document that does not
+ * scroll is not yet a header that fits. "no header row" is itself an offender (non-vacuity).
+ */
+async function headerOverflow(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const offenders: string[] = []
+    const doc = document.documentElement
+    if (doc.scrollWidth > doc.clientWidth) offenders.push(`document scrollWidth ${doc.scrollWidth} > clientWidth ${doc.clientWidth}`)
+    const nav = document.querySelector('header nav[aria-label="Storefront"]')
+    const row = nav?.parentElement
+    if (!nav || !row) return [...offenders, "no storefront header row"]
+    const r = row.getBoundingClientRect()
+    for (const el of [row.firstElementChild, nav, ...Array.from(nav.children)]) {
+      if (!el) continue
+      const b = el.getBoundingClientRect()
+      if (b.width === 0 && b.height === 0) continue
+      if (getComputedStyle(el).position === "absolute") continue
+      const name = (el.getAttribute("aria-label") || el.textContent || el.tagName).replace(/\s+/g, " ").trim().slice(0, 30)
+      if (b.right > r.right + 0.5 || b.left < r.left - 0.5) {
+        offenders.push(`"${name}" [${b.left.toFixed(1)}, ${b.right.toFixed(1)}] outside the row [${r.left.toFixed(1)}, ${r.right.toFixed(1)}]`)
+      }
+    }
+    return offenders
+  })
 }
 
 /** The menu's first addable dish: its Add button and the dish name the button is named after. */
@@ -350,6 +401,34 @@ test.describe("live storefront @mobile-only", () => {
     // INSTRUMENT: the same basket name forced to one clipped line is reported.
     await page.addStyleTag({ content: "main h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }" })
     expect((await clippedText(page, "h3", [dish])).length).toBeGreaterThan(0)
+  })
+
+  test("F6: signed out at 360px with 130% text the header row fits on the menu, basket and checkout; INSTRUMENT: a widened control is caught", async ({ page }) => {
+    await page.goto(`/shop/${SHOP_SLUG}`)
+    const { dish, addLabel } = await firstAddableDish(page)
+    // Signed out is the condition: the header carries the "Sign in" pill, not the profile control.
+    await expect(page.locator("header").getByRole("link", { name: "Sign in" })).toBeVisible()
+    await page.locator(`button[aria-label="${addLabel}"]`).first().click()
+    await expect(page.locator(`button[aria-label="Remove ${dish} from basket"]`).first()).toBeVisible()
+
+    await largeTextNarrow(page)
+    soft(await headerOverflow(page), "the menu page header at 360px / 130%").toEqual([])
+
+    await page.goto(`/shop/${SHOP_SLUG}/cart`)
+    await expect(page.getByRole("heading", { name: dish }).first()).toBeVisible({ timeout: 15_000 })
+    await largeTextNarrow(page)
+    soft(await headerOverflow(page), "the basket page header at 360px / 130%").toEqual([])
+
+    await page.goto(`/shop/${SHOP_SLUG}/checkout`)
+    await expect(page.locator("main").getByText(dish).first()).toBeVisible({ timeout: 15_000 })
+    await largeTextNarrow(page)
+    expect(await headerOverflow(page), "the checkout page header at 360px / 130%").toEqual([])
+    await expect(page.locator("header").getByRole("link", { name: "Sign in" }), "still signed out at checkout").toBeVisible()
+
+    // INSTRUMENT: the same real header with the Sign-in pill forced 60px wider must be reported.
+    await page.addStyleTag({ content: 'header a[href^="/shop/signin"] { min-width: 10rem !important; }' })
+    await settled(page)
+    expect((await headerOverflow(page)).length, "the header probe missed a row pushed past its box").toBeGreaterThan(0)
   })
 })
 
