@@ -108,8 +108,13 @@ blocked: 0
   reason: "Observed in 2026-10-15 Chrome UAT session: API 403 requiredRole GROUP_ADMIN rendered as 'No webhook endpoints yet' + Add endpoint"
   severity: major
   test: 12
-  artifacts: []
-  missing: []
+  root_cause: "fetchSubscriptions catch shows a transient destructive toast and leaves subscriptions empty, so the 403 renders the "No webhook endpoints yet" empty state with Add endpoint; Finance (finance/page.tsx:243-252) already has the honest admin-gate card pattern (QA FE-2)"
+  artifacts:
+    - path: "frontend/app/dashboard/webhooks/page.tsx"
+      issue: "webhooks page lines 73-89 and 309"
+  missing:
+    - "Detect 403 shop-access-denied on list() and render the access-required card (mirror Finance/Approvals); hide Add endpoint; jest test RED on the current page"
+  debug_session: ""
 
 - gap_id: G-37-13
   truth: "Staff page selects are legible in dark mode"
@@ -117,8 +122,13 @@ blocked: 0
   reason: "Observed in 2026-10-15 Chrome UAT session: five selects render rgb(248,250,252) text on white (bg-white hardcoded)"
   severity: major
   test: 13
-  artifacts: []
-  missing: []
+  root_cause: "SELECT_CLASS and the Grant-access select classes hardcode bg-white while text colour inherits the dark theme foreground"
+  artifacts:
+    - path: "frontend/components/dashboard/staff/invite-staff-form.tsx"
+      issue: "SELECT_CLASS line 60; frontend/app/dashboard/staff/page.tsx lines 812 and 857"
+  missing:
+    - "Use theme tokens (bg-background text-foreground border-input) for all five selects; measure computed contrast in dark mode before and after"
+  debug_session: ""
 
 - gap_id: G-37-14
   truth: "Pending invitations table fits 768 px"
@@ -126,8 +136,13 @@ blocked: 0
   reason: "Observed in 2026-10-15 Chrome UAT session: 630 px table in 398 px box; words break mid-word; action buttons cut/off-screen"
   severity: minor
   test: 14
-  artifacts: []
-  missing: []
+  root_cause: "Pending invitations table keeps a four-column layout in a 398 px content box at 768 (persistent 256 px sidebar), so cells wrap per character and the actions overflow the scroll box"
+  artifacts:
+    - path: "frontend/components/dashboard/staff"
+      issue: "pending-invitations table (37-09)"
+  missing:
+    - "Stacked card layout below the md content width as the People table already does at 390, or break-words only on the email; verify at 390/768/1024 with no clipped action"
+  debug_session: ""
 
 - gap_id: G-37-15
   truth: "Picker shows no literal 'null'"
@@ -135,5 +150,10 @@ blocked: 0
   reason: "Observed in 2026-10-15 Chrome UAT session: integration accounts show '(null)'"
   severity: cosmetic
   test: 15
-  artifacts: []
-  missing: []
+  root_cause: "picker label is `${d.displayName} (${d.email})`; integration accounts have email null"
+  artifacts:
+    - path: "frontend/app/dashboard/staff/page.tsx"
+      issue: "line 522"
+  missing:
+    - "Omit the parenthesis when email is null; unit test for a null-email directory entry"
+  debug_session: ""
