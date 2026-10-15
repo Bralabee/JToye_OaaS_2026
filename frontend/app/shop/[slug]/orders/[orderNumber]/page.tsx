@@ -434,7 +434,9 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         <div className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm mb-6">
           {/* F1 (37-51): an ordered list of the steps, the current one marked aria-current="step".
               F6 (UXT-080): labels wrap — min-w-0 lets the label column shrink, and nothing here
-              truncates, so a 130% root text size at 360px breaks lines instead of clipping. */}
+              truncates, so a 130% root text size at 360px breaks lines instead of clipping.
+              37-53 review fix: between words (break-words breaks a word only when it cannot fit a
+              line on its own), never mid-word as overflow-wrap:anywhere allows. */}
           <ol aria-label="Order progress" className="space-y-0">
             {STEPS.map((step, i) => {
               const isActive = i === currentStep
@@ -485,7 +487,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                   </div>
 
                   {/* Label */}
-                  <div className="min-w-0 flex-1 pb-6 [overflow-wrap:anywhere]">
+                  <div className="min-w-0 flex-1 pb-6 break-words">
                     <p
                       className={`text-sm font-medium ${
                         isComplete || isActive ? "text-slate-900" : "text-slate-600"

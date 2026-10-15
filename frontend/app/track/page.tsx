@@ -523,11 +523,24 @@ function TrackOrderContent() {
 
           {/* Progress */}
           {!isCancelled && !isRefunded && (
-            <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
-              {/* F1 (37-51): an ordered list, the current step aria-current="step". F6 (UXT-080): each
-                  column may shrink (min-w-0) and its label breaks (hyphens, then anywhere), so 130%
-                  text at 360px wraps inside the card instead of pushing the row wider than it. */}
-              <ol aria-label="Order progress" className="flex items-start justify-between gap-1">
+            <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm [container-type:inline-size]">
+              {/* F1 (37-51): an ordered list, the current step aria-current="step".
+                  F6 (UXT-080) + 37-53 review fix: labels wrap BETWEEN words only (no
+                  overflow-wrap:anywhere, no hyphens:auto), and the layout, not the word, gives way.
+                  The card is a size container, so the switch is measured in the card's own width
+                  and in rem, which a container query resolves against the ROOT font size: a 130%
+                  root text size moves the switch with it, where a px media query would not.
+                  Below 23rem of card width the steps stand in a column (icon, then label, joined
+                  by a rail, as the order page's tracker); at 23rem and wider they sit in the
+                  original row of five. 23rem: the longest label, "Completed", is 66px at 12px text
+                  (5.5em), so five equal columns plus four 4px gaps need 21.6rem; the rest is
+                  margin for a phone's fallback font. Measured: the row fits whole words at a 346px
+                  card and not at 324px (390px phone). At the default size the desktop card is
+                  446px, so desktop keeps the row. */}
+              <ol
+                aria-label="Order progress"
+                className="flex flex-col [@container_(min-width:23rem)]:flex-row [@container_(min-width:23rem)]:items-start [@container_(min-width:23rem)]:justify-between [@container_(min-width:23rem)]:gap-1"
+              >
                 {STEPS.map((step, i) => {
                   const isComplete = i <= currentStep
                   const isActive = i === currentStep
@@ -536,28 +549,42 @@ function TrackOrderContent() {
                       key={step.key}
                       data-tracker-step={step.key}
                       aria-current={isActive ? "step" : undefined}
-                      className="flex min-w-0 flex-1 flex-col items-center"
+                      className="flex min-w-0 gap-3 [@container_(min-width:23rem)]:flex-1 [@container_(min-width:23rem)]:flex-col [@container_(min-width:23rem)]:items-center [@container_(min-width:23rem)]:gap-0"
                     >
-                      {/* Keyed on completion so a step newly reaching complete
-                          remounts and springs in; active step pulses finitely. */}
-                      <m.div
-                        aria-hidden="true"
-                        key={`${step.key}-${isComplete}`}
-                        initial={{ scale: 0.6 }}
-                        animate={{ scale: isActive ? [1, 1.08, 1] : 1 }}
-                        transition={isActive ? { duration: 0.9, repeat: 2 } : springPop}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs ${
-                          isComplete
-                            ? isActive
-                              ? "bg-amber-500 text-oxblood ring-2 ring-amber-200"
-                              : "bg-emerald-500 text-white"
-                            : "bg-slate-100 text-slate-400"
-                        }`}
-                      >
-                        <step.icon className="h-3.5 w-3.5" />
-                      </m.div>
+                      <div aria-hidden="true" className="flex flex-col items-center">
+                        {/* Keyed on completion so a step newly reaching complete
+                            remounts and springs in; active step pulses finitely. */}
+                        <m.div
+                          key={`${step.key}-${isComplete}`}
+                          initial={{ scale: 0.6 }}
+                          animate={{ scale: isActive ? [1, 1.08, 1] : 1 }}
+                          transition={isActive ? { duration: 0.9, repeat: 2 } : springPop}
+                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs ${
+                            isComplete
+                              ? isActive
+                                ? "bg-amber-500 text-oxblood ring-2 ring-amber-200"
+                                : "bg-emerald-500 text-white"
+                              : "bg-slate-100 text-slate-400"
+                          }`}
+                        >
+                          <step.icon className="h-3.5 w-3.5" />
+                        </m.div>
+                        {/* The column's rail: the segment below a passed step fills top-down
+                            (the order page's rail). The row has the progress bar instead. */}
+                        {i < STEPS.length - 1 && (
+                          <div className="h-3 w-0.5 overflow-hidden bg-slate-200 [@container_(min-width:23rem)]:hidden">
+                            <m.div
+                              className="h-full w-full bg-emerald-500"
+                              style={{ transformOrigin: "top" }}
+                              initial={false}
+                              animate={{ scaleY: i < currentStep ? 1 : 0 }}
+                              transition={{ duration: 0.5, ease: "easeOut" }}
+                            />
+                          </div>
+                        )}
+                      </div>
                       <p
-                        className={`mt-1 max-w-full text-center text-xs font-medium hyphens-auto [overflow-wrap:anywhere] ${
+                        className={`flex min-h-8 min-w-0 items-center text-sm font-medium [@container_(min-width:23rem)]:mt-1 [@container_(min-width:23rem)]:block [@container_(min-width:23rem)]:min-h-0 [@container_(min-width:23rem)]:max-w-full [@container_(min-width:23rem)]:text-center [@container_(min-width:23rem)]:text-xs ${
                           isComplete ? "text-slate-900" : "text-slate-600"
                         }`}
                       >
@@ -567,8 +594,9 @@ function TrackOrderContent() {
                   )
                 })}
               </ol>
-              {/* Progress bar — scaleX from the left, animated on status change */}
-              <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
+              {/* Progress bar — scaleX from the left, animated on status change. The row only:
+                  in the column the rail carries the same progress. */}
+              <div className="mt-3 hidden h-1 overflow-hidden rounded-full bg-slate-100 [@container_(min-width:23rem)]:block">
                 <m.div
                   className="h-full w-full bg-amber-500 rounded-full"
                   style={{ transformOrigin: "left" }}
