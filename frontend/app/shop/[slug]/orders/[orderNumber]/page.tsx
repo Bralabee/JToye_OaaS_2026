@@ -15,7 +15,7 @@ import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-s
 import { SellerBlock } from "@/components/storefront/seller-block"
 import { NoVatRegistrationNote } from "@/components/storefront/no-vat-registration-note"
 import { consumeJustPlaced } from "@/lib/just-placed"
-import { ORDER_STATUS_COPY, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
+import { ORDER_STATUS_COPY, statusCopy, statusUpdateAnnouncement } from "@/lib/order-status-announcement"
 import { asVatRate, vatRateLabel } from "@/lib/vat"
 import type { FulfilmentType } from "@/types/api"
 import type { PublicOrderAllergenRecord, PublicShop } from "@/types/storefront"
@@ -179,7 +179,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       const previous = lastStatusRef.current
       lastStatusRef.current = res.data.status
       if (previous !== null && previous !== res.data.status) {
-        const update = statusUpdateAnnouncement(res.data.status)
+        const update = statusUpdateAnnouncement(res.data.status, res.data.fulfilmentType)
         if (update) setStatusUpdate(update)
       }
       setOrder(res.data)
@@ -443,6 +443,9 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
               const isComplete = i < currentStep
               const isPending = i > currentStep
               const isReached = isComplete || isActive
+              // F2 (37-F review): READY says collection or delivery for THIS order — the same words
+              // the status region announces (statusCopy is shared with statusUpdateAnnouncement).
+              const stepDesc = statusCopy(step.key, order.fulfilmentType)?.desc ?? step.desc
               const Icon = step.icon
 
               return (
@@ -497,8 +500,8 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                     </p>
                     <p className={`text-xs ${isActive ? "text-amber-700" : "text-slate-600"}`}>
                       {isActive && order.updatedAt
-                        ? `${step.desc} · ${formatTime(order.updatedAt)}`
-                        : step.desc}
+                        ? `${stepDesc} · ${formatTime(order.updatedAt)}`
+                        : stepDesc}
                     </p>
                   </div>
                 </li>

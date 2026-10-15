@@ -188,7 +188,8 @@ describe("F1 on /track: one status region, announcing changes only", () => {
     await screen.findByText("Ada's Kitchen")
     expect(statusRegion()).toHaveTextContent(/^$/)
 
-    await poll({ ...ORDER, status: "READY" })
+    // F2 (37-F review): "for collection" is said only for an order the response says is one.
+    await poll({ ...ORDER, fulfilmentType: "COLLECTION", status: "READY" })
     await waitFor(() =>
       expect(statusRegion()).toHaveTextContent("Order update: Ready. Ready for collection.")
     )
@@ -220,5 +221,33 @@ describe("F1 / F6 on /track: step semantics and wrapping", () => {
         expect(el.className.toString()).not.toMatch(/\b(truncate|whitespace-nowrap|text-ellipsis|line-clamp-\d)\b/)
       }
     }
+  })
+})
+
+describe("37-F review F2 on /track: READY is described for THIS order's fulfilment type", () => {
+  it("a DELIVERY order is announced as ready for delivery", async () => {
+    trackingAnswer = { ...ORDER, fulfilmentType: "DELIVERY" }
+    await guestLookup()
+    await poll({ ...ORDER, fulfilmentType: "DELIVERY", status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Ready for delivery.")
+    )
+  })
+
+  it("a COLLECTION order is announced as ready for collection", async () => {
+    trackingAnswer = { ...ORDER, fulfilmentType: "COLLECTION" }
+    await guestLookup()
+    await poll({ ...ORDER, fulfilmentType: "COLLECTION", status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Ready for collection.")
+    )
+  })
+
+  it("a response with no fulfilment type gets the neutral description, not an invented one", async () => {
+    await guestLookup()
+    await poll({ ...ORDER, status: "READY" })
+    await waitFor(() =>
+      expect(statusRegion()).toHaveTextContent("Order update: Ready. Your order is ready.")
+    )
   })
 })

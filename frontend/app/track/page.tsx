@@ -38,6 +38,11 @@ export interface OrderStatus extends PublicOrderAllergenRecord {
    * `itemCount` — the count is simply not rendered when it is not known.
    */
   unitCount?: number | null
+  /**
+   * DELIVERY or COLLECTION (PublicOrderStatus, 37-37). Optional and nullable: an older backend
+   * omits it and a pre-V45 row has none, and then READY is described neutrally (37-F review F2).
+   */
+  fulfilmentType?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -153,7 +158,7 @@ function TrackOrderContent() {
     lastSeen.current = { orderNumber: next.orderNumber, status: next.status }
     if (previous && previous.orderNumber === next.orderNumber) {
       if (previous.status !== next.status) {
-        const update = statusUpdateAnnouncement(next.status)
+        const update = statusUpdateAnnouncement(next.status, next.fulfilmentType)
         if (update) setStatusUpdate(update)
       }
     } else {
