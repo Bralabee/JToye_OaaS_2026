@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { m } from "framer-motion"
 import { formatDistanceToNow } from "date-fns"
@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Ban,
   MoreHorizontal,
+  ShieldCheck,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -36,8 +37,12 @@ import {
   extractErrorDetail,
   EVENT_TYPE_META,
   SIGNING_SECRET_COPY,
+  WEBHOOKS_ACCESS_REQUIRED_COPY,
   type WebhookSubscription,
 } from "@/lib/webhooks-api"
+import { isShopAccessDenied } from "@/lib/access-events"
+import { describeLoadError } from "@/lib/human-error"
+import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import { SubscriptionStatusBadge } from "@/components/dashboard/webhooks/status-badge"
 import { WebhookCreateDialog } from "@/components/dashboard/webhooks/WebhookCreateDialog"
 import { SecretRevealDialog } from "@/components/dashboard/secret-reveal-dialog"
@@ -46,6 +51,8 @@ import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialo
 // Config-injected retention window for the revoke copy (GLOBAL_RULE_6) —
 // mirrors the backend webhook.delivery.retention-days default (22-05).
 const RETENTION_DAYS = process.env.NEXT_PUBLIC_WEBHOOK_RETENTION_DAYS ?? "30"
+
+const LOAD_FALLBACK = "Couldn't load webhooks — check your connection and try again."
 
 function eventsSummary(sub: WebhookSubscription): string {
   if (!sub.eventTypes || sub.eventTypes.length === 0) return "None"
@@ -70,20 +77,36 @@ export default function WebhooksPage() {
   const [secretOpen, setSecretOpen] = useState(false)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
 
+  // G-37-12 (D-08): a refused read is a refusal, and a list that was never read is
+  // unknown, not empty (QA-council F2). Only a read that once succeeded may keep its
+  // list on screen through a failed refresh.
+  const [forbidden, setForbidden] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const listEverRead = useRef(false)
+
   const fetchSubscriptions = async () => {
     try {
       setLoading(true)
       const data = await webhooksApi.list()
       setSubscriptions(data)
+      listEverRead.current = true
+      setForbidden(false)
+      setLoadError(null)
     } catch (err: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error loading webhooks",
-        description: extractErrorDetail(
-          err,
-          "Couldn't load webhooks — check your connection and try again."
-        ),
-      })
+      const response = (err as { response?: { status?: number; data?: { type?: unknown } } })
+        ?.response
+      if (isShopAccessDenied(response?.status, response?.data?.type)) {
+        setForbidden(true)
+        setLoadError(null)
+      } else if (!listEverRead.current) {
+        setLoadError(describeLoadError(err, LOAD_FALLBACK).message)
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error loading webhooks",
+          description: extractErrorDetail(err, LOAD_FALLBACK),
+        })
+      }
     } finally {
       setLoading(false)
     }
@@ -261,13 +284,65 @@ export default function WebhooksPage() {
    * The tier is written into the DOM as a declaration rather than left as the
    * absence of a cap, because "uncapped" and "someone forgot to cap it" render
    * identically and no assertion can tell them apart — ORCH-03 (orchestrator
-   * decision, 2026-08-29). Both render branches declare it; a branch without it is
+   * decision, 2026-08-29). Every render branch declares it (the spinner, the
+   * G-37-12 refusal and load-error branches, and the list); a branch without it is
    * an undeclared first paint.
    */
   if (loading) {
     return (
       <div data-width-tier="index" className="flex h-full items-center justify-center">
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-orange-500" />
+      </div>
+    )
+  }
+
+  // One heading for every branch, so the refusal, the load error and the list
+  // cannot drift apart. Only the loaded list puts Add endpoint beside it.
+  const pageHeading = (
+    <div>
+      <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">
+        Webhooks
+      </h1>
+      <p className="mt-1 text-sm text-slate-600">
+        Send signed events to your own systems.
+      </p>
+    </div>
+  )
+
+  // G-37-12: the typed 403 is shown as what it is. Static copy only: no list, no
+  // create, secret or confirm dialog. The server's GROUP_ADMIN gate stays the control.
+  if (forbidden) {
+    return (
+      <div data-width-tier="index" className="space-y-6">
+        {pageHeading}
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <ShieldCheck className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
+            <h2 className="mb-2 text-lg font-semibold text-slate-900">
+              {WEBHOOKS_ACCESS_REQUIRED_COPY.title}
+            </h2>
+            <p className="text-sm text-slate-500">{WEBHOOKS_ACCESS_REQUIRED_COPY.body}</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // QA-council F2: a first read that failed for any other reason is unknown, never
+  // "No webhook endpoints yet".
+  if (loadError) {
+    return (
+      <div data-width-tier="index" className="space-y-6">
+        {pageHeading}
+        <Card>
+          <CardContent>
+            <LoadErrorPanel
+              subject="webhook endpoints"
+              message={loadError}
+              onRetry={() => fetchSubscriptions()}
+            />
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -280,14 +355,7 @@ export default function WebhooksPage() {
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center"
       >
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">
-            Webhooks
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Send signed events to your own systems.
-          </p>
-        </div>
+        {pageHeading}
         <Button
           onClick={() => setCreateOpen(true)}
           className="w-full gap-2 bg-orange-700 text-white hover:bg-orange-800 sm:w-auto"

@@ -9,7 +9,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import WebhooksPage from "../page"
 import apiClient from "@/lib/api-client"
-import { useToast } from "@/hooks/use-toast"
 import { WEBHOOKS_ACCESS_REQUIRED_COPY } from "@/lib/webhooks-api"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 
@@ -25,7 +24,7 @@ const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
 
 jest.mock("@/hooks/use-toast", () => {
   const toast = jest.fn()
-  return { useToast: () => ({ toast }) }
+  return { useToast: () => ({ toast }), __toast: toast }
 })
 
 const now = new Date().toISOString()
@@ -172,7 +171,8 @@ const SHOP_ACCESS_DENIED = {
 
 const SERVER_ERROR = { response: { status: 500, data: {} } }
 
-const toastMock = () => useToast().toast as jest.Mock
+const toastMock = () =>
+  (jest.requireMock("@/hooks/use-toast") as { __toast: jest.Mock }).__toast
 
 describe("Webhooks page: refused and unknown reads (G-37-12)", () => {
   it("renders the Group admin refusal, not the empty state, for the typed shop-access-denied 403", async () => {
