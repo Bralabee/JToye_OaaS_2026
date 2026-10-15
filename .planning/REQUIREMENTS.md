@@ -421,8 +421,8 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | PGC-793 | Phase 31.1 | 31.1-04, 31.1-30 | Planned |
 | PGC-840 | Phase 31.1 | 31.1-05, 31.1-30 | Planned |
 | PGC-878 | Phase 31.1 | 31.1-28, 31.1-30 | Planned — UXT-114 only; #878 stays open for UXT-119 (Phase 32) |
-| RWO-003 | Phase 37 | 37-02, 37-04, 37-05, 37-06, 37-07, 37-08, 37-09, 37-15, 37-18 | Planned (P0) |
-| RWO-004 | Phase 37 | 37-02, 37-03, 37-04, 37-05, 37-06, 37-07, 37-08, 37-09, 37-15 | Planned (P0) |
+| RWO-003 | Phase 37 | 37-02, 37-04, 37-05, 37-06, 37-07, 37-08, 37-09, 37-15, 37-18, 37-54 | Planned (P0) |
+| RWO-004 | Phase 37 | 37-02, 37-03, 37-04, 37-05, 37-06, 37-07, 37-08, 37-09, 37-15, 37-54 | Planned (P0) |
 | RWO-018 | Phase 37 | 37-10, 37-12, 37-15 | Planned (P0) |
 | RWO-026 | Phase 37 | 37-13, 37-14, 37-15 | Planned |
 | RWO-027 | Phase 37 | 37-11, 37-12, 37-15 | Planned |

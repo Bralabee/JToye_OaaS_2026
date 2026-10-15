@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: verifying
-stopped_at: "Phase 37: all 53 plans complete and all seven sub-theme PRs merged (37-F = PR 924, squash 57d257f0, 2026-10-15T09:57Z, D3 rounds 5 -> 1 -> 0, Review-Record on 60b683ed; CI 30 pass / 6 skipped); origin/main merged back (29928f87, tree equal to main); stack rebuilt, freshness 4/4, live a11y 29/29. 37-VERIFICATION human_needed (8/8 SC, 35/35 RWO), 37-SECURITY 175/175, 37-VALIDATION nyquist_compliant. NEXT: owner runs /gsd-verify-work 37 for the 11 items in 37-UAT.md; phase.complete follows a passed UAT. Phase 39 planning due before 2026-10-26."
-last_updated: "2026-10-15T10:20:00.000Z"
+stopped_at: "Phase 37 UAT gap closure: 37-54 DONE 2026-10-15 (G-37-12..15 fixed in the frontend, jest RED/GREEN, full jest 2959/2959, tsc/lint/build rc 0, metrics 6119 -> 6135; commits 1f61d6dd..7b3c50d8). NEXT: 37-55 (live Chrome RED/GREEN on a rebuilt runtime; stack checkpoint is the owner's), then /gsd-verify-work 37 re-runs the gaps. Phase 39 planning due before 2026-10-26."
+last_updated: "2026-10-15T19:20:00.000Z"
 last_activity: 2026-10-15
 state_head: 31ee7b62
 progress:
   total_phases: 20
   completed_phases: 13
-  total_plans: 238
-  completed_plans: 238
+  total_plans: 240
+  completed_plans: 239
   percent: 65
 ---
 
@@ -29,6 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-07)
 ## Current Position
 
 Phase: 37 (Real-world operations readiness) — EXECUTING
+- 37-54 DONE 2026-10-15 (UAT gap closure G-37-12..15): Webhooks shows the typed-403 access card and a LoadErrorPanel, never a fake empty list; the five Staff selects, labels, hints and email error reach 4.5:1 in dark with light colours unchanged (globals.css byte-identical to origin/main); picker never prints null; pending invitations switch on a 60rem card container query. Jest RED 3/27, 2/65, 5/63 then GREEN; full jest 250/2959, tsc/lint/build rc 0; built-CSS arms prove the container rule. Metrics 6119 -> 6135. Deviation: developers/page.tsx touched for the nullable DirectoryEntry.email type. Left to 37-55: live Chrome proof, dark native option list, real table width vs 60rem, People table dark styling (owner decision).
 - 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
 - 31.1-02 DONE 2026-10-06: #777 closed at the service. V68 (erasure_records.subject_customer_id nullable, no backfill); GdprService.matchSubjectInTenant + one private anonymisation core behind eraseCustomerData and eraseSubjectByDigest (returns records written, so tenantsErased counts real erasures); tenant-predicated order finder + DISTINCT email projections; unpredicated unpaged finder deleted. DsarGuestErasureRlsIntegrationTest 8/0/0 (RED tenantsErased=0 with all PII present), GdprErasure 4, GdprErasureReviewRls 7, DsarFanout 11, RlsContract 7, GdprServiceTest 16, full unit 1495/0/0. Break arms 1 and 3 red, 2 green under RLS as predicted. PGC-777 stays open (shared with 31.1-07/-11).
 - 31.1-03 DONE 2026-10-06: #784/#785 closed at the server. V69 (orders + orders_aud allergen_ack_mask, allergen_ack_at, placed_via; nullable, no backfill, no default; CHECKs on orders). GuestOrderRequest.acknowledgedAllergenMask (@Min 0 @Max 16383, NON_NULL). Missing -> 422 allergen-acknowledgement-required; differs from the union read in the V63 snapshot loop -> 409 allergen-acknowledgement-stale with currentAllergenMask/currentAllergens (bit order)/lines (basket order); both roll the reservation back. Vendor/API/MCP orders: placed_via VENDOR, ack NULL. GuestOrderAllergenAckIntegrationTest 10/0/0 (RED: missing-ack 201; stale arms 201). Containment break arm red on the removed-bit arm. A1 in-tree confirmed: without NON_NULL the two storefront.guest-order* golden rows red; with it IdempotencyFingerprintGoldenTest 15/0/0, jackson2-golden untouched. Six callers + seed-order-metric.sh send the CURRENT mask (GuestOrderAcknowledgements); OpenAPI snapshot +1 field. Full unit 1495/0/0, full integration 790/0/0. Owed: seed-order-metric.sh live run + fail direction (31.1-30); 31.1-15 must send the mask before 31.1-30's rebuild. PGC-784/785 stay open (shared).
@@ -1400,8 +1401,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-14T16:45:00.000Z
-Stopped at: Phase 37 merged in full (37-F = PR 924); awaiting /gsd-verify-work 37 (11 human UAT items) before phase.complete.
+Last session: 2026-10-15T19:20:00.000Z
+Stopped at: 37-54 done (UAT gaps G-37-12..15 fixed, jest-proven); 37-55 next (live proof, owner stack checkpoint), then /gsd-verify-work 37.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
