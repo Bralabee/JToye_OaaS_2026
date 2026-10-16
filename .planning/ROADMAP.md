@@ -1262,10 +1262,27 @@ Already current, out of scope:
   5. The observability stack: every alert rule loads on Prometheus 3, a deliberately fired alert reaches Alertmanager, and the Grafana dashboards render with data.
   6. Tailwind 4: no layout regression at the four widths on the declared surfaces, shown by screenshots against the pre-upgrade baseline.
 
-**Plans:** 0 plans
+**Plans:** 1/10 plans complete (Wave 1 planned 2026-10-16; 39-01 executed)
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 39 to break down)
+
+**Wave 1 (Zero-rebuild horizon gate, quick deadlines, customer narrowing, Dependabot roll-up)**
+- [x] 39-01-PLAN.md — Track 39-A (part 1): disarm `2026-10-26` `rabbitmq-k8s` `manual_review` expiry (`ADR-0002`, `2027-01-16`), refresh all 7 `UNKNOWN` `manual_review` rows (`2026-10-16`), and `--refresh` all 6 drifted `H-5` line-number sites (`pin-not-at-site=0`)
+- [ ] 39-02-PLAN.md — Track 39-A (part 2): upgrade `alpine:3.20` -> `alpine:3.24` (`DEFERRED-27` retired) and compose `rabbitmq:4.3.4` -> `4.3.6-management-alpine` (`vendor_eol: 2027-01-31`, `#724` retired)
+- [ ] 39-08-PLAN.md — Track 39-F (part 1): Option C per-shop customer narrowing (`V85__customer_origin_shop_scope.sql`, GUC backfill, non-`allShops` predicates on `CustomerService` + `OrderService` + `createCustomer` `originShopId` stamping, 404 on refused ID, NOSUPERUSER proof)
+- [ ] 39-10-PLAN.md — Track 39-G: consolidated roll-up of Dependabot PRs `#904`–`#915` (`39-DEPENDABOT-TRIAGE.md`) with `check-doc-versions.sh` alignment and paired Stripe JS v10/v7 upgrade
+
+**Wave 2 (Observability stack, Keycloak 26, and old-slug 301 aliases)**
+- [ ] 39-03-PLAN.md — Track 39-B: Prometheus `v3.13.4` LTS (NOT `3.15` short-term EOL `2026-11-06`), Grafana `13.2.4`, Alertmanager `v0.34.1`, `redis-exporter` `v1.94.0`, `postgres-exporter` `v0.20.1` (`DEFERRED-27` retired)
+- [ ] 39-04-PLAN.md — Track 39-C: Keycloak `24.0.5` -> `26.8.1`, Hostname v2 alignment, Postgres-backed realm `--override true` re-import, and live Playwright auth proof (`DEFERRED-27` retired)
+- [ ] 39-09-PLAN.md — Track 39-F (part 2): old-slug 301 aliases (`V86__shop_slug_alias.sql`, `RlsContractTest` exemption, `/shop/[slug]` 301 redirect)
+
+**Wave 3 (Database and Cache majors)**
+- [ ] 39-05-PLAN.md — Track 39-D: PostgreSQL `15` -> `18.6` across compose, `pg-backup:18-blob`, CI service, and all 204 Testcontainers suites + `postgres-major-parity.conf` Testcontainers guard + dump/restore drill
+- [ ] 39-06-PLAN.md — Track 39-E (part 1): Redis `7.4` -> `8.10-alpine` across compose and k8s with Lettuce 7 & Spring Cache parity proof
+
+**Wave 4 (Tailwind CSS 4)**
+- [ ] 39-07-PLAN.md — Track 39-E (part 2): Tailwind CSS `3.4.1` -> `4.3` config migration with 4-viewport (`390/768/1280/1920`) visual parity proof
 
 ---
 

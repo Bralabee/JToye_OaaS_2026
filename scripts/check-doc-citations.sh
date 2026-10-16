@@ -269,6 +269,11 @@ for doc in "${DOCS[@]}"; do
   doc_cites=0
   case "$doc" in *.yaml|*.yml) dialect=yaml ;; *) dialect=md ;; esac
 
+  # Capture outside `<<< "$(...)"` so a `void` (exit 2) inside `yaml_citations`
+  # terminates the gate instead of exiting only the command-substitution subshell
+  # and silently reporting `citations=0` with PASS rc 0 (37-24 / 37-47).
+  raw_citations="$(citations_in "$doc")" || exit $?
+
   # every `path:spec` citation, with the doc line it sits on and its claim text
   while IFS=$'\x1f' read -r docline_no cite subject docline; do
       [ -z "$cite" ] && continue
@@ -392,7 +397,7 @@ for doc in "${DOCS[@]}"; do
        claim: $(printf '%s' "$docline" | sed -E 's/^[[:space:]]*//' | cut -c1-92)
        cited: $(printf '%s' "$cited" | sed -E 's/^[[:space:]]+//' | cut -c1-92)"
       fi
-  done <<< "$(citations_in "$doc")"
+  done <<< "$raw_citations"
 
   printf '  %-42s citations=%s\n' "$doc" "$doc_cites"
 done
