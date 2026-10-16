@@ -83,10 +83,11 @@ type ContrastResult = {
  *
  * scope "cards": the Invite someone card and the Grant access card (the Card holding #staff-user).
  * scope "outside": every element in <main> that is in neither card (the residue measurement).
+ * scope "refusal": the Webhooks page's G-37-12 refusal card (the Card holding its heading).
  */
-async function measureContrast(page: Page, scope: "cards" | "outside"): Promise<ContrastResult> {
+async function measureContrast(page: Page, scope: "cards" | "outside" | "refusal"): Promise<ContrastResult> {
   return page.evaluate(
-    ({ scope, minRatio }) => {
+    ({ scope, minRatio, refusalHeading }) => {
       const canvas = document.createElement("canvas")
       canvas.width = 1
       canvas.height = 1
@@ -126,11 +127,20 @@ async function measureContrast(page: Page, scope: "cards" | "outside"): Promise<
       const inviteCard = document.getElementById("invite-email")?.closest('[role="region"]') ?? null
       const grantCard = document.getElementById("staff-user")?.closest(".bg-card") ?? null
       const missing: string[] = []
-      if (!inviteCard) missing.push("Invite someone card")
-      if (!grantCard) missing.push("Grant access card")
+      if (scope !== "refusal") {
+        if (!inviteCard) missing.push("Invite someone card")
+        if (!grantCard) missing.push("Grant access card")
+      }
 
       let candidates: Element[] = []
-      if (scope === "cards") {
+      if (scope === "refusal") {
+        const heading = Array.from(document.querySelectorAll("main h2")).find(
+          (h) => (h.textContent || "").trim() === refusalHeading
+        )
+        const card = heading?.closest(".bg-card") ?? null
+        if (!card) missing.push("refusal card")
+        else candidates.push(card, ...Array.from(card.querySelectorAll("*")))
+      } else if (scope === "cards") {
         for (const root of [inviteCard, grantCard]) {
           if (root) candidates.push(root, ...Array.from(root.querySelectorAll("*")))
         }
@@ -218,7 +228,7 @@ async function measureContrast(page: Page, scope: "cards" | "outside"): Promise<
       }
       return { failures, selects, texts, missing }
     },
-    { scope, minRatio: MIN_RATIO }
+    { scope, minRatio: MIN_RATIO, refusalHeading: REFUSAL_HEADING }
   )
 }
 
@@ -375,6 +385,23 @@ test.describe("UAT gaps G-37-12..G-37-15, live (37-55) @desktop-only", () => {
       annotate(testInfo, "g-37-12-refusal", { status: response.status(), type: problem.type })
 
       await expectRefusal(invitee.page, 20_000)
+
+      // Round-1 review of #925: the refusal card is new content, so it reads at 4.5:1 in dark
+      // too (the G-37-13 bar). The page heading above it is the dashboard-wide residue (evidence
+      // 37-55 section 7) and is deliberately outside this scope.
+      await invitee.page.evaluate(() => localStorage.setItem("theme", "dark"))
+      await invitee.page.reload({ waitUntil: "domcontentloaded" })
+      await expectRefusal(invitee.page, 20_000)
+      expect(
+        await invitee.page.evaluate(() => document.documentElement.classList.contains("dark")),
+        "html.dark must be set, or the dark measurement is vacuous"
+      ).toBe(true)
+      await settle(invitee.page)
+      const refusalDark = await measureContrast(invitee.page, "refusal")
+      annotate(testInfo, "g-37-12-refusal-dark", refusalDark)
+      expect(refusalDark.missing, "the refusal card must be found").toEqual([])
+      expect(refusalDark.texts, "the refusal card's title and body are measured").toBeGreaterThanOrEqual(2)
+      expect(refusalDark.failures, "G-37-12: the refusal card at 4.5:1 (dark)").toEqual([])
 
       // Control: the Group admin still sees the endpoint management.
       await page.goto("/dashboard/webhooks", { waitUntil: "domcontentloaded" })
