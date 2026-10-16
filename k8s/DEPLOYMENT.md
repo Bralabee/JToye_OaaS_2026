@@ -805,7 +805,7 @@ kubectl describe certificate jtoye-tls -n jtoye-production
 kubectl get secret postgres-credentials -n jtoye-production -o yaml
 
 # Test database connectivity from a pod
-kubectl run -it --rm psql --image=postgres:15 --restart=Never -n jtoye-production -- \
+kubectl run -it --rm psql --image=postgres:18-alpine --restart=Never -n jtoye-production -- \
   psql -h postgresql-primary.jtoye-infrastructure.svc.cluster.local -U jtoye -d jtoye
 ```
 

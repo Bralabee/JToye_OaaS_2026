@@ -97,7 +97,7 @@ class GuestCheckoutOnlinePaymentIntegrationTest {
     private static final String NOT_A_KEY_JUST_NON_BLANK = "stripe-configured-for-this-test-only";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");

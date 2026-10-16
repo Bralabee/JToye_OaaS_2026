@@ -500,7 +500,7 @@ jobs:
         if: always() && steps.stack-up.outcome == 'success'
         run: |
           set -euo pipefail
-          docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+          docker build -t ghcr.io/bralabee/jtoye-pg-backup:18-blob infra/backups
           cur=$(sed -n 's/^DB_BACKUP_PASSWORD=//p' .env | tail -n 1)
           case "$cur" in
             ''|CHANGE_ME*)

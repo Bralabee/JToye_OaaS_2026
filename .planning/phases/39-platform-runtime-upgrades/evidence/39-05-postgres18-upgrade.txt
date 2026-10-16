@@ -1,0 +1,116 @@
+# Phase 39-05: PostgreSQL 15 -> 18.6 Upgrade Evidence (`OPS-HORIZON-05`)
+Date: 2026-10-16
+Branch: feature/phase-39-wave-d-postgres18-redis8
+
+## 1. Zero Stale PostgreSQL 15/16 References in Compose, CI, Backup Tooling, K8s & Testcontainers
+
+### 1.1 Testcontainers PostgreSQLContainer sweep (`core-java/src/test/java`)
+$ rg -uu 'PostgreSQLContainer<>\("postgres:(15|16)' core-java/src/test/java | wc -l
+0
+$ rg -uu 'PostgreSQLContainer<>\("postgres:18-alpine"\)' core-java/src/test/java | wc -l
+207
+
+### 1.2 Backup image tag sweep (`:15-blob` -> `:18-blob`)
+$ rg -uu '15-blob' k8s/ infra/ .github/ scripts/ docs/runbooks/ | wc -l
+0
+$ rg -uu '18-blob' k8s/ infra/ .github/ scripts/ docs/runbooks/ | wc -l
+17
+
+### 1.3 Kubernetes golden manifest & render invariant verification
+$ diff -u k8s/goldens/staging.yaml <(kubectl kustomize k8s/staging)
+rc=0
+$ diff -u k8s/goldens/production.yaml <(kubectl kustomize k8s/production)
+rc=0
+$ bash k8s/scripts/check-render-invariants.sh
+OK: all 10 render invariants hold across staging and production (INV-1..INV-10)
+OK: all 7 local overlay invariants hold (LOC-1..LOC-7)
+rc=0
+
+## 2. Fail-Before-Pass Proof: `scripts/check-postgres-major-parity.sh`
+
+### 2.1 Deliberate Break Arm (Compose pinned to `18-alpine` while `infra/backups/Dockerfile` and `RlsContractTest` were still on `15`)
+$ bash scripts/check-postgres-major-parity.sh
+== postgres-major-parity check ==
+  [SERVER ] 18  docker-compose.full-stack.yml:43 (image: postgres:18-alpine) — canonical full-stack compose postgres service
+  [SERVER ] 18  infra/docker-compose.yml:19 (image: postgres:18-alpine) — hybrid dev compose postgres service
+  [SERVER ] 18  .github/workflows/ci-cd.yaml:138 (image: postgres:18-alpine) — CI integration-tests job service container
+  [SERVER ] 15  core-java/src/test/java/uk/jtoye/core/security/RlsContractTest.java:90 (static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")) — representative Testcontainers RLS suite
+  [TOOLING] 15  infra/backups/Dockerfile:20 (FROM postgres:15-bookworm) — pg-backup image base (carries pg_dump)
+  [TOOLING] 18  k8s/base/pg-backup-cronjob.yaml:40 (image: ghcr.io/bralabee/jtoye-pg-backup:18-blob) — k8s base backup CronJob image tag
+  [TOOLING] 18  k8s/local/kustomization.yaml:55 (newTag: 18-blob) — local overlay backup image tag override
+  [TOOLING] 18  .github/workflows/e2e-nightly.yml:222 (PG_BACKUP_IMAGE: ghcr.io/bralabee/jtoye-pg-backup:18-blob) — nightly backup-restore drill image
+  [TOOLING] 18  scripts/check-backup-restore-drill.sh:40 (PG_BACKUP_IMAGE="${PG_BACKUP_IMAGE:-ghcr.io/bralabee/jtoye-pg-backup:18-blob}") — backup-restore drill script default image
+
+  violation: SERVER site 'core-java/src/test/java/uk/jtoye/core/security/RlsContractTest.java' is on major 15, canonical server major is 18 (from docker-compose.full-stack.yml)
+  violation: TOOLING site 'infra/backups/Dockerfile' is on major 15 < server major 18 — pg_dump 15 will abort against a 18 server with 'server version mismatch'
+
+FAILED: 2 postgres major-parity violation(s).
+rc=1
+
+### 2.2 Passing Arm (All 9 sites on PostgreSQL 18)
+$ bash scripts/check-postgres-major-parity.sh
+== postgres-major-parity check ==
+  [SERVER ] 18  docker-compose.full-stack.yml:43 (image: postgres:18-alpine) — canonical full-stack compose postgres service
+  [SERVER ] 18  infra/docker-compose.yml:19 (image: postgres:18-alpine) — hybrid dev compose postgres service
+  [SERVER ] 18  .github/workflows/ci-cd.yaml:138 (image: postgres:18-alpine) — CI integration-tests job service container
+  [SERVER ] 18  core-java/src/test/java/uk/jtoye/core/security/RlsContractTest.java:90 (static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")) — representative Testcontainers RLS suite
+  [TOOLING] 18  infra/backups/Dockerfile:20 (FROM postgres:18-bookworm) — pg-backup image base (carries pg_dump)
+  [TOOLING] 18  k8s/base/pg-backup-cronjob.yaml:40 (image: ghcr.io/bralabee/jtoye-pg-backup:18-blob) — k8s base backup CronJob image tag
+  [TOOLING] 18  k8s/local/kustomization.yaml:55 (newTag: 18-blob) — local overlay backup image tag override
+  [TOOLING] 18  .github/workflows/e2e-nightly.yml:222 (PG_BACKUP_IMAGE: ghcr.io/bralabee/jtoye-pg-backup:18-blob) — nightly backup-restore drill image
+  [TOOLING] 18  scripts/check-backup-restore-drill.sh:40 (PG_BACKUP_IMAGE="${PG_BACKUP_IMAGE:-ghcr.io/bralabee/jtoye-pg-backup:18-blob}") — backup-restore drill script default image
+
+OK: server majors agree and all tooling majors >= server major.
+    server : 18
+    tooling: 18
+    (9 site(s) checked)
+rc=0
+
+## 3. PostgreSQL 18 Docker Volume Path Verification (`PGDATA=/var/lib/postgresql/18/docker`)
+
+### 3.1 Fail Proof: Mounting at legacy `/var/lib/postgresql/data` on `postgres:18-alpine`
+$ docker run --rm -e POSTGRES_PASSWORD=test --mount type=tmpfs,destination=/var/lib/postgresql/data postgres:18-alpine postgres --version
+Error: in 18+, these Docker images are configured to store database data in a
+       format which is compatible with "pg_ctlcluster" (specifically, using
+       major-version-specific directory names).
+       Specifically, thePGDATA environment variable is now set to:
+          /var/lib/postgresql/18/docker
+       instead of theaeb86f99f65c44f5 legacy:
+          /var/lib/postgresql/data
+       OLD_DATABASES+=( '/var/lib/postgresql/data (unused mount/volume)' )
+rc=1
+
+### 3.2 Pass Proof: Mounting at `/var/lib/postgresql` on `postgres:18-alpine`
+$ docker run --rm -e POSTGRES_PASSWORD=test --mount type=tmpfs,destination=/var/lib/postgresql postgres:18-alpine postgres --version
+postgres (PostgreSQL) 18.6
+rc=0
+
+Both `docker-compose.full-stack.yml:81` (`postgres_data:/var/lib/postgresql`) and `infra/docker-compose.yml:33` (`pgdata:/var/lib/postgresql`) are updated to mount at `/var/lib/postgresql`.
+
+## 4. Hermetic PG 15.19 -> PG 18.6 Dump/Restore Drill (`ghcr.io/bralabee/jtoye-pg-backup:18-blob`)
+
+Built `ghcr.io/bralabee/jtoye-pg-backup:18-blob` from `infra/backups/Dockerfile` (`FROM postgres:18-bookworm`):
+- `pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg12+1)`
+- `pg_restore (PostgreSQL) 18.6 (Debian 18.6-1.pgdg12+1)`
+
+Executed hermetic dump/restore drill from live `jtoye-postgres` (`PostgreSQL 15.19 on x86_64-pc-linux-musl`) into ephemeral `postgres:18-alpine` (`PostgreSQL 18.6 on x86_64-pc-linux-musl`):
+- Source version: `PostgreSQL 15.19 on x86_64-pc-linux-musl, compiled by gcc (Alpine 14.2.0) 14.2.0, 64-bit`
+- Dump artifact: `/tmp/pg15_to_18_drill/jtoye_pg15.dump` (`16384402 bytes`, custom format `-Fc`)
+- Target version: `PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit`
+- Pre-upgrade (PG 15.19) vs Post-restore (PG 18.6) row counts:
+  - `flyway_schema_history`: `84` -> `84`
+  - `pg_policies (public)`: `68` -> `68`
+  - `tenants`: `3` -> `3`
+  - `shops`: `5` -> `5`
+  - `products`: `38` -> `38`
+  - `customers`: `8` -> `8`
+  - `orders`: `485` -> `485`
+- Diff of `(tablename, policyname, cmd, roles, qual, with_check)` across all 68 RLS policies: `0` lines (`PARITY_OK: 0 count diffs, 0 policy diffs across 68 RLS policies`, `rc=0`).
+
+## 5. Testcontainers Verification under `postgres:18-alpine` (`NOSUPERUSER NOBYPASSRLS`)
+
+In PostgreSQL 16+ (commit `a0ffa885e`), `ALTER ROLE <role> NOSUPERUSER` is rejected on the `initdb` bootstrap superuser (`oid = 10`: `ERROR: permission denied to alter role / Detail: The bootstrap superuser must have the SUPERUSER attribute`). `IntegrationTestSupport.ensureDowngradableTestRole` renames the `oid = 10` bootstrap role to `jtoye_bootstrap_su` and recreates the Testcontainers test role (`"test"`) as a non-bootstrap `SUPERUSER` (`oid > 10`) before Flyway runs, allowing all 31 integration test classes that execute `ALTER ROLE "<test>" NOSUPERUSER` to downgrade cleanly on PostgreSQL 18.
+
+$ ./gradlew :core-java:integrationTest --tests "*ShopSlugAliasIntegrationTest" --tests "*ScheduledCleanupServiceIntegrationTest" --tests "*RlsContractTest" --tests "*CustomerOriginShopScopeIntegrationTest" --no-daemon
+BUILD SUCCESSFUL in 3m 59s
+rc=0

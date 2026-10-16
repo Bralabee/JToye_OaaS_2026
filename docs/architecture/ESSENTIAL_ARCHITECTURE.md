@@ -12,7 +12,7 @@ A multi-tenant UK SaaS for owner-led food vendors. A **Spring Boot core** (JDK 2
 the business logic, the data, and — crucially — **all the security**. A **Next.js frontend** (`:3000`)
 and an **MCP server** for AI agents (`:9100`) both call the core **directly**. A **Go edge gateway**
 (`:8089`) exists but fronts almost nothing — one JWT route with no live caller, plus a WhatsApp
-webhook. **PostgreSQL 15 with Row-Level Security is the tenant boundary**; everything else defends it.
+webhook. **PostgreSQL 18 with Row-Level Security is the tenant boundary**; everything else defends it.
 
 ## The five things you must not get wrong
 
@@ -43,7 +43,7 @@ webhook. **PostgreSQL 15 with Row-Level Security is the tenant boundary**; every
 ## The runtime in one diagram
 
 ```
-Browser ──▶ frontend :3000 ──(SSR + SSE + STOMP)──▶ core-java :9090 ──▶ Postgres 15 (RLS)
+Browser ──▶ frontend :3000 ──(SSR + SSE + STOMP)──▶ core-java :9090 ──▶ Postgres 18 (RLS)
 AI agent ──▶ mcp-server :9100 ──(Bearer passthrough)──▶ core ──▶ Redis · RabbitMQ · Azure Blob (Azurite locally) · Keycloak
 Meta   ──▶ edge-go :8089 ──(WhatsApp HMAC → orders; /sync/batch, no caller)──▶ core
 ```
@@ -76,7 +76,7 @@ Postgres **5433**, Keycloak **8085**, Grafana **3002**.
 ## The stack (fixed — do not migrate without a decision)
 
 Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38) · JDK 25 (Gradle 9.7.1 wrapper — JDK 25 requires Gradle >= 9.1) · Next.js 16.4.0 / React 19 · Go 1.27 /
-Gin · PostgreSQL 15 · Redis 7 · RabbitMQ 4.3.6 · Keycloak 26.8.1 · Azure Blob Storage (Azurite 3.37.0 locally) · Ollama.
+Gin · PostgreSQL 18 · Redis 8 · RabbitMQ 4.3.6 · Keycloak 26.8.1 · Azure Blob Storage (Azurite 3.37.0 locally) · Ollama.
 
 ## The culture, in one line
 

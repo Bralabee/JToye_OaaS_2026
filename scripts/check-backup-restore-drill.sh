@@ -95,7 +95,7 @@
 #   the stack is absent.
 #
 # USAGE
-#   docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+#   docker build -t ghcr.io/bralabee/jtoye-pg-backup:18-blob infra/backups
 #   docker compose -f docker-compose.full-stack.yml up -d postgres azurite
 #   bash scripts/check-backup-restore-drill.sh
 #
@@ -113,7 +113,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
-IMAGE="${PG_BACKUP_IMAGE:-ghcr.io/bralabee/jtoye-pg-backup:15-blob}"
+IMAGE="${PG_BACKUP_IMAGE:-ghcr.io/bralabee/jtoye-pg-backup:18-blob}"
 PG_CONTAINER="${PG_CONTAINER:-jtoye-postgres}"
 AZ_CONTAINER="${AZURITE_CONTAINER:-jtoye-azurite}"
 ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"

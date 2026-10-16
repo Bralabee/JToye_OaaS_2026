@@ -113,6 +113,60 @@ public final class IntegrationTestSupport {
     }
 
     /**
+     * PostgreSQL 16+ (commit a0ffa885e) forbids {@code ALTER ROLE <role> NOSUPERUSER} on the
+     * bootstrap superuser ({@code oid = 10}, {@code BOOTSTRAP_SUPERUSERID}) with:
+     * {@code ERROR: permission denied to alter role / Detail: The bootstrap superuser must have the SUPERUSER attribute}.
+     *
+     * <p>Testcontainers passes {@code POSTGRES_USER=<username>} to {@code initdb}, making the test
+     * connection role {@code oid = 10}. To preserve the 30+ RLS integration tests that seed as
+     * {@code postgres.getUsername()} and then downgrade it in-place via
+     * {@code ALTER ROLE "<username>" NOSUPERUSER}, this helper renames the {@code oid = 10}
+     * bootstrap role to {@code jtoye_bootstrap_su} and recreates {@code <username>} as a
+     * non-bootstrap {@code SUPERUSER} ({@code oid > 10}) owning the test database and {@code public}
+     * schema before Flyway runs.
+     */
+    public static synchronized void ensureDowngradableTestRole(PostgreSQLContainer<?> postgres) {
+        String jdbcUrl = postgres.getJdbcUrl();
+        String user = postgres.getUsername();
+        String password = postgres.getPassword();
+        String dbName = postgres.getDatabaseName();
+        String escapedPassword = password.replace("'", "''");
+        String quotedUser = "\"" + user.replace("\"", "\"\"") + "\"";
+        String quotedDb = "\"" + dbName.replace("\"", "\"\"") + "\"";
+
+        try {
+            try (java.sql.Connection c1 = java.sql.DriverManager.getConnection(jdbcUrl, user, password);
+                 java.sql.Statement s1 = c1.createStatement();
+                 java.sql.ResultSet rs = s1.executeQuery("SELECT oid FROM pg_roles WHERE rolname = current_user")) {
+                if (!rs.next() || rs.getLong(1) != 10L) {
+                    return;
+                }
+                s1.execute("DO $$ BEGIN "
+                        + "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'jtoye_bootstrap_tmp') THEN "
+                        + "CREATE ROLE jtoye_bootstrap_tmp SUPERUSER CREATEDB CREATEROLE INHERIT LOGIN PASSWORD '"
+                        + escapedPassword + "'; "
+                        + "END IF; END $$;");
+            }
+
+            try (java.sql.Connection c2 = java.sql.DriverManager.getConnection(jdbcUrl, "jtoye_bootstrap_tmp", password);
+                 java.sql.Statement s2 = c2.createStatement()) {
+                s2.execute("ALTER ROLE " + quotedUser + " RENAME TO jtoye_bootstrap_su");
+                s2.execute("CREATE ROLE " + quotedUser
+                        + " SUPERUSER CREATEDB CREATEROLE INHERIT BYPASSRLS LOGIN PASSWORD '" + escapedPassword + "'");
+                s2.execute("ALTER DATABASE " + quotedDb + " OWNER TO " + quotedUser);
+                s2.execute("ALTER SCHEMA public OWNER TO " + quotedUser);
+            }
+
+            try (java.sql.Connection c3 = java.sql.DriverManager.getConnection(jdbcUrl, user, password);
+                 java.sql.Statement s3 = c3.createStatement()) {
+                s3.execute("DROP ROLE IF EXISTS jtoye_bootstrap_tmp");
+            }
+        } catch (java.sql.SQLException e) {
+            throw new IllegalStateException("Failed to prepare downgradable non-bootstrap test role for " + user, e);
+        }
+    }
+
+    /**
      * Registers the full Testcontainers-Postgres property set on top of the
      * {@code test} profile: datasource, H2-override trio, Flyway on,
      * Hibernate DDL off, rate limiting off, and a dead-port brokerless
@@ -120,7 +174,10 @@ public final class IntegrationTestSupport {
      */
     public static void registerPostgresTestProperties(DynamicPropertyRegistry registry,
                                                       PostgreSQLContainer<?> postgres) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.url", () -> {
+            ensureDowngradableTestRole(postgres);
+            return postgres.getJdbcUrl();
+        });
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         // application-test.yml defaults to H2; point every H2-specific

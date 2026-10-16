@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-05 & 39-06: PostgreSQL 18.6 & Redis 8.10-alpine Upgrade (#938) — 2026-10-16
+
+Upgrades the database and cache majors across compose, CI, backup tooling, Kubernetes overlays, and all 207 Testcontainers suites, completing Phase 39 (10/10 plans).
+
+- **PostgreSQL 18.6 (`39-05`, `OPS-HORIZON-05`).** Moves `docker-compose.full-stack.yml`, `infra/docker-compose.yml`, `.github/workflows/ci-cd.yaml`, and all 207 `PostgreSQLContainer` sites in `core-java/src/test/java/**` from PostgreSQL `15` to `postgres:18-alpine` (with compose volume mounts updated from `/var/lib/postgresql/data` to `/var/lib/postgresql` per PG 18+ `PGDATA=/var/lib/postgresql/18/docker`), upgrades `infra/backups/Dockerfile` (`postgres:18-bookworm`) and all k8s/CI/runbook backup image tags from `ghcr.io/bralabee/jtoye-pg-backup:15-blob` to `:18-blob`, adds `RlsContractTest.java` as a `SERVER` site in `scripts/gates/postgres-major-parity.conf`, and introduces `IntegrationTestSupport.ensureDowngradableTestRole` so `ALTER ROLE "<test>" NOSUPERUSER` continues to work on PostgreSQL 16+ where the `initdb` bootstrap superuser (`oid = 10`) cannot lose `SUPERUSER`. Proven by a hermetic PG 15.19 → PG 18.6 `pg_dump` / `pg_restore` drill (84 migrations, 68 RLS policies, 0 count or policy diffs) and full Testcontainers RLS verification.
+- **Redis 8.10-alpine (`39-06`, `OPS-HORIZON-06`).** Moves `docker-compose.full-stack.yml` and all 8 `GenericContainer` Redis test sites in `core-java/src/test/java/**` from `redis:7-alpine` to `redis:8.10-alpine` (horizon `eol: false`, cycle `8.10` in `infra/dependency-horizons.yaml`), proven with Lettuce 7, `CacheFormatIsolationIntegrationTest` (`v5:` key prefix), `PublicRateLimitIntegrationTest` (Bucket4j), and `RedisFaultInjectionIntegrationTest`.
+
 ### Phase 39-04: Keycloak 26.8.1 Upgrade (#937) — 2026-10-16
 
 Upgrades the identity provider from `quay.io/keycloak/keycloak:24.0.5` (EOL `2024-06-10`) to `quay.io/keycloak/keycloak:26.8.1` (`eol: false`, cycle `26.8`) across all three compose topologies and retires the final `DEFERRED-27` horizon exemption (`active-exemptions=0`).

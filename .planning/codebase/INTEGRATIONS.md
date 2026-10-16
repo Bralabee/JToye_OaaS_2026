@@ -44,11 +44,11 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 ## Data Storage
 
 **Databases:**
-- PostgreSQL 15
-  - LOCAL-DEV: `postgres:15-alpine` container, `docker-compose.full-stack.yml`, published on `127.0.0.1:5433:5432` (loopback-only by default, `JTOYE_BIND_HOST`), `max_connections=200` explicit
+- PostgreSQL 18
+  - LOCAL-DEV: `postgres:18-alpine` container, `docker-compose.full-stack.yml`, published on `127.0.0.1:5433:5432` (loopback-only by default, `JTOYE_BIND_HOST`), `max_connections=200` explicit
   - STAGING/PROD: external/managed Postgres, connection budget math enforced by `k8s/scripts/check-connection-math.sh` (HikariCP pool sizes: 12 per pod in staging/prod vs 20 in dev, sized against HPA replica ceiling)
   - Runtime/migrator role split (SEC-04 / #552): app connects as `jtoye_runtime` (DML-only), Flyway migrates as `jtoye_app`/`DB_MIGRATION_USER` (schema owner) — two separate credential pairs (`DB_USER`/`DB_PASSWORD` vs `DB_MIGRATION_USER`/`DB_MIGRATION_PASSWORD`)
-  - Client: Spring Data JPA / Hibernate, JDBC driver `org.postgresql:postgresql:42.7.13`
+  - Client: Spring Data JPA / Hibernate, JDBC driver `org.postgresql:postgresql:42.7.14`
   - RLS: enabled + FORCE RLS on every tenant-scoped table; enforced by `RlsContractTest` with an explicit `EXEMPT_TABLES` allowlist (currently: `tenants`, `dsar_request`, `postcode_centroid`, plus others documented per-table in migration headers)
   - Keycloak also persists to the SAME Postgres instance (`keycloak` DB) — `KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak`
 
@@ -59,8 +59,8 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - Config: `storage.blob.auth-mode/connection-string/endpoint/public-container/quarantine-container/public-url/create-containers`, all `${ENV:default}` (`STORAGE_*`), defaults pointing at local Azurite.
 
 **Caching:**
-- Redis 7
-  - LOCAL-DEV: `redis:7-alpine`, `--appendonly yes --requirepass`, loopback-only port `6379`
+- Redis 8
+  - LOCAL-DEV: `redis:8.10-alpine`, `--appendonly yes --requirepass`, loopback-only port `6379`
   - STAGING/PROD: external/managed Redis; `application-staging.yml` and `application-prod.yml` both make `REDIS_PASSWORD` **required with no default** (fails startup via `PlaceholderResolutionException` rather than starting unauthenticated — closed 2026-09-02 per QA-council SEC-7/A7, staging was previously the one deployed profile that failed open)
   - Client: Spring Data Redis (Lettuce), pool tuned per profile (dev: 8 active/8 idle; staging: 15/8; prod: 20/10)
   - Used for: distributed cache (`@Cacheable`, tenant-aware key generator), Bucket4j rate-limit buckets, tenant-lifecycle status TTL cache

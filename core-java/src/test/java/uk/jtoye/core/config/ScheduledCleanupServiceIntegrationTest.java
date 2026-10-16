@@ -65,31 +65,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class ScheduledCleanupServiceIntegrationTest {
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        // application-test.yml defaults to H2; override every H2-specific property so
-        // the Testcontainers Postgres is actually used (mirrors RlsContractTest).
-        registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
-        registry.add("spring.jpa.database-platform", () -> "org.hibernate.dialect.PostgreSQLDialect");
-        registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.PostgreSQLDialect");
-        // ddl-auto: none so the Flyway-managed schema (with its RLS policies) is the
-        // sole source of truth rather than Hibernate create-drop clobbering it.
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
-        registry.add("spring.flyway.enabled", () -> "true");
-        registry.add("rate-limiting.enabled", () -> "false");
-        // RabbitMQ (OrderEventPublisher) points at a dead port with listener
-        // auto-startup disabled so the context boots without a live broker.
-        registry.add("spring.rabbitmq.host", () -> "localhost");
-        registry.add("spring.rabbitmq.port", () -> "0");
-        registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
+        uk.jtoye.core.testsupport.IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
         // Any DRAFT created before the job runs counts as stale — no backdating needed.
         registry.add("cleanup.stale-draft-hours", () -> "0");
     }

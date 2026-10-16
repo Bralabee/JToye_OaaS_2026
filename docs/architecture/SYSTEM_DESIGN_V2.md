@@ -76,7 +76,7 @@ graph drawn here: the compose service set, its ports and the AMQP exchanges are 
       │ JDBC              │   │   │ HTTP         │ SMTP       │
       │            RESP   │   │   │              │            │
 ┌─────▼────────┐  ┌───────▼─┐ │ ┌─▼──────────┐ ┌─▼─────────┐  │
-│ PostgreSQL15 │  │ Redis 7 │ │ │  Ollama    │ │  Mailhog  │  │
+│ PostgreSQL18 │  │ Redis 8 │ │ │  Ollama    │ │  Mailhog  │  │
 │ :5433 → 5432 │  │  :6379  │ │ │  :11434    │ │ :1025 SMTP│  │
 │ RLS+HikariCP │  │ cache · │ │ │ image      │ │ :8025 UI  │  │
 │              │  │ ratelimit│ │ analysis   │ │           │  │

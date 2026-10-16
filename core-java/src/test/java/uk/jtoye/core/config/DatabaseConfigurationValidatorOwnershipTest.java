@@ -67,7 +67,7 @@ class DatabaseConfigurationValidatorOwnershipTest {
     private static final String RUNTIME_PW = "run_" + Long.toHexString(Double.doubleToLongBits(Math.random()));
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye")
             .withUsername("test")
             .withPassword("test");
@@ -76,7 +76,7 @@ class DatabaseConfigurationValidatorOwnershipTest {
     // required — the same reason PublicRateLimitIntegrationTest runs one. A container, not the live
     // stack, so the test is self-contained in CI.
     @Container
-    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine"))
             .withExposedPorts(6379);
 
     @BeforeAll

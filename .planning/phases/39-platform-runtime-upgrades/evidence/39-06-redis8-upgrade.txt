@@ -1,0 +1,48 @@
+# Phase 39-06: Redis 7.4 -> 8.10-alpine Upgrade Evidence (`OPS-HORIZON-06`)
+Date: 2026-10-16
+Branch: feature/phase-39-wave-d-postgres18-redis8
+
+## 1. Zero Stale `redis:7` References in Compose, K8s, Horizons & Testcontainers
+
+$ rg -uu 'redis:7' docker-compose.full-stack.yml infra/ k8s/ core-java/src/test/java/ | wc -l
+0
+
+$ rg -uu 'redis:8\.10-alpine' docker-compose.full-stack.yml infra/dependency-horizons.yaml core-java/src/test/java/
+docker-compose.full-stack.yml:173:    image: redis:8.10-alpine
+infra/dependency-horizons.yaml:222:    pin: "redis:8.10-alpine"
+core-java/src/test/java/uk/jtoye/core/cache/CacheFormatIsolationIntegrationTest.java:81:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine"))
+core-java/src/test/java/uk/jtoye/core/cache/TenantCacheEvictorIntegrationTest.java:53:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine")).withExposedPorts(6379);
+core-java/src/test/java/uk/jtoye/core/chaos/RedisFaultInjectionIntegrationTest.java:70:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine"))
+core-java/src/test/java/uk/jtoye/core/common/IdempotencyDualLayerIntegrationTest.java:43:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine")).withExposedPorts(6379);
+core-java/src/test/java/uk/jtoye/core/ratelimit/PublicRateLimitIntegrationTest.java:58:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine")).withExposedPorts(6379);
+core-java/src/test/java/uk/jtoye/core/ratelimit/RateLimitDegradedModeIntegrationTest.java:54:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine")).withExposedPorts(6379);
+core-java/src/test/java/uk/jtoye/core/ratelimit/TieredRateLimitIntegrationTest.java:59:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine")).withExposedPorts(6379);
+core-java/src/test/java/uk/jtoye/core/tenant/TenantLifecycleNegativeTest.java:93:            new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine"))
+rc=0
+
+## 2. Dependency Horizons Gate Verification (`infra/dependency-horizons.yaml`)
+
+$ conda run -n jtoye-ops bash scripts/check-dependency-horizons.sh
+OK     postgres                  pin=postgres:18-alpine              cycle=18       horizon=2030-11-14 (1489d)
+OK     redis                     pin=redis:8.10-alpine               cycle=8.10     horizon=open-ended (eol=false)
+...
+--- summary ---
+checked=21  ok=21  warn=0  active-exemptions=0  violations=0  pin-not-at-site=0  site-unresolvable=0
+PASS: all 21 dependency horizons within policy
+rc=0
+
+## 3. Redis 8.10 Container & Testcontainers Integration Verification (Lettuce 7 + Spring Cache `v5:` + Bucket4j)
+
+### 3.1 Ephemeral `redis:8.10-alpine` server version & AOF/requirepass flag parity
+$ docker run --rm redis:8.10-alpine redis-server --version
+Redis server v=8.10.0 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=alpine
+
+### 3.2 Testcontainers suites against `redis:8.10-alpine` + `postgres:18-alpine`
+Executed:
+- `CacheFormatIsolationIntegrationTest` (proves `v5:` cache key prefix, `GenericJacksonJsonRedisSerializer` round-trip, and cross-tenant key isolation on `redis:8.10-alpine`)
+- `PublicRateLimitIntegrationTest` (proves Bucket4j Lettuce Redis proxy manager token-bucket enforcement on `redis:8.10-alpine`)
+- `RedisFaultInjectionIntegrationTest` (proves circuit-breaker / degraded-mode resilience against `redis:8.10-alpine`)
+
+$ ./gradlew :core-java:integrationTest --tests "*CacheFormatIsolationIntegrationTest" --tests "*PublicRateLimitIntegrationTest" --tests "*RedisFaultInjectionIntegrationTest" --no-daemon
+BUILD SUCCESSFUL in 3m 59s
+rc=0

@@ -1124,7 +1124,7 @@ spec:
                   name: app-config
             - name: RETENTION_DAYS
               value: "30"
-            image: ghcr.io/bralabee/jtoye-pg-backup:15-blob
+            image: ghcr.io/bralabee/jtoye-pg-backup:18-blob
             imagePullPolicy: IfNotPresent
             name: pg-backup
             resources:

@@ -129,7 +129,7 @@ labels:
 # to imply otherwise was dead config and was removed in plan 26-02.
 # scripts/k8s-local-up.sh (plan 26-05) owns the build + load sequence.
 #
-# The pg-backup image (ghcr.io/bralabee/jtoye-pg-backup:15-blob, built from
+# The pg-backup image (ghcr.io/bralabee/jtoye-pg-backup:18-blob, built from
 # infra/backups/Dockerfile) is NOT retagged: its base tag is already immutable
 # and environment-independent, so it is loaded as-is.
 images:

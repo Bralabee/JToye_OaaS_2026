@@ -283,7 +283,7 @@ job publishes to. So a tag change is a manifest change, made in the one D-10 cha
 main build publishes it. A local build, for example for the restore drill, is:
 
 ```bash
-docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+docker build -t ghcr.io/bralabee/jtoye-pg-backup:18-blob infra/backups
 ```
 
 The tag changed from `:15` because the contents changed (D-10).
@@ -397,7 +397,7 @@ does:
 docker run --rm --network <compose network> \
   -e STORAGE_AUTH_MODE=connection-string \
   -e 'STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://azurite' \
-  -v /tmp:/out --entrypoint blobctl ghcr.io/bralabee/jtoye-pg-backup:15-blob \
+  -v /tmp:/out --entrypoint blobctl ghcr.io/bralabee/jtoye-pg-backup:18-blob \
   download jtoye-db-backups backups/<file>.dump /out/r.dump
 ```
 
@@ -437,7 +437,7 @@ restores into a scratch database and counts. Credentials travel only in 0600 env
 never printed; scratch databases are dropped on exit.
 
 ```bash
-docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+docker build -t ghcr.io/bralabee/jtoye-pg-backup:18-blob infra/backups
 docker compose -f docker-compose.full-stack.yml up -d postgres azurite    # core-java is not needed
 bash scripts/check-backup-restore-drill.sh      # 0 PASS · 1 an arm failed · 2 VOID
 ```
