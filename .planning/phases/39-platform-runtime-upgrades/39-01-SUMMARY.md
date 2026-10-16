@@ -6,7 +6,7 @@
 ## What Was Done
 
 1. **Disarmed the `2026-10-26` `rabbitmq-k8s` Horizon Gate:**
-   - Verified `rg -uu -n 'image:.*rabbitmq' k8s/base k8s/staging k8s/production` returns zero matches (`k8s/local/rabbitmq.yaml` is the local minikube overlay only).
+   - Verified `rg -uu -n 'image:.*rabbitmq' k8s/` returns zero matches (`k8s/local/configmap-patch.yaml:136` routes the local minikube overlay to the host Compose broker via `host.minikube.internal`).
    - Verified `https://www.rabbitmq.com/release-information` (`2026-10-16`): `4.3.6` (`2026-09-16`) is the latest release (no `4.4` series published yet), and the vendor extended **4.3 End of Community Support to `31 Jan 2027` (`2027-01-31`)**.
    - Refreshed `rabbitmq-k8s.manual_review` in [`infra/dependency-horizons.yaml`](../../../infra/dependency-horizons.yaml) (`last_checked: "2026-10-16"`, `expires: "2027-01-16"`) and recorded the re-check in [`docs/architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md`](../../../docs/architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md).
 2. **Refreshed All `manual_review` Rows (`H-6`) With `2026-10-16` Upstream Measurements:**

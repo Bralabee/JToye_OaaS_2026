@@ -105,10 +105,10 @@ is still Proposed and still needs owner sign-off.
 
 Re-checked ahead of the `2026-10-26` `rabbitmq-k8s` `manual_review` expiry:
 
-- `rg -uu -n 'image:.*rabbitmq' k8s/base k8s/staging k8s/production` still returns zero matches
-  (`k8s/local/rabbitmq.yaml` is the local minikube overlay only). Staging/production RabbitMQ
-  remains provisioned outside this repository and its version remains unverifiable from this
-  checkout.
+- `rg -uu -n 'image:.*rabbitmq' k8s/` still returns zero matches (and `k8s/local/configmap-patch.yaml:136`
+  routes the local minikube overlay to the host Compose broker via `host.minikube.internal`).
+  Staging/production RabbitMQ remains provisioned outside this repository and its version remains
+  unverifiable from this checkout.
 - Upstream check against `https://www.rabbitmq.com/release-information` (`2026-10-16`): `4.3.6`
   (`16 Sept 2026`) is the latest release (no `4.4` release exists yet on GitHub or Docker Hub), and
   the vendor extended **4.3 End of Community Support to `31 Jan 2027` (`2027-01-31`)** (End of

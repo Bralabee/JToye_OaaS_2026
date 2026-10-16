@@ -562,16 +562,17 @@ dependencies:
     eol_slug: null
     note: >-
       The staging/production broker is not deployed from this repo. MEASURED 2026-07-26 and
-      re-verified 2026-10-16 (39-01): `rg -uu -n 'image:.*rabbitmq' k8s/base k8s/staging k8s/production`
-      returns NOTHING — the only rabbitmq strings under k8s/base|staging|production are the
-      configmap host/port and the `rabbitmq-credentials` Secret refs (`k8s/local/rabbitmq.yaml`
-      is the local minikube overlay only). Its staging/production version is therefore
-      unresolvable from this repo by construction, which is why this row is UNASSIGNED: there
-      is no platform-operator identity here to assign it to, and saying so is more useful than
-      inventing a name. Re-checked 2026-10-16 against https://www.rabbitmq.com/release-information:
-      4.3.6 (released 16 Sept 2026) is the newest upstream release (no 4.4 series published yet),
-      and the vendor extended 4.3 End of Community Support to 31 Jan 2027 (2027-01-31). See
-      ADR-0002 and docs/runbooks/rabbitmq-broker-upgrade.md.
+      re-verified 2026-10-16 (39-01): `rg -uu -n 'image:.*rabbitmq' k8s/` returns NOTHING —
+      the only rabbitmq strings under k8s/ are the configmap host/port (`k8s/base/configmap.yaml`
+      and `k8s/local/configmap-patch.yaml`, which routes local minikube pods to the host Compose
+      broker via `host.minikube.internal`) and the `rabbitmq-credentials` Secret refs. Its
+      staging/production version is therefore unresolvable from this repo by construction, which
+      is why this row is UNASSIGNED: there is no platform-operator identity here to assign it to,
+      and saying so is more useful than inventing a name. Re-checked 2026-10-16 against
+      https://www.rabbitmq.com/release-information: 4.3.6 (released 16 Sept 2026) is the newest
+      upstream release (no 4.4 series published yet), and the vendor extended 4.3 End of
+      Community Support to 31 Jan 2027 (2027-01-31). See ADR-0002 and
+      docs/runbooks/rabbitmq-broker-upgrade.md.
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-16"
