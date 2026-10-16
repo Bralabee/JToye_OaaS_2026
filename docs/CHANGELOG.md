@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-04: Keycloak 26.8.1 Upgrade (#937) — 2026-10-16
+
+Upgrades the identity provider from `quay.io/keycloak/keycloak:24.0.5` (EOL `2024-06-10`) to `quay.io/keycloak/keycloak:26.8.1` (`eol: false`, cycle `26.8`) across all three compose topologies and retires the final `DEFERRED-27` horizon exemption (`active-exemptions=0`).
+
+- **Hostname v2 & observability parity (`docker-compose.full-stack.yml`, `infra/docker-compose.yml`, `infra/docker-compose.hostnet.yml`, `infra/keycloak/realm-export.template.json`).** Aligns Keycloak 26 with `KC_HOSTNAME: http://localhost:8085`, `KC_HOSTNAME_STRICT: "false"`, and `KC_LEGACY_OBSERVABILITY_INTERFACE: "true"` so split-horizon OIDC discovery (`http://localhost:8085/realms/jtoye-dev` & `jtoye-customers`), `/health/ready` (`UP`), and `/metrics` on internal port `8080` remain intact.
+- **Horizon gate clean (`infra/dependency-horizons.yaml`).** Updates `keycloak` to `26.8.1` across all 3 compose files and deletes the last `DEFERRED-27` exemption (`violations=0`, `active-exemptions=0`).
+
 ### Phase 39-07: Tailwind CSS 4.3.3 (`@tailwindcss/postcss`) Migration (#936) — 2026-10-16
 
 Migrates the Next.js 16 frontend from Tailwind CSS `3.4.1` to Tailwind CSS `4.3.3` (`@tailwindcss/postcss`), preserving all custom design tokens, horizontal layout-width tiers (`1800px` / `1400px` / `1280px`), `@container` queries, and `@media (hover: hover)` gating.

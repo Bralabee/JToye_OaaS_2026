@@ -67,7 +67,7 @@ graph drawn here: the compose service set, its ports and the AMQP exchanges are 
                    │      core-java       │◄──── OIDC/JWT ────┐
                    │  Spring Boot 3.5.16  │                   │
                    │  :9090 (mgmt :9091)  │            ┌──────┴───────┐
-                   │  REST · state machine│            │  Keycloak 24 │
+                   │  REST · state machine│            │  Keycloak 26 │
                    │  RLS · outbox→events │            │    :8085     │
                    │  STOMP broker/relay  │            │ realm:       │
                    └──┬───┬───┬───┬───┬───┘            │  jtoye-dev   │
@@ -159,7 +159,7 @@ third, independent ingress that forwards an agent's Bearer to the same core REST
 | **edge-go** | Batch-sync + WhatsApp ingress, rate limiting, breaker | Go 1.25 + Gin | Horizontal (stateless) |
 | **core-java** | Business logic, domain model, auditing, realtime fan-out | Spring Boot 3.5.16, Hibernate | Horizontal (stateless) |
 | **mcp-server** | MCP tool surface for AI agents over the core REST API | Node 20 + MCP SDK (Streamable HTTP) | Horizontal (stateless) |
-| **keycloak** | Identity provider, SSO, user management | Keycloak 24 | Horizontal (2+ replicas) |
+| **keycloak** | Identity provider, SSO, user management | Keycloak 26 | Horizontal (2+ replicas) |
 | **postgresql** | Primary data store, RLS enforcement | PostgreSQL 15 | Vertical + read replicas |
 | **redis** | Cache, session storage, rate limit state | Redis 7 Cluster | Horizontal (cluster mode) |
 | **rabbitmq** | Domain events (outbox), STOMP relay for KDS | RabbitMQ 4.3.6 | Horizontal (HA queues) |

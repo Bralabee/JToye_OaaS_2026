@@ -82,7 +82,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Recharts 3.10.1 - Charts and data visualization
 - Redis 7 - Session and cache store
 - RabbitMQ 4.3.6 - Message queue (AMQP)
-- Keycloak 24.0.5 - Identity provider (OIDC/OAuth2)
+- Keycloak 26.8.1 - Identity provider (OIDC/OAuth2)
 - Azurite 3.37.0 - Azure Blob emulator (local, hybrid, nightly); Azure Blob Storage in staging/production
 - Ollama (latest) - Local LLM for image analysis
 - Mailhog v1.0.1 - Local SMTP for email testing
@@ -129,12 +129,12 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - PostgreSQL 15+ database
 - Redis 7+ (external or managed service)
 - RabbitMQ **3.13+** minimum (4.3 recommended — the dev/compose stack pins 4.3.6). The deployed staging/production broker's version is **unverified from this repository** — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
-- Keycloak 24.0+ (external identity provider)
+- Keycloak 26.8+ (external identity provider)
 - Azure Blob Storage (Azurite locally)
 - SMTP server (SendGrid, AWS SES, etc.)
 - Spring Boot: 4.1.1 (Java 25)
 - PostgreSQL: 15-alpine
-- Keycloak: 24.0.5
+- Keycloak: 26.8.1
 - Redis: 7-alpine
 - RabbitMQ: 4.3.6-management-alpine
 - Azurite: 3.37.0
