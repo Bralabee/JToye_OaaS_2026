@@ -139,10 +139,10 @@
 
 ## Observability Stack (self-hosted, compose-based)
 
-- Prometheus v2.48.0 (`prom/prometheus`) — `infra/monitoring/docker-compose.monitoring.yml:35`.
-- Grafana 10.2.2 (`grafana/grafana`) — `infra/monitoring/docker-compose.monitoring.yml:84`.
-- Alertmanager v0.27.0 (`prom/alertmanager`) — `infra/monitoring/docker-compose.monitoring.yml:115`.
-- redis_exporter v1.58.0, postgres_exporter v0.15.0 — infra metric exporters.
+- Prometheus v3.13.4 (`prom/prometheus`) — `infra/monitoring/docker-compose.monitoring.yml:35`.
+- Grafana 13.2.4 (`grafana/grafana`) — `infra/monitoring/docker-compose.monitoring.yml:82`.
+- Alertmanager v0.34.1 (`prom/alertmanager`) — `infra/monitoring/docker-compose.monitoring.yml:112`.
+- redis_exporter v1.94.0, postgres_exporter v0.20.1 — infra metric exporters.
 - No hosted/SaaS error tracker (no Sentry or equivalent) is wired into either `core-java/build.gradle.kts` or `frontend/package.json`.
 
 ## Security Scanning / Supply Chain (CI)

@@ -100,7 +100,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 **Metrics:**
 - Micrometer + Prometheus registry (`io.micrometer:micrometer-registry-prometheus`) on core-java, exposed at `/actuator/prometheus` (base profile: disabled by default, opt-in per non-prod profile; prod serves it on a **separate internal management port 9091**, never the public app port).
 - Edge gateway: `prometheus/client_golang` v1.24.1, served on a dedicated metrics port (`EDGE_MANAGEMENT_PORT`, default `9101`) — deliberately not published under compose `ports:`, reached over the bridge network by container name only.
-- Self-hosted scrape/dashboard/alert stack (`infra/monitoring/docker-compose.monitoring.yml`): Prometheus v2.48.0, Grafana 10.2.2, Alertmanager v0.27.0, plus `redis_exporter` v1.58.0 and `postgres_exporter` v0.15.0.
+- Self-hosted scrape/dashboard/alert stack (`infra/monitoring/docker-compose.monitoring.yml`): Prometheus v3.13.4, Grafana 13.2.4, Alertmanager v0.34.1, plus `redis_exporter` v1.94.0 and `postgres_exporter` v0.20.1.
 
 **Tracing:**
 - Micrometer Tracing with the Brave bridge (`micrometer-tracing-bridge-brave`) + `zipkin-reporter-brave`.

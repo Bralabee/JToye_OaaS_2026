@@ -241,45 +241,36 @@ dependencies:
   #  27-02's draft manifest omitted this entire block. 27-02 now consumes THIS file (D-B),
   #  so the omission is closed here rather than inherited.
   - id: prometheus
-    pin: "prom/prometheus:v2.48.0"
+    pin: "prom/prometheus:v3.13.4"
     sites: ["infra/monitoring/docker-compose.monitoring.yml:35"]
     kind: image
     owner: maintainer
     eol_slug: prometheus
-    eol_cycle: "2.48"
-    eol_date: "2023-12-28"
-    exemption:
-      reason: >-
-        Prometheus 2.48 went EOL 2023-12-28 (942 days past — the oldest breach in this file).
-        Deferred deliberately for ONE phase: 27-00 Task 1 and Task 4 have just re-templated
-        prometheus.yml and alertmanager.yml, and 27-03 is about to rewrite the alert rules
-        this server evaluates. Moving to 3.x mid-flight would change PromQL evaluation and
-        remote-write behaviour underneath two plans that are using this server as their
-        measuring instrument. Upgrade after 27-03 lands, not before.
-      expires: "2026-12-31"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "3.13"
+    eol_date: "2027-07-31"
+    note: >-
+      Upgraded 2026-10-16 (39-03) from 2.48.0 (EOL 2023-12-28) to Prometheus 3.13 LTS
+      (v3.13.4, cycle 3.13 EOL 2027-07-31). 3.13 LTS was selected over 3.15 short-term
+      because 3.15 has lts=false and EOL 2026-11-06 (21 days from upgrade date, which
+      immediately breaches HORIZON_WARN_DAYS=90). DEFERRED-27 exemption retired.
 
   - id: grafana
-    pin: "grafana/grafana:10.2.2"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:84"]
+    pin: "grafana/grafana:13.2.4"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:82"]
     kind: image
     owner: maintainer
     eol_slug: grafana
-    eol_cycle: "10.2"
-    eol_date: "2024-07-24"
-    exemption:
-      reason: >-
-        Grafana 10.2 went EOL 2024-07-24 (733 days past). Dev-stack visualisation only — it
-        is not on the request path and holds no tenant data; the dashboards it renders are
-        provisioned from files in this repo, so the blast radius of a bad upgrade is the
-        dashboards, not the platform. Deferred with prometheus so the monitoring stack moves
-        as one piece after 27-03, rather than one component at a time.
-      expires: "2026-12-31"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "13.2"
+    eol_date: "2027-05-18"
+    note: >-
+      Upgraded 2026-10-16 (39-03) from 10.2.2 (EOL 2024-07-24) to 13.2.4 (cycle 13.2 EOL
+      2027-05-18). Removed obsolete GF_INSTALL_PLUGINS=grafana-piechart-panel (Angular
+      plugin removed in Grafana 11+; native piechart v2 panel is built in). DEFERRED-27
+      exemption retired.
 
   - id: alertmanager
-    pin: "prom/alertmanager:v0.27.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:115"]
+    pin: "prom/alertmanager:v0.34.1"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:112"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -288,16 +279,15 @@ dependencies:
       `prometheus-alertmanager`, both measured 2026-07-27). Alertmanager versions
       independently of Prometheus, so the `prometheus` row's horizon does NOT cover it —
       which is precisely the assumption that let it be omitted from 27-02's draft.
-      Re-checked 2026-10-16 (39-01): upstream latest is v0.34.1 (published 2026-09-17);
-      coupled upgrade with Prometheus 3.13 LTS and Grafana 13.2 is owned by 39-03-PLAN.md.
+      Upgraded 2026-10-16 (39-03) from v0.27.0 to v0.34.1 (published 2026-09-17).
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/prometheus/alertmanager/releases"
 
   - id: redis-exporter
-    pin: "oliver006/redis_exporter:v1.58.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:163"]
+    pin: "oliver006/redis_exporter:v1.94.0"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:160"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -306,16 +296,15 @@ dependencies:
       docs/ops/terminal-states.yaml TS-16: this image's compose entry drifted from its
       RUNNING container for 20 days without any gate noticing, because
       check-runtime-freshness.sh scopes itself to BUILT services.
-      Re-checked 2026-10-16 (39-01): upstream latest is v1.94.0 (published 2026-10-15);
-      coupled upgrade owned by 39-03-PLAN.md.
+      Upgraded 2026-10-16 (39-03) from v1.58.0 to v1.94.0 (published 2026-10-15).
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/oliver006/redis_exporter/releases"
 
   - id: postgres-exporter
-    pin: "prometheuscommunity/postgres-exporter:v0.15.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:183"]
+    pin: "prometheuscommunity/postgres-exporter:v0.20.1"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:180"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -323,8 +312,7 @@ dependencies:
       Third-party exporter, endoflife.date 404 (measured 2026-07-27). Its credential fault
       (register TS-13) was masked for weeks behind a green `up` — a reminder that "the
       container is running" says nothing about whether it works.
-      Re-checked 2026-10-16 (39-01): upstream latest is v0.20.1 (published 2026-07-08);
-      coupled upgrade owned by 39-03-PLAN.md.
+      Upgraded 2026-10-16 (39-03) from v0.15.0 to v0.20.1 (published 2026-07-08).
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-27"

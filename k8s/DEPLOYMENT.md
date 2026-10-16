@@ -675,7 +675,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 
 `ops-contracts` has two outbound dependencies and they are accepted deliberately:
 `check-dependency-horizons.sh` fetches `endoflife.date`, and `check-alert-rules.sh` pulls
-`prom/prometheus:v2.48.0` to run `promtool` (it is not installed on hosts, and the image's
+`prom/prometheus:v3.13.4` to run `promtool` (it is not installed on hosts, and the image's
 ENTRYPOINT is `/bin/prometheus`, so the call must pass `--entrypoint=promtool`). An outage of
 either turns the job **red at exit 2**, never green.
 

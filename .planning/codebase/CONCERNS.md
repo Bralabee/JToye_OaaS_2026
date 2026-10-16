@@ -81,15 +81,15 @@ All governed by `infra/dependency-horizons.yaml` + `scripts/check-dependency-hor
 
 | Component | Horizon | Exemption expires | Tracked by |
 |---|---|---|---|
-| RabbitMQ 4.3.x (vendor community support) | 2026-11-30 | **2026-11-30** (ends ON the horizon — no viable upgrade target exists yet; 4.4 not yet on Docker Hub as of 2026-09-02) | **#724** |
-| `rabbitmq-k8s` (staging/prod broker — not deployed from this repo, version unknown, `owner: UNASSIGNED`) | n/a | manual-review **2026-10-26** | ADR-0002 |
-| Alpine 3.20 (dev seed/init helper only) | 2026-04-01 | 2026-11-30 | DEFERRED-27 |
-| Keycloak 24.0.5 | 2024-06-10 | 2026-12-31 (upgrade needs its own live-auth-rehearsal plan — this repo has a recorded JWT-issuer/JWKS split-horizon outage history) | DEFERRED-27 |
-| Prometheus 2.48.0 | 2023-12-28 | 2026-12-31 | DEFERRED-27 |
-| Grafana 10.2.2 | 2024-07-24 | 2026-12-31 | DEFERRED-27 |
+| ~~RabbitMQ 4.3.x (vendor community support)~~ **CLOSED 2026-10-16 (39-02):** compose bumped to `4.3.6-management-alpine` (`vendor_eol: 2027-01-31`, no exemption) | ~~2026-11-30~~ | exemption deleted | ~~#724~~ |
+| `rabbitmq-k8s` (staging/prod broker — not deployed from this repo, version unknown, `owner: UNASSIGNED`) | n/a | manual-review **2027-01-16** (refreshed 2026-10-16, 39-01) | ADR-0002 |
+| ~~Alpine 3.20 (dev seed/init helper only)~~ **CLOSED 2026-10-16 (39-02):** all 3 compose init helpers bumped to `alpine:3.24` (horizon `2028-05-01`, no exemption) | ~~2026-04-01~~ | exemption deleted | ~~DEFERRED-27~~ |
+| Keycloak 24.0.5 | 2024-06-10 | 2026-12-31 (upgrade needs its own live-auth-rehearsal plan — this repo has a recorded JWT-issuer/JWKS split-horizon outage history; owned by `39-04-PLAN.md`) | DEFERRED-27 |
+| ~~Prometheus 2.48.0~~ **CLOSED 2026-10-16 (39-03):** bumped to `prom/prometheus:v3.13.4` LTS (cycle `3.13`, horizon `2027-07-31`, no exemption) | ~~2023-12-28~~ | exemption deleted | ~~DEFERRED-27~~ |
+| ~~Grafana 10.2.2~~ **CLOSED 2026-10-16 (39-03):** bumped to `grafana/grafana:13.2.4` (cycle `13.2`, horizon `2027-05-18`, no exemption) | ~~2024-07-24~~ | exemption deleted | ~~DEFERRED-27~~ |
 | ~~Spring Boot 3.5.16 (OSS support ended)~~ **CLOSED 2026-10-05 (Phase 38):** core-java is on Spring Boot 4.1.1 (horizon 2027-07-31, cycle 4.1, no exemption) — see ADR-0006 | ~~2026-06-30~~ | exemption deleted | ~~#706~~ |
 
-Several third-party images (ollama, mailhog, alertmanager, redis-exporter, postgres-exporter) have no `endoflife.date` entry at all (404) and are tracked via dated `manual_review` (`expires: 2027-01-27`) rather than a horizon — by design, not a gap. The Azurite emulator (Phase 36) is the same kind: no `endoflife.date` product, its own `manual_review` in `infra/dependency-horizons.yaml` (`expires: 2026-12-27`).
+Several third-party images (ollama, mailhog, alertmanager, redis-exporter, postgres-exporter) have no `endoflife.date` entry at all (404) and are tracked via dated `manual_review` (`expires: 2027-01-27`, re-checked `2026-10-16` in `39-01`, exporters and Alertmanager upgraded in `39-03`) rather than a horizon — by design, not a gap. The Azurite emulator (Phase 36) is the same kind: no `endoflife.date` product, its own `manual_review` in `infra/dependency-horizons.yaml` (`expires: 2027-01-16`).
 
 ---
 

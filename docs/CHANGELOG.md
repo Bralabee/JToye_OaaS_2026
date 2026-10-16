@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-02 & 39-03: Alpine 3.24, RabbitMQ 4.3.6 & Observability Stack Upgrade — 2026-10-16
+
+Upgrades the local/compose init helpers, RabbitMQ broker, and 5-component observability stack onto supported releases, retiring four of the five dependency-horizon exemptions (`alpine`, `rabbitmq`, `prometheus`, `grafana`).
+
+- **Init containers & broker (`39-02`).** All three Alpine init containers (`keycloak-realm-render` and both `db-init` services) move from `alpine:3.20` (EOL `2026-04-01`) to `alpine:3.24` (horizon `2028-05-01`, `DEFERRED-27` retired), and the compose broker moves from `rabbitmq:4.3.4-management-alpine` to `4.3.6-management-alpine` (`vendor_eol: 2027-01-31`, `#724` retired).
+- **Observability stack (`39-03`).** `infra/monitoring/docker-compose.monitoring.yml` moves Prometheus from `v2.48.0` (EOL `2023-12-28`) to `v3.13.4` LTS (cycle `3.13`, horizon `2027-07-31`; chosen over short-term `3.15` whose `2026-11-06` EOL breaches the 90-day warn window), Grafana from `10.2.2` (EOL `2024-07-24`) to `13.2.4` (horizon `2027-05-18`, obsolete `grafana-piechart-panel` plugin install removed), Alertmanager from `v0.27.0` to `v0.34.1`, `redis-exporter` from `v1.58.0` to `v1.94.0`, and `postgres-exporter` from `v0.15.0` to `v0.20.1` (`DEFERRED-27` exemptions on Prometheus and Grafana retired).
+
 ### Phase 39-09: Old-slug 301 aliases (#933) — 2026-10-16
 
 Printed links and QR codes pointing at a shop's old storefront URL now redirect permanently (`301 Moved Permanently`) to the shop's new slug after a deliberate slug change.
