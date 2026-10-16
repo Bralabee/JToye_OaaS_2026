@@ -111,23 +111,25 @@ dependencies:
       exemption is REMOVED (H-4 fails an exemption on a row that is not breaching).
 
   - id: keycloak
-    pin: "quay.io/keycloak/keycloak:24.0.5"
-    sites: ["docker-compose.full-stack.yml:145"]
+    pin: "quay.io/keycloak/keycloak:26.8.1"
+    sites:
+      - "docker-compose.full-stack.yml:145"
+      - "infra/docker-compose.yml:71"
+      - "infra/docker-compose.hostnet.yml:26"
     kind: image
     owner: maintainer
     eol_slug: keycloak
-    eol_cycle: "24.0"
-    eol_date: "2024-06-10"
-    exemption:
-      reason: >-
-        Keycloak 24.0 went EOL 2024-06-10 (777 days past). Upgrading is NOT a tag bump: KC 25+
-        changes the admin API and the user-profile handling this repo already has a recorded
-        trap for (unmanaged tenant_id attributes are stripped on admin-API user creation), the
-        realm import path is Postgres-backed, and JWT issuer/JWKS split-horizon has caused a
-        total live-auth outage here before. It needs its own plan with a live auth rehearsal,
-        not a line in an ops-spine phase.
-      expires: "2026-12-31"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "26.8"
+    eol_date: "false"
+    note: >-
+      UPGRADED BY 39-04 (2026-10-16): 24.0.5 (EOL 2024-06-10) -> 26.8.1 (cycle 26.8,
+      `eol: false`). Hostname v2 configured with `KC_HOSTNAME: http://localhost:8085` (replacing
+      the deprecated v1 `KC_HOSTNAME_PORT` option so split-horizon issuer `http://localhost:8085/realms/...`
+      is preserved) and `KC_LEGACY_OBSERVABILITY_INTERFACE: "true"` so `/health/ready` and
+      `/metrics` remain on port 8080 for compose healthcheck and Prometheus scrape parity.
+      All three compose sites (`docker-compose.full-stack.yml`, `infra/docker-compose.yml`,
+      `infra/docker-compose.hostnet.yml`) are tracked in `sites:` so H-5 prevents silent skew.
+      The final DEFERRED-27 exemption is REMOVED (`active-exemptions=0`).
 
   - id: redis
     pin: "redis:7-alpine"

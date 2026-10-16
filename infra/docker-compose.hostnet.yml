@@ -23,7 +23,7 @@ services:
         echo "Rendered infra/keycloak/realm-export.json from template"
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.8.1
     container_name: jtoye-keycloak-host
     command: ["start-dev", "--import-realm", "--http-port=8081"]
     environment:

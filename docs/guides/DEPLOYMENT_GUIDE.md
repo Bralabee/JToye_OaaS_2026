@@ -44,7 +44,7 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 
 **Infrastructure:**
 - PostgreSQL 15 (primary + replicas)
-- Keycloak 24 (OIDC provider)
+- Keycloak 26 (OIDC provider)
 - Redis 7 (cache + sessions)
 - RabbitMQ 4.3.6 (message queue)
 

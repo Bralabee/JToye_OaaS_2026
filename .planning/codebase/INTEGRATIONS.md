@@ -75,7 +75,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 
 ## Authentication & Identity
 
-**Auth Provider: Keycloak 24.0.5** (two realms, dual-issuer split-horizon pattern throughout)
+**Auth Provider: Keycloak 26.8.1** (two realms, dual-issuer split-horizon pattern throughout)
 - `jtoye-dev` realm — staff/vendor identity (dashboard admin users). Frontend NextAuth.js (`next-auth` 5.0.0-beta.32, `frontend/auth.ts`) uses the `next-auth/providers/keycloak` provider.
 - `jtoye-customers` realm — B2C customer identity (Phase 18 realm split), storefront sign-in / order history. Separate `CustomerJwtVerifier` on the backend, separate `customer-auth.ts` on the frontend.
 - Google identity provider — federated into the `jtoye-customers` realm (ADR-0005), **disabled by default** (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` empty by default in the realm-render template).
@@ -86,7 +86,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - MCP server: Bearer pass-through only — forwards the caller's own token verbatim to core-java, validates nothing itself (RLS in core is the sole isolation boundary; T-20-04 SSRF guard keeps `CORE_BASE_URL` a fixed internal service name).
 - Keycloak admin API (deprovisioning) — `jtoye.keycloak.admin.enabled` (default false), disables an offboarded tenant's Keycloak users post-commit (best-effort, `REQUIRES_NEW` after the offboard transaction).
 - LOCAL-DEV: Keycloak container backed by the shared Postgres, realm JSON rendered from a template at container start (`keycloak-realm-render` service, `envsubst`) so no secret is committed.
-- STAGING/PROD: external Keycloak 24.0+ instance (deployment target unverified from this repo beyond the version floor).
+- STAGING/PROD: external Keycloak 26.8+ instance (deployment target unverified from this repo beyond the version floor).
 
 ## Vendor-Scoped Access / Machine Clients
 
