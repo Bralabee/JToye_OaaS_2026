@@ -16,7 +16,11 @@
 
 import { TextEncoder as NodeTextEncoder, TextDecoder as NodeTextDecoder } from "node:util"
 import { render, screen, act, fireEvent } from "@testing-library/react"
-import { useTheme } from "@/hooks/use-theme"
+import {
+  DARK_THEME_AVAILABLE,
+  __setDarkThemeAvailableForTests,
+  useTheme,
+} from "@/hooks/use-theme"
 
 /* ---------------------------------------------------------------------------
  * jsdom implements neither MessageChannel nor TextEncoder, and
@@ -108,10 +112,11 @@ function installMatchMedia(): void {
 
 /** A consumer that renders the resolved theme and exposes both mutators. */
 function Probe({ id = "probe" }: { id?: string }) {
-  const { dark, setDark, toggle } = useTheme()
+  const { dark, available, setDark, toggle } = useTheme()
   return (
     <div>
       <span data-testid={id}>{dark ? "dark" : "light"}</span>
+      <span data-testid={`${id}-available`}>{String(available)}</span>
       <button type="button" data-testid={`${id}-toggle`} onClick={toggle}>
         toggle
       </button>
@@ -131,13 +136,134 @@ function ServerProbe() {
   return <div className={dark ? DARK_CLASS : "light"}>theme</div>
 }
 
+/* Shared by both blocks below: every case starts from empty storage, a bare
+ * <html>, a light system preference and a fresh matchMedia stub. */
+beforeEach(() => {
+  localStorage.clear()
+  document.documentElement.className = ""
+  systemPrefersDark = false
+  mediaListeners.clear()
+  installMatchMedia()
+})
+
+/** Calls to localStorage.setItem whose key is the theme key. */
+function themeWrites(spy: jest.SpyInstance): unknown[][] {
+  return spy.mock.calls.filter(([key]) => key === STORAGE_KEY)
+}
+
+/* ===========================================================================
+ * FORCED LIGHT — owner ruling 2026-10-16 (phase 37 deferred-items.md, "Owner
+ * rulings 2026-10-16"; quick 261016-edv). The dashboard is unreadable in dark
+ * (37-55 evidence sections 6-7: 73/125 text elements on /dashboard/staff below
+ * 4.5:1), so until the dashboard-wide dark pass ships the hook resolves light
+ * whatever is stored or preferred, and leaves a stored choice byte-identical so
+ * it returns with the pass.
+ *
+ * These cases run on the SHIPPED default — no seam call — so they prove what
+ * ships. Flipping DARK_THEME_AVAILABLE to true turns every one of them red BY
+ * DESIGN; they are deleted together with the flag when the dark pass lands.
+ * ========================================================================= */
+describe("useTheme, with the dark theme withheld (shipped default)", () => {
+  it("ships with DARK_THEME_AVAILABLE false and reports available: false", () => {
+    expect(DARK_THEME_AVAILABLE).toBe(false)
+
+    render(<Probe />)
+
+    expect(screen.getByTestId("probe-available")).toHaveTextContent("false")
+  })
+
+  it("resolves light with a stored dark preference, adds no dark class, and keeps the stored value", () => {
+    localStorage.setItem(STORAGE_KEY, "dark")
+    systemPrefersDark = false
+
+    render(<Probe />)
+
+    expect(screen.getByTestId("probe")).toHaveTextContent("light")
+    expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("dark")
+  })
+
+  it("resolves light when nothing is stored and the system prefers dark", () => {
+    systemPrefersDark = true
+
+    render(<Probe />)
+
+    expect(screen.getByTestId("probe")).toHaveTextContent("light")
+    expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+  })
+
+  it("removes a stale dark class that was on the document before mount", () => {
+    // Both inputs say dark AND the class is already there, so this proves the
+    // mount effect actively LEAVES no class — not merely that nobody added one.
+    localStorage.setItem(STORAGE_KEY, "dark")
+    systemPrefersDark = true
+    document.documentElement.classList.add(DARK_CLASS)
+    expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(true)
+
+    render(<Probe />)
+
+    expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+    expect(screen.getByTestId("probe")).toHaveTextContent("light")
+  })
+
+  it("setDark(true), setDark(false) and toggle() write nothing for the theme key and stay light", () => {
+    localStorage.setItem(STORAGE_KEY, "dark")
+    // Installed AFTER seeding, so the seed is not counted. The spy, not a
+    // read-back, is the proof: writing "dark" over "dark" is invisible to
+    // getItem, and setDark(false) / toggle() would write "light".
+    const setItem = jest.spyOn(Storage.prototype, "setItem")
+    try {
+      render(<Probe />)
+
+      fireEvent.click(screen.getByTestId("probe-on"))
+      fireEvent.click(screen.getByTestId("probe-off"))
+      fireEvent.click(screen.getByTestId("probe-toggle"))
+
+      expect(themeWrites(setItem)).toHaveLength(0)
+      expect(screen.getByTestId("probe")).toHaveTextContent("light")
+      expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+      expect(localStorage.getItem(STORAGE_KEY)).toBe("dark")
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
+  it("setDark(true) with nothing stored leaves storage empty and the theme light", () => {
+    render(<Probe />)
+
+    fireEvent.click(screen.getByTestId("probe-on"))
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    expect(screen.getByTestId("probe")).toHaveTextContent("light")
+    expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+  })
+
+  it("stays light when another tab stores dark and the storage event arrives", () => {
+    render(<Probe />)
+    expect(screen.getByTestId("probe")).toHaveTextContent("light")
+
+    localStorage.setItem(STORAGE_KEY, "dark")
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY }))
+    })
+
+    expect(screen.getByTestId("probe")).toHaveTextContent("light")
+    expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+  })
+})
+
+/* ===========================================================================
+ * FLAG ON — the behaviour the dark pass restores. Every case below predates the
+ * 2026-10-16 ruling and is unchanged; the seam turns the dark theme back on for
+ * this block only, so flipping DARK_THEME_AVAILABLE to true leaves it green.
+ * ========================================================================= */
 describe("useTheme", () => {
   beforeEach(() => {
-    localStorage.clear()
-    document.documentElement.className = ""
-    systemPrefersDark = false
-    mediaListeners.clear()
-    installMatchMedia()
+    __setDarkThemeAvailableForTests(true)
+  })
+
+  afterEach(() => {
+    __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
   })
 
   /* --- resolving the current theme ------------------------------------- */
