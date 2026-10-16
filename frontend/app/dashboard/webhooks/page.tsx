@@ -318,10 +318,12 @@ export default function WebhooksPage() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <ShieldCheck className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
-            <h2 className="mb-2 text-lg font-semibold text-slate-900">
+            <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
               {WEBHOOKS_ACCESS_REQUIRED_COPY.title}
             </h2>
-            <p className="text-sm text-slate-500">{WEBHOOKS_ACCESS_REQUIRED_COPY.body}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {WEBHOOKS_ACCESS_REQUIRED_COPY.body}
+            </p>
           </CardContent>
         </Card>
       </div>
