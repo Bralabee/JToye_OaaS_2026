@@ -81,7 +81,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Framer Motion 14.0.0 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
 - Redis 7 - Session and cache store
-- RabbitMQ 4.3.4 - Message queue (AMQP)
+- RabbitMQ 4.3.6 - Message queue (AMQP)
 - Keycloak 24.0.5 - Identity provider (OIDC/OAuth2)
 - Azurite 3.37.0 - Azure Blob emulator (local, hybrid, nightly); Azure Blob Storage in staging/production
 - Ollama (latest) - Local LLM for image analysis
@@ -128,7 +128,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Docker container runtime
 - PostgreSQL 15+ database
 - Redis 7+ (external or managed service)
-- RabbitMQ **3.13+** minimum (4.3 recommended — the dev/compose stack pins 4.3.4). The deployed staging/production broker's version is **unverified from this repository** — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
+- RabbitMQ **3.13+** minimum (4.3 recommended — the dev/compose stack pins 4.3.6). The deployed staging/production broker's version is **unverified from this repository** — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 - Keycloak 24.0+ (external identity provider)
 - Azure Blob Storage (Azurite locally)
 - SMTP server (SendGrid, AWS SES, etc.)
@@ -136,7 +136,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - PostgreSQL: 15-alpine
 - Keycloak: 24.0.5
 - Redis: 7-alpine
-- RabbitMQ: 4.3.4-management-alpine
+- RabbitMQ: 4.3.6-management-alpine
 - Azurite: 3.37.0
 - Go: 1.27-alpine
 - Node.js: 24+

@@ -132,7 +132,7 @@
 - Kubernetes via Kustomize: `k8s/base` + `k8s/staging` / `k8s/production` overlays. Images pushed to `ghcr.io/bralabee/jtoye-{core-java,edge-go,frontend,pg-backup}`; `newTag` in overlay `kustomization.yaml` defaults to `2.1.0` but CI pins the exact full-sha tag at deploy time via `kustomize edit set image`.
 - PostgreSQL 15+ (managed/external in prod).
 - Redis 7+ (external/managed).
-- RabbitMQ 4.3.4-management-alpine pinned in compose; **the deployed staging/production broker version is unverified from this repository** (see `docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) — minimum supported is 3.13+. RabbitMQ 4.3 community support ends **2026-11-30**, tracked in `infra/dependency-horizons.yaml`.
+- RabbitMQ 4.3.6-management-alpine pinned in compose; **the deployed staging/production broker version is unverified from this repository** (see `docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) — minimum supported is 3.13+. RabbitMQ 4.3 community support ends **2027-01-31**, tracked in `infra/dependency-horizons.yaml`.
 - Keycloak 24.0.5 (external IdP in prod).
 - Azure Blob Storage for image storage and backups (Workload Identity, raw Blob endpoint; `docs/runbooks/azure-blob-provisioning.md`) — Azurite 3.37.0 is the local/nightly emulator.
 - SMTP provider (Mailhog is dev-only, e.g. SendGrid/SES in prod).
