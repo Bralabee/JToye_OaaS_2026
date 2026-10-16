@@ -8,14 +8,14 @@
 
 1. **Alpine `3.20` → `3.24` (`3.24.2`) across all 3 init containers (`RUN-02`)**:
    - `docker-compose.full-stack.yml:96` (`keycloak-realm-render` service)
-   - `infra/docker-compose.yml:48` (`db-init` service)
-   - `infra/docker-compose.hostnet.yml:5` (`db-init` service)
+   - `infra/docker-compose.yml:48` (`keycloak-realm-render` service)
+   - `infra/docker-compose.hostnet.yml:5` (`keycloak-realm-render` service)
    - `docs/runbooks/rabbitmq-broker-upgrade.md` (`alpine:3.24` volume snapshot/restore helper commands)
-   - `infra/dependency-horizons.yaml`: `alpine` row bumped to `pinned: "3.24"`, `eol_cycle: "3.24"` (EOL `2028-05-01`), and the `DEFERRED-27` (`2026-12-31`) exemption removed.
+   - `infra/dependency-horizons.yaml`: `alpine` row bumped to `pin: "alpine:3.24"`, `eol_cycle: "3.24"` (EOL `2028-06-01`), and the `DEFERRED-27` (`2026-12-31`) exemption removed.
 
 2. **RabbitMQ `4.3.4-management-alpine` → `4.3.6-management-alpine` (`RUN-03`)**:
    - `docker-compose.full-stack.yml:224` (`rabbitmq` service)
-   - `infra/dependency-horizons.yaml`: `rabbitmq` row bumped to `pinned: "4.3.6-management-alpine"`, `vendor_eol: "2027-01-31"` (matching `endoflife.date` `4.3` cycle EOL `2027-01-31`, 107 days ahead of `2026-10-16`), and the `#724` (`2026-11-30`) exemption removed.
+   - `infra/dependency-horizons.yaml`: `rabbitmq` row bumped to `pin: "rabbitmq:4.3.6-management-alpine"`, `vendor_eol: "2027-01-31"` (matching `endoflife.date` `4.3` cycle EOL `2027-01-31`, 107 days ahead of `2026-10-16`), and the `#724` (`2026-11-30`) exemption removed.
    - Synchronised prose claims across `CLAUDE.md`, `AGENTS.md`, `.planning/codebase/STACK.md`, `.planning/codebase/INTEGRATIONS.md`, `docs/architecture/ESSENTIAL_ARCHITECTURE.md`, `docs/guides/DEPLOYMENT_GUIDE.md`, `docs/architecture/SYSTEM_DESIGN_V2.md`, `docs/runbooks/rabbitmq-broker-upgrade.md`, and `k8s/DEPLOYMENT.md`.
 
 3. **Remaining Phase 39 Plan Files Authored**:

@@ -83,7 +83,7 @@ All governed by `infra/dependency-horizons.yaml` + `scripts/check-dependency-hor
 |---|---|---|---|
 | ~~RabbitMQ 4.3.x (vendor community support)~~ **CLOSED 2026-10-16 (39-02):** compose bumped to `4.3.6-management-alpine` (`vendor_eol: 2027-01-31`, no exemption) | ~~2026-11-30~~ | exemption deleted | ~~#724~~ |
 | `rabbitmq-k8s` (staging/prod broker — not deployed from this repo, version unknown, `owner: UNASSIGNED`) | n/a | manual-review **2027-01-16** (refreshed 2026-10-16, 39-01) | ADR-0002 |
-| ~~Alpine 3.20 (dev seed/init helper only)~~ **CLOSED 2026-10-16 (39-02):** all 3 compose init helpers bumped to `alpine:3.24` (horizon `2028-05-01`, no exemption) | ~~2026-04-01~~ | exemption deleted | ~~DEFERRED-27~~ |
+| ~~Alpine 3.20 (dev seed/init helper only)~~ **CLOSED 2026-10-16 (39-02):** all 3 compose init helpers bumped to `alpine:3.24` (horizon `2028-06-01`, no exemption) | ~~2026-04-01~~ | exemption deleted | ~~DEFERRED-27~~ |
 | Keycloak 24.0.5 | 2024-06-10 | 2026-12-31 (upgrade needs its own live-auth-rehearsal plan — this repo has a recorded JWT-issuer/JWKS split-horizon outage history; owned by `39-04-PLAN.md`) | DEFERRED-27 |
 | ~~Prometheus 2.48.0~~ **CLOSED 2026-10-16 (39-03):** bumped to `prom/prometheus:v3.13.4` LTS (cycle `3.13`, horizon `2027-07-31`, no exemption) | ~~2023-12-28~~ | exemption deleted | ~~DEFERRED-27~~ |
 | ~~Grafana 10.2.2~~ **CLOSED 2026-10-16 (39-03):** bumped to `grafana/grafana:13.2.4` (cycle `13.2`, horizon `2027-05-18`, no exemption) | ~~2024-07-24~~ | exemption deleted | ~~DEFERRED-27~~ |
