@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-09: Old-slug 301 aliases (#933) — 2026-10-16
+
+Printed links and QR codes pointing at a shop's old storefront URL now redirect permanently (`301 Moved Permanently`) to the shop's new slug after a deliberate slug change.
+
+- **Retired-slug alias registry (`V86`).** `shop_slug_alias` (`old_slug` PK, `shop_id` FK `ON DELETE CASCADE`, `tenant_id` FK `ON DELETE CASCADE`) records displaced slugs whenever `ShopService.updateShop` changes a shop's slug, deletes any self-alias if the shop reverts to an earlier slug (`A -> B -> A`), and blocks any other shop from claiming a retired slug in `ensureUniqueSlug`.
+- **Storefront `301` redirect (`PublicStorefrontController` & Next.js `/shop/[slug]`).** When an anonymous storefront request arrives for a retired slug whose target shop is still `PUBLISHED`, the API responds `301 Moved Permanently` with `Location` pointing to the current slug (and Next.js SSR triggers `permanentRedirect('/shop/' + redirectedSlug)`), while aliases pointing at unpublished or deleted shops return `404`.
+
 ### Phase 39-08: Per-shop customer narrowing (#927) — 2026-10-16
 
 A shop manager or staff member now sees and acts on only the customers of the shops they hold a grant on, without adding a join table.
