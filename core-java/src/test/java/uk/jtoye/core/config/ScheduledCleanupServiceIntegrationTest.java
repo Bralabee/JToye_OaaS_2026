@@ -65,14 +65,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class ScheduledCleanupServiceIntegrationTest {
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.url", () -> { uk.jtoye.core.testsupport.IntegrationTestSupport.ensureDowngradableTestRole(postgres); return postgres.getJdbcUrl(); });
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         // application-test.yml defaults to H2; override every H2-specific property so

@@ -104,7 +104,7 @@ class FreshChainMigrationIntegrationTest {
     private static final String EXPECTED_SENTINEL = "00000000-0000-0000-0000-000000000000";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_fresh")
             .withUsername("test")
             .withPassword("test");

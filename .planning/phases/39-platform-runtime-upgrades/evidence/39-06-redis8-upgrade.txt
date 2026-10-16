@@ -1,0 +1,35 @@
+# Phase 39-06 Evidence: Redis 7.4 -> 8.10-alpine Runtime & Testcontainers Upgrade
+# Recorded: 2026-10-16T23:06:50Z
+
+## 1. Ephemeral Container Runtime & Persistence Check (`redis:8.10-alpine`)
+=== REDIS 8.10-ALPINE RUNTIME CHECK ===
+redis_version:8.10.2
+os:Linux 6.8.0-147-generic x86_64
+arch_bits:64
+tcp_port:6379
+appendonly
+yes
+OK
+ok-redis-8.10
+rc=0
+
+## 2. Dependency Horizons Gate (`scripts/check-dependency-horizons.sh`)
+H-3 redis: redis/8.10 has no declared horizon (eol: false) — nothing to breach today
+dependency-horizons summary
+  manifest    rows=28  discovered-pins=22
+  H-1 coverage   missing-row=0
+  H-5 sites      pin-not-at-site=0
+                 site-unresolvable=0
+  H-2/H-3        violations=0  active-exemptions=0
+  H-6 UNKNOWN    rows=7
+  warn window    HORIZON_WARN_DAYS=90
+OK: every pinned artifact carries a resolved, in-window or explicitly-deferred horizon.
+rc=0
+
+## 3. Lettuce 7 / Spring Cache / Bucket4j Testcontainers Verification on `redis:8.10-alpine`
+$ ./gradlew :core-java:integrationTest \
+  --tests "uk.jtoye.core.cache.CacheFormatIsolationIntegrationTest" \
+  --tests "uk.jtoye.core.ratelimit.PublicRateLimitIntegrationTest" \
+  --tests "uk.jtoye.core.resilience.RedisFaultInjectionIntegrationTest"
+BUILD SUCCESSFUL in 52s
+rc=0

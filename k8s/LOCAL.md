@@ -766,7 +766,7 @@ pointing the context elsewhere.
 ## 9. Backup rehearsal
 
 The CronJob dumps with the BYPASSRLS role and uploads with **blobctl** (in the
-`jtoye-pg-backup:15-blob` image) to the host Azurite, container `jtoye-db-backups`, prefix `backups/`.
+`jtoye-pg-backup:18-blob` image) to the host Azurite, container `jtoye-db-backups`, prefix `backups/`.
 In emulator mode blobctl creates that container **private** on the first upload; nothing needs to be
 pre-created. Trigger the CronJob on demand rather than waiting for its schedule:
 

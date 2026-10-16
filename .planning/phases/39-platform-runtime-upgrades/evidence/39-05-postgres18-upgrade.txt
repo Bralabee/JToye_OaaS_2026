@@ -1,0 +1,53 @@
+# Phase 39-05 Evidence: PostgreSQL 15 -> 18.6 Runtime & Tooling Upgrade
+# Recorded: 2026-10-16T23:06:50Z
+
+## 1. PostgreSQL Major Parity Gate (`scripts/check-postgres-major-parity.sh`)
+check-postgres-major-parity
+  config : scripts/gates/postgres-major-parity.conf
+  SERVER  docker-compose.full-stack.yml          image: postgres:                           -> 18
+  SERVER  infra/docker-compose.yml               image: postgres:                           -> 18
+  SERVER  .github/workflows/ci-cd.yaml           image: postgres:                           -> 18
+  SERVER  core-java/src/test/java/uk/jtoye/core/security/RlsContractTest.java PostgreSQLContainer<>("postgres:           -> 18
+  TOOLING infra/backups/Dockerfile               FROM postgres:                             -> 18
+  TOOLING infra/backups/Dockerfile               -t ghcr.io/bralabee/jtoye-pg-backup:       -> 18
+  TOOLING k8s/base/pg-backup-cronjob.yaml        image: ghcr.io/bralabee/jtoye-pg-backup:   -> 18
+  TOOLING scripts/check-backup-restore-drill.sh  ghcr.io/bralabee/jtoye-pg-backup:          -> 18
+  SERVER  infra/dependency-horizons.yaml         pin: "postgres:                            -> 18
+  TOOLING infra/dependency-horizons.yaml         pin: "ghcr.io/bralabee/jtoye-pg-backup:    -> 18
+  server : 18   tooling: 18   (10 site(s) checked)
+PASS: backup tooling and server agree on PostgreSQL major 18.
+rc=0
+
+## 2. Backup Tooling Image Build & Version Verification (`ghcr.io/bralabee/jtoye-pg-backup:18-blob`)
+$ docker build -t ghcr.io/bralabee/jtoye-pg-backup:18-blob infra/backups
+$ docker run --rm --entrypoint pg_dump ghcr.io/bralabee/jtoye-pg-backup:18-blob --version
+pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg12+2)
+$ docker run --rm --entrypoint pg_restore ghcr.io/bralabee/jtoye-pg-backup:18-blob --version
+pg_restore (PostgreSQL) 18.6 (Debian 18.6-1.pgdg12+2)
+rc=0
+
+## 3. Hermetic PG 15.19 -> PG 18.6 Custom-Format Dump & Restore Drill
+=== PG15 SOURCE VERSION ===
+PostgreSQL 15.19 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+=== PG18 TARGET VERSION ===
+PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+=== PG_DUMP FROM PG15 USING ghcr.io/bralabee/jtoye-pg-backup:18-blob ===
+; Archive created at 2026-10-16 23:06:46 UTC
+;     dbname: jtoye
+;     TOC Entries: 16
+;     Compression: gzip
+;     Dump Version: 1.16-0
+;     Format: CUSTOM
+;     Dumped from database version: 15.19
+;     Dumped by pg_dump version: 18.6 (Debian 18.6-1.pgdg12+2)
+=== PARITY CHECK (PG15 vs PG18) ===
+PG15 counts (tenants|shops|policies|rls_enabled|rls_forced):
+2|2|1|t|t
+PG18 counts (tenants|shops|policies|rls_enabled|rls_forced):
+2|2|1|t|t
+rc=0
+
+## 4. Testcontainers PostgreSQL 18 + NOSUPERUSER RLS Verification
+- Updated all 206 `PostgreSQLContainer<>("postgres:15")` test files to `PostgreSQLContainer<>("postgres:18-alpine")`.
+- Added `IntegrationTestSupport.ensureDowngradableTestRole(PostgreSQLContainer<?>)` to swap the `initdb` bootstrap superuser (`oid = 10`, which PostgreSQL 16+ / 18 forbids downgrading via `ALTER ROLE ... NOSUPERUSER`) with an identically named non-bootstrap superuser (`oid > 10`) before the first JDBC connection opens.
+- Verified with `./gradlew :core-java:integrationTest --tests "uk.jtoye.core.security.RlsContractTest" --tests "uk.jtoye.core.customer.CustomerOriginShopScopeIntegrationTest" --tests "uk.jtoye.core.shop.ShopSlugAliasIntegrationTest" --tests "uk.jtoye.core.config.ScheduledCleanupServiceIntegrationTest" --tests "uk.jtoye.core.storefront.GuestTrackingOrderLinesRlsIntegrationTest" --tests "uk.jtoye.core.security.RuntimeRoleGrantContractTest"` -> BUILD SUCCESSFUL, rc=0.

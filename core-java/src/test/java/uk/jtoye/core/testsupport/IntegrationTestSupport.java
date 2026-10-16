@@ -8,6 +8,8 @@ import org.testcontainers.utility.MountableFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Shared property wiring for {@code @Tag("testcontainers")} integration tests
@@ -112,6 +114,66 @@ public final class IntegrationTestSupport {
                         + " — refusing to proceed over a missing input.");
     }
 
+    private static final Set<String> DOWNGRADABLE_ROLE_PROVISIONED = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Replaces the Testcontainers {@code initdb} bootstrap superuser ({@code oid = 10}) with an
+     * identically named non-bootstrap superuser ({@code oid > 10}) so PostgreSQL 16+ / 18 allows
+     * {@code ALTER ROLE "<username>" NOSUPERUSER} after test seeding.
+     *
+     * <p>PostgreSQL 16+ (commit {@code a0b6c604}) rejects {@code ALTER ROLE ... NOSUPERUSER} when
+     * {@code roleid == BOOTSTRAP_SUPERUSERID (10)} with
+     * {@code ERROR: permission denied to alter role — Detail: The bootstrap superuser must have the SUPERUSER attribute}.
+     * Renaming {@code oid = 10} to {@code _jtoye_bootstrap_superuser} and recreating
+     * {@code <username>} as a standard {@code SUPERUSER} ({@code oid != 10}) preserves full
+     * superuser privileges for Flyway migrations and test seeding while allowing RLS integration
+     * tests to downgrade the role to {@code NOSUPERUSER} on PostgreSQL 18.
+     */
+    public static void ensureDowngradableTestRole(PostgreSQLContainer<?> postgres) {
+        String containerId = postgres.getContainerId();
+        if (containerId != null && !DOWNGRADABLE_ROLE_PROVISIONED.add(containerId)) {
+            return;
+        }
+        String user = postgres.getUsername();
+        String pass = postgres.getPassword();
+        String db = postgres.getDatabaseName();
+        try {
+            Container.ExecResult step1 = postgres.execInContainer(
+                    "psql", "-v", "ON_ERROR_STOP=1", "-U", user, "-d", db,
+                    "-c", "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '_jtoye_admin') "
+                            + "THEN CREATE ROLE \"_jtoye_admin\" SUPERUSER LOGIN; END IF; END $$;");
+            if (step1.getExitCode() != 0) {
+                throw new IllegalStateException("ensureDowngradableTestRole step1 failed: " + step1.getStderr());
+            }
+            String swapSql = String.format(
+                    "DO $$ DECLARE v_oid oid; BEGIN "
+                            + "SELECT oid INTO v_oid FROM pg_roles WHERE rolname = '%s'; "
+                            + "IF v_oid = 10 THEN "
+                            + "ALTER ROLE \"%s\" RENAME TO \"_jtoye_bootstrap_superuser\"; "
+                            + "CREATE ROLE \"%s\" SUPERUSER CREATEDB CREATEROLE INHERIT LOGIN PASSWORD '%s'; "
+                            + "ALTER DATABASE \"%s\" OWNER TO \"%s\"; "
+                            + "END IF; "
+                            + "END $$;",
+                    user.replace("'", "''"),
+                    user.replace("\"", "\"\""),
+                    user.replace("\"", "\"\""),
+                    pass.replace("'", "''"),
+                    db.replace("\"", "\"\""),
+                    user.replace("\"", "\"\""));
+            Container.ExecResult step2 = postgres.execInContainer(
+                    "psql", "-v", "ON_ERROR_STOP=1", "-U", "_jtoye_admin", "-d", db,
+                    "-c", swapSql);
+            if (step2.getExitCode() != 0) {
+                throw new IllegalStateException("ensureDowngradableTestRole step2 failed: " + step2.getStderr());
+            }
+        } catch (Exception e) {
+            if (containerId != null) {
+                DOWNGRADABLE_ROLE_PROVISIONED.remove(containerId);
+            }
+            throw new IllegalStateException("Failed to provision downgradable test role on PostgreSQL 18 container", e);
+        }
+    }
+
     /**
      * Registers the full Testcontainers-Postgres property set on top of the
      * {@code test} profile: datasource, H2-override trio, Flyway on,
@@ -120,7 +182,10 @@ public final class IntegrationTestSupport {
      */
     public static void registerPostgresTestProperties(DynamicPropertyRegistry registry,
                                                       PostgreSQLContainer<?> postgres) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.url", () -> {
+            ensureDowngradableTestRole(postgres);
+            return postgres.getJdbcUrl();
+        });
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         // application-test.yml defaults to H2; point every H2-specific

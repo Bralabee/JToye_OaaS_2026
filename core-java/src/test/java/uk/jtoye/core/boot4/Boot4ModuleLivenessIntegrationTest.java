@@ -72,7 +72,7 @@ class Boot4ModuleLivenessIntegrationTest {
     private static final String MIGRATION_PATTERN = "classpath*:db/migration/V*.sql";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");

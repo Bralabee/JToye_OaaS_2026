@@ -84,7 +84,7 @@ class DemoDataSeederServiceAccountGrantIntegrationTest {
     private static final String ARCHIVE_SLUG = "unsorted-legacy-items";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");

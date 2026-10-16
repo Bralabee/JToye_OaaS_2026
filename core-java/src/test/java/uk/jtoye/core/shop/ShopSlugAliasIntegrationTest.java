@@ -69,7 +69,7 @@ class ShopSlugAliasIntegrationTest {
     private static final AtomicBoolean DOWNGRADED = new AtomicBoolean(false);
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername(DOWNGRADED_APP_ROLE)
             .withPassword("test");

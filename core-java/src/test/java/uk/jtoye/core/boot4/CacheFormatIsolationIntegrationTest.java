@@ -84,13 +84,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CacheFormatIsolationIntegrationTest {
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");
 
     @Container
-    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:8.10-alpine"))
             .withExposedPorts(6379);
 
     @DynamicPropertySource

@@ -53,7 +53,7 @@ class LedgerEntryKindMigrationIntegrationTest {
     private static final String RLS_MIGRATOR_PW = "rls_migrator_pw";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_v78")
             .withUsername("test")
             .withPassword("test");

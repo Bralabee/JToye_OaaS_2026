@@ -61,7 +61,7 @@ class DemoDataSeederTraderIdentityIntegrationTest {
     private static final UUID DEMO_TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");
