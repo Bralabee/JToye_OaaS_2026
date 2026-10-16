@@ -201,11 +201,15 @@ public class OrderService {
         // never 0. CreateOrderRequest and the MCP contract are unchanged.
         order.setPlacedVia(OrderChannel.VENDOR);
 
-        // Link customer: if customerId provided, look up and populate denormalized fields
+        // Link customer: if customerId provided, look up (scoped to caller's granted shops under Option C)
+        // and populate denormalized fields; backfill originShopId when null (Phase 39-08).
         if (request.getCustomerId() != null) {
-            Customer customer = customerRepository.findById(request.getCustomerId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Customer not found: " + request.getCustomerId()));
+            Customer customer = resolveScopedCustomer(request.getCustomerId(), tenantId);
+            if (customer.getOriginShopId() == null) {
+                customer.setOriginShopId(shop.getId());
+                customer.setUpdatedAt(OffsetDateTime.now());
+                customerRepository.save(customer);
+            }
             order.setCustomerId(customer.getId());
             order.setCustomerName(customer.getName());
             order.setCustomerEmail(customer.getEmail());
@@ -423,10 +427,9 @@ public class OrderService {
                     "Cannot update order in " + order.getStatus() + " status. Only DRAFT or PENDING orders can be edited.");
         }
 
-        // Link customer if customerId provided
+        // Link customer if customerId provided (scoped to caller's granted shops under Option C)
         if (request.getCustomerId() != null) {
-            Customer customer = customerRepository.findById(request.getCustomerId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
+            Customer customer = resolveScopedCustomer(request.getCustomerId(), order.getTenantId());
             order.setCustomerId(customer.getId());
             order.setCustomerName(customer.getName());
             order.setCustomerEmail(customer.getEmail());
@@ -443,6 +446,25 @@ public class OrderService {
 
         log.info("Updated order {} details", order.getOrderNumber());
         return orderMapper.toDto(order);
+    }
+
+    /**
+     * Option C (Phase 39-08): resolve {@code customerId} for an order write. Callers with
+     * tenant-wide ("all shops") reach resolve across the tenant; per-shop callers only resolve
+     * customers whose {@code originShopId} or order history intersects their {@code grantedShopIds()}.
+     * Out-of-scope customer IDs throw {@link ResourceNotFoundException} (HTTP 404, no existence oracle).
+     */
+    private Customer resolveScopedCustomer(UUID customerId, UUID tenantId) {
+        if (shopAccessService.isGroupAdmin() || shopAccessService.hasAllShopsAccess()) {
+            return customerRepository.findById(customerId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
+        }
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            throw new ResourceNotFoundException("Customer not found: " + customerId);
+        }
+        return customerRepository.findByIdAndTenantScopedInGrantSet(customerId, tenantId, granted)
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
     }
 
     /**

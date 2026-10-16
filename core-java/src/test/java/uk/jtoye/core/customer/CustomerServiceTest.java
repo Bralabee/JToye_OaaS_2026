@@ -17,6 +17,7 @@ import uk.jtoye.core.customer.CustomerController.CustomerDto;
 import uk.jtoye.core.customer.CustomerController.UpdateCustomerRequest;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 
 import java.lang.reflect.Field;
 import java.time.OffsetDateTime;
@@ -40,6 +41,9 @@ class CustomerServiceTest {
 
     @Mock
     private CustomerMapper customerMapper;
+
+    @Mock
+    private ShopAccessService shopAccessService;
 
     @InjectMocks
     private CustomerService customerService;
@@ -71,6 +75,8 @@ class CustomerServiceTest {
 
         // Set up tenant context
         TenantContext.set(tenantId);
+
+        lenient().when(shopAccessService.isGroupAdmin()).thenReturn(true);
 
         // Create test customer (using reflection to set auto-generated fields)
         testCustomer = new Customer();

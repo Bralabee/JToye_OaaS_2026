@@ -832,6 +832,10 @@
             "minLength" : 0,
             "type" : "string"
           },
+          "originShopId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
           "phone" : {
             "maxLength" : 50,
             "minLength" : 0,
@@ -1660,6 +1664,10 @@
             "type" : "string"
           },
           "name" : {
+            "type" : "string"
+          },
+          "originShopId" : {
+            "format" : "uuid",
             "type" : "string"
           },
           "phone" : {

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-08: Per-shop customer narrowing (#927) — 2026-10-16
+
+A shop manager or staff member now sees and acts on only the customers of the shops they hold a grant on, without adding a join table.
+
+- **Origin shop and order history (`V85`).** `customers.origin_shop_id` (`REFERENCES shops(id) ON DELETE SET NULL`, mirrored on `customers_aud`) records the shop a customer started at, backfilled from each customer's earliest order inside a per-tenant `set_config('app.current_tenant_id', ...)` loop under `FORCE ROW LEVEL SECURITY` and proven under `NOSUPERUSER NOBYPASSRLS`.
+- **Scoped customer reads, edits and order linking.** Non-`allShops` callers (`SHOP_MANAGER` and `STAFF`) list, view, edit and link onto orders only customers whose `origin_shop_id` is in their granted shop set or who have placed an order at a shop in their granted shop set; out-of-scope customer IDs return `404` (`ResourceNotFoundException`).
+- **Automatic origin stamping.** Creating a customer as a single-shop manager defaults `originShopId` to that shop (or verifies `SHOP_MANAGER` on an explicit `originShopId`), and linking an orderless customer onto their first order backfills `originShopId` when still `NULL`. Group-admin customer deletion and GDPR erasure stay tenant-wide.
+
 ### Phase 37: UAT gaps G-37-12..G-37-15 (#925) — 2026-10-16
 
 Four gaps the owner's acceptance test of Phase 37 found on the vendor dashboard are closed.
