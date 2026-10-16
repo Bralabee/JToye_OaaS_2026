@@ -2,6 +2,7 @@ package uk.jtoye.core.shop;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
@@ -42,6 +43,7 @@ public class ShopService {
     private static final Logger log = LoggerFactory.getLogger(ShopService.class);
 
     private final ShopRepository shopRepository;
+    private final ShopSlugAliasRepository shopSlugAliasRepository;
     private final ShopMapper shopMapper;
     private final StorageService storageService;
     private final TenantCacheEvictor cacheEvictor;
@@ -91,7 +93,22 @@ public class ShopService {
                        ShopCacheLoader shopCacheLoader,
                        PostcodeGeocoder postcodeGeocoder,
                        Clock clock) {
+        this(shopRepository, null, shopMapper, storageService, cacheEvictor, shopAccessService,
+                shopCacheLoader, postcodeGeocoder, clock);
+    }
+
+    @Autowired
+    public ShopService(ShopRepository shopRepository,
+                       ShopSlugAliasRepository shopSlugAliasRepository,
+                       ShopMapper shopMapper,
+                       StorageService storageService,
+                       TenantCacheEvictor cacheEvictor,
+                       ShopAccessService shopAccessService,
+                       ShopCacheLoader shopCacheLoader,
+                       PostcodeGeocoder postcodeGeocoder,
+                       Clock clock) {
         this.shopRepository = shopRepository;
+        this.shopSlugAliasRepository = shopSlugAliasRepository;
         this.shopMapper = shopMapper;
         this.storageService = storageService;
         this.cacheEvictor = cacheEvictor;
@@ -128,8 +145,9 @@ public class ShopService {
             shop.setSlug(generateSlug(request.getName()));
         } else {
             assertSlugNotReserved(shop.getSlug());
-            // 37-48 (UXT-028): a typed 409, not the generic duplicate from idx_shops_slug.
-            if (shopRepository.existsBySlug(shop.getSlug())) {
+            // 37-48 (UXT-028) + 39-09 (V86): a typed 409 when held as a current slug OR as a retired alias.
+            if (shopRepository.existsBySlug(shop.getSlug())
+                    || (shopSlugAliasRepository != null && shopSlugAliasRepository.existsById(shop.getSlug()))) {
                 throw new ShopSlugTakenException(shop.getSlug());
             }
         }
@@ -313,26 +331,32 @@ public class ShopService {
         // loosened, `published` still cannot be written from a request body here.
         shop.setPublished(publishedBeforeUpdate);
 
-        // 37-48 (RWO-028 / UXT-028, owner ruling 2026-10-10): the slug is the shop's public web address, printed
-        // on menus and QR codes and shared as links, so an edit KEEPS it. Until 37-48 this block said "regenerate
-        // slug if name changed", but it regenerated UNCONDITIONALLY: every save without a slug (an hours save, a
-        // phone number) ran generateSlug(name) with a fresh random suffix, whether or not the name changed, and
-        // broke every link to the shop. Now an absent, blank or unchanged slug keeps the stored one, and only an
-        // explicit, different slug is validated (shape by bean validation; reserved route; held by another shop)
-        // and applied. The mapper has already copied the request slug, so the kept value is restored explicitly.
-        // Old-slug 301 aliases are deferred to Phase 39 (same ruling).
+        // 37-48 (RWO-028 / UXT-028, owner ruling 2026-10-10) + 39-09 (V86 old-slug 301 aliases): the slug is the
+        // shop's public web address, printed on menus and QR codes and shared as links, so an edit KEEPS it unless
+        // an explicit, different slug is sent. When a vendor DOES deliberately change the slug, the previous slug
+        // is recorded in shop_slug_alias (V86) so printed QR codes and links permanently redirect (HTTP 301) to the
+        // new address, and no other shop may claim a retired slug held in shop_slug_alias. If this shop renames back
+        // to one of its own previous slugs (A -> B -> A), its self-alias row for A is removed before saving so no
+        // redirect cycle exists.
         //
         // The kept slug goes back on the entity BEFORE the taken check: the check is a query, and Hibernate
         // auto-flushes the managed shop before running it, so a requested slug left on the entity would hit
         // idx_shops_slug inside existsBySlugAndIdNot and surface as the generic duplicate (measured).
         String requestedSlug = request.getSlug();
+        boolean slugChanged = false;
         shop.setSlug(slugBeforeUpdate);
         if (requestedSlug != null && !requestedSlug.isBlank() && !requestedSlug.equals(slugBeforeUpdate)) {
             assertSlugNotReserved(requestedSlug);
-            if (shopRepository.existsBySlugAndIdNot(requestedSlug, shopId)) {
+            if (shopRepository.existsBySlugAndIdNot(requestedSlug, shopId)
+                    || (shopSlugAliasRepository != null
+                        && shopSlugAliasRepository.existsByOldSlugAndShopIdNot(requestedSlug, shopId))) {
                 throw new ShopSlugTakenException(requestedSlug);
             }
+            if (shopSlugAliasRepository != null) {
+                shopSlugAliasRepository.deleteByOldSlugAndShopId(requestedSlug, shopId);
+            }
             shop.setSlug(requestedSlug);
+            slugChanged = true;
         }
 
         // Re-geocode from the FINAL address (the mapper has already applied any address
@@ -345,6 +369,9 @@ public class ShopService {
         applyCoordinate(shop, request, latitudeBeforeUpdate, longitudeBeforeUpdate);
 
         shop = saveTranslatingSlugConflict(shop);
+        if (slugChanged && shopSlugAliasRepository != null && slugBeforeUpdate != null && !slugBeforeUpdate.isBlank()) {
+            recordSlugAliasTranslatingConflict(slugBeforeUpdate, shopId);
+        }
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
 
         log.info("Updated shop {} with ID {}", shop.getName(), shop.getId());
@@ -742,6 +769,19 @@ public class ShopService {
             for (Throwable t = e; t != null; t = t.getCause()) {
                 if (t.getMessage() != null && t.getMessage().contains("idx_shops_slug")) {
                     throw new ShopSlugTakenException(shop.getSlug());
+                }
+            }
+            throw e;
+        }
+    }
+
+    private void recordSlugAliasTranslatingConflict(String oldSlug, UUID shopId) {
+        try {
+            shopSlugAliasRepository.saveAndFlush(new ShopSlugAlias(oldSlug, shopId, OffsetDateTime.now(clock)));
+        } catch (DataIntegrityViolationException e) {
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                if (t.getMessage() != null && t.getMessage().contains("shop_slug_alias")) {
+                    throw new ShopSlugTakenException(oldSlug);
                 }
             }
             throw e;

@@ -179,6 +179,9 @@ jest.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND")
   },
+  permanentRedirect: (target: string) => {
+    throw new Error(`NEXT_PERMANENT_REDIRECT:${target}`)
+  },
 }))
 jest.mock("@/app/shop/[slug]/shop-detail-client", () => ({
   ShopDetailClient: () => <div data-testid="shop-detail-client" />,
@@ -256,5 +259,21 @@ describe("shop page (server component): the seller block is in the server output
     expect(screen.getByTestId("shop-detail-client")).toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Who you are buying from" })).not.toBeInTheDocument()
     expect(screen.queryByText(MISSING_LITERAL)).not.toBeInTheDocument()
+  })
+
+  it("issues permanentRedirect to /shop/<canonicalSlug> in both generateMetadata and ShopDetailPage when loadShopDetail returns redirect (39-09, RWO-028)", async () => {
+    mockLoadShopDetail.mockResolvedValue({
+      state: "redirect",
+      canonicalSlug: "mama-ade-new-slug",
+    })
+    const { default: ShopDetailPage, generateMetadata } = await import("@/app/shop/[slug]/page")
+
+    await expect(
+      generateMetadata({ params: Promise.resolve({ slug: "mama-ade-old" }) })
+    ).rejects.toThrow("NEXT_PERMANENT_REDIRECT:/shop/mama-ade-new-slug")
+
+    await expect(
+      ShopDetailPage({ params: Promise.resolve({ slug: "mama-ade-old" }) })
+    ).rejects.toThrow("NEXT_PERMANENT_REDIRECT:/shop/mama-ade-new-slug")
   })
 })

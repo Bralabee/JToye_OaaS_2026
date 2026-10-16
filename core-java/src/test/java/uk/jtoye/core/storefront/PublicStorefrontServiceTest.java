@@ -72,6 +72,7 @@ class PublicStorefrontServiceTest {
     @Mock private IdempotencyService idempotencyService;
     // 31.1-24: the seller block's tenant-pinned read; returns null (no seller) unless an arm stubs it.
     @Mock private uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService;
+    @Mock private uk.jtoye.core.shop.ShopSlugAliasRepository shopSlugAliasRepository;
 
     /** 37-28: 64 hex characters for the ClientIpDigester under test — a fixture, not a credential. */
     private static final String TEST_HMAC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -100,7 +101,7 @@ class PublicStorefrontServiceTest {
         // 37-27: a real CashOrderCaps over the mocked OrderRepository, whose count queries return 0 unless an
         // arm stubs them, so no cash order in this file is capped by accident.
         // 37-28: a real ClientIpDigester under a fixture key (not a credential); the arms pass no address.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), new ClientIpDigester(TEST_HMAC_KEY), 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, shopSlugAliasRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK), new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5), new ClientIpDigester(TEST_HMAC_KEY), 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -1751,5 +1752,34 @@ class PublicStorefrontServiceTest {
             assertFalse(value.contains("-0.0"), "no longitude in the header");
             assertFalse(value.toLowerCase(Locale.ROOT).contains("lat"), "no lat token at all");
         }
+    }
+
+    @Test
+    @DisplayName("39-09 RWO-028: getShopBySlug on a retired alias for a published shop throws ShopSlugRedirectException with canonical slug")
+    void getShopBySlug_oldSlugAliasForPublishedShop_throwsShopSlugRedirectExceptionWithCanonicalSlug() {
+        when(shopRepository.findBySlugAndPublishedTrue("old-brixton")).thenReturn(Optional.empty());
+        when(shopSlugAliasRepository.findPublishedCanonicalSlugByOldSlug("old-brixton"))
+                .thenReturn(Optional.of("test-shop-abc12345"));
+
+        uk.jtoye.core.exception.ShopSlugRedirectException ex = assertThrows(
+                uk.jtoye.core.exception.ShopSlugRedirectException.class,
+                () -> service.getShopBySlug("old-brixton"));
+
+        assertEquals("old-brixton", ex.getOldSlug());
+        assertEquals("test-shop-abc12345", ex.getCanonicalSlug());
+    }
+
+    @Test
+    @DisplayName("39-09 RWO-028: getShopBySlug on a retired alias for an unpublished shop throws 404 ResourceNotFoundException without disclosing canonical slug")
+    void getShopBySlug_oldSlugAliasForUnpublishedShop_throwsResourceNotFoundException() {
+        when(shopRepository.findBySlugAndPublishedTrue("old-unpublished")).thenReturn(Optional.empty());
+        when(shopSlugAliasRepository.findPublishedCanonicalSlugByOldSlug("old-unpublished"))
+                .thenReturn(Optional.empty());
+
+        ResourceNotFoundException ex = assertThrows(
+                ResourceNotFoundException.class,
+                () -> service.getShopBySlug("old-unpublished"));
+
+        assertTrue(ex.getMessage().contains("old-unpublished"));
     }
 }

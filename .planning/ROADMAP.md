@@ -1262,7 +1262,7 @@ Already current, out of scope:
   5. The observability stack: every alert rule loads on Prometheus 3, a deliberately fired alert reaches Alertmanager, and the Grafana dashboards render with data.
   6. Tailwind 4: no layout regression at the four widths on the declared surfaces, shown by screenshots against the pre-upgrade baseline.
 
-**Plans:** 2/10 plans complete (Wave 1 planned 2026-10-16; 39-01 and 39-08 executed)
+**Plans:** 3/10 plans complete (Wave 1 planned 2026-10-16; 39-01, 39-08, and 39-09 executed)
 
 Plans:
 
@@ -1275,7 +1275,7 @@ Plans:
 **Wave 2 (Observability stack, Keycloak 26, and old-slug 301 aliases)**
 - [ ] 39-03-PLAN.md — Track 39-B: Prometheus `v3.13.4` LTS (NOT `3.15` short-term EOL `2026-11-06`), Grafana `13.2.4`, Alertmanager `v0.34.1`, `redis-exporter` `v1.94.0`, `postgres-exporter` `v0.20.1` (`DEFERRED-27` retired)
 - [ ] 39-04-PLAN.md — Track 39-C: Keycloak `24.0.5` -> `26.8.1`, Hostname v2 alignment, Postgres-backed realm `--override true` re-import, and live Playwright auth proof (`DEFERRED-27` retired)
-- [ ] 39-09-PLAN.md — Track 39-F (part 2): old-slug 301 aliases (`V86__shop_slug_alias.sql`, `RlsContractTest` exemption, `/shop/[slug]` 301 redirect)
+- [x] 39-09-PLAN.md — Track 39-F (part 2): old-slug 301 aliases (`V86__shop_slug_alias.sql`, `RlsContractTest` exemption, `/shop/[slug]` 301 redirect)
 
 **Wave 3 (Database and Cache majors)**
 - [ ] 39-05-PLAN.md — Track 39-D: PostgreSQL `15` -> `18.6` across compose, `pg-backup:18-blob`, CI service, and all 204 Testcontainers suites + `postgres-major-parity.conf` Testcontainers guard + dump/restore drill
