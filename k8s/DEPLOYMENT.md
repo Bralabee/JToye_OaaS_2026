@@ -30,7 +30,7 @@ Two interactive topology views, generated from [`SYSTEM_DESIGN_V2.md §1`](../do
 1. **Kubernetes Cluster**: v1.27+ (tested on EKS, GKE, AKS)
 2. **Database**: PostgreSQL 15+ (managed service recommended)
 3. **Cache**: Redis 7+ (managed service recommended)
-4. **Message Queue**: RabbitMQ **3.13+** minimum, 4.3 recommended (dev/compose pins 4.3.4). The deployed broker's version is unverified from this repo — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
+4. **Message Queue**: RabbitMQ **3.13+** minimum, 4.3 recommended (dev/compose pins 4.3.6). The deployed broker's version is unverified from this repo — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 5. **Identity Provider**: Keycloak 22+ deployment
 6. **DNS**: Configured for your domains
 7. **TLS Certificates**: cert-manager with Let's Encrypt
@@ -675,13 +675,13 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 
 `ops-contracts` has two outbound dependencies and they are accepted deliberately:
 `check-dependency-horizons.sh` fetches `endoflife.date`, and `check-alert-rules.sh` pulls
-`prom/prometheus:v2.48.0` to run `promtool` (it is not installed on hosts, and the image's
+`prom/prometheus:v3.13.4` to run `promtool` (it is not installed on hosts, and the image's
 ENTRYPOINT is `/bin/prometheus`, so the call must pass `--entrypoint=promtool`). An outage of
 either turns the job **red at exit 2**, never green.
 
 **This job reddens on dates, with no code change.** RabbitMQ 4.3's vendor horizon is
-2026-11-30 against a 90-day warn window, so expect amber around **2026-09-01** and red on
-**2026-12-01**. Resolve it by upgrading the pin or re-dating the exemption in the manifest —
+2027-01-31 against a 90-day warn window, so expect amber around **2026-11-02** and red on
+**2027-02-01**. Resolve it by upgrading the pin or re-dating the exemption in the manifest —
 never by weakening the job.
 
 ### The runtime set — deliberately NOT in CI

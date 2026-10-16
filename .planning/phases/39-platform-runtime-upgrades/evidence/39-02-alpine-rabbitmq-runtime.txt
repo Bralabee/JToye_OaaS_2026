@@ -1,0 +1,62 @@
+# Phase 39 Plan 39-02 — Alpine 3.24 & RabbitMQ 4.3.6-management-alpine Runtime Evidence
+# Recorded: 2026-10-16T21:54:15+01:00
+# Worktree: /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39 (branch: feature/phase-39-wave-b-infra-observability)
+
+## 1. Alpine 3.24 Realm-Render (gettext envsubst + jq JSON validity)
+
+Command:
+docker run --rm -v /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39/infra/keycloak:/keycloak:ro \
+  -e KEYCLOAK_CLIENT_SECRET=test-kc \
+  -e EDGE_API_CLIENT_SECRET=test-edge \
+  -e KC_SEED_USER_PASSWORD=test-seed \
+  -e INTEGRATION_CATALOG_RO_SECRET=test-ro \
+  -e INTEGRATION_ORDERS_RW_SECRET=test-rw \
+  -e 'CUSTOMER_STOREFRONT_REDIRECT_URIS="http://localhost:3000/*"' \
+  -e 'CUSTOMER_STOREFRONT_WEB_ORIGINS="http://localhost:3000"' \
+  -e CUSTOMER_VERIFY_EMAIL=false \
+  -e GOOGLE_CLIENT_ID= \
+  -e GOOGLE_CLIENT_SECRET= \
+  alpine:3.24 sh -ec 'cat /etc/alpine-release && apk add --no-cache gettext jq >/dev/null && envsubst < /keycloak/realm-export.template.json > /tmp/realm-export.json && envsubst < /keycloak/realm-export-customers.template.json > /tmp/realm-export-customers.json && jq empty /tmp/realm-export.json && jq empty /tmp/realm-export-customers.json && jq -r .realm /tmp/realm-export.json /tmp/realm-export-customers.json && echo REALM_RENDER_OK'
+
+Output (rc=0):
+3.24.2
+jtoye-dev
+jtoye-customers
+REALM_RENDER_OK
+
+## 2. RabbitMQ 4.3.6-management-alpine Server Boot, OTP Release & Port Connectivity
+
+Command:
+docker run --rm --entrypoint sh rabbitmq:4.3.6-management-alpine -ec 'cat /etc/alpine-release && rabbitmqctl version && erl -eval "erlang:display(erlang:system_info(otp_release)), halt()." -noshell && docker-entrypoint.sh rabbitmq-server -detached && sleep 6 && rabbitmq-diagnostics check_running && rabbitmq-diagnostics check_port_connectivity && rabbitmqctl stop'
+
+Output (rc=0):
+3.23.6
+4.3.6
+"27"
+Checking if RabbitMQ is running on node rabbit@595bbd3d1e93 ...
+RabbitMQ on node rabbit@595bbd3d1e93 is fully booted and running
+Testing TCP connections to all active listeners on node rabbit@595bbd3d1e93 using hostname resolution ...
+Will connect to 595bbd3d1e93:15672
+Will connect to 595bbd3d1e93:15692
+Will connect to 595bbd3d1e93:25672
+Will connect to 595bbd3d1e93:5672
+Successfully connected to ports 5672, 15672, 15692, 25672 on node rabbit@595bbd3d1e93 (using node hostname resolution)
+Stopping and halting node rabbit@595bbd3d1e93 ...
+
+## 3. Dependency Horizon & Documentation Version Gates
+
+Command:
+source ~/miniconda3/etc/profile.d/conda.sh && conda activate jtoye-ops && bash scripts/check-dependency-horizons.sh && bash scripts/check-doc-versions.sh && bash scripts/check-doc-citations.sh
+
+Output (rc=0):
+dependency-horizons summary
+  manifest    rows=28  discovered-pins=22
+  H-1 coverage   missing-row=0
+  H-5 sites      pin-not-at-site=0          (NOTE class, advisory — run --refresh)
+                 site-unresolvable=0          (VOID class)
+  H-2/H-3        violations=0  active-exemptions=3
+  H-6 UNKNOWN    rows=7  (printed above; each passes only while its review is unexpired)
+  warn window    HORIZON_WARN_DAYS=90
+OK: every pinned artifact carries a resolved, in-window or explicitly-deferred horizon.
+PASS: all 153 version claim(s) across 7 doc(s) match the build files.
+PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).

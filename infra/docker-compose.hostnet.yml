@@ -2,7 +2,7 @@ services:
   # Keycloak realm render (issue #80) — renders the gitignored realm-export.json
   # from realm-export.template.json using rotated secrets from .env.
   keycloak-realm-render:
-    image: alpine:3.20
+    image: alpine:3.24
     container_name: jtoye-keycloak-realm-render-host
     environment:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set}
