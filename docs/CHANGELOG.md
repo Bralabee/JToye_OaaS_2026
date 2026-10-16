@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-05 & 39-06: PostgreSQL 18.6 & Redis 8.10 Upgrade (#939) — 2026-10-16
+
+Upgrades the relational datastore (`postgres:15` -> `postgres:18-alpine` / `postgres:18-bookworm`, `18.6`) and distributed cache (`redis:7-alpine` -> `redis:8.10-alpine`, `8.10.2`) across compose, CI, backup tooling, K8s manifests/goldens, and all 214 Testcontainers suites, completing Phase 39 (`10/10` plans).
+
+- **PostgreSQL 18.6 runtime, backup tooling & 10-site parity gate (`39-05`).** Moves `docker-compose.full-stack.yml`, `infra/docker-compose.yml`, and `.github/workflows/ci-cd.yaml` to `postgres:18-alpine` (with `/var/lib/postgresql` volume target for PG 18's `/var/lib/postgresql/18/docker` layout), updates `infra/backups/Dockerfile` (`FROM postgres:18-bookworm`, build tag `ghcr.io/bralabee/jtoye-pg-backup:18-blob`), `k8s/base/pg-backup-cronjob.yaml`, `k8s/goldens/{staging,production}.yaml`, and `scripts/check-backup-restore-drill.sh`, and expands `scripts/gates/postgres-major-parity.conf` from 8 to 10 sites.
+- **Testcontainers PostgreSQL 18 `NOSUPERUSER` RLS compatibility (`core-java/src/test/java/uk/jtoye/core/testsupport/IntegrationTestSupport.java`).** Updates all 206 `PostgreSQLContainer` suites to `"postgres:18-alpine"` and adds `IntegrationTestSupport.ensureDowngradableTestRole` to swap the `initdb` bootstrap superuser (`oid = 10`, which PostgreSQL 16+/18 forbids downgrading via `ALTER ROLE ... NOSUPERUSER`) with an identically named non-bootstrap superuser (`oid > 10`) before the first JDBC connection opens, preserving all 30+ `NOSUPERUSER` RLS integration test assertions.
+- **Redis 8.10 upgrade (`39-06`).** Moves `docker-compose.full-stack.yml`, `infra/dependency-horizons.yaml` (`cycle: "8.10"`, `cached_eol: "false"`), and all 8 Redis Testcontainers suites to `redis:8.10-alpine` with Lettuce 7, Spring Cache (`v4:`), and Bucket4j parity verified.
+
 ### Phase 39-04: Keycloak 26.8.1 Upgrade (#937) — 2026-10-16
 
 Upgrades the identity provider from `quay.io/keycloak/keycloak:24.0.5` (EOL `2024-06-10`) to `quay.io/keycloak/keycloak:26.8.1` (`eol: false`, cycle `26.8`) across all three compose topologies and retires the final `DEFERRED-27` horizon exemption (`active-exemptions=0`).
