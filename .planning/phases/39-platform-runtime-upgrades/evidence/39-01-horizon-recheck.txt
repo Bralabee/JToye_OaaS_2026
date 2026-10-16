@@ -1,0 +1,62 @@
+# 39-01 Evidence: Disarm 2026-10-26 rabbitmq-k8s Horizon Gate & Refresh H-5/H-6 Sites
+
+Date: 2026-10-16T14:55:16+01:00
+Worktree: /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39
+Branch: feature/phase-39-platform-runtime-planning
+
+## 1. Break Arm (rabbitmq-k8s.manual_review.expires = 2026-10-01 -> FAIL rc=1)
+
+```text
+UNKNOWN rabbitmq-k8s: The staging/production broker is not deployed from this repo. MEASURED 2026-07-26: `grep - owner=UNASSIGNED review-expires=2026-10-01
+FAIL: H-6 rabbitmq-k8s: manual_review LAPSED on 2026-10-01 (15 days ago) — an expired review is not a review
+dependency-horizons summary
+  manifest    rows=28  discovered-pins=22
+  H-1 coverage   missing-row=0
+  H-5 sites      pin-not-at-site=0          (NOTE class, advisory — run --refresh)
+                 site-unresolvable=0          (VOID class)
+  H-2/H-3        violations=1  active-exemptions=5
+  H-6 UNKNOWN    rows=7  (printed above; each passes only while its review is unexpired)
+  warn window    HORIZON_WARN_DAYS=90
+FAILED: 1 horizon contract violation(s).
+rc=1
+```
+
+## 2. Clean Pass After 39-01 Refresh (PASS rc=0, pin-not-at-site=0)
+
+```text
+H-3 EXEMPT alpine: alpine-linux/3.20 PAST EOL 2026-04-01 (catalogue, 198 days) until 2026-11-30 [DEFERRED-27]
+H-3 EXEMPT keycloak: keycloak/24.0 PAST EOL 2024-06-10 (catalogue, 858 days) until 2026-12-31 [DEFERRED-27]
+H-3 EXEMPT rabbitmq: rabbitmq/4.3 approaching 2026-11-30 (vendor (eol_source override), 45 days) until 2026-11-30 [#724]
+H-3 EXEMPT prometheus: prometheus/2.48 PAST EOL 2023-12-28 (catalogue, 1023 days) until 2026-12-31 [DEFERRED-27]
+H-3 EXEMPT grafana: grafana/10.2 PAST EOL 2024-07-24 (catalogue, 814 days) until 2026-12-31 [DEFERRED-27]
+H-3 golang: go/1.27 has no declared horizon (eol: false) — nothing to breach today
+H-3 go-toolchain: go/1.27 has no declared horizon (eol: false) — nothing to breach today
+H-3 go-ci-setup: go/1.27 has no declared horizon (eol: false) — nothing to breach today
+H-3 gradle: gradle/9 has no declared horizon (eol: false) — nothing to breach today
+UNKNOWN azurite: Phase 36 (36-02): the Azure Blob emulator that replaced the retired self-hosted object sto owner=maintainer review-expires=2027-01-16
+UNKNOWN ollama: endoflife.date 404 (measured 2026-07-27), floating `:latest`. Pinned at TWO sites — the mo owner=maintainer review-expires=2027-01-27
+UNKNOWN mailhog: endoflife.date 404 (measured 2026-07-27). MailHog is archived upstream and receives no rel owner=maintainer review-expires=2027-01-27
+UNKNOWN alertmanager: endoflife.date has no `alertmanager` product (404 on `alertmanager` and on `prometheus-ale owner=maintainer review-expires=2027-01-27
+UNKNOWN redis-exporter: Third-party exporter, endoflife.date 404 (measured 2026-07-27). See docs/ops/terminal-stat owner=maintainer review-expires=2027-01-27
+UNKNOWN postgres-exporter: Third-party exporter, endoflife.date 404 (measured 2026-07-27). Its credential fault (regi owner=maintainer review-expires=2027-01-27
+UNKNOWN rabbitmq-k8s: The staging/production broker is not deployed from this repo. MEASURED 2026-07-26 and re-v owner=UNASSIGNED review-expires=2027-01-16
+dependency-horizons summary
+  manifest    rows=28  discovered-pins=22
+  H-1 coverage   missing-row=0
+  H-5 sites      pin-not-at-site=0          (NOTE class, advisory — run --refresh)
+                 site-unresolvable=0          (VOID class)
+  H-2/H-3        violations=0  active-exemptions=5
+  H-6 UNKNOWN    rows=7  (printed above; each passes only while its review is unexpired)
+  warn window    HORIZON_WARN_DAYS=90
+OK: every pinned artifact carries a resolved, in-window or explicitly-deferred horizon.
+horizons_rc=0
+```
+
+## 3. Doc Citations & Claim Gates (PASS rc=0)
+
+```text
+PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+citations_rc=0
+PASS: all 50 claim(s) across 6 doc(s) match their source of truth.
+claims_rc=0
+```

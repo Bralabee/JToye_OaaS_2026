@@ -100,3 +100,19 @@ and [`docs/runbooks/backups.md`](../../runbooks/backups.md).
 
 This note does not change the ADR's status: the PostgreSQL / Redis / RabbitMQ hosting decision above
 is still Proposed and still needs owner sign-off.
+
+## 2026-10-16 — Manual review re-check (Phase 39, plan 39-01)
+
+Re-checked ahead of the `2026-10-26` `rabbitmq-k8s` `manual_review` expiry:
+
+- `rg -uu -n 'image:.*rabbitmq' k8s/base k8s/staging k8s/production` still returns zero matches
+  (`k8s/local/rabbitmq.yaml` is the local minikube overlay only). Staging/production RabbitMQ
+  remains provisioned outside this repository and its version remains unverifiable from this
+  checkout.
+- Upstream check against `https://www.rabbitmq.com/release-information` (`2026-10-16`): `4.3.6`
+  (`16 Sept 2026`) is the latest release (no `4.4` release exists yet on GitHub or Docker Hub), and
+  the vendor extended **4.3 End of Community Support to `31 Jan 2027` (`2027-01-31`)** (End of
+  Commercial Support `30 Apr 2028`).
+- `rabbitmq-k8s.manual_review` in [`infra/dependency-horizons.yaml`](../../../infra/dependency-horizons.yaml)
+  is refreshed to `last_checked: "2026-10-16"`, `expires: "2027-01-16"` (90-day cadence). Status of
+  this ADR remains `Proposed` pending owner sign-off.

@@ -196,7 +196,7 @@ dependencies:
 
   - id: azurite
     pin: "mcr.microsoft.com/azure-storage/azurite:${AZURITE_IMAGE_TAG:-3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5}"
-    sites: ["docker-compose.full-stack.yml:609", "infra/docker-compose.yml:110"]
+    sites: ["docker-compose.full-stack.yml:690", "infra/docker-compose.yml:110"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -218,16 +218,18 @@ dependencies:
       docker-compose.full-stack.yml (infra/docker-compose.yml is not in its declared set), so the
       hybrid file's line is protected by H-5 alone: a divergent pin there removes this string
       from every non-comment line of that file, which is exit 2 (VOID), not a NOTE.
+      Re-checked 2026-10-16 against https://github.com/Azure/Azurite/releases: latest release
+      remains v3.37.0 (published 2026-08-26).
     manual_review:
-      last_checked: "2026-09-28"
-      expires: "2026-12-27"
+      last_checked: "2026-10-16"
+      expires: "2027-01-16"
       url: "https://github.com/Azure/Azurite/releases"
 
   - id: ollama
     pin: "ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}"
     sites:
-      - "docker-compose.full-stack.yml:636"
-      - "docker-compose.full-stack.yml:701"
+      - "docker-compose.full-stack.yml:717"
+      - "docker-compose.full-stack.yml:782"
     kind: image
     owner: maintainer
     eol_slug: null
@@ -236,13 +238,13 @@ dependencies:
       the model-puller and the server — and H-5 asserts the pin at both, so bumping one and
       not the other is a drift failure rather than an invisible skew.
     manual_review:
-      last_checked: "2026-07-27"
+      last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/ollama/ollama/releases"
 
   - id: mailhog
     pin: "mailhog/mailhog:v1.0.1"
-    sites: ["docker-compose.full-stack.yml:717"]
+    sites: ["docker-compose.full-stack.yml:798"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -251,7 +253,7 @@ dependencies:
       releases; the horizon is not "unknown pending a check" so much as "there will never be
       another version". Dev-only SMTP sink, never deployed to staging or production.
     manual_review:
-      last_checked: "2026-07-27"
+      last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/mailhog/MailHog"
 
@@ -306,8 +308,10 @@ dependencies:
       `prometheus-alertmanager`, both measured 2026-07-27). Alertmanager versions
       independently of Prometheus, so the `prometheus` row's horizon does NOT cover it —
       which is precisely the assumption that let it be omitted from 27-02's draft.
+      Re-checked 2026-10-16 (39-01): upstream latest is v0.34.1 (published 2026-09-17);
+      coupled upgrade with Prometheus 3.13 LTS and Grafana 13.2 is owned by 39-03-PLAN.md.
     manual_review:
-      last_checked: "2026-07-27"
+      last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/prometheus/alertmanager/releases"
 
@@ -322,8 +326,10 @@ dependencies:
       docs/ops/terminal-states.yaml TS-16: this image's compose entry drifted from its
       RUNNING container for 20 days without any gate noticing, because
       check-runtime-freshness.sh scopes itself to BUILT services.
+      Re-checked 2026-10-16 (39-01): upstream latest is v1.94.0 (published 2026-10-15);
+      coupled upgrade owned by 39-03-PLAN.md.
     manual_review:
-      last_checked: "2026-07-27"
+      last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/oliver006/redis_exporter/releases"
 
@@ -337,8 +343,10 @@ dependencies:
       Third-party exporter, endoflife.date 404 (measured 2026-07-27). Its credential fault
       (register TS-13) was masked for weeks behind a green `up` — a reminder that "the
       container is running" says nothing about whether it works.
+      Re-checked 2026-10-16 (39-01): upstream latest is v0.20.1 (published 2026-07-08);
+      coupled upgrade owned by 39-03-PLAN.md.
     manual_review:
-      last_checked: "2026-07-27"
+      last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/prometheus-community/postgres_exporter/releases"
 
@@ -431,8 +439,8 @@ dependencies:
     pin: "go-version: '1.27'"
     sites:
       - ".github/workflows/ci-cd.yaml:53"
-      - ".github/workflows/ci-cd.yaml:907"
-      - ".github/workflows/ci-cd.yaml:1269"
+      - ".github/workflows/ci-cd.yaml:939"
+      - ".github/workflows/ci-cd.yaml:1336"
     kind: toolchain
     owner: maintainer
     eol_slug: go
@@ -553,14 +561,18 @@ dependencies:
     owner: UNASSIGNED
     eol_slug: null
     note: >-
-      The staging/production broker is not deployed from this repo. MEASURED 2026-07-26:
-      `grep -rn 'image:.*rabbitmq' k8s/` returns NOTHING — the only rabbitmq strings under
-      k8s/ are the configmap host/port and the `rabbitmq-credentials` Secret refs. Its
-      version is therefore unresolvable from this repo by construction, which is why this row
-      is UNASSIGNED: there is no platform-operator identity here to assign it to, and saying
-      so is more useful than inventing a name. See ADR-0002 and
-      docs/runbooks/rabbitmq-broker-upgrade.md.
+      The staging/production broker is not deployed from this repo. MEASURED 2026-07-26 and
+      re-verified 2026-10-16 (39-01): `rg -uu -n 'image:.*rabbitmq' k8s/base k8s/staging k8s/production`
+      returns NOTHING — the only rabbitmq strings under k8s/base|staging|production are the
+      configmap host/port and the `rabbitmq-credentials` Secret refs (`k8s/local/rabbitmq.yaml`
+      is the local minikube overlay only). Its staging/production version is therefore
+      unresolvable from this repo by construction, which is why this row is UNASSIGNED: there
+      is no platform-operator identity here to assign it to, and saying so is more useful than
+      inventing a name. Re-checked 2026-10-16 against https://www.rabbitmq.com/release-information:
+      4.3.6 (released 16 Sept 2026) is the newest upstream release (no 4.4 series published yet),
+      and the vendor extended 4.3 End of Community Support to 31 Jan 2027 (2027-01-31). See
+      ADR-0002 and docs/runbooks/rabbitmq-broker-upgrade.md.
     manual_review:
-      last_checked: "2026-07-26"
-      expires: "2026-10-26"
+      last_checked: "2026-10-16"
+      expires: "2027-01-16"
       url: "https://www.rabbitmq.com/release-information"
