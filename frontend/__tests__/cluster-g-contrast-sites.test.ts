@@ -37,9 +37,32 @@ const AMBER_INK = "#3A2400" // tailwind.config.ts "amber-ink"
 const AA_NORMAL = 4.5
 
 type Rgb = [number, number, number]
-const hexToRgb = (hex: string): Rgb => {
-  const h = hex.replace("#", "")
-  return [0, 1, 2].map((i) => parseInt(h.substr(i * 2, 2), 16)) as Rgb
+const hexToRgb = (colorStr: string): Rgb => {
+  if (colorStr.startsWith("#")) {
+    const h = colorStr.replace("#", "")
+    return [0, 1, 2].map((i) => parseInt(h.substr(i * 2, 2), 16)) as Rgb
+  }
+  const m = colorStr.match(/^oklch\(\s*([\d.]+)%?\s+([\d.]+)\s+([\d.]+)\s*\)$/)
+  if (!m) throw new Error(`VOID: unsupported colour format "${colorStr}"`)
+  const L = Number(m[1]) / 100
+  const C = Number(m[2])
+  const H = (Number(m[3]) * Math.PI) / 180
+  const a = C * Math.cos(H)
+  const b = C * Math.sin(H)
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b
+  const l = l_ * l_ * l_
+  const ms = m_ * m_ * m_
+  const s = s_ * s_ * s_
+  const rLin = +4.0767416621 * l - 3.3077115913 * ms + 0.2309699292 * s
+  const gLin = -1.2684380046 * l + 2.6097574011 * ms - 0.3413193965 * s
+  const bLin = -0.0041960863 * l - 0.7034186147 * ms + 1.7076147010 * s
+  const gamma = (v: number) => {
+    const c = Math.max(0, Math.min(1, v))
+    return (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255
+  }
+  return [gamma(rLin), gamma(gLin), gamma(bLin)]
 }
 const luminance = ([r, g, b]: Rgb) => {
   const [R, G, B] = [r, g, b]

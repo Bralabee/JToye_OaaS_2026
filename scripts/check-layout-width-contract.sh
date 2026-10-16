@@ -431,16 +431,22 @@ theme_container="$(grep -nE '^[[:space:]]*container[[:space:]]*:' <<< "$THEME_BL
 [ -z "$theme_container" ] || violation "G-3a: tailwind.config.ts reinstates a 'container' key inside theme (line number is relative to the theme block, not the file): ${theme_container//$'\n'/ | }. The plugin's selector is a hardcoded '.container' and it forces each cap to EQUAL the breakpoint that activates it, so it cannot express this contract at all."
 
 CORE_BLOCK="$(block_of "$TW_STRIPPED" corePlugins)"
+BLOCKLIST_LINE="$(grep -E '^[[:space:]]*blocklist[[:space:]]*:' "$TW_STRIPPED")"
 
-# HALF B — the core plugin is disabled. Independent of half A, and it has to be: deleting the
-# theme block on its own makes the plugin emit its DEFAULT five media queries, which is
-# strictly worse than the single 1400px query the tree had before this phase.
+# HALF B — the core plugin is disabled (v3 corePlugins.container: false + v4 blocklist: ["container"]).
+# Independent of half A, and it has to be: deleting the theme block on its own makes the plugin
+# emit its DEFAULT five media queries, which is strictly worse than the single 1400px query the
+# tree had before this phase. In Tailwind v4, corePlugins is ignored by the engine and only
+# blocklist: ["container"] suppresses .container emission.
 claim
 if [ -z "$CORE_BLOCK" ]; then
     violation "G-3b: tailwind.config.ts has no 'corePlugins' block, so the container core plugin is ON. With no theme.container to constrain it, the plugin falls back to the default screens and emits FIVE media queries — one per breakpoint, each capping at its own breakpoint value. That is worse than the state this phase replaced, and it happens silently because the class keeps working and simply caps somewhere else."
 else
     core_off="$(grep -cE '^[[:space:]]*container[[:space:]]*:[[:space:]]*false' <<< "$CORE_BLOCK")"
     [ "$core_off" -ge 1 ] || violation "G-3b: tailwind.config.ts does not set 'container: false' in corePlugins. See G-3a's note — the plugin left on emits five default media queries."
+fi
+if [ -z "$BLOCKLIST_LINE" ] || ! grep -qE '"container"|'\''container'\''' <<< "$BLOCKLIST_LINE"; then
+    violation "G-3b: tailwind.config.ts does not include 'container' in blocklist. Tailwind v4 ignores corePlugins.container: false and requires blocklist: [\"container\"] to suppress the five default .container media queries."
 fi
 
 # ============================================================================================

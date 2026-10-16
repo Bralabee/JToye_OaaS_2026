@@ -11,7 +11,7 @@ import tailwindcssAnimate from "tailwindcss-animate";
 // a real build does.
 import { LAYOUT_WIDTHS } from "./lib/layout-widths";
 
-const config: Config = {
+const config: Config & { corePlugins?: { container?: boolean } } = {
   // Gate every `hover:` utility behind `@media (hover: hover)` (#503).
   //
   // Without this Tailwind emits bare `hover:` rules that apply on touch devices,
@@ -31,15 +31,17 @@ const config: Config = {
   future: {
     hoverOnlyWhenSupported: true,
   },
-  darkMode: ["class"],
+  darkMode: "class",
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "!**/__tests__/**",
+    "!**/*.{test,spec}.{js,ts,jsx,tsx}",
   ],
   // The stock shadcn `container` scaffold used to sit here, capping every
-  // dashboard surface at 1400px. It is gone, and `corePlugins` below is what
-  // makes that removal real — see the note there.
+  // dashboard surface at 1400px. It is gone, and `corePlugins` / `blocklist`
+  // below is what makes that removal real — see the note there.
   theme: {
     extend: {
       // The declared horizontal layout contract (phase 35). Values come from
@@ -138,9 +140,12 @@ const config: Config = {
   // activates it, so "cap at 1700 starting from 1280" is not sayable. Both
   // properties were read out of the installed plugin source.
   //
-  // So the utility is retired by switching the plugin off. The CSS test asserts
-  // zero container rules are emitted even with the class name in the scanned
-  // content, and that assertion has a recorded fail arm.
+  // So the utility is retired by switching the plugin off (`corePlugins` in v3,
+  // `blocklist: ["container"]` in v4, which adds "container" to the design
+  // system's invalidCandidates set). The CSS test asserts zero container rules
+  // are emitted even with the class name in the scanned content, and that
+  // assertion has a recorded fail arm.
+  blocklist: ["container"],
   corePlugins: {
     container: false,
   },

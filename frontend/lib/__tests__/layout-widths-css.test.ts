@@ -1,6 +1,11 @@
+/**
+ * @jest-environment node
+ */
+import fs from "fs"
+import path from "path"
 import postcss from "postcss"
-import type { AcceptedPlugin, ChildNode, Container } from "postcss"
-import tailwindcss from "tailwindcss"
+import type { ChildNode, Container } from "postcss"
+import { compile } from "tailwindcss"
 import type { Config } from "tailwindcss"
 
 import tailwindConfig from "../../tailwind.config"
@@ -20,7 +25,8 @@ import {
  * both directions: a hand-typed value in tailwind.config.ts drifts away from the
  * module, or the config fails to pick the module up at all and every capped
  * element renders uncapped with a completely clean build. This runs the repo's
- * REAL config through PostCSS and reads the answer out of the emitted stylesheet.
+ * REAL config through the Tailwind compiler and reads the answer out of the
+ * emitted stylesheet AST.
  *
  * WHY THE AST AND NOT STRING MATCHING. One of the four properties is "this rule
  * is not inside a media query", and that is a question about structure. A regex
@@ -95,25 +101,48 @@ function rulesNaming(token: string): EmittedRule[] {
 }
 
 beforeAll(async () => {
-  const raw = [
+  const candidates = [
     ...(Object.keys(LAYOUT_WIDTHS) as (keyof typeof LAYOUT_WIDTHS)[]).map(
       tierUtility
     ),
     RETIRED_UTILITY,
     REPO_SPECIFIC_TOKEN,
-  ].join(" ")
+  ]
 
-  const result = await postcss([
-    tailwindcss({
-      ...(tailwindConfig as Config),
-      content: [{ raw }],
-    }) as AcceptedPlugin,
-  ]).process("@tailwind base;\n@tailwind components;\n@tailwind utilities;", {
-    from: undefined,
+  const frontendRoot = path.resolve(__dirname, "..", "..")
+  const compiler = await compile(
+    '@import "tailwindcss" source(none);\n@config "../tailwind.config.ts";',
+    {
+      base: path.join(frontendRoot, "app"),
+      loadStylesheet: async (id, base) => {
+        const resolved =
+          id === "tailwindcss"
+            ? path.join(frontendRoot, "node_modules", "tailwindcss", "index.css")
+            : path.resolve(base, id)
+        return {
+          path: resolved,
+          base: path.dirname(resolved),
+          content: fs.readFileSync(resolved, "utf8"),
+        }
+      },
+      loadModule: async (id, base) => {
+        const resolved = path.resolve(base, id)
+        return {
+          path: resolved,
+          base: path.dirname(resolved),
+          module: tailwindConfig,
+        }
+      },
+    }
+  )
+
+  const cssOutput = compiler.build(candidates)
+  const root = postcss.parse(cssOutput, {
+    from: path.join(frontendRoot, "app", "globals.css"),
   })
 
   emitted = []
-  result.root.walkRules((rule) => {
+  root.walkRules((rule) => {
     const media: string[] = []
     let parent: Container<ChildNode> | undefined = rule.parent as
       | Container<ChildNode>
@@ -207,7 +236,9 @@ describe("tailwind.config.ts — the structural half", () => {
   // Secondary to the emitted-CSS assertions above, deliberately. A structural
   // check can pass while the function is still broken, so these exist to say
   // WHY the CSS looks the way it does, never as the evidence that it does.
-  const config = tailwindConfig as Config
+  const config = tailwindConfig as Config & {
+    corePlugins?: { container?: boolean }
+  }
 
   it("carries no theme.container block for anyone to re-adopt", () => {
     expect(config.theme).toBeDefined()
@@ -216,6 +247,13 @@ describe("tailwind.config.ts — the structural half", () => {
 
   it("switches the container core plugin off", () => {
     expect(config.corePlugins).toMatchObject({ container: false })
+    expect(config.blocklist).toContain("container")
+    expect(config.content).toEqual(
+      expect.arrayContaining([
+        "!**/__tests__/**",
+        "!**/*.{test,spec}.{js,ts,jsx,tsx}",
+      ])
+    )
   })
 
   it("feeds theme.extend.maxWidth from the declaration module", () => {

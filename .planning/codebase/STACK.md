@@ -63,7 +63,7 @@
 - Flyway 12 (Boot-managed 12.4.0): `flyway-core` + `flyway-database-postgresql` — schema migration. Under Boot 4 the Flyway auto-configuration is its own module, so `spring-boot-starter-flyway` is declared explicitly; without it 0 of 67 migrations apply and `RlsContractTest` goes 4/7 red (38-03, 38-04).
 - Lombok + MapStruct 1.6.3 (+ `lombok-mapstruct-binding` 0.2.0) — boilerplate reduction / compile-time DTO mapping.
 - ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.4.0`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
-- TailwindCSS 3.4.1 + PostCSS 8.5.12 — Frontend styling.
+- TailwindCSS 4.3.3 + `@tailwindcss/postcss` 4.3.3 + PostCSS 8.5.12 — Frontend styling.
 - tsx ^4 — MCP server dev-mode TS execution (`mcp-server/package.json` `dev` script).
 - cross-env 10.1.0 — cross-platform env var injection for `npm run dev`.
 

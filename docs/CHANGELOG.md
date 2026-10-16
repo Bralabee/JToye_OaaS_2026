@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-07: Tailwind CSS 4.3.3 (`@tailwindcss/postcss`) Migration (#936) — 2026-10-16
+
+Migrates the Next.js 16 frontend from Tailwind CSS `3.4.1` to Tailwind CSS `4.3.3` (`@tailwindcss/postcss`), preserving all custom design tokens, horizontal layout-width tiers (`1800px` / `1400px` / `1280px`), `@container` queries, and `@media (hover: hover)` gating.
+
+- **PostCSS & CSS-first entry (`frontend/postcss.config.mjs`, `frontend/app/globals.css`).** Replaces `tailwindcss: {}` with `"@tailwindcss/postcss": {}` and switches `@tailwind base/components/utilities` to `@import "tailwindcss" source(none);` + `@config "../tailwind.config.ts";`, keeping explicit `@layer base` border-color (`border-border` on `*, ::after, ::before, ::backdrop, ::file-selector-button`) and enabled button `cursor: pointer` rules for v3 visual parity.
+- **v4 `.container` retirement & test-content exclusion (`frontend/tailwind.config.ts`, `scripts/check-layout-width-contract.sh`).** Adds `blocklist: ["container"]` alongside `corePlugins: { container: false }` (enforced by `G-3b` and `layout-widths-css.test.ts` after proving Tailwind v4 ignores `corePlugins.container: false`), and excludes `!**/__tests__/**` and `!**/*.{test,spec}.{js,ts,jsx,tsx}` from `content` scanning.
+- **Oklch palette & CSSOM layer adapters.** Updates contrast test suites (`contrast-literals`, `dashboard-pending-badge-contrast`, `cluster-g-contrast-sites`, `staff-page`) to convert `tailwindcss/colors` v4 `oklch(...)` strings to sRGB and updates `mobile-instrument-contract.spec.ts` to walk `CSSLayerBlockRule` (`@layer utilities`).
+
 ### Phase 39-02 & 39-03: Alpine 3.24, RabbitMQ 4.3.6 & Observability Stack Upgrade (#935) — 2026-10-16
 
 Upgrades the local/compose init helpers, RabbitMQ broker, and 5-component observability stack onto supported releases, retiring four of the five dependency-horizon exemptions (`alpine`, `rabbitmq`, `prometheus`, `grafana`).

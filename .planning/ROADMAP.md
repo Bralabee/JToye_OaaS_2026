@@ -1262,7 +1262,7 @@ Already current, out of scope:
   5. The observability stack: every alert rule loads on Prometheus 3, a deliberately fired alert reaches Alertmanager, and the Grafana dashboards render with data.
   6. Tailwind 4: no layout regression at the four widths on the declared surfaces, shown by screenshots against the pre-upgrade baseline.
 
-**Plans:** 6/10 plans complete (Wave 1 complete; 39-01, 39-02, 39-03, 39-08, 39-09, and 39-10 executed)
+**Plans:** 7/10 plans complete (Wave 1 and Wave 4 complete; 39-01, 39-02, 39-03, 39-07, 39-08, 39-09, and 39-10 executed)
 
 Plans:
 
@@ -1282,7 +1282,7 @@ Plans:
 - [ ] 39-06-PLAN.md — Track 39-E (part 1): Redis `7.4` -> `8.10-alpine` across compose and k8s with Lettuce 7 & Spring Cache parity proof
 
 **Wave 4 (Tailwind CSS 4)**
-- [ ] 39-07-PLAN.md — Track 39-E (part 2): Tailwind CSS `3.4.1` -> `4.3` config migration with 4-viewport (`390/768/1280/1920`) visual parity proof
+- [x] 39-07-PLAN.md — Track 39-E (part 2): Tailwind CSS `3.4.1` -> `4.3.3` config migration with 4-viewport (`390/768/1280/1920`) visual parity proof
 
 ---
 

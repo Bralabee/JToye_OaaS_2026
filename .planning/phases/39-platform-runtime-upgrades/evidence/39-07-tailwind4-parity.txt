@@ -1,0 +1,153 @@
+# Phase 39 Plan 39-07 — Tailwind CSS 3.4.1 -> 4.3.3 (@tailwindcss/postcss) Parity & Verification Evidence
+# Date: 2026-10-16
+# Branch: feature/39-07-tailwind-v4
+
+## 1. Baseline & Fail-Before-Pass Controls
+
+### 1a. Baseline on tailwindcss@3.4.1 (before upgrade)
+$ npx jest --runInBand lib/__tests__/layout-widths-css.test.ts __tests__/contrast-tokens.test.ts __tests__/contrast-literals.test.ts __tests__/dashboard-pending-badge-contrast.test.ts __tests__/cluster-g-contrast-sites.test.ts __tests__/reduced-motion-css.test.ts __tests__/kds-flash-css.test.ts
+Test Suites: 7 passed, 7 total
+Tests:       89 passed, 89 total
+rc=0
+
+$ bash scripts/check-layout-width-contract.sh
+checked : 112 claim(s) across 7 assertions (G-1..G-7)
+PASS: the horizontal layout contract holds across 112 checked claim(s).
+rc=0
+
+### 1b. Deliberate RED after installing tailwindcss@4.3.3 + @tailwindcss/postcss@4.3.3 (before config/test migration)
+$ npx jest --runInBand lib/__tests__/layout-widths-css.test.ts __tests__/contrast-tokens.test.ts __tests__/contrast-literals.test.ts __tests__/dashboard-pending-badge-contrast.test.ts __tests__/cluster-g-contrast-sites.test.ts __tests__/reduced-motion-css.test.ts __tests__/kds-flash-css.test.ts
+FAIL __tests__/contrast-literals.test.ts (oklch() strings returned by tailwindcss/colors in v4)
+FAIL __tests__/dashboard-pending-badge-contrast.test.ts (oklch() strings returned by tailwindcss/colors in v4)
+FAIL __tests__/cluster-g-contrast-sites.test.ts (oklch() strings returned by tailwindcss/colors in v4)
+FAIL lib/__tests__/layout-widths-css.test.ts ("trying to use tailwindcss directly as a PostCSS plugin")
+Test Suites: 4 failed, 3 passed, 7 total
+Tests:       21 failed, 68 passed, 89 total
+rc=1
+
+### 1c. Deliberate RED on Tailwind v4 container retirement when `blocklist: ["container"]` is commented out
+# In Tailwind v4, `corePlugins: { container: false }` is ignored by the engine; only `blocklist: ["container"]`
+# suppresses `.container` emission. Removing `blocklist: ["container"]` fails both `layout-widths-css.test.ts`
+# and `scripts/check-layout-width-contract.sh` (G-3b):
+
+$ npx jest --runInBand lib/__tests__/layout-widths-css.test.ts
+FAIL lib/__tests__/layout-widths-css.test.ts
+  ● generated CSS — the retired shadcn container › emits no container rule even when the class name is in the content
+    - Array []
+    + Array [
+    +   ".container [unwrapped]",
+    + ]
+  ● tailwind.config.ts — the structural half › switches the container core plugin off
+    expect(config.blocklist).toContain("container") -> Received: undefined
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 9 passed, 11 total
+rc=1
+
+$ bash scripts/check-layout-width-contract.sh
+  VIOLATION: G-3b: tailwind.config.ts does not include 'container' in blocklist. Tailwind v4 ignores corePlugins.container: false and requires blocklist: ["container"] to suppress the five default .container media queries.
+FAIL: 1 layout-contract violation(s).
+rc=1
+
+## 2. Passing Build, Typecheck, Lint, Jest, and Static Contract Gates on tailwindcss@4.3.3
+
+### 2a. CSS & Contrast Suites (8 suites, 100 tests)
+$ npx jest --runInBand lib/__tests__/layout-widths-css.test.ts __tests__/contrast-tokens.test.ts __tests__/contrast-literals.test.ts __tests__/dashboard-pending-badge-contrast.test.ts __tests__/cluster-g-contrast-sites.test.ts __tests__/reduced-motion-css.test.ts __tests__/kds-flash-css.test.ts app/dashboard/__tests__/staff-page.test.tsx
+Test Suites: 8 passed, 8 total
+Tests:       100 passed, 100 total
+rc=0
+
+### 2b. Full Frontend Jest Suite (250 suites, 2962 tests)
+$ npm test -- --watchAll=false
+Test Suites: 250 passed, 250 total
+Tests:       2962 passed, 2962 total
+Snapshots:   2 passed, 2 total
+Time:        23.533 s
+rc=0
+
+### 2c. TypeScript Check & ESLint
+$ npx tsc --noEmit
+rc=0
+
+$ npm run lint
+✖ 29 problems (0 errors, 29 warnings)
+rc=0
+
+### 2d. Next.js 16.4.0 Production Build & Emitted CSS Inspection
+$ npm run build
+▲ Next.js 16.4.0 (Turbopack)
+✓ Compiled successfully in 5.1s
+✓ Finished TypeScript in 9.8s
+✓ Generating static pages using 15 workers (7/7) in 89ms
+rc=0
+
+Emitted CSS chunks (.next/static/chunks/22ver7pnsp211.css, 2l7a7n1l-gmdq.css):
+total bytes: 126378
+has max-w-shell: true
+has max-w-detail: true
+has max-w-marketing: true
+has .container{: false
+has @media (hover:hover): true
+has @container: true
+has --primary: true
+rc=0
+
+### 2e. Layout Width Contract & Mobile Instrument Static Gates
+$ bash scripts/check-layout-width-contract.sh
+Layout width contract gate
+  manifest   : docs/architecture/layout-tiers.tsv  (45 rows)
+  vocabulary : frontend/components/layout/content-tier.tsx
+  scanned    : 538 source file(s) for tier literals, 208 shipped file(s) for declarations and class context
+  discovered : 28 shipped file(s) declaring a tier
+  families   : 1 parity family/families
+  checked    : 112 claim(s) across 7 assertions (G-1..G-7)
+PASS: the horizontal layout contract holds across 112 checked claim(s).
+rc=0
+
+$ bash scripts/check-playwright-mobile-contract.sh
+check-playwright-mobile-contract
+  config : frontend/playwright.config.ts
+  ok       project "mobile" (mobile, touch-capable)
+  ok       project "desktop" (ok)
+  parsed : 2 project(s), 0 blind
+PASS: every mobile Playwright project can report touch.
+rc=0
+
+## 3. Browser E2E & 4-Viewport (390 / 768 / 1280 / 1920) Parity Against Production Build
+
+### 3a. Mobile Instrument Contract (`e2e/mobile-instrument-contract.spec.ts`)
+$ PLAYWRIGHT_BASE_URL=http://localhost:3107 npx playwright test e2e/mobile-instrument-contract.spec.ts
+  4 passed (2.5s)
+rc=0
+
+### 3b. Horizontal Layout Contract (`e2e/layout-width-contract.spec.ts --grep "@stack-free"`)
+$ PLAYWRIGHT_BASE_URL=http://localhost:3107 npx playwright test e2e/layout-width-contract.spec.ts --grep "@stack-free"
+  12 passed (18.8s)
+rc=0
+
+### 3c. Public-Surface Layout + WCAG 2.2 AA Accessibility Conformance (`e2e/public-layout.spec.ts e2e/public-a11y.spec.ts`)
+$ PLAYWRIGHT_BASE_URL=http://localhost:3107 npx playwright test e2e/public-layout.spec.ts e2e/public-a11y.spec.ts
+  80 passed (2.7m)
+rc=0
+
+### 3d. 4-Viewport (390 / 768 / 1280 / 1920) Computed Token, Tier Width, Overflow & Cursor Probe
+vp=390x844 route=/ scroll=390/390 overflow=0 tier=marketing:390px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=390x844 route=/shop scroll=390/390 overflow=0 tier=marketing:390px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=390x844 route=/track scroll=390/390 overflow=0 tier=marketing:390px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=390x844 route=/for-operators scroll=390/390 overflow=0 tier=marketing:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=390x844 route=/auth/signin scroll=390/390 overflow=0 tier=none:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=768x1024 route=/ scroll=768/768 overflow=0 tier=marketing:768px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=768x1024 route=/shop scroll=768/768 overflow=0 tier=marketing:768px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=768x1024 route=/track scroll=768/768 overflow=0 tier=marketing:768px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=768x1024 route=/for-operators scroll=768/768 overflow=0 tier=marketing:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=768x1024 route=/auth/signin scroll=768/768 overflow=0 tier=none:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1280x800 route=/ scroll=1280/1280 overflow=0 tier=marketing:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1280x800 route=/shop scroll=1280/1280 overflow=0 tier=marketing:1280px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1280x800 route=/track scroll=1280/1280 overflow=0 tier=marketing:1280px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1280x800 route=/for-operators scroll=1280/1280 overflow=0 tier=marketing:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1280x800 route=/auth/signin scroll=1280/1280 overflow=0 tier=none:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1920x1080 route=/ scroll=1920/1920 overflow=0 tier=marketing:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1920x1080 route=/shop scroll=1920/1920 overflow=0 tier=marketing:1280px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1920x1080 route=/track scroll=1920/1920 overflow=0 tier=marketing:1280px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1920x1080 route=/for-operators scroll=1920/1920 overflow=0 tier=marketing:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+vp=1920x1080 route=/auth/signin scroll=1920/1920 overflow=0 tier=none:0px cursor=pointer --primary="17.5 88.3% 40.4%"
+rc=0

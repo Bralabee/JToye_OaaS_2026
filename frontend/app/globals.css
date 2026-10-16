@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+@config "../tailwind.config.ts";
 
 /* ---------------------------------------------------------------------------
    Colour-token contrast contract (#451 / QA-A F-M4-A11Y)
@@ -101,8 +100,16 @@
 }
 
 @layer base {
-  * {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
     @apply border-border;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
   }
   body {
     @apply bg-background text-foreground;
