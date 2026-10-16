@@ -815,6 +815,31 @@ describe("Remove access confirm names the consequence (UI-SPEC § B1)", () => {
       expect(mockedApiClient.delete).toHaveBeenCalledWith(`/api/v1/staff/${GRANT_MULTI_A}`)
     )
   })
+
+  it("names a remaining shop whose name ends in a full stop once, with one full stop (G-37-6)", async () => {
+    mockedFetchMyShops.mockResolvedValue({
+      shops: [
+        { id: SHOP_A, name: "Peckham Kitchen", published: true },
+        { id: SHOP_B, name: "Peckham Jollof Co.", published: true },
+      ] as never,
+      isGroupAdmin: true,
+      userId: USER_GA,
+    } as never)
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Mo Twoshops")).toBeInTheDocument())
+
+    fireEvent.click(
+      within(rowOf("Mo Twoshops")).getByRole("button", {
+        name: /remove shop manager at peckham kitchen/i,
+      })
+    )
+
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveTextContent(
+      "After this they'll have: Staff · Peckham Jollof Co. They'll lose it on their next action."
+    )
+    expect(dialog.textContent).not.toContain("..")
+  })
 })
 
 /**

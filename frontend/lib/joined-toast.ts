@@ -1,4 +1,5 @@
 import type { MyAccess } from "@/lib/shops-api"
+import { withFullStop } from "@/lib/sentence-end"
 
 /**
  * The one-time welcome after an invitation is accepted (D-26, 37-09; UI-SPEC § B2
@@ -40,5 +41,5 @@ export function joinedToastTitle(
   const scope = joinedScope(access, shops)
   if (!scope) return null
   const business = access.businessName ?? "your new business"
-  return `You've joined ${business}. You can work on ${scope}.`
+  return `You've joined ${withFullStop(business)} You can work on ${withFullStop(scope)}`
 }

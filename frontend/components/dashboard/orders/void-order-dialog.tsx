@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import apiClient from "@/lib/api-client"
 import { formatUkDate } from "@/lib/uk-datetime"
+import { withFullStop } from "@/lib/sentence-end"
 import type { OrderDetail, OrderStatus, PaymentStatus } from "@/types/api"
 
 /**
@@ -101,7 +102,7 @@ export function alreadyVoidedCopy(name: string, voidedAt: string | null | undefi
   const on = voidedAt ? formatUkDate(voidedAt) : ""
   return on
     ? `This order was already voided by ${name} on ${on}.`
-    : `This order was already voided by ${name}.`
+    : `This order was already voided by ${withFullStop(name)}`
 }
 
 const ALREADY_VOIDED_TYPE_SUFFIX = "/order-already-voided"
