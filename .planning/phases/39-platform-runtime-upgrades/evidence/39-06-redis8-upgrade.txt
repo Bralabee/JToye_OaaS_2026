@@ -28,8 +28,8 @@ rc=0
 
 ## 3. Lettuce 7 / Spring Cache / Bucket4j Testcontainers Verification on `redis:8.10-alpine`
 $ ./gradlew :core-java:integrationTest \
-  --tests "uk.jtoye.core.cache.CacheFormatIsolationIntegrationTest" \
-  --tests "uk.jtoye.core.ratelimit.PublicRateLimitIntegrationTest" \
+  --tests "uk.jtoye.core.boot4.CacheFormatIsolationIntegrationTest" \
+  --tests "uk.jtoye.core.security.PublicRateLimitIntegrationTest" \
   --tests "uk.jtoye.core.resilience.RedisFaultInjectionIntegrationTest"
-BUILD SUCCESSFUL in 52s
+BUILD SUCCESSFUL in 46s
 rc=0
