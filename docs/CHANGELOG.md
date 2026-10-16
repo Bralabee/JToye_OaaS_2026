@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37: UAT gaps G-37-12..G-37-15 (#925) — 2026-10-16
+
+Four gaps the owner's acceptance test of Phase 37 found on the vendor dashboard are closed.
+
+- **Webhooks say why you cannot use them.** A Staff user opening Webhooks now sees "Group admin access required"
+  instead of an empty list with an Add endpoint button that could never work. Group admins are unchanged.
+- **Staff forms in the dark theme.** The Invite someone and Grant access cards, their five dropdowns included, now
+  read clearly in both themes (light text on a white dropdown was 1.05:1).
+- **Pending invitations fit their card.** Rows stack until the card is wide enough for the table, so emails and
+  actions no longer wrap mid-word or spill out of the card on tablets and small laptops; stacked rows say "Expires".
+- **No "(null)" in the person picker** for an account without an email.
+
 ### Phase 37-F: Accessibility (#924) — 2026-10-15
 
 A customer using a screen reader, a keyboard or large text can now find a shop, fill a basket, check out

@@ -446,3 +446,98 @@ describe("Pending invitations (UI-SPEC § B1)", () => {
     )
   })
 })
+
+/*
+ * G-37-14 (37-54, D-07): at a 768px viewport the card beside the persistent 256px
+ * sidebar is about 398px wide, but `sm:` (a 640px VIEWPORT breakpoint) had already
+ * chosen the four-column table: words split mid-word and the actions were cut off.
+ * The layout now follows the CARD's own width through a container query, one threshold.
+ */
+const CONTAINER_TABLE = "[@container_(min-width:60rem)]"
+
+describe("Pending invitations follow the card's width, not the viewport (G-37-14)", () => {
+  it("makes the Pending card content a size container", async () => {
+    serverInvites = [OPEN, EXPIRED]
+    await renderLoaded()
+    const scroller = await within(await screen.findByRole("region", { name: "Pending invitations" }))
+      .findByRole("region", { name: "Pending invitations table" })
+    expect(scroller.parentElement).toHaveClass("[container-type:inline-size]")
+  })
+
+  it("stacks rows, cells and header until the container threshold, with no sm: viewport switch", async () => {
+    serverInvites = [OPEN, EXPIRED]
+    await renderLoaded()
+    const pending = await screen.findByRole("region", { name: "Pending invitations" })
+
+    const rows = Array.from(pending.querySelectorAll("tr[data-status]"))
+    expect(rows).toHaveLength(2)
+    for (const row of rows) {
+      expect(row).toHaveClass("flex", "flex-col", `${CONTAINER_TABLE}:table-row`)
+      expect(Array.from(row.classList).filter((c) => c.startsWith("sm:"))).toEqual([])
+      for (const cell of Array.from(row.querySelectorAll("td"))) {
+        expect(cell).toHaveClass("block", `${CONTAINER_TABLE}:table-cell`)
+        expect(Array.from(cell.classList).filter((c) => c.startsWith("sm:"))).toEqual([])
+      }
+    }
+    expect(pending.querySelector("thead")).toHaveClass(
+      "hidden",
+      `${CONTAINER_TABLE}:table-header-group`
+    )
+    // The actions stay one column of full-width buttons in both layouts.
+    const sm = Array.from(pending.querySelectorAll("*")).flatMap((el) =>
+      Array.from(el.classList).filter((c) => c.startsWith("sm:"))
+    )
+    expect(sm).toEqual([])
+  })
+
+  it("uses exactly one container threshold across the card", async () => {
+    serverInvites = [OPEN, EXPIRED]
+    await renderLoaded()
+    const pending = await screen.findByRole("region", { name: "Pending invitations" })
+    const thresholds = new Set<string>()
+    for (const el of [pending, ...Array.from(pending.querySelectorAll("*"))]) {
+      for (const c of Array.from(el.classList)) {
+        for (const m of c.matchAll(/\(min-width:(\d+(?:\.\d+)?rem)\)/g)) thresholds.add(m[1])
+      }
+    }
+    expect(Array.from(thresholds)).toEqual(["60rem"])
+  })
+
+  it("keeps the overflow-wrap safety net on the email and stops mid-word breaks at the threshold", async () => {
+    serverInvites = [OPEN]
+    await renderLoaded()
+    const pending = await screen.findByRole("region", { name: "Pending invitations" })
+    expect(within(pending).getByText("maya@example.test")).toHaveClass(
+      "[overflow-wrap:anywhere]",
+      `${CONTAINER_TABLE}:break-words`
+    )
+  })
+
+  it("names an open row's expiry 'Expires' while stacked; an expired row shows the badge and no prefix", async () => {
+    serverInvites = [OPEN, EXPIRED]
+    await renderLoaded()
+    const pending = await screen.findByRole("region", { name: "Pending invitations" })
+
+    const openRow = within(pending).getByText("maya@example.test").closest("tr") as HTMLElement
+    const prefix = within(openRow).getByText("Expires")
+    expect(prefix).toHaveClass(`${CONTAINER_TABLE}:hidden`)
+    const time = within(openRow).getByText("10 Oct, 14:32")
+    expect(prefix.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    const expiredRow = within(pending).getByText("old@example.test").closest("tr") as HTMLElement
+    expect(within(expiredRow).getByText("Expired")).toBeInTheDocument()
+    expect(within(expiredRow).queryByText("Expires")).toBeNull()
+  })
+
+  it("keeps both actions as h-11 buttons whose names include the address", async () => {
+    serverInvites = [OPEN]
+    await renderLoaded()
+    const pending = await screen.findByRole("region", { name: "Pending invitations" })
+    expect(
+      within(pending).getByRole("button", { name: "Send invitation again to maya@example.test" })
+    ).toHaveClass("h-11", "w-full")
+    expect(
+      within(pending).getByRole("button", { name: "Cancel invitation for maya@example.test" })
+    ).toHaveClass("h-11", "w-full")
+  })
+})

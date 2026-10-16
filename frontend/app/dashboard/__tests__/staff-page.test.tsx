@@ -1126,3 +1126,241 @@ describe("Staff page: API credentials are integrations, not people (37-46, UI-SP
     expect(screen.getAllByText("Integration account")).toHaveLength(2)
   })
 })
+
+/*
+ * G-37-15 (37-54, D-09): a service account has no email (`DirectoryEntryDto.maskEmail`
+ * passes a null through), so the picker printed "integration-orders-rw (null)" in the
+ * 2026-10-15 UAT. The label says only what the data holds.
+ */
+describe("Grant picker labels say only what the directory holds (G-37-15)", () => {
+  it("labels a no-email entry by its name, a nameless one as 'Integration account', and never prints null", async () => {
+    const SA_NAMED = "44444444-4444-4444-4444-444444444444"
+    const SA_BARE = "55555555-5555-5555-5555-555555555555"
+    const named = { userId: SA_NAMED, email: null, displayName: "integration-orders-rw", lastSeen: null }
+    const bare = { userId: SA_BARE, email: null, displayName: null, lastSeen: null }
+    mockedApiClient.get.mockResolvedValue({
+      data: {
+        directory: [...directory, named, bare],
+        grants,
+        people: [
+          ...people,
+          person(named, access(SA_NAMED, "NONE")),
+          person(bare, access(SA_BARE, "NONE")),
+        ],
+      },
+    } as never)
+
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    const picker = screen.getByLabelText(/team member/i) as HTMLSelectElement
+    const label = (userId: string) =>
+      Array.from(picker.options).find((o) => o.value === userId)?.textContent
+    expect(label(SA_NAMED)).toBe("integration-orders-rw")
+    expect(label(SA_BARE)).toBe("Integration account")
+    for (const o of Array.from(picker.options)) {
+      expect(o.textContent).not.toMatch(/null|undefined|\(\)/)
+    }
+    // #290 still holds beside it: a named member is "Name (masked email)".
+    expect(label(USER_SAM)).toBe(`Sam Cook (${EMAIL_SAM})`)
+  })
+})
+
+/*
+ * G-37-13 (37-54): in the dark theme the five Staff-page selects were `bg-white` with no
+ * text colour, so they inherited the dark theme's near-white foreground: about 1.0:1.
+ * Their labels were slate-700 on the dark card, about 1.9:1.
+ *
+ * jsdom applies no stylesheet, so this resolves each element's colour from its CLASS
+ * TOKENS the way Tailwind would: palette names from `tailwindcss/colors`, the theme
+ * names (foreground, background, card) from app/globals.css `:root` / `.dark`. The
+ * live computed-style measure is 37-55's.
+ */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const fsForTokens = require("fs") as typeof import("fs")
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pathForTokens = require("path") as typeof import("path")
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const PALETTE = require("tailwindcss/colors") as Record<string, unknown>
+
+type Rgb = [number, number, number]
+type Theme = "light" | "dark"
+
+const GLOBALS_CSS = fsForTokens.readFileSync(
+  pathForTokens.resolve(__dirname, "..", "..", "..", "app", "globals.css"),
+  "utf8"
+)
+
+function hslToRgbT(h: number, s: number, l: number): Rgb {
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = l - c / 2
+  const [r, g, b] =
+    h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x]
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255]
+}
+
+function hexToRgbT(hex: string): Rgb {
+  let h = hex.replace("#", "")
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("")
+  return [0, 1, 2].map((i) => parseInt(h.substr(i * 2, 2), 16)) as Rgb
+}
+
+function luminanceT([r, g, b]: Rgb): number {
+  const [R, G, B] = [r, g, b]
+    .map((v) => v / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)))
+  return 0.2126 * R + 0.7152 * G + 0.0722 * B
+}
+
+function contrast(a: Rgb, b: Rgb): number {
+  const [hi, lo] = [luminanceT(a), luminanceT(b)].sort((x, y) => y - x)
+  return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100
+}
+
+/** A theme variable out of the `:root` or `.dark` block (scoped: most are declared twice). */
+function themeVar(name: string, theme: Theme): Rgb {
+  const scope = theme === "dark" ? ".dark" : ":root"
+  const start = GLOBALS_CSS.indexOf(`${scope} {`)
+  if (start === -1) throw new Error(`VOID: no ${scope} block in globals.css`)
+  const end = GLOBALS_CSS.indexOf("\n  }", start)
+  const m = GLOBALS_CSS.slice(start, end).match(new RegExp(`--${name}:\\s*([^;]+);`))
+  if (!m) throw new Error(`VOID: --${name} not found in ${scope}`)
+  const parts = m[1].trim().match(/([\d.]+)\s+([\d.]+)%\s+([\d.]+)%/)
+  if (!parts) throw new Error(`VOID: --${name} is not an HSL triple`)
+  return hslToRgbT(Number(parts[1]), Number(parts[2]) / 100, Number(parts[3]) / 100)
+}
+
+const THEME_NAMES = ["foreground", "background", "card", "card-foreground"]
+
+/** A colour token's value, or null for anything that is not a colour (text-sm, text-xs…). */
+function colourOf(name: string, theme: Theme): Rgb | null {
+  if (name === "white") return [255, 255, 255]
+  if (name === "black") return [0, 0, 0]
+  if (THEME_NAMES.includes(name)) return themeVar(name, theme)
+  const m = name.match(/^([a-z]+)-(\d{2,3})$/)
+  if (!m) return null
+  const family = PALETTE[m[1]] as Record<string, string> | undefined
+  const hex = family && typeof family === "object" ? family[m[2]] : undefined
+  return typeof hex === "string" ? hexToRgbT(hex) : null
+}
+
+/** The colour one utility (`text` or `bg`) resolves to, by the variant precedence Tailwind's CSS order gives. */
+function pickToken(classes: string[], kind: "text" | "bg", theme: Theme, disabled: boolean): Rgb | null {
+  const levels: string[] = []
+  if (theme === "dark" && disabled) levels.push("dark:disabled:")
+  if (theme === "dark") levels.push("dark:")
+  if (disabled) levels.push("disabled:")
+  levels.push("")
+  for (const variant of levels) {
+    for (const c of classes) {
+      if (!c.startsWith(`${variant}${kind}-`)) continue
+      const colour = colourOf(c.slice(`${variant}${kind}-`.length), theme)
+      if (colour) return colour
+    }
+  }
+  return null
+}
+
+/** Text and background of an element that sits inside a Card (no token = the card's own pair). */
+function resolveColours(classes: string[], theme: Theme, disabled = false): { text: Rgb; bg: Rgb } {
+  return {
+    text: pickToken(classes, "text", theme, disabled) ?? themeVar("card-foreground", theme),
+    bg: pickToken(classes, "bg", theme, disabled) ?? themeVar("card", theme),
+  }
+}
+
+const SELECT_IDS = ["invite-role", "invite-shop", "staff-user", "staff-shop", "staff-role"]
+
+/** Every measured element after load, Group admin chosen (hint shown) and an empty email sent (error shown). */
+async function renderMeasuredStaffForms(): Promise<{ name: string; el: HTMLElement }[]> {
+  render(<StaffPage />)
+  await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+  fireEvent.change(document.getElementById("invite-role")!, { target: { value: "GROUP_ADMIN" } })
+  fireEvent.click(screen.getByRole("button", { name: "Send invitation" }))
+  await screen.findByText("Enter an email address.")
+
+  const selects = Array.from(document.querySelectorAll("select"))
+  expect(selects.map((s) => s.id).sort()).toEqual([...SELECT_IDS].sort())
+  expect((document.getElementById("invite-shop") as HTMLSelectElement).disabled).toBe(true)
+
+  const measured: { name: string; el: HTMLElement }[] = []
+  for (const id of SELECT_IDS) {
+    measured.push({ name: `select#${id}`, el: document.getElementById(id)! })
+    const lbl = document.querySelector(`label[for="${id}"]`) as HTMLElement | null
+    expect(lbl).not.toBeNull()
+    measured.push({ name: `label[for=${id}]`, el: lbl! })
+  }
+  measured.push({ name: "group-admin hint", el: screen.getByText("Group admin always covers every shop.") })
+  measured.push({ name: "grant hint", el: screen.getByText(/Granting the same access twice is safe/) })
+  measured.push({ name: "email error", el: screen.getByText("Enter an email address.") })
+  return measured
+}
+
+function belowAA(measured: { name: string; el: HTMLElement }[], theme: Theme): string[] {
+  return measured.flatMap(({ name, el }) => {
+    const { text, bg } = resolveColours(
+      Array.from(el.classList),
+      theme,
+      (el as HTMLSelectElement).disabled === true
+    )
+    const r = contrast(text, bg)
+    return r >= 4.5 ? [] : [`${name}: ${r}:1`]
+  })
+}
+
+describe("Staff-page form controls are readable in both themes (G-37-13)", () => {
+  it("brings every select, its label, the hints and the email error to 4.5:1 in the dark theme", async () => {
+    const measured = await renderMeasuredStaffForms()
+    expect(belowAA(measured, "dark")).toEqual([])
+  })
+
+  it("keeps every select, its label, the hints and the email error at 4.5:1 in the light theme", async () => {
+    const measured = await renderMeasuredStaffForms()
+    expect(belowAA(measured, "light")).toEqual([])
+  })
+
+  it("keeps today's light-theme colours on the two form cards", async () => {
+    const measured = await renderMeasuredStaffForms()
+    const hex = (rgb: Rgb) => rgb.map((v) => Math.round(v)).join(",")
+    const colours = Object.fromEntries(
+      measured.map(({ name, el }) => {
+        const { text, bg } = resolveColours(
+          Array.from(el.classList),
+          "light",
+          (el as HTMLSelectElement).disabled === true
+        )
+        return [name, `${hex(text)} on ${hex(bg)}`]
+      })
+    )
+    const FG = hex(themeVar("foreground", "light"))
+    const CARD = hex(themeVar("card", "light"))
+    const tw = (name: string) => hex(colourOf(name, "light")!)
+    expect(colours).toEqual({
+      "select#invite-role": `${FG} on 255,255,255`,
+      "label[for=invite-role]": `${tw("slate-700")} on ${CARD}`,
+      "select#invite-shop": `${tw("slate-700")} on ${tw("slate-100")}`,
+      "label[for=invite-shop]": `${tw("slate-700")} on ${CARD}`,
+      "select#staff-user": `${FG} on 255,255,255`,
+      "label[for=staff-user]": `${tw("slate-700")} on ${CARD}`,
+      "select#staff-shop": `${FG} on 255,255,255`,
+      "label[for=staff-shop]": `${tw("slate-700")} on ${CARD}`,
+      "select#staff-role": `${FG} on 255,255,255`,
+      "label[for=staff-role]": `${tw("slate-700")} on ${CARD}`,
+      "group-admin hint": `${tw("slate-600")} on ${CARD}`,
+      "grant hint": `${tw("slate-500")} on ${CARD}`,
+      "email error": `${tw("red-700")} on ${CARD}`,
+    })
+  })
+
+  it("instrument arm: the pre-fix select and label tokens measure below 4.5:1 in the dark theme", () => {
+    const PRE_FIX_SELECT =
+      "h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-700"
+    const select = resolveColours(PRE_FIX_SELECT.split(" "), "dark")
+    expect(contrast(select.text, select.bg)).toBeLessThan(4.5)
+    const label = resolveColours("text-sm font-medium text-slate-700".split(" "), "dark")
+    expect(contrast(label.text, label.bg)).toBeLessThan(4.5)
+    // ...and a size token is not read as a colour.
+    expect(colourOf("sm", "dark")).toBeNull()
+  })
+})
