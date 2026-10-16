@@ -23,9 +23,23 @@ public interface CustomerMapper {
 
     /**
      * Convert Customer entity to CustomerDto.
-     * MapStruct will automatically map all matching fields.
      */
-    CustomerDto toDto(Customer customer);
+    default CustomerDto toDto(Customer customer) {
+        if (customer == null) {
+            return null;
+        }
+        return new CustomerDto(
+                customer.getId(),
+                customer.getTenantId(),
+                customer.getName(),
+                customer.getEmail(),
+                customer.getPhone(),
+                customer.getAllergenRestrictions(),
+                customer.getCreatedAt(),
+                customer.getUpdatedAt(),
+                customer.getOriginShopId()
+        );
+    }
 
     /**
      * Convert CreateCustomerRequest to Customer entity.
@@ -47,5 +61,6 @@ public interface CustomerMapper {
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     @Mapping(target = "notes", ignore = true)
+    @Mapping(target = "originShopId", ignore = true)
     Customer toEntity(UpdateCustomerRequest request);
 }

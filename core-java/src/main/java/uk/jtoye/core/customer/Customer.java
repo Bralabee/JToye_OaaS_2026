@@ -60,6 +60,9 @@ public class Customer {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "origin_shop_id")
+    private UUID originShopId;
+
     // Constructors
 
     public Customer() {
@@ -140,6 +143,15 @@ public class Customer {
 
     public void setNotes(String notes) {
         this.notes = notes;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    public UUID getOriginShopId() {
+        return originShopId;
+    }
+
+    public void setOriginShopId(UUID originShopId) {
+        this.originShopId = originShopId;
         this.updatedAt = OffsetDateTime.now();
     }
 
