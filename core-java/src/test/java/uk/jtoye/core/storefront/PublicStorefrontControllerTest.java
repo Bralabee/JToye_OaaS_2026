@@ -274,4 +274,21 @@ class PublicStorefrontControllerTest {
         mockMvc.perform(get("/public/shops/ghost/announcements"))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("39-09 RWO-028: retired slug alias returns HTTP 301 Moved Permanently with Location and X-Shop-Canonical-Slug on both public prefixes")
+    void getShopBySlug_retiredAlias_returns301WithCanonicalLocationAndHeaderOnBothPublicPrefixes() throws Exception {
+        when(storefrontService.getShopBySlug("old-slug"))
+                .thenThrow(new uk.jtoye.core.exception.ShopSlugRedirectException("old-slug", "new-slug"));
+
+        mockMvc.perform(get("/public/shops/old-slug"))
+                .andExpect(status().isMovedPermanently())
+                .andExpect(header().string("Location", "/public/shops/new-slug"))
+                .andExpect(header().string("X-Shop-Canonical-Slug", "new-slug"));
+
+        mockMvc.perform(get("/api/v1/public/shops/old-slug"))
+                .andExpect(status().isMovedPermanently())
+                .andExpect(header().string("Location", "/api/v1/public/shops/new-slug"))
+                .andExpect(header().string("X-Shop-Canonical-Slug", "new-slug"));
+    }
 }

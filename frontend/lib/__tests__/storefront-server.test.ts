@@ -64,19 +64,23 @@ const product: PublicProduct = {
  * calls it cares about. Anything unlisted answers 200 with `fallback` — an
  * UNLISTED call must never be the reason a block passes or fails.
  */
-function mockFetch(routes: Array<[RegExp, number, unknown]>, fallback: unknown = {}) {
+function mockFetch(
+  routes: Array<[RegExp, number, unknown, Record<string, string>?]>,
+  fallback: unknown = {}
+) {
   return jest.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
-    for (const [pattern, status, body] of routes) {
+    for (const [pattern, status, body, hdrs] of routes) {
       if (pattern.test(url)) {
         return {
           ok: status >= 200 && status < 300,
           status,
+          headers: new Headers(hdrs ?? {}),
           json: async () => body,
         } as Response
       }
     }
-    return { ok: true, status: 200, json: async () => fallback } as Response
+    return { ok: true, status: 200, headers: new Headers(), json: async () => fallback } as Response
   })
 }
 
@@ -244,6 +248,45 @@ describe("loadShopDetail", () => {
       expect(String(call[0])).not.toContain("../")
       expect(String(call[0])).toContain("%2F")
     }
+  })
+
+  it("returns redirect with canonicalSlug when the shop endpoint answers 301 with X-Shop-Canonical-Slug, even though /products is 404 on the old slug (39-09, RWO-028)", async () => {
+    global.fetch = mockFetch([
+      [
+        /\/public\/shops\/[^/?]+$/,
+        301,
+        null,
+        {
+          location: "/api/v1/public/shops/brixton-village-grill-new",
+          "x-shop-canonical-slug": "brixton-village-grill-new",
+        },
+      ],
+      [/\/products$/, 404, null],
+    ]) as unknown as typeof fetch
+
+    await expect(loadShopDetail("brixton-village-grill-old")).resolves.toEqual({
+      state: "redirect",
+      canonicalSlug: "brixton-village-grill-new",
+    })
+  })
+
+  it("falls back to the Location header's trailing segment when X-Shop-Canonical-Slug is absent on a 301 (39-09, RWO-028)", async () => {
+    global.fetch = mockFetch([
+      [
+        /\/public\/shops\/[^/?]+$/,
+        301,
+        null,
+        {
+          location: "/public/shops/peckham-kitchen-2026",
+        },
+      ],
+      [/\/products$/, 404, null],
+    ]) as unknown as typeof fetch
+
+    await expect(loadShopDetail("peckham-kitchen-old")).resolves.toEqual({
+      state: "redirect",
+      canonicalSlug: "peckham-kitchen-2026",
+    })
   })
 })
 

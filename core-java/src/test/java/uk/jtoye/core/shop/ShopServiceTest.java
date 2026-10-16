@@ -56,6 +56,9 @@ class ShopServiceTest {
     @Mock
     private PostcodeGeocoder postcodeGeocoder;
 
+    @Mock
+    private ShopSlugAliasRepository shopSlugAliasRepository;
+
     // Phase 23-10 (CR-01): getShopById now delegates its cached data-load to the
     // ShopCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
     // repository + mapper) in setUp() so the existing by-id tests keep exercising
@@ -94,7 +97,7 @@ class ShopServiceTest {
         // ("123 Test Street, London") — Optional.empty(), never (0,0). The geocoding
         // behaviour itself is asserted in ShopServiceGeocodeTest.
         lenient().when(postcodeGeocoder.locate(any())).thenReturn(Optional.empty());
-        shopService = new ShopService(shopRepository, shopMapper, storageService, cacheEvictor,
+        shopService = new ShopService(shopRepository, shopSlugAliasRepository, shopMapper, storageService, cacheEvictor,
                 shopAccessService, new ShopService.ShopCacheLoader(shopRepository, shopMapper),
                 postcodeGeocoder, java.time.Clock.systemUTC());
 
@@ -584,5 +587,57 @@ class ShopServiceTest {
 
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
                 () -> shopService.updateShop(shopId, validRequest));
+    }
+
+    @Test
+    @DisplayName("39-09 RWO-028: changing a shop's slug records the old slug in shop_slug_alias and removes any self-alias for the new slug")
+    void testUpdateShop_SlugChange_RecordsOldSlugAliasAndDeletesSelfAlias() {
+        testShop.setSlug("old-slug");
+        validRequest.setSlug("new-slug");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.existsBySlugAndIdNot("new-slug", shopId)).thenReturn(false);
+        when(shopSlugAliasRepository.existsByOldSlugAndShopIdNot("new-slug", shopId)).thenReturn(false);
+        when(shopRepository.saveAndFlush(any(Shop.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ShopDto result = shopService.updateShop(shopId, validRequest);
+
+        assertEquals("new-slug", result.getSlug());
+        verify(shopSlugAliasRepository).deleteByOldSlugAndShopId("new-slug", shopId);
+        ArgumentCaptor<ShopSlugAlias> aliasCaptor = ArgumentCaptor.forClass(ShopSlugAlias.class);
+        verify(shopSlugAliasRepository).saveAndFlush(aliasCaptor.capture());
+        assertEquals("old-slug", aliasCaptor.getValue().getOldSlug());
+        assertEquals(shopId, aliasCaptor.getValue().getShopId());
+    }
+
+    @Test
+    @DisplayName("39-09 RWO-028: updateShop refuses a slug held in shop_slug_alias by another shop with 409 ShopSlugTakenException")
+    void testUpdateShop_SlugClaimedByAnotherShopAlias_ThrowsShopSlugTaken() {
+        testShop.setSlug("my-slug");
+        validRequest.setSlug("retired-by-other");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(testShop));
+        when(shopRepository.existsBySlugAndIdNot("retired-by-other", shopId)).thenReturn(false);
+        when(shopSlugAliasRepository.existsByOldSlugAndShopIdNot("retired-by-other", shopId)).thenReturn(true);
+
+        uk.jtoye.core.exception.ShopSlugTakenException ex = assertThrows(
+                uk.jtoye.core.exception.ShopSlugTakenException.class,
+                () -> shopService.updateShop(shopId, validRequest));
+
+        assertEquals("retired-by-other", ex.getSlug());
+        verify(shopRepository, never()).saveAndFlush(any(Shop.class));
+    }
+
+    @Test
+    @DisplayName("39-09 RWO-028: createShop refuses an explicit slug held in shop_slug_alias with 409 ShopSlugTakenException")
+    void testCreateShop_SlugClaimedByAnotherShopAlias_ThrowsShopSlugTaken() {
+        validRequest.setSlug("retired-slug");
+        when(shopRepository.existsBySlug("retired-slug")).thenReturn(false);
+        when(shopSlugAliasRepository.existsById("retired-slug")).thenReturn(true);
+
+        uk.jtoye.core.exception.ShopSlugTakenException ex = assertThrows(
+                uk.jtoye.core.exception.ShopSlugTakenException.class,
+                () -> shopService.createShop(validRequest));
+
+        assertEquals("retired-slug", ex.getSlug());
+        verify(shopRepository, never()).saveAndFlush(any(Shop.class));
     }
 }
