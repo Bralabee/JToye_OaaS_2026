@@ -12,6 +12,12 @@
  *      ancestor background; and the Grant-access person picker shows no "null", "undefined"
  *      or "()". The dark-theme residue outside the two cards is measured and attached as the
  *      annotation "dark-residue" for the owner's decision; it is not asserted.
+ *      UNDER FORCED LIGHT (owner ruling 2026-10-16, quick 261016-edv): the dashboard no longer
+ *      applies dark (hooks/use-theme.ts DARK_THEME_AVAILABLE = false). The dark runs therefore
+ *      first assert that the stored dark choice does NOT reach <html> (the new contract), then
+ *      add the class by hand AFTER mount (the hook's mount effect removes it), so the two cards'
+ *      and the refusal card's `dark:` classes stay measured as the forward guard, and
+ *      "dark-residue" stays the input, for the Phase 39 candidate dark pass.
  *   3. G-37-14 (D-07, UAT test 14): at 390, 768, 1024, 1280 and 1440 px no token of a fixture
  *      Pending-invitations row is split across lines, both actions of every row sit inside the
  *      card and its scroll region, and the scroll region does not scroll sideways.
@@ -343,7 +349,17 @@ function annotate(testInfo: TestInfo, type: string, value: unknown) {
   testInfo.annotations.push({ type, description: typeof value === "string" ? value : JSON.stringify(value) })
 }
 
-/** Open /dashboard/staff in `theme` (set before the page's own scripts run) and wait for both cards. */
+/**
+ * Open /dashboard/staff in `theme` (set before the page's own scripts run) and wait for both cards.
+ *
+ * Dark, under forced light (owner ruling 2026-10-16, quick 261016-edv): the dashboard no longer
+ * applies dark, so a stale `dark` class is seeded on <html> before the page's scripts run and
+ * must be GONE once the page is up — only use-theme's mount effect removes it, so its absence
+ * proves the client ran and kept light despite the stored choice (server markup never carries
+ * the class, so a bare "absent" read could not fail). Then the class is added BY HAND: the two
+ * cards' `dark:` classes stay measured as the forward guard for the Phase 39 candidate dark pass,
+ * and it is added after mount because the mount effect would remove it.
+ */
 async function openStaffIn(page: Page, theme: "dark" | "light") {
   await page.addInitScript((t) => {
     try {
@@ -351,10 +367,33 @@ async function openStaffIn(page: Page, theme: "dark" | "light") {
     } catch {
       // storage blocked: the html.dark control below reports it
     }
+    if (t !== "dark") return
+    const add = () => document.documentElement?.classList.add("dark")
+    if (document.documentElement) {
+      add()
+      return
+    }
+    const observer = new MutationObserver(() => {
+      if (document.documentElement) {
+        add()
+        observer.disconnect()
+      }
+    })
+    observer.observe(document, { childList: true })
   }, theme)
   await page.goto("/dashboard/staff", { waitUntil: "domcontentloaded" })
   await expect(page.getByRole("region", { name: "Invite someone" })).toBeVisible({ timeout: 20_000 })
   await expect(page.locator("#staff-role")).toBeVisible({ timeout: 20_000 })
+  if (theme === "dark") {
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.classList.contains("dark")), {
+        timeout: 15_000,
+        message:
+          "quick 261016-edv: the stored dark choice must not reach <html> (the seeded stale class must be removed)",
+      })
+      .toBe(false)
+    await page.evaluate(() => document.documentElement.classList.add("dark"))
+  }
 }
 
 test.describe("UAT gaps G-37-12..G-37-15, live (37-55) @desktop-only", () => {
@@ -392,6 +431,16 @@ test.describe("UAT gaps G-37-12..G-37-15, live (37-55) @desktop-only", () => {
       await invitee.page.evaluate(() => localStorage.setItem("theme", "dark"))
       await invitee.page.reload({ waitUntil: "domcontentloaded" })
       await expectRefusal(invitee.page, 20_000)
+      // Forced light (owner ruling 2026-10-16, quick 261016-edv): the refusal is rendered from
+      // the client's own list read, so the client has mounted and use-theme's mount effect has
+      // run; the stored dark choice must not have reached <html>. Then the class is applied by
+      // hand so the refusal card's `dark:` classes stay measured as the forward guard for the
+      // Phase 39 candidate dark pass.
+      expect(
+        await invitee.page.evaluate(() => document.documentElement.classList.contains("dark")),
+        "quick 261016-edv: the stored dark choice must not reach <html>"
+      ).toBe(false)
+      await invitee.page.evaluate(() => document.documentElement.classList.add("dark"))
       expect(
         await invitee.page.evaluate(() => document.documentElement.classList.contains("dark")),
         "html.dark must be set, or the dark measurement is vacuous"
@@ -446,6 +495,11 @@ test.describe("UAT gaps G-37-12..G-37-15, live (37-55) @desktop-only", () => {
     await page.waitForTimeout(500)
     expect(invitePosts, "an empty email must not reach the API").toEqual([])
 
+    // The class was applied by hand (forced light, quick 261016-edv): confirm it is still there
+    // immediately before the measurement, or the dark measurement is vacuous.
+    await expect(page.locator("html"), "html.dark must be set, or the dark measurement is vacuous").toHaveClass(
+      /(^|\s)dark(\s|$)/
+    )
     const dark = await measureContrast(page, "cards")
     annotate(testInfo, "contrast-dark", dark)
     expect(dark.missing, "VOID if a card is missing").toEqual([])
