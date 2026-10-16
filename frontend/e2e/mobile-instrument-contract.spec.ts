@@ -86,11 +86,22 @@ async function hoverRuleAudit(page: import("@playwright/test").Page) {
         if (rule instanceof CSSMediaRule) {
           const cond = (rule.conditionText || rule.media.mediaText || "").replace(/\s+/g, "")
           walk(rule.cssRules, insideHoverMedia || cond.includes("hover:hover"))
-        } else if (rule instanceof CSSSupportsRule) {
-          walk(rule.cssRules, insideHoverMedia)
         } else if (rule instanceof CSSStyleRule && rule.selectorText.includes("hover\\:")) {
-          if (insideHoverMedia) gated++
+          const nestedHoverMedia =
+            "cssRules" in rule &&
+            rule.cssRules &&
+            rule.cssRules.length > 0 &&
+            Array.from(rule.cssRules).every(
+              (child) =>
+                child instanceof CSSMediaRule &&
+                (child.conditionText || child.media.mediaText || "")
+                  .replace(/\s+/g, "")
+                  .includes("hover:hover")
+            )
+          if (insideHoverMedia || nestedHoverMedia) gated++
           else ungated.push(rule.selectorText)
+        } else if ("cssRules" in rule && (rule as CSSGroupingRule).cssRules) {
+          walk((rule as CSSGroupingRule).cssRules, insideHoverMedia)
         }
       }
     }

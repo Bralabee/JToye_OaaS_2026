@@ -53,7 +53,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - React 19 - UI component library
 - React Hook Form 7.90.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
-- TailwindCSS 3.4.1 - Utility-first CSS framework
+- TailwindCSS 4.3.3 - Utility-first CSS framework
 - Radix UI - Headless component library
 - Zod 4.6.7 - Schema validation
 - Gin v1.12.0 - HTTP routing and middleware
