@@ -130,7 +130,7 @@ export function FulfilmentSlotPicker({
             <CalendarClock className="h-5 w-5 text-amber-700" aria-hidden="true" />
             Fulfilment Window
           </h3>
-          <p className="mt-0.5 text-xs text-stone-500">
+          <p className="mt-0.5 text-xs text-stone-600">
             {isRequired
               ? "Choose a pre-order pickup or delivery window before placing your order."
               : "Order for immediate preparation, or reserve a scheduled window ahead of time."}
@@ -184,14 +184,14 @@ export function FulfilmentSlotPicker({
             >
               <div className="flex w-full items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-sm font-bold">
-                  <Sparkles className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                  <Sparkles className="h-4 w-4 text-amber-700" aria-hidden="true" />
                   Order for now (ASAP)
                 </span>
                 {selectedSlotId === null && (
                   <CheckCircle2 className="h-4 w-4 text-amber-700" aria-hidden="true" />
                 )}
               </div>
-              <span className="mt-1 text-xs text-stone-500">
+              <span className="mt-1 text-xs text-stone-600">
                 Prepared as soon as the kitchen accepts your order
               </span>
             </button>
@@ -227,7 +227,7 @@ export function FulfilmentSlotPicker({
                   }}
                   className={`flex flex-col items-start justify-between rounded-xl border-2 p-4 text-left transition-all ${
                     isUnavailable
-                      ? "cursor-not-allowed border-stone-200 bg-stone-100/70 text-stone-400 opacity-75"
+                      ? "cursor-not-allowed border-stone-200 bg-stone-100/70 text-stone-600 opacity-75"
                       : isSelected
                         ? "border-amber-600 bg-amber-50/70 text-stone-900 shadow-sm"
                         : "border-stone-200 bg-white text-stone-800 hover:border-stone-300"
@@ -236,7 +236,7 @@ export function FulfilmentSlotPicker({
                   <div className="flex w-full items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-bold">{slot.windowLabel}</div>
-                      <div className="mt-0.5 text-xs text-stone-500">
+                      <div className="mt-0.5 text-xs text-stone-600">
                         {slot.serviceDate} &middot; {slot.windowStart}&ndash;{slot.windowEnd}
                       </div>
                     </div>
@@ -272,7 +272,7 @@ export function FulfilmentSlotPicker({
                               : "Available"}
                     </span>
 
-                    <span className="flex items-center gap-1 text-[11px] text-stone-500">
+                    <span className="flex items-center gap-1 text-xs text-stone-600">
                       <Clock className="h-3 w-3" aria-hidden="true" />
                       Cutoff {formatCutoff(slot.cutoffAt)}
                     </span>
