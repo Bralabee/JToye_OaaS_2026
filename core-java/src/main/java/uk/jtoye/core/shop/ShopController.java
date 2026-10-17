@@ -277,4 +277,27 @@ public class ShopController {
             @Parameter(description = "Slot ID") @PathVariable UUID slotId) {
         return ResponseEntity.ok(slotService.deactivateSlot(id, slotId));
     }
+
+    /**
+     * Generate a shareable WhatsApp-to-Storefront pre-order link and broadcast message (ADR-0007 / GAP-GTM-06, #208).
+     * GET /shops/{id}/whatsapp-preorder-link[?slotId=...]
+     */
+    @GetMapping("/{id}/whatsapp-preorder-link")
+    @Operation(summary = "Generate WhatsApp pre-order checkout link",
+            description = "Returns the storefront checkout path, pre-formatted WhatsApp reply/broadcast text, and wa.me "
+                    + "deep-link for a shop and optional scheduled fulfilment slot (ADR-0007 / GAP-GTM-06, #208). Requires STAFF on the shop.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "WhatsApp pre-order checkout link generated"),
+            @ApiResponse(responseCode = "403", description = "No STAFF grant on this shop"),
+            @ApiResponse(responseCode = "404", description = "Shop or slot not found"),
+            @ApiResponse(responseCode = "409", description = "Selected fulfilment slot is inactive, past cutoff, or full")
+    })
+    public ResponseEntity<uk.jtoye.core.shop.dto.WhatsAppPreOrderLinkDto> getWhatsAppPreOrderLink(
+            @Parameter(description = "Shop ID") @PathVariable UUID id,
+            @Parameter(description = "Optional scheduled fulfilment slot ID") @RequestParam(required = false) UUID slotId) {
+        if (slotService == null) {
+            throw new IllegalStateException("Fulfilment slot service is not configured");
+        }
+        return ResponseEntity.ok(slotService.buildWhatsAppPreOrderLink(id, slotId));
+    }
 }

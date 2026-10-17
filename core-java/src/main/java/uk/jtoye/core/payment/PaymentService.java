@@ -234,6 +234,82 @@ public class PaymentService {
     }
 
     /**
+     * Stripe idempotency key for a deposit order's remaining-balance PaymentIntent (GAP-GTM-04).
+     */
+    static String balanceIntentIdempotencyKey(Order order) {
+        return "order-balance-payment-intent-" + order.getId();
+    }
+
+    /**
+     * Create a Stripe PaymentIntent for the remaining balance due on a deposit-split order
+     * (ADR-0007 §1.3 / GAP-GTM-04, PAY-04).
+     *
+     * @throws IllegalStateException if the order is not persisted or has no positive remaining balance due
+     */
+    @CircuitBreaker(name = "stripe")
+    public PaymentIntentResult createBalancePaymentIntent(Order order) throws StripeException {
+        if (order.getId() == null) {
+            throw new IllegalStateException(
+                    "createBalancePaymentIntent requires a persisted order — order "
+                            + order.getOrderNumber() + " has no id.");
+        }
+        if (order.isVoided()
+                || order.getStatus() == OrderStatus.DRAFT
+                || order.getStatus() == OrderStatus.CANCELLED
+                || order.getStatus() == OrderStatus.REFUNDED) {
+            throw new IllegalStateException(
+                    "Order " + order.getOrderNumber() + " is not eligible for balance payment in status "
+                            + order.getStatus());
+        }
+        Long balanceDue = order.getBalanceDuePennies();
+        if (balanceDue == null || balanceDue <= 0) {
+            throw new IllegalStateException(
+                    "Order " + order.getOrderNumber() + " has no remaining balance due.");
+        }
+
+        java.util.Optional<SettlementRoutingDecision> routingOpt =
+                stripeConnectService.resolveSettlementRouting(order);
+
+        PaymentIntentCreateParams.Builder builder = PaymentIntentCreateParams.builder()
+                .setAmount(balanceDue)
+                .setCurrency(stripeProperties.getCurrency())
+                .setDescription("Remaining balance for Order " + order.getOrderNumber())
+                .putMetadata("order_id", order.getId().toString())
+                .putMetadata("order_number", order.getOrderNumber())
+                .putMetadata("tenant_id", order.getTenantId().toString())
+                .putMetadata("payment_stage", "BALANCE")
+                .setAutomaticPaymentMethods(
+                        PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
+                                .setEnabled(true)
+                                .build()
+                );
+
+        RequestOptions.RequestOptionsBuilder requestOptionsBuilder = RequestOptions.builder()
+                .setIdempotencyKey(balanceIntentIdempotencyKey(order));
+
+        if (routingOpt.isPresent()) {
+            SettlementRoutingDecision decision = routingOpt.get();
+            builder.putMetadata("settlement_mode", decision.mode().name());
+            long fee = stripeConnectService.applicationFeePennies(balanceDue);
+            if (fee > 0) {
+                builder.setApplicationFeeAmount(fee);
+            }
+            if (decision.usesDirectChargeHeader()) {
+                requestOptionsBuilder.setStripeAccount(decision.connectedAccountId());
+            } else if (decision.usesDestinationTransfer()) {
+                builder.setTransferData(PaymentIntentCreateParams.TransferData.builder()
+                        .setDestination(decision.connectedAccountId())
+                        .build());
+            }
+        }
+
+        PaymentIntent intent = PaymentIntent.create(builder.build(), requestOptionsBuilder.build());
+        log.info("Created BALANCE PaymentIntent {} for order {} (balanceDue: {} pennies)",
+                intent.getId(), order.getOrderNumber(), balanceDue);
+        return new PaymentIntentResult(intent.getId(), intent.getClientSecret());
+    }
+
+    /**
      * Retrieve the client secret of an EXISTING PaymentIntent by its id (WR-02).
      * Used by the guest-order idempotency short-circuit so a retried checkout
      * can resume payment with a real {@code pi_..._secret_...} value — the
@@ -335,7 +411,11 @@ public class PaymentService {
             String paymentMethodDesc = "Card";
             if (intent.getLatestCharge() != null) {
                 try {
-                    com.stripe.model.Charge charge = com.stripe.model.Charge.retrieve(intent.getLatestCharge());
+                    com.stripe.model.Charge charge = (event.getAccount() != null && !event.getAccount().isBlank())
+                            ? com.stripe.model.Charge.retrieve(
+                                    intent.getLatestCharge(),
+                                    RequestOptions.builder().setStripeAccount(event.getAccount()).build())
+                            : com.stripe.model.Charge.retrieve(intent.getLatestCharge());
                     if (charge.getPaymentMethodDetails() != null
                             && charge.getPaymentMethodDetails().getCard() != null) {
                         var card = charge.getPaymentMethodDetails().getCard();
@@ -344,6 +424,38 @@ public class PaymentService {
                 } catch (StripeException e) {
                     log.warn("Could not retrieve charge details for PI {}", intent.getId(), e);
                 }
+            }
+
+            boolean isBalanceStage = "BALANCE".equals(intent.getMetadata().get("payment_stage"));
+            if (isBalanceStage) {
+                long settledBalancePennies = (order.getBalanceDuePennies() != null && order.getBalanceDuePennies() > 0)
+                        ? order.getBalanceDuePennies()
+                        : (intent.getAmount() != null ? intent.getAmount() : 0L);
+                order.setBalanceDuePennies(0L);
+                order.setPaymentStatus(PaymentStatus.CAPTURED);
+                order.setPaymentReference(intent.getId());
+                order.setPaymentMethod(paymentMethodDesc);
+                order.setUpdatedAt(java.time.OffsetDateTime.now());
+                orderRepository.save(order);
+
+                paymentEventPublisher.publishSucceeded(
+                        order.getId(), order.getTenantId(), order.getOrderNumber(),
+                        intent.getId(), settledBalancePennies, "gbp");
+
+                if (!order.isVoided() && order.getTotalAmountPennies() != null) {
+                    financialTransactionService.createTransaction(
+                            new CreateTransactionRequest(
+                                    order.getTotalAmountPennies(),
+                                    order.getVatRate(),
+                                    "Payment " + intent.getId() + " for Order " + order.getOrderNumber(),
+                                    order.getId(),
+                                    order.getShopId()
+                            ));
+                }
+
+                log.info("Remaining balance payment succeeded for order {} — PI: {}, balance: {} pennies",
+                        order.getOrderNumber(), intent.getId(), settledBalancePennies);
+                return;
             }
 
             order.setPaymentStatus(PaymentStatus.CAPTURED);
@@ -424,22 +536,31 @@ public class PaymentService {
             Order order = orderRepository.findById(java.util.UUID.fromString(orderId))
                     .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
-            order.setPaymentStatus(PaymentStatus.FAILED);
-            order.setPaymentReference(intent.getId());
-            order.setUpdatedAt(java.time.OffsetDateTime.now());
-            orderRepository.save(order);
+            boolean isBalanceStage = "BALANCE".equals(intent.getMetadata().get("payment_stage"));
+            if (!isBalanceStage) {
+                order.setPaymentStatus(PaymentStatus.FAILED);
+                order.setPaymentReference(intent.getId());
+                order.setUpdatedAt(java.time.OffsetDateTime.now());
+                orderRepository.save(order);
+            }
 
             String failureReason = intent.getLastPaymentError() != null
                     ? intent.getLastPaymentError().getMessage()
                     : "unknown";
 
+            long failedAmountPennies = isBalanceStage
+                    ? ((order.getBalanceDuePennies() != null && order.getBalanceDuePennies() > 0)
+                            ? order.getBalanceDuePennies()
+                            : (intent.getAmount() != null ? intent.getAmount() : order.getTotalAmountPennies()))
+                    : order.getTotalAmountPennies();
+
             // Publish payment failed event
             paymentEventPublisher.publishFailed(
                     order.getId(), order.getTenantId(), order.getOrderNumber(),
-                    intent.getId(), order.getTotalAmountPennies(), "gbp", failureReason);
+                    intent.getId(), failedAmountPennies, "gbp", failureReason);
 
-            log.warn("Payment failed for order {} — PI: {}: {}",
-                    order.getOrderNumber(), intent.getId(), failureReason);
+            log.warn("Payment failed for order {} — PI: {} (stage={}): {}",
+                    order.getOrderNumber(), intent.getId(), isBalanceStage ? "BALANCE" : "INITIAL", failureReason);
         } finally {
             TenantContext.clear();
         }

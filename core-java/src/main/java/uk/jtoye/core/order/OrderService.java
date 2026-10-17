@@ -1030,4 +1030,55 @@ public class OrderService {
                 || financialTransactionService.findSaleForOrder(order.getId()).isPresent();
     }
 
+    /**
+     * Build the shareable remaining-balance payment link and pre-formatted WhatsApp message
+     * for a deposit-split order (ADR-0007 §1.3 / GAP-GTM-04, PAY-04).
+     * Requires STAFF on the order's shop.
+     */
+    @Transactional(readOnly = true)
+    public uk.jtoye.core.order.dto.BalancePaymentLinkDto getBalancePaymentLink(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        shopAccessService.require(order.getShopId(), ShopRole.STAFF);
+
+        if (order.isVoided()
+                || order.getStatus() == OrderStatus.DRAFT
+                || order.getStatus() == OrderStatus.CANCELLED
+                || order.getStatus() == OrderStatus.REFUNDED) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Order " + order.getOrderNumber() + " is not eligible for balance payment.");
+        }
+        Long balanceDue = order.getBalanceDuePennies();
+        if (balanceDue == null || balanceDue <= 0) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Order " + order.getOrderNumber() + " has no remaining balance due.");
+        }
+
+        String encodedOrderNumber = org.springframework.web.util.UriUtils.encodeQueryParam(
+                order.getOrderNumber(), java.nio.charset.StandardCharsets.UTF_8);
+        String trackingPaymentPath = "/track?orderNumber=" + encodedOrderNumber + "&payBalance=true";
+        String greetingName = (order.getCustomerName() != null && !order.getCustomerName().isBlank())
+                ? order.getCustomerName().strip()
+                : "there";
+        String formattedBalance = String.format(java.util.Locale.UK, "£%.2f", balanceDue / 100.0);
+        String whatsappShareText = "Hi " + greetingName + ", your remaining balance of " + formattedBalance
+                + " for order " + order.getOrderNumber()
+                + " is ready for payment. Complete your secure payment here: " + trackingPaymentPath;
+        String waMeUrl = "https://wa.me/?text=" + org.springframework.web.util.UriUtils.encodeQueryParam(
+                whatsappShareText, java.nio.charset.StandardCharsets.UTF_8);
+
+        return new uk.jtoye.core.order.dto.BalancePaymentLinkDto(
+                order.getId(),
+                order.getOrderNumber(),
+                order.getTotalAmountPennies(),
+                order.getDepositAmountPennies(),
+                balanceDue,
+                trackingPaymentPath,
+                whatsappShareText,
+                waMeUrl
+        );
+    }
+
 }

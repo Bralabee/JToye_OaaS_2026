@@ -1158,4 +1158,51 @@ class OrderServiceTest {
         assertFalse(oldOrder.getOrderNumber().matches("^ORD-[0-9A-F]{8}-\\d{8}-[0-9A-F]{8}$"),
                 "Old format should not match new pattern");
     }
+
+    @Test
+    @DisplayName("GAP-GTM-04: getBalancePaymentLink returns tracking payment path, formatted £ balance, and wa.me URL for deposit order")
+    void getBalancePaymentLink_orderWithRemainingBalance_returnsShareLink() {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setCustomerName("Amaka Okafor");
+        testOrder.setTotalAmountPennies(10_000L);
+        testOrder.setDepositAmountPennies(3000L);
+        testOrder.setBalanceDuePennies(7000L);
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+
+        var dto = orderService.getBalancePaymentLink(orderId);
+
+        assertEquals(orderId, dto.orderId());
+        assertEquals(testOrder.getOrderNumber(), dto.orderNumber());
+        assertEquals(10_000L, dto.totalAmountPennies());
+        assertEquals(3000L, dto.depositAmountPennies());
+        assertEquals(7000L, dto.balanceDuePennies());
+        assertTrue(dto.trackingPaymentPath().contains("payBalance=true"));
+        assertTrue(dto.whatsappShareText().contains("£70.00"));
+        assertTrue(dto.whatsappShareText().contains("Amaka Okafor"));
+        assertTrue(dto.waMeUrl().startsWith("https://wa.me/?text="));
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: getBalancePaymentLink rejects order with zero remaining balance with 409 Conflict")
+    void getBalancePaymentLink_noBalanceDue_throws409Conflict() {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setBalanceDuePennies(0L);
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+
+        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> orderService.getBalancePaymentLink(orderId));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: getBalancePaymentLink rejects DRAFT order before upfront deposit is paid with 409 Conflict")
+    void getBalancePaymentLink_draftOrder_throws409Conflict() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        testOrder.setBalanceDuePennies(7000L);
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+
+        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> orderService.getBalancePaymentLink(orderId));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+    }
 }

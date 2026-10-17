@@ -674,5 +674,169 @@ class PaymentServiceTest {
             verify(financialTransactionService, never()).createTransaction(any());
         }
     }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentIntent creates BALANCE PaymentIntent for balanceDuePennies on connected account")
+    void createBalancePaymentIntent_validBalance_createsIntentWithBalanceMetadata() throws Exception {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setPaymentStatus(PaymentStatus.CAPTURED);
+        testOrder.setTotalAmountPennies(10_000L);
+        testOrder.setDepositAmountPennies(3000L);
+        testOrder.setBalanceDuePennies(7000L);
+        when(stripeProperties.getCurrency()).thenReturn("gbp");
+        when(stripeConnectService.resolveSettlementRouting(testOrder))
+                .thenReturn(Optional.of(new SettlementRoutingDecision(
+                        SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR,
+                        "acct_caterer_1",
+                        3000L,
+                        75L,
+                        3000L,
+                        7000L
+                )));
+        when(stripeConnectService.applicationFeePennies(7000L)).thenReturn(175L);
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_bal_1");
+        when(mockIntent.getClientSecret()).thenReturn("pi_bal_1_secret");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                            any(com.stripe.net.RequestOptions.class)))
+                    .thenReturn(mockIntent);
+
+            PaymentIntentResult result = paymentService.createBalancePaymentIntent(testOrder);
+            assertEquals("pi_bal_1", result.paymentIntentId());
+            assertEquals("pi_bal_1_secret", result.clientSecret());
+
+            ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> paramsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
+            ArgumentCaptor<com.stripe.net.RequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.net.RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.create(paramsCaptor.capture(), optionsCaptor.capture()));
+
+            assertEquals(7000L, paramsCaptor.getValue().getAmount());
+            assertEquals(175L, paramsCaptor.getValue().getApplicationFeeAmount());
+            assertEquals("BALANCE", paramsCaptor.getValue().getMetadata().get("payment_stage"));
+            assertEquals("SPLIT_DEPOSIT_VENDOR_MOR", paramsCaptor.getValue().getMetadata().get("settlement_mode"));
+            assertEquals("acct_caterer_1", optionsCaptor.getValue().getStripeAccount());
+            assertEquals(PaymentService.balanceIntentIdempotencyKey(testOrder),
+                    optionsCaptor.getValue().getIdempotencyKey());
+        }
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentIntent rejects order with zero or null balanceDuePennies")
+    void createBalancePaymentIntent_zeroBalance_throwsIllegalState() {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setBalanceDuePennies(0L);
+        assertThrows(IllegalStateException.class, () -> paymentService.createBalancePaymentIntent(testOrder));
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentIntent rejects DRAFT order before upfront deposit is paid")
+    void createBalancePaymentIntent_draftOrder_throwsIllegalState() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        testOrder.setBalanceDuePennies(7000L);
+        assertThrows(IllegalStateException.class, () -> paymentService.createBalancePaymentIntent(testOrder));
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: handlePaymentIntentFailed with payment_stage=BALANCE preserves CAPTURED deposit status and deposit paymentReference")
+    void handlePaymentFailed_balanceStage_preservesCapturedDepositAndEmitsBalanceAmount() throws Exception {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setPaymentStatus(PaymentStatus.CAPTURED);
+        testOrder.setPaymentReference("pi_deposit_captured");
+        testOrder.setTotalAmountPennies(10_000L);
+        testOrder.setDepositAmountPennies(3000L);
+        testOrder.setBalanceDuePennies(7000L);
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_bal_failed");
+        when(mockIntent.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString(),
+                "payment_stage", "BALANCE"
+        ));
+        when(mockIntent.getLastPaymentError()).thenReturn(null);
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockIntent));
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.payment_failed");
+        when(mockEvent.getId()).thenReturn("evt_bal_fail");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
+                    .thenReturn(mockEvent);
+
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+
+            paymentService.handleWebhookEvent("{}", "sig_test");
+
+            assertEquals(PaymentStatus.CAPTURED, testOrder.getPaymentStatus(),
+                    "Failed balance attempt must not overwrite CAPTURED deposit status");
+            assertEquals("pi_deposit_captured", testOrder.getPaymentReference(),
+                    "Failed balance attempt must not overwrite captured deposit paymentReference");
+            assertEquals(7000L, testOrder.getBalanceDuePennies());
+            verify(paymentEventPublisher).publishFailed(
+                    eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                    eq("pi_bal_failed"), eq(7000L), eq("gbp"), eq("unknown"));
+        }
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: handlePaymentIntentSucceeded with payment_stage=BALANCE clears balanceDuePennies, preserves CONFIRMED status, and writes full-order SALE ledger row")
+    void handlePaymentSucceeded_balanceStage_clearsBalanceAndWritesSaleLedgerRow() throws Exception {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setTotalAmountPennies(10_000L);
+        testOrder.setDepositAmountPennies(3000L);
+        testOrder.setBalanceDuePennies(7000L);
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_bal_succ");
+        when(mockIntent.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString(),
+                "payment_stage", "BALANCE"
+        ));
+        when(mockIntent.getLatestCharge()).thenReturn(null);
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockIntent));
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.succeeded");
+        when(mockEvent.getId()).thenReturn("evt_bal_succ");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
+                    .thenReturn(mockEvent);
+
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+            when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            paymentService.handleWebhookEvent("{}", "sig_test");
+
+            assertEquals(OrderStatus.CONFIRMED, testOrder.getStatus(),
+                    "Balance settlement must not regress a CONFIRMED order back to PENDING");
+            assertEquals(0L, testOrder.getBalanceDuePennies());
+            assertEquals("pi_bal_succ", testOrder.getPaymentReference());
+            verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+            verify(paymentEventPublisher).publishSucceeded(
+                    eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                    eq("pi_bal_succ"), eq(7000L), eq("gbp"));
+
+            ArgumentCaptor<CreateTransactionRequest> txCaptor = ArgumentCaptor.forClass(CreateTransactionRequest.class);
+            verify(financialTransactionService).createTransaction(txCaptor.capture());
+            assertEquals(10_000L, txCaptor.getValue().amountPennies());
+        }
+    }
 }
 

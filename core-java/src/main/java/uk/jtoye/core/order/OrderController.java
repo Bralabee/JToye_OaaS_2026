@@ -227,6 +227,25 @@ public class OrderController {
     }
 
     /**
+     * Get shareable remaining-balance payment link and WhatsApp message for a deposit-split order
+     * (ADR-0007 §1.3 / GAP-GTM-04, PAY-04).
+     * GET /orders/{id}/balance-payment-link
+     */
+    @GetMapping("/{id}/balance-payment-link")
+    @Operation(summary = "Get remaining-balance payment link for a deposit order",
+            description = "Returns the customer tracking payment path, pre-formatted WhatsApp message, and wa.me deep-link "
+                    + "for an order with a positive remaining balance due (ADR-0007 §1.3 / GAP-GTM-04, PAY-04). Requires STAFF on the order's shop.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Balance payment link generated"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks STAFF grant on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "Order has no remaining balance due or is cancelled/voided")
+    })
+    public ResponseEntity<uk.jtoye.core.order.dto.BalancePaymentLinkDto> getBalancePaymentLink(@PathVariable UUID id) {
+        return ResponseEntity.ok(orderService.getBalancePaymentLink(id));
+    }
+
+    /**
      * Update order details (customer info, notes).
      * PUT /orders/{id}
      * Only allowed on DRAFT or PENDING orders.

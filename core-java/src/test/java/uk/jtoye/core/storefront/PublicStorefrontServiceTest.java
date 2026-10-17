@@ -1846,5 +1846,79 @@ class PublicStorefrontServiceTest {
                 () -> service.createGuestOrder("test-shop-abc12345", request));
         assertEquals("PAUSED", ex.getReason());
     }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentSession verifies (orderNumber, email) and creates Stripe balance PaymentIntent")
+    void createBalancePaymentSession_validDepositOrder_returnsClientSecret() throws Exception {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setTenantId(tenantId);
+        order.setShopId(publishedShop.getId());
+        order.setOrderNumber("ORD-11112222-20261017-AABBCCDD");
+        order.setCustomerEmail("customer@example.com");
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setTotalAmountPennies(10_000L);
+        order.setDepositAmountPennies(3000L);
+        order.setBalanceDuePennies(7000L);
+
+        Session mockSession = mock(Session.class);
+        when(entityManager.unwrap(Session.class)).thenReturn(mockSession);
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-11112222-20261017-AABBCCDD", "customer@example.com"))
+                .thenReturn(Optional.of(order));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createBalancePaymentIntent(order))
+                .thenReturn(new uk.jtoye.core.payment.PaymentIntentResult("pi_bal_99", "pi_bal_99_secret"));
+
+        var sessionDto = service.createBalancePaymentSession("ORD-11112222-20261017-AABBCCDD", "customer@example.com");
+
+        assertEquals("ORD-11112222-20261017-AABBCCDD", sessionDto.orderNumber());
+        assertEquals(7000L, sessionDto.balanceDuePennies());
+        assertEquals("pi_bal_99", sessionDto.paymentIntentId());
+        assertEquals("pi_bal_99_secret", sessionDto.clientSecret());
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentSession rejects order with zero remaining balance with 409 Conflict")
+    void createBalancePaymentSession_zeroBalance_throws409Conflict() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setTenantId(tenantId);
+        order.setShopId(publishedShop.getId());
+        order.setOrderNumber("ORD-11112222-20261017-AABBCCDD");
+        order.setCustomerEmail("customer@example.com");
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setBalanceDuePennies(0L);
+
+        Session mockSession = mock(Session.class);
+        when(entityManager.unwrap(Session.class)).thenReturn(mockSession);
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-11112222-20261017-AABBCCDD", "customer@example.com"))
+                .thenReturn(Optional.of(order));
+
+        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.createBalancePaymentSession("ORD-11112222-20261017-AABBCCDD", "customer@example.com"));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentSession rejects DRAFT order before upfront deposit is paid with 409 Conflict")
+    void createBalancePaymentSession_draftOrder_throws409Conflict() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setTenantId(tenantId);
+        order.setShopId(publishedShop.getId());
+        order.setOrderNumber("ORD-11112222-20261017-AABBCCDD");
+        order.setCustomerEmail("customer@example.com");
+        order.setStatus(OrderStatus.DRAFT);
+        order.setBalanceDuePennies(7000L);
+
+        Session mockSession = mock(Session.class);
+        when(entityManager.unwrap(Session.class)).thenReturn(mockSession);
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-11112222-20261017-AABBCCDD", "customer@example.com"))
+                .thenReturn(Optional.of(order));
+
+        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.createBalancePaymentSession("ORD-11112222-20261017-AABBCCDD", "customer@example.com"));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+    }
 }
 

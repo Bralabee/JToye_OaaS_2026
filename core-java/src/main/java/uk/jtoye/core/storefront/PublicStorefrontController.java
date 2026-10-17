@@ -363,6 +363,23 @@ public class PublicStorefrontController {
         return ResponseEntity.ok(storefrontService.trackOrder(orderNumber, email));
     }
 
+    @PostMapping("/orders/{orderNumber}/balance-payment-intent")
+    @Operation(summary = "Create remaining-balance PaymentIntent for a deposit order",
+            description = "Creates or resumes a Stripe PaymentIntent for the remaining balance due on a deposit-split "
+                    + "catering/pre-order after verifying customer ownership via (orderNumber, email) under the guest-tracking "
+                    + "RLS policy (ADR-0007 §1.3 / GAP-GTM-04, PAY-04).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Stripe PaymentIntent session created for the remaining balance"),
+            @ApiResponse(responseCode = "404", description = "Order not found or email does not match"),
+            @ApiResponse(responseCode = "409", description = "Order has no remaining balance due, or is cancelled/voided"),
+            @ApiResponse(responseCode = "503", description = "Card payment processing is not configured")
+    })
+    public ResponseEntity<uk.jtoye.core.storefront.dto.BalancePaymentSessionDto> createBalancePaymentIntent(
+            @PathVariable String orderNumber,
+            @RequestParam String email) {
+        return ResponseEntity.ok(storefrontService.createBalancePaymentSession(orderNumber, email));
+    }
+
     @GetMapping("/shops/{slug}/reviews")
     @Operation(summary = "Get shop reviews", description = "List verified customer reviews for a shop, newest first.")
     public Page<ReviewDto> getShopReviews(

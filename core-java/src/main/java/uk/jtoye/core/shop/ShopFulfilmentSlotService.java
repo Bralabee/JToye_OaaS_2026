@@ -159,6 +159,78 @@ public class ShopFulfilmentSlotService {
         slotRepository.releaseCapacity(order.getFulfilmentSlotId(), order.getTenantId(), units, OffsetDateTime.now(clock));
     }
 
+    /**
+     * Builds a shareable WhatsApp-to-Storefront pre-order link and pre-formatted broadcast/reply
+     * message for a shop and optional scheduled fulfilment slot (ADR-0007 / GAP-GTM-06, #208).
+     * Requires STAFF on the shop.
+     */
+    @Transactional(readOnly = true)
+    public uk.jtoye.core.shop.dto.WhatsAppPreOrderLinkDto buildWhatsAppPreOrderLink(UUID shopId, UUID slotId) {
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        UUID tenantId = requireTenantId();
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+
+        String encodedSlug = org.springframework.web.util.UriUtils.encodePathSegment(
+                shop.getSlug(), java.nio.charset.StandardCharsets.UTF_8);
+
+        if (slotId != null) {
+            ShopFulfilmentSlot slot = slotRepository.findByIdAndShopId(slotId, shopId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Fulfilment slot not found: " + slotId));
+            if (!slot.isActive()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Selected fulfilment slot is no longer active.");
+            }
+            if (!slot.getCutoffAt().isAfter(OffsetDateTime.now(clock))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Pre-order cutoff has passed for the selected fulfilment slot.");
+            }
+            boolean ordersFull = slot.getMaxOrders() != null && slot.getReservedOrders() >= slot.getMaxOrders();
+            boolean unitsFull = slot.getMaxUnits() != null && slot.getReservedUnits() >= slot.getMaxUnits();
+            if (ordersFull || unitsFull) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Selected fulfilment slot is already at full capacity.");
+            }
+            String storefrontPath = "/shop/" + encodedSlug + "?slot=" + slot.getId();
+            String windowLabel = slot.formatWindowLabel();
+            String prefilledMessage = "Pre-order from " + shop.getName()
+                    + " for " + slot.getServiceDate() + " (" + windowLabel + ")"
+                    + " — check allergens & complete your secure pre-order here: " + storefrontPath;
+            String waMeUrl = "https://wa.me/?text=" + org.springframework.web.util.UriUtils.encodeQueryParam(
+                    prefilledMessage, java.nio.charset.StandardCharsets.UTF_8);
+            return new uk.jtoye.core.shop.dto.WhatsAppPreOrderLinkDto(
+                    shop.getId(),
+                    shop.getSlug(),
+                    shop.getName(),
+                    slot.getId(),
+                    slot.getServiceDate(),
+                    windowLabel,
+                    slot.getCutoffAt(),
+                    storefrontPath,
+                    prefilledMessage,
+                    waMeUrl
+            );
+        }
+
+        String storefrontPath = "/shop/" + encodedSlug;
+        String prefilledMessage = "Order from " + shop.getName()
+                + " — view the menu, check allergens & complete your secure checkout here: " + storefrontPath;
+        String waMeUrl = "https://wa.me/?text=" + org.springframework.web.util.UriUtils.encodeQueryParam(
+                prefilledMessage, java.nio.charset.StandardCharsets.UTF_8);
+        return new uk.jtoye.core.shop.dto.WhatsAppPreOrderLinkDto(
+                shop.getId(),
+                shop.getSlug(),
+                shop.getName(),
+                null,
+                null,
+                null,
+                null,
+                storefrontPath,
+                prefilledMessage,
+                waMeUrl
+        );
+    }
+
     private static int resolveOrderUnits(Order order) {
         if (order.getUnitCount() != null && order.getUnitCount() > 0) {
             return order.getUnitCount();
