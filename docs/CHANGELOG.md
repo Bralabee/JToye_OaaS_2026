@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### GAP-GTM-02 & GAP-GTM-03 (Frontend UI): Kitchen "Cook Sheet" Prep View & Storefront Scheduled Fulfilment Slot Picker — 2026-10-17
+
+Completes the customer-facing and kitchen-facing UI for `ADR-0007` (`V87`, #943) on `/dashboard/kitchen` and `/shop/[slug]/checkout`.
+
+- **Consolidated Kitchen "Cook Sheet" Prep View (`GAP-GTM-03`, `frontend/components/dashboard/kitchen/kds-cook-sheet-panel.tsx`, `frontend/app/dashboard/kitchen/page.tsx`).** Adds a `Cook sheet` toggle (`data-testid="kds-cook-sheet-toggle"`) in the KDS header that opens `KdsCookSheetPanel` (consuming `GET /api/v1/orders/cook-sheet` and `GET /api/v1/shops/{id}/slots` via `frontend/lib/kitchen-orders-api.ts` and registered in `kitchen-route-calls.ts`), with date and fulfilment-slot filtering, batch KPI cards (`Orders in batch`, `Total dish units`, `Customer allergy notes`), aggregated dish quantities with V63 14-allergen badges, a dedicated V73 customer allergy-notes alert list, print export, and `KdsScheduledWindowBadge` on KDS tickets.
+- **Storefront Scheduled Fulfilment Slot Picker (`GAP-GTM-02`, `frontend/components/storefront/fulfilment-slot-picker.tsx`, `frontend/app/shop/[slug]/checkout/page.tsx`, `frontend/lib/checkout-idempotency.ts`).** Renders `FulfilmentSlotPicker` on `/shop/[slug]/checkout` when the shop's `fulfilmentTimingMode` is `SCHEDULED_SLOTS_ONLY` or `HYBRID_IMMEDIATE_AND_SLOTS` (consuming `GET /public/shops/{slug}/slots`), showing remaining order capacity, cutoff timestamps, and an `Order for now (ASAP)` option in hybrid mode, includes `fulfilmentSlotId` in the guest order idempotency fingerprint (`buildGuestOrderIntent`), and maps RFC 9457 slot problem types (`fulfilment-slot-required`, `fulfilment-slot-closed`, `fulfilment-slot-cutoff-passed`, `fulfilment-slot-full`) via `describeSlotCheckoutError`.
+
 ### ADR-0007: Multi-Model Commercial Settlement, Scheduled Fulfilment Slots & Kitchen Cook Sheets (`V87`) (#943) — 2026-10-17
 
 Implements `ADR-0007` (`GAP-GTM-01`, `GAP-GTM-02`, `GAP-GTM-03`) so each shop can operate on-demand counter orders, scheduled batch/pre-order drop windows, or hybrid fulfilment alongside configurable Stripe settlement routing (`DIRECT_CHARGE_VENDOR_MOR`, `DESTINATION_CHARGE_PLATFORM_MOR`, `SPLIT_DEPOSIT_VENDOR_MOR`) and consolidated prep cook sheets.

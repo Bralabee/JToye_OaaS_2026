@@ -61,6 +61,48 @@ export interface Shop {
   offersDelivery?: boolean
   /** The shop takes COLLECTION orders. Absent reads as true. */
   offersCollection?: boolean
+  /** V87 (ADR-0007 / GAP-GTM-02): immediate only, scheduled slots only, or hybrid. */
+  fulfilmentTimingMode?: FulfilmentTimingMode
+  /** V87 (ADR-0007 / GAP-GTM-01): commercial settlement routing policy override. */
+  settlementPolicyMode?: SettlementPolicyMode
+  /** V87 (ADR-0007 / GAP-GTM-01): upfront deposit basis points (1000..10000) when SPLIT_DEPOSIT_VENDOR_MOR. */
+  depositBps?: number
+}
+
+export type FulfilmentTimingMode =
+  | "IMMEDIATE_ONLY"
+  | "SCHEDULED_SLOTS_ONLY"
+  | "HYBRID_IMMEDIATE_AND_SLOTS"
+
+export type SettlementPolicyMode =
+  | "DIRECT_CHARGE_VENDOR_MOR"
+  | "DESTINATION_CHARGE_PLATFORM_MOR"
+  | "SPLIT_DEPOSIT_VENDOR_MOR"
+
+export interface FulfilmentSlotDto {
+  id: string
+  shopId: string
+  serviceDate: string
+  windowStart: string
+  windowEnd: string
+  windowLabel: string
+  cutoffAt: string
+  maxOrders: number | null
+  maxUnits: number | null
+  reservedOrders: number
+  reservedUnits: number
+  remainingOrders: number | null
+  remainingUnits: number | null
+  active: boolean
+}
+
+export interface CreateFulfilmentSlotRequest {
+  serviceDate: string
+  windowStart: string
+  windowEnd: string
+  cutoffAt: string
+  maxOrders?: number | null
+  maxUnits?: number | null
 }
 
 export interface CreateShopRequest {
@@ -94,6 +136,12 @@ export interface CreateShopRequest {
   /** 37-48: at least one of the two must be true (400 under `fulfilmentOffered` otherwise). */
   offersDelivery?: boolean
   offersCollection?: boolean
+  /** V87 (ADR-0007 / GAP-GTM-02): fulfilment timing mode. */
+  fulfilmentTimingMode?: FulfilmentTimingMode
+  /** V87 (ADR-0007 / GAP-GTM-01): settlement policy override. */
+  settlementPolicyMode?: SettlementPolicyMode
+  /** V87 (ADR-0007 / GAP-GTM-01): deposit basis points (1000..10000). */
+  depositBps?: number
 }
 
 // Media asset types (Phase 24 IMG-04) — mirror the backend
@@ -390,6 +438,12 @@ export interface Order {
   // MCP order and every pre-V81 order. Only `false` renders the "Unverified contact" badge; absent
   // never does (F20). Never derive it from the absence of a token.
   contactVerified?: boolean | null
+  // V87 (ADR-0007 / GAP-GTM-01, GAP-GTM-02): scheduled fulfilment slot and split-deposit fields.
+  fulfilmentSlotId?: string | null
+  scheduledForDate?: string | null
+  scheduledWindowLabel?: string | null
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
 }
 
 /** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */
@@ -502,6 +556,43 @@ export interface OrderDetail {
   // MCP order and every pre-V81 order. Only `false` renders the "Unverified contact" badge; absent
   // never does (F20). Never derive it from the absence of a token.
   contactVerified?: boolean | null
+  // V87 (ADR-0007 / GAP-GTM-01, GAP-GTM-02): scheduled fulfilment slot and split-deposit fields.
+  fulfilmentSlotId?: string | null
+  scheduledForDate?: string | null
+  scheduledWindowLabel?: string | null
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
+}
+
+/**
+ * Consolidated kitchen "Cook Sheet" batch-prep summary (V87, ADR-0007 / GAP-GTM-03).
+ * Mirrors backend `uk.jtoye.core.order.dto.CookSheetDto`.
+ */
+export interface CookSheetItemRow {
+  productId: string
+  productName: string
+  totalQuantity: number
+  orderCount: number
+  allergenMask: number | null
+  allergenNames: string[] | null
+}
+
+export interface CookSheetAllergyAlert {
+  orderId: string
+  orderNumber: string
+  customerName: string | null
+  allergyNote: string
+  acknowledged: boolean
+}
+
+export interface CookSheetDto {
+  shopId: string
+  scheduledForDate: string | null
+  fulfilmentSlotId: string | null
+  totalOrders: number
+  totalUnits: number
+  items: CookSheetItemRow[]
+  allergyAlerts: CookSheetAllergyAlert[]
 }
 
 export interface CreateOrderRequest {

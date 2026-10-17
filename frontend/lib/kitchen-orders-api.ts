@@ -1,6 +1,7 @@
+import apiClient from "@/lib/api-client"
 import { resolveKitchenOrdersPageSize } from "@/lib/env-validation"
 import { fetchAllPages } from "@/lib/paged-fetch"
-import type { OrderDetail, OrderStatus } from "@/types/api"
+import type { CookSheetDto, FulfilmentSlotDto, OrderDetail, OrderStatus } from "@/types/api"
 
 /**
  * The statuses that belong on a kitchen board.
@@ -95,4 +96,37 @@ export async function fetchKitchenBoard(shopId: string): Promise<KitchenBoardPag
   })
 
   return { orders: items, pagesRead, truncated }
+}
+
+/**
+ * Fetch the consolidated kitchen "Cook Sheet" batch-prep summary for one shop
+ * (V87, ADR-0007 / GAP-GTM-03). Requires STAFF on the shop (`OrderCookSheetService.java:59`).
+ */
+export async function fetchKitchenCookSheet(params: {
+  shopId: string
+  scheduledForDate?: string | null
+  fulfilmentSlotId?: string | null
+}): Promise<CookSheetDto> {
+  const query = new URLSearchParams({ shopId: params.shopId })
+  if (params.scheduledForDate) {
+    query.set("scheduledForDate", params.scheduledForDate)
+  }
+  if (params.fulfilmentSlotId) {
+    query.set("fulfilmentSlotId", params.fulfilmentSlotId)
+  }
+  const response = await apiClient.get<CookSheetDto>(
+    `/api/v1/orders/cook-sheet?${query.toString()}`
+  )
+  return response.data
+}
+
+/**
+ * Fetch scheduled fulfilment slots for a shop on the kitchen display
+ * (V87, ADR-0007 / GAP-GTM-02). Requires STAFF on the shop (`ShopFulfilmentSlotService.java:49`).
+ */
+export async function fetchKitchenFulfilmentSlots(shopId: string): Promise<FulfilmentSlotDto[]> {
+  const response = await apiClient.get<FulfilmentSlotDto[]>(
+    `/api/v1/shops/${shopId}/slots`
+  )
+  return Array.isArray(response.data) ? response.data : []
 }

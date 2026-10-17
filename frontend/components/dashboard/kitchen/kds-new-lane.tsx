@@ -22,6 +22,7 @@ import {
   orderLabel,
 } from "@/components/dashboard/kitchen/kds-card-parts"
 import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
+import { KdsScheduledWindowBadge } from "@/components/dashboard/kitchen/kds-cook-sheet-panel"
 import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
 import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
 import type { OrderDetail, OrderStatus } from "@/types/api"
@@ -384,6 +385,10 @@ function KdsNewCard({
         <div className="flex flex-wrap items-start gap-2">
           <CardTitle className="min-w-0 break-words text-lg font-semibold">{label}</CardTitle>
           <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
+          <KdsScheduledWindowBadge
+            scheduledWindowLabel={order.scheduledWindowLabel}
+            scheduledForDate={order.scheduledForDate}
+          />
         </div>
         <OrderAllergenBanner
           allergenNames={order.allergenNames}

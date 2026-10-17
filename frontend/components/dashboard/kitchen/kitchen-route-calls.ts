@@ -30,6 +30,8 @@ export interface KitchenRouteCall {
 export const KITCHEN_ROUTE_CALLS: readonly KitchenRouteCall[] = [
   // The board's read (lib/kitchen-orders-api.ts).
   { method: "GET", path: "/api/v1/orders/kitchen", floor: "STAFF", server: "OrderService.java:452" },
+  // Consolidated kitchen Cook Sheet batch-prep read (lib/kitchen-orders-api.ts, V87 / GAP-GTM-03).
+  { method: "GET", path: "/api/v1/orders/cook-sheet", floor: "STAFF", server: "OrderCookSheetService.java:59" },
   // Order detail: the board's ticket and the New lane's card (page.tsx, kds-new-lane.tsx).
   { method: "GET", path: "/api/v1/orders/{id}/detail", floor: "STAFF", server: "OrderService.java:324" },
   // The bump: start-preparation, mark-ready, complete (page.tsx). Every transition delegates to one method.
@@ -44,8 +46,9 @@ export const KITCHEN_ROUTE_CALLS: readonly KitchenRouteCall[] = [
     floor: "STAFF",
     server: "OrderService.java:648",
   },
-  // The selected shop's read and the pause (lib/shops-api.ts).
+  // The selected shop's read, scheduled slots list, and the pause (lib/shops-api.ts, lib/kitchen-orders-api.ts).
   { method: "GET", path: "/api/v1/shops/{id}", floor: "STAFF", server: "ShopService.java:171" },
+  { method: "GET", path: "/api/v1/shops/{id}/slots", floor: "STAFF", server: "ShopFulfilmentSlotService.java:49" },
   { method: "PUT", path: "/api/v1/shops/{id}/pause", floor: "STAFF", server: "ShopService.java:459" },
   { method: "DELETE", path: "/api/v1/shops/{id}/pause", floor: "STAFF", server: "ShopService.java:485" },
   // The shop switcher's list: narrowed to the caller's grants, never a shop-access-denied 403 for a vendor.
