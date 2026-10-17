@@ -115,6 +115,15 @@ describe("OrderAllergenPanel — the declared set (S3)", () => {
     ).toBeInTheDocument()
   })
 
+  it("names a kitchen whose name ends in a full stop once, with one full stop (G-37-6)", () => {
+    const { container } = renderPanel({ vendorName: "Peckham Jollof Co." })
+    const intro = screen.getByText(/^These items are prepared by /)
+    expect(intro.textContent).toBe(
+      "These items are prepared by Peckham Jollof Co. Based on what the kitchen has declared, this order contains:"
+    )
+    expect(container.textContent).not.toContain("..")
+  })
+
   it("carries the D-01/D-02 sub-line verbatim", () => {
     renderPanel()
     expect(screen.getByText(ALLERGEN_PANEL_SUBLINE_COPY)).toBeInTheDocument()

@@ -41,6 +41,7 @@ const SHOP_A = "aaaaaaaa-1111-1111-1111-111111111111"
 const SHOP_B = "bbbbbbbb-2222-2222-2222-222222222222"
 const SHOP_C = "cccccccc-3333-3333-3333-333333333333"
 const LONG_NAME = "The Very Long Named Peckham Rye Jollof And Suya Kitchen Ltd." // 60 characters
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 const SHOPS = [
   { id: SHOP_A, name: "Peckham Kitchen", published: true },
@@ -311,7 +312,9 @@ describe("UXT-026 copy to another shop (UI-SPEC § B6 'Copy to shop')", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Copy 2 products" }))
 
     const status = await within(dialog).findByRole("status")
-    expect(status).toHaveTextContent(`2 copied to ${LONG_NAME}.`)
+    // Anchored on the whole status text: LONG_NAME ends in "Ltd.", which ends the sentence, so
+    // nothing may follow it (G-37-6; this line asserted the double full stop until 37-56).
+    expect(status).toHaveTextContent(new RegExp(`^2 copied to ${escapeRegExp(LONG_NAME)}$`))
     expect(status).toHaveClass("break-words")
   })
 

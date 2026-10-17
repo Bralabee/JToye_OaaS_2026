@@ -9,6 +9,7 @@ import {
 } from "@/components/storefront/order-allergen-panel"
 import type { OrderAllergenFlag } from "@/types/api"
 import { formatUkClockTime } from "@/lib/uk-datetime"
+import { withFullStop } from "@/lib/sentence-end"
 
 /**
  * "What was recorded on your order" (Phase 31.1-15, D-08; Phase 31 D-03).
@@ -64,7 +65,7 @@ export const RECORDED_SET_SHOW_COPY = "Show what the kitchen recorded"
 
 /** D-15: the customer sent an allergy note with the order. The TEXT is never shown here. */
 export function ALLERGY_NOTE_SENT_COPY(shopName: string): string {
-  return `Your allergy note was sent to ${shopName}.`
+  return `Your allergy note was sent to ${withFullStop(shopName)}`
 }
 
 /** D-15: the shop marked the note read. `time` comes from {@link formatAllergyNoteReadAt}. */

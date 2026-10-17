@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import jakarta.mail.Message;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -555,6 +556,38 @@ class EmailNotificationServiceTest {
                         .doesNotContain(EmailNotificationService.RECORDED_SET_HEADING_COPY);
             }
         }
+    }
+
+    @Test
+    @DisplayName("G-37-6: a shop whose name ends in a full stop is named with one full stop in every status email "
+            + "and its footer")
+    void everyStatusEndsAShopNameWithOneFullStop() {
+        String shop = "Peckham Jollof Co.";
+        // Soft: a regression names every status it reaches, not just the first.
+        SoftAssertions softly = new SoftAssertions();
+        for (Status status : STATUSES) {
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            status.send().accept(service, full(shop, SHOP_EMAIL));
+
+            verify(mailSender, times(1)).send(messageCaptor.capture());
+            String body = new Sent(SentMail.reparse(messageCaptor.getValue())).getText();
+            softly.assertThat(body).as(status.name())
+                    .doesNotContain("..")
+                    .containsPattern("on behalf of Peckham Jollof Co\\.\\r?\\n");
+            String lead = switch (status.name()) {
+                case "received" -> "has been sent to Peckham Jollof Co. They will confirm it shortly";
+                case "confirmed" -> "has been confirmed by Peckham Jollof Co.";
+                case "preparing" -> "is now being prepared by Peckham Jollof Co.";
+                case "completed" -> "Thank you for ordering from Peckham Jollof Co.";
+                default -> null;
+            };
+            if (lead != null) {
+                softly.assertThat(body).as(status.name()).contains(lead).doesNotContain(lead + ".");
+            }
+        }
+        softly.assertAll();
     }
 
     // --- T-31.1-88 / ASVS V7: the recipient never reaches a log line ---------------------------------
