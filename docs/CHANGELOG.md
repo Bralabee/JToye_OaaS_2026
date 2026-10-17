@@ -16,6 +16,13 @@ Implements `ADR-0007` (`GAP-GTM-01`, `GAP-GTM-02`, `GAP-GTM-03`) so each shop ca
 - **Scheduled fulfilment slots & pre-order cut-offs (`GAP-GTM-02`, `ShopFulfilmentSlotService`, `ShopController`, `PublicStorefrontController`, `PublicStorefrontService`).** Adds vendor slot management (`GET/POST /api/v1/shops/{id}/slots`, `DELETE /api/v1/shops/{id}/slots/{slotId}`), public active-slot discovery (`GET /public/shops/{slug}/slots`), and atomic `tryReserveCapacity` (`reserved_orders + 1 <= max_orders AND cutoff_at > now()`) on storefront order creation (`409` on expired or full slot, `422` when `SCHEDULED_SLOTS_ONLY` is missing `fulfilmentSlotId` or `IMMEDIATE_ON_DEMAND` supplies one).
 - **Consolidated kitchen cook sheet (`GAP-GTM-03`, `OrderCookSheetService`, `GET /api/v1/orders/cook-sheet`).** Aggregates non-cancelled, non-voided scheduled orders for a `(shopId, scheduledForDate)` into total order/unit counts, dish quantities, and customer allergy notes + V63 `AllergenCatalog` snapshots.
 
+### GAP-GTM-07 (Part B): Merchant Value & ROI Telemetry on `/dashboard/finance` (#942) — 2026-10-17
+
+Adds the **Merchant Value & ROI Telemetry Card** (`frontend/components/dashboard/merchant-roi-card.tsx` + `frontend/lib/finance-roi.ts`) to `/dashboard/finance` so UK food vendors see their retained direct-ordering margin and operational protection in pounds and pence directly alongside the `V79` shop-scoped ledger.
+
+- **28% Aggregator Commission Saved & `ADR-0007` Plan Switcher (`frontend/lib/finance-roi.ts`, `frontend/components/dashboard/merchant-roi-card.tsx`).** Computes deterministic gross variable commission saved and net monthly savings against the 28% (`2,800 bps`) UK aggregator benchmark across all three `ADR-0007` Axis 4 billing plans (`SAAS_HYBRID_STANDARD` `£39/mo + 0.5%`, `SAAS_FLAT_PREDICTABLE` `£99/mo + 0%`, and `BATCH_PAYG_STARTER` `£0/mo + 6.0%`), surfacing an automatic upgrade notice when `BATCH_PAYG_STARTER` Direct GTV exceeds the `£710/mo` (`71,000` pennies) crossover threshold.
+- **Repeat Buyer Rate & `V81` Cash-Order Abuse Telemetry (`frontend/lib/finance-api.ts`, `frontend/app/dashboard/finance/page.tsx`).** Reads a non-blocking shop-scoped orders sample (`fetchFinanceOrdersSample`) to compute repeat buyer percentage across distinct identified customers (`null` / honest empty state when zero identified buyers exist in the sample) and `V81` (`37-27`) unverified-contact cash-order counts (`contactVerified === false` strictly per `F20`).
+
 ### Phase 37: UAT gap G-37-6 (#941) — 2026-10-17
 
 Closes UAT test 6's gap G-37-6 (plans 37-56 to 37-59). Frontend and email copy only: no migration and no API change.
