@@ -6,7 +6,9 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.boot.mail.autoconfigure.MailSenderAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.env.PropertySource;
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 
@@ -35,8 +37,15 @@ class MailStartTlsPropertyTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(MailSenderAutoConfiguration.class))
-            .withInitializer(ctx -> shippedApplicationYml()
-                    .forEach(ps -> ctx.getEnvironment().getPropertySources().addLast(ps)));
+            .withInitializer(ctx -> {
+                MutablePropertySources sources = ctx.getEnvironment().getPropertySources();
+                // The runner's StandardEnvironment includes the caller's OS environment and JVM
+                // properties, so an exported SMTP_STARTTLS would replace the ":true" default
+                // under test. Drop both so the shipped default is what gets asserted.
+                sources.remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
+                sources.remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
+                shippedApplicationYml().forEach(sources::addLast);
+            });
 
     @Test
     @DisplayName("DEF-29-6 — application.yml turns STARTTLS on under JavaMail's own key by default")
