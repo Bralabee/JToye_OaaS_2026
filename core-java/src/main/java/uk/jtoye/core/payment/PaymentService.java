@@ -51,6 +51,7 @@ public class PaymentService {
     private final JdbcTemplate jdbcTemplate;
     private final RefundService refundService;
     private final StripeConnectService stripeConnectService;
+    private final StripeBillingService stripeBillingService;
 
     // issue #98 [P2-7]: real payment-failure counter behind the Prometheus
     // PaymentFailureSpike alert (rate(jtoye_payment_failed_total[5m])).
@@ -68,6 +69,22 @@ public class PaymentService {
                          RefundService refundService,
                          StripeConnectService stripeConnectService,
                          ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this(stripeProperties, orderRepository, eventPublisher, paymentEventPublisher,
+                financialTransactionService, jdbcTemplate, refundService, stripeConnectService,
+                meterRegistryProvider, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PaymentService(StripeProperties stripeProperties,
+                         OrderRepository orderRepository,
+                         OrderEventPublisher eventPublisher,
+                         PaymentEventPublisher paymentEventPublisher,
+                         FinancialTransactionService financialTransactionService,
+                         JdbcTemplate jdbcTemplate,
+                         RefundService refundService,
+                         StripeConnectService stripeConnectService,
+                         ObjectProvider<MeterRegistry> meterRegistryProvider,
+                         StripeBillingService stripeBillingService) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
@@ -76,6 +93,7 @@ public class PaymentService {
         this.jdbcTemplate = jdbcTemplate;
         this.refundService = refundService;
         this.stripeConnectService = stripeConnectService;
+        this.stripeBillingService = stripeBillingService;
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
         this.paymentFailedCounter = reg != null
                 ? Counter.builder("jtoye.payment.failed")
@@ -383,6 +401,21 @@ public class PaymentService {
             // the platform endpoint (or this handler split per-secret — deferred
             // to the keyed environment).
             case "account.updated" -> stripeConnectService.handleAccountUpdated(event);
+            case "invoice.paid" -> {
+                if (stripeBillingService != null) {
+                    stripeBillingService.handleInvoicePaid(event);
+                }
+            }
+            case "invoice.payment_failed" -> {
+                if (stripeBillingService != null) {
+                    stripeBillingService.handleInvoicePaymentFailed(event);
+                }
+            }
+            case "customer.subscription.deleted" -> {
+                if (stripeBillingService != null) {
+                    stripeBillingService.handleSubscriptionDeleted(event);
+                }
+            }
             default -> log.debug("Unhandled Stripe event type: {}", event.getType());
         }
     }

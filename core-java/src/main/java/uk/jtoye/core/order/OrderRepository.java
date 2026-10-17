@@ -165,6 +165,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     Optional<Order> findByTenantIdAndIdempotencyKey(UUID tenantId, String idempotencyKey);
 
+    List<Order> findByTenantIdAndCustomerPhoneIsNotNullAndStatusIn(
+            UUID tenantId, Collection<OrderStatus> statuses);
+
     /**
      * How many OPEN cash orders one email address holds at a shop (Phase 37-27, D-18, UXT-041).
      *

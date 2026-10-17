@@ -241,14 +241,14 @@ public class StripeConnectService {
                     : SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR;
         }
 
-        Optional<String> accountIdOpt = tenantRepository.findById(tenantId)
+        Optional<Tenant> tenantOpt = tenantRepository.findById(tenantId)
                 .filter(t -> t.getStripeConnectStatus() == StripeConnectStatus.ENABLED)
-                .map(Tenant::getStripeAccountId)
-                .filter(accountId -> accountId != null && !accountId.isBlank());
-        if (accountIdOpt.isEmpty()) {
+                .filter(t -> t.getStripeAccountId() != null && !t.getStripeAccountId().isBlank());
+        if (tenantOpt.isEmpty()) {
             return Optional.empty();
         }
-        String accountId = accountIdOpt.get();
+        Tenant tenant = tenantOpt.get();
+        String accountId = tenant.getStripeAccountId();
 
         if (mode == SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR) {
             int depositBps = (shop != null && shop.getDepositBps() != null
@@ -259,12 +259,12 @@ public class StripeConnectService {
                     ? orderTotalPennies
                     : Math.max(1L, orderTotalPennies * depositBps / 10_000L);
             long balanceDue = Math.max(0L, orderTotalPennies - depositAmount);
-            long fee = applicationFeePennies(depositAmount);
+            long fee = applicationFeePennies(tenant, depositAmount);
             return Optional.of(new SettlementRoutingDecision(
                     mode, accountId, depositAmount, fee, depositAmount, balanceDue));
         }
 
-        long fee = applicationFeePennies(orderTotalPennies);
+        long fee = applicationFeePennies(tenant, orderTotalPennies);
         return Optional.of(new SettlementRoutingDecision(
                 mode, accountId, orderTotalPennies, fee, null, null));
     }
@@ -293,6 +293,37 @@ public class StripeConnectService {
                 .filter(t -> t.getStripeConnectStatus() == StripeConnectStatus.ENABLED)
                 .map(Tenant::getStripeAccountId)
                 .filter(accountId -> accountId != null && !accountId.isBlank());
+    }
+
+    /**
+     * Platform application fee for a connected charge on a specific tenant,
+     * honouring the tenant's {@link uk.jtoye.core.tenant.BillingPlanMode}
+     * (ADR-0007 §1.4 / GAP-GTM-05, PAY-02, and D-B9 walk cap) before falling
+     * back to the global {@code stripe.platform-fee-bps}.
+     */
+    public long applicationFeePennies(Tenant tenant, long amountPennies) {
+        if (amountPennies <= 0) {
+            return 0L;
+        }
+        if (tenant == null || tenant.getBillingPlanMode() == null) {
+            return applicationFeePennies(amountPennies);
+        }
+        uk.jtoye.core.tenant.BillingPlanMode planMode = tenant.getBillingPlanMode();
+        boolean walkSetupDone = tenant.getWalkSetupCompletedAt() != null;
+        int bps = stripeProperties.getBilling().feeBpsFor(planMode, walkSetupDone);
+        if (bps <= 0) {
+            return 0L;
+        }
+        long rawFee = amountPennies * bps / 10_000L;
+        if (planMode == uk.jtoye.core.tenant.BillingPlanMode.WALK_SETUP_STEPDOWN && walkSetupDone) {
+            long cap = stripeProperties.getBilling().getWalkMonthlyCapPennies();
+            long alreadyCharged = Math.max(0L, tenant.getMonthlyFeeChargedPennies());
+            if (alreadyCharged >= cap) {
+                return 0L;
+            }
+            return Math.min(rawFee, cap - alreadyCharged);
+        }
+        return rawFee;
     }
 
     /**

@@ -1,0 +1,247 @@
+package uk.jtoye.core.payment;
+
+import jakarta.persistence.EntityManager;
+import org.hibernate.Session;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import uk.jtoye.core.customer.Customer;
+import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.customer.PhoneVerificationChallenge;
+import uk.jtoye.core.customer.PhoneVerificationChallengeRepository;
+import uk.jtoye.core.customer.PhoneVerificationService;
+import uk.jtoye.core.notification.dispatch.WhatsAppSmsChannel;
+import uk.jtoye.core.order.Order;
+import uk.jtoye.core.order.OrderRepository;
+import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.order.PaymentStatus;
+import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+
+import java.lang.reflect.Field;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Unit tests for {@link PhoneVerificationService} (#462) and {@link OrderPaymentLinkService}
+ * (#461 / PAY-04 / B5): OTP challenge/verify, verified-phone-only payment link issuance,
+ * single-use token redemption, and prior-link revocation.
+ */
+@ExtendWith(MockitoExtension.class)
+class PhoneVerificationAndPaymentLinkTest {
+
+    @Mock private PhoneVerificationChallengeRepository challengeRepository;
+    @Mock private CustomerRepository customerRepository;
+    @Mock private OrderRepository orderRepository;
+    @Mock private OrderPaymentLinkRepository linkRepository;
+    @Mock private PaymentService paymentService;
+    @Mock private ShopAccessService shopAccessService;
+    @Mock private WhatsAppSmsChannel whatsAppSmsChannel;
+    @Mock private EntityManager entityManager;
+    @Mock private Session hibernateSession;
+
+    private PhoneVerificationService phoneVerificationService;
+    private OrderPaymentLinkService paymentLinkService;
+
+    private UUID tenantId;
+    private UUID shopId;
+    private UUID orderId;
+
+    @BeforeEach
+    void setUp() {
+        tenantId = UUID.randomUUID();
+        shopId = UUID.randomUUID();
+        orderId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        phoneVerificationService = new PhoneVerificationService(
+                challengeRepository,
+                customerRepository,
+                orderRepository,
+                whatsAppSmsChannel,
+                10,
+                5,
+                true
+        );
+
+        paymentLinkService = new OrderPaymentLinkService(
+                linkRepository,
+                orderRepository,
+                phoneVerificationService,
+                paymentService,
+                shopAccessService,
+                whatsAppSmsChannel,
+                entityManager,
+                "https://shop.jtoye.co.uk",
+                60
+        );
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
+
+    @Test
+    @DisplayName("PhoneVerificationService normalizes UK numbers to E.164, verifies 6-digit OTP, and stamps Customer + open Order")
+    void phoneVerification_challengeAndVerify_stampsCustomerAndOpenOrder() {
+        AtomicReference<PhoneVerificationChallenge> savedChallenge = new AtomicReference<>();
+        when(challengeRepository.saveAndFlush(any(PhoneVerificationChallenge.class))).thenAnswer(inv -> {
+            PhoneVerificationChallenge c = inv.getArgument(0);
+            if (c.getId() == null) {
+                c.setId(UUID.randomUUID());
+            }
+            savedChallenge.set(c);
+            return c;
+        });
+
+        PhoneVerificationService.ChallengeResult challenge = phoneVerificationService.sendChallenge(
+                tenantId, null, "07700 900123", "whatsapp");
+
+        assertThat(challenge.phoneNormalized()).isEqualTo("+447700900123");
+        assertThat(challenge.channel()).isEqualTo("WHATSAPP");
+        assertThat(challenge.testPreviewOtp()).matches("^[0-9]{6}$");
+        verify(whatsAppSmsChannel).deliver(any());
+
+        when(challengeRepository.findTopByTenantIdAndPhoneNormalizedAndVerifiedAtIsNullOrderByCreatedAtDesc(
+                tenantId, "+447700900123"))
+                .thenReturn(Optional.of(savedChallenge.get()));
+
+        Customer customer = new Customer("Ada Lovelace", "ada@example.com");
+        customer.setTenantId(tenantId);
+        customer.setPhone("07700 900123");
+        when(customerRepository.findByTenantIdAndPhoneIsNotNull(tenantId)).thenReturn(List.of(customer));
+
+        Order openOrder = buildOrder(OrderStatus.PENDING, 2500L, false);
+        openOrder.setCustomerPhone("+44 7700 900123");
+        when(orderRepository.findByTenantIdAndCustomerPhoneIsNotNullAndStatusIn(eq(tenantId), any()))
+                .thenReturn(List.of(openOrder));
+
+        // Fail first with a wrong OTP — attempts increments from 0 to 1
+        assertThatThrownBy(() -> phoneVerificationService.verifyOtp(tenantId, "+447700900123", "000000"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid verification code");
+        assertThat(savedChallenge.get().getAttempts()).isEqualTo(1);
+
+        // Pass with the real OTP
+        PhoneVerificationService.VerifyResult verified = phoneVerificationService.verifyOtp(
+                tenantId, "07700900123", challenge.testPreviewOtp());
+
+        assertThat(verified.verified()).isTrue();
+        assertThat(verified.phoneNormalized()).isEqualTo("+447700900123");
+        assertThat(customer.isPhoneVerified()).isTrue();
+        assertThat(customer.getPhoneVerifiedAt()).isNotNull();
+        assertThat(openOrder.isPhoneVerified()).isTrue();
+    }
+
+    @Test
+    @DisplayName("OrderPaymentLinkService refuses unverified phone (422) and issues single-use expiring link once verified (#461 / PAY-04)")
+    void issueAndRedeemPaymentLink_enforcesVerifiedPhoneAndSingleUse() throws Exception {
+        Order order = buildOrder(OrderStatus.PENDING, 4200L, false);
+        order.setCustomerPhone("07700 900456");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+        // 1. Fail-before-pass: unverified phone is rejected with 422 UNPROCESSABLE_ENTITY
+        when(challengeRepository.existsByTenantIdAndPhoneNormalizedAndVerifiedAtIsNotNull(
+                tenantId, "+447700900456")).thenReturn(false);
+        when(customerRepository.findByTenantIdAndPhoneIsNotNull(tenantId)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> paymentLinkService.issuePaymentLink(orderId, "UPFRONT", 30))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> {
+                    ResponseStatusException rse = (ResponseStatusException) ex;
+                    assertThat(rse.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(rse.getReason()).contains("Customer phone number must be verified");
+                });
+
+        // 2. Once phone is verified, issuing a payment link succeeds and creates a Stripe PaymentIntent
+        when(challengeRepository.existsByTenantIdAndPhoneNormalizedAndVerifiedAtIsNotNull(
+                tenantId, "+447700900456")).thenReturn(true);
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentService.isConfigured()).thenReturn(true);
+        when(paymentService.createPaymentIntent(order))
+                .thenReturn(new PaymentIntentResult("pi_live_link_01", "pi_live_link_01_secret_xyz"));
+
+        List<OrderPaymentLink> storedLinks = new ArrayList<>();
+        when(linkRepository.findByTenantIdAndOrderIdOrderByCreatedAtDesc(tenantId, orderId))
+                .thenAnswer(inv -> new ArrayList<>(storedLinks));
+        when(linkRepository.saveAndFlush(any(OrderPaymentLink.class))).thenAnswer(inv -> {
+            OrderPaymentLink l = inv.getArgument(0);
+            if (l.getId() == null) {
+                l.setId(UUID.randomUUID());
+            }
+            storedLinks.removeIf(existing -> existing.getId().equals(l.getId()));
+            storedLinks.add(l);
+            return l;
+        });
+
+        OrderPaymentLinkService.IssuedPaymentLinkDto issued =
+                paymentLinkService.issuePaymentLink(orderId, "UPFRONT", 30);
+
+        assertThat(issued.orderId()).isEqualTo(orderId);
+        assertThat(issued.purpose()).isEqualTo("UPFRONT");
+        assertThat(issued.amountPennies()).isEqualTo(4200L);
+        assertThat(issued.stripePaymentIntentId()).isEqualTo("pi_live_link_01");
+        assertThat(issued.paymentUrl()).startsWith("https://shop.jtoye.co.uk/pay/");
+        assertThat(order.isPhoneVerified()).isTrue();
+        assertThat(order.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
+
+        // 3. Single-use redemption: first call succeeds and stamps used_at; second call fails with 409 CONFLICT
+        lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
+        OrderPaymentLink savedLink = storedLinks.get(0);
+        when(linkRepository.findByTokenSha256(savedLink.getTokenSha256()))
+                .thenReturn(Optional.of(savedLink));
+        when(paymentService.retrieveClientSecret("pi_live_link_01"))
+                .thenReturn("pi_live_link_01_secret_xyz");
+
+        OrderPaymentLinkService.RedeemedPaymentLinkDto redeemed =
+                paymentLinkService.redeemPaymentLink(issued.token());
+
+        assertThat(redeemed.clientSecret()).isEqualTo("pi_live_link_01_secret_xyz");
+        assertThat(savedLink.getUsedAt()).isNotNull();
+
+        assertThatThrownBy(() -> paymentLinkService.redeemPaymentLink(issued.token()))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> {
+                    ResponseStatusException rse = (ResponseStatusException) ex;
+                    assertThat(rse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(rse.getReason()).contains("already been used");
+                });
+    }
+
+    private Order buildOrder(OrderStatus status, long totalAmountPennies, boolean phoneVerified) {
+        Order order = new Order();
+        try {
+            Field idField = Order.class.getDeclaredField("id");
+            idField.setAccessible(true);
+            idField.set(order, orderId);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+        order.setTenantId(tenantId);
+        order.setShopId(shopId);
+        order.setOrderNumber("ORD-P30-001");
+        order.setStatus(status);
+        order.setTotalAmountPennies(totalAmountPennies);
+        order.setPhoneVerified(phoneVerified);
+        return order;
+    }
+}

@@ -831,6 +831,18 @@ stripe:
     # Where Stripe returns the vendor after Express onboarding / on link expiry.
     return-url: ${STRIPE_CONNECT_RETURN_URL:http://localhost:3000/dashboard/payments/connect/return}
     refresh-url: ${STRIPE_CONNECT_REFRESH_URL:http://localhost:3000/dashboard/payments/connect/refresh}
+  # Phase 30 (GAP-GTM-05 / PAY-02 / B8 / B9 / D-B9): Plan-configurable recurring SaaS billing tiers.
+  billing:
+    hybrid-monthly-pennies: ${STRIPE_BILLING_HYBRID_MONTHLY_PENNIES:3900}
+    hybrid-fee-bps: ${STRIPE_BILLING_HYBRID_FEE_BPS:50}
+    flat-monthly-pennies: ${STRIPE_BILLING_FLAT_MONTHLY_PENNIES:7900}
+    flat-max-monthly-pennies: ${STRIPE_BILLING_FLAT_MAX_MONTHLY_PENNIES:14900}
+    flat-fee-bps: ${STRIPE_BILLING_FLAT_FEE_BPS:0}
+    payg-monthly-pennies: ${STRIPE_BILLING_PAYG_MONTHLY_PENNIES:0}
+    payg-fee-bps: ${STRIPE_BILLING_PAYG_FEE_BPS:600}
+    walk-setup-monthly-pennies: ${STRIPE_BILLING_WALK_SETUP_MONTHLY_PENNIES:19500}
+    walk-ongoing-fee-bps: ${STRIPE_BILLING_WALK_ONGOING_FEE_BPS:250}
+    walk-monthly-cap-pennies: ${STRIPE_BILLING_WALK_MONTHLY_CAP_PENNIES:3900}
 
 # issue #102 — tenant lifecycle enforcement (TenantStatusInterceptor).
 # statusOf() lookups are served from an in-memory TTL cache; lifecycle
