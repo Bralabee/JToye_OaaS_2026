@@ -327,4 +327,16 @@ describe("D-17: Download allergen label asks for the production date", () => {
     expect(anchorClick).not.toHaveBeenCalled()
     expect(screen.getByRole("dialog")).toBeInTheDocument()
   })
+
+  it("selecting the 62mm continuous thermal roll format appends &format=THERMAL_62MM (GTM-BLK-06)", async () => {
+    const dialog = await openLabelDialog()
+    const formatSelect = within(dialog).getByLabelText("Label size / printer")
+    fireEvent.change(formatSelect, { target: { value: "THERMAL_62MM" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download label" }))
+
+    await waitFor(() => expect(labelCalls()).toHaveLength(1))
+    expect(labelCalls()[0][0]).toBe(
+      `/api/v1/products/p-1/label?productionDate=${LONDON_TODAY}&format=THERMAL_62MM`
+    )
+  })
 })

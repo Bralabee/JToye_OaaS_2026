@@ -9,12 +9,15 @@ import {
   Loader2,
   Printer,
   RefreshCw,
+  Tag,
   UtensilsCrossed,
 } from "lucide-react"
 import {
   fetchKitchenCookSheet,
   fetchKitchenFulfilmentSlots,
 } from "@/lib/kitchen-orders-api"
+import { downloadProductLabelBlob } from "@/lib/products-api"
+import { withFullStop } from "@/lib/sentence-end"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,6 +28,15 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import type { CookSheetDto, FulfilmentSlotDto } from "@/types/api"
+
+function ukTodayIso(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
 
 export interface KdsCookSheetPanelProps {
   shopId: string | null
@@ -75,6 +87,32 @@ export function KdsCookSheetPanel({ shopId, shopName, stopped = false }: KdsCook
   const [cookSheet, setCookSheet] = useState<CookSheetDto | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  const [downloadingLabelId, setDownloadingLabelId] = useState<string | null>(null)
+
+  const downloadThermalLabel = async (productId: string, productName: string) => {
+    if (!productId || downloadingLabelId === productId) return
+    setDownloadingLabelId(productId)
+    setError(null)
+    try {
+      const productionDate = scheduledForDate.trim() || ukTodayIso()
+      const blob = await downloadProductLabelBlob({
+        productId,
+        productionDate,
+        format: "THERMAL_62MM",
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      const safeName = productName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || productId
+      a.download = `label-62mm-${safeName}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError(`Could not generate 62mm thermal PPDS label for ${withFullStop(productName)}`)
+    } finally {
+      setDownloadingLabelId(null)
+    }
+  }
 
   const loadSlots = useCallback(async () => {
     if (!shopId || stopped) {
@@ -387,6 +425,9 @@ export function KdsCookSheetPanel({ shopId, shopName, stopped = false }: KdsCook
                       <th scope="col" className="px-3.5 py-2.5">
                         Recorded allergens (PPDS)
                       </th>
+                      <th scope="col" className="px-3.5 py-2.5 text-right">
+                        PPDS Label
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
@@ -441,6 +482,25 @@ export function KdsCookSheetPanel({ shopId, shopName, stopped = false }: KdsCook
                               ))}
                             </div>
                           )}
+                        </td>
+                        <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            data-testid={`cook-sheet-thermal-label-btn-${item.productId}`}
+                            disabled={downloadingLabelId === item.productId}
+                            onClick={() => void downloadThermalLabel(item.productId, item.productName)}
+                            aria-label={`Download 62mm thermal PPDS label for ${item.productName}`}
+                            className="h-8 gap-1.5 text-xs"
+                          >
+                            {downloadingLabelId === item.productId ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Tag className="h-3.5 w-3.5" aria-hidden="true" />
+                            )}
+                            62mm Label
+                          </Button>
                         </td>
                       </tr>
                     ))}

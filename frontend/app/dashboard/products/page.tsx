@@ -47,12 +47,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import Link from "next/link"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload, Copy as CopyIcon } from "lucide-react"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload, Copy as CopyIcon, UtensilsCrossed } from "lucide-react"
 import { CopyToShopDialog } from "@/components/dashboard/products/copy-to-shop-dialog"
+import { SeedCulinaryPackDialog } from "@/components/dashboard/products/seed-culinary-pack-dialog"
 import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
-import type { Product, CreateProductRequest, Shop, ProductAllergenWarning, VatRate } from "@/types/api"
+import type { Product, CreateProductRequest, Shop, ProductAllergenWarning, VatRate, LabelFormat } from "@/types/api"
 import {
   ALLERGENS,
   hasAllergen,
@@ -209,8 +210,10 @@ export default function ProductsPage() {
   const [labelProduct, setLabelProduct] = useState<Product | null>(null)
   const [labelDate, setLabelDate] = useState("")
   const [labelMaxDate, setLabelMaxDate] = useState("")
+  const [labelFormat, setLabelFormat] = useState<LabelFormat>("STANDARD_100X60MM")
   const [labelError, setLabelError] = useState<string | null>(null)
   const [labelDownloading, setLabelDownloading] = useState(false)
+  const [seedDialogOpen, setSeedDialogOpen] = useState(false)
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
@@ -566,6 +569,7 @@ export default function ProductsPage() {
     const today = ukTodayIso()
     setLabelDate(today)
     setLabelMaxDate(today)
+    setLabelFormat("STANDARD_100X60MM")
     setLabelError(null)
     setLabelProduct(product)
   }
@@ -590,14 +594,18 @@ export default function ProductsPage() {
     setLabelError(null)
     setLabelDownloading(true)
     try {
+      const formatParam = labelFormat === "THERMAL_62MM" ? "&format=THERMAL_62MM" : ""
       const res = await apiClient.get(
-        `/api/v1/products/${labelProduct.id}/label?productionDate=${encodeURIComponent(labelDate)}`,
+        `/api/v1/products/${labelProduct.id}/label?productionDate=${encodeURIComponent(labelDate)}${formatParam}`,
         { responseType: "blob" }
       )
       const url = URL.createObjectURL(res.data)
       const a = document.createElement("a")
       a.href = url
-      a.download = `label-${labelProduct.sku}.pdf`
+      a.download =
+        labelFormat === "THERMAL_62MM"
+          ? `label-62mm-${labelProduct.sku}.pdf`
+          : `label-${labelProduct.sku}.pdf`
       a.click()
       URL.revokeObjectURL(url)
       closeLabelDialog()
@@ -683,6 +691,15 @@ export default function ProductsPage() {
               Copy to another shop…
             </Button>
           )}
+          <Button
+            variant="outline"
+            className="gap-2"
+            data-testid="open-seed-culinary-pack-btn"
+            onClick={() => setSeedDialogOpen(true)}
+          >
+            <UtensilsCrossed className="h-4 w-4" aria-hidden="true" />
+            Seed Cuisine Pack…
+          </Button>
           <Link href="/dashboard/products/import">
             <Button variant="outline" className="gap-2">
               <Upload className="h-4 w-4" />
@@ -932,6 +949,16 @@ export default function ProductsPage() {
           }}
         />
       )}
+
+      <SeedCulinaryPackDialog
+        open={seedDialogOpen}
+        onOpenChange={setSeedDialogOpen}
+        shops={shops}
+        defaultShopId={contextShopId}
+        onSeeded={(result) => {
+          if (result.created > 0) fetchProducts()
+        }}
+      />
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={onFormDialogOpenChange}>
@@ -1449,6 +1476,19 @@ export default function ProductsPage() {
                   {labelError}
                 </p>
               )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="label-format-select">Label size / printer</Label>
+              <select
+                id="label-format-select"
+                data-testid="label-format-select"
+                value={labelFormat}
+                onChange={(e) => setLabelFormat(e.target.value as LabelFormat)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="STANDARD_100X60MM">Standard 100×60mm sheet</option>
+                <option value="THERMAL_62MM">62mm continuous thermal roll (Brother QL)</option>
+              </select>
             </div>
             <DialogFooter>
               <Button
