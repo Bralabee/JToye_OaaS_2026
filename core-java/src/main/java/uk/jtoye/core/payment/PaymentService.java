@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
@@ -51,6 +52,7 @@ public class PaymentService {
     private final JdbcTemplate jdbcTemplate;
     private final RefundService refundService;
     private final StripeConnectService stripeConnectService;
+    private final StripeBillingService stripeBillingService;
 
     // issue #98 [P2-7]: real payment-failure counter behind the Prometheus
     // PaymentFailureSpike alert (rate(jtoye_payment_failed_total[5m])).
@@ -68,6 +70,22 @@ public class PaymentService {
                          RefundService refundService,
                          StripeConnectService stripeConnectService,
                          ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this(stripeProperties, orderRepository, eventPublisher, paymentEventPublisher,
+                financialTransactionService, jdbcTemplate, refundService, stripeConnectService,
+                meterRegistryProvider, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PaymentService(StripeProperties stripeProperties,
+                         OrderRepository orderRepository,
+                         OrderEventPublisher eventPublisher,
+                         PaymentEventPublisher paymentEventPublisher,
+                         FinancialTransactionService financialTransactionService,
+                         JdbcTemplate jdbcTemplate,
+                         RefundService refundService,
+                         StripeConnectService stripeConnectService,
+                         ObjectProvider<MeterRegistry> meterRegistryProvider,
+                         StripeBillingService stripeBillingService) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
@@ -76,6 +94,7 @@ public class PaymentService {
         this.jdbcTemplate = jdbcTemplate;
         this.refundService = refundService;
         this.stripeConnectService = stripeConnectService;
+        this.stripeBillingService = stripeBillingService;
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
         this.paymentFailedCounter = reg != null
                 ? Counter.builder("jtoye.payment.failed")
@@ -290,7 +309,9 @@ public class PaymentService {
         if (routingOpt.isPresent()) {
             SettlementRoutingDecision decision = routingOpt.get();
             builder.putMetadata("settlement_mode", decision.mode().name());
-            long fee = stripeConnectService.applicationFeePennies(balanceDue);
+            // A-2 (PR #949 round 1): the balance fee honours the tenant's BillingPlanMode
+            // (0.5% / 0% / 6% / walk-capped), never the global stripe.platform-fee-bps.
+            long fee = stripeConnectService.applicationFeePennies(order.getTenantId(), balanceDue);
             if (fee > 0) {
                 builder.setApplicationFeeAmount(fee);
             }
@@ -318,6 +339,26 @@ public class PaymentService {
     @CircuitBreaker(name = "stripe")
     public String retrieveClientSecret(String paymentIntentId) throws StripeException {
         return PaymentIntent.retrieve(paymentIntentId).getClientSecret();
+    }
+
+    /**
+     * Retrieve the client secret of an EXISTING PaymentIntent that belongs to {@code order}.
+     * A-1 (PR #949 round 1): direct-charge and split-deposit intents live on the vendor's
+     * connected account, so they must be retrieved with the {@code Stripe-Account} header —
+     * a platform-account retrieve answers 404 {@code resource_missing}.
+     */
+    @CircuitBreaker(name = "stripe")
+    public String retrieveClientSecret(Order order, String paymentIntentId) throws StripeException {
+        if (order != null) {
+            Optional<SettlementRoutingDecision> routing = stripeConnectService.resolveSettlementRouting(order);
+            if (routing.isPresent() && routing.get().usesDirectChargeHeader()) {
+                RequestOptions options = RequestOptions.builder()
+                        .setStripeAccount(routing.get().connectedAccountId())
+                        .build();
+                return PaymentIntent.retrieve(paymentIntentId, options).getClientSecret();
+            }
+        }
+        return retrieveClientSecret(paymentIntentId);
     }
 
     /**
@@ -383,6 +424,21 @@ public class PaymentService {
             // the platform endpoint (or this handler split per-secret — deferred
             // to the keyed environment).
             case "account.updated" -> stripeConnectService.handleAccountUpdated(event);
+            case "invoice.paid" -> {
+                if (stripeBillingService != null) {
+                    stripeBillingService.handleInvoicePaid(event);
+                }
+            }
+            case "invoice.payment_failed" -> {
+                if (stripeBillingService != null) {
+                    stripeBillingService.handleInvoicePaymentFailed(event);
+                }
+            }
+            case "customer.subscription.deleted" -> {
+                if (stripeBillingService != null) {
+                    stripeBillingService.handleSubscriptionDeleted(event);
+                }
+            }
             default -> log.debug("Unhandled Stripe event type: {}", event.getType());
         }
     }

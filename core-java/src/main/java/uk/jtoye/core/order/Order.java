@@ -697,6 +697,9 @@ public class Order {
         this.scheduledWindowLabel = scheduledWindowLabel;
     }
 
+    @Column(name = "phone_verified")
+    private Boolean phoneVerified;
+
     public Long getDepositAmountPennies() {
         return depositAmountPennies;
     }
@@ -711,6 +714,18 @@ public class Order {
 
     public void setBalanceDuePennies(Long balanceDuePennies) {
         this.balanceDuePennies = balanceDuePennies;
+    }
+
+    public Boolean getPhoneVerified() {
+        return phoneVerified;
+    }
+
+    public boolean isPhoneVerified() {
+        return Boolean.TRUE.equals(phoneVerified);
+    }
+
+    public void setPhoneVerified(Boolean phoneVerified) {
+        this.phoneVerified = phoneVerified;
     }
 
     /** JPA-managed optimistic lock version. Null until the entity is flushed. */

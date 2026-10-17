@@ -88,6 +88,38 @@ public class Tenant {
     @ColumnDefault("'NONE'")
     private StripeConnectStatus stripeConnectStatus = StripeConnectStatus.NONE;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "billing_plan_mode", length = 40)
+    private BillingPlanMode billingPlanMode;
+
+    @Column(name = "stripe_customer_id", length = 255)
+    private String stripeCustomerId;
+
+    @Column(name = "stripe_subscription_id", length = 255)
+    private String stripeSubscriptionId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "subscription_status", nullable = false, length = 32)
+    @ColumnDefault("'NONE'")
+    private SubscriptionStatus subscriptionStatus = SubscriptionStatus.NONE;
+
+    @Column(name = "subscription_current_period_end")
+    private OffsetDateTime subscriptionCurrentPeriodEnd;
+
+    @Column(name = "subscription_cancel_at_period_end", nullable = false)
+    @ColumnDefault("false")
+    private boolean subscriptionCancelAtPeriodEnd = false;
+
+    @Column(name = "latest_stripe_invoice_id", length = 255)
+    private String latestStripeInvoiceId;
+
+    @Column(name = "walk_setup_completed_at")
+    private OffsetDateTime walkSetupCompletedAt;
+
+    @Column(name = "monthly_fee_charged_pennies", nullable = false)
+    @ColumnDefault("0")
+    private long monthlyFeeChargedPennies = 0L;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
@@ -129,5 +161,42 @@ public class Tenant {
     public StripeConnectStatus getStripeConnectStatus() { return stripeConnectStatus; }
     public void setStripeConnectStatus(StripeConnectStatus stripeConnectStatus) {
         this.stripeConnectStatus = stripeConnectStatus;
+    }
+
+    public BillingPlanMode getBillingPlanMode() { return billingPlanMode; }
+    public void setBillingPlanMode(BillingPlanMode billingPlanMode) { this.billingPlanMode = billingPlanMode; }
+
+    public String getStripeCustomerId() { return stripeCustomerId; }
+    public void setStripeCustomerId(String stripeCustomerId) { this.stripeCustomerId = stripeCustomerId; }
+
+    public String getStripeSubscriptionId() { return stripeSubscriptionId; }
+    public void setStripeSubscriptionId(String stripeSubscriptionId) { this.stripeSubscriptionId = stripeSubscriptionId; }
+
+    public SubscriptionStatus getSubscriptionStatus() { return subscriptionStatus; }
+    public void setSubscriptionStatus(SubscriptionStatus subscriptionStatus) { this.subscriptionStatus = subscriptionStatus; }
+
+    public OffsetDateTime getSubscriptionCurrentPeriodEnd() { return subscriptionCurrentPeriodEnd; }
+    public void setSubscriptionCurrentPeriodEnd(OffsetDateTime subscriptionCurrentPeriodEnd) {
+        this.subscriptionCurrentPeriodEnd = subscriptionCurrentPeriodEnd;
+    }
+
+    public boolean isSubscriptionCancelAtPeriodEnd() { return subscriptionCancelAtPeriodEnd; }
+    public void setSubscriptionCancelAtPeriodEnd(boolean subscriptionCancelAtPeriodEnd) {
+        this.subscriptionCancelAtPeriodEnd = subscriptionCancelAtPeriodEnd;
+    }
+
+    public String getLatestStripeInvoiceId() { return latestStripeInvoiceId; }
+    public void setLatestStripeInvoiceId(String latestStripeInvoiceId) {
+        this.latestStripeInvoiceId = latestStripeInvoiceId;
+    }
+
+    public OffsetDateTime getWalkSetupCompletedAt() { return walkSetupCompletedAt; }
+    public void setWalkSetupCompletedAt(OffsetDateTime walkSetupCompletedAt) {
+        this.walkSetupCompletedAt = walkSetupCompletedAt;
+    }
+
+    public long getMonthlyFeeChargedPennies() { return monthlyFeeChargedPennies; }
+    public void setMonthlyFeeChargedPennies(long monthlyFeeChargedPennies) {
+        this.monthlyFeeChargedPennies = monthlyFeeChargedPennies;
     }
 }

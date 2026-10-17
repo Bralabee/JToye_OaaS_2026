@@ -239,6 +239,7 @@ public class OrderService {
             order.setCustomerName(customer.getName());
             order.setCustomerEmail(customer.getEmail());
             order.setCustomerPhone(customer.getPhone());
+            order.setPhoneVerified(customer.isPhoneVerified());
         } else {
             // Fallback: use directly provided fields (backward compatible)
             order.setCustomerName(request.getCustomerName());
@@ -459,6 +460,7 @@ public class OrderService {
             order.setCustomerName(customer.getName());
             order.setCustomerEmail(customer.getEmail());
             order.setCustomerPhone(customer.getPhone());
+            order.setPhoneVerified(customer.isPhoneVerified());
         } else {
             if (request.getCustomerName() != null) order.setCustomerName(request.getCustomerName());
             if (request.getCustomerEmail() != null) order.setCustomerEmail(request.getCustomerEmail());
@@ -792,6 +794,14 @@ public class OrderService {
         // Use StateMachine to validate and execute transition
         OrderStatus newStatus = stateMachineService.sendEvent(orderId, oldStatus, event);
 
+        // Phase 30 (#461 / PAY-04 / B5): unpaid card or payment-link orders must never enter
+        // kitchen production (PREPARING) until upfront or deposit payment is completed.
+        if (newStatus == OrderStatus.PREPARING && isAwaitingUpfrontOrDepositPayment(order)) {
+            throw new InvalidStateTransitionException(
+                    "Order " + order.getOrderNumber()
+                            + " cannot enter kitchen preparation until upfront or deposit payment is completed (#461).");
+        }
+
         // Mutate in memory first; the save happens AFTER stock bookkeeping so a
         // stock failure rolls back the status change (CQ-01 — RESEARCH §11 Q7).
         order.setStatus(newStatus);
@@ -1079,6 +1089,16 @@ public class OrderService {
                 whatsappShareText,
                 waMeUrl
         );
+    }
+
+    private static boolean isAwaitingUpfrontOrDepositPayment(Order order) {
+        PaymentStatus ps = order.getPaymentStatus();
+        if (ps == PaymentStatus.PENDING || ps == PaymentStatus.FAILED) {
+            return true;
+        }
+        return order.getPaymentReference() != null
+                && ps != PaymentStatus.CAPTURED
+                && ps != PaymentStatus.AUTHORIZED;
     }
 
 }

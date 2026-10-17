@@ -117,7 +117,7 @@ public class CashOrderCaps {
      * prefix is a different key. {@code GuestOrderRequest} enforces only {@code @NotBlank @Size(max = 50)}
      * on the phone, so the spellings this folds are the ones customers actually submit.
      */
-    static String normalisePhone(String phone) {
+    public static String normalisePhone(String phone) {
         if (phone == null) {
             return null;
         }
@@ -137,7 +137,7 @@ public class CashOrderCaps {
     }
 
     /** Trimmed and lower-cased; {@code null} for a blank address. */
-    static String normaliseEmail(String email) {
+    public static String normaliseEmail(String email) {
         if (email == null) {
             return null;
         }

@@ -17,5 +17,10 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
     /** Webhook lookup: resolve the tenant a connected account belongs to (V48 unique index). */
     Optional<Tenant> findByStripeAccountId(String stripeAccountId);
 
+    /** Webhook lookup: resolve the tenant for invoice.* / subscription.* events (V88). */
+    Optional<Tenant> findByStripeCustomerId(String stripeCustomerId);
+
+    Optional<Tenant> findByStripeSubscriptionId(String stripeSubscriptionId);
+
     Optional<Tenant> findByName(String name);
 }

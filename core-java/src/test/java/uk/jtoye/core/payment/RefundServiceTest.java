@@ -52,6 +52,7 @@ class RefundServiceTest {
     @Mock private RefundMapper refundMapper;
     @Mock private StripeRefundClient stripeRefundClient;
     @Mock private RefundEventPublisher refundEventPublisher;
+    @Mock private StripeConnectService stripeConnectService;
 
     private RefundService refundService;
 
@@ -62,7 +63,8 @@ class RefundServiceTest {
     void setUp() {
         refundService = new RefundService(
                 refundRepository, orderRepository, stateMachineService,
-                refundMapper, stripeRefundClient, refundEventPublisher
+                refundMapper, stripeRefundClient, refundEventPublisher,
+                stripeConnectService
         );
         tenantId = UUID.randomUUID();
         orderId = UUID.randomUUID();
@@ -454,5 +456,87 @@ class RefundServiceTest {
                 .hasMessageContaining(orderId.toString());
 
         verifyNoInteractions(refundMapper);
+    }
+
+    @Test
+    @DisplayName("createRefund routes DIRECT_CHARGE_VENDOR_MOR refunds to the connected account via RequestOptions.stripeAccount (PAY-03)")
+    void createRefund_directChargeVendorMor_setsStripeAccountHeader() throws StripeException {
+        Order order = buildOrder(OrderStatus.COMPLETED, 2000L, "pi_direct_01");
+        when(stripeConnectService.resolveSettlementRouting(order)).thenReturn(Optional.of(
+                new SettlementRoutingDecision(
+                        SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR,
+                        "acct_vendor_direct_01",
+                        2000L, 10L, null, null
+                )
+        ));
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(refundRepository.sumLiveAmountByOrderId(orderId)).thenReturn(0L);
+        when(refundRepository.saveAndFlush(any(Refund.class))).thenAnswer(inv -> {
+            Refund r = inv.getArgument(0);
+            try {
+                Field idField = Refund.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                if (r.getId() == null) idField.set(r, UUID.randomUUID());
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException(e);
+            }
+            return r;
+        });
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stripeRefundClient.create(any(RefundCreateParams.class), any(RequestOptions.class)))
+                .thenReturn(stripeRefund("re_direct_01", "succeeded"));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.COMPLETED, OrderEvent.REFUND_REQUESTED))
+                .thenReturn(OrderStatus.REFUNDED);
+        when(refundMapper.toDto(any(Refund.class))).thenReturn(stubDto(UUID.randomUUID()));
+
+        refundService.createRefund(orderId, req(2000L, RefundReason.REQUESTED_BY_CUSTOMER, "Direct refund"), "idem-direct-1");
+
+        ArgumentCaptor<RefundCreateParams> paramsCaptor = ArgumentCaptor.forClass(RefundCreateParams.class);
+        ArgumentCaptor<RequestOptions> optsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(stripeRefundClient).create(paramsCaptor.capture(), optsCaptor.capture());
+
+        assertThat(optsCaptor.getValue().getStripeAccount()).isEqualTo("acct_vendor_direct_01");
+        assertThat(paramsCaptor.getValue().getReverseTransfer()).isNull();
+    }
+
+    @Test
+    @DisplayName("createRefund sets reverseTransfer=true on DESTINATION_CHARGE_PLATFORM_MOR connected-account refunds (PAY-03)")
+    void createRefund_destinationChargePlatformMor_setsReverseTransferTrue() throws StripeException {
+        Order order = buildOrder(OrderStatus.COMPLETED, 3000L, "pi_dest_01");
+        when(stripeConnectService.resolveSettlementRouting(order)).thenReturn(Optional.of(
+                new SettlementRoutingDecision(
+                        SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR,
+                        "acct_vendor_dest_01",
+                        3000L, 15L, null, null
+                )
+        ));
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(refundRepository.sumLiveAmountByOrderId(orderId)).thenReturn(0L);
+        when(refundRepository.saveAndFlush(any(Refund.class))).thenAnswer(inv -> {
+            Refund r = inv.getArgument(0);
+            try {
+                Field idField = Refund.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                if (r.getId() == null) idField.set(r, UUID.randomUUID());
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException(e);
+            }
+            return r;
+        });
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stripeRefundClient.create(any(RefundCreateParams.class), any(RequestOptions.class)))
+                .thenReturn(stripeRefund("re_dest_01", "succeeded"));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.COMPLETED, OrderEvent.REFUND_REQUESTED))
+                .thenReturn(OrderStatus.REFUNDED);
+        when(refundMapper.toDto(any(Refund.class))).thenReturn(stubDto(UUID.randomUUID()));
+
+        refundService.createRefund(orderId, req(3000L, RefundReason.REQUESTED_BY_CUSTOMER, "Dest refund"), "idem-dest-1");
+
+        ArgumentCaptor<RefundCreateParams> paramsCaptor = ArgumentCaptor.forClass(RefundCreateParams.class);
+        ArgumentCaptor<RequestOptions> optsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(stripeRefundClient).create(paramsCaptor.capture(), optsCaptor.capture());
+
+        assertThat(optsCaptor.getValue().getStripeAccount()).isNull();
+        assertThat(paramsCaptor.getValue().getReverseTransfer()).isTrue();
     }
 }

@@ -37,6 +37,12 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
     Optional<Customer> findByPhone(String phone);
 
     /**
+     * Find all customers in tenant with a non-null phone so normalized UK/E.164 phone matching
+     * works regardless of stored spacing/prefix (#462).
+     */
+    List<Customer> findByTenantIdAndPhoneIsNotNull(UUID tenantId);
+
+    /**
      * Option C (Phase 39-08): per-shop customer narrowing for non-{@code allShops} callers.
      * Matches customers in {@code tenantId} whose {@code originShopId} is in {@code shopIds}
      * OR who have at least one order placed at a shop in {@code shopIds}.

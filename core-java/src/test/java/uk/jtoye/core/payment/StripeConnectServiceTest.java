@@ -436,5 +436,39 @@ class StripeConnectServiceTest {
 
         assertEquals(Optional.empty(), service.resolveSettlementRouting(tenantId, shop, 5000L));
     }
+
+    @Test
+    @DisplayName("applicationFeePennies(Tenant, long) honours SAAS_HYBRID_STANDARD (0.5%), SAAS_FLAT_PREDICTABLE (0%), BATCH_PAYG_STARTER (6%), and WALK_SETUP_STEPDOWN (2.5% capped at £39/mo)")
+    void applicationFeePennies_respectsBillingPlanModeAndWalkCap() {
+        // 1. SAAS_HYBRID_STANDARD: 0.5% (50 bps) -> 50p on £100 (10,000p)
+        tenant.setBillingPlanMode(uk.jtoye.core.tenant.BillingPlanMode.SAAS_HYBRID_STANDARD);
+        assertEquals(50L, service.applicationFeePennies(tenant, 10_000L));
+
+        // 2. SAAS_FLAT_PREDICTABLE: 0% (0 bps) -> 0p on £100
+        tenant.setBillingPlanMode(uk.jtoye.core.tenant.BillingPlanMode.SAAS_FLAT_PREDICTABLE);
+        assertEquals(0L, service.applicationFeePennies(tenant, 10_000L));
+
+        // 3. BATCH_PAYG_STARTER: 6.0% (600 bps) -> 600p on £100
+        tenant.setBillingPlanMode(uk.jtoye.core.tenant.BillingPlanMode.BATCH_PAYG_STARTER);
+        assertEquals(600L, service.applicationFeePennies(tenant, 10_000L));
+
+        // 4. WALK_SETUP_STEPDOWN during setup: 0% (billed £195/mo fixed instead)
+        tenant.setBillingPlanMode(uk.jtoye.core.tenant.BillingPlanMode.WALK_SETUP_STEPDOWN);
+        tenant.setWalkSetupCompletedAt(null);
+        assertEquals(0L, service.applicationFeePennies(tenant, 10_000L));
+
+        // 5. WALK_SETUP_STEPDOWN post-setup: 2.5% (250 bps) capped at £39/mo (3900p, D-B9)
+        tenant.setWalkSetupCompletedAt(java.time.OffsetDateTime.now());
+        tenant.setMonthlyFeeChargedPennies(0L);
+        assertEquals(250L, service.applicationFeePennies(tenant, 10_000L));
+
+        // When 3800p has already been charged this month, a £100 order (raw 250p) is capped at remaining 100p
+        tenant.setMonthlyFeeChargedPennies(3800L);
+        assertEquals(100L, service.applicationFeePennies(tenant, 10_000L));
+
+        // Once the £39/mo (3900p) cap is reached, fee is 0p
+        tenant.setMonthlyFeeChargedPennies(3900L);
+        assertEquals(0L, service.applicationFeePennies(tenant, 10_000L));
+    }
 }
 
