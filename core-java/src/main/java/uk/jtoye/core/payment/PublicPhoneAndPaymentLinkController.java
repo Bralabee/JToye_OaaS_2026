@@ -11,14 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uk.jtoye.core.customer.PhoneVerificationService;
-import uk.jtoye.core.exception.ResourceNotFoundException;
-import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
-import uk.jtoye.core.shop.ShopRepository;
-
-import java.util.Optional;
-import java.util.UUID;
+import uk.jtoye.core.storefront.PublicStorefrontService;
 
 /**
  * Public storefront endpoints for customer phone OTP verification (#462) and single-use
@@ -32,15 +27,15 @@ import java.util.UUID;
 @Tag(name = "Public Storefront", description = "Public endpoints for customer-facing shop discovery, product browsing, order tracking, and reviews. Canonical prefix /api/v1/public; bare /public is a deprecated legacy alias.")
 public class PublicPhoneAndPaymentLinkController {
 
-    private final ShopRepository shopRepository;
+    private final PublicStorefrontService storefrontService;
     private final PhoneVerificationService phoneVerificationService;
     private final OrderPaymentLinkService paymentLinkService;
 
     public PublicPhoneAndPaymentLinkController(
-            ShopRepository shopRepository,
+            PublicStorefrontService storefrontService,
             PhoneVerificationService phoneVerificationService,
             OrderPaymentLinkService paymentLinkService) {
-        this.shopRepository = shopRepository;
+        this.storefrontService = storefrontService;
         this.phoneVerificationService = phoneVerificationService;
         this.paymentLinkService = paymentLinkService;
     }
@@ -63,7 +58,7 @@ public class PublicPhoneAndPaymentLinkController {
     public ResponseEntity<PhoneVerificationService.ChallengeResult> sendPhoneVerification(
             @PathVariable String slug,
             @Valid @RequestBody SendPhoneVerificationRequest request) {
-        Shop shop = resolvePublicShop(slug);
+        Shop shop = storefrontService.resolvePublicShopForSlug(slug);
         try {
             PhoneVerificationService.ChallengeResult result = phoneVerificationService.sendChallenge(
                     shop.getTenantId(), null, request.phone(), request.channel());
@@ -81,7 +76,7 @@ public class PublicPhoneAndPaymentLinkController {
     public ResponseEntity<PhoneVerificationService.VerifyResult> verifyPhoneOtp(
             @PathVariable String slug,
             @Valid @RequestBody VerifyPhoneOtpRequest request) {
-        Shop shop = resolvePublicShop(slug);
+        Shop shop = storefrontService.resolvePublicShopForSlug(slug);
         try {
             PhoneVerificationService.VerifyResult result = phoneVerificationService.verifyOtp(
                     shop.getTenantId(), request.phone(), request.otp());
@@ -99,17 +94,5 @@ public class PublicPhoneAndPaymentLinkController {
     public ResponseEntity<OrderPaymentLinkService.RedeemedPaymentLinkDto> redeemPaymentLink(
             @PathVariable String token) {
         return ResponseEntity.ok(paymentLinkService.redeemPaymentLink(token));
-    }
-
-    private Shop resolvePublicShop(String slug) {
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
-        Optional<UUID> upstreamTenant = TenantContext.get();
-        if (upstreamTenant.isPresent() && !upstreamTenant.get().equals(shop.getTenantId())) {
-            throw new TenantAccessDeniedException(
-                    "Tenant mismatch between authenticated identity and requested shop");
-        }
-        TenantContext.set(shop.getTenantId());
-        return shop;
     }
 }
