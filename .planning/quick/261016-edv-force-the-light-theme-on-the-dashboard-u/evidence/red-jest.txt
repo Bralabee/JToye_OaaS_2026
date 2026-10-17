@@ -1,0 +1,669 @@
+# RED run, 2026-10-16T09:30:53Z, HEAD b51241fe, hook unchanged (use-theme.ts sha256 646859225b90c030)
+npm notice run frontend@2.3.0 test
+npm notice run jest --ci --watchAll=false hooks/__tests__/use-theme.test.tsx components/dashboard/__tests__/theme-cross-surface.test.tsx
+  Using tsconfig file: tsconfig.build.json
+FAIL components/dashboard/__tests__/theme-cross-surface.test.tsx
+  ● dashboard theme, with the dark theme withheld (shipped default) › offers no theme control on either surface, keeps Sign Out on both, and stays light
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 0
+    Received length: 2
+    Received array:  [<button class="inline-flex items-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2 w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"><svg aria-hidden="true" class="lucide lucide-sun h-5 w-5" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>Light Mode</button>, <button class="inline-flex items-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full justify-start gap-3 text-slate-700 dark:text-slate-200"><svg aria-hidden="true" class="lucide lucide-sun h-5 w-5" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>Light Mode</button>]
+
+       99 |     expect(screen.getByRole("dialog")).toBeInTheDocument()
+      100 |
+    > 101 |     expect(themeButtons(/dark mode|light mode/i)).toHaveLength(0)
+          |                                                   ^
+      102 |     // Positive control: the same query reaches the footer the control shared
+      103 |     // with Sign Out — one per surface.
+      104 |     expect(themeButtons(/sign out/i)).toHaveLength(2)
+
+      at Object.toHaveLength (components/dashboard/__tests__/theme-cross-surface.test.tsx:101:51)
+
+  ● dashboard theme, across both surfaces › shows the tab bar the sidebar's toggle with no reload
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      114 | describe("dashboard theme, across both surfaces", () => {
+      115 |   beforeEach(() => {
+    > 116 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      117 |   })
+      118 |
+      119 |   afterEach(() => {
+
+      at Object.<anonymous> (components/dashboard/__tests__/theme-cross-surface.test.tsx:116:36)
+
+  ● dashboard theme, across both surfaces › shows the tab bar the sidebar's toggle with no reload
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      118 |
+      119 |   afterEach(() => {
+    > 120 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      121 |   })
+      122 |
+      123 |   it("shows the tab bar the sidebar's toggle with no reload", () => {
+
+      at Object.<anonymous> (components/dashboard/__tests__/theme-cross-surface.test.tsx:120:36)
+
+  ● dashboard theme, across both surfaces › shows the sidebar the tab bar's toggle with no reload
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      114 | describe("dashboard theme, across both surfaces", () => {
+      115 |   beforeEach(() => {
+    > 116 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      117 |   })
+      118 |
+      119 |   afterEach(() => {
+
+      at Object.<anonymous> (components/dashboard/__tests__/theme-cross-surface.test.tsx:116:36)
+
+  ● dashboard theme, across both surfaces › shows the sidebar the tab bar's toggle with no reload
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      118 |
+      119 |   afterEach(() => {
+    > 120 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      121 |   })
+      122 |
+      123 |   it("shows the tab bar the sidebar's toggle with no reload", () => {
+
+      at Object.<anonymous> (components/dashboard/__tests__/theme-cross-surface.test.tsx:120:36)
+
+  ● dashboard theme, across both surfaces › renders both surfaces on a stored dark preference without either reading the other
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      114 | describe("dashboard theme, across both surfaces", () => {
+      115 |   beforeEach(() => {
+    > 116 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      117 |   })
+      118 |
+      119 |   afterEach(() => {
+
+      at Object.<anonymous> (components/dashboard/__tests__/theme-cross-surface.test.tsx:116:36)
+
+  ● dashboard theme, across both surfaces › renders both surfaces on a stored dark preference without either reading the other
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      118 |
+      119 |   afterEach(() => {
+    > 120 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      121 |   })
+      122 |
+      123 |   it("shows the tab bar the sidebar's toggle with no reload", () => {
+
+      at Object.<anonymous> (components/dashboard/__tests__/theme-cross-surface.test.tsx:120:36)
+
+FAIL hooks/__tests__/use-theme.test.tsx
+  ● useTheme, with the dark theme withheld (shipped default) › ships with DARK_THEME_AVAILABLE false and reports available: false
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: undefined
+
+      166 | describe("useTheme, with the dark theme withheld (shipped default)", () => {
+      167 |   it("ships with DARK_THEME_AVAILABLE false and reports available: false", () => {
+    > 168 |     expect(DARK_THEME_AVAILABLE).toBe(false)
+          |                                  ^
+      169 |
+      170 |     render(<Probe />)
+      171 |
+
+      at Object.toBe (hooks/__tests__/use-theme.test.tsx:168:34)
+
+  ● useTheme, with the dark theme withheld (shipped default) › resolves light with a stored dark preference, adds no dark class, and keeps the stored value
+
+    expect(element).toHaveTextContent()
+
+    Expected element to have text content:
+      light
+    Received:
+      dark
+
+      179 |     render(<Probe />)
+      180 |
+    > 181 |     expect(screen.getByTestId("probe")).toHaveTextContent("light")
+          |                                         ^
+      182 |     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+      183 |     expect(localStorage.getItem(STORAGE_KEY)).toBe("dark")
+      184 |   })
+
+      at Object.toHaveTextContent (hooks/__tests__/use-theme.test.tsx:181:41)
+
+  ● useTheme, with the dark theme withheld (shipped default) › resolves light when nothing is stored and the system prefers dark
+
+    expect(element).toHaveTextContent()
+
+    Expected element to have text content:
+      light
+    Received:
+      dark
+
+      189 |     render(<Probe />)
+      190 |
+    > 191 |     expect(screen.getByTestId("probe")).toHaveTextContent("light")
+          |                                         ^
+      192 |     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+      193 |   })
+      194 |
+
+      at Object.toHaveTextContent (hooks/__tests__/use-theme.test.tsx:191:41)
+
+  ● useTheme, with the dark theme withheld (shipped default) › removes a stale dark class that was on the document before mount
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      203 |     render(<Probe />)
+      204 |
+    > 205 |     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+          |                                                                     ^
+      206 |     expect(screen.getByTestId("probe")).toHaveTextContent("light")
+      207 |   })
+      208 |
+
+      at Object.toBe (hooks/__tests__/use-theme.test.tsx:205:69)
+
+  ● useTheme, with the dark theme withheld (shipped default) › setDark(true), setDark(false) and toggle() write nothing for the theme key and stay light
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 0
+    Received length: 3
+    Received array:  [["theme", "dark"], ["theme", "light"], ["theme", "dark"]]
+
+      220 |       fireEvent.click(screen.getByTestId("probe-toggle"))
+      221 |
+    > 222 |       expect(themeWrites(setItem)).toHaveLength(0)
+          |                                    ^
+      223 |       expect(screen.getByTestId("probe")).toHaveTextContent("light")
+      224 |       expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+      225 |       expect(localStorage.getItem(STORAGE_KEY)).toBe("dark")
+
+      at Object.toHaveLength (hooks/__tests__/use-theme.test.tsx:222:36)
+
+  ● useTheme, with the dark theme withheld (shipped default) › setDark(true) with nothing stored leaves storage empty and the theme light
+
+    expect(received).toBeNull()
+
+    Received: "dark"
+
+      234 |     fireEvent.click(screen.getByTestId("probe-on"))
+      235 |
+    > 236 |     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+          |                                               ^
+      237 |     expect(screen.getByTestId("probe")).toHaveTextContent("light")
+      238 |     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+      239 |   })
+
+      at Object.toBeNull (hooks/__tests__/use-theme.test.tsx:236:47)
+
+  ● useTheme, with the dark theme withheld (shipped default) › stays light when another tab stores dark and the storage event arrives
+
+    expect(element).toHaveTextContent()
+
+    Expected element to have text content:
+      light
+    Received:
+      dark
+
+      248 |     })
+      249 |
+    > 250 |     expect(screen.getByTestId("probe")).toHaveTextContent("light")
+          |                                         ^
+      251 |     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
+      252 |   })
+      253 | })
+
+      at Object.toHaveTextContent (hooks/__tests__/use-theme.test.tsx:250:41)
+
+  ● useTheme › resolves dark when the stored preference is dark and the system prefers light
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › resolves dark when the stored preference is dark and the system prefers light
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › lets an explicit light preference win over a dark system preference
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › lets an explicit light preference win over a dark system preference
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › falls back to a dark system preference when nothing is stored
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › falls back to a dark system preference when nothing is stored
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › falls back to a light system preference when nothing is stored
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › falls back to a light system preference when nothing is stored
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › resolves light and lets no exception escape when localStorage is unreadable
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › resolves light and lets no exception escape when localStorage is unreadable
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › server-renders without throwing and never emits the dark class
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › server-renders without throwing and never emits the dark class
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › applies the stored preference to the document class on mount
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › applies the stored preference to the document class on mount
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › setDark(true) stores dark, adds the dark class and updates the subscriber
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › setDark(true) stores dark, adds the dark class and updates the subscriber
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › setDark(false) stores light, removes the dark class and updates the subscriber
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › setDark(false) stores light, removes the dark class and updates the subscriber
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › toggle() inverts the current value and applies the same two side effects
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › toggle() inverts the current value and applies the same two side effects
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › observes a storage event for the theme key written by another tab
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › observes a storage event for the theme key written by another tab
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › ignores a storage event for an unrelated key
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › ignores a storage event for an unrelated key
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › keeps two simultaneously mounted consumers in agreement after either one toggles
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › keeps two simultaneously mounted consumers in agreement after either one toggles
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+  ● useTheme › removes exactly the listeners it added once the last subscriber unmounts
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      260 | describe("useTheme", () => {
+      261 |   beforeEach(() => {
+    > 262 |     __setDarkThemeAvailableForTests(true)
+          |                                    ^
+      263 |   })
+      264 |
+      265 |   afterEach(() => {
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:262:36)
+
+  ● useTheme › removes exactly the listeners it added once the last subscriber unmounts
+
+    TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function
+
+      264 |
+      265 |   afterEach(() => {
+    > 266 |     __setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)
+          |                                    ^
+      267 |   })
+      268 |
+      269 |   /* --- resolving the current theme ------------------------------------- */
+
+      at Object.<anonymous> (hooks/__tests__/use-theme.test.tsx:266:36)
+
+Test Suites: 2 failed, 2 total
+Tests:       25 failed, 25 total
+Snapshots:   0 total
+Time:        0.922 s, estimated 1 s
+Ran all test suites matching hooks/__tests__/use-theme.test.tsx|components/dashboard/__tests__/theme-cross-surface.test.tsx.
+rc=1
+
+# ===== CLASSIFICATION (written after the run, from the output above) =====
+# 25 tests, 25 failed, rc=1.
+# FORCED-LIGHT cases (8: 7 in use-theme, 1 in theme-cross-surface) fail ON THEIR OWN ASSERTIONS against the unchanged hook:
+#   ● dashboard theme, with the dark theme withheld (shipped default) › offers no theme control on either surface, keeps Sign Out on both, and stays light
+#           expect(received).toHaveLength(expected)
+#           Expected length: 0
+#           Received length: 2
+#           Received array:  [<button class="inline-flex items-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2 w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"><svg aria-hidden="true" class="lucide lucide-sun h-5 w-5" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>Light Mode</button>, <button class="inline-flex items-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 w-full justify-start gap-3 text-slate-700 dark:text-slate-200"><svg aria-hidden="true" class="lucide lucide-sun h-5 w-5" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>Light Mode</button>]
+#   ● useTheme, with the dark theme withheld (shipped default) › ships with DARK_THEME_AVAILABLE false and reports available: false
+#           expect(received).toBe(expected) // Object.is equality
+#           Expected: false
+#           Received: undefined
+#   ● useTheme, with the dark theme withheld (shipped default) › resolves light with a stored dark preference, adds no dark class, and keeps the stored value
+#           Expected element to have text content:
+#           Received:
+#   ● useTheme, with the dark theme withheld (shipped default) › resolves light when nothing is stored and the system prefers dark
+#           Expected element to have text content:
+#           Received:
+#   ● useTheme, with the dark theme withheld (shipped default) › removes a stale dark class that was on the document before mount
+#           expect(received).toBe(expected) // Object.is equality
+#           Expected: false
+#           Received: true
+#   ● useTheme, with the dark theme withheld (shipped default) › setDark(true), setDark(false) and toggle() write nothing for the theme key and stay light
+#           expect(received).toHaveLength(expected)
+#           Expected length: 0
+#           Received length: 3
+#           Received array:  [["theme", "dark"], ["theme", "light"], ["theme", "dark"]]
+#   ● useTheme, with the dark theme withheld (shipped default) › setDark(true) with nothing stored leaves storage empty and the theme light
+#           expect(received).toBeNull()
+#           Received: "dark"
+#   ● useTheme, with the dark theme withheld (shipped default) › stays light when another tab stores dark and the storage event arrives
+#           Expected element to have text content:
+#           Received:
+#   (the three toHaveTextContent cases: expected "light", received "dark" — see the full blocks above)
+# FLAG-ON cases (17 pre-existing: 14 use-theme + 3 theme-cross-surface) fail ONLY because the seam is not exported yet:
+#   TypeError: (0 , _usetheme.__setDarkThemeAvailableForTests) is not a function (in beforeEach and afterEach)
+# No forced-light case passed on the unchanged hook (none vacuous).

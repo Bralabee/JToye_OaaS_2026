@@ -55,7 +55,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
 - [x] **Phase 31.1: Persona gap closure (INSERTED)** — The 17 persona-testing clusters (epic #880) on completed Phase 31: DSAR fulfilment, the allergen acknowledgement and display chain, seller identity, and privacy/cookie/accessibility statement truthfulness; 6 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request) (completed 2026-10-07)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
-- [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
+- [x] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request) (completed 2026-10-16)
 - [x] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04) (completed 2026-10-05)
 - [x] **Phase 39: Platform runtime upgrades** — Every other runtime onto a supported, latest-stable release: Alpine, RabbitMQ (compose and k8s), the Prometheus/Alertmanager/Grafana/exporter stack, Keycloak 26, PostgreSQL 18, Redis 8 and Tailwind 4; retires the DEFERRED-27 and #724 horizon exemptions before they expire (first dated row 2026-10-26) (added 2026-10-04 by owner request) (completed 2026-10-16)
 
@@ -356,8 +356,9 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
-| 37. Real-world operations readiness | v2.3 | 53/53 | In Progress | — |
+| 37. Real-world operations readiness | v2.3 | 59/59 | Complete    | 2026-10-16 |
 | 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
+| 39. Platform runtime upgrades | v2.3 | 10/10 | Complete    | 2026-10-16 |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -1004,7 +1005,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
   7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end on the delivered runtime. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
   8. **Catalogue & shop admin (37-G).** Vendors can set a delivery fee, a free-delivery threshold and collection-only, enforced on every writer, and editing a shop keeps its public address.
 
-**Plans:** 54/55 plans executed in 42 waves, plus 2 UAT gap-closure plans (37-54, 37-55; gaps G-37-12..G-37-15 from the 2026-10-15 UAT session). Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
+**Plans:** 59/59 plans complete: 37-01..37-53 in 42 waves, plus UAT gap-closure plans 37-54, 37-55 (gaps G-37-12..G-37-15 from the 2026-10-15 UAT session, done) and 37-56..37-59 (gap G-37-6 from the 2026-10-16 UAT session, done). Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
 
 Plans:
 **Wave 1**
@@ -1146,7 +1147,13 @@ Plans:
 
 **Gap closure — UAT 2026-10-15 (G-37-12..G-37-15)**
 - [x] 37-54-PLAN.md — Webhooks typed refusal, Staff-page form controls legible in the dark theme, container-query pending invitations, null-safe picker labels (jest RED/GREEN)
-- [ ] 37-55-PLAN.md — Live Chrome RED/GREEN on the rebuilt runtime (stack checkpoint), parity, doc metrics, PR branch phase-37-uat-gaps
+- [x] 37-55-PLAN.md — Live Chrome RED/GREEN on the rebuilt runtime (stack checkpoint), parity, doc metrics, PR branch phase-37-uat-gaps
+
+**Gap closure — UAT 2026-10-16 (G-37-6, test 6)**
+- [x] 37-56-PLAN.md — (wave 1) One TypeScript sentence-end rule (lib/sentence-end.ts) at every frontend call site that ends a sentence with a vendor or person name, plus a source guard (jest RED/GREEN)
+- [x] 37-57-PLAN.md — (wave 2) The Java mirror (uk.jtoye.core.common.Sentences) held equal by a parity test, routed through the staff invitation, customer order emails and the onboarding update (JUnit RED/GREEN)
+- [x] 37-58-PLAN.md — (wave 1) Finance stat and VAT grids and the shared Pagination chosen by container queries, figures whole, every pagination control 44 px; VAT helper sign-off recorded (jest RED/GREEN, built-CSS check)
+- [x] 37-59-PLAN.md — (wave 3) Live RED/GREEN on the rebuilt runtime (stack checkpoint) incl. the void dialog at 390/768/1280, parity by stylesheet and jar, doc metrics, path-scoped PR branch phase-37-uat-g376
 
 **Cross-cutting constraints:**
 - After the cut, origin/main is merged into phase-37-ops-readiness once more so the next sub-theme starts on current main (D-04)

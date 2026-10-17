@@ -839,7 +839,7 @@ The copy below is the contract. Every claim in it must be backed by data the UI 
 | Export | Export CSV |
 | Reversal reference | Reversal of {order number} |
 | VAT select / options | VAT rate · Standard rate (20%) · Reduced rate (5%) · Zero rate (0%) · Exempt |
-| VAT helper (**owner sign-off required**) | The rate that applies to this item when you sell it. Hot takeaway food is usually standard-rated, and much cold food is zero-rated, but there are exceptions. If you're not sure, check HMRC VAT Notice 709/1 or ask your accountant. |
+| VAT helper (owner sign-off 2026-10-16: accepted as written) | The rate that applies to this item when you sell it. Hot takeaway food is usually standard-rated, and much cold food is zero-rated, but there are exceptions. If you're not sure, check HMRC VAT Notice 709/1 or ask your accountant. |
 | Import target | Importing into: **{Shop}** · Shop to import into · Choose a shop to import into |
 | Copy dialog | **Copy {n} products to another shop** · They'll be copied with their allergens, ingredients and photos. · Copy to · [Copy {n} products] |
 | Copy result | {created} copied to {Shop}. {skipped} skipped because {Shop} already has them. {failed} couldn't be copied. (Zero counts omitted.) |
@@ -1219,6 +1219,7 @@ line.
 1. **Owner sign-off on three defaults:** the VAT helper copy (B6, it must not read as tax advice),
    the four reject reasons (D1), and the alert/alarm timing (5 s chime, 3 s alarm). Each is
    isolated in a named constant or copy table, so it can change without touching this contract.
+   - Status (2026-10-16): the VAT helper copy and the four reject reasons were accepted as written by owner rulings on 2026-10-16 (UAT tests 6 and 7); the 5 s / 3 s / 2 min timings were confirmed in UAT test 5, by-ear distinction not judged.
 2. **The reject reason must not reach the customer.** D1's body copy says so. The planner must
    confirm the cancellation email path does not include `reason`, or change that copy.
 3. **`realm_admin_seen_at` or "Not recorded"** (B1). Both are specified; the planner picks one.

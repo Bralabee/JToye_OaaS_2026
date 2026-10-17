@@ -868,3 +868,59 @@ where it must be resolved.
   **Suggested fix:** wrap between words only and change the layout (vertical, as the order page's tracker, or two
   rows) or the label size below the width where one-word labels stop fitting; assert "no single-word label spans two
   lines" at 360/390 default and 130%, red first.
+
+## From 37-55 (UAT gaps G-37-12..15, live)
+
+- **In the dark theme the dashboard page content outside the Staff page's two form cards is unreadable, and the shop switcher's open list is drawn light (found in 37-55, open, owner decision).**
+  status: ruled: forced light (quick 261016-edv); dark pass = Phase 39 candidate
+  **What:** on `/dashboard/staff` in dark, 73 of 125 visible text elements in `<main>` outside the Invite someone and
+  Grant access cards measure below 4.5:1 from computed colour: the h1 at 1.13, names and grant lines at 1.12, muted
+  text and the Pending row buttons at 2.64, the "No access" badges at 1.93. The page content hard-codes light-theme
+  text (`text-slate-900/600/700`) while card backgrounds follow the theme token. `#shop-context-select` keeps
+  `color-scheme: normal` in dark while its options carry white text on a transparent background, which is the input for
+  a white-on-white open list. Evidence `evidence/37-55-uat-gaps-runtime.md` sections 6 and 7.
+  **Suggested fix (owner to choose):** a dashboard-wide dark pass as its own change (theme tokens in place of hard-coded
+  slate text, `[color-scheme:dark]` on the switcher, the 37-55 `measureContrast` "outside" scope promoted to an
+  assertion over every dashboard route, red first), or hide the Dark Mode toggle until that pass ships.
+
+## Owner rulings 2026-10-16 (on the 37-55 open items)
+
+- **Container threshold: KEEP 60rem.** The 37-55 boundary measurement (clean 960-1017 px, first
+  failure below 920 px) stands in for the plan's max-content rule, which would have meant 64rem.
+  `37-54-PLAN.md`'s 60rem is final; no code change.
+- **Dark-theme residue: force light on the dashboard now; dashboard-wide dark pass later.** The
+  Dark Mode control is hidden and the dashboard renders light whatever the stored choice or the
+  system preference, until the pass ships. A stored `theme` value is left untouched so the
+  choice comes back with the pass. The dark pass (theme tokens for the hard-coded slate text,
+  `[color-scheme:dark]` on `#shop-context-select`, the 37-55 `measureContrast` "outside" scope
+  as an assertion over every dashboard route, red first) is a Phase 39 candidate.
+  status: ruled
+- **TDD gate:** overridden after proof; `evidence/37-tdd-gate-override.md`.
+
+## Found in 37-58 (2026-10-16): test files feed the production stylesheet
+
+- Tailwind's `content` globs (`./app/**`, `./components/**`, `./pages/**` in
+  `frontend/tailwind.config.ts`) include every `__tests__/` file under those trees, so a class
+  spelled literally in a TEST is emitted into the production CSS whatever the source does.
+  Measured: adding only `components/ui/__tests__/pagination.test.tsx` (source unchanged) took
+  `rg -uu -l -F '(min-width:19rem)'` over the built chunks from rc 1 to rc 0; a fail arm that
+  assembled the source's 19rem class from two parts kept the built stylesheet at rc 0 while the
+  per-file probe (Tailwind run with `content` narrowed to `components/ui/pagination.tsx`) went
+  rc 1. Consequence: a built-CSS grep cannot prove a SOURCE file emits its own class when a test
+  spells it. Not fixed here (it changes the production stylesheet of every page); options for a
+  later plan: exclude `**/__tests__/**` and `*.test.*` from `content`, or keep a per-file
+  emission check. 37-59's live geometry is what proves the rules apply at runtime.
+
+## Found in 37-59 (2026-10-16): the gap-closure goods line exceeds the dev tenant's rate limit
+
+- 37-59's combined desktop verify line (`screens-copy-uat`, `staff-webhooks-uat`, `staff-invite`,
+  `basket-revalidation` in ONE Playwright run) drains the dev stack's per-tenant bucket
+  (`RATE_LIMIT_PER_MINUTE` default 100, `docker-compose.full-stack.yml` l.282-287) on tenant
+  …0001. It passed once (15:03Z) and failed three times after that (15:14Z, 15:17Z, 15:20Z),
+  each failure a "server is busy" 429 on /dashboard/staff or a missing People row, with
+  core-java logging `Rate limit exceeded for tenant 00000000-…0001` at those times. Each
+  spec passes alone on a rested bucket with 0 events. Not changed here: the limiter stays at
+  its developer default on purpose (the compose comment), and the nightly already sizes it for a
+  whole suite. Options for a later plan: run gap specs as separate invocations with a refill
+  gap, or pass a sized `RATE_LIMIT_PER_MINUTE` in the gate's own command like the nightly.
+  Evidence: `evidence/37-59-g376-runtime.md` section 12.

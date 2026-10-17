@@ -2,33 +2,40 @@
 gsd_state_version: "1.0"
 milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
-current_phase: 37
-current_phase_name: Real-world operations readiness
-status: verifying
-stopped_at: "Phase 37 UAT gap closure: 37-54 DONE 2026-10-15 (G-37-12..15 fixed in the frontend, jest RED/GREEN, full jest 2959/2959, tsc/lint/build rc 0, metrics 6119 -> 6135; commits 1f61d6dd..7b3c50d8). NEXT: 37-55 (live Chrome RED/GREEN on a rebuilt runtime; stack checkpoint is the owner's), then /gsd-verify-work 37 re-runs the gaps. Phase 39 planning due before 2026-10-26."
-last_updated: "2026-10-15T19:20:00.000Z"
-last_activity: 2026-10-15
-state_head: 31ee7b62
+current_phase: 29
+current_phase_name: Deployable Staging, With Its Own Monitoring
+status: planning
+stopped_at: Phase 37 (59/59), Phase 39 (10/10), and ADR-0007 (V87, GAP-GTM-01..04, 06, 07B) complete and merged to main; ready to plan Phase 29
+last_updated: "2026-10-17T11:55:00.000Z"
+last_activity: 2026-10-17
+last_activity_desc: Phase 37 + Phase 39 + ADR-0007 consolidated on main (V87)
+state_head: 7b4d327d
 progress:
   total_phases: 20
-  completed_phases: 13
-  total_plans: 240
-  completed_plans: 239
-  percent: 65
+  completed_phases: 15
+  total_plans: 257
+  completed_plans: 257
+  percent: 82
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-07)
+See: .planning/PROJECT.md (updated 2026-10-17)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 37 — Real-world operations readiness
+**Current focus:** Phase 29 — Deployable Staging, With Its Own Monitoring (note: paused body lives on `phase-29-research`)
 
 ## Current Position
 
-Phase: 37 (Real-world operations readiness) — EXECUTING
+Phase: 29 — Deployable Staging, With Its Own Monitoring
+- Phase 39 (39-01..39-10) & ADR-0007 (GAP-GTM-01..04, 06, 07B) DONE 2026-10-17: Merged across PRs #926, #927 (V85), #933 (V86), #934..#937, #939 (PostgreSQL 18.6, Redis 8.10, Keycloak 26.8.1, Tailwind CSS 4.3.3, active-exemptions=0), #940 (ADR-0007), #941 (G-37-6), #942 (GAP-GTM-07B Merchant ROI card), #943 (V87 settlement policy engine, scheduled fulfilment slots, cook sheet API), #944 (GAP-GTM-04 balance payment links & GAP-GTM-06 WhatsApp pre-order links), #945 (Cook Sheet KDS UI & Storefront FulfilmentSlotPicker).
+- 37-59 DONE 2026-10-16 (G-37-6 live proof + PR cut): e2e/screens-copy-uat.spec.ts (5 tests, an arm each) RED on the pre-fix runtime on every gap assertion (finance 768/1024, pagination 32 px, "Co.." in the checkout intro and the invitation); void dialog found clean (2b not taken; the title check measured a leading-none font box, fixed). Rebuild: freshness 1 -> 0 (edge-go/mcp-server force-recreated), (min-width:55rem) rc 1 -> 0 in the served CSS, Sentences.class 0 -> 1 in the jar. GREEN 5/5; the finance arm was vacuous (forced nothing) and is fixed. Measured AT each container threshold the bound figure wrapped at 27/55/26/52rem, so raised to 28/57rem (stat) and 27/54rem (VAT), jest RED first; pagination held (20/4/4 px). Goods: desktop 11/11, dashboard-mobile 48/48. origin/main moved (#926): merged db2887ca, rebuilt, freshness 0; the combined goods line then drained the dev tenant rate-limit bucket (100/min, logged in deferred-items), each spec green alone. Metrics 6148 -> 6208. Tag cut/phase-37-uat-g376 = eaaf8dc2; PR branch phase-37-uat-g376 = 116ef333, ONE commit above origin/main, 25 paths all 'same base' + 4 metric files (6198), tsc/full jest 3003/Gradle 146 green, third verify clean with its fail direction; light-theme quick task excluded; NOT pushed. Evidence: evidence/37-59-g376-runtime.md.
+- 37-57 DONE 2026-10-16 (G-37-6 defect 2, Java half): uk.jtoye.core.common.Sentences (TERMINATORS .!?…, endsSentence, withFullStop, fullStopAfter; trim = isSpaceChar + 0x09-0x0D + 0xFEFF, never isWhitespace); SentencesTest 8 (37-56 table, every code unit 0x0000-0xFFFF vs the 25-entry list, parity with SENTENCE_TERMINATORS and TRAILING_SPACE_CODE_POINTS read from sentence-end.ts). Routed: sendStaffInvite, received/confirmed/preparing/completed leads, the on-behalf-of footer (6 withFullStop in EmailNotificationService, 1 on the RED tree), onboarding reason (text withFullStop, html fullStopAfter after </strong>, still sHtml-escaped). RED_EVIDENCE_OK x3 (task1; task2 as two records, one per JUnit report) then GREEN; arms A, B, C1 (names exactly U+001C-U+001F and U+FEFF), C2, footer (all six statuses) restored by sha256. Full unit 214 classes/1852 tests 0 failures; notification IT 7/22 green; existing tests 0 removed lines. +11 Java @Test, +1 file: metrics left to 37-59.
+- 37-58 DONE 2026-10-16 (G-37-6 defects 1 and 3, item 5): finance stat grid [container-type:inline-size] wrapper + grid-cols-1 / 27rem two / 55rem four (md:grid-cols-4 gone), VAT grid on its CardContent 26/52rem with min-w-0 tile text; 8 finance-amount figures tabular-nums [overflow-wrap:anywhere]; Pagination root container + flex-wrap, prev/next always, first/last from 19rem, "Page N of M" below 21rem, 3-page window from 21rem, 5-page from 27rem, every control h-11 w-11/min-w-11, paginationWindow exported; VAT_RATE_HELP_COPY JSDoc + UI-SPEC record the 2026-10-16 sign-off. RED_EVIDENCE_OK x2 (3/23, 6/9) then GREEN; full jest 253/3011, tsc, lint, build rc 0; globals.css = origin/main. FINDING: Tailwind content includes __tests__, so a test spelling a class puts it in production CSS and the built-CSS grep cannot fail once RED exists (measured 3 ways); per-file probe evidence/37-58-tw-emits.js is the falsifiable form; logged in deferred-items. Plan CSS path .next/static/css does not exist (Turbopack: .next/static/chunks). Metrics drift (jest 3011/253) left to 37-59.
+- 37-56 DONE 2026-10-16 (G-37-6 defect 2, TS half): frontend/lib/sentence-end.ts withFullStop (SENTENCE_TERMINATORS .!?…, TRAILING_SPACE_CODE_POINTS 25, each one line for 37-57's parity regex); routed: allergen panel intro, ALLERGY_NOTE_SENT_COPY, alreadyVoidedCopy (no date), joinedToastTitle, copyResultSentence, Staff removeDescription. Guard in __tests__/sentence-end-call-sites.test.ts (289 files, planted controls, exactly-once allowlist: accessibility surface.name, checkout shop/driver ternary). import-copy's double-stop assertion replaced by an anchored one. Jest RED 1/26, 3/7, 5/72 (RED_EVIDENCE_OK x3) then GREEN; full jest 252/2999, tsc, lint rc 0; EmailNotificationServiceTest 28/0/0 unedited. G376_BASE 36f9aee357b4d96f3718239d4d76903ae41a9099. Metrics drift (6180) left to 37-59.
+- 37-55 DONE 2026-10-15 (owner answered proceed on the stack checkpoint): e2e/staff-webhooks-uat.spec.ts (3 tests, each with a built-in instrument arm) RED on the pre-rebuild runtime on its own gap assertions (403 shown as empty list; 13 dark elements below 4.5:1 and two "(null)" picker labels; 30/2/1 layout failures at 768/1024/1280); all images rebuilt (core-java, edge-go, mcp-server --no-cache after a cached build), freshness rc 1 -> 0 (4/4, 0 unverified), refusal copy 0 -> 14 bundle files; GREEN 3/3, with goods 29/0/0. Metrics 6135 -> 6138. 60rem kept (max-content 1017 px but 0 failures at 960-1017 px, first split at 900 px) - owner may rule 64rem. PR branch phase-37-uat-gaps = 9f6c11dd on 57d257f0, tag cut/phase-37-uat-gaps = 1f383f47, upstream removed, not pushed. Owner decisions logged in deferred-items: dashboard dark residue, #shop-context-select dark option list. Dev residue: 3 STAFF users staff-<ms>@example.test.
 - 37-54 DONE 2026-10-15 (UAT gap closure G-37-12..15): Webhooks shows the typed-403 access card and a LoadErrorPanel, never a fake empty list; the five Staff selects, labels, hints and email error reach 4.5:1 in dark with light colours unchanged (globals.css byte-identical to origin/main); picker never prints null; pending invitations switch on a 60rem card container query. Jest RED 3/27, 2/65, 5/63 then GREEN; full jest 250/2959, tsc/lint/build rc 0; built-CSS arms prove the container rule. Metrics 6119 -> 6135. Deviation: developers/page.tsx touched for the nullable DirectoryEntry.email type. Left to 37-55: live Chrome proof, dark native option list, real table width vs 60rem, People table dark styling (owner decision).
 - 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
 - 31.1-02 DONE 2026-10-06: #777 closed at the service. V68 (erasure_records.subject_customer_id nullable, no backfill); GdprService.matchSubjectInTenant + one private anonymisation core behind eraseCustomerData and eraseSubjectByDigest (returns records written, so tenantsErased counts real erasures); tenant-predicated order finder + DISTINCT email projections; unpredicated unpaged finder deleted. DsarGuestErasureRlsIntegrationTest 8/0/0 (RED tenantsErased=0 with all PII present), GdprErasure 4, GdprErasureReviewRls 7, DsarFanout 11, RlsContract 7, GdprServiceTest 16, full unit 1495/0/0. Break arms 1 and 3 red, 2 green under RLS as predicted. PGC-777 stays open (shared with 31.1-07/-11).
@@ -762,7 +769,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Executing Phase 37
+Status: Ready to plan
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -773,9 +780,9 @@ Status: Executing Phase 37
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-12
+Last activity: 2026-10-16 — Phase 37 complete, transitioned to Phase 29
 
-Progress: [███████░░░] 65%
+Progress: [████████░░] 78%
 
 ## Milestone v2.3 Phase Map
 
@@ -808,7 +815,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 117 (phase 23) + 12 (phases 21-22) = 29
+- Total plans completed: 176 (phase 23) + 12 (phases 21-22) = 29
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -826,6 +833,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 36 | 18 | - | - |
 | 38 | 19 | - | - |
 | 31.1 | 30 | - | - |
+| 37 | 59 | - | - |
 
 *Updated after each plan completion*
 | Phase 24 P01 | ~20min | 3 tasks | 10 files |
@@ -935,6 +943,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P31 | 115 min | 3 tasks | 36 files |
 | Phase 37 P32 | 51 min | 2 tasks | 21 files |
 | Phase 37 P33 | 87 min | 2 tasks | 16 files |
+| Phase 37 P56 | 10min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -1328,6 +1337,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-50 (owner, 2026-10-14): the 37-G gate may take the shared compose stack ("proceed"); demo shop settings are not restored afterwards
 - [Phase 37]: 37-50 (executor, 2026-10-14): two defects found live and deferred to the owner, not fixed in the gate: collection-only shops still advertise delivery on the /shop card and basket page; a cached pre-deploy ShopDto lets an edit clear fee and threshold (cache key version bump suggested)
 - [Phase 37]: 37-50 (owner, 2026-10-14): fix both 37-50 findings on the 37-G PR branch before it opens; bump CACHE_KEY_FORMAT_VERSION on any cached DTO field addition, not only unreadable formats
+- [Phase 37]: 37-56: withFullStop (frontend/lib/sentence-end.ts) is the one TypeScript rule for ending a sentence with a vendor- or person-supplied value; six call sites routed; __tests__/sentence-end-call-sites.test.ts guard fails on any other free-text value before a literal sentence full stop
+- [Phase 37]: 37-56: G376_BASE = 36f9aee357b4d96f3718239d4d76903ae41a9099 (evidence/37-56-g376-base.txt), read by 37-59's cut
 
 ### Pending Todos
 
@@ -1398,11 +1409,12 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 261004-nsn | Fix #885: the issue de-dup in e2e-nightly and base-image-freshness (3 sites) searched only the 100 newest open issues; now `--search "in:title …"` with the exact-title jq filter kept. Rendered step scripts: main misses #683 at all 3 sites, branch finds it; substring-title control rejected | 2026-10-04 | (see PR) | [261004-nsn-fix-885-nightly-dedup-title-search](./quick/261004-nsn-fix-885-nightly-dedup-title-search/) |
 | 261009-g8m | WINDOWS #29 ruling B: gate customer endpoints on any honoured grant under D-06 strict scoping, with RED-first Testcontainers arms, and re-cut the 37-B PR branch (phase-37-b-staff-access) from origin/main as one squash commit carrying the gate | 2026-10-09 | 29520bf2 | [261009-g8m-windows-29-ruling-b-gate-customer-endpoi](./quick/261009-g8m-windows-29-ruling-b-gate-customer-endpoi/) |
 | 261010-ppb | Owner rulings 2026-10-10 package: option E customer write floors, hours editor all-day pre-fill and copy, pause-403 copy, alarm cap, vendor realm SSO max 14h with D-14 amendment, record option C and slug follow-ups | 2026-10-10 | fa3552fa | [261010-ppb-owner-rulings-2026-10-10-package-option-](./quick/261010-ppb-owner-rulings-2026-10-10-package-option-/) |
+| 261016-edv | Force the light theme on the dashboard until a dashboard-wide dark pass ships | 2026-10-16 | e0c064fd | [261016-edv-force-the-light-theme-on-the-dashboard-u](./quick/261016-edv-force-the-light-theme-on-the-dashboard-u/) |
 
 ## Session Continuity
 
-Last session: 2026-10-15T19:20:00.000Z
-Stopped at: 37-54 done (UAT gaps G-37-12..15 fixed, jest-proven); 37-55 next (live proof, owner stack checkpoint), then /gsd-verify-work 37.
+Last session: 2026-10-17T11:55:00Z
+Stopped at: Phase 37 (59/59, UAT 15/15, verification passed, G-37-6 merged as PR #941, forced-light quick-261016-edv + closeout merged), Phase 39 (10/10 plans, PRs #926, #927, #933..#937, #939), and ADR-0007 (GAP-GTM-01..04, 06, 07B, PRs #940, #942..#945, Schema V87) consolidated on main. Next phase per ROADMAP: 29 (its paused body lives on branch phase-29-research).
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
