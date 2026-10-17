@@ -73,6 +73,12 @@ export interface GuestOrderFields {
    * (`GuestOrderRequest.expectedTotalPennies`). Optional for callers that predate it.
    */
   expectedTotalPennies?: number | null
+  /**
+   * V87 / GAP-GTM-03 (ADR-0007): selected scheduled fulfilment slot UUID
+   * (`GuestOrderRequest.fulfilmentSlotId`). Optional; trimmed, and ABSENT when null/blank so an
+   * immediate order fingerprints identically to pre-V87. Part of the signed intent when set.
+   */
+  fulfilmentSlotId?: string | null
 }
 
 /**
@@ -97,6 +103,8 @@ export interface GuestOrderIntent {
   allergyNote?: string
   /** GuestOrderRequest.expectedTotalPennies (37-32, D-16). Part of the signed intent. */
   expectedTotalPennies?: number
+  /** GuestOrderRequest.fulfilmentSlotId (V87 / GAP-GTM-03). Part of the signed intent. */
+  fulfilmentSlotId?: string
 }
 
 /** Normalise the form state into the body the checkout page submits. */
@@ -129,6 +137,7 @@ export function buildGuestOrderIntent(fields: GuestOrderFields): GuestOrderInten
     allergyNote: fields.allergyNote?.trim() || undefined,
     // `??`, not `||`: a £0.00 total (a free basket) is a value the customer saw, and is signed.
     expectedTotalPennies: fields.expectedTotalPennies ?? undefined,
+    fulfilmentSlotId: fields.fulfilmentSlotId?.trim() || undefined,
   }
 }
 

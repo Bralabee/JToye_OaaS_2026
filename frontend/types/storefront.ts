@@ -1,4 +1,4 @@
-import type { TraderEntityType } from "@/types/api"
+import type { FulfilmentTimingMode, TraderEntityType } from "@/types/api"
 
 export interface PublicShop {
   slug: string
@@ -84,6 +84,11 @@ export interface PublicShop {
    */
   offersDelivery?: boolean
   offersCollection?: boolean
+  /**
+   * V87 (ADR-0007 / GAP-GTM-02): whether the shop accepts immediate orders only (IMMEDIATE_ONLY),
+   * scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS).
+   */
+  fulfilmentTimingMode?: FulfilmentTimingMode
 }
 
 /** One structured opening window (backend `OpeningSchedule.TimeWindow`). `close <= open` = closes the next day. */
@@ -242,6 +247,11 @@ export interface GuestOrderConfirmation {
   acknowledgedAllergens?: string[] | null
   recordedAllergens?: string[] | null
   recordedAllergenFlags?: OrderAllergenFlag[] | null
+  fulfilmentSlotId?: string | null
+  scheduledForDate?: string | null
+  scheduledWindowLabel?: string | null
+  depositAmountPennies?: number | null
+  balanceDuePennies?: number | null
 }
 
 /** The RFC 7807 `type` URI the stale-acknowledgement 409 carries (31.1-03). */

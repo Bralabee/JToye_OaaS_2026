@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### GAP-GTM-02 & GAP-GTM-03 (Frontend UI): Kitchen "Cook Sheet" Prep View & Storefront Scheduled Fulfilment Slot Picker (#945) — 2026-10-17
+
+Completes the customer-facing and kitchen-facing UI for `ADR-0007` (`V87`, #943) on `/dashboard/kitchen` and `/shop/[slug]/checkout`.
+
+- **Consolidated Kitchen "Cook Sheet" Prep View (`GAP-GTM-03`, `frontend/components/dashboard/kitchen/kds-cook-sheet-panel.tsx`, `frontend/app/dashboard/kitchen/page.tsx`).** Adds a `Cook sheet` toggle (`data-testid="kds-cook-sheet-toggle"`) in the KDS header that opens `KdsCookSheetPanel` (consuming `GET /api/v1/orders/cook-sheet` and `GET /api/v1/shops/{id}/slots` via `frontend/lib/kitchen-orders-api.ts` and registered in `kitchen-route-calls.ts`), with date and fulfilment-slot filtering, batch KPI cards (`Orders in batch`, `Total dish units`, `Customer allergy notes`), aggregated dish quantities with V63 14-allergen badges, a dedicated V73 customer allergy-notes alert list, print export, and `KdsScheduledWindowBadge` on KDS tickets.
+- **Storefront Scheduled Fulfilment Slot Picker (`GAP-GTM-02`, `frontend/components/storefront/fulfilment-slot-picker.tsx`, `frontend/app/shop/[slug]/checkout/page.tsx`, `frontend/lib/checkout-idempotency.ts`).** Renders `FulfilmentSlotPicker` on `/shop/[slug]/checkout` when the shop's `fulfilmentTimingMode` is `SCHEDULED_SLOTS_ONLY` or `HYBRID_IMMEDIATE_AND_SLOTS` (consuming `GET /public/shops/{slug}/slots`), showing remaining order capacity, cutoff timestamps, and an `Order for now (ASAP)` option in hybrid mode, includes `fulfilmentSlotId` in the guest order idempotency fingerprint (`buildGuestOrderIntent`), permits closed-hours scheduled slot pre-orders (`isCheckoutBlockedByAvailability`), and maps RFC 9457 slot problem types (`fulfilment-slot-required`, `fulfilment-slot-closed`, `fulfilment-slot-cutoff-passed`, `fulfilment-slot-full`) via `describeSlotCheckoutError`.
+
 ### Phase 39-05 & 39-06: PostgreSQL 18.6 & Redis 8.10 Upgrade (#939) — 2026-10-17
 
 Upgrades the relational datastore (`postgres:15` -> `postgres:18-alpine` / `postgres:18-bookworm`, `18.6`) and distributed cache (`redis:7-alpine` -> `redis:8.10-alpine`, `8.10.2`) across compose, CI, backup tooling, K8s manifests/goldens, and all 215 Testcontainers suites, completing Phase 39 (`10/10` plans).

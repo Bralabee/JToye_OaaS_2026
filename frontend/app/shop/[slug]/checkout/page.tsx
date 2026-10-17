@@ -47,8 +47,18 @@ import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
 import { basketAllergenAttribution, basketAllergenFlags, indexProductsById } from "@/lib/basket-allergens"
+import {
+  FulfilmentSlotPicker,
+  describeSlotCheckoutError,
+  isCheckoutBlockedByAvailability,
+} from "@/components/storefront/fulfilment-slot-picker"
 // FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
-import { getAllergenNames, type FulfilmentType, type OrderAllergenFlag } from "@/types/api"
+import {
+  getAllergenNames,
+  type FulfilmentSlotDto,
+  type FulfilmentType,
+  type OrderAllergenFlag,
+} from "@/types/api"
 import {
   ALLERGEN_ACK_STALE_PROBLEM_TYPE,
   BASKET_CHANGED_PROBLEM_TYPE,
@@ -526,6 +536,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // The shop, read once on load and again after a stated reopening time (the loader is below). It is
   // declared here because the order intent — the expected total, D-16 — needs its delivery fee.
   const [shop, setShop] = useState<PublicShop | null>(null)
+  // V87 / GAP-GTM-03 (ADR-0007): Scheduled fulfilment slots for pre-order / hybrid kitchens.
+  // Only fetched when the loaded shop declares SCHEDULED_SLOTS_ONLY or HYBRID_IMMEDIATE_AND_SLOTS.
+  const [fulfilmentSlots, setFulfilmentSlots] = useState<FulfilmentSlotDto[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
+  const [slotsError, setSlotsError] = useState<string | null>(null)
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
   // 37-34 (UI-SPEC § C1, D-16): the server's basket diff, held until it is accepted or an order is
   // placed. `names` is the basket AS THE CUSTOMER SAW IT at the moment of the 409 — a REMOVED entry
@@ -723,6 +739,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         acknowledgedAllergenMask: declaredAllergenMask,
         allergyNote,
         expectedTotalPennies,
+        fulfilmentSlotId: selectedSlotId,
       }),
     [
       customerName,
@@ -738,6 +755,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       declaredAllergenMask,
       allergyNote,
       expectedTotalPennies,
+      selectedSlotId,
     ]
   )
   const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
@@ -779,6 +797,41 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         // both follow it. A shop taking both leaves the customer's choice alone (a re-read included).
         const only = onlyOfferedType(res.data)
         if (only) setFulfilmentType(only)
+        // V87 / GAP-GTM-03: fetch open scheduled slots only when the shop uses scheduled slots.
+        if (
+          res.data.fulfilmentTimingMode === "SCHEDULED_SLOTS_ONLY" ||
+          res.data.fulfilmentTimingMode === "HYBRID_IMMEDIATE_AND_SLOTS"
+        ) {
+          setSlotsLoading(true)
+          setSlotsError(null)
+          publicApiClient
+            .get<FulfilmentSlotDto[]>(`/public/shops/${slug}/slots`)
+            .then((slotsRes) => {
+              if (cancelled) return
+              const list = Array.isArray(slotsRes.data) ? slotsRes.data : []
+              setFulfilmentSlots(list)
+              if (
+                res.data.fulfilmentTimingMode === "SCHEDULED_SLOTS_ONLY" ||
+                (res.data.fulfilmentTimingMode === "HYBRID_IMMEDIATE_AND_SLOTS" &&
+                  res.data.openNow === false)
+              ) {
+                const firstOpen = list.find(
+                  (s) => s.active && (s.remainingOrders === null || s.remainingOrders > 0)
+                )
+                setSelectedSlotId((prev) => prev ?? (firstOpen ? firstOpen.id : null))
+              }
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setSlotsError(
+                  "Could not load available fulfilment windows. Please refresh and try again."
+                )
+              }
+            })
+            .finally(() => {
+              if (!cancelled) setSlotsLoading(false)
+            })
+        }
       })
       .catch(() => {
         /* Preview falls back to £0 delivery; server recomputes the real fee. */
@@ -796,13 +849,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const sellerVatUndeclared = shop !== null && !sellerVatRegistered
 
   // 37-22 (UI-SPEC K3 "Checkout", D-15): the shop's SERVER answer at page load. When it says the shop
-  // is not taking orders (paused, or openNow false), the K3 notice sits at the top of step 1 and
-  // Place order is disabled with that notice as its permanent explanation (aria-describedby) — the
-  // `belowMinimum` precedent: disabled only where the reason is on screen beside it. A shop that did
-  // not load, or a payload without openNow, disables nothing: the server still decides at submit,
-  // and its typed refusal is handled below (the checkout race).
+  // is not taking orders (paused, or openNow false for an immediate order), the K3 notice sits at the
+  // top of step 1 and Place order is disabled with that notice as its permanent explanation
+  // (aria-describedby) — the `belowMinimum` precedent: disabled only where the reason is on screen
+  // beside it. Under V87 (ADR-0007), scheduled slot pre-orders are permitted when `openNow === false`
+  // (unless the shop is explicitly paused).
   const shopAvailability = shop ? readShopAvailability(shop) : null
-  const notTakingOrders = shopAvailability?.kind === "paused" || shopAvailability?.kind === "closed"
+  const notTakingOrders = isCheckoutBlockedByAvailability({
+    availabilityKind: shopAvailability?.kind,
+    timingMode: shop?.fulfilmentTimingMode,
+    selectedSlotId,
+  })
 
   // The snapshot above is the ONLY thing that disables Place order, and it was read once, on mount.
   // A customer who opened checkout during a 20-minute pause and waited it out would otherwise keep a
@@ -896,6 +953,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       }
     }
     setFieldErrors({})
+
+    // V87 / GAP-GTM-03: SCHEDULED_SLOTS_ONLY requires a selected fulfilment slot before submit.
+    if (shop?.fulfilmentTimingMode === "SCHEDULED_SLOTS_ONLY" && !selectedSlotId) {
+      setError("Please choose an available fulfilment window before placing your order.")
+      return
+    }
 
     // 37-34 (UI-SPEC § C1) — THE BASKET-CHANGED GATE. The server has said the basket is not the one
     // the customer saw, and they have not yet accepted the changes: refuse, announce it beside the
@@ -1144,6 +1207,16 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       const limit = readOrderLimitProblem(err)
       if (limit) {
         setError(orderLimitCopy(limit))
+        return
+      }
+      // V87 / GAP-GTM-03 (ADR-0007): RFC 9457 scheduled-slot refusals
+      // (fulfilment-slot-required, fulfilment-slot-closed, fulfilment-slot-cutoff-passed, fulfilment-slot-full).
+      const slotProblem = problemOf(err)
+      const slotCopy = describeSlotCheckoutError(
+        slotProblem?.data as { type?: string; detail?: string } | undefined
+      )
+      if (slotCopy) {
+        setError(slotCopy)
         return
       }
       // #409: this used to read ONLY `response.data.detail` (RFC 7807). The rate
@@ -1404,6 +1477,24 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             Collection
           </button>
         </div>
+        )}
+
+        {/* V87 / GAP-GTM-03 (ADR-0007): Scheduled Fulfilment Slot Picker for pre-order / hybrid kitchens */}
+        {(shop?.fulfilmentTimingMode === "SCHEDULED_SLOTS_ONLY" ||
+          shop?.fulfilmentTimingMode === "HYBRID_IMMEDIATE_AND_SLOTS") && (
+          <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
+            <FulfilmentSlotPicker
+              timingMode={shop.fulfilmentTimingMode}
+              slots={fulfilmentSlots}
+              loading={slotsLoading}
+              error={slotsError}
+              selectedSlotId={selectedSlotId}
+              onSelectSlot={(slotId) => {
+                setSelectedSlotId(slotId)
+                setError(null)
+              }}
+            />
+          </div>
         )}
 
         {/* Conditional UK delivery address — only for DELIVERY */}
