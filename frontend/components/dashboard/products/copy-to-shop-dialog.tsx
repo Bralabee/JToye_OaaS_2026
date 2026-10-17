@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { copyProducts } from "@/lib/products-api"
+import { withFullStop } from "@/lib/sentence-end"
 import { cn } from "@/lib/utils"
 import type { CopyProductsResult, Shop } from "@/types/api"
 
@@ -38,14 +39,14 @@ export function productCountCopy(n: number): string {
  */
 export function copyResultSentence(result: CopyProductsResult, shopName: string): string {
   const parts: string[] = []
-  if (result.created > 0) parts.push(`${result.created} copied to ${shopName}.`)
+  if (result.created > 0) parts.push(`${result.created} copied to ${withFullStop(shopName)}`)
   if (result.skipped > 0) {
     parts.push(
       `${result.skipped} skipped because ${shopName} already has ${result.skipped === 1 ? "it" : "them"}.`
     )
   }
   if (result.failed > 0) parts.push(`${result.failed} couldn't be copied.`)
-  return parts.length > 0 ? parts.join(" ") : `Nothing was copied to ${shopName}.`
+  return parts.length > 0 ? parts.join(" ") : `Nothing was copied to ${withFullStop(shopName)}`
 }
 
 export interface CopyToShopDialogProps {

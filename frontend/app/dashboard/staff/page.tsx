@@ -42,6 +42,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { describeLoadError } from "@/lib/human-error"
 import { fetchMyShops } from "@/lib/shops-api"
+import { withFullStop } from "@/lib/sentence-end"
 import { CREDENTIAL_PROBLEMS, listCredentials } from "@/lib/credentials-api"
 import {
   cancelStaffInvite,
@@ -708,7 +709,7 @@ export default function StaffPage() {
         ? ""
         : remaining.length === 0
           ? "After this they'll have no access to this business. "
-          : `After this they'll have: ${remaining.join("; ")}. `
+          : `After this they'll have: ${withFullStop(remaining.join("; "))} `
     return `${after}They'll lose it on their next action.`
   }
 

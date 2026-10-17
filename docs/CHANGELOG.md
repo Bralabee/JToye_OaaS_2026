@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37: UAT gap G-37-6 (#941) — 2026-10-17
+
+Closes UAT test 6's gap G-37-6 (plans 37-56 to 37-59). Frontend and email copy only: no migration and no API change.
+
+- **Finance figures (`frontend/app/dashboard/finance/page.tsx`).** The stat and VAT grids pick their columns from their own container width, not the viewport (stat 28rem/57rem, VAT 27rem/54rem), sized to the widest allowed figure "−£999,999.99". Figures stopped painting under the next card at 768 px beside the sidebar. They use `tabular-nums` with an overflow-wrap fallback.
+- **One sentence-end rule per language (`frontend/lib/sentence-end.ts`, `uk.jtoye.core.common.Sentences`).** A name that already ends in a full stop no longer gets a second one ("Peckham Jollof Co.."). A parity test holds the two implementations equal. The rule covers the checkout allergen panel, order page, void and joined-toast sentences, copy-result, remove-access, the staff invitation, four customer status-email leads, the footer and the onboarding reason.
+- **Pagination (`frontend/components/ui/pagination.tsx`).** Controls are chosen from the component's own width (19/21/27rem tiers), previous/next always show, and every control is 44 × 44 px. The control row no longer overflows its card at 375/390 px.
+- **Void dialog.** Proven to fit at 390, 768 and 1280 px through the real opener. No change.
+- **Live proof (`frontend/e2e/screens-copy-uat.spec.ts`).** Five tests, each with an instrument arm that must fail on every run. They failed on the pre-fix runtime and passed after a full rebuild.
+
 ### Phase 39-04: Keycloak 26.8.1 Upgrade (#937) — 2026-10-16
 
 Upgrades the identity provider from `quay.io/keycloak/keycloak:24.0.5` (EOL `2024-06-10`) to `quay.io/keycloak/keycloak:26.8.1` (`eol: false`, cycle `26.8`) across all three compose topologies and retires the final `DEFERRED-27` horizon exemption (`active-exemptions=0`).

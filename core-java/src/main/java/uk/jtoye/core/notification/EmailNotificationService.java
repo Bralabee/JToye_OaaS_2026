@@ -12,6 +12,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import uk.jtoye.core.common.Sentences;
 import uk.jtoye.core.config.ClockConfig;
 import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.order.FulfilmentType;
@@ -154,8 +155,8 @@ public class EmailNotificationService {
                                       CustomerEmailContext context) {
         CustomerEmailContext ctx = orUnknown(context);
         String lead = """
-                Your order %s has been sent to %s. They will confirm it shortly, and you'll get another \
-                email when they start preparing it.""".formatted(event.orderNumber(), shopLabel(ctx));
+                Your order %s has been sent to %s They will confirm it shortly, and you'll get another \
+                email when they start preparing it.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
         send(event, recipientEmail, "order-received", subject(event, "Received"), lead, ctx, true);
     }
 
@@ -164,9 +165,9 @@ public class EmailNotificationService {
                                    CustomerEmailContext context) {
         CustomerEmailContext ctx = orUnknown(context);
         String lead = """
-                Great news! Your order %s has been confirmed by %s.
+                Great news! Your order %s has been confirmed by %s
 
-                Preparation will begin soon.""".formatted(event.orderNumber(), shopLabel(ctx));
+                Preparation will begin soon.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
         send(event, recipientEmail, "order-confirmed", subject(event, "Confirmed"), lead, ctx, false);
     }
 
@@ -175,9 +176,9 @@ public class EmailNotificationService {
                                    CustomerEmailContext context) {
         CustomerEmailContext ctx = orUnknown(context);
         String lead = """
-                Your order %s is now being prepared by %s.
+                Your order %s is now being prepared by %s
 
-                You'll get another email when it's ready.""".formatted(event.orderNumber(), shopLabel(ctx));
+                You'll get another email when it's ready.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
         send(event, recipientEmail, "order-preparing", subject(event, "Being Prepared"), lead, ctx, false);
     }
 
@@ -227,7 +228,8 @@ public class EmailNotificationService {
         String lead = """
                 Your order %s from %s has been completed.
 
-                Thank you for ordering from %s.""".formatted(event.orderNumber(), shopLabel(ctx), shopLabel(ctx));
+                Thank you for ordering from %s""".formatted(event.orderNumber(), shopLabel(ctx),
+                Sentences.withFullStop(shopLabel(ctx)));
         send(event, recipientEmail, "order-completed", subject(event, "Completed"), lead, ctx, false);
     }
 
@@ -286,14 +288,14 @@ public class EmailNotificationService {
         String expiry = expiresAt.atZoneSameInstant(ClockConfig.UK_ZONE).format(INVITE_EXPIRY_FORMAT);
         String subject = inviter + " invited you to " + business + " on " + PLATFORM_NAME;
         String body = """
-                %s has invited you to help run %s on J'Toye as %s for %s.
+                %s has invited you to help run %s on J'Toye as %s for %s
 
                 Accept the invitation: %s
 
                 This link works once and expires on %s (UK time).
 
                 If you weren't expecting this, you can ignore this email. Nothing happens unless you accept.
-                """.formatted(inviter, business, role, shop, link, expiry);
+                """.formatted(inviter, business, role, Sentences.withFullStop(shop), link, expiry);
         try {
             MimeMessage mime = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
@@ -473,7 +475,7 @@ public class EmailNotificationService {
         StringBuilder b = new StringBuilder("—\n");
         String shop = sanitise(ctx.shopName());
         b.append("This email was sent by ").append(PLATFORM_NAME).append(" on behalf of ")
-                .append(shop == null ? "the seller" : shop).append(".\n");
+                .append(Sentences.withFullStop(shop == null ? "the seller" : shop)).append('\n');
         b.append(platformLegalName).append(", registered in ").append(platformRegistration)
                 .append(", company number ").append(platformCompanyNumber).append(".\n");
         String office = oneLine(platformRegisteredOffice);

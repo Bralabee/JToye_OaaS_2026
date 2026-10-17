@@ -109,6 +109,17 @@ class EmailNotificationServiceStaffInviteTest {
     }
 
     @Test
+    @DisplayName("G-37-6: a shop whose name ends in a full stop is named once, with one full stop")
+    void inviteEmail_shopNameEndingInAFullStop_hasOneFullStop() {
+        service.sendStaffInvite(TO, "Ada Admin", "Peckham Jollof", "Staff", "Peckham Jollof Co.", LINK, EXPIRES_BST);
+
+        String text = SentMail.text(sent());
+        assertThat(text)
+                .containsPattern("as Staff for Peckham Jollof Co\\.(\\r?\\n)")
+                .doesNotContain("..");
+    }
+
+    @Test
     @DisplayName("D-07: the message is plain text: a single text/plain part with no HTML tag")
     void inviteEmail_isPlainText() throws Exception {
         service.sendStaffInvite(TO, "Ada Admin", "Mama Ade's Kitchen", "Staff", "Shop A", LINK, EXPIRES_BST);

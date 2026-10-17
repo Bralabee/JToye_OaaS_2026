@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import type { OrderAllergenFlag } from "@/types/api"
 import { ALLERGEN_ATTRIBUTION_INTRO_COPY, allergenAttributionCopy } from "@/lib/allergen-copy"
 import { attributionAgreesWith, type AllergenAttribution } from "@/lib/basket-allergens"
+import { withFullStop } from "@/lib/sentence-end"
 
 /**
  * S3 — the pre-submit allergen set and its acknowledgement (Phase 31-14, LGL-03 / D-01..D-03).
@@ -119,7 +120,7 @@ const ALLERGEN_ACK_ERROR_COPY_BY_KIND: Record<AllergenAckErrorKind, string> = {
 
 /** The intro line, which attributes the declaration to the kitchen that made it. */
 export function allergenPanelIntroCopy(vendorName: string): string {
-  return `These items are prepared by ${vendorName}. Based on what the kitchen has declared, this order contains:`
+  return `These items are prepared by ${withFullStop(vendorName)} Based on what the kitchen has declared, this order contains:`
 }
 
 /**

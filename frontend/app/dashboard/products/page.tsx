@@ -112,9 +112,10 @@ const VAT_RATE_OPTIONS: ReadonlyArray<{ value: VatRate; label: string }> = [
 ]
 
 /**
- * UI-SPEC § Copywriting B4-B6 "VAT helper". OWNER SIGN-OFF PENDING (UI-SPEC open item 1, presented
- * in 37-15): it must not read as tax advice, so it names the rule of thumb, says there are
- * exceptions and points at HMRC and an accountant rather than deciding for the vendor.
+ * UI-SPEC § Copywriting B4-B6 "VAT helper". Signed off by the owner on 2026-10-16 (UAT test 6
+ * ruling: accepted as written). It must not read as tax advice, so it names the rule of thumb,
+ * says there are exceptions and points at HMRC and an accountant rather than deciding for the
+ * vendor.
  */
 const VAT_RATE_HELP_COPY =
   "The rate that applies to this item when you sell it. Hot takeaway food is usually standard-rated, and much cold food is zero-rated, but there are exceptions. If you're not sure, check HMRC VAT Notice 709/1 or ask your accountant."

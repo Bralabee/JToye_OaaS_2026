@@ -2,6 +2,7 @@ package uk.jtoye.core.notification.template;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
+import uk.jtoye.core.common.Sentences;
 
 import java.util.Map;
 
@@ -125,8 +126,8 @@ public class EmailTemplateRenderer {
         }
         String reasonHtml = sHtml(m, "reason");
         return new Copy(subject, "Onboarding update",
-                "<p style=\"margin:0;font-size:15px;line-height:1.6;\">There's an update on your J'Toye onboarding: <strong>%s</strong>. Open your dashboard to see what's needed next.</p>".formatted(reasonHtml),
-                "There's an update on your J'Toye onboarding: %s. Open your dashboard to see what's needed next.".formatted(reason));
+                "<p style=\"margin:0;font-size:15px;line-height:1.6;\">There's an update on your J'Toye onboarding: <strong>%s</strong>%s Open your dashboard to see what's needed next.</p>".formatted(reasonHtml, Sentences.fullStopAfter(reason)),
+                "There's an update on your J'Toye onboarding: %s Open your dashboard to see what's needed next.".formatted(Sentences.withFullStop(reason)));
     }
 
     private Copy paymentCopy(RecipientRole role, Map<String, Object> m) {
