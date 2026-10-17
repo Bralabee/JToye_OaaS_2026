@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 37 Owner Decisions: Verified-Contact Cash-Order IP-Cap Exemption & `core-api` Service Account Hardening (#947) — 2026-10-17
+
+Resolves the remaining Phase 37 owner decisions (`37-31` H4, `T-37-107`, and Phase 29 staging/production operator handoff).
+
+- **Verified-contact cash-order per-IP cap exemption (`37-31` H4, `PublicStorefrontService`, `PublicStorefrontServiceTest`, `CashOrderCapIntegrationTest`).** Skips `cashOrderCaps.checkIp(...)` and leaves `orders.client_ip_digest` `null` when `contactVerified` is `true` (the request carried a verified customer-realm token whose email matches `customerEmail`), preventing signed-in customers arriving through the Next.js `/api/customer-orders` server-to-server proxy from colliding on the `frontend` container's socket peer IP or consuming guest IP slots while keeping the `per-email` (3) and `per-phone` (3) open cash-order caps enforced.
+- **Keycloak `core-api` service account disabled (`T-37-107`, `infra/keycloak/realm-export.template.json`, `docs/runbooks/credential-rotation.md`).** Sets `"serviceAccountsEnabled" : false` on the `core-api` client and `"enabled" : false` on `service-account-core-api` so `KEYCLOAK_CLIENT_SECRET` cannot mint a machine token on the human OIDC client ID, and updates the credential-rotation runbook acceptance probe for `core-api`.
+
 ### Forced-Light Dashboard Theme (`quick-261016-edv`) & Phase 37 Closeout Consolidation (#946) — 2026-10-17
 
 Forces the vendor dashboard onto the light theme while withholding the theme toggle (`quick-261016-edv`) and consolidates the Phase 37 completion records (`59/59` plans, `15/15` UAT) onto `main`.
