@@ -66,7 +66,7 @@ class MediaBackfillMigrationIntegrationTest {
     private static final String PUBLIC_URL = "http://localhost:10000/devstoreaccount1/jtoye-images/";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_media")
             .withUsername("test")
             .withPassword("test");

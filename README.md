@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-6265%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-6279%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -20,7 +20,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
 | **Backend** | Spring Boot 4, Java 25, MapStruct 1.6.3, Redis Caching, Spring State Machine |
 | **Edge** | Go 1.27, Gin, Circuit Breakers, Rate Limiting |
-| **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
+| **Database** | PostgreSQL 18 with Row-Level Security (RLS) |
 | **Auth** | Keycloak 26 (OAuth2/OIDC) |
 | **Infrastructure** | Docker, Kubernetes, Redis, RabbitMQ |
 
@@ -175,7 +175,7 @@ services**.
 │         │                                                   │
 │         ↓                                                   │
 │  ┌──────────────────────────────────────┐                  │
-│  │  PostgreSQL 15 (Port 5433)          │                  │
+│  │  PostgreSQL 18 (Port 5433)          │                  │
 │  │  - Row-Level Security (RLS)         │                  │
 │  │  - Multi-tenant isolation           │                  │
 │  │  - Audit trails (Envers)            │                  │
@@ -290,10 +290,10 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
 - Backend (Java): 2882 `@Test` methods across 408 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 112 `Test*` functions across 14 files ✅
-- Frontend (Jest): 3014 `it/test` blocks across 254 files ✅
+- Frontend (Jest): 3028 `it/test` blocks across 256 files ✅
 - Frontend E2E (Playwright): 187 `test()` blocks across 44 specs ✅
 - MCP server (vitest): 70 `it/test` blocks across 8 files ✅
-- **Total: 6265 logical test invocations** ✅
+- **Total: 6279 logical test invocations** ✅
 
 Database schema version: **V87** (Flyway).
 

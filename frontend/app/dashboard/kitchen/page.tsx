@@ -56,6 +56,10 @@ import {
   useShopPause,
 } from "@/components/dashboard/kitchen/pause-orders-control"
 import { PausedBanner } from "@/components/dashboard/kitchen/paused-banner"
+import {
+  KdsCookSheetPanel,
+  KdsScheduledWindowBadge,
+} from "@/components/dashboard/kitchen/kds-cook-sheet-panel"
 import { SESSION_LAPSED_EVENT } from "@/lib/session-lapse"
 import { SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-events"
 import { vendorLogout } from "@/lib/vendor-logout"
@@ -76,6 +80,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   ChefHat,
+  ClipboardList,
   Clock,
   ArrowRight,
   CheckCircle2,
@@ -247,6 +252,10 @@ export default function KitchenPage() {
 
   // Loading state
   const [loading, setLoading] = useState(true)
+
+  // GAP-GTM-02 (V87 / ADR-0007): consolidated batch prep "Cook Sheet" panel,
+  // toggled on demand so the live ticket board stays a 1-request initial mount.
+  const [cookSheetOpen, setCookSheetOpen] = useState(false)
 
   // --- 37-18 (D-14, UI-SPEC K2): the board has stopped ---
   //
@@ -913,6 +922,21 @@ export default function KitchenPage() {
             Print all
           </Button>
 
+          {/* GAP-GTM-02 (V87 / ADR-0007): toggle the consolidated Cook Sheet batch-prep view */}
+          <Button
+            type="button"
+            variant={cookSheetOpen ? "default" : "outline"}
+            onClick={() => setCookSheetOpen((open) => !open)}
+            disabled={!selectedShopId}
+            aria-expanded={cookSheetOpen}
+            aria-controls="kds-cook-sheet-panel"
+            data-testid="kds-cook-sheet-toggle"
+            className="kds-press"
+          >
+            <ClipboardList className="mr-2 h-5 w-5" />
+            {cookSheetOpen ? "Hide cook sheet" : "Cook sheet"}
+          </Button>
+
           {/* 37-17 (D-12): the sound control says, in words, what the board can do. It replaces the
               icon-only mute button; the `kds-muted` preference behind it is the same. */}
           <KdsSoundControl
@@ -1000,6 +1024,18 @@ export default function KitchenPage() {
           This shop has more order history than the board reads in one go. Older
           tickets may not be shown &mdash; check the Orders screen if a ticket is
           missing.
+        </div>
+      )}
+
+      {/* GAP-GTM-02 (V87 / ADR-0007): consolidated batch prep "Cook Sheet" panel.
+          Mounted on demand when toggled open so initial mount fires zero extra API calls. */}
+      {cookSheetOpen && (
+        <div id="kds-cook-sheet-panel">
+          <KdsCookSheetPanel
+            shopId={selectedShopId}
+            shopName={selectedShopName}
+            stopped={stopped !== null}
+          />
         </div>
       )}
 
@@ -1124,6 +1160,10 @@ export default function KitchenPage() {
                           {order.orderNumber || `#${order.id.substring(0, 6)}`}
                         </CardTitle>
                         <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
+                        <KdsScheduledWindowBadge
+                          scheduledWindowLabel={order.scheduledWindowLabel}
+                          scheduledForDate={order.scheduledForDate}
+                        />
                         {config && (
                           <Badge className={`${config.bgColor} ml-auto flex flex-shrink-0 items-center gap-1 text-white`}>
                             <StatusIcon className="h-3 w-3" />

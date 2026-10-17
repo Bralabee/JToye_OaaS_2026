@@ -43,9 +43,9 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 | **frontend** | Next.js 16 (standalone) | 3000 | ~272MB | ~5s |
 
 **Infrastructure:**
-- PostgreSQL 15 (primary + replicas)
+- PostgreSQL 18 (primary + replicas)
 - Keycloak 26 (OIDC provider)
-- Redis 7 (cache + sessions)
+- Redis 8.10 (cache + sessions)
 - RabbitMQ 4.3.6 (message queue)
 
 ---

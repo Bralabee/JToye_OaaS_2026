@@ -77,7 +77,7 @@ class V57GrantSourceBackfillIntegrationTest {
     private static final String RLS_MIGRATOR_PW = "rls_migrator_pw";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_v57")
             .withUsername("test")
             .withPassword("test");

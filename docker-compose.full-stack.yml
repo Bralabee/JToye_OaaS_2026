@@ -40,7 +40,7 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: jtoye-postgres
     restart: unless-stopped
     # Issue #94 [P2-3]: max_connections is EXPLICIT (PG15 default is 100).
@@ -78,7 +78,7 @@ services:
       # issue for the rest.
       - "${JTOYE_BIND_HOST:-127.0.0.1}:5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
       - ./infra/db/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT 1' && psql -U ${POSTGRES_USER} -d keycloak -c 'SELECT 1'"]
@@ -197,7 +197,7 @@ services:
 
   # Redis Cache
   redis:
-    image: redis:7-alpine
+    image: redis:8.10-alpine
     container_name: jtoye-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}

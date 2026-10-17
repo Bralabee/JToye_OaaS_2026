@@ -28,8 +28,8 @@ Two interactive topology views, generated from [`SYSTEM_DESIGN_V2.md §1`](../do
 
 ### Required Infrastructure
 1. **Kubernetes Cluster**: v1.27+ (tested on EKS, GKE, AKS)
-2. **Database**: PostgreSQL 15+ (managed service recommended)
-3. **Cache**: Redis 7+ (managed service recommended)
+2. **Database**: PostgreSQL 18+ (managed service recommended)
+3. **Cache**: Redis 8+ (managed service recommended)
 4. **Message Queue**: RabbitMQ **3.13+** minimum, 4.3 recommended (dev/compose pins 4.3.6). The deployed broker's version is unverified from this repo — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 5. **Identity Provider**: Keycloak 22+ deployment
 6. **DNS**: Configured for your domains
@@ -805,7 +805,7 @@ kubectl describe certificate jtoye-tls -n jtoye-production
 kubectl get secret postgres-credentials -n jtoye-production -o yaml
 
 # Test database connectivity from a pod
-kubectl run -it --rm psql --image=postgres:15 --restart=Never -n jtoye-production -- \
+kubectl run -it --rm psql --image=postgres:18-alpine --restart=Never -n jtoye-production -- \
   psql -h postgresql-primary.jtoye-infrastructure.svc.cluster.local -U jtoye -d jtoye
 ```
 
