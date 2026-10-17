@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### GAP-GTM-07 (Part B): Merchant Value & ROI Telemetry on `/dashboard/finance` — 2026-10-17
+
+Adds the **Merchant Value & ROI Telemetry Card** (`frontend/components/dashboard/merchant-roi-card.tsx` + `frontend/lib/finance-roi.ts`) to `/dashboard/finance` so UK food vendors see their retained direct-ordering margin and operational protection in pounds and pence directly alongside the `V79` shop-scoped ledger.
+
+- **28% Aggregator Commission Saved & `ADR-0007` Plan Switcher (`frontend/lib/finance-roi.ts`, `frontend/components/dashboard/merchant-roi-card.tsx`).** Computes deterministic gross variable commission saved and net monthly savings against the 28% (`2,800 bps`) UK aggregator benchmark across all three `ADR-0007` Axis 4 billing plans (`SAAS_HYBRID_STANDARD` `£39/mo + 0.5%`, `SAAS_FLAT_PREDICTABLE` `£99/mo + 0%`, and `BATCH_PAYG_STARTER` `£0/mo + 6.0%`), surfacing an automatic upgrade notice when `BATCH_PAYG_STARTER` Direct GTV exceeds the `£710/mo` (`71,000` pennies) crossover threshold.
+- **Repeat Buyer Rate & `V81` Cash-Order Abuse Telemetry (`frontend/lib/finance-api.ts`, `frontend/app/dashboard/finance/page.tsx`).** Reads a non-blocking shop-scoped orders sample (`fetchFinanceOrdersSample`) to compute repeat buyer percentage across distinct identified customers (`null` / honest empty state when zero identified buyers exist in the sample) and `V81` (`37-27`) unverified-contact cash-order counts (`contactVerified === false` strictly per `F20`).
+
 ### Phase 39-04: Keycloak 26.8.1 Upgrade (#937) — 2026-10-16
 
 Upgrades the identity provider from `quay.io/keycloak/keycloak:24.0.5` (EOL `2024-06-10`) to `quay.io/keycloak/keycloak:26.8.1` (`eol: false`, cycle `26.8`) across all three compose topologies and retires the final `DEFERRED-27` horizon exemption (`active-exemptions=0`).

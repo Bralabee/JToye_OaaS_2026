@@ -11,9 +11,11 @@ import {
   FinanceScopeText,
 } from "@/components/dashboard/finance-scope-text"
 import { VoidedBadge } from "@/components/dashboard/orders/voided-badge"
+import { MerchantRoiCard } from "@/components/dashboard/merchant-roi-card"
 import { Button } from "@/components/ui/button"
 import {
   fetchFinanceExport,
+  fetchFinanceOrdersSample,
   fetchFinanceSummary,
   fetchFinanceTransactions,
   financeGate,
@@ -53,6 +55,7 @@ import {
 import type {
   FinancialTransaction,
   FinancialSummary,
+  Order,
   VatRate,
 } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
@@ -88,6 +91,7 @@ function httpStatus(err: unknown): number | undefined {
 export default function FinancePage() {
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([])
+  const [ordersSample, setOrdersSample] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   // The page number belongs to the scope it was chosen in: switching shop starts again
@@ -127,13 +131,15 @@ export default function FinancePage() {
       setLoading(true)
       setExportFailed(false)
       setExportEmpty(false)
-      const [summaryRes, txRes] = await Promise.all([
+      const [summaryRes, txRes, ordersRes] = await Promise.all([
         fetchFinanceSummary(query),
         fetchFinanceTransactions(query, currentPage, PAGE_SIZE),
+        fetchFinanceOrdersSample(query),
       ])
       if (seq !== loadSeq.current) return
       setSummary(summaryRes.summary)
       setTransactions(txRes.content)
+      setOrdersSample(ordersRes)
       setTotalPages(txRes.totalPages)
       setTotalElements(txRes.totalElements)
       setScope(summaryRes.scope ?? txRes.scope)
@@ -390,6 +396,22 @@ export default function FinancePage() {
               </p>
             </CardContent>
           </Card>
+        </m.div>
+      )}
+
+      {/* GAP-GTM-07: Merchant Value & ROI Telemetry (Direct GTV, 28% Aggregator Commission Saved, Repeat Buyers, V81 Cash Abuse Protection) */}
+      {summary && (
+        <m.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          <MerchantRoiCard
+            summary={summary}
+            transactions={transactions}
+            orders={ordersSample}
+            scope={scope ?? { shopId: null, shopName: null, from: null, to: null }}
+          />
         </m.div>
       )}
 
