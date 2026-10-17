@@ -246,7 +246,10 @@ public class CulinaryPackSeedService {
         if (overridePennies != null && overridePennies > 0) {
             return overridePennies;
         }
-        if ("main".equalsIgnoreCase(course) || "soup-stew".equalsIgnoreCase(course)) {
+        if ("main".equalsIgnoreCase(course)
+                || "soup".equalsIgnoreCase(course)
+                || "stew".equalsIgnoreCase(course)
+                || "soup-stew".equalsIgnoreCase(course)) {
             return DEFAULT_MAIN_PRICE_PENNIES;
         }
         return DEFAULT_SECONDARY_PRICE_PENNIES;
@@ -258,8 +261,9 @@ public class CulinaryPackSeedService {
         }
         return switch (course.toLowerCase(Locale.ROOT)) {
             case "main" -> "Mains";
-            case "soup-stew" -> "Soups & Stews";
+            case "soup", "stew", "soup-stew" -> "Soups & Stews";
             case "street-food" -> "Street Food & Small Chops";
+            case "bread" -> "Breads";
             case "side" -> "Sides";
             case "snack" -> "Snacks & Pastries";
             case "dessert" -> "Desserts";

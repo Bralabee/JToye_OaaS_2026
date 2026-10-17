@@ -19,7 +19,7 @@ import {
   deactivateShopFulfilmentSlot,
   fetchShopFulfilmentSlots,
   fetchWhatsAppPreOrderLink,
-} from "@/lib/shops-api"
+} from "@/lib/shop-slots-api"
 import { Calendar, Copy, ExternalLink, Loader2, MessageSquare, Plus, XCircle } from "lucide-react"
 import type { FulfilmentSlotDto, Shop, WhatsAppPreOrderLinkDto } from "@/types/api"
 
@@ -317,14 +317,14 @@ export function ShopFulfilmentSlotsDialog({
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => void copyMessage(waLink.messageText)}
+                  onClick={() => void copyMessage(waLink.prefilledMessage)}
                   className="h-8 gap-1.5 bg-white text-xs text-slate-900"
                 >
                   <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                   Copy broadcast text
                 </Button>
                 <a
-                  href={waLink.whatsappShareUrl}
+                  href={waLink.waMeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-medium text-white hover:bg-emerald-800"
@@ -335,10 +335,10 @@ export function ShopFulfilmentSlotsDialog({
               </div>
             </div>
             <p className="rounded border border-emerald-200 bg-white p-2.5 font-mono text-xs text-slate-800 break-words">
-              {waLink.messageText}
+              {waLink.prefilledMessage}
             </p>
             <p className="text-xs text-emerald-900">
-              Checkout path: <span className="font-mono">{waLink.checkoutPath}</span>
+              Checkout path: <span className="font-mono">{waLink.storefrontPath}</span>
             </p>
           </div>
         )}

@@ -17,6 +17,7 @@ import {
   fetchKitchenFulfilmentSlots,
 } from "@/lib/kitchen-orders-api"
 import { downloadProductLabelBlob } from "@/lib/products-api"
+import { withFullStop } from "@/lib/sentence-end"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -107,7 +108,7 @@ export function KdsCookSheetPanel({ shopId, shopName, stopped = false }: KdsCook
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      setError(`Could not generate 62mm thermal PPDS label for ${productName}.`)
+      setError(`Could not generate 62mm thermal PPDS label for ${withFullStop(productName)}`)
     } finally {
       setDownloadingLabelId(null)
     }

@@ -384,14 +384,15 @@ export interface CulinaryPackSeedResult {
 /** GAP-GTM-06: Shareable WhatsApp pre-order checkout link and broadcast copy. */
 export interface WhatsAppPreOrderLinkDto {
   shopId: string
-  shopName: string
   shopSlug: string
-  slotId: string | null
-  windowLabel: string | null
-  cutoffAt: string | null
-  checkoutPath: string
-  messageText: string
-  whatsAppShareUrl: string
+  shopName: string
+  slotId?: string | null
+  serviceDate?: string | null
+  windowLabel?: string | null
+  cutoffAt?: string | null
+  storefrontPath: string
+  prefilledMessage: string
+  waMeUrl: string
 }
 
 

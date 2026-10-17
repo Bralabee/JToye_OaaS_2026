@@ -94,7 +94,7 @@ export function SeedCulinaryPackDialog({
     if (selectedPackIds.length === packs.length) {
       setSelectedPackIds([])
     } else {
-      setSelectedPackIds(packs.map((p) => p.id))
+      setSelectedPackIds(packs.map((p) => p.cuisineKey))
     }
   }
 
@@ -110,7 +110,7 @@ export function SeedCulinaryPackDialog({
     try {
       const res = await seedCulinaryPack({
         shopId: selectedShopId,
-        cuisineIds: selectedPackIds,
+        cuisineKeys: selectedPackIds,
         defaultPricePennies: 950,
       })
       setResult(res)
@@ -137,10 +137,10 @@ export function SeedCulinaryPackDialog({
   }
 
   const totalSelectedDishes = packs
-    .filter((p) => selectedPackIds.includes(p.id))
+    .filter((p) => selectedPackIds.includes(p.cuisineKey))
     .reduce((sum, p) => sum + p.dishCount, 0)
 
-  const statutoryCopy = packs[0]?.statutoryNotice || DEFAULT_STATUTORY_NOTICE
+  const statutoryCopy = DEFAULT_STATUTORY_NOTICE
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -223,10 +223,10 @@ export function SeedCulinaryPackDialog({
                   className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2.5 sm:grid-cols-2"
                 >
                   {packs.map((pack) => {
-                    const checked = selectedPackIds.includes(pack.id)
+                    const checked = selectedPackIds.includes(pack.cuisineKey)
                     return (
                       <label
-                        key={pack.id}
+                        key={pack.cuisineKey}
                         className={`flex cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition-colors ${
                           checked
                             ? "border-amber-600 bg-amber-50/70"
@@ -235,16 +235,16 @@ export function SeedCulinaryPackDialog({
                       >
                         <input
                           type="checkbox"
-                          data-testid={`culinary-pack-checkbox-${pack.id}`}
+                          data-testid={`culinary-pack-checkbox-${pack.cuisineKey}`}
                           checked={checked}
-                          onChange={() => togglePack(pack.id)}
+                          onChange={() => togglePack(pack.cuisineKey)}
                           disabled={submitting}
                           className="mt-1 h-4 w-4 rounded border-slate-300 text-amber-700 focus:ring-amber-600"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-1">
                             <span className="text-sm font-semibold text-slate-900">
-                              {pack.name}
+                              {pack.cuisineLabel}
                             </span>
                             <Badge variant="outline" className="text-xs text-slate-700">
                               {pack.dishCount} {pack.dishCount === 1 ? "dish" : "dishes"}
@@ -283,7 +283,7 @@ export function SeedCulinaryPackDialog({
                 <p className="font-semibold">
                   {result.created} draft {result.created === 1 ? "dish" : "dishes"} seeded ({result.skipped} existing skipped).
                 </p>
-                <p className="text-xs text-emerald-900">{result.statutoryNotice}</p>
+                <p className="text-xs text-emerald-900">{statutoryCopy}</p>
               </div>
             </div>
           </div>

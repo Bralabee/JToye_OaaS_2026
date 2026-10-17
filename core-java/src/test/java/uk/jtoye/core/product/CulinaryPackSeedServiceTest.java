@@ -165,4 +165,34 @@ class CulinaryPackSeedServiceTest {
                 .hasMessageContaining("cuisineKeys or dishSlugs");
         verify(productService, never()).createProduct(any());
     }
+
+    @Test
+    @DisplayName("seedPack prices soup and stew courses at 950p ('Soups & Stews') and breads at 550p ('Breads')")
+    void seedPackAssignsMainPriceAndCategoryToSoupsStewsAndBreads() {
+        Shop shop = new Shop();
+        when(shopRepository.lockByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+        when(productRepository.findByTenantIdAndShopIdOrderByDisplayOrderAscCreatedAtAsc(tenantId, shopId))
+                .thenReturn(List.of());
+        when(productRepository.existsByTenantIdAndSku(any(), any())).thenReturn(false);
+        when(productService.createProduct(any(CreateProductRequest.class))).thenAnswer(inv -> {
+            CreateProductRequest req = inv.getArgument(0);
+            ProductDto dto = new ProductDto();
+            dto.setId(UUID.randomUUID());
+            dto.setSku(req.getSku());
+            dto.setTitle(req.getTitle());
+            return dto;
+        });
+
+        seedService.seedPack(new CulinaryPackSeedRequest(
+                shopId, null, List.of("groundnut-soup", "guyanese-pepperpot", "injera"), null, null));
+
+        ArgumentCaptor<CreateProductRequest> captor = ArgumentCaptor.forClass(CreateProductRequest.class);
+        verify(productService, times(3)).createProduct(captor.capture());
+
+        List<CreateProductRequest> created = captor.getAllValues();
+        assertThat(created).extracting(CreateProductRequest::getCategory)
+                .containsExactly("Soups & Stews", "Soups & Stews", "Breads");
+        assertThat(created).extracting(CreateProductRequest::getPricePennies)
+                .containsExactly(950L, 950L, 550L);
+    }
 }

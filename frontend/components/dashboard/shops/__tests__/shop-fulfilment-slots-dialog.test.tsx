@@ -23,8 +23,20 @@ const sampleShop: Shop = {
   id: "shop-peckham",
   tenantId: "tenant-1",
   name: "Mama Put Peckham",
+  address: "10 Rye Lane, London SE15 5BS",
   slug: "mama-put-peckham",
+  description: null,
+  logoUrl: null,
+  bannerUrl: null,
+  phone: null,
+  email: null,
+  latitude: null,
+  longitude: null,
+  openingHours: null,
+  deliveryInfo: null,
+  minimumOrderPennies: 1000,
   published: true,
+  tags: null,
   fulfilmentTimingMode: "HYBRID_IMMEDIATE_AND_SLOTS",
   settlementPolicyMode: "SPLIT_DEPOSIT_VENDOR_MOR",
   depositBps: 5000,
@@ -54,13 +66,13 @@ const sampleWaLink: WhatsAppPreOrderLinkDto = {
   shopName: "Mama Put Peckham",
   shopSlug: "mama-put-peckham",
   slotId: "slot-fri",
+  serviceDate: "2026-10-23",
   windowLabel: "2026-10-23 17:00–19:00",
   cutoffAt: "2026-10-22T18:00:00Z",
-  remainingOrders: 13,
-  checkoutPath: "/shop/mama-put-peckham/checkout?slotId=slot-fri",
-  messageText:
+  storefrontPath: "/shop/mama-put-peckham/checkout?slotId=slot-fri",
+  prefilledMessage:
     "Order from Mama Put Peckham for 2026-10-23 17:00–19:00 (13 slots left): /shop/mama-put-peckham/checkout?slotId=slot-fri",
-  whatsappShareUrl:
+  waMeUrl:
     "https://wa.me/?text=Order%20from%20Mama%20Put%20Peckham",
 }
 
