@@ -251,4 +251,25 @@ class AllergenCatalogTest {
         assertDoesNotThrow(() -> AllergenCatalog.resolveBits(pathological));
         assertThat(AllergenCatalog.resolveBits(pathological)).contains(6);
     }
+
+    @Test
+    @DisplayName("GTM-BLK-02: resolves Pan-African & Caribbean culinary synonyms (stockfish, okporoko, titus, saltfish, bacalao, yaji, kibbeh, ayib)")
+    void resolvesPanAfricanCulinarySynonyms() {
+        // Bit 3 (Fish): West African & Caribbean dried/salted/canned fish terms
+        assertThat(AllergenCatalog.resolveBit("stockfish")).contains(3);
+        assertThat(AllergenCatalog.resolveBit("okporoko")).contains(3);
+        assertThat(AllergenCatalog.resolveBit("titus")).contains(3);
+        assertThat(AllergenCatalog.resolveBit("saltfish")).contains(3);
+        assertThat(AllergenCatalog.resolveBit("bacalao")).contains(3);
+
+        // Bit 4 (Peanuts): Hausa/Nigerian Suya spice blend made from defatted groundnut cake (kuli-kuli)
+        assertThat(AllergenCatalog.resolveBit("yaji")).contains(4);
+        assertThat(AllergenCatalog.resolveBit("suya yaji spice")).contains(4);
+
+        // Bit 6 (Milk): Ethiopian spiced clarified butter (niter kibbeh) and fresh cheese (ayib)
+        assertThat(AllergenCatalog.resolveBit("kibbeh")).contains(6);
+        assertThat(AllergenCatalog.resolveBit("niter kibbeh")).contains(6);
+        assertThat(AllergenCatalog.resolveBit("ayib")).contains(6);
+    }
 }
+

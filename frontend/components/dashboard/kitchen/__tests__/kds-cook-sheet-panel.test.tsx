@@ -211,6 +211,41 @@ describe("KdsCookSheetPanel (GAP-GTM-02 / V87)", () => {
     expect(alert).toHaveAttribute("role", "alert")
     expect(alert).toHaveTextContent(/Could not load the consolidated cook sheet/i)
   })
+
+  it("downloads a 62mm thermal PPDS label PDF for a dish row (GTM-BLK-06)", async () => {
+    const createObjectURLSpy = jest.fn(() => "blob:mock-thermal-label")
+    const revokeObjectURLSpy = jest.fn()
+    Object.defineProperty(URL, "createObjectURL", { value: createObjectURLSpy, writable: true })
+    Object.defineProperty(URL, "revokeObjectURL", { value: revokeObjectURLSpy, writable: true })
+
+    mockGet.mockImplementation((url: string) => {
+      if (url === "/api/v1/shops/shop-1/slots") {
+        return Promise.resolve({ data: sampleSlots })
+      }
+      if (url.startsWith("/api/v1/orders/cook-sheet")) {
+        return Promise.resolve({ data: sampleCookSheet })
+      }
+      if (url.startsWith("/api/v1/products/prod-jollof/label")) {
+        return Promise.resolve({ data: new Blob(["%PDF-1.4"], { type: "application/pdf" }) })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    render(<KdsCookSheetPanel shopId="shop-1" shopName="Mama Put Kitchen" />)
+    const labelBtn = await screen.findByTestId("cook-sheet-thermal-label-btn-prod-jollof")
+    fireEvent.click(labelBtn)
+
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\/api\/v1\/products\/prod-jollof\/label\?productionDate=\d{4}-\d{2}-\d{2}&format=THERMAL_62MM$/
+        ),
+        { responseType: "blob" }
+      )
+    })
+    expect(createObjectURLSpy).toHaveBeenCalled()
+    expect(revokeObjectURLSpy).toHaveBeenCalledWith("blob:mock-thermal-label")
+  })
 })
 
 describe("KdsScheduledWindowBadge", () => {

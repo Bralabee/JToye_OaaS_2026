@@ -37,7 +37,9 @@ class ProductControllerTest {
     @Mock
     private ProductLabelService labelService;
 
-    @InjectMocks
+    @Mock
+    private CulinaryPackSeedService culinaryPackSeedService;
+
     private ProductController productController;
 
     private UUID testTenantId;
@@ -45,6 +47,7 @@ class ProductControllerTest {
     @BeforeEach
     void setup() {
         testTenantId = UUID.randomUUID();
+        productController = new ProductController(productService, labelService, null, null, culinaryPackSeedService);
     }
 
     @AfterEach
@@ -121,6 +124,49 @@ class ProductControllerTest {
         // When/Then
         assertThrows(IllegalStateException.class, () -> productController.create(request));
         verify(productService, times(1)).createProduct(any(CreateProductRequest.class));
+    }
+
+    @Test
+    void listCulinaryPacksDelegatesToSeedService() {
+        uk.jtoye.core.product.dto.CulinaryPackDto pack = new uk.jtoye.core.product.dto.CulinaryPackDto(
+                "NG", "Nigeria", "West Africa", 16, List.of());
+        when(culinaryPackSeedService.listPacks()).thenReturn(List.of(pack));
+
+        ResponseEntity<List<uk.jtoye.core.product.dto.CulinaryPackDto>> res = productController.listCulinaryPacks();
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).hasSize(1);
+        assertThat(res.getBody().get(0).cuisineKey()).isEqualTo("NG");
+    }
+
+    @Test
+    void seedCulinaryPackDelegatesToSeedService() {
+        UUID shopId = UUID.randomUUID();
+        uk.jtoye.core.product.dto.CulinaryPackSeedRequest req =
+                new uk.jtoye.core.product.dto.CulinaryPackSeedRequest(shopId, List.of("NG"), null, 1250L, false);
+        uk.jtoye.core.product.dto.CulinaryPackSeedResult seeded =
+                new uk.jtoye.core.product.dto.CulinaryPackSeedResult(16, 0, 0, List.of());
+        when(culinaryPackSeedService.seedPack(req)).thenReturn(seeded);
+
+        ResponseEntity<uk.jtoye.core.product.dto.CulinaryPackSeedResult> res = productController.seedCulinaryPack(req);
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isNotNull();
+        assertThat(res.getBody().created()).isEqualTo(16);
+    }
+
+    @Test
+    void generateLabelPassesThermalFormatToLabelService() {
+        UUID productId = UUID.randomUUID();
+        java.time.LocalDate prodDate = java.time.LocalDate.of(2026, 10, 17);
+        byte[] pdfBytes = new byte[]{0x25, 0x50, 0x44, 0x46};
+        when(labelService.generateLabel(productId, prodDate, ProductLabelService.LabelFormat.THERMAL_62MM))
+                .thenReturn(pdfBytes);
+
+        ResponseEntity<byte[]> res = productController.generateLabel(productId, prodDate, "THERMAL_62MM");
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(res.getBody()).isEqualTo(pdfBytes);
+        assertThat(res.getHeaders().getFirst("Content-Disposition"))
+                .isEqualTo("attachment; filename=label-" + productId + "-62mm.pdf");
+        verify(labelService).generateLabel(productId, prodDate, ProductLabelService.LabelFormat.THERMAL_62MM);
     }
 
     private ProductDto createTestProductDto() {

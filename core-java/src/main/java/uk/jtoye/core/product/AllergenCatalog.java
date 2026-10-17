@@ -119,19 +119,21 @@ public final class AllergenCatalog {
         // 2 — Eggs
         put(m, 2, "egg", "eggs", "albumen", "ovalbumin", "mayonnaise", "mayo", "meringue");
 
-        // 3 — Fish
+        // 3 — Fish (including West African & Caribbean dried/salted/canned fish terms: GTM-BLK-02)
         put(m, 3, "fish", "anchovy", "anchovies", "cod", "salmon", "tuna", "haddock",
-                "mackerel", "sardine", "sardines", "pollock", "tilapia", "trout", "herring");
+                "mackerel", "sardine", "sardines", "pollock", "tilapia", "trout", "herring",
+                "stockfish", "okporoko", "titus", "saltfish", "bacalao");
 
-        // 4 — Peanuts (listed separately from tree nuts by the FSA)
-        put(m, 4, "peanut", "peanuts", "groundnut", "groundnuts", "arachis");
+        // 4 — Peanuts (listed separately from tree nuts by the FSA; includes Hausa/Nigerian yaji spice: GTM-BLK-02)
+        put(m, 4, "peanut", "peanuts", "groundnut", "groundnuts", "arachis", "yaji");
 
         // 5 — Soybeans
         put(m, 5, "soy", "soya", "soybean", "soybeans", "tofu", "edamame", "miso", "tempeh");
 
-        // 6 — Milk
+        // 6 — Milk (including Ethiopian spiced clarified butter niter kibbeh and fresh cheese ayib: GTM-BLK-02)
         put(m, 6, "milk", "dairy", "butter", "buttermilk", "cheese", "cheeses", "cream",
-                "yoghurt", "yogurt", "whey", "casein", "caseinate", "lactose", "ghee");
+                "yoghurt", "yogurt", "whey", "casein", "caseinate", "lactose", "ghee",
+                "kibbeh", "ayib");
 
         // 7 — Nuts (tree nuts)
         put(m, 7, "nut", "nuts", "almond", "almonds", "hazelnut", "hazelnuts", "walnut",

@@ -2,7 +2,12 @@ import apiClient from "@/lib/api-client"
 import { resolveShopsPageSize } from "@/lib/env-validation"
 import { fetchAllPages } from "@/lib/paged-fetch"
 import type { ShopRole } from "@/lib/staff-api"
-import type { Shop } from "@/types/api"
+import type {
+  CreateFulfilmentSlotRequest,
+  FulfilmentSlotDto,
+  Shop,
+  WhatsAppPreOrderLinkDto,
+} from "@/types/api"
 
 /**
  * The caller's server-authoritative effective access (GET /api/v1/staff/me,
@@ -158,5 +163,41 @@ export async function pauseShopOrders(shopId: string, choice: PauseChoice): Prom
 /** DELETE /api/v1/shops/{id}/pause (STAFF on the shop): ends any pause. Resolves with the shop. */
 export async function resumeShopOrders(shopId: string): Promise<Shop> {
   const res = await apiClient.delete<Shop>(`/api/v1/shops/${shopId}/pause`)
+  return res.data
+}
+
+/** GET /api/v1/shops/{id}/slots (STAFF on the shop): list scheduled fulfilment slots (ADR-0007 / GAP-GTM-02). */
+export async function fetchShopFulfilmentSlots(shopId: string): Promise<FulfilmentSlotDto[]> {
+  const res = await apiClient.get<FulfilmentSlotDto[]>(`/api/v1/shops/${shopId}/slots`)
+  return res.data ?? []
+}
+
+/** POST /api/v1/shops/{id}/slots (SHOP_MANAGER on the shop): create a scheduled fulfilment slot. */
+export async function createShopFulfilmentSlot(
+  shopId: string,
+  req: CreateFulfilmentSlotRequest
+): Promise<FulfilmentSlotDto> {
+  const res = await apiClient.post<FulfilmentSlotDto>(`/api/v1/shops/${shopId}/slots`, req)
+  return res.data
+}
+
+/** DELETE /api/v1/shops/{id}/slots/{slotId} (SHOP_MANAGER on the shop): deactivate a scheduled fulfilment slot. */
+export async function deactivateShopFulfilmentSlot(
+  shopId: string,
+  slotId: string
+): Promise<FulfilmentSlotDto> {
+  const res = await apiClient.delete<FulfilmentSlotDto>(`/api/v1/shops/${shopId}/slots/${slotId}`)
+  return res.data
+}
+
+/** GET /api/v1/shops/{id}/whatsapp-preorder-link[?slotId=...] (STAFF on the shop): generate shareable WhatsApp pre-order link. */
+export async function fetchWhatsAppPreOrderLink(
+  shopId: string,
+  slotId?: string | null
+): Promise<WhatsAppPreOrderLinkDto> {
+  const query = slotId && slotId.trim() ? `?slotId=${encodeURIComponent(slotId.trim())}` : ""
+  const res = await apiClient.get<WhatsAppPreOrderLinkDto>(
+    `/api/v1/shops/${shopId}/whatsapp-preorder-link${query}`
+  )
   return res.data
 }
