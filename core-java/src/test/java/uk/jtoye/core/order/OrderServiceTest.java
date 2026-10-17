@@ -1193,4 +1193,16 @@ class OrderServiceTest {
                 () -> orderService.getBalancePaymentLink(orderId));
         assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
     }
+
+    @Test
+    @DisplayName("GAP-GTM-04: getBalancePaymentLink rejects DRAFT order before upfront deposit is paid with 409 Conflict")
+    void getBalancePaymentLink_draftOrder_throws409Conflict() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        testOrder.setBalanceDuePennies(7000L);
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+
+        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> orderService.getBalancePaymentLink(orderId));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+    }
 }

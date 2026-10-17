@@ -1898,5 +1898,27 @@ class PublicStorefrontServiceTest {
                 () -> service.createBalancePaymentSession("ORD-11112222-20261017-AABBCCDD", "customer@example.com"));
         assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
     }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentSession rejects DRAFT order before upfront deposit is paid with 409 Conflict")
+    void createBalancePaymentSession_draftOrder_throws409Conflict() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setTenantId(tenantId);
+        order.setShopId(publishedShop.getId());
+        order.setOrderNumber("ORD-11112222-20261017-AABBCCDD");
+        order.setCustomerEmail("customer@example.com");
+        order.setStatus(OrderStatus.DRAFT);
+        order.setBalanceDuePennies(7000L);
+
+        Session mockSession = mock(Session.class);
+        when(entityManager.unwrap(Session.class)).thenReturn(mockSession);
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-11112222-20261017-AABBCCDD", "customer@example.com"))
+                .thenReturn(Optional.of(order));
+
+        var ex = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.createBalancePaymentSession("ORD-11112222-20261017-AABBCCDD", "customer@example.com"));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
+    }
 }
 

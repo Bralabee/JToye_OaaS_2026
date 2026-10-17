@@ -289,7 +289,8 @@ public class ShopController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "WhatsApp pre-order checkout link generated"),
             @ApiResponse(responseCode = "403", description = "No STAFF grant on this shop"),
-            @ApiResponse(responseCode = "404", description = "Shop or slot not found")
+            @ApiResponse(responseCode = "404", description = "Shop or slot not found"),
+            @ApiResponse(responseCode = "409", description = "Selected fulfilment slot is inactive, past cutoff, or full")
     })
     public ResponseEntity<uk.jtoye.core.shop.dto.WhatsAppPreOrderLinkDto> getWhatsAppPreOrderLink(
             @Parameter(description = "Shop ID") @PathVariable UUID id,

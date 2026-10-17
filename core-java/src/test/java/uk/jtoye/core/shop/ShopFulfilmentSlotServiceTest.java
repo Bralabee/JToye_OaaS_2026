@@ -284,4 +284,33 @@ class ShopFulfilmentSlotServiceTest {
         assertTrue(dto.prefilledMessage().contains("/shop/lagos-kitchen"));
         assertTrue(dto.waMeUrl().startsWith("https://wa.me/?text="));
     }
+
+    @Test
+    @DisplayName("GAP-GTM-06: buildWhatsAppPreOrderLink rejects inactive, past-cutoff, or full slot with 409 Conflict")
+    void buildWhatsAppPreOrderLink_inactiveOrPastCutoffOrFullSlot_throws409Conflict() {
+        shop.setSlug("lagos-kitchen");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+
+        UUID slotId = UUID.randomUUID();
+        ShopFulfilmentSlot slot = new ShopFulfilmentSlot();
+        slot.setId(slotId);
+        slot.setShopId(shopId);
+        slot.setServiceDate(LocalDate.of(2026, 10, 24));
+        slot.setWindowStart(LocalTime.of(14, 0));
+        slot.setWindowEnd(LocalTime.of(18, 0));
+        slot.setCutoffAt(OffsetDateTime.parse("2026-10-22T22:00:00Z"));
+        slot.setActive(false);
+        when(slotRepository.findByIdAndShopId(slotId, shopId)).thenReturn(Optional.of(slot));
+
+        var inactiveEx = assertThrows(ResponseStatusException.class,
+                () -> service.buildWhatsAppPreOrderLink(shopId, slotId));
+        assertEquals(HttpStatus.CONFLICT, inactiveEx.getStatusCode());
+
+        slot.setActive(true);
+        slot.setMaxOrders(10);
+        slot.setReservedOrders(10);
+        var fullEx = assertThrows(ResponseStatusException.class,
+                () -> service.buildWhatsAppPreOrderLink(shopId, slotId));
+        assertEquals(HttpStatus.CONFLICT, fullEx.getStatusCode());
+    }
 }

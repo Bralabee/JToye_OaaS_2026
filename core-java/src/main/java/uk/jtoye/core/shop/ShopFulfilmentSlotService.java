@@ -177,6 +177,20 @@ public class ShopFulfilmentSlotService {
         if (slotId != null) {
             ShopFulfilmentSlot slot = slotRepository.findByIdAndShopId(slotId, shopId)
                     .orElseThrow(() -> new ResourceNotFoundException("Fulfilment slot not found: " + slotId));
+            if (!slot.isActive()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Selected fulfilment slot is no longer active.");
+            }
+            if (!slot.getCutoffAt().isAfter(OffsetDateTime.now(clock))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Pre-order cutoff has passed for the selected fulfilment slot.");
+            }
+            boolean ordersFull = slot.getMaxOrders() != null && slot.getReservedOrders() >= slot.getMaxOrders();
+            boolean unitsFull = slot.getMaxUnits() != null && slot.getReservedUnits() >= slot.getMaxUnits();
+            if (ordersFull || unitsFull) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Selected fulfilment slot is already at full capacity.");
+            }
             String storefrontPath = "/shop/" + encodedSlug + "?slot=" + slot.getId();
             String windowLabel = slot.formatWindowLabel();
             String prefilledMessage = "Pre-order from " + shop.getName()

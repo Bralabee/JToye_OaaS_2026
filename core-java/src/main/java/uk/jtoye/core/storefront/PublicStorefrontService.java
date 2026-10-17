@@ -854,6 +854,7 @@ public class PublicStorefrontService {
                         "Order not found. Check your order number and email address."));
 
         if (order.isVoided()
+                || order.getStatus() == OrderStatus.DRAFT
                 || order.getStatus() == OrderStatus.CANCELLED
                 || order.getStatus() == OrderStatus.REFUNDED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,

@@ -678,6 +678,8 @@ class PaymentServiceTest {
     @Test
     @DisplayName("GAP-GTM-04: createBalancePaymentIntent creates BALANCE PaymentIntent for balanceDuePennies on connected account")
     void createBalancePaymentIntent_validBalance_createsIntentWithBalanceMetadata() throws Exception {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setPaymentStatus(PaymentStatus.CAPTURED);
         testOrder.setTotalAmountPennies(10_000L);
         testOrder.setDepositAmountPennies(3000L);
         testOrder.setBalanceDuePennies(7000L);
@@ -725,8 +727,65 @@ class PaymentServiceTest {
     @Test
     @DisplayName("GAP-GTM-04: createBalancePaymentIntent rejects order with zero or null balanceDuePennies")
     void createBalancePaymentIntent_zeroBalance_throwsIllegalState() {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
         testOrder.setBalanceDuePennies(0L);
         assertThrows(IllegalStateException.class, () -> paymentService.createBalancePaymentIntent(testOrder));
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: createBalancePaymentIntent rejects DRAFT order before upfront deposit is paid")
+    void createBalancePaymentIntent_draftOrder_throwsIllegalState() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        testOrder.setBalanceDuePennies(7000L);
+        assertThrows(IllegalStateException.class, () -> paymentService.createBalancePaymentIntent(testOrder));
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-04: handlePaymentIntentFailed with payment_stage=BALANCE preserves CAPTURED deposit status and deposit paymentReference")
+    void handlePaymentFailed_balanceStage_preservesCapturedDepositAndEmitsBalanceAmount() throws Exception {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setPaymentStatus(PaymentStatus.CAPTURED);
+        testOrder.setPaymentReference("pi_deposit_captured");
+        testOrder.setTotalAmountPennies(10_000L);
+        testOrder.setDepositAmountPennies(3000L);
+        testOrder.setBalanceDuePennies(7000L);
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_bal_failed");
+        when(mockIntent.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString(),
+                "payment_stage", "BALANCE"
+        ));
+        when(mockIntent.getLastPaymentError()).thenReturn(null);
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockIntent));
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.payment_failed");
+        when(mockEvent.getId()).thenReturn("evt_bal_fail");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
+                    .thenReturn(mockEvent);
+
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+
+            paymentService.handleWebhookEvent("{}", "sig_test");
+
+            assertEquals(PaymentStatus.CAPTURED, testOrder.getPaymentStatus(),
+                    "Failed balance attempt must not overwrite CAPTURED deposit status");
+            assertEquals("pi_deposit_captured", testOrder.getPaymentReference(),
+                    "Failed balance attempt must not overwrite captured deposit paymentReference");
+            assertEquals(7000L, testOrder.getBalanceDuePennies());
+            verify(paymentEventPublisher).publishFailed(
+                    eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                    eq("pi_bal_failed"), eq(7000L), eq("gbp"), eq("unknown"));
+        }
     }
 
     @Test

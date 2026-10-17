@@ -14681,6 +14681,16 @@
               }
             },
             "description" : "Shop or slot not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Selected fulfilment slot is inactive, past cutoff, or full"
           }
         },
         "security" : [

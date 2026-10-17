@@ -1042,6 +1042,7 @@ public class OrderService {
         shopAccessService.require(order.getShopId(), ShopRole.STAFF);
 
         if (order.isVoided()
+                || order.getStatus() == OrderStatus.DRAFT
                 || order.getStatus() == OrderStatus.CANCELLED
                 || order.getStatus() == OrderStatus.REFUNDED) {
             throw new org.springframework.web.server.ResponseStatusException(

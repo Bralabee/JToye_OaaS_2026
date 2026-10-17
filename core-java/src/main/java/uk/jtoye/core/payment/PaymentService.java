@@ -253,6 +253,14 @@ public class PaymentService {
                     "createBalancePaymentIntent requires a persisted order — order "
                             + order.getOrderNumber() + " has no id.");
         }
+        if (order.isVoided()
+                || order.getStatus() == OrderStatus.DRAFT
+                || order.getStatus() == OrderStatus.CANCELLED
+                || order.getStatus() == OrderStatus.REFUNDED) {
+            throw new IllegalStateException(
+                    "Order " + order.getOrderNumber() + " is not eligible for balance payment in status "
+                            + order.getStatus());
+        }
         Long balanceDue = order.getBalanceDuePennies();
         if (balanceDue == null || balanceDue <= 0) {
             throw new IllegalStateException(
@@ -528,22 +536,31 @@ public class PaymentService {
             Order order = orderRepository.findById(java.util.UUID.fromString(orderId))
                     .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
-            order.setPaymentStatus(PaymentStatus.FAILED);
-            order.setPaymentReference(intent.getId());
-            order.setUpdatedAt(java.time.OffsetDateTime.now());
-            orderRepository.save(order);
+            boolean isBalanceStage = "BALANCE".equals(intent.getMetadata().get("payment_stage"));
+            if (!isBalanceStage) {
+                order.setPaymentStatus(PaymentStatus.FAILED);
+                order.setPaymentReference(intent.getId());
+                order.setUpdatedAt(java.time.OffsetDateTime.now());
+                orderRepository.save(order);
+            }
 
             String failureReason = intent.getLastPaymentError() != null
                     ? intent.getLastPaymentError().getMessage()
                     : "unknown";
 
+            long failedAmountPennies = isBalanceStage
+                    ? ((order.getBalanceDuePennies() != null && order.getBalanceDuePennies() > 0)
+                            ? order.getBalanceDuePennies()
+                            : (intent.getAmount() != null ? intent.getAmount() : order.getTotalAmountPennies()))
+                    : order.getTotalAmountPennies();
+
             // Publish payment failed event
             paymentEventPublisher.publishFailed(
                     order.getId(), order.getTenantId(), order.getOrderNumber(),
-                    intent.getId(), order.getTotalAmountPennies(), "gbp", failureReason);
+                    intent.getId(), failedAmountPennies, "gbp", failureReason);
 
-            log.warn("Payment failed for order {} — PI: {}: {}",
-                    order.getOrderNumber(), intent.getId(), failureReason);
+            log.warn("Payment failed for order {} — PI: {} (stage={}): {}",
+                    order.getOrderNumber(), intent.getId(), isBalanceStage ? "BALANCE" : "INITIAL", failureReason);
         } finally {
             TenantContext.clear();
         }
