@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Forced-Light Dashboard Theme (`quick-261016-edv`) & Phase 37 Closeout Consolidation (#946) — 2026-10-17
+
+Forces the vendor dashboard onto the light theme while withholding the theme toggle (`quick-261016-edv`) and consolidates the Phase 37 completion records (`59/59` plans, `15/15` UAT) onto `main`.
+
+- **Forced-light dashboard contract (`frontend/hooks/use-theme.ts`, `frontend/components/dashboard/sidebar.tsx`, `frontend/components/dashboard/mobile-tab-bar.tsx`).** Exports `DARK_THEME_AVAILABLE = false` so `getSnapshot` always resolves to `false` (light) and the mount effect strips any `.dark` class while preserving stored `localStorage` preferences until a dashboard-wide dark-mode pass lands; gates the desktop sidebar and mobile "More" sheet theme switchers behind `DARK_THEME_AVAILABLE`; and adds 8 new Jest unit/cross-surface tests (`use-theme.test.tsx`, `theme-cross-surface.test.tsx`) plus `frontend/e2e/dashboard-forced-light.spec.ts`.
+- **Phase 37 closeout consolidation (`.planning/phases/37-real-world-operations-readiness/**`, `docs/metrics.json`).** Redacts the `37-57` staff-invite fixture token in `evidence/37-57-red-task1.json`, synchronizes Phase 37 (`59/59`), Phase 39 (`10/10`), and `ADR-0007` (`V87`) state/roadmap/handoff records, and advances `docs/metrics.json` to `6289` logical test invocations.
+
 ### GAP-GTM-04 & GAP-GTM-06: Catering Deposit Balance Payment Links & WhatsApp Pre-Order Checkout Bridge (#944) — 2026-10-17
 
 Implements `GAP-GTM-04` (`PAY-04`) and `GAP-GTM-06` (`#208`) on top of the `V87` scheduled fulfilment and split-deposit schema so vendors can collect remaining catering balances via verified customer tracking links and convert WhatsApp DM/broadcast traffic directly into allergen-acknowledged scheduled checkout sessions.

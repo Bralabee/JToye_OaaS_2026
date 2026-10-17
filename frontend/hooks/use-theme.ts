@@ -23,6 +23,33 @@ import { canEnhance } from "@/lib/gsap-gate"
  * graph.
  */
 
+/**
+ * DARK THEME WITHHELD — owner ruling 2026-10-16 (phase 37
+ * `deferred-items.md`, "Owner rulings 2026-10-16"; quick 261016-edv).
+ *
+ * The dashboard is unreadable in dark today: measured in the 37-55 UAT evidence
+ * (`37-55-uat-gaps-runtime.md` sections 6-7), 73 of 125 text elements on
+ * /dashboard/staff outside the two Staff form cards fall below 4.5:1, and the
+ * shop picker draws a light option list. Until a dashboard-wide dark pass ships
+ * (Phase 39 candidate), while this is false:
+ *   - the hook resolves LIGHT whatever is stored or the system prefers, and its
+ *     mount effect leaves no `dark` class on <html>;
+ *   - setDark / toggle write NOTHING to localStorage, so a stored `theme` is
+ *     left byte-identical and the user's choice returns with the pass;
+ *   - `available` is false, and both surfaces (sidebar, mobile tab bar) hide the
+ *     Dark Mode / Light Mode control.
+ *
+ * Re-enabling dark is flipping this ONE line to true. The forced-light jest
+ * blocks (use-theme.test.tsx, theme-cross-surface.test.tsx) and the live spec
+ * e2e/dashboard-forced-light.spec.ts go red on that flip BY DESIGN; delete them
+ * together with this flag. Typed `boolean`, not the literal `false`, so the
+ * flag-on branches stay type-reachable.
+ */
+export const DARK_THEME_AVAILABLE: boolean = false
+
+/** The live value of the flag; only the test seam below ever changes it. */
+let darkThemeAvailable: boolean = DARK_THEME_AVAILABLE
+
 const STORAGE_KEY = "theme"
 const DARK_CLASS = "dark"
 const PREFERS_DARK_QUERY = "(prefers-color-scheme: dark)"
@@ -59,8 +86,13 @@ function readStored(): StoredTheme {
   }
 }
 
-/** An explicit stored preference always wins; otherwise follow the system. */
+/**
+ * An explicit stored preference always wins; otherwise follow the system.
+ * While the dark theme is withheld, light — decided before the stored value is
+ * even read, so no stored value reaches render.
+ */
 function getSnapshot(): boolean {
+  if (!darkThemeAvailable) return false
   const stored = readStored()
   if (stored !== null) return stored === "dark"
   if (!canEnhance()) return false
@@ -82,6 +114,18 @@ function getServerSnapshot(): boolean {
 
 function notify(): void {
   for (const listener of listeners) listener()
+}
+
+/**
+ * TEST SEAM — turns the withheld dark theme back on (or off) for a test block,
+ * so the flag-on behaviour stays covered while the shipped flag is false.
+ * Callers restore it with `__setDarkThemeAvailableForTests(DARK_THEME_AVAILABLE)`.
+ * Follows the repo's `__<name>ForTests` convention (lib/vendor-logout.ts,
+ * lib/gsap-gate.ts). Not on window: reachable only by importing this module.
+ */
+export function __setDarkThemeAvailableForTests(next: boolean): void {
+  darkThemeAvailable = next
+  notify()
 }
 
 function handleStorage(event: StorageEvent): void {
@@ -121,8 +165,13 @@ function subscribe(onStoreChange: () => void): () => void {
   }
 }
 
-/** Persist the preference, put the document in step, and wake every subscriber. */
+/**
+ * Persist the preference, put the document in step, and wake every subscriber.
+ * While the dark theme is withheld this does NOTHING: no localStorage write (a
+ * stored `theme` stays byte-identical), no class change, no notify.
+ */
 function applyTheme(next: boolean): void {
+  if (!darkThemeAvailable) return
   if (typeof window === "undefined") return
   try {
     localStorage.setItem(STORAGE_KEY, next ? "dark" : "light")
@@ -137,6 +186,11 @@ function applyTheme(next: boolean): void {
 interface ThemeControls {
   /** True when the dark theme is active for this render. */
   dark: boolean
+  /**
+   * False while the dark theme is withheld (DARK_THEME_AVAILABLE, owner ruling
+   * 2026-10-16); surfaces hide their theme control when it is false.
+   */
+  available: boolean
   /** Set the theme explicitly and persist it. */
   setDark: (next: boolean) => void
   /** Invert the current theme and persist it. */
@@ -157,6 +211,7 @@ export function useTheme(): ThemeControls {
 
   return {
     dark,
+    available: darkThemeAvailable,
     setDark: applyTheme,
     toggle: () => applyTheme(!dark),
   }

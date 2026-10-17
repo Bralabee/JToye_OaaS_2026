@@ -7,8 +7,8 @@ status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: "2026-10-07"
-audited: "2026-10-15"
-audited_at_head: "15932090"
+audited: "2026-10-16"
+audited_at_head: "eb7636ac"
 requirements_total: 35
 requirements_covered: 35
 requirements_partial: 0
@@ -55,7 +55,7 @@ Gates run per sub-theme PR: `scripts/docs-freshness.sh` (+`--write`), `scripts/c
 | Suite | Where measured | Result |
 |-------|----------------|--------|
 | core-java unit | re-run by this audit at `afd2aaf2`: `./gradlew :core-java:cleanTest :core-java:test`, rc 0; 210 of 210 XML newer than the run start | 1828 tests, 0 failures, 0 errors, 1 skipped |
-| core-java integration (Testcontainers) | NOT re-run by this audit (32 min). Recorded in `evidence/37-53-gate-37F.md` §1.4 at `94f06286` with `cleanIntegrationTest` forcing execution; `git diff --name-only 94f06286 HEAD -- core-java` is empty, so the result applies to this head | 1242 tests, 0 failures, 0 errors, 1 skipped |
+| core-java integration (Testcontainers) | NOT re-run by this audit (32 min). Recorded in `evidence/37-53-gate-37F.md` §1.4 at `94f06286` with `cleanIntegrationTest` forcing execution; `git diff --name-only 94f06286 HEAD -- core-java` is empty, so the result applies to this head. **Corrected 2026-10-16:** that diff is NOT empty: the T-37-59 fix (43e908ae, 85b6e190) changed 9 core-java files after 94f06286. The core-java/edge-go/mcp-server tree at this head is byte-identical to the 37-F PR head 60b683ed (`git diff 60b683ed HEAD` empty; control: 94f06286..60b683ed lists the 9 files), where CI's Integration Tests (Testcontainers RLS) passed (runs 38706569802, 38706576834) | 1242 tests, 0 failures, 0 errors, 1 skipped |
 | frontend jest | re-run by this audit, rc 0 | 248 suites, 2927 tests passed |
 | mcp-server vitest | re-run by this audit, rc 0 | 8 files, 70 tests passed |
 | edge-go | re-run by this audit, `go -C edge-go test -count=1 ./...`, rc 0 | 5 packages ok, 0 FAIL |
@@ -74,8 +74,8 @@ Test titles are given as `file :: title`. Java paths are under `core-java/src/te
 
 | Req | Plans | Behaviour | Tests (file :: title) | Status |
 |-----|-------|-----------|-----------------------|--------|
-| RWO-003 | 37-02,04..09,15,18 | revoke last grant → own token 403 next call; dashboard "no longer have access"; Staff page "No access" + Grant from the ShopAccessService source | `security/access/StaffManagementIntegrationTest :: grantGivesAccess_thenRevokeProduces403`; `security/access/StaffEffectiveAccessIntegrationTest :: signedInUngrantedUser_isListed_asNone`; `frontend/components/dashboard/__tests__/no-access-page.test.tsx :: never says 'You no longer have access' without having seen access in this session`; `frontend/app/dashboard/__tests__/staff-page.test.tsx :: grants a shop-scoped role and refreshes the list` | ✅ |
-| RWO-004 | 37-02..09,15 | strict-scoping default true everywhere; ungranted login has no access, no JIT row; OPERATOR/realm/bootstrap admins kept; single-use expiring tenant-scoped invite → exact grant | `security/access/StrictScopingDefaultIntegrationTest :: ungrantedVendor_isRefusedAShopWrite_andNoJitRowIsWritten`, `:: ungrantedVendor_staffMe_isNotAGroupAdmin_andHasNoShops`; `security/access/StrictScopingTighteningIntegrationTest :: strictOn_deHonoursJitGroupAdmins_operatorGrantHonoured`, `:: strictOn_retainsOldestJitAsBootstrap_whenAllGroupAdminsAreJit`; `scripts/check-strict-scoping-default.sh` (gate); `security/access/StaffInviteAcceptIntegrationTest :: newInvitee_fromTheEmailedLink_previewThenAccept_landsWithExactlyTheInvitedGrant`; `security/access/StaffInviteRlsIntegrationTest :: databaseRefusesCrossTenantReadUpdateAndInsert`; `frontend/e2e/staff-invite.spec.ts :: a Group admin invites, the invitee joins with exactly the invited access` | ✅ |
+| RWO-003 | 37-02,04..09,15,18 | revoke last grant → own token 403 next call; dashboard "no longer have access"; Staff page "No access" + Grant from the ShopAccessService source | `security/access/StaffManagementIntegrationTest :: grantGivesAccess_thenRevokeProduces403`; `security/access/StaffEffectiveAccessIntegrationTest :: signedInUngrantedUser_isListed_asNone`; `frontend/components/dashboard/__tests__/no-access-page.test.tsx :: never says 'You no longer have access' without having seen access in this session`; `frontend/app/dashboard/__tests__/staff-page.test.tsx :: grants a shop-scoped role and refreshes the list`; gap closure 37-54/55 (audit 2026-10-16): `frontend/app/dashboard/webhooks/__tests__/webhooks-page.test.tsx :: Webhooks page: refused and unknown reads (G-37-12)`, `frontend/app/dashboard/__tests__/staff-page.test.tsx :: Staff-page form controls are readable in both themes (G-37-13)`, `:: Grant picker labels say only what the directory holds (G-37-15)`, `frontend/app/dashboard/__tests__/staff-invites.test.tsx :: Pending invitations follow the card's width, not the viewport (G-37-14)`, `frontend/e2e/staff-webhooks-uat.spec.ts :: UAT gaps G-37-12..G-37-15, live (37-55)` | ✅ |
+| RWO-004 | 37-02..09,15 | strict-scoping default true everywhere; ungranted login has no access, no JIT row; OPERATOR/realm/bootstrap admins kept; single-use expiring tenant-scoped invite → exact grant | `security/access/StrictScopingDefaultIntegrationTest :: ungrantedVendor_isRefusedAShopWrite_andNoJitRowIsWritten`, `:: ungrantedVendor_staffMe_isNotAGroupAdmin_andHasNoShops`; `security/access/StrictScopingTighteningIntegrationTest :: strictOn_deHonoursJitGroupAdmins_operatorGrantHonoured`, `:: strictOn_retainsOldestJitAsBootstrap_whenAllGroupAdminsAreJit`; `scripts/check-strict-scoping-default.sh` (gate); `security/access/StaffInviteAcceptIntegrationTest :: newInvitee_fromTheEmailedLink_previewThenAccept_landsWithExactlyTheInvitedGrant`; `security/access/StaffInviteRlsIntegrationTest :: databaseRefusesCrossTenantReadUpdateAndInsert`; `frontend/e2e/staff-invite.spec.ts :: a Group admin invites, the invitee joins with exactly the invited access`; gap closure 37-54/55: `frontend/app/dashboard/__tests__/staff-invites.test.tsx :: (G-37-14)`, `frontend/e2e/staff-webhooks-uat.spec.ts :: G-37-14: pending invitations keep every token on one line and both actions in reach, 390 to 1440` | ✅ |
 | RWO-018 | 37-10,12,15 | only DRAFT/PENDING delete; later → 409; GA-only void with reason reverses the sale; nothing dangles | `order/OrderVoidIntegrationTest :: completedOrderWithLedgerRow_deleteIsRefused_andNothingDangles`, `:: draftOrPendingOrder_stillDeletes`, `:: completedOrder_voidedByGroupAdmin_reversesTheSale`, `:: differentReason_isAlreadyVoided409`; `finance/LedgerEntryKindMigrationIntegrationTest :: v78ClassifiesExistingLedgerRowsAcrossTenantsUnderRls`; `frontend/components/dashboard/orders/__tests__/void-order-dialog.test.tsx` | ✅ |
 | RWO-026 | 37-13,14,15 | CSV import files rows under the selected shop; "Copy to shop" copies allergen data verbatim under an Idempotency-Key | `product/BulkImportShopDefaultIntegrationTest :: groupAdminImportIntoShopA_showsOnShopAsStorefront`; `product/ProductCopyIntegrationTest :: copyAtoB_carriesEveryAllergenFactVerbatim`, `:: repeatingTheCopy_createsNothing`; `frontend/app/dashboard/products/__tests__/import-copy.test.tsx` | ✅ |
 | RWO-027 | 37-11,12,15 | ledger rows carry the shop (tenant-loop backfill); site manager sees own shop's finance/export; tenant view GA only | `finance/FinanceShopScopeIntegrationTest :: managerOfA_seesOwnShopSummary`, `:: managerOfA_isRefusedShopB_andTheTenantView`; `finance/LedgerShopBackfillMigrationIntegrationTest :: v79AttributesExistingLedgerRowsToTheirOrdersShopAcrossTenantsUnderRls`; `frontend/app/dashboard/finance/__tests__/finance-scope.test.tsx` | ✅ |
@@ -143,6 +143,19 @@ Test titles are given as `file :: title`. Java paths are under `core-java/src/te
 | Cross-cutting | Behaviour | Evidence | Status |
 |---|---|---|---|
 | SC-7 | 40 goods re-verified | `evidence/37-53-goods-40.md` (mixed API/browser battery, instrument corrections recorded there) | ✅ as recorded |
+
+### G-37-6 gap closure (37-56..37-59, delta over `36f9aee3`, audited 2026-10-16 at `eb7636ac`)
+
+No new requirement; G-37-6 (UAT test 6: finance figures overflow, pagination on narrow widths, void-dialog fit, sentence-end copy) is closure work under rows already COVERED above. Added tests, each re-run by this audit (Java XML timestamps 2026-10-16T15:37Z; jest rc 0):
+
+| Requirement(s) | Plan | Test | Result |
+|---|---|---|---|
+| RWO-003, -004, -018, -026 | 37-56 | `frontend/lib/__tests__/sentence-end.test.ts` (literal table + exhaustive whitespace-set row); `frontend/__tests__/sentence-end-call-sites.test.ts` (six call sites + source guard with planted controls); touched `order-allergen-panel.a11y`, `import-copy`, `staff-page` suites | ✅ jest |
+| RWO-004 (+ customer emails) | 37-57 | `core-java/.../common/SentencesTest` (8: case table, 0x0000-0xFFFF whitespace row, parity with both TS declarations); `EmailNotificationServiceTest` (29), `EmailNotificationServiceStaffInviteTest` (7), `EmailTemplateRendererTest` (17) | ✅ 61/61 |
+| RWO-027, RWO-018, RWO-046 | 37-58 | `frontend/components/ui/__tests__/pagination.test.tsx` (container tiers, 44 px controls, `paginationWindow`); `frontend/app/dashboard/finance/__tests__/finance-scope.test.tsx` (container-query grids, tabular figures) | ✅ jest |
+| G-37-6 live | 37-59 | `frontend/e2e/screens-copy-uat.spec.ts` (5 live tests, each with an instrument arm; finance grids measured at each `@container` threshold) | ✅ as recorded: RED rc 1 (1 passed / 4 failed on gap assertions) on the pre-fix runtime, GREEN `11 passed` on the rebuilt runtime, arms failed as designed (`evidence/37-59-g376-runtime.md` §3-4). NOT re-run by this audit (it writes to the live stack). |
+
+Jest re-run by this audit: 7 suites, 145 tests passed (sentence-end 2 suites, pagination, finance-scope, staff-page 45, import-copy, order-allergen-panel.a11y).
 
 *Planning-time names that do not exist and were replaced by the real tests (confirmed absent with `rg -uu --files`, rc 1):*
 `OrderServiceKitchenStatusesTest` → `order/KitchenStatusesParityTest`; `OpeningScheduleMigrationIntegrationTest` →
@@ -214,3 +227,28 @@ whole-word block named above.
 | Gaps found | 1 |
 | Resolved | 1 (gap fix 3b13a7a8 / 013acbca / 7816464d, owner-approved) |
 | Escalated | 0 |
+
+## Validation Audit 2026-10-16
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+| Plans added since last audit | 3 |
+| Jest tests re-run | 101 |
+
+Plans added since the 2026-10-15 audit: 37-54, 37-55 (gap closure G-37-12..15, mapped under RWO-003/RWO-004) and quick 261016-edv (forced light theme, a presentation change with no requirement row). Jest re-run 2026-10-16: staff-page, staff-invites, webhooks-page, theme-cross-surface, use-theme: 5 suites, 101 passed.
+
+## Validation Audit 2026-10-16
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+| Plans added since last audit | 4 |
+| Jest tests re-run | 145 |
+| Java tests re-run | 61 |
+
+Plans added since the previous 2026-10-16 audit: 37-56..37-59 (gap G-37-6), mapped under RWO-003/004/018/026/027/046 in the "G-37-6 gap closure" block above. No requirement gap; nyquist_compliant stays true.

@@ -1,0 +1,64 @@
+# Break arms, quick 261016-edv — 2026-10-16T09:33:05Z, HEAD 6f7da333 (feat committed, so the restore target is committed)
+## CLEAN (opening)
+git status --short frontend/: []
+sha256 frontend/hooks/use-theme.ts (pre-arm): a2236794a71fbabe68140ffdfdc4fd865aaf45c8d7d7b6a5db58f1d5fe7dd2f2
+
+## ARM A — flip DARK_THEME_AVAILABLE to true (the owner's one-line re-enable)
+diff:
+-export const DARK_THEME_AVAILABLE: boolean = false
++export const DARK_THEME_AVAILABLE: boolean = true
+rc=1
+  ● dashboard theme, with the dark theme withheld (shipped default) › offers no theme control on either surface, keeps Sign Out on both, and stays light
+  ● useTheme, with the dark theme withheld (shipped default) › removes a stale dark class that was on the document before mount
+  ● useTheme, with the dark theme withheld (shipped default) › resolves light when nothing is stored and the system prefers dark
+  ● useTheme, with the dark theme withheld (shipped default) › resolves light with a stored dark preference, adds no dark class, and keeps the stored value
+  ● useTheme, with the dark theme withheld (shipped default) › setDark(true), setDark(false) and toggle() write nothing for the theme key and stay light
+  ● useTheme, with the dark theme withheld (shipped default) › setDark(true) with nothing stored leaves storage empty and the theme light
+  ● useTheme, with the dark theme withheld (shipped default) › ships with DARK_THEME_AVAILABLE false and reports available: false
+  ● useTheme, with the dark theme withheld (shipped default) › stays light when another tab stores dark and the storage event arrives
+Tests:       8 failed, 17 passed, 25 total
+passing cases (✓) [NOTE: multi-file jest prints no per-test ✓ lines, so this 0 is not a count; the Tests: line above (17 passed = every flag-on case) is the count]:
+0
+restored: sha256 a2236794a71fbabe68140ffdfdc4fd865aaf45c8d7d7b6a5db58f1d5fe7dd2f2
+
+## ARM B — delete only the early return in applyTheme
+matching lines before: 1 (getSnapshot's 'return false' is a different line and is kept)
+diff:
+-  if (!darkThemeAvailable) return
+rc=1
+  ● useTheme, with the dark theme withheld (shipped default) › setDark(true), setDark(false) and toggle() write nothing for the theme key and stay light
+  ● useTheme, with the dark theme withheld (shipped default) › setDark(true) with nothing stored leaves storage empty and the theme light
+Tests:       2 failed, 19 passed, 21 total
+first failure detail of the spy case:
+    expect(received).toHaveLength(expected)
+    Expected length: 0
+    Received length: 3
+    Received array:  [["theme", "dark"], ["theme", "light"], ["theme", "dark"]]
+
+## ARM C — the build's type-check can fail: return a string where ThemeControls.available is boolean
+diff:
+-    available: darkThemeAvailable,
++    available: "withheld",
+rc=1
+hooks/use-theme.ts(214,5): error TS2322: Type 'string' is not assignable to type 'boolean'.
+
+## CLEAN (closing) — restore verified by content
+sha256 frontend/hooks/use-theme.ts (post-arms): a2236794a71fbabe68140ffdfdc4fd865aaf45c8d7d7b6a5db58f1d5fe7dd2f2
+equals pre-arm a2236794…: YES
+rg -uu -c 'DARK_THEME_AVAILABLE: boolean = false': 1 (rc=0)
+applyTheme early return present: 1
+git status --short frontend/: []
+closing targeted jest rc=0
+Test Suites: 2 passed, 2 total
+Tests:       25 passed, 25 total
+closing build rc=0
+✓ Compiled successfully in 296ms
+  Finished TypeScript in 2.5s ...
+
+
+## Dark-class appliers search — every classList add/toggle/remove plus next-themes / ThemeProvider / setAttribute("class" in frontend source (rg -uu -i; node_modules, .next, coverage, reports, __tests__ and e2e excluded).
+## Positive control: frontend/hooks/use-theme.ts (both writers) must be listed.
+rc=0
+frontend/hooks/use-theme.ts:71: * derived from it reaches `classList.toggle(DARK_CLASS, next)`, so no
+frontend/hooks/use-theme.ts:182:  document.documentElement.classList.toggle(DARK_CLASS, next)
+frontend/hooks/use-theme.ts:209:    document.documentElement.classList.toggle(DARK_CLASS, dark)

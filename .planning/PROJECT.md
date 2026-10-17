@@ -203,3 +203,5 @@ This document evolves at phase transitions and milestone boundaries.
 *Last updated: 2026-10-05 after Phase 38 (Spring Boot 4.1 Migration, 19 plans). core-java runs Spring Boot 4.1.1 with Jackson 3; BOOT4-01..14 validated 14/14; the Phase 38 owner decisions D-01..D-05 are logged in Key Decisions. Not yet merged to main: the phase still needs /gsd-secure-phase 38 and /gsd-ship 38. Previous: 2026-09-29 after Phase 36 (Azure Blob Storage Throughout).*
 
 *Last updated: 2026-10-07 after Phase 31.1 (Persona gap closure, 30 plans). PGC-777..878 validated 17/17; UAT 182/182 (8 owner rulings); 102/102 threats closed at ASVS L2; nyquist_compliant. Not yet shipped (`/gsd-ship 31.1`); next planning target Phase 37 per the owner's order.*
+
+*Last updated: 2026-10-17 after Phase 37 (Real-world operations readiness, 59/59 plans, UAT 15/15, PRs #913..#925, #941), Phase 39 (Platform runtime upgrades, 10/10 plans, PRs #926, #927, #933..#937, #939; PostgreSQL 18.6, Redis 8.10, Keycloak 26.8.1, Tailwind CSS 4.3.3, active-exemptions=0), and ADR-0007 commercial/fulfilment policy engine (GAP-GTM-01..04, 06, 07B; Schema V87; PRs #940, #942..#945).*

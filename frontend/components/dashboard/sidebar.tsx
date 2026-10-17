@@ -119,8 +119,9 @@ export function Sidebar() {
   // Theme lives in ONE shared store (hooks/use-theme.ts), not in this
   // component. The store owns the localStorage read/write and the
   // documentElement class, so there is no mount-time setState here to suppress
-  // and no second copy of the class side effect.
-  const { dark, toggle } = useTheme()
+  // and no second copy of the class side effect. `available` is false while
+  // DARK_THEME_AVAILABLE is false (owner ruling 2026-10-16): the control is withheld.
+  const { dark, available, toggle } = useTheme()
   // D-08 (37-06): while the no-access page shows, every route below would be
   // refused (each reads tenant data behind the shop/group gate, and the dashboard
   // home itself shows the same page), so the links and the shop switcher are
@@ -189,16 +190,20 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Theme Toggle + Logout */}
+      {/* Theme Toggle + Logout. The theme control is withheld while
+          DARK_THEME_AVAILABLE is false (owner ruling 2026-10-16, quick
+          261016-edv): the dashboard is light until its dark pass ships. */}
       <div className="border-t border-slate-800 p-4 space-y-1">
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
-          onClick={toggle}
-        >
-          {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-          {dark ? "Light Mode" : "Dark Mode"}
-        </Button>
+        {available && (
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+            onClick={toggle}
+          >
+            {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            {dark ? "Light Mode" : "Dark Mode"}
+          </Button>
+        )}
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"

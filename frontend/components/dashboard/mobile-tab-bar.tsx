@@ -60,8 +60,9 @@ function isTabActive(pathname: string, href: string): boolean {
 /**
  * Mobile bottom tab bar (< md). Four primary tabs in the thumb zone plus a
  * "More" sheet holding the remaining dashboard routes and the user/theme/
- * sign-out controls relocated from the sidebar footer. Hidden at md+ where the
- * 256px sidebar takes over.
+ * sign-out controls relocated from the sidebar footer. The theme control is
+ * withheld while DARK_THEME_AVAILABLE is false (owner ruling 2026-10-16). Hidden
+ * at md+ where the 256px sidebar takes over.
  */
 export function MobileTabBar({ className }: { className?: string }) {
   const pathname = usePathname()
@@ -71,8 +72,9 @@ export function MobileTabBar({ className }: { className?: string }) {
   // mount-ordering dependency that came with it is gone: both surfaces now
   // subscribe to the SAME store (hooks/use-theme.ts), so a toggle on either one
   // is observed by the other with no reload and regardless of which mounted
-  // first.
-  const { dark, toggle } = useTheme()
+  // first. `available` is false while DARK_THEME_AVAILABLE is false (owner
+  // ruling 2026-10-16): the control is withheld from the More sheet.
+  const { dark, available, toggle } = useTheme()
   // The same staff/me gate the sidebar applies (37-46): an admin-only item is listed only on the
   // server's word, so a shop manager's "More" sheet never offers Developers.
   const moreItems = visibleNavigation(moreNavigation, useIsKnownGroupAdmin())
@@ -181,14 +183,16 @@ export function MobileTabBar({ className }: { className?: string }) {
           </nav>
 
           <div className="space-y-1 border-t border-slate-200 p-3 dark:border-slate-800">
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-3 text-slate-700 dark:text-slate-200"
-              onClick={toggle}
-            >
-              {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-              {dark ? "Light Mode" : "Dark Mode"}
-            </Button>
+            {available && (
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 text-slate-700 dark:text-slate-200"
+                onClick={toggle}
+              >
+                {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                {dark ? "Light Mode" : "Dark Mode"}
+              </Button>
+            )}
             <Button
               variant="ghost"
               className="w-full justify-start gap-3 text-slate-700 dark:text-slate-200"

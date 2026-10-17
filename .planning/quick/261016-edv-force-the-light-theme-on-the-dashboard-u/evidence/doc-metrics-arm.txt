@@ -1,0 +1,40 @@
+
+# check-doc-metrics fail arm — 2026-10-16T09:44:53Z
+## natural fail direction: before the prose update (metrics regenerated, prose still 6138/2959/182/43) the gate printed 13 claim FAIL lines and exited rc=1 (README 5, CLAUDE.md 4, AGENTS.md 4)
+README.md hash-object pre-arm: 683f053177060dc0bbeccf42feb372c9361db303
+arm diff:
+293c293
+< - Frontend (Jest): 2967 `it/test` blocks across 250 files ✅
+---
+> - Frontend (Jest): 2966 `it/test` blocks across 250 files ✅
+arm rc=1
+FAIL: README.md [jest_blocks]: doc says 2966, docs/metrics.json says 2967
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.
+README.md hash-object post-restore: 683f053177060dc0bbeccf42feb372c9361db303 (EQUAL)
+closing rc=0
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+docs-freshness rc=0
+docs-freshness OK: metrics match source (total logical invocations: 6148).
+
+# count-oracle fail arm — 2026-10-16T09:45:31Z: the pre-change docs/metrics.json (2959 / 182 / 43) swapped back in
+docs/metrics.json hash-object (regenerated): 6be12ca3862260317a03815ba4c28a5236b2a22b
+oracle jest (arm) rc=1
+  jest it/test blocks                runner=2967   manifest=2959
+FAIL: jest it/test blocks: the runner says 2967, docs/metrics.json says 2959. Run scripts/docs-freshness.sh --write and update the prose counts.
+oracle playwright (arm) rc=1
+  playwright test() blocks           runner=184    manifest=182
+FAIL: playwright test() blocks: the runner says 184, docs/metrics.json says 182. Run scripts/docs-freshness.sh --write and update the prose counts.
+restored hash-object: 6be12ca3862260317a03815ba4c28a5236b2a22b (EQUAL)
+oracle jest (closing) rc=0
+PASS: the jest runner agrees with docs/metrics.json.
+oracle playwright (closing) rc=0
+PASS: the playwright runner agrees with docs/metrics.json.
+
+# deferred-items status line — rg -uu -c on the edited file: 1 (rc=0); the same pattern on the HEAD copy (before the edit): no match (rc=1)
+
+# closing freshness after task 3 (HEAD 9b8b0af8, nothing here is in a build context): rc=0
+  core-java    FRESH  image tagged 2026-10-16 09:39:53 UTC >= newest build-input commit 57d257f0 (2026-10-15 09:57:48 UTC)
+  edge-go      FRESH  image tagged 2026-10-15 19:52:54 UTC >= newest build-input commit d6c3d308 (2026-10-14 08:57:07 UTC)
+  frontend     FRESH  image tagged 2026-10-16 09:39:33 UTC >= newest build-input commit 6f7da333 (2026-10-16 09:32:49 UTC)
+  mcp-server   FRESH  image tagged 2026-10-15 19:52:23 UTC >= newest build-input commit d6c3d308 (2026-10-14 08:57:07 UTC)
+PASS: 4 running built service(s) match the source tree (0 unverified).

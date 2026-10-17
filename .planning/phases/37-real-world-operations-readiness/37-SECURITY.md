@@ -6,8 +6,8 @@ status: verified
 threats_open: 0
 asvs_level: 2
 block_on: medium
-threats_total: 175
-threats_closed: 175
+threats_total: 200
+threats_closed: 200
 register_authored_at_plan_time: true
 created: "2026-10-15"
 ---
@@ -57,7 +57,7 @@ created: "2026-10-15"
 
 ## Threat Register
 
-175 threats across 53 plans (T-37-SC repeats once per plan as the supply-chain row). Severity: 4 critical, 102 high, 50 medium, 19 low. Disposition: 169 mitigate, 6 accept.
+200 threats across 59 plans and one quick task (T-37-SC repeats once per plan as the supply-chain row). The 175 rows from plans 37-01..37-53 (severity 4 critical, 102 high, 50 medium, 19 low; 169 mitigate, 6 accept) were joined by 12 rows from 37-54, 37-55 and quick 261016-edv (2026-10-16 delta) and 13 rows from 37-56..37-59, gap G-37-6 (5 high, 3 medium, 5 low; all mitigate; 2026-10-16 G-37-6 delta). Disposition overall: 192 mitigate, 8 accept.
 
 | Plan | Threat ID | Category | Component | Severity | Disposition | Mitigation (plan) | Evidence (verified) | Status |
 |------|-----------|----------|-----------|----------|-------------|-------------------|---------------------|--------|
@@ -236,6 +236,31 @@ created: "2026-10-15"
 | 37-52 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | d9661e86..5d7c3549 0 manifest changes | closed |
 | 37-53 | T-37-121 | Repudiation | phase declared done while a valued behaviour regressed | high | mitigate | All 40 goods re-run on the final rebuilt runtime; any red stops completion | evidence/37-53-goods-40.md:9 40/40; regression fixed and re-proven evidence/37-53-gate-37F.md:498-520,614-690 | closed |
 | 37-53 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | 602a1cfb..8a25330d 0 manifest changes; whole 42ffb5f5..HEAD 0 (control b3b87a47 finds 6) | closed |
+| 37-54 | T-37-123 | Elevation of Privilege | Staff page selects in the dark theme | medium | mitigate | STAFF_SELECT_CLASS / STAFF_FIELD_LABEL_CLASS bring every form-card control to >=4.5:1 in both themes; jest resolver with instrument arm; live measure in 37-55 | invite-staff-form.tsx:70-74,179-241; staff/page.tsx:251-287,811-869; staff-page.test.tsx:1312-1365 (arm :1356-1365); 37-55 evidence RED 13 dark failures, GREEN 0. Since quick 261016-edv the dashboard is forced light (use-theme.ts:95,174); light measure 0 failures (edv live-runtime.md:165); the dark measure stays as a forward guard for the flag flip (staff-webhooks-uat.spec.ts:387-395,498-503) | closed |
+| 37-54 | T-37-124 | Information Disclosure | /dashboard/webhooks refusal branch | low | mitigate | Typed 403 renders static copy only; server GROUP_ADMIN gate unchanged | webhooks/page.tsx:98-100,314-331 (returns before list; dialogs only at :463-502); webhooks-page.test.tsx:177-196; WebhookSubscriptionService.java:71,99,112,117,132,146; no core-java change f632b4e2..HEAD | closed |
+| 37-54 | T-37-125 | Information Disclosure | grant picker label | low | mitigate | Only the masked email or name; null never rendered; no new field | staff/page.tsx:528-531; DirectoryEntryDto.java:33,44-53; staff-page.test.tsx:1135-1162 | closed |
+| 37-54 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | f632b4e2..07d1131b 0 manifest changes (control b3b87a47 finds package.json, lock, go.mod) | closed |
+| 37-55 | T-37-126 | Repudiation | gaps declared closed on a stale runtime | high | mitigate | Freshness rc 1 then rc 0; refusal copy grepped from the running bundle both directions | evidence/37-55-uat-gaps-runtime.md:25-37,70-91; re-run 2026-10-16: check-runtime-freshness.sh rc 0 4/4, bundle grep 14 files (controls 2/0), image a69cbd04 | closed |
+| 37-55 | T-37-127 | Information Disclosure | per-run STAFF account and invitation on the shared dev stack | low | mitigate | Password in memory only; example.test address; invitation cancelled in test and finally | e2e/helpers/staff-invitee.ts:100-102,131,166-182; staff-webhooks-uat.spec.ts:581,676-695; rg -uu finds the password only at its generator | closed |
+| 37-55 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | 1d249640..1f383f47 0 manifest changes; squash 716831ce 0 | closed |
+| 37-55 | T-37-128 | Tampering | PR branch carrying another change's commits | medium | mitigate | One squash commit off origin/main; tree equality with cut/phase-37-uat-gaps | 9f6c11dd parent 57d257f0, tree 12742d43 = cut/phase-37-uat-gaps; later commits are #925's own review work; merged squash 716831ce tree = branch tip fd31a6fe | closed |
+| quick-261016-edv | T-261016edv-01 | Tampering | use-theme.ts getSnapshot/readStored | low | mitigate | While the flag is false getSnapshot returns false before readStored | use-theme.ts:95-96,77-87,111-113; use-theme.test.tsx:175-207,241-252; break arm A quick evidence/break-arms.txt:6-19 | closed |
+| quick-261016-edv | T-261016edv-02 | Tampering | use-theme.ts applyTheme | low | mitigate | Early return before setItem keeps the stored choice byte-identical | use-theme.ts:174,177; use-theme.test.tsx:209-229; arm B break-arms.txt:24-36; live dashboard-forced-light.spec.ts:88-211 | closed |
+| quick-261016-edv | T-261016edv-03 | Elevation of Privilege | __setDarkThemeAvailableForTests export | low | accept | Module import only, cosmetic | use-theme.ts:126-129; importers are two jest files only; no window/globalThis assignment (rg rc=1); AR-37-11 | closed |
+| quick-261016-edv | T-261016edv-SC | Tampering | npm/pip/cargo installs | low | accept | No package installed | b51241fe..e19b3bb5 0 manifest changes; AR-37-12 | closed |
+| 37-56 | T-37-129 | Tampering | withFullStop on vendor-supplied names | low | mitigate | Output = input minus trailing whitespace plus at most one full stop; nothing interpreted; React text nodes | sentence-end.ts:33-42; sentence-end.test.ts:68-69 keeps "<b>Co.</b>" literal; all 7 call sites reach text nodes only (order-allergen-panel.tsx:214, recorded-allergen-set.tsx:252, copy-to-shop-dialog.tsx:195/111, void-order-dialog.tsx:215, toaster.tsx:20-22, confirm-action-dialog.tsx:70); no dangerouslySetInnerHTML uses them (rc 1) | closed |
+| 37-56 | T-37-130 | Repudiation | a later call site reintroducing the double full stop | low | mitigate | Source guard with planted controls and stale-allowlist failure | sentence-end-call-sites.test.ts:173,190,199; guard regex over 36f9aee3 files: 8 findings rc 1; at HEAD 0 findings rc 0 | closed |
+| 37-56 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | 9 (37-56) commits change 0 manifests (control b3b87a47 finds 6) | closed |
+| 37-57 | T-37-131 | Tampering | Sentences in EmailNotificationService and EmailTemplateRenderer | medium | mitigate | Applied after sanitise; HTML still escapes reason; fullStopAfter returns "" or "." only | EmailNotificationService.java:497 (shopLabel sanitised, used :159,170,181,232), :287/:298, :476/:478; subject :289 unchanged; EmailTemplateRenderer.java:127-130 escaped reasonHtml + Sentences.java:56-58 constant; test diff removes 0 lines; crlfInShopNameCannotInjectAHeader, otherControlCharactersAreStripped, onboardingReasonIsHtmlEscaped, inviteEmail_tenantControlledNamesAreSanitised green (29/17/7, 0 failures) | closed |
+| 37-57 | T-37-132 | Repudiation | TS and Java sentence rules drifting apart | low | mitigate | SentencesTest parity reads both TS declarations; exhaustive 0x0000-0xFFFF rows both languages | SentencesTest.java:62-78,120-146; sentence-end.test.ts:84-102; 8/8; parity replica EQUAL rc 0, 0xfeff dropped rc 1, "…" dropped rc 1 | closed |
+| 37-57 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | 7 (37-57) commits change 0 manifests | closed |
+| 37-58 | T-37-133 | Tampering | finance figures as displayed | medium | mitigate | Container-query columns sized from the bound, tabular figures, overflow-wrap net; jest whole-text; live arm | finance/page.tsx:352,356 (28/57rem), :447,450 (27/54rem), :366,381,396,415,466; finance-scope.test.tsx:470-477,489-494,503-522 (bound "−£999,999.99", no truncate); evidence/37-59-g376-runtime.md §4.1-§5; served CSS on frontend 9d00d7480b92 has 57/28/54rem rc 0 (controls 55rem, 91rem rc 1) | closed |
+| 37-58 | T-37-134 | Denial of Service | Pagination at phone widths | low | mitigate | prev/next always, first/last from 19rem, 44 px controls; live click at 390 px | pagination.tsx:58-61,79; pagination.test.tsx:52,69; screens-copy-uat.spec.ts:784-794 ("Showing 21-40" then "1-20"); served CSS has @container (min-width:19rem) | closed |
+| 37-58 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | 6 (37-58) commits change 0 manifests | closed |
+| 37-59 | T-37-135 | Repudiation | G-37-6 declared closed on a stale runtime | high | mitigate | Freshness rc 1 then rc 0; CSS rule and Sentences.class read from the running artifacts both directions | evidence/37-59-g376-runtime.md §1 (pre: freshness rc 1, CSS probe rc 1, Sentences.class 0, controls), §3/§12 (rc 0); re-run 2026-10-16: check-runtime-freshness.sh rc 0, 4/4 FRESH, 0 unverified; app.jar Sentences.class 1 (control 1, fake name 0) | closed |
+| 37-59 | T-37-136 | Information Disclosure | captured Authorization header, per-run invitation, void dialog on the shared stack | low | mitigate | Header in one local passed only to request calls; example.test invite cancelled in test and finally; Keep order + zero void POSTs | screens-copy-uat.spec.ts:833,847,850 (only uses; :48,:826 comments); :1042, :1071-1087; :820-823, :935, :938; basket key removed :1014-1018; test-results/ holds only .last-run.json | closed |
+| 37-59 | T-37-137 | Tampering | PR branch carrying another change | medium | mitigate | Tag before fetch/merge; path set from G376_BASE; range checks; per-path patches; one commit above origin/main | tag eaaf8dc2 lacks b43d1ae9 (rc 1); origin/main..phase-37-uat-g376 = 1 (116ef333, parent b43d1ae9), 0 behind; not pushed (ls-remote); name-only diff = 25 set paths + 4 docs/metrics (29/29); per-path blobs equal tag (control use-theme.ts differs rc 1); range (ii) 20 commits all in 37-56..59, (iii) 0 merges | closed |
+| 37-59 | T-37-SC | Tampering | npm/pip/cargo installs | high | mitigate | No package installed | 11 (37-59) commits and whole range 36f9aee3..HEAD (incl. #926 merge) change 0 manifests (positive control b3b87a47) | closed |
 
 *Status: open · closed · open — below medium threshold (non-blocking)*
 *Severity: critical > high > medium > low. Only open threats at or above workflow.security_block_on (medium) count toward threats_open.*
@@ -297,6 +322,8 @@ created: "2026-10-15"
 | AR-37-08 | 37-30 / 37-31 H4 | Proxy-peer IP cap while `TRUSTED_PROXY_CIDRS` is empty. Signed-in cash orders go through the Next `/api/customer-orders` proxy, so they share one IP digest per shop. If the owner settles H4 by trusting the frontend's range, note that `route.ts:104-105` forwards the client's XFF, so an ingress that overwrites XFF is a precondition. **Pending owner.** | owner (pending) | 2026-10-15 |
 | AR-37-09 | T-37-107 / T-37-113 residual (37-45, 37-47) | The core-api client has `serviceAccountsEnabled: true` in the dev realm and carries the dashboard `azp`, so it passes HumanCallerGuard (`HumanCallerGuard.java:68-71`). It still needs a Group-admin grant, and none is issued to a service account. Staging/production `keycloak.client-id` must equal the dashboard's client id there. Carried in `evidence/37-47-gate-37E.md:231-238`. **Pending owner.** | owner (pending) | 2026-10-15 |
 | AR-37-10 | T-37-19 deploy residual (37-08) | The `tenant_id` admin-only user profile is in the realm TEMPLATE. Staging/production realms need a re-import (`37-USER-SETUP.md:24-27`), and `unmanagedAttributePolicy` must never be ENABLED. This fails closed: an admin-API user with no tenant sees nothing. | plan register (37-08) | 2026-10-15 |
+| AR-37-11 | T-261016edv-03 (quick 261016-edv, low) | The test seam ships in the client bundle as a module export, not on `window`; only two jest files import it. The worst outcome is the cosmetic dark theme returning; no data access, no request changed. | plan register (261016-edv-PLAN.md:337) | 2026-10-16 |
+| AR-37-12 | T-261016edv-SC (quick 261016-edv, low) | No package installed; b51241fe..e19b3bb5 has 0 manifest or lockfile changes. | plan register (261016-edv-PLAN.md:338) | 2026-10-16 |
 
 *Accepted risks do not resurface in future audit runs.*
 
@@ -351,11 +378,15 @@ Each flag is new attack surface reported in a SUMMARY `## Threat Flags` section 
 |------------|---------------|--------|------|--------|
 | 2026-10-15 | 175 | 174 (168 mitigated + 6 accepted, 4 of them pending owner) | 1 (T-37-59, high, blocking) | /gsd-secure-phase 37, 7 parallel gsd-security-auditor runs (opus), ASVS L2, block_on medium |
 | 2026-10-15 (re-audit) | 175 | 175 (169 mitigated + 6 accepted, 4 of them pending owner) | 0 | independent re-audit of the T-37-59 fix (43e908ae, 85b6e190, 15932090): code review against the Boot 4.1.1 bytecode, 3 unit classes 13/13, 2 env break arms refused, closing clean run, Testcontainers IT 1/1 |
+| 2026-10-16 (delta) | 187 | 187 (179 mitigated + 8 accepted, 4 of them pending owner) | 0 | delta audit of 37-54, 37-55 and quick 261016-edv (12 rows) by one gsd-security-auditor run, ASVS L2, block_on medium; the 175 earlier rows were not re-audited |
+| 2026-10-16 (G-37-6 delta) | 200 | 200 (192 mitigated + 8 accepted, 4 of them pending owner) | 0 | delta audit of 37-56..37-59 (13 rows) by one gsd-security-auditor run (opus), ASVS L2, block_on medium; 8 jest suites (146) and 4 Java classes (61) re-run green; runtime freshness re-run rc 0; the 187 earlier rows were not re-audited |
 
 **Run notes:**
 - **Step 4 user gate (AskUserQuestion):** answered with the recommended option, "Verify all open threats", on orchestrator instruction.
 - **Step 5 OPEN_THREATS accept/block choice:** T-37-59 is recorded as OPEN, not accepted, on orchestrator instruction. Fixes are recorded, not applied.
 - **T-37-59 fix:** the owner chose to fix T-37-59 in the 37-F PR. Another agent implemented it and first edited this file's T-37-59 row and `threats_open`. This reviewer, who did not write the fix, re-verified it and rewrote the row's evidence, the counts, the verdict, the audit trail and the sign-off.
+- **2026-10-16 delta observations (no threat reopened):** (1) T-37-127: `playwright.config.ts:71` keeps traces on failure, and traces record typed values, so a failed run can leave a one-time password in the gitignored `frontend/test-results/`; nothing is on disk now. (2) The 37-55 live proof ran before #925's round-1 fix; the edv rebuild re-ran it with the fix (0 failures). (3) A blank email passes `maskEmail` unchanged and the picker shows "Integration account". (4) Four unusable per-run STAFF accounts remain on the dev stack.
+- **2026-10-16 G-37-6 delta observations (no threat reopened):** (1) T-37-131: in `EmailTemplateRenderer.java:120,130` the plain-text `reason` is not sanitised (pre-existing, body only; the onboarding subject is a constant, so no header path). (2) T-37-136: `playwright.config.ts:71` keeps traces on failure, so a failed run of the void-dialog test would leave the Authorization header in the gitignored `test-results/` trace (same class as the T-37-127 observation). (3) The plan's combined post-merge desktop line failed rc 1 three times on the per-tenant rate limiter; each spec passed alone and `screens-copy-uat` passed 5/5 post-merge (evidence §12). (4) The register summary line still said 175 threats; corrected to 200.
 - **Step 7 commit:** skipped on orchestrator instruction. The orchestrator commits this file together with 37-VERIFICATION.md and 37-VALIDATION.md.
 
 ---
@@ -367,4 +398,4 @@ Each flag is new attack surface reported in a SUMMARY `## Threat Flags` section 
 - [x] `threats_open: 0` confirmed (re-audit 2026-10-15; T-37-59 closed)
 - [x] `status: verified` set in frontmatter
 
-**Approval:** verified 2026-10-15. Four accepted risks remain pending the owner: AR-37-05, AR-37-07, AR-37-08 and AR-37-09.
+**Approval:** verified 2026-10-15; G-37-6 delta (37-56..37-59) verified 2026-10-16, threats_open 0. Four accepted risks remain pending the owner: AR-37-05, AR-37-07, AR-37-08 and AR-37-09.
