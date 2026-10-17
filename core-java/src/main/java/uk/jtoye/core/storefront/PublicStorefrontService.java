@@ -742,6 +742,10 @@ public class PublicStorefrontService {
             status.setPlacedVia(placedVia(order));
             // D-15: that a note was sent and when the shop read it, from columns. Never the text.
             setAllergyNoteStatus(status, order);
+            status.setScheduledForDate(order.getScheduledForDate());
+            status.setScheduledWindowLabel(order.getScheduledWindowLabel());
+            status.setDepositAmountPennies(order.getDepositAmountPennies());
+            status.setBalanceDuePennies(order.getBalanceDuePennies());
             return status;
         });
     }
@@ -811,10 +815,77 @@ public class PublicStorefrontService {
         status.setPlacedVia(placedVia(order));
         // D-15 (#812): the customer sees that the shop read their allergy note. Never the text (T-31.1-46).
         setAllergyNoteStatus(status, order);
+        status.setScheduledForDate(order.getScheduledForDate());
+        status.setScheduledWindowLabel(order.getScheduledWindowLabel());
+        status.setDepositAmountPennies(order.getDepositAmountPennies());
+        status.setBalanceDuePennies(order.getBalanceDuePennies());
         OrderAllergenSnapshot.OrderAllergenView recorded = OrderAllergenSnapshot.viewOf(order.getItems());
         status.setRecordedAllergens(recorded.declaredNames());
         status.setRecordedAllergenFlags(recorded.flags());
         return status;
+    }
+
+    /**
+     * Create a Stripe PaymentIntent session for the remaining balance due on a deposit-split order
+     * after verifying customer ownership via {@code (orderNumber, email)} under the guest-tracking
+     * RLS policy (ADR-0007 §1.3 / GAP-GTM-04, PAY-04).
+     */
+    @Transactional(readOnly = true)
+    public uk.jtoye.core.storefront.dto.BalancePaymentSessionDto createBalancePaymentSession(
+            String orderNumber, String email) {
+        if (orderNumber == null || orderNumber.isBlank() || email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Order number and email are required.");
+        }
+
+        Session session = entityManager.unwrap(Session.class);
+        session.doWork(connection -> {
+            try (var stmt = connection.prepareStatement("SELECT set_config('app.tracking_order_number', ?, true)")) {
+                stmt.setString(1, orderNumber);
+                stmt.execute();
+            }
+            try (var stmt = connection.prepareStatement("SELECT set_config('app.tracking_email', ?, true)")) {
+                stmt.setString(1, email);
+                stmt.execute();
+            }
+        });
+
+        Order order = orderRepository.findByOrderNumberAndCustomerEmail(orderNumber, email)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found. Check your order number and email address."));
+
+        if (order.isVoided()
+                || order.getStatus() == OrderStatus.CANCELLED
+                || order.getStatus() == OrderStatus.REFUNDED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Order " + order.getOrderNumber() + " is not eligible for balance payment.");
+        }
+        if (order.getBalanceDuePennies() == null || order.getBalanceDuePennies() <= 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Order " + order.getOrderNumber() + " has no remaining balance due.");
+        }
+        if (!paymentService.isConfigured()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Card payment processing is not configured.");
+        }
+
+        TenantContext.set(order.getTenantId());
+        try {
+            uk.jtoye.core.payment.PaymentIntentResult result = paymentService.createBalancePaymentIntent(order);
+            return new uk.jtoye.core.storefront.dto.BalancePaymentSessionDto(
+                    order.getOrderNumber(),
+                    order.getTotalAmountPennies(),
+                    order.getDepositAmountPennies(),
+                    order.getBalanceDuePennies(),
+                    result.paymentIntentId(),
+                    result.clientSecret()
+            );
+        } catch (com.stripe.exception.StripeException e) {
+            log.error("Failed to create balance PaymentIntent for order {}: {}", order.getOrderNumber(), e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Unable to initialize balance payment session with payment provider.");
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     /**

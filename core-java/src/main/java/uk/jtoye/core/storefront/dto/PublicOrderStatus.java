@@ -95,12 +95,37 @@ public class PublicOrderStatus {
             + "(or when no note was sent).")
     private OffsetDateTime allergyNoteAcknowledgedAt;
 
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Target calendar date for a scheduled batch/pre-order (V87 / GAP-GTM-02).")
+    private java.time.LocalDate scheduledForDate;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Human-readable fulfilment window label captured at checkout (V87 / GAP-GTM-02).")
+    private String scheduledWindowLabel;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Upfront deposit amount in pennies for a split-deposit catering order (V87 / GAP-GTM-04).")
+    private Long depositAmountPennies;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Remaining balance due in pennies for a split-deposit catering order (V87 / GAP-GTM-04).")
+    private Long balanceDuePennies;
+
     public Boolean getAllergyNoteProvided() { return allergyNoteProvided; }
     public void setAllergyNoteProvided(Boolean allergyNoteProvided) { this.allergyNoteProvided = allergyNoteProvided; }
     public OffsetDateTime getAllergyNoteAcknowledgedAt() { return allergyNoteAcknowledgedAt; }
     public void setAllergyNoteAcknowledgedAt(OffsetDateTime allergyNoteAcknowledgedAt) {
         this.allergyNoteAcknowledgedAt = allergyNoteAcknowledgedAt;
     }
+
+    public java.time.LocalDate getScheduledForDate() { return scheduledForDate; }
+    public void setScheduledForDate(java.time.LocalDate scheduledForDate) { this.scheduledForDate = scheduledForDate; }
+    public String getScheduledWindowLabel() { return scheduledWindowLabel; }
+    public void setScheduledWindowLabel(String scheduledWindowLabel) { this.scheduledWindowLabel = scheduledWindowLabel; }
+    public Long getDepositAmountPennies() { return depositAmountPennies; }
+    public void setDepositAmountPennies(Long depositAmountPennies) { this.depositAmountPennies = depositAmountPennies; }
+    public Long getBalanceDuePennies() { return balanceDuePennies; }
+    public void setBalanceDuePennies(Long balanceDuePennies) { this.balanceDuePennies = balanceDuePennies; }
 
     public Integer getAcknowledgedAllergenMask() { return acknowledgedAllergenMask; }
     public void setAcknowledgedAllergenMask(Integer acknowledgedAllergenMask) { this.acknowledgedAllergenMask = acknowledgedAllergenMask; }

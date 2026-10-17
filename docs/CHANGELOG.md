@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### GAP-GTM-04 & GAP-GTM-06: Catering Deposit Balance Payment Links & WhatsApp Pre-Order Checkout Bridge (#944) — 2026-10-17
+
+Implements `GAP-GTM-04` (`PAY-04`) and `GAP-GTM-06` (`#208`) on top of the `V87` scheduled fulfilment and split-deposit schema so vendors can collect remaining catering balances via verified customer tracking links and convert WhatsApp DM/broadcast traffic directly into allergen-acknowledged scheduled checkout sessions.
+
+- **Remaining-balance `PaymentIntent` & settlement webhook (`GAP-GTM-04`, `PaymentService`, `PublicStorefrontService`, `PublicStorefrontController`, `OrderService`, `OrderController`).** Adds `PaymentService.createBalancePaymentIntent` (`payment_stage=BALANCE`, idempotency key `order-balance-payment-intent-{id}`) and `handlePaymentIntentSucceeded` balance-stage handling (zeroes `orders.balance_due_pennies`, preserves `CONFIRMED`/`PREPARING`/`READY` order status, and records the full-order `SALE` financial transaction once the remaining balance settles); exposes `GET /api/v1/orders/{id}/balance-payment-link` (`BalancePaymentLinkDto`, requires `STAFF` on the order's shop) and `POST /api/v1/public/orders/{orderNumber}/balance-payment-intent?email={email}` (`BalancePaymentSessionDto`, verified by `(orderNumber, email)` under the `V17` guest-tracking RLS policy); and surfaces `scheduledForDate`, `scheduledWindowLabel`, `depositAmountPennies`, and `balanceDuePennies` on `PublicOrderStatus`.
+- **WhatsApp-to-Storefront pre-order link generator (`GAP-GTM-06`, `ShopFulfilmentSlotService`, `ShopController`).** Adds `GET /api/v1/shops/{id}/whatsapp-preorder-link[?slotId=...]` (`WhatsAppPreOrderLinkDto`, requires `STAFF` on the shop) returning the canonical `/shop/{slug}[?slot={slotId}]` path, a pre-formatted WhatsApp reply/broadcast message with service date and window label, and an encoded `https://wa.me/?text=...` deep-link.
+
 ### ADR-0007: Multi-Model Commercial Settlement, Scheduled Fulfilment Slots & Kitchen Cook Sheets (`V87`) (#943) — 2026-10-17
 
 Implements `ADR-0007` (`GAP-GTM-01`, `GAP-GTM-02`, `GAP-GTM-03`) so each shop can operate on-demand counter orders, scheduled batch/pre-order drop windows, or hybrid fulfilment alongside configurable Stripe settlement routing (`DIRECT_CHARGE_VENDOR_MOR`, `DESTINATION_CHARGE_PLATFORM_MOR`, `SPLIT_DEPOSIT_VENDOR_MOR`) and consolidated prep cook sheets.

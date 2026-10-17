@@ -243,4 +243,45 @@ class ShopFulfilmentSlotServiceTest {
         assertEquals(1, available.size());
         assertEquals(openSlot.getId(), available.get(0).id());
     }
+
+    @Test
+    @DisplayName("GAP-GTM-06: buildWhatsAppPreOrderLink with slotId includes slot parameter, window label, and wa.me URL")
+    void buildWhatsAppPreOrderLink_withSlot_returnsFormattedSlotLink() {
+        shop.setSlug("lagos-kitchen");
+        UUID slotId = UUID.randomUUID();
+        ShopFulfilmentSlot slot = new ShopFulfilmentSlot();
+        slot.setId(slotId);
+        slot.setShopId(shopId);
+        slot.setServiceDate(LocalDate.of(2026, 10, 24));
+        slot.setWindowStart(LocalTime.of(14, 0));
+        slot.setWindowEnd(LocalTime.of(18, 0));
+        slot.setCutoffAt(OffsetDateTime.parse("2026-10-22T22:00:00Z"));
+        slot.setActive(true);
+
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+        when(slotRepository.findByIdAndShopId(slotId, shopId)).thenReturn(Optional.of(slot));
+
+        var dto = service.buildWhatsAppPreOrderLink(shopId, slotId);
+
+        verify(shopAccessService).require(shopId, ShopRole.STAFF);
+        assertEquals("/shop/lagos-kitchen?slot=" + slotId, dto.storefrontPath());
+        assertEquals("2026-10-24 14:00-18:00", dto.windowLabel());
+        assertTrue(dto.prefilledMessage().contains("Lagos Kitchen"));
+        assertTrue(dto.waMeUrl().startsWith("https://wa.me/?text="));
+    }
+
+    @Test
+    @DisplayName("GAP-GTM-06: buildWhatsAppPreOrderLink without slotId returns shop storefront path and wa.me URL")
+    void buildWhatsAppPreOrderLink_withoutSlot_returnsShopLink() {
+        shop.setSlug("lagos-kitchen");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+
+        var dto = service.buildWhatsAppPreOrderLink(shopId, null);
+
+        verify(shopAccessService).require(shopId, ShopRole.STAFF);
+        assertEquals("/shop/lagos-kitchen", dto.storefrontPath());
+        assertNull(dto.slotId());
+        assertTrue(dto.prefilledMessage().contains("/shop/lagos-kitchen"));
+        assertTrue(dto.waMeUrl().startsWith("https://wa.me/?text="));
+    }
 }
