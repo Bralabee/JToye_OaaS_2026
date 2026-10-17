@@ -87,6 +87,33 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.id IN :ids")
     List<Order> findAllWithItemsByIdIn(@Param("ids") Collection<UUID> ids);
 
+    /**
+     * V87 (ADR-0007 / GAP-GTM-03): Consolidated kitchen "Cook Sheet" queries.
+     * Fetches active, non-voided orders with line items for a shop, optionally narrowed
+     * to a target scheduled date or scheduled fulfilment slot.
+     */
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items "
+            + "WHERE o.shopId = :shopId AND o.status IN :statuses AND o.voidedAt IS NULL "
+            + "ORDER BY o.createdAt ASC")
+    List<Order> findCookSheetOrdersByShop(@Param("shopId") UUID shopId,
+                                          @Param("statuses") Collection<OrderStatus> statuses);
+
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items "
+            + "WHERE o.shopId = :shopId AND o.status IN :statuses AND o.voidedAt IS NULL "
+            + "AND o.scheduledForDate = :scheduledForDate "
+            + "ORDER BY o.createdAt ASC")
+    List<Order> findCookSheetOrdersByShopAndDate(@Param("shopId") UUID shopId,
+                                                 @Param("statuses") Collection<OrderStatus> statuses,
+                                                 @Param("scheduledForDate") java.time.LocalDate scheduledForDate);
+
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items "
+            + "WHERE o.shopId = :shopId AND o.status IN :statuses AND o.voidedAt IS NULL "
+            + "AND o.fulfilmentSlotId = :fulfilmentSlotId "
+            + "ORDER BY o.createdAt ASC")
+    List<Order> findCookSheetOrdersByShopAndSlot(@Param("shopId") UUID shopId,
+                                                 @Param("statuses") Collection<OrderStatus> statuses,
+                                                 @Param("fulfilmentSlotId") UUID fulfilmentSlotId);
+
     Page<Order> findByCustomerIdAndShopIdIn(UUID customerId, Collection<UUID> shopIds, Pageable pageable);
 
     /**

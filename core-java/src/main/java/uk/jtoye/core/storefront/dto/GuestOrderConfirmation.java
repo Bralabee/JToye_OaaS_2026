@@ -1,9 +1,12 @@
 package uk.jtoye.core.storefront.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 public class GuestOrderConfirmation {
     private String orderNumber;
@@ -55,6 +58,26 @@ public class GuestOrderConfirmation {
             + "nothing was flagged; null when the lines carry no snapshot.")
     private List<OrderAllergenFlagDto> recordedAllergenFlags;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Reserved scheduled fulfilment slot UUID, when placed for a scheduled slot.")
+    private UUID fulfilmentSlotId;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Scheduled service date (YYYY-MM-DD), when placed for a scheduled slot.")
+    private LocalDate scheduledForDate;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Human-readable scheduled window label (e.g. '2026-10-24 14:00-18:00').")
+    private String scheduledWindowLabel;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Upfront deposit amount in pennies when settled under SPLIT_DEPOSIT_VENDOR_MOR.")
+    private Long depositAmountPennies;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Remaining balance due in pennies when settled under SPLIT_DEPOSIT_VENDOR_MOR.")
+    private Long balanceDuePennies;
+
     public GuestOrderConfirmation(String orderNumber, String status, Long subtotalPennies,
                                   Long deliveryFeePennies, String vatRate, Long vatAmountPennies,
                                   Long totalAmountPennies, String shopName, int itemCount,
@@ -95,4 +118,14 @@ public class GuestOrderConfirmation {
     public List<String> getAcknowledgedAllergens() { return acknowledgedAllergens; }
     public List<String> getRecordedAllergens() { return recordedAllergens; }
     public List<OrderAllergenFlagDto> getRecordedAllergenFlags() { return recordedAllergenFlags; }
+    public UUID getFulfilmentSlotId() { return fulfilmentSlotId; }
+    public void setFulfilmentSlotId(UUID fulfilmentSlotId) { this.fulfilmentSlotId = fulfilmentSlotId; }
+    public LocalDate getScheduledForDate() { return scheduledForDate; }
+    public void setScheduledForDate(LocalDate scheduledForDate) { this.scheduledForDate = scheduledForDate; }
+    public String getScheduledWindowLabel() { return scheduledWindowLabel; }
+    public void setScheduledWindowLabel(String scheduledWindowLabel) { this.scheduledWindowLabel = scheduledWindowLabel; }
+    public Long getDepositAmountPennies() { return depositAmountPennies; }
+    public void setDepositAmountPennies(Long depositAmountPennies) { this.depositAmountPennies = depositAmountPennies; }
+    public Long getBalanceDuePennies() { return balanceDuePennies; }
+    public void setBalanceDuePennies(Long balanceDuePennies) { this.balanceDuePennies = balanceDuePennies; }
 }

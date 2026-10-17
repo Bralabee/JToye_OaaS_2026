@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
+import java.util.UUID;
 
 public class GuestOrderRequest {
     @NotBlank(message = "Name is required")
@@ -135,6 +136,11 @@ public class GuestOrderRequest {
             minimum = "0")
     private Long expectedTotalPennies;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Optional scheduled fulfilment slot UUID (ADR-0007 / GAP-GTM-02). Required when the shop's "
+            + "fulfilmentTimingMode is SCHEDULED_SLOTS_ONLY; permitted when HYBRID_IMMEDIATE_AND_SLOTS; refused when IMMEDIATE_ONLY.")
+    private UUID fulfilmentSlotId;
+
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public String getCustomerEmail() { return customerEmail; }
@@ -165,4 +171,6 @@ public class GuestOrderRequest {
     public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
     public Long getExpectedTotalPennies() { return expectedTotalPennies; }
     public void setExpectedTotalPennies(Long expectedTotalPennies) { this.expectedTotalPennies = expectedTotalPennies; }
+    public UUID getFulfilmentSlotId() { return fulfilmentSlotId; }
+    public void setFulfilmentSlotId(UUID fulfilmentSlotId) { this.fulfilmentSlotId = fulfilmentSlotId; }
 }

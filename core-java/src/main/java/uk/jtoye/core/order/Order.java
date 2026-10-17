@@ -8,6 +8,7 @@ import org.hibernate.envers.NotAudited;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.finance.VatRate;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -237,6 +238,38 @@ public class Order {
 
     @Column(name = "payment_method", length = 100)
     private String paymentMethod;
+
+    /**
+     * ADR-0007 / V87: Scheduled fulfilment slot reserved by this order (null for immediate orders).
+     */
+    @Column(name = "fulfilment_slot_id")
+    private UUID fulfilmentSlotId;
+
+    /**
+     * ADR-0007 / V87: Service date snapshotted from the reserved fulfilment slot at order creation.
+     */
+    @Column(name = "scheduled_for_date")
+    private LocalDate scheduledForDate;
+
+    /**
+     * ADR-0007 / V87: Human-readable window label (e.g. "2026-10-24 14:00-18:00") snapshotted from the slot.
+     */
+    @Column(name = "scheduled_window_label", length = 64)
+    private String scheduledWindowLabel;
+
+    /**
+     * ADR-0007 / V87: Upfront deposit charged at checkout in pennies when settled under
+     * {@code SPLIT_DEPOSIT_VENDOR_MOR} (null for standard full-payment orders).
+     */
+    @Column(name = "deposit_amount_pennies")
+    private Long depositAmountPennies;
+
+    /**
+     * ADR-0007 / V87: Remaining balance due in pennies when settled under
+     * {@code SPLIT_DEPOSIT_VENDOR_MOR} (null for standard full-payment orders).
+     */
+    @Column(name = "balance_due_pennies")
+    private Long balanceDuePennies;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -638,6 +671,46 @@ public class Order {
 
     public void setIdempotencyKey(String idempotencyKey) {
         this.idempotencyKey = idempotencyKey;
+    }
+
+    public UUID getFulfilmentSlotId() {
+        return fulfilmentSlotId;
+    }
+
+    public void setFulfilmentSlotId(UUID fulfilmentSlotId) {
+        this.fulfilmentSlotId = fulfilmentSlotId;
+    }
+
+    public LocalDate getScheduledForDate() {
+        return scheduledForDate;
+    }
+
+    public void setScheduledForDate(LocalDate scheduledForDate) {
+        this.scheduledForDate = scheduledForDate;
+    }
+
+    public String getScheduledWindowLabel() {
+        return scheduledWindowLabel;
+    }
+
+    public void setScheduledWindowLabel(String scheduledWindowLabel) {
+        this.scheduledWindowLabel = scheduledWindowLabel;
+    }
+
+    public Long getDepositAmountPennies() {
+        return depositAmountPennies;
+    }
+
+    public void setDepositAmountPennies(Long depositAmountPennies) {
+        this.depositAmountPennies = depositAmountPennies;
+    }
+
+    public Long getBalanceDuePennies() {
+        return balanceDuePennies;
+    }
+
+    public void setBalanceDuePennies(Long balanceDuePennies) {
+        this.balanceDuePennies = balanceDuePennies;
     }
 
     /** JPA-managed optimistic lock version. Null until the entity is flushed. */

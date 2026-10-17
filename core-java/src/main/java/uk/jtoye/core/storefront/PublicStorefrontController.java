@@ -219,6 +219,13 @@ public class PublicStorefrontController {
         return ResponseEntity.ok(storefrontService.getShopProducts(slug));
     }
 
+    @GetMapping("/shops/{slug}/slots")
+    @Operation(summary = "Get available fulfilment slots",
+            description = "Returns active, future scheduled fulfilment slots for a published shop (ADR-0007 / GAP-GTM-02).")
+    public ResponseEntity<List<uk.jtoye.core.shop.dto.FulfilmentSlotDto>> getShopSlots(@PathVariable String slug) {
+        return ResponseEntity.ok(storefrontService.getShopSlots(slug));
+    }
+
     @PostMapping("/shops/{slug}/orders")
     @Idempotent(endpoint = PublicStorefrontService.GUEST_ORDER_ENDPOINT)
     @Operation(summary = "Place a guest order",

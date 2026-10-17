@@ -121,6 +121,7 @@ public class OrderService {
      * which the Spring proxy would not see (self-invocation).
      */
     private final TransactionTemplate perOrderTransaction;
+    private final uk.jtoye.core.shop.ShopFulfilmentSlotService slotService;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -137,6 +138,29 @@ public class OrderService {
                        OrderLimits orderLimits,
                        BulkCancelLimit bulkCancelLimit,
                        PlatformTransactionManager transactionManager) {
+        this(orderRepository, productRepository, shopRepository, customerRepository,
+                stateMachineService, orderMapper, eventPublisher, financialTransactionService,
+                stockService, refundService, shopAccessService, orderNumberGenerator,
+                orderLimits, bulkCancelLimit, transactionManager, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderService(OrderRepository orderRepository,
+                       ProductRepository productRepository,
+                       ShopRepository shopRepository,
+                       CustomerRepository customerRepository,
+                       OrderStateMachineService stateMachineService,
+                       OrderMapper orderMapper,
+                       OrderEventPublisher eventPublisher,
+                       FinancialTransactionService financialTransactionService,
+                       StockService stockService,
+                       RefundService refundService,
+                       ShopAccessService shopAccessService,
+                       OrderNumberGenerator orderNumberGenerator,
+                       OrderLimits orderLimits,
+                       BulkCancelLimit bulkCancelLimit,
+                       PlatformTransactionManager transactionManager,
+                       uk.jtoye.core.shop.ShopFulfilmentSlotService slotService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -153,6 +177,7 @@ public class OrderService {
         this.bulkCancelLimit = bulkCancelLimit;
         this.perOrderTransaction = new TransactionTemplate(transactionManager);
         this.perOrderTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.slotService = slotService;
     }
 
     /**
@@ -800,6 +825,9 @@ public class OrderService {
         if (newStatus == OrderStatus.CANCELLED && oldStatus.ordinal() >= OrderStatus.CONFIRMED.ordinal()) {
             stockService.restoreForOrder(order.getItems());
         }
+        if (newStatus == OrderStatus.CANCELLED && slotService != null) {
+            slotService.releaseSlotForOrder(order);
+        }
 
         // Save AFTER stock bookkeeping — ensures a decrement failure leaves the
         // order in its prior PENDING status, not a ghost CONFIRMED row.
@@ -940,6 +968,9 @@ public class OrderService {
             order.setVoidReason(trimmed);
             order.setUpdatedAt(OffsetDateTime.now());
             order = orderRepository.save(order);
+            if (order.getStatus() != OrderStatus.CANCELLED && slotService != null) {
+                slotService.releaseSlotForOrder(order);
+            }
             log.info("Order {} voided (status stays {})", order.getOrderNumber(), order.getStatus());
         }
 
@@ -980,6 +1011,9 @@ public class OrderService {
             throw OrderNotDeletableException.settled(order.getOrderNumber(), order.getStatus());
         }
 
+        if (order.getStatus() != OrderStatus.CANCELLED && slotService != null) {
+            slotService.releaseSlotForOrder(order);
+        }
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);
     }
