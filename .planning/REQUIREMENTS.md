@@ -396,10 +396,10 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | DPLY-03 | Phase 29 | not yet planned | Not started |
 | DPLY-04 | Phase 29 | not yet planned | Not started — blocked on ADR-0002 sign-off |
 | DPLY-05 | Phase 29 | not yet planned | Not started |
-| PAY-01 | Phase 30 | not yet planned | Not started — blocked on Stripe test-mode keys |
-| PAY-02 | Phase 30 | not yet planned | Not started |
-| PAY-03 | Phase 30 | not yet planned | Not started |
-| PAY-04 | Phase 30 | not yet planned | Not started — decision settled 2026-08-02; blocked on phone verification (#462), the channel seam (#208) and Stripe keys |
+| PAY-01 | Phase 30 | no plans (PR #949) | Open — refunds executed in Stripe test mode via API (`30-VERIFICATION.md`), but the criterion is the refund E2E: `vendor-refund-flow.spec.ts` is still `ALLOW` in `scripts/gates/e2e-skip-budget.conf`; #61 open |
+| PAY-02 | Phase 30 | no plans (PR #949) | Evidenced — test-mode invoices retrieved by id for three of the four `BillingPlanMode` presets (`SAAS_HYBRID_STANDARD`, `SAAS_FLAT_PREDICTABLE`, `WALK_SETUP_STEPDOWN`); `BATCH_PAYG_STARTER` has no subscription invoice, only a PaymentIntent carrying its 6% `application_fee_amount` (`30-VERIFICATION.md`, V88); unticked pending owner acceptance; #102 open |
+| PAY-03 | Phase 30 | no plans (PR #949) | Open — direct and destination loops executed in Stripe test mode from a laptop (`30-VERIFICATION.md`); the criterion says "on staging", which waits on Phase 29 |
+| PAY-04 | Phase 30 | no plans (PR #949) | Evidenced — OTP, single-use links and the PREPARING guard proven in test mode (`30-VERIFICATION.md`, V88); delivery to a real phone not shown; unticked pending owner acceptance; #461/#462 open |
 | CUST-01 | Phase 33 | 33-01, 33-02, 33-03, 33-05, 33-06, 33-07 | **Complete** — 2026-08-09, per-limb evidence above. Coordinates (33-05, closed against the delivered runtime), the distance query (33-06), the real-shop row (33-03) and the located journey (33-07, human gate approved). Limitations recorded: ~100 m centroids, Great Britain only |
 | CUST-02 | Phase 33 | 33-04 (D-2 decision only) | **Not closed** — #453 carved out as a decision ticket, #458 dispatch half and #452 out of scope per D-3. The recorded decision explains the non-build but names no adjudicator for `MANUAL_REVIEW`, which is the requirement's own second limb. Gap survives the phase open |
 | CUST-03 | Phase 33 | 33-04 | **Complete** — recorded-decision limb (ADR-0005, 2026-08-08); `identityProviders` deliberately unpopulated, groundwork committed disabled |
