@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### GAP-GTM-07 (Part B): Merchant Value & ROI Telemetry on `/dashboard/finance` — 2026-10-17
+### GAP-GTM-07 (Part B): Merchant Value & ROI Telemetry on `/dashboard/finance` (#942) — 2026-10-17
 
 Adds the **Merchant Value & ROI Telemetry Card** (`frontend/components/dashboard/merchant-roi-card.tsx` + `frontend/lib/finance-roi.ts`) to `/dashboard/finance` so UK food vendors see their retained direct-ordering margin and operational protection in pounds and pence directly alongside the `V79` shop-scoped ledger.
 
