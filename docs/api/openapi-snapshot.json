@@ -2007,6 +2007,225 @@
         },
         "type" : "object"
       },
+      "CulinaryDishTemplateDto" : {
+        "description" : "A pre-audited Pan-African or Caribbean dish template with UK FSA 14-allergen bitmasks and inline-emphasised ingredients prose (GTM-BLK-02)",
+        "properties" : {
+          "allergenMask" : {
+            "description" : "UK FSA 14-allergen declared bitmask (0..16383)",
+            "example" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "allergenNames" : {
+            "description" : "Declared allergens in UK FSA bit order",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "course" : {
+            "description" : "Course classification (main, soup-stew, street-food, side, snack, dessert, breakfast, drink)",
+            "example" : "main",
+            "type" : "string"
+          },
+          "cuisineKey" : {
+            "description" : "Cuisine key",
+            "example" : "nigerian",
+            "type" : "string"
+          },
+          "cuisineLabel" : {
+            "description" : "Human-readable cuisine label",
+            "example" : "Nigerian",
+            "type" : "string"
+          },
+          "description" : {
+            "description" : "Customer-facing dish description",
+            "type" : "string"
+          },
+          "dietaryTags" : {
+            "description" : "Dietary tags (e.g. halal-friendly, gluten-free, vegan)",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "ingredientsText" : {
+            "description" : "Ingredients prose with **bold** emphasis tokens matching allergenMask",
+            "type" : "string"
+          },
+          "mayContainMask" : {
+            "description" : "UK FSA 14-allergen cross-contact ('May contain') bitmask (0..16383)",
+            "example" : 608,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "mayContainNames" : {
+            "description" : "Cross-contact allergens in UK FSA bit order",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "name" : {
+            "description" : "Display name of the dish",
+            "example" : "Jollof Rice",
+            "type" : "string"
+          },
+          "region" : {
+            "description" : "Geographic/cultural region",
+            "example" : "WEST_AFRICAN",
+            "type" : "string"
+          },
+          "shelfLifeDays" : {
+            "description" : "Recommended refrigerated shelf life in days for PPDS Use-By calculation",
+            "example" : 3,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "slug" : {
+            "description" : "Stable dish slug",
+            "example" : "jollof-rice",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CulinaryPackDto" : {
+        "description" : "A cuisine pack of pre-audited Pan-African / Caribbean dish templates for 1-click shop seeding",
+        "properties" : {
+          "cuisineKey" : {
+            "description" : "Stable cuisine pack key",
+            "example" : "nigerian",
+            "type" : "string"
+          },
+          "cuisineLabel" : {
+            "description" : "Human-readable cuisine pack name",
+            "example" : "Nigerian",
+            "type" : "string"
+          },
+          "dishCount" : {
+            "description" : "Number of dish templates in this cuisine pack",
+            "example" : 6,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "dishes" : {
+            "description" : "Dish templates included in this cuisine pack",
+            "items" : {
+              "$ref" : "#/components/schemas/CulinaryDishTemplateDto"
+            },
+            "type" : "array"
+          },
+          "region" : {
+            "description" : "Region identifier",
+            "example" : "WEST_AFRICAN",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CulinaryPackSeedRequest" : {
+        "description" : "Seed a shop's product catalogue from the Pan-African & Caribbean Culinary Knowledge Base. Requires SHOP_MANAGER on shopId and SCOPE_catalog:write. Idempotent: dishes whose deterministic CKB SKU or title already exist in the target shop are skipped.",
+        "properties" : {
+          "available" : {
+            "description" : "Whether seeded dishes are immediately marked available on the storefront. Defaults to false (draft) so the Food Business Operator reviews and confirms their exact kitchen recipe and price before going live.",
+            "type" : "boolean"
+          },
+          "cuisineKeys" : {
+            "description" : "Cuisine pack keys to seed (e.g. ['nigerian', 'ghanaian']). At least one of cuisineKeys or dishSlugs must be provided.",
+            "items" : {
+              "type" : "string"
+            },
+            "maxItems" : 20,
+            "minItems" : 0,
+            "type" : "array"
+          },
+          "defaultPricePennies" : {
+            "description" : "Optional override price in pennies applied to seeded dishes. When omitted, mains/soups-stews default to 950 (£9.50) and sides/snacks/street-food/desserts/drinks default to 550 (£5.50).",
+            "format" : "int64",
+            "minimum" : 1,
+            "type" : "integer"
+          },
+          "dishSlugs" : {
+            "description" : "Optional specific dish slugs to seed (e.g. ['jollof-rice', 'suya']). If both cuisineKeys and dishSlugs are provided, their union is seeded.",
+            "items" : {
+              "type" : "string"
+            },
+            "maxItems" : 100,
+            "minItems" : 0,
+            "type" : "array"
+          },
+          "shopId" : {
+            "description" : "Target shop to seed dishes into (requires SHOP_MANAGER)",
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "shopId"
+        ],
+        "type" : "object"
+      },
+      "CulinaryPackSeedResult" : {
+        "description" : "Result of seeding Pan-African / Caribbean dish templates into a shop",
+        "properties" : {
+          "created" : {
+            "description" : "Dishes created in the target shop",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "failed" : {
+            "description" : "Dishes that could not be seeded; see each item's reason",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "items" : {
+            "description" : "One outcome per requested dish template, in catalogue order",
+            "items" : {
+              "$ref" : "#/components/schemas/CulinaryPackSeedResultItem"
+            },
+            "type" : "array"
+          },
+          "skipped" : {
+            "description" : "Dishes skipped because the target shop already has them",
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CulinaryPackSeedResultItem" : {
+        "description" : "The outcome for one dish template",
+        "properties" : {
+          "dishName" : {
+            "description" : "The dish display name",
+            "type" : "string"
+          },
+          "dishSlug" : {
+            "description" : "The dish template slug",
+            "type" : "string"
+          },
+          "outcome" : {
+            "description" : "CREATED, SKIPPED or FAILED",
+            "enum" : [
+              "CREATED",
+              "SKIPPED",
+              "FAILED"
+            ],
+            "type" : "string"
+          },
+          "productId" : {
+            "description" : "The new product ID in the target shop (CREATED only)",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "reason" : {
+            "description" : "Why it was skipped or failed (null when CREATED)",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "CustomerDto" : {
         "properties" : {
           "allergenRestrictions" : {
@@ -11871,6 +12090,129 @@
         ]
       }
     },
+    "/api/v1/products/culinary-packs" : {
+      "get" : {
+        "description" : "Returns the 10 pre-audited regional cuisine packs (52 dishes) from the bundled OaaS Culinary Knowledge Base (GTM-BLK-02), with UK FSA 14-allergen declared and cross-contact bitmasks, inline-emphasised ingredients prose, and recommended refrigerated shelf-life days.",
+        "operationId" : "listCulinaryPacks",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/CulinaryPackDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "Available culinary packs and dish templates"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or an invalid one"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List Pan-African & Caribbean culinary packs",
+        "tags" : [
+          "Products"
+        ]
+      }
+    },
+    "/api/v1/products/culinary-packs/seed" : {
+      "post" : {
+        "description" : "Idempotently seeds a shop's product catalogue from one or more regional cuisine packs or specific dish template slugs (GTM-BLK-02). Requires SHOP_MANAGER on shopId and SCOPE_catalog:write. Seeded dishes are created as drafts (available=false) by default so the Food Business Operator confirms their exact kitchen recipe and price before publishing. Dishes whose deterministic CKB SKU or title already exist in the target shop are SKIPPED.",
+        "operationId" : "seedCulinaryPack",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CulinaryPackSeedRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CulinaryPackSeedResult"
+                }
+              }
+            },
+            "description" : "Seed processed; see created, skipped, failed and items"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing shopId, or neither cuisineKeys nor dishSlugs provided (errors/validation, errors/invalid-argument)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on shopId (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Shop not found in the caller's tenant (errors/not-found)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Seed shop catalogue from Pan-African & Caribbean culinary pack",
+        "tags" : [
+          "Products"
+        ]
+      }
+    },
     "/api/v1/products/search" : {
       "get" : {
         "description" : "Full-text search (GIN/tsvector, per-word prefix matching, relevance-ranked) over title, category, description, ingredients and dietary tags, plus SKU prefix lookup. Returns a JSON array (wire contract frozen: edge WhatsApp flow and dashboard both consume it) of at most one page; optional page/size params paginate, with size capped by the global pageable maximum (100). Optional shopId narrows to one shop of the tenant (requires at least STAFF on that shop).",
@@ -12626,7 +12968,7 @@
     },
     "/api/v1/products/{id}/label" : {
       "get" : {
-        "description" : "Returns a PPDS (Natasha's Law) allergen label PDF for the product. The label prints the production date and a use-by / best-before date counted from it (production date + the product's shelf life), and a separate 'May contain' line for cross-contact allergens that are not already declared. Dates are printed en-GB, e.g. '5 October 2026'.",
+        "description" : "Returns a PPDS (Natasha's Law) allergen label PDF for the product. The label prints the production date and a use-by / best-before date counted from it (production date + the product's shelf life), and a separate 'May contain' line for cross-contact allergens that are not already declared. Dates are printed en-GB, e.g. '5 October 2026'. Optional format parameter selects STANDARD_100X60MM (100x60mm sticker, default) or THERMAL_62MM (62mm continuous thermal roll for Brother QL-800/810W printers, GTM-BLK-06).",
         "operationId" : "generateLabel",
         "parameters" : [
           {
@@ -12648,6 +12990,16 @@
               "format" : "date",
               "type" : "string"
             }
+          },
+          {
+            "description" : "Optional page layout: STANDARD_100X60MM (default 100x60mm sheet/sticker) or THERMAL_62MM (62mm continuous roll for Brother QL thermal printers, GTM-BLK-06).",
+            "example" : "THERMAL_62MM",
+            "in" : "query",
+            "name" : "format",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
           }
         ],
         "responses" : {
@@ -12661,6 +13013,16 @@
               }
             },
             "description" : "The label PDF (attachment label-{id}.pdf)"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Unsupported label format parameter (errors/invalid-argument)"
           },
           "401" : {
             "content" : {

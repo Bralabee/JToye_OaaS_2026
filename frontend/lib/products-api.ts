@@ -4,6 +4,10 @@ import type {
   BulkImportResult,
   CopyProductsRequest,
   CopyProductsResult,
+  CulinaryPackDto,
+  CulinaryPackSeedRequest,
+  CulinaryPackSeedResult,
+  LabelFormat,
   Product,
 } from "@/types/api"
 
@@ -108,3 +112,51 @@ export async function copyProducts(req: CopyProductsRequest): Promise<CopyProduc
   const res = await apiClient.post<CopyProductsResult>("/api/v1/products/copy", req)
   return res.data
 }
+
+/**
+ * Fetch the 10 Pan-African & Caribbean regional cuisine packs (52 dish templates) from
+ * GET /api/v1/products/culinary-packs (GTM-BLK-02).
+ */
+export async function fetchCulinaryPacks(): Promise<CulinaryPackDto[]> {
+  const res = await apiClient.get<CulinaryPackDto[]>("/api/v1/products/culinary-packs")
+  return Array.isArray(res.data) ? res.data : []
+}
+
+/**
+ * Idempotently seed a shop's product catalogue from selected regional cuisine packs or dish slugs
+ * via POST /api/v1/products/culinary-packs/seed (GTM-BLK-02).
+ */
+export async function seedCulinaryPack(
+  req: CulinaryPackSeedRequest
+): Promise<CulinaryPackSeedResult> {
+  const res = await apiClient.post<CulinaryPackSeedResult>(
+    "/api/v1/products/culinary-packs/seed",
+    req
+  )
+  return res.data
+}
+
+/**
+ * Download a PPDS (Natasha's Law) allergen label PDF for a product in either standard 100x60mm
+ * or 62mm continuous thermal roll format (GTM-BLK-06).
+ */
+export async function downloadProductLabelBlob(params: {
+  productId: string
+  productionDate?: string
+  format?: LabelFormat
+}): Promise<Blob> {
+  const query = new URLSearchParams()
+  if (params.productionDate) {
+    query.set("productionDate", params.productionDate)
+  }
+  if (params.format) {
+    query.set("format", params.format)
+  }
+  const qs = query.toString()
+  const res = await apiClient.get<Blob>(
+    `/api/v1/products/${encodeURIComponent(params.productId)}/label${qs ? `?${qs}` : ""}`,
+    { responseType: "blob" }
+  )
+  return res.data
+}
+

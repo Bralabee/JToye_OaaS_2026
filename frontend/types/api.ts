@@ -326,6 +326,76 @@ export interface CopyProductsResult {
   items: CopyProductsResultItem[]
 }
 
+/** GTM-BLK-06: PPDS label page layout format. */
+export type LabelFormat = "STANDARD_100X60MM" | "THERMAL_62MM"
+
+/** GTM-BLK-02: A single dish template in the Pan-African & Caribbean Culinary Knowledge Base. */
+export interface CulinaryDishTemplateDto {
+  slug: string
+  name: string
+  cuisineKey: string
+  cuisineLabel: string
+  region: string
+  course: string
+  description: string
+  shelfLifeDays: number
+  allergenMask: number
+  allergenNames: string[]
+  mayContainMask: number
+  mayContainNames: string[]
+  ingredientsText: string
+  dietaryTags: string[]
+}
+
+/** GTM-BLK-02: A regional cuisine pack of pre-audited dish templates. */
+export interface CulinaryPackDto {
+  cuisineKey: string
+  cuisineLabel: string
+  region: string
+  dishCount: number
+  dishes: CulinaryDishTemplateDto[]
+}
+
+/** GTM-BLK-02: Request to seed a shop's catalogue from selected cuisine packs or dish slugs. */
+export interface CulinaryPackSeedRequest {
+  shopId: string
+  cuisineKeys?: string[]
+  dishSlugs?: string[]
+  defaultPricePennies?: number | null
+  available?: boolean
+}
+
+export interface CulinaryPackSeedResultItem {
+  dishSlug: string
+  dishName: string
+  outcome: CopyOutcome
+  productId?: string | null
+  reason?: string | null
+}
+
+/** GTM-BLK-02: Outcome of seeding a culinary pack into a shop. */
+export interface CulinaryPackSeedResult {
+  created: number
+  skipped: number
+  failed: number
+  items: CulinaryPackSeedResultItem[]
+}
+
+/** GAP-GTM-06: Shareable WhatsApp pre-order checkout link and broadcast copy. */
+export interface WhatsAppPreOrderLinkDto {
+  shopId: string
+  shopSlug: string
+  shopName: string
+  slotId?: string | null
+  serviceDate?: string | null
+  windowLabel?: string | null
+  cutoffAt?: string | null
+  storefrontPath: string
+  prefilledMessage: string
+  waMeUrl: string
+}
+
+
 // Order Types
 export type OrderStatus =
   | "DRAFT"

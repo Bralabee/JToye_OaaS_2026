@@ -348,23 +348,24 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 9/16 (on `phase-29-research`) | Paused | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
+| 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
-| 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
+| 35. Horizontal Layout Contract | v2.3 | 13/13 | Complete | 2026-08-30 |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
 | 37. Real-world operations readiness | v2.3 | 59/59 | Complete    | 2026-10-16 |
 | 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
 | 39. Platform runtime upgrades | v2.3 | 10/10 | Complete    | 2026-10-16 |
 
-**Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
-before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
-The `progress:` frontmatter counters in `STATE.md` deliberately still read 48/48 — they run on the
-**v2.3 build denominator (Phases 21–26)** and are not the milestone's completion measure. Phases
-27–34 are tracked in this table.
+**Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's original 6/6 build
+(Phases 21–26, where `STATE.md` counters originally sat at 48/48) closed but before any successor
+milestone opened, and `STATE.md` kept the milestone `in-progress` throughout. All 20 v2.3 phases
+(21–39, including 31.1) are now tracked in this table and reconciled with `STATE.md` frontmatter
+(`17/20` phases complete, `254/254` written plans on `main`).
 
 > **Every open issue has a home — see `.planning/ISSUE-DISPOSITION.md`.** Added 2026-08-07 after a
 > sweep found that **15 of 57** open issues were named anywhere in this file, and that six —
