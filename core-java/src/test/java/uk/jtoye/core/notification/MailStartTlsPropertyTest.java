@@ -1,0 +1,71 @@
+package uk.jtoye.core.notification;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.mail.autoconfigure.MailSenderAutoConfiguration;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Properties;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * DEF-29-6 — STARTTLS must actually reach JavaMail.
+ *
+ * <p>{@code spring.mail.properties.*} is handed to JavaMail verbatim, so the key has to be
+ * JavaMail's own spelling, {@code mail.smtp.starttls.enable}. {@code application.yml} spelled it
+ * {@code starttls.enabled}: relaxed binding accepted the unknown key, JavaMail never read it, and
+ * every real SMTP connection (SES, Gmail) went out without STARTTLS while {@code SMTP_STARTTLS}
+ * looked configurable. Nothing failed — that is the whole defect.
+ *
+ * <p>This test runs the SHIPPED {@code application.yml} (read from the classpath, as the jar does)
+ * through Boot's real {@link MailSenderAutoConfiguration} and asserts on the properties the built
+ * {@link JavaMailSenderImpl} will hand to the {@code jakarta.mail.Session}, not on the YAML text.
+ */
+class MailStartTlsPropertyTest {
+
+    private static final String JAVAMAIL_STARTTLS = "mail.smtp.starttls.enable";
+
+    private final ApplicationContextRunner runner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(MailSenderAutoConfiguration.class))
+            .withInitializer(ctx -> shippedApplicationYml()
+                    .forEach(ps -> ctx.getEnvironment().getPropertySources().addLast(ps)));
+
+    @Test
+    @DisplayName("DEF-29-6 — application.yml turns STARTTLS on under JavaMail's own key by default")
+    void startTlsReachesJavaMailByDefault() {
+        runner.run(ctx -> {
+            Properties props = ctx.getBean(JavaMailSenderImpl.class).getJavaMailProperties();
+            assertThat(props.getProperty(JAVAMAIL_STARTTLS))
+                    .as("JavaMail reads %s; any other spelling is silently ignored", JAVAMAIL_STARTTLS)
+                    .isEqualTo("true");
+            assertThat(props.stringPropertyNames())
+                    .as("no misspelt STARTTLS key may ship beside the real one")
+                    .doesNotContain("mail.smtp.starttls.enabled");
+        });
+    }
+
+    @Test
+    @DisplayName("DEF-29-6 — SMTP_STARTTLS=false (local Mailhog) reaches the same key")
+    void smtpStartTlsEnvTurnsItOff() {
+        runner.withPropertyValues("SMTP_STARTTLS=false").run(ctx ->
+                assertThat(ctx.getBean(JavaMailSenderImpl.class).getJavaMailProperties()
+                        .getProperty(JAVAMAIL_STARTTLS)).isEqualTo("false"));
+    }
+
+    private static List<PropertySource<?>> shippedApplicationYml() {
+        try {
+            return new YamlPropertySourceLoader()
+                    .load("shipped-application.yml", new ClassPathResource("application.yml"));
+        } catch (IOException e) {
+            throw new IllegalStateException("classpath application.yml unreadable", e);
+        }
+    }
+}

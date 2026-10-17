@@ -145,7 +145,7 @@ spring:
         smtp:
           auth: ${SMTP_AUTH:false}
           starttls:
-            enabled: ${SMTP_STARTTLS:true}
+            enable: ${SMTP_STARTTLS:true}
     test-connection: false
   security:
     oauth2:
