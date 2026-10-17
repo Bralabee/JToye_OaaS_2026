@@ -5,11 +5,11 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: planning
-stopped_at: Phase 37 (59/59), Phase 39 (10/10), and ADR-0007 (V87, GAP-GTM-01..04, 06, 07B) complete and merged to main; ready to plan Phase 29
-last_updated: "2026-10-17T15:00:00.000Z"
+stopped_at: Phase 37, Phase 39, ADR-0007 and GTM track 2 (#948) merged; Phase 30 code merged as #949 (V88) but PAY-01/PAY-03 open; ready to re-plan Phase 29 on main
+last_updated: "2026-10-17T19:45:00.000Z"
 last_activity: 2026-10-17
-last_activity_desc: Planning ledger reconciled — STATE counters, ROADMAP progress table and REQUIREMENTS traceability re-measured from disk
-state_head: efea48f0
+last_activity_desc: Phase 30 (#949) recorded in ROADMAP and REQUIREMENTS as partial — PAY-02/04 evidenced, PAY-01/03 open
+state_head: eaa6392a
 progress:
   total_phases: 20
   completed_phases: 17
