@@ -74,7 +74,7 @@ class RuntimeRoleGrantContractTest {
     private static final int CUSTOMERS_B = 2;
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye")
             .withUsername("test")
             .withPassword("test");

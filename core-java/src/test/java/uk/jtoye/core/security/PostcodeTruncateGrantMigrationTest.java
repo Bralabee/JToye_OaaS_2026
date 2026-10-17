@@ -52,7 +52,7 @@ class PostcodeTruncateGrantMigrationTest {
     private static final String RUNTIME_PW = "run" + Long.toHexString(Double.doubleToLongBits(Math.random()));
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye")
             .withUsername("test")
             .withPassword("test");

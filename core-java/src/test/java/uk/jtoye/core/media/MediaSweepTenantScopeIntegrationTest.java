@@ -86,7 +86,7 @@ class MediaSweepTenantScopeIntegrationTest {
     private static final String SWEEP_PW = "rls_sweep_pw";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");

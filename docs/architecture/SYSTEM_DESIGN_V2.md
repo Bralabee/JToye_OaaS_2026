@@ -76,10 +76,10 @@ graph drawn here: the compose service set, its ports and the AMQP exchanges are 
       │ JDBC              │   │   │ HTTP         │ SMTP       │
       │            RESP   │   │   │              │            │
 ┌─────▼────────┐  ┌───────▼─┐ │ ┌─▼──────────┐ ┌─▼─────────┐  │
-│ PostgreSQL15 │  │ Redis 7 │ │ │  Ollama    │ │  Mailhog  │  │
+│ PostgreSQL18 │  │ Redis 8 │ │ │  Ollama    │ │  Mailhog  │  │
 │ :5433 → 5432 │  │  :6379  │ │ │  :11434    │ │ :1025 SMTP│  │
 │ RLS+HikariCP │  │ cache · │ │ │ image      │ │ :8025 UI  │  │
-│              │  │ ratelimit│ │ analysis   │ │           │  │
+│              │  │ ratelimit│ │ │ analysis   │ │           │  │
 └──────────────┘  └─────────┘ │ └────────────┘ └───────────┘  │
         ▲                     │                               │
         └─────────────────────┼───────────────────────────────┘
@@ -160,8 +160,8 @@ third, independent ingress that forwards an agent's Bearer to the same core REST
 | **core-java** | Business logic, domain model, auditing, realtime fan-out | Spring Boot 3.5.16, Hibernate | Horizontal (stateless) |
 | **mcp-server** | MCP tool surface for AI agents over the core REST API | Node 20 + MCP SDK (Streamable HTTP) | Horizontal (stateless) |
 | **keycloak** | Identity provider, SSO, user management | Keycloak 26 | Horizontal (2+ replicas) |
-| **postgresql** | Primary data store, RLS enforcement | PostgreSQL 15 | Vertical + read replicas |
-| **redis** | Cache, session storage, rate limit state | Redis 7 Cluster | Horizontal (cluster mode) |
+| **postgresql** | Primary data store, RLS enforcement | PostgreSQL 18 | Vertical + read replicas |
+| **redis** | Cache, session storage, rate limit state | Redis 8.10 Cluster | Horizontal (cluster mode) |
 | **rabbitmq** | Domain events (outbox), STOMP relay for KDS | RabbitMQ 4.3.6 | Horizontal (HA queues) |
 | **blob storage** | Media assets — validated WebP derivatives + thumbnails | Azure Blob Storage (Azurite emulator locally) | Managed |
 | **ollama** | Local LLM image analysis (`AI_PROVIDER=ollama`) | Ollama + `gemma3:12b` | Vertical (GPU-bound) |
@@ -858,7 +858,7 @@ jobs:
 ### 3.2 Database Scalability
 
 > **⚠️ CURRENT STATE (2026-07-12) — none of the diagram below is deployed.**
-> Production-shaped reality is a **single PostgreSQL 15 instance** (compose/k8s),
+> Production-shaped reality is a **single PostgreSQL 18 instance** (compose/k8s),
 > no replicas, no Patroni, no PgBouncer, **no WAL archiving and therefore no
 > PITR**. Backups are a daily 2 AM logical `pg_dump` via the hardened k8s
 > CronJob from #90 (custom-format, integrity-verified via `pg_restore --list`,

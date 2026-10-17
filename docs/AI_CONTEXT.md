@@ -7,8 +7,8 @@ Stack
 - Core: Java 25, Spring Boot 4.1.1 (Spring Framework 7, Jackson 3), JPA/Hibernate 7 Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.6.3, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
 - Edge: Go 1.22, Gin, circuit breakers (gobreaker), rate limiting
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion, Jest/React Testing Library
-- Database: PostgreSQL 15 with Row‑Level Security (RLS)
-- Cache: Redis (Spring Cache abstraction, tenant-aware key generation)
+- Database: PostgreSQL 18 with Row‑Level Security (RLS)
+- Cache: Redis 8.10 (Spring Cache abstraction, tenant-aware key generation)
 - Identity: Keycloak 26 (realm: jtoye-dev)
 - Observability: Prometheus metrics, Zipkin distributed tracing, structured JSON logging
 

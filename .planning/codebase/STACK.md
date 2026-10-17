@@ -12,7 +12,7 @@
 
 **Secondary:**
 - TypeScript (Node/ESM) — MCP server (`mcp-server/`), `mcp-server/package.json` devDependencies `typescript: ~5.9`, runtime `node:24-alpine` (`mcp-server/Dockerfile`).
-- SQL (PostgreSQL 15 dialect) — Flyway migrations, `core-java/src/main/resources/db/migration/` (66 versioned files, V1–V66; see Configuration below).
+- SQL (PostgreSQL 18 dialect) — Flyway migrations, `core-java/src/main/resources/db/migration/` (66 versioned files, V1–V66; see Configuration below).
 - YAML — Spring profiles, Kustomize manifests, GitHub Actions workflows.
 
 ## Runtime
@@ -21,7 +21,7 @@
 - JVM — Java 25 (Temurin), Core API execution. `gradle.properties` enables toolchain auto-detect/auto-download.
 - Node.js 24 — Frontend build/runtime (`frontend/Dockerfile` builder+runner both `node:24-alpine`; CI `node-version: '24'`) and MCP server runtime (`mcp-server/Dockerfile` `node:24-alpine`).
 - Go 1.27 runtime — Edge gateway, statically linked (`CGO_ENABLED=0`), deployed on a `scratch` base image (`edge-go/Dockerfile`).
-- PostgreSQL 15-alpine — Database (`docker-compose.full-stack.yml:43` `postgres:15-alpine`; `infra/docker-compose.yml:19-20` `image: postgres:15` for `jtoye-postgres`; `infra/backups/Dockerfile` uses `postgres:15-bookworm` for pg_dump tooling).
+- PostgreSQL 18-alpine — Database (`docker-compose.full-stack.yml:43` `postgres:18-alpine`; `infra/docker-compose.yml:19-20` `image: postgres:18-alpine` for `jtoye-postgres`; `infra/backups/Dockerfile` uses `postgres:18-bookworm` for pg_dump tooling).
 
 **Package Manager:**
 - Gradle 9.7.1 (Kotlin DSL) — `gradle/wrapper/gradle-wrapper.properties` pins `distributionUrl` to `gradle-9.7.1-bin.zip`. Lockfile: none (Gradle doesn't use one by default here); dependency versions pinned via `io.spring.dependency-management` BOM + explicit `implementation(...)` coordinates in `core-java/build.gradle.kts`.
@@ -130,8 +130,8 @@
 
 **Production:**
 - Kubernetes via Kustomize: `k8s/base` + `k8s/staging` / `k8s/production` overlays. Images pushed to `ghcr.io/bralabee/jtoye-{core-java,edge-go,frontend,pg-backup}`; `newTag` in overlay `kustomization.yaml` defaults to `2.1.0` but CI pins the exact full-sha tag at deploy time via `kustomize edit set image`.
-- PostgreSQL 15+ (managed/external in prod).
-- Redis 7+ (external/managed).
+- PostgreSQL 18+ (managed/external in prod).
+- Redis 8.10+ (external/managed).
 - RabbitMQ 4.3.6-management-alpine pinned in compose; **the deployed staging/production broker version is unverified from this repository** (see `docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) — minimum supported is 3.13+. RabbitMQ 4.3 community support ends **2027-01-31**, tracked in `infra/dependency-horizons.yaml`.
 - Keycloak 26.8.1 (external IdP in prod).
 - Azure Blob Storage for image storage and backups (Workload Identity, raw Blob endpoint; `docs/runbooks/azure-blob-provisioning.md`) — Azurite 3.37.0 is the local/nightly emulator.

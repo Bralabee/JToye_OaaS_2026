@@ -84,13 +84,22 @@ dependencies:
 
   # ------------------------------------------------------------------ runtime images
   - id: postgres
-    pin: "postgres:15-alpine"
-    sites: ["docker-compose.full-stack.yml:43"]
+    pin: "postgres:18-alpine"
+    sites:
+      - "docker-compose.full-stack.yml:43"
+      - "infra/docker-compose.yml:19"
+      - ".github/workflows/ci-cd.yaml:22"
     kind: image
     owner: maintainer
     eol_slug: postgresql
-    eol_cycle: "15"
-    eol_date: "2027-11-11"
+    eol_cycle: "18"
+    eol_date: "2030-11-14"
+    note: >-
+      UPGRADED BY 39-05 (2026-10-16): 15 (postgres:15-alpine, EOL 2027-11-11) -> 18.6
+      (postgres:18-alpine, cycle 18, EOL 2030-11-14 per endoflife.date). Moved in lockstep
+      across full-stack compose, hybrid infra compose, CI service container, Testcontainers,
+      and jtoye-pg-backup:18-blob (postgres:18-bookworm), enforced by
+      scripts/check-postgres-major-parity.sh.
 
   - id: alpine
     pin: "alpine:3.24"
@@ -132,19 +141,19 @@ dependencies:
       The final DEFERRED-27 exemption is REMOVED (`active-exemptions=0`).
 
   - id: redis
-    pin: "redis:7-alpine"
+    pin: "redis:8.10-alpine"
     sites: ["docker-compose.full-stack.yml:200"]
     kind: image
     owner: maintainer
     eol_slug: redis
-    eol_cycle: "7.4"
-    resolved_cycle: "7.4"
+    eol_cycle: "8.10"
+    resolved_cycle: "8.10"
     resolved_evidence: >-
-      The tag is the floating `7-alpine`; the catalogue has no cycle "7" (cycles are
-      8.8, 8.6, 8.4, 8.2, 8.0, 7.4, 7.2, 7.0, 6.2, 6.0, 5.0). Resolved by reading the
-      RUNNING container: `docker exec jtoye-redis redis-server --version` reports v=7.4.8,
-      so 7.4 is the deployed series. Catalogue `eol: false` for 7.4.
-    eol_date: "2029-12-01"
+      UPGRADED BY 39-06 (2026-10-16): 7-alpine (7.4.8) -> 8.10-alpine (8.10.2; owner
+      dual-RSALv2/SSPLv1/AGPLv3 licence ruling 2026-10-04 in 39-CONTEXT.md, internal cache +
+      rate-limit backing store only). Verified via `docker run --rm redis:8.10-alpine
+      redis-server --version` -> `v=8.10.2`. Catalogue `eol: false` for 8.10.
+    eol_date: "false"
 
   - id: rabbitmq
     pin: "rabbitmq:4.3.6-management-alpine"
@@ -507,13 +516,14 @@ dependencies:
     eol_slug: null
 
   - id: jtoye-pg-backup
-    pin: "ghcr.io/bralabee/jtoye-pg-backup:15-blob"
+    pin: "ghcr.io/bralabee/jtoye-pg-backup:18-blob"
     sites: ["k8s/base/pg-backup-cronjob.yaml:54"]
     kind: first_party
     owner: maintainer
     eol_slug: null
     note: >-
-      The `:15-blob` tag's `15` tracks the postgres major it backs up, not a first-party
+      UPGRADED BY 39-05 (2026-10-16): :15-blob -> :18-blob (postgres:18-bookworm base).
+      The `:18-blob` tag's `18` tracks the postgres major it backs up, not a first-party
       semver; the `-blob` suffix marks the Phase 36 contents change (AWS CLI out, blobctl in,
       D-10), made so a node holding the old `:15` can never run it under the new env contract.
       It must move in lockstep with the `postgres` row; they are deliberately separate rows so

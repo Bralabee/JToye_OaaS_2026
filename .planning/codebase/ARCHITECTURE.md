@@ -25,7 +25,7 @@
             │ JDBC (RLS-enforced, tenant GUC pinned per-transaction)
             ▼
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  PostgreSQL 15 — RLS-enabled, FORCE RLS on every tenant table             │
+│  PostgreSQL 18 — RLS-enabled, FORCE RLS on every tenant table             │
 │  `core-java/src/main/resources/db/migration/` (V1..V66)                   │
 └───────────────────────────────────────────────────────────────────────────┘
 
@@ -104,7 +104,7 @@
 - Depends on: PostgreSQL JDBC driver; every query executes under the RLS session GUC set by `TenantSetLocalAspect`
 - Used by: Service layer exclusively — controllers never touch repositories directly
 
-**Database (PostgreSQL 15, RLS-enabled):**
+**Database (PostgreSQL 18, RLS-enabled):**
 - Purpose: Multi-tenant data storage with row-level tenant isolation and Envers audit trails
 - Location: Schema in `core-java/src/main/resources/db/migration/` — 66 Flyway migrations (V1 through V66; `spring.flyway.out-of-order=true` is required because several slots were filled non-sequentially, e.g. V44 after V45/V46)
 - Contains: Tenant tables (`shops`, `products`, `orders`, `customers`, `financial_transactions`, `media_asset`, `shop_staff`, `webhook_subscription`, etc.) with `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`, matching `*_aud` Envers mirror tables for audited entities, and a small set of deliberately RLS-EXEMPT platform tables (`tenants`, `postcode_centroid`, `dsar_request`) each justified in `RlsContractTest.EXEMPT_TABLES`

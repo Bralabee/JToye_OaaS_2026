@@ -80,7 +80,7 @@ import static uk.jtoye.core.testsupport.TenantJwts.adminJwt;
 class WebhookDeliveryWorkerIntegrationTest {
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");

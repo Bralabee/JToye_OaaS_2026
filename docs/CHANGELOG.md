@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-05 & 39-06: PostgreSQL 18.6 & Redis 8.10 Upgrade (#939) — 2026-10-17
+
+Upgrades the relational datastore (`postgres:15` -> `postgres:18-alpine` / `postgres:18-bookworm`, `18.6`) and distributed cache (`redis:7-alpine` -> `redis:8.10-alpine`, `8.10.2`) across compose, CI, backup tooling, K8s manifests/goldens, and all 215 Testcontainers suites, completing Phase 39 (`10/10` plans).
+
+- **PostgreSQL 18.6 runtime, backup tooling & 10-site parity gate (`39-05`).** Moves `docker-compose.full-stack.yml`, `infra/docker-compose.yml`, and `.github/workflows/ci-cd.yaml` to `postgres:18-alpine` (with `/var/lib/postgresql` volume target for PG 18's `/var/lib/postgresql/18/docker` layout), updates `infra/backups/Dockerfile` (`FROM postgres:18-bookworm`, build tag `ghcr.io/bralabee/jtoye-pg-backup:18-blob`), `k8s/base/pg-backup-cronjob.yaml`, `k8s/goldens/{staging,production}.yaml`, and `scripts/check-backup-restore-drill.sh`, and expands `scripts/gates/postgres-major-parity.conf` from 8 to 10 sites.
+- **Testcontainers PostgreSQL 18 `NOSUPERUSER` RLS compatibility (`core-java/src/test/java/uk/jtoye/core/testsupport/IntegrationTestSupport.java`).** Updates all 207 `PostgreSQLContainer` suites to `"postgres:18-alpine"` and adds `IntegrationTestSupport.ensureDowngradableTestRole` to swap the `initdb` bootstrap superuser (`oid = 10`, which PostgreSQL 16+/18 forbids downgrading via `ALTER ROLE ... NOSUPERUSER`) with an identically named non-bootstrap superuser (`oid > 10`) and migrate `pg_default_acl` (`defaclrole = 10`) before the first JDBC connection opens, preserving all 30+ `NOSUPERUSER` RLS integration test assertions.
+- **Redis 8.10 upgrade (`39-06`).** Moves `docker-compose.full-stack.yml`, `infra/dependency-horizons.yaml` (`eol_cycle: "8.10"`, `eol_date: "false"`), and all 8 Redis Testcontainers suites to `redis:8.10-alpine` with Lettuce 7, Spring Cache (`v4:`), and Bucket4j parity verified.
+
 ### ADR-0007: Multi-Model Commercial Settlement, Scheduled Fulfilment Slots & Kitchen Cook Sheets (`V87`) (#943) — 2026-10-17
 
 Implements `ADR-0007` (`GAP-GTM-01`, `GAP-GTM-02`, `GAP-GTM-03`) so each shop can operate on-demand counter orders, scheduled batch/pre-order drop windows, or hybrid fulfilment alongside configurable Stripe settlement routing (`DIRECT_CHARGE_VENDOR_MOR`, `DESTINATION_CHARGE_PLATFORM_MOR`, `SPLIT_DEPOSIT_VENDOR_MOR`) and consolidated prep cook sheets.

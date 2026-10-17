@@ -78,7 +78,7 @@ class OrderAllergenSnapshotIntegrationTest {
             LoggerFactory.getLogger(OrderAllergenSnapshotIntegrationTest.class);
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");

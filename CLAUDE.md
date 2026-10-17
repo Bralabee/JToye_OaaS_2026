@@ -9,7 +9,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ### Constraints
 
-- **Tech stack**: Must use existing stack — Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38), Next.js 16, Go 1.27, PostgreSQL 15
+- **Tech stack**: Must use existing stack — Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38), Next.js 16, Go 1.27, PostgreSQL 18
 - **Java version**: JDK 25 (Temurin) on Gradle 9.7.1 — JDK 25 requires Gradle ≥ 9.1 (migrated from JDK 21/Gradle 8.10.2, 2026-08-31)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
 - **Testing**: All new code requires tests — project standard is 6251 logical invocations passing (2868 Java `@Test` methods across 408 files + 3014 Jest `it/test` blocks across 254 files + 112 top-level Go `Test*` funcs across 14 files + 187 Playwright `test()` blocks across 44 specs + 70 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `AGENTS.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
@@ -30,7 +30,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - JVM (Java 25) - Core API execution
 - Node.js 24+ - Frontend build and runtime
 - Go 1.27 runtime - Edge gateway
-- PostgreSQL 15 - Database
+- PostgreSQL 18 - Database
 - Gradle 9.7+ (Kotlin DSL) - Java/Spring Boot build
 - npm - Node.js dependencies
 - go mod - Go dependencies
@@ -81,7 +81,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Axios 1.19.0 - HTTP client for API calls
 - Framer Motion 14.0.0 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
-- Redis 7 - Session and cache store
+- Redis 8.10 - Session and cache store
 - RabbitMQ 4.3.6 - Message queue (AMQP)
 - Keycloak 26.8.1 - Identity provider (OIDC/OAuth2)
 - Azurite 3.37.0 - Azure Blob emulator (local, hybrid, nightly); Azure Blob Storage in staging/production
@@ -127,8 +127,8 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Docker (for building multi-stage images)
 - Kubernetes (recommended) - See `k8s/` directory for manifests
 - Docker container runtime
-- PostgreSQL 15+ database
-- Redis 7+ (external or managed service)
+- PostgreSQL 18+ database
+- Redis 8+ (external or managed service)
 - RabbitMQ **3.13+** minimum (4.3 recommended — the dev/compose stack pins 4.3.6). The deployed staging/production broker's version is **unverified from this repository** — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 - Keycloak 26.8+ (external identity provider)
 - Azure Blob Storage (Azurite locally)

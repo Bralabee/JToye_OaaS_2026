@@ -59,7 +59,7 @@ class UnsubscribeLinkReachesControllerIntegrationTest {
     private static final String API_ORIGIN = "https://api-staging.olajay.co.uk";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_test")
             .withUsername("test")
             .withPassword("test");
