@@ -165,6 +165,31 @@ class EmailTemplateRendererTest {
                 "the plain-text path stays unescaped (no markup context)");
     }
 
+    @Test
+    @DisplayName("G-37-6 — a reason that already ends in a full stop is stated with one full stop, text and html; "
+            + "a reason without one still gains exactly one, outside the strong element")
+    void onboardingReasonEndingInAFullStopHasOneFullStop() {
+        String reason = "2 product(s) are missing required allergen/durability data: Puff Puff, Zobo. "
+                + "Each product needs a durability type, a shelf life, and an ingredients list.";
+        RenderedEmail ended = renderer.render(
+                "onboarding.state.changed", RecipientRole.VENDOR, Map.of("reason", reason), UNSUB);
+
+        assertTrue(ended.text().contains(reason + " Open your dashboard"),
+                "text: the reason's own full stop ends the sentence, then the next one starts");
+        assertTrue(ended.html().contains("list.</strong> Open your dashboard"),
+                "html: no second full stop after the strong element");
+        assertFalse(ended.text().contains(".."), "text must not contain a double full stop");
+        assertFalse(ended.html().contains("..") || ended.html().contains(".</strong>."),
+                "html must not contain a double full stop");
+
+        RenderedEmail plain = renderer.render(
+                "onboarding.state.changed", RecipientRole.VENDOR,
+                Map.of("reason", "Manual review required: business verification pending"), UNSUB);
+        assertTrue(plain.text().contains("pending. Open your dashboard"), "text: one full stop gained");
+        assertTrue(plain.html().contains("pending</strong>. Open your dashboard"),
+                "html: one full stop gained, outside the strong element");
+    }
+
     // --- issue #279: escaping is the DEFAULT for every HTML-context value ------
 
     @Test

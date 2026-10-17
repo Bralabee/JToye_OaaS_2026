@@ -20,6 +20,7 @@ import apiClient from "@/lib/api-client"
 import { ShopSwitcherProvider } from "@/components/dashboard/shop-switcher-provider"
 import { fetchAllMyShops, fetchMyShops, type MyAccess } from "@/lib/shops-api"
 import { setShopContext } from "@/lib/shop-context"
+import { formatSignedPennies } from "@/lib/finance-api"
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -70,6 +71,8 @@ let listContent: unknown[] = []
 let listTotal = 0
 let exportFails = false
 let summaryStatus = 200
+/** When set, the summary figures the mocked API serves instead of its fixed ones (G-37-6). */
+let summaryOverride: Record<string, unknown> | null = null
 
 function access(over: Partial<MyAccess>): MyAccess {
   return {
@@ -104,12 +107,14 @@ function apiMock(url: string) {
     if (summaryStatus === 403) return forbidden()
     return Promise.resolve({
       data: {
-        totalRevenuePennies: 4500,
-        totalExpensesPennies: 0,
-        netAmountPennies: 4500,
-        totalVatPennies: 750,
-        transactionCount: 3,
-        vatBreakdown: [],
+        ...(summaryOverride ?? {
+          totalRevenuePennies: 4500,
+          totalExpensesPennies: 0,
+          netAmountPennies: 4500,
+          totalVatPennies: 750,
+          transactionCount: 3,
+          vatBreakdown: [],
+        }),
         scope: scopeFor(url),
       },
     })
@@ -164,6 +169,7 @@ beforeEach(() => {
   listTotal = 0
   exportFails = false
   summaryStatus = 200
+  summaryOverride = null
   mockedApiClient.get.mockImplementation(apiMock as never)
   mockedFetchAllMyShops.mockResolvedValue(SHOPS as never)
 })
@@ -408,6 +414,112 @@ describe("Export CSV (UI-SPEC § B5 'Export')", () => {
 
     await waitFor(() => expect(downloads).toEqual([SERVER_FILENAME]))
     expect(await screen.findByText("No transactions in this range")).toBeInTheDocument()
+  })
+})
+
+/*
+ * G-37-6 defect 1 (UAT test 6): at 768 px beside the 256 px sidebar the stat cards were
+ * about 98 px wide, so "£400.40" was painted under the next card and read "£400.4". The
+ * columns were keyed on the VIEWPORT (md:grid-cols-4); what the figures need is the grid's
+ * OWN width, so the grids are container-query grids now.
+ *
+ * jsdom has no layout: these tests assert what jsdom can observe — the declarations
+ * (container on the parent, container variants on the grid, no viewport-keyed column
+ * token), the whole formatted text, and the figure classes. Whether the declared columns
+ * hold the figures at 390/768/1024/1280 is measured live in Chrome by 37-59, and whether
+ * Tailwind EMITS each container rule is checked against the built stylesheet.
+ */
+describe("Stat cards and VAT breakdown fit their own box (G-37-6)", () => {
+  // The declared bound: the widest figure under a million pounds, signed.
+  const BOUND = 99_999_999
+  const BOUND_SUMMARY = {
+    totalRevenuePennies: BOUND,
+    totalExpensesPennies: BOUND,
+    netAmountPennies: -BOUND,
+    totalVatPennies: BOUND,
+    transactionCount: 12,
+    vatBreakdown: [
+      { vatRate: "STANDARD", totalAmountPennies: BOUND, totalVatPennies: 16_666_666, count: 4 },
+      { vatRate: "REDUCED", totalAmountPennies: -BOUND, totalVatPennies: -4_761_904, count: 3 },
+      { vatRate: "ZERO", totalAmountPennies: BOUND, totalVatPennies: 0, count: 3 },
+      { vatRate: "EXEMPT", totalAmountPennies: BOUND, totalVatPennies: 0, count: 2 },
+    ],
+  }
+
+  const VIEWPORT_PREFIX = /^(sm|md|lg|xl|2xl):/
+  const tokens = (el: Element) => el.className.split(/\s+/).filter(Boolean)
+  const viewportTokens = (el: Element) => tokens(el).filter((t) => VIEWPORT_PREFIX.test(t))
+  const containerWidths = (el: Element) =>
+    Array.from(new Set(Array.from(el.className.matchAll(/\(min-width:(\d+(?:\.\d+)?)rem\)/g), (m) => m[1])))
+
+  async function renderAtBound() {
+    summaryOverride = BOUND_SUMMARY
+    renderFinance(access({ groupAdmin: true, grantedShopIds: null }), null)
+    await waitFor(() => expect(banner()).toHaveTextContent("Showing all shops"))
+  }
+
+  it("stat grid: columns from its own width (28rem two, 57rem four), no viewport-keyed column token", async () => {
+    await renderAtBound()
+
+    // Found by structure first, so on a tree without the test id the failure names the
+    // viewport tokens it found rather than only "no element".
+    const grid = screen.getByText("Revenue").closest(".grid") as HTMLElement
+    expect(grid).not.toBeNull()
+    expect(viewportTokens(grid)).toEqual([])
+    expect(grid.getAttribute("data-testid")).toBe("finance-stat-grid")
+    expect(grid).toHaveClass(
+      "grid",
+      "grid-cols-1",
+      "[@container_(min-width:28rem)]:grid-cols-2",
+      "[@container_(min-width:57rem)]:grid-cols-4"
+    )
+    expect(containerWidths(grid)).toEqual(["28", "57"])
+    expect(grid.parentElement).toHaveClass("[container-type:inline-size]")
+  })
+
+  it("VAT grid: columns from its card's width (27rem two, 54rem four); each tile's text column can shrink", async () => {
+    await renderAtBound()
+
+    const grid = screen.getByText("Standard").closest(".grid") as HTMLElement
+    expect(grid).not.toBeNull()
+    expect(viewportTokens(grid)).toEqual([])
+    expect(grid.getAttribute("data-testid")).toBe("finance-vat-grid")
+    expect(grid).toHaveClass(
+      "grid",
+      "grid-cols-1",
+      "[@container_(min-width:27rem)]:grid-cols-2",
+      "[@container_(min-width:54rem)]:grid-cols-4"
+    )
+    expect(containerWidths(grid)).toEqual(["27", "54"])
+    expect(grid.parentElement).toHaveClass("[container-type:inline-size]")
+
+    expect(grid.children).toHaveLength(4)
+    for (const label of ["Standard", "Reduced", "Zero", "Exempt"]) {
+      const textColumn = within(grid).getByText(label).parentElement as HTMLElement
+      expect(textColumn).toHaveClass("min-w-0", "flex-1")
+    }
+  })
+
+  it("amounts: every stat and VAT figure is the whole formatted text, tabular, with a wrap safety net", async () => {
+    await renderAtBound()
+
+    const amounts = screen.getAllByTestId("finance-amount")
+    expect(amounts.map((a) => a.textContent)).toEqual([
+      formatSignedPennies(BOUND),
+      formatSignedPennies(BOUND),
+      formatSignedPennies(-BOUND),
+      formatSignedPennies(BOUND),
+      formatSignedPennies(BOUND),
+      formatSignedPennies(-BOUND),
+      formatSignedPennies(BOUND),
+      formatSignedPennies(BOUND),
+    ])
+    // The bound, spelled out once, so a formatter change cannot move both sides together.
+    expect(formatSignedPennies(-BOUND)).toBe("−£999,999.99")
+    for (const amount of amounts) {
+      expect(amount).toHaveClass("tabular-nums", "[overflow-wrap:anywhere]")
+      expect(amount.className).not.toMatch(/\btruncate\b/)
+    }
   })
 })
 

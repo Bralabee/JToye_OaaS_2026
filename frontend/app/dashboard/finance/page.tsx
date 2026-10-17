@@ -226,11 +226,12 @@ export default function FinancePage() {
    * decision, 2026-08-29). It is declared on EVERY render branch below, not just
    * the loaded one: a branch without it is an undeclared first paint.
    *
-   * COVERAGE BOUNDARY, stated rather than implied: this page has no mounted page
-   * test, so none of the three declarations below is asserted in jsdom. They are
-   * covered by plan 35-10's static gate and by a browser spec in plan 35-08 that
-   * no current tree executes (#683 — the nightly lane is dark). Nothing on a
-   * pull request exercises them.
+   * COVERAGE BOUNDARY, stated rather than implied: `__tests__/finance-scope.test.tsx`
+   * (37-12) mounts this page inside the real ShopSwitcherProvider and asserts the
+   * declarations its branches reach — the scope banner, the refusal states, and the
+   * stat and VAT grid declarations (G-37-6, 37-58). jsdom has no layout, so it proves
+   * the declarations and the whole figure text, never the widths: the live width proof
+   * at 390/768/1024/1280 is 37-59's browser spec, plus plan 35-10's static gate.
    */
   if (gate === "wait" || (gate === "fetch" && loading)) {
     return (
@@ -326,70 +327,101 @@ export default function FinancePage() {
         </p>
       )}
 
-      {/* Summary Cards */}
+      {/*
+        Summary Cards. G-37-6 defect 1 (UAT test 6): the columns were keyed on the VIEWPORT
+        (four from md), so at 768 beside the 256 px sidebar each card was about 98 px wide and
+        "£400.40" was painted under the next card. The motion wrapper is now an inline-size
+        container and the grid chooses its columns from that width.
+
+        Derivation, so the thresholds are not magic: the declared bound is
+        formatSignedPennies(-99_999_999) = "−£999,999.99", the widest figure under a million
+        pounds. Measured in Chrome on the rebuilt runtime (37-59): that figure's max-content is
+        164 px at text-2xl bold tabular, so a card needs 164 + 48 px padding + 2 px border =
+        214 px. With gap-4 (16 px) two columns need 2 x 214 + 16 = 444 px (27.75rem -> 28rem)
+        and four need 4 x 214 + 48 = 904 px (56.5rem -> 57rem). The first estimate (27rem/55rem)
+        wrapped "−£999,999.99" onto two lines with the container exactly at each threshold
+        (e2e/screens-copy-uat.spec.ts, finance-edge-*). Beyond the bound a figure
+        wraps inside its own card (overflow-wrap) instead of being painted under its neighbour.
+        Every class below is a complete literal: Tailwind emits only whole names it reads.
+      */}
       {summary && (
         <m.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid gap-4 md:grid-cols-4"
+          className="[container-type:inline-size]"
         >
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Revenue</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-700">
-                {formatPennies(summary.totalRevenuePennies)}
-              </div>
-            </CardContent>
-          </Card>
+          <div
+            data-testid="finance-stat-grid"
+            className="grid grid-cols-1 gap-4 [@container_(min-width:28rem)]:grid-cols-2 [@container_(min-width:57rem)]:grid-cols-4"
+          >
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Revenue</CardTitle>
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-amount"
+                  className="text-2xl font-bold tabular-nums text-green-700 [overflow-wrap:anywhere]"
+                >
+                  {formatPennies(summary.totalRevenuePennies)}
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Expenses</CardTitle>
-              <TrendingDown className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-700">
-                {formatPennies(summary.totalExpensesPennies)}
-              </div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Expenses</CardTitle>
+                <TrendingDown className="h-4 w-4 text-red-600" />
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-amount"
+                  className="text-2xl font-bold tabular-nums text-red-700 [overflow-wrap:anywhere]"
+                >
+                  {formatPennies(summary.totalExpensesPennies)}
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Net</CardTitle>
-              <Banknote className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div
-                className={`text-2xl font-bold ${
-                  summary.netAmountPennies >= 0
-                    ? "text-green-700"
-                    : "text-red-700"
-                }`}
-              >
-                {formatPennies(summary.netAmountPennies)}
-              </div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Net</CardTitle>
+                <Banknote className="h-4 w-4 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-amount"
+                  className={`text-2xl font-bold tabular-nums [overflow-wrap:anywhere] ${
+                    summary.netAmountPennies >= 0
+                      ? "text-green-700"
+                      : "text-red-700"
+                  }`}
+                >
+                  {formatPennies(summary.netAmountPennies)}
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total VAT</CardTitle>
-              <Receipt className="h-4 w-4 text-amber-700" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-amber-700">
-                {formatPennies(summary.totalVatPennies)}
-              </div>
-              <p className="text-xs text-slate-500 mt-1">
-                {summary.transactionCount} transaction{summary.transactionCount !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total VAT</CardTitle>
+                <Receipt className="h-4 w-4 text-amber-700" />
+              </CardHeader>
+              <CardContent>
+                <div
+                  data-testid="finance-amount"
+                  className="text-2xl font-bold tabular-nums text-amber-700 [overflow-wrap:anywhere]"
+                >
+                  {formatPennies(summary.totalVatPennies)}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {summary.transactionCount} transaction{summary.transactionCount !== 1 ? "s" : ""}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </m.div>
       )}
 
@@ -405,8 +437,18 @@ export default function FinancePage() {
               <CardTitle>VAT Breakdown</CardTitle>
               <CardDescription>Revenue by VAT rate category</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/*
+              Same shape as the stat grid, on the card's own content box (G-37-6): a tile needs
+              badge + gap + the bound at text-lg + padding + border = 205 px (measured, 37-59).
+              With gap-3 (12 px) two columns need 2 x 205 + 12 = 422 px (26.375rem -> 27rem) and
+              four need 4 x 205 + 36 = 856 px (53.5rem -> 54rem); 26rem/52rem wrapped the bound
+              figure at the threshold. Complete literals only.
+            */}
+            <CardContent className="[container-type:inline-size]">
+              <div
+                data-testid="finance-vat-grid"
+                className="grid grid-cols-1 gap-3 [@container_(min-width:27rem)]:grid-cols-2 [@container_(min-width:54rem)]:grid-cols-4"
+              >
                 {summary.vatBreakdown.map((vat) => {
                   const config = vatRateConfig[vat.vatRate]
                   return (
@@ -417,9 +459,12 @@ export default function FinancePage() {
                       <Badge className={`${config.color} text-white`}>
                         {config.rate}
                       </Badge>
-                      <div className="flex-1">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">{config.label}</p>
-                        <p className="text-lg font-bold">
+                        <p
+                          data-testid="finance-amount"
+                          className="text-lg font-bold tabular-nums [overflow-wrap:anywhere]"
+                        >
                           {formatPennies(vat.totalAmountPennies)}
                         </p>
                         <p className="text-xs text-slate-500">

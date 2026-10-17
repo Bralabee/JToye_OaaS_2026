@@ -7,13 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Phase 39-05 & 39-06: PostgreSQL 18.6 & Redis 8.10 Upgrade (#939) — 2026-10-16
+### Phase 39-05 & 39-06: PostgreSQL 18.6 & Redis 8.10 Upgrade (#939) — 2026-10-17
 
 Upgrades the relational datastore (`postgres:15` -> `postgres:18-alpine` / `postgres:18-bookworm`, `18.6`) and distributed cache (`redis:7-alpine` -> `redis:8.10-alpine`, `8.10.2`) across compose, CI, backup tooling, K8s manifests/goldens, and all 214 Testcontainers suites, completing Phase 39 (`10/10` plans).
 
 - **PostgreSQL 18.6 runtime, backup tooling & 10-site parity gate (`39-05`).** Moves `docker-compose.full-stack.yml`, `infra/docker-compose.yml`, and `.github/workflows/ci-cd.yaml` to `postgres:18-alpine` (with `/var/lib/postgresql` volume target for PG 18's `/var/lib/postgresql/18/docker` layout), updates `infra/backups/Dockerfile` (`FROM postgres:18-bookworm`, build tag `ghcr.io/bralabee/jtoye-pg-backup:18-blob`), `k8s/base/pg-backup-cronjob.yaml`, `k8s/goldens/{staging,production}.yaml`, and `scripts/check-backup-restore-drill.sh`, and expands `scripts/gates/postgres-major-parity.conf` from 8 to 10 sites.
-- **Testcontainers PostgreSQL 18 `NOSUPERUSER` RLS compatibility (`core-java/src/test/java/uk/jtoye/core/testsupport/IntegrationTestSupport.java`).** Updates all 206 `PostgreSQLContainer` suites to `"postgres:18-alpine"` and adds `IntegrationTestSupport.ensureDowngradableTestRole` to swap the `initdb` bootstrap superuser (`oid = 10`, which PostgreSQL 16+/18 forbids downgrading via `ALTER ROLE ... NOSUPERUSER`) with an identically named non-bootstrap superuser (`oid > 10`) before the first JDBC connection opens, preserving all 30+ `NOSUPERUSER` RLS integration test assertions.
+- **Testcontainers PostgreSQL 18 `NOSUPERUSER` RLS compatibility (`core-java/src/test/java/uk/jtoye/core/testsupport/IntegrationTestSupport.java`).** Updates all 206 `PostgreSQLContainer` suites to `"postgres:18-alpine"` and adds `IntegrationTestSupport.ensureDowngradableTestRole` to swap the `initdb` bootstrap superuser (`oid = 10`, which PostgreSQL 16+/18 forbids downgrading via `ALTER ROLE ... NOSUPERUSER`) with an identically named non-bootstrap superuser (`oid > 10`) and migrate `pg_default_acl` (`defaclrole = 10`) before the first JDBC connection opens, preserving all 30+ `NOSUPERUSER` RLS integration test assertions.
 - **Redis 8.10 upgrade (`39-06`).** Moves `docker-compose.full-stack.yml`, `infra/dependency-horizons.yaml` (`eol_cycle: "8.10"`, `eol_date: "false"`), and all 8 Redis Testcontainers suites to `redis:8.10-alpine` with Lettuce 7, Spring Cache (`v4:`), and Bucket4j parity verified.
+
+### Phase 37: UAT gap G-37-6 (#941) — 2026-10-17
+
+Closes UAT test 6's gap G-37-6 (plans 37-56 to 37-59). Frontend and email copy only: no migration and no API change.
+
+- **Finance figures (`frontend/app/dashboard/finance/page.tsx`).** The stat and VAT grids pick their columns from their own container width, not the viewport (stat 28rem/57rem, VAT 27rem/54rem), sized to the widest allowed figure "−£999,999.99". Figures stopped painting under the next card at 768 px beside the sidebar. They use `tabular-nums` with an overflow-wrap fallback.
+- **One sentence-end rule per language (`frontend/lib/sentence-end.ts`, `uk.jtoye.core.common.Sentences`).** A name that already ends in a full stop no longer gets a second one ("Peckham Jollof Co.."). A parity test holds the two implementations equal. The rule covers the checkout allergen panel, order page, void and joined-toast sentences, copy-result, remove-access, the staff invitation, four customer status-email leads, the footer and the onboarding reason.
+- **Pagination (`frontend/components/ui/pagination.tsx`).** Controls are chosen from the component's own width (19/21/27rem tiers), previous/next always show, and every control is 44 × 44 px. The control row no longer overflows its card at 375/390 px.
+- **Void dialog.** Proven to fit at 390, 768 and 1280 px through the real opener. No change.
+- **Live proof (`frontend/e2e/screens-copy-uat.spec.ts`).** Five tests, each with an instrument arm that must fail on every run. They failed on the pre-fix runtime and passed after a full rebuild.
 
 ### Phase 39-04: Keycloak 26.8.1 Upgrade (#937) — 2026-10-16
 
