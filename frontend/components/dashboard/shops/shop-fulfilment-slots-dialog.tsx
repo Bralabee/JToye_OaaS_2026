@@ -77,6 +77,7 @@ export function ShopFulfilmentSlotsDialog({
 
   useEffect(() => {
     if (!open || !shop) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: reset-on-open for a controlled surface; one post-open render is the contract
     setWaLink(null)
     setError(null)
     void loadSlots()

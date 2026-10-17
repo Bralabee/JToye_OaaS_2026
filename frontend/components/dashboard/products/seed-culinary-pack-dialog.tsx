@@ -55,6 +55,7 @@ export function SeedCulinaryPackDialog({
 
   useEffect(() => {
     if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: reset-on-open for a controlled surface; one post-open render is the contract
     setResult(null)
     setError(null)
     setSelectedPackIds([])
