@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Mail STARTTLS Property Spelled the Way JavaMail Reads It (DEF-29-6) (#952) — 2026-10-17
+
+- **`spring.mail.properties.mail.smtp.starttls.enable` (`application.yml`, `MailStartTlsPropertyTest`).** The key was spelled `starttls.enabled`. JavaMail reads only `.enable`, so STARTTLS was silently off for every real SMTP server, while `SMTP_STARTTLS` / k8s `smtp.starttls: "true"` looked configurable. A new unit test runs the shipped `application.yml` through `MailSenderAutoConfiguration` and asserts on the sender's JavaMail properties: RED on the old spelling (`but was: null`), GREEN after. Local compose is unchanged (`SMTP_STARTTLS=false` for Mailhog).
+
 ### Phase 30: Live Stripe Test-Mode Billing Tiers, Connect Payouts, Phone OTP & Payment Links (#61, #462) (#949) — 2026-10-17
 
 Closes Phase 30 (`PAY-01..04`, `GAP-GTM-05`, `#61`, `#462`) with `V88__billing_tiers_and_phone_verification.sql`, recurring SaaS billing tiers, customer phone OTP verification, single-use Stripe payment links, and live Stripe Test-Mode API proofs (`30-live-stripe-api-proofs.json`, `30-VERIFICATION.md`).
