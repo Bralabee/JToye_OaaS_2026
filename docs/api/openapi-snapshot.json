@@ -611,6 +611,92 @@
         "type" : "object"
       },
       "BeanFactory" : { },
+      "BillingSubscriptionDto" : {
+        "properties" : {
+          "billingPlanMode" : {
+            "enum" : [
+              "SAAS_HYBRID_STANDARD",
+              "SAAS_FLAT_PREDICTABLE",
+              "BATCH_PAYG_STARTER",
+              "WALK_SETUP_STEPDOWN"
+            ],
+            "type" : "string"
+          },
+          "cancelAtPeriodEnd" : {
+            "type" : "boolean"
+          },
+          "currentPeriodEnd" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "effectiveFeeBps" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "latestStripeInvoiceId" : {
+            "type" : "string"
+          },
+          "monthlyAmountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "monthlyFeeCapPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "monthlyFeeChargedPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "stripeCustomerId" : {
+            "type" : "string"
+          },
+          "stripeSubscriptionId" : {
+            "type" : "string"
+          },
+          "subscriptionStatus" : {
+            "enum" : [
+              "NONE",
+              "ACTIVE",
+              "TRIALING",
+              "PAST_DUE",
+              "CANCELED"
+            ],
+            "type" : "string"
+          },
+          "tenantId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "walkSetupCompleted" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "BillingSubscriptionRequest" : {
+        "properties" : {
+          "paymentMethodId" : {
+            "type" : "string"
+          },
+          "planMode" : {
+            "enum" : [
+              "SAAS_HYBRID_STANDARD",
+              "SAAS_FLAT_PREDICTABLE",
+              "BATCH_PAYG_STARTER",
+              "WALK_SETUP_STEPDOWN"
+            ],
+            "type" : "string"
+          },
+          "testClockId" : {
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "planMode"
+        ],
+        "type" : "object"
+      },
       "BulkCancelRequest" : {
         "description" : "Which orders to reject, and why. The reason is kept on each order and never shown to the customer.",
         "properties" : {
@@ -695,6 +781,28 @@
               "OTHER"
             ],
             "example" : "CUSTOMER_REQUEST",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ChallengeResult" : {
+        "properties" : {
+          "challengeId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "channel" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "phoneNormalized" : {
+            "type" : "string"
+          },
+          "testPreviewOtp" : {
             "type" : "string"
           }
         },
@@ -2900,6 +3008,57 @@
         },
         "type" : "object"
       },
+      "IssuePaymentLinkRequest" : {
+        "properties" : {
+          "purpose" : {
+            "type" : "string"
+          },
+          "ttlMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "IssuedPaymentLinkDto" : {
+        "properties" : {
+          "amountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "clientSecret" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "paymentUrl" : {
+            "type" : "string"
+          },
+          "purpose" : {
+            "type" : "string"
+          },
+          "stripePaymentIntentId" : {
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "JspConfigDescriptor" : {
         "properties" : {
           "jspPropertyGroups" : {
@@ -4883,6 +5042,36 @@
         },
         "type" : "object"
       },
+      "RedeemedPaymentLinkDto" : {
+        "properties" : {
+          "amountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "clientSecret" : {
+            "type" : "string"
+          },
+          "linkId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "purpose" : {
+            "type" : "string"
+          },
+          "stripePaymentIntentId" : {
+            "type" : "string"
+          },
+          "usedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "RedirectView" : {
         "properties" : {
           "applicationContext" : {
@@ -5206,6 +5395,21 @@
           "addressLines",
           "entityType",
           "legalName"
+        ],
+        "type" : "object"
+      },
+      "SendPhoneVerificationRequest" : {
+        "properties" : {
+          "channel" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "phone"
         ],
         "type" : "object"
       },
@@ -6565,6 +6769,38 @@
         },
         "type" : "object"
       },
+      "VerifyPhoneOtpRequest" : {
+        "properties" : {
+          "otp" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "phone" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "otp",
+          "phone"
+        ],
+        "type" : "object"
+      },
+      "VerifyResult" : {
+        "properties" : {
+          "phoneNormalized" : {
+            "type" : "string"
+          },
+          "verified" : {
+            "type" : "boolean"
+          },
+          "verifiedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "VoidOrderRequest" : {
         "description" : "Why the order is being voided.",
         "properties" : {
@@ -7513,6 +7749,129 @@
         "summary" : "Update announcement",
         "tags" : [
           "Announcements"
+        ]
+      }
+    },
+    "/api/v1/billing/subscription" : {
+      "get" : {
+        "operationId" : "getSubscription",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get current tenant billing plan and subscription status",
+        "tags" : [
+          "Billing"
+        ]
+      },
+      "post" : {
+        "operationId" : "subscribeOrUpdate",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BillingSubscriptionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Subscribe or switch the tenant's recurring billing plan (GAP-GTM-05 / PAY-02 / D-B9)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/api/v1/billing/subscription/cancel" : {
+      "post" : {
+        "operationId" : "cancelSubscription",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "immediate",
+            "required" : false,
+            "schema" : {
+              "default" : true,
+              "type" : "boolean"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Self-serve subscription cancellation with zero exit fee (B8)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/api/v1/billing/subscription/complete-walk-setup" : {
+      "post" : {
+        "operationId" : "completeWalkSetup",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Complete WALK_SETUP_STEPDOWN onboarding book and step down from £195/mo to 2.5% capped at £39/mo (B9 / D-B9)",
+        "tags" : [
+          "Billing"
         ]
       }
     },
@@ -10968,6 +11327,53 @@
         ]
       }
     },
+    "/api/v1/orders/{orderId}/payment-links" : {
+      "post" : {
+        "description" : "Requires the customer's phone number on the order to be verified (#461 / #462). Supports UPFRONT, DEPOSIT, and BALANCE payment links and revokes any prior unused link for the same order and purpose.",
+        "operationId" : "issuePaymentLink",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "orderId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/IssuePaymentLinkRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Issue a single-use expiring payment link for an order",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
     "/api/v1/orders/{orderId}/refund" : {
       "post" : {
         "description" : "Creates a Stripe refund and records it. Idempotency-Key header recommended; same key returns the same refund without invoking Stripe twice.",
@@ -12984,6 +13390,38 @@
         ]
       }
     },
+    "/api/v1/public/payment-links/{token}/redeem" : {
+      "post" : {
+        "description" : "Marks the payment link token as used (single-use) and returns the live Stripe PaymentIntent client secret (#461 / PAY-04).",
+        "operationId" : "redeemPaymentLink",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RedeemedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Redeem a single-use expiring payment link",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/payments/webhook" : {
       "post" : {
         "description" : "Handles Stripe webhook events. Verifies signature before processing.",
@@ -13300,6 +13738,90 @@
           }
         },
         "summary" : "Place a guest order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/shops/{slug}/phone-verification/send" : {
+      "post" : {
+        "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
+        "operationId" : "sendPhoneVerification",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SendPhoneVerificationRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChallengeResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Send customer phone OTP verification challenge",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/shops/{slug}/phone-verification/verify" : {
+      "post" : {
+        "description" : "Verifies a 6-digit OTP challenge for the shop's tenant and marks matching customer and open order records phone_verified = true (#462).",
+        "operationId" : "verifyPhoneOtp_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyPhoneOtpRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/VerifyResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Verify customer phone OTP code",
         "tags" : [
           "Public Storefront"
         ]
@@ -15734,6 +16256,129 @@
         ]
       }
     },
+    "/billing/subscription" : {
+      "get" : {
+        "operationId" : "getSubscription_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get current tenant billing plan and subscription status",
+        "tags" : [
+          "Billing"
+        ]
+      },
+      "post" : {
+        "operationId" : "subscribeOrUpdate_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BillingSubscriptionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Subscribe or switch the tenant's recurring billing plan (GAP-GTM-05 / PAY-02 / D-B9)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/billing/subscription/cancel" : {
+      "post" : {
+        "operationId" : "cancelSubscription_1",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "immediate",
+            "required" : false,
+            "schema" : {
+              "default" : true,
+              "type" : "boolean"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Self-serve subscription cancellation with zero exit fee (B8)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/billing/subscription/complete-walk-setup" : {
+      "post" : {
+        "operationId" : "completeWalkSetup_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Complete WALK_SETUP_STEPDOWN onboarding book and step down from £195/mo to 2.5% capped at £39/mo (B9 / D-B9)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
     "/health" : {
       "get" : {
         "operationId" : "health",
@@ -15947,6 +16592,38 @@
           }
         },
         "summary" : "Create remaining-balance PaymentIntent for a deposit order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/payment-links/{token}/redeem" : {
+      "post" : {
+        "description" : "Marks the payment link token as used (single-use) and returns the live Stripe PaymentIntent client secret (#461 / PAY-04).",
+        "operationId" : "redeemPaymentLink_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RedeemedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Redeem a single-use expiring payment link",
         "tags" : [
           "Public Storefront"
         ]
@@ -16268,6 +16945,90 @@
           }
         },
         "summary" : "Place a guest order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/shops/{slug}/phone-verification/send" : {
+      "post" : {
+        "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
+        "operationId" : "sendPhoneVerification_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SendPhoneVerificationRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChallengeResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Send customer phone OTP verification challenge",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/shops/{slug}/phone-verification/verify" : {
+      "post" : {
+        "description" : "Verifies a 6-digit OTP challenge for the shop's tenant and marks matching customer and open order records phone_verified = true (#462).",
+        "operationId" : "verifyPhoneOtp",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyPhoneOtpRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/VerifyResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Verify customer phone OTP code",
         "tags" : [
           "Public Storefront"
         ]
@@ -16615,6 +17376,10 @@
     {
       "description" : "Announcement management endpoints",
       "name" : "Announcements"
+    },
+    {
+      "description" : "Plan-configurable recurring subscription billing & fee metering",
+      "name" : "Billing"
     },
     {
       "description" : "Integrator API credentials: issue, list, rotate, revoke (Group admin only)",
