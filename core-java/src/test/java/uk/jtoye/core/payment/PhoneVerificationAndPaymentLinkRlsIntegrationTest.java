@@ -196,4 +196,39 @@ class PhoneVerificationAndPaymentLinkRlsIntegrationTest {
                 .isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("ck_tenants_billing_plan_mode");
     }
+
+    @Test
+    @DisplayName("order_payment_links_public_select requires matching app.payment_link_token_sha256 GUC when anonymous")
+    void anonymousPublicSelectRequiresMatchingTokenGuc() {
+        UUID linkA = UUID.randomUUID();
+        String tokenHash = "e".repeat(64);
+        Timestamp expires = Timestamp.from(Instant.now().plus(15, ChronoUnit.MINUTES));
+
+        TenantContext.set(tenantA);
+        jdbc.execute("SET LOCAL ROLE " + RLS_TEST_ROLE);
+        jdbc.update("INSERT INTO order_payment_links " +
+                        "(id, tenant_id, shop_id, order_id, token_sha256, stripe_payment_intent_id, amount_pennies, purpose, " +
+                        "phone_verified, expires_at, created_at) " +
+                        "VALUES (?, ?, ?, ?, ?, 'pi_test_v88_pub', 3500, 'UPFRONT', true, ?, now())",
+                linkA, tenantA, shopA, orderA, tokenHash, expires);
+
+        // Switch to anonymous storefront session (current_tenant_id() IS NULL)
+        TenantContext.clear();
+        jdbc.execute("SELECT set_config('app.current_tenant_id', '', true)");
+        jdbc.execute("SELECT set_config('app.payment_link_token_sha256', '', true)");
+
+        Integer countWithoutTokenGuc = jdbc.queryForObject(
+                "SELECT count(*) FROM order_payment_links WHERE id = ?", Integer.class, linkA);
+        assertThat(countWithoutTokenGuc).isZero();
+
+        jdbc.execute("SELECT set_config('app.payment_link_token_sha256', '" + "f".repeat(64) + "', true)");
+        Integer countWithWrongTokenGuc = jdbc.queryForObject(
+                "SELECT count(*) FROM order_payment_links WHERE id = ?", Integer.class, linkA);
+        assertThat(countWithWrongTokenGuc).isZero();
+
+        jdbc.execute("SELECT set_config('app.payment_link_token_sha256', '" + tokenHash + "', true)");
+        Integer countWithMatchingTokenGuc = jdbc.queryForObject(
+                "SELECT count(*) FROM order_payment_links WHERE id = ?", Integer.class, linkA);
+        assertThat(countWithMatchingTokenGuc).isEqualTo(1);
+    }
 }

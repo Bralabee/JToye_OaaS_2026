@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
@@ -308,7 +309,9 @@ public class PaymentService {
         if (routingOpt.isPresent()) {
             SettlementRoutingDecision decision = routingOpt.get();
             builder.putMetadata("settlement_mode", decision.mode().name());
-            long fee = stripeConnectService.applicationFeePennies(balanceDue);
+            // A-2 (PR #949 round 1): the balance fee honours the tenant's BillingPlanMode
+            // (0.5% / 0% / 6% / walk-capped), never the global stripe.platform-fee-bps.
+            long fee = stripeConnectService.applicationFeePennies(order.getTenantId(), balanceDue);
             if (fee > 0) {
                 builder.setApplicationFeeAmount(fee);
             }
@@ -336,6 +339,26 @@ public class PaymentService {
     @CircuitBreaker(name = "stripe")
     public String retrieveClientSecret(String paymentIntentId) throws StripeException {
         return PaymentIntent.retrieve(paymentIntentId).getClientSecret();
+    }
+
+    /**
+     * Retrieve the client secret of an EXISTING PaymentIntent that belongs to {@code order}.
+     * A-1 (PR #949 round 1): direct-charge and split-deposit intents live on the vendor's
+     * connected account, so they must be retrieved with the {@code Stripe-Account} header —
+     * a platform-account retrieve answers 404 {@code resource_missing}.
+     */
+    @CircuitBreaker(name = "stripe")
+    public String retrieveClientSecret(Order order, String paymentIntentId) throws StripeException {
+        if (order != null) {
+            Optional<SettlementRoutingDecision> routing = stripeConnectService.resolveSettlementRouting(order);
+            if (routing.isPresent() && routing.get().usesDirectChargeHeader()) {
+                RequestOptions options = RequestOptions.builder()
+                        .setStripeAccount(routing.get().connectedAccountId())
+                        .build();
+                return PaymentIntent.retrieve(paymentIntentId, options).getClientSecret();
+            }
+        }
+        return retrieveClientSecret(paymentIntentId);
     }
 
     /**

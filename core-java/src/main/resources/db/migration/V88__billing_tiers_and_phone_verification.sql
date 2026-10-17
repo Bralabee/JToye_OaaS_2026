@@ -175,10 +175,14 @@ DO $$ BEGIN
         WHERE tablename = 'order_payment_links'
           AND policyname = 'order_payment_links_public_select'
     ) THEN
+        -- A-3 (PR #949 round 1): an anonymous session sees ONLY the row whose token hash
+        -- it presented via app.payment_link_token_sha256 — never every link of every
+        -- published shop. NULLIF makes an unset/empty GUC match nothing.
         CREATE POLICY order_payment_links_public_select ON order_payment_links
             FOR SELECT
             USING (
                 current_tenant_id() IS NULL
+                AND token_sha256 = NULLIF(current_setting('app.payment_link_token_sha256', true), '')
                 AND EXISTS (
                     SELECT 1 FROM shops s
                     WHERE s.id = order_payment_links.shop_id

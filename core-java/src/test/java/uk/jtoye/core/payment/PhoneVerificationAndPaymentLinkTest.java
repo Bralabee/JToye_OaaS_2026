@@ -124,6 +124,7 @@ class PhoneVerificationAndPaymentLinkTest {
         when(challengeRepository.findTopByTenantIdAndPhoneNormalizedAndVerifiedAtIsNullOrderByCreatedAtDesc(
                 tenantId, "+447700900123"))
                 .thenReturn(Optional.of(savedChallenge.get()));
+        lenient().when(challengeRepository.consumeAttemptIfAvailable(any(UUID.class))).thenReturn(1);
 
         Customer customer = new Customer("Ada Lovelace", "ada@example.com");
         customer.setTenantId(tenantId);
@@ -150,6 +151,54 @@ class PhoneVerificationAndPaymentLinkTest {
         assertThat(customer.isPhoneVerified()).isTrue();
         assertThat(customer.getPhoneVerifiedAt()).isNotNull();
         assertThat(openOrder.isPhoneVerified()).isTrue();
+    }
+
+    @Test
+    @DisplayName("A-4: a stale in-memory attempt count cannot bypass max_attempts — the atomic DB claim decides (429)")
+    void verifyOtp_concurrentAttemptsExhausted_atomicClaimRefuses() {
+        PhoneVerificationChallenge stale = new PhoneVerificationChallenge();
+        stale.setId(UUID.randomUUID());
+        stale.setTenantId(tenantId);
+        stale.setPhoneNormalized("+447700900777");
+        stale.setOtpSha256(PhoneVerificationService.sha256Hex("123456"));
+        stale.setMaxAttempts(5);
+        stale.setAttempts(0); // this thread read 0; parallel threads have since used all 5
+        stale.setExpiresAt(OffsetDateTime.now().plusMinutes(10));
+
+        when(challengeRepository.findTopByTenantIdAndPhoneNormalizedAndVerifiedAtIsNullOrderByCreatedAtDesc(
+                tenantId, "+447700900777")).thenReturn(Optional.of(stale));
+        when(challengeRepository.consumeAttemptIfAvailable(stale.getId())).thenReturn(0);
+
+        assertThatThrownBy(() -> phoneVerificationService.verifyOtp(tenantId, "+447700900777", "000000"))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                        .isEqualTo(HttpStatus.TOO_MANY_REQUESTS));
+    }
+
+    @Test
+    @DisplayName("A-4: a redemption that loses the atomic single-use claim answers 409, even though it read used_at IS NULL")
+    void redeemPaymentLink_lostAtomicClaim_returnsConflict() {
+        TenantContext.clear();
+        lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
+        OrderPaymentLink link = new OrderPaymentLink();
+        link.setId(UUID.randomUUID());
+        link.setTenantId(tenantId);
+        link.setShopId(shopId);
+        link.setOrderId(orderId);
+        link.setTokenSha256(PhoneVerificationService.sha256Hex("race-token"));
+        link.setPurpose("UPFRONT");
+        link.setAmountPennies(4200L);
+        link.setPhoneVerified(true);
+        link.setExpiresAt(OffsetDateTime.now().plusMinutes(30));
+        // usedAt stays null: this request read the row before the winner's UPDATE committed
+
+        when(linkRepository.findByTokenSha256(link.getTokenSha256())).thenReturn(Optional.of(link));
+        when(linkRepository.markUsedIfUnused(eq(link.getId()), any(OffsetDateTime.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> paymentLinkService.redeemPaymentLink("race-token"))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                        .isEqualTo(HttpStatus.CONFLICT));
     }
 
     @Test
@@ -204,12 +253,24 @@ class PhoneVerificationAndPaymentLinkTest {
         assertThat(order.isPhoneVerified()).isTrue();
         assertThat(order.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
 
-        // 3. Single-use redemption: first call succeeds and stamps used_at; second call fails with 409 CONFLICT
+        // 3. Single-use redemption: clears ambient TenantContext during public lookup (A-3),
+        // atomically marks used via markUsedIfUnused (A-4), and passes Order to retrieveClientSecret
+        // for connected-account routing (A-1); second/concurrent call fails with 409 CONFLICT.
         lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
         OrderPaymentLink savedLink = storedLinks.get(0);
-        when(linkRepository.findByTokenSha256(savedLink.getTokenSha256()))
-                .thenReturn(Optional.of(savedLink));
-        when(paymentService.retrieveClientSecret("pi_live_link_01"))
+        UUID callerAmbientTenant = UUID.randomUUID();
+        TenantContext.set(callerAmbientTenant);
+
+        when(linkRepository.findByTokenSha256(savedLink.getTokenSha256())).thenAnswer(inv -> {
+            assertThat(TenantContext.get())
+                    .as("Public token lookup must run with TenantContext cleared so RLS public policy applies")
+                    .isEmpty();
+            return Optional.of(savedLink);
+        });
+        when(linkRepository.markUsedIfUnused(eq(savedLink.getId()), any(OffsetDateTime.class)))
+                .thenReturn(1)
+                .thenReturn(0);
+        when(paymentService.retrieveClientSecret(order, "pi_live_link_01"))
                 .thenReturn("pi_live_link_01_secret_xyz");
 
         OrderPaymentLinkService.RedeemedPaymentLinkDto redeemed =
@@ -217,7 +278,11 @@ class PhoneVerificationAndPaymentLinkTest {
 
         assertThat(redeemed.clientSecret()).isEqualTo("pi_live_link_01_secret_xyz");
         assertThat(savedLink.getUsedAt()).isNotNull();
+        assertThat(TenantContext.get()).contains(callerAmbientTenant);
 
+        // Reset in-memory usedAt to null to simulate a concurrent thread that read usedAt == null
+        // before markUsedIfUnused returned 0 rows updated
+        savedLink.setUsedAt(null);
         assertThatThrownBy(() -> paymentLinkService.redeemPaymentLink(issued.token()))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> {

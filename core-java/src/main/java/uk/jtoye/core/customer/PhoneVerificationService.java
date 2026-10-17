@@ -177,12 +177,19 @@ public class PhoneVerificationService {
                     "Maximum verification attempts exceeded. Please request a new code.");
         }
 
+        // A-4 (PR #949 round 1): the database decides whether an attempt is left. N parallel
+        // guesses can all read the same in-memory count; only max_attempts of them get a row.
+        if (challengeRepository.consumeAttemptIfAvailable(challenge.getId()) != 1) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Maximum verification attempts exceeded. Please request a new code.");
+        }
         challenge.setAttempts(challenge.getAttempts() + 1);
         byte[] expected = challenge.getOtpSha256().getBytes(StandardCharsets.UTF_8);
         byte[] actual = sha256Hex(otp).getBytes(StandardCharsets.UTF_8);
 
         if (!MessageDigest.isEqual(expected, actual)) {
-            challengeRepository.saveAndFlush(challenge);
+            // The attempt is already committed by the conditional UPDATE above
+            // (noRollbackFor keeps it); never write the in-memory count back.
             throw new IllegalArgumentException("Invalid verification code.");
         }
 

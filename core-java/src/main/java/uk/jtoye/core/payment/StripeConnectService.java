@@ -296,6 +296,22 @@ public class StripeConnectService {
     }
 
     /**
+     * Platform application fee for a connected charge on a tenant identified by UUID,
+     * resolving the {@link Tenant} to honour its {@link uk.jtoye.core.tenant.BillingPlanMode}.
+     */
+    @Transactional(readOnly = true)
+    public long applicationFeePennies(UUID tenantId, long amountPennies) {
+        if (amountPennies <= 0) {
+            return 0L;
+        }
+        if (tenantId == null) {
+            return applicationFeePennies(amountPennies);
+        }
+        Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        return applicationFeePennies(tenant, amountPennies);
+    }
+
+    /**
      * Platform application fee for a connected charge on a specific tenant,
      * honouring the tenant's {@link uk.jtoye.core.tenant.BillingPlanMode}
      * (ADR-0007 §1.4 / GAP-GTM-05, PAY-02, and D-B9 walk cap) before falling

@@ -244,20 +244,28 @@ public class OrderPaymentLinkService {
         }
         String tokenSha256 = PhoneVerificationService.sha256Hex(rawToken.trim());
 
+        // A-3 (PR #949 round 1): the bearer lookup must run tenant-less so the token-scoped
+        // order_payment_links_public_select policy applies. An ambient TenantContext (an
+        // authenticated user of another tenant clicking the link) would otherwise pin the GUC
+        // to the wrong tenant and both policies would hide the row. Restored in finally.
+        UUID previousTenant = TenantContext.get().orElse(null);
+        TenantContext.clear();
+
         Session session = entityManager.unwrap(Session.class);
-        session.doWork(connection -> {
-            try (var stmt = connection.prepareStatement(
-                    "SELECT set_config('app.payment_link_token_sha256', ?, true)")) {
-                stmt.setString(1, tokenSha256);
-                stmt.execute();
-            }
-        });
-
-        OrderPaymentLink link = linkRepository.findByTokenSha256(tokenSha256)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment link not found."));
-
-        TenantContext.set(link.getTenantId());
         try {
+            session.doWork(connection -> {
+                try (var stmt = connection.prepareStatement(
+                        "SELECT set_config('app.current_tenant_id', '', true), "
+                                + "set_config('app.payment_link_token_sha256', ?, true)")) {
+                    stmt.setString(1, tokenSha256);
+                    stmt.execute();
+                }
+            });
+
+            OrderPaymentLink link = linkRepository.findByTokenSha256(tokenSha256)
+                    .orElseThrow(() -> new ResourceNotFoundException("Payment link not found."));
+
+            TenantContext.set(link.getTenantId());
             session.doWork(connection -> {
                 try (var stmt = connection.prepareStatement(
                         "SELECT set_config('app.current_tenant_id', ?, true)")) {
@@ -280,13 +288,22 @@ public class OrderPaymentLinkService {
                         "This payment link has expired.");
             }
 
+            // A-4 (PR #949 round 1): claim atomically. Two concurrent redemptions can both read
+            // used_at IS NULL above; only one conditional UPDATE matches a row.
+            int claimed = linkRepository.markUsedIfUnused(link.getId(), now);
+            if (claimed != 1) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "This single-use payment link has already been used.");
+            }
             link.setUsedAt(now);
-            linkRepository.saveAndFlush(link);
 
             String clientSecret = null;
             if (link.getStripePaymentIntentId() != null && paymentService.isConfigured()) {
+                Order order = orderRepository.findById(link.getOrderId()).orElse(null);
                 try {
-                    clientSecret = paymentService.retrieveClientSecret(link.getStripePaymentIntentId());
+                    // A-1: order-aware retrieve carries the Stripe-Account header for
+                    // direct-charge / split-deposit intents on the vendor's connected account.
+                    clientSecret = paymentService.retrieveClientSecret(order, link.getStripePaymentIntentId());
                 } catch (StripeException e) {
                     log.error("Failed to retrieve Stripe client secret for payment link {}: {}",
                             link.getId(), e.getMessage());
@@ -308,7 +325,11 @@ public class OrderPaymentLinkService {
                     now
             );
         } finally {
-            TenantContext.clear();
+            if (previousTenant != null) {
+                TenantContext.set(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
         }
     }
 
