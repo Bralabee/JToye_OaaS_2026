@@ -6,16 +6,16 @@ current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: planning
 stopped_at: Phase 37 (59/59), Phase 39 (10/10), and ADR-0007 (V87, GAP-GTM-01..04, 06, 07B) complete and merged to main; ready to plan Phase 29
-last_updated: "2026-10-17T11:55:00.000Z"
+last_updated: "2026-10-17T15:00:00.000Z"
 last_activity: 2026-10-17
-last_activity_desc: Phase 37 + Phase 39 + ADR-0007 consolidated on main (V87)
-state_head: 7b4d327d
+last_activity_desc: Planning ledger reconciled — STATE counters, ROADMAP progress table and REQUIREMENTS traceability re-measured from disk
+state_head: efea48f0
 progress:
   total_phases: 20
-  completed_phases: 15
-  total_plans: 257
-  completed_plans: 257
-  percent: 82
+  completed_phases: 17
+  total_plans: 254
+  completed_plans: 254
+  percent: 85
 ---
 
 # Project State
@@ -244,6 +244,22 @@ Wave 3 DONE 2026-09-29: 36-09 k8s Blob + Workload Identity on every target, D-11
 Wave 2 DONE 2026-09-29: 36-06 fail-loud storage config + boot probe asserting #626 container levels (on ApplicationStartedEvent, before the demo seeder), 36-07 D-09 cross-tenant URL delete CLOSED (reproduced first; BLOB-03 complete) + media pipeline proven on unstubbed Azurite, 36-08 pg-backup on blobctl + two-arm restore drill as a nightly gate (never run on a runner yet — WINDOWS.md #2), 36-11 dev DB reseeded per D-04 after owner backup-then-approve (21 seed URLs moved, 1 stale fixture FAILED, 0 old-origin residue; pre-reseed dump sha256 3281f7a5… in the job scratch dir). Wave-2 gate: core-java unit re-run green, blobctl ok, compose valid, bash -n clean. Dev DB side effects: jtoye_backup role now exists; ~241 MB drill blobs under drill/ in azurite_data. Security notes for review: validate-on-startup can still be overridden by env (STORAGE_BLOB_VALIDATEONSTARTUP); a tenant can still SAVE another tenant's image URL (display only, delete now refused).
 Wave 1 DONE 2026-09-28: 36-01 Blob SDK spine + Azurite tracer (private jtoye-quarantine, #626 proven, AWS SDK gone), 36-02 digest-pinned Azurite in both compose runtimes + nightly, 36-03 frontend CSP/remotePatterns on Azurite (BLOB-08 closed), 36-04 blobctl (own conditional upload: azblob v1.8.1 UploadFile drops If-None-Match above 256 MiB), 36-05 D-11 account names (owner option-a, 30-day WORM recorded) + runbook. Wave-1 gate: core-java unit 1240/0 fail (--rerun-tasks), blobctl go test ok, both compose files validate. Expected reds carried: check-env-contract.sh (36-09), docs-freshness counts (36-17). OPEN for owner: Microsoft.Storage provider unregistered on c483d353, so the name-availability check returned VOID (DNS shows all four free) — .planning/WINDOWS.md #1.
 Next: merge PR #768 first (the required Operational Contracts check is red on every branch until it lands). The most serious open defect is issue #764 — GDPR erasure fails for any customer with a review (`reviews` has no UPDATE policy), review photos are deleted before the rollback, AND the email lookup sees other tenants' PUBLISHED reviews, so the UPDATE policy must never ship without the tenant-scoped lookup; reproduced on the dev DB, predates Phase 36, needs a V67 migration. STATE.md stays hand-edited (`state.begin-phase` / `state.record-session` are destructive here; see memory trap-gsd-state-record-session). Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
+
+> **PERCENT PROVENANCE (2026-10-17): `percent` is completed phases over total phases — 17/20 = 85.**
+> The 2026-08-30 note below defined it as "of written plans"; that stopped being true at the Phase 36
+> merge (12/16 = 75 while plans read 137/137), and every value since was phase-based but hand-set,
+> so two drifted: 72 after Phase 38 (13/19 is 68) and 82 after #946 (15/20 is 75). Re-measured for
+> this edit:
+> - **Phases** from the ROADMAP progress table, now 20 rows (31.1 was missing; 35 read `9/13 In
+>   Progress` although `35-VERIFICATION.md` passed 13/13). Complete: 21–28, 31, 31.1, 33–39 = 17.
+>   Open: 29 (paused at 9/16 on `phase-29-research`), 30 (in flight on
+>   `feat/phase-30-live-stripe-billing-and-phone-verify`, not merged), 32 (unplanned).
+> - **Plans** with `git ls-files` over the numbered phase directories on main: 254 `*-PLAN.md`,
+>   254 `*-SUMMARY.md`. The previous 257 equals neither set measured here (numbered directories 254;
+>   all of `.planning/phases/`, including `motion-D-gsap-marketing`, 255). Phase 29's 16 plans are on
+>   its branch and not counted here.
+> - Still hand-edited: `state.update-progress` and `state.record-session` corrupt
+>   `stopped_at`/`last_activity` (recorded above).
 
 > **PERCENT PROVENANCE (2026-08-30): 100 means "of written plans", not "of the milestone".**
 > Counters re-measured from disk per the 35-11 rule: `git ls-files` reports **119** `*-PLAN.md`
