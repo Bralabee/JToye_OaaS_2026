@@ -1920,5 +1920,42 @@ class PublicStorefrontServiceTest {
                 () -> service.createBalancePaymentSession("ORD-11112222-20261017-AABBCCDD", "customer@example.com"));
         assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatusCode());
     }
+
+    @Test
+    @DisplayName("37-31 H4 owner decision: a verified-contact cash order skips the per-IP cap and leaves clientIpDigest null, while an unverified order from the same IP is refused at the cap")
+    void createGuestOrder_cashCheckout_verifiedContact_skipsIpCapAndDoesNotRecordDigest() {
+        publishedShop.setDeliveryFeePennies(0L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        // The shared proxy peer (198.51.100.7) is already at the per-IP cap of 5.
+        lenient().when(orderRepository.countOpenCashOrdersByClientIpDigest(any(), any(), any())).thenReturn(5L);
+
+        assertDoesNotThrow(() -> service.createGuestOrder(
+                        "test-shop-abc12345", deliveryRequest(product), "key-verified-1", "Ada@Example.com", "198.51.100.7"),
+                "a signed-in customer with contactVerified=true is bounded by email/phone caps and must not collide on the frontend proxy IP bucket");
+
+        // Email and phone axes are still consulted for the verified customer, but the IP axis is skipped.
+        verify(orderRepository).countOpenCashOrdersByEmail(any(), any(), eq("ada@example.com"));
+        verify(orderRepository).findOpenCashOrderPhones(any(), any());
+        verify(orderRepository, never()).countOpenCashOrdersByClientIpDigest(any(), any(), any());
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        Order saved = captor.getValue();
+        assertEquals(Boolean.TRUE, saved.getContactVerified());
+        assertNull(saved.getClientIpDigest(),
+                "a verified-contact order must not record the proxy peer's IP digest into the open-cash IP bucket");
+
+        // Non-vacuity control: an unverified order from the same IP hits the 5-order IP cap.
+        var ex = assertThrows(uk.jtoye.core.exception.OrderCapExceededException.class,
+                () -> service.createGuestOrder(
+                        "test-shop-abc12345", deliveryRequest(product), "key-unverified-1", null, "198.51.100.7"));
+        assertEquals(uk.jtoye.core.exception.OrderCapExceededException.Axis.IP, ex.getAxis());
+        assertEquals(5, ex.getCap());
+    }
 }
 
