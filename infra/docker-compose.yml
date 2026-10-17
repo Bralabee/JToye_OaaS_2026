@@ -16,7 +16,7 @@
 
 services:
   postgres:
-    image: postgres:15
+    image: postgres:18-alpine
     container_name: jtoye-postgres
     environment:
       # Creates both 'jtoye' and 'keycloak' databases via init scripts
@@ -30,7 +30,7 @@ services:
       # the documented start command.
       - "${JTOYE_BIND_HOST:-127.0.0.1}:5433:5432" # 5433 on host to avoid conflicts with an existing postgres
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
       - ./db/init:/docker-entrypoint-initdb.d
     networks:
       - jtoye-net

@@ -53,7 +53,7 @@ class FlywayV44OutOfOrderIntegrationTest {
     private static final String TENANT = "00000000-0000-0000-0000-0000000000aa";
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
             .withDatabaseName("jtoye_ooo")
             .withUsername("test")
             .withPassword("test");

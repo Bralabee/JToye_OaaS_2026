@@ -57,7 +57,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 - [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
 - [x] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04) (completed 2026-10-05)
-- [ ] **Phase 39: Platform runtime upgrades** — Every other runtime onto a supported, latest-stable release: Alpine, RabbitMQ (compose and k8s), the Prometheus/Alertmanager/Grafana/exporter stack, Keycloak 26, PostgreSQL 18, Redis 8 and Tailwind 4; retires the DEFERRED-27 and #724 horizon exemptions before they expire (first dated row 2026-10-26) (added 2026-10-04 by owner request)
+- [x] **Phase 39: Platform runtime upgrades** — Every other runtime onto a supported, latest-stable release: Alpine, RabbitMQ (compose and k8s), the Prometheus/Alertmanager/Grafana/exporter stack, Keycloak 26, PostgreSQL 18, Redis 8 and Tailwind 4; retires the DEFERRED-27 and #724 horizon exemptions before they expire (first dated row 2026-10-26) (added 2026-10-04 by owner request) (completed 2026-10-16)
 
 ## Phase Details
 
@@ -1271,7 +1271,7 @@ Already current, out of scope:
   5. The observability stack: every alert rule loads on Prometheus 3, a deliberately fired alert reaches Alertmanager, and the Grafana dashboards render with data.
   6. Tailwind 4: no layout regression at the four widths on the declared surfaces, shown by screenshots against the pre-upgrade baseline.
 
-**Plans:** 8/10 plans complete (Wave 1, Wave 2, and Wave 4 complete; 39-01, 39-02, 39-03, 39-04, 39-07, 39-08, 39-09, and 39-10 executed)
+**Plans:** 10/10 plans complete (Waves 1–4 complete; all 10 plans 39-01..39-10 executed,completed 2026-10-16)
 
 Plans:
 
@@ -1287,8 +1287,8 @@ Plans:
 - [x] 39-09-PLAN.md — Track 39-F (part 2): old-slug 301 aliases (`V86__shop_slug_alias.sql`, `RlsContractTest` exemption, `/shop/[slug]` 301 redirect)
 
 **Wave 3 (Database and Cache majors)**
-- [ ] 39-05-PLAN.md — Track 39-D: PostgreSQL `15` -> `18.6` across compose, `pg-backup:18-blob`, CI service, and all 204 Testcontainers suites + `postgres-major-parity.conf` Testcontainers guard + dump/restore drill
-- [ ] 39-06-PLAN.md — Track 39-E (part 1): Redis `7.4` -> `8.10-alpine` across compose and k8s with Lettuce 7 & Spring Cache parity proof
+- [x] 39-05-PLAN.md — Track 39-D: PostgreSQL `15` -> `18.6` across compose, `pg-backup:18-blob`, CI service, and all 206 Testcontainers suites + `postgres-major-parity.conf` Testcontainers guard + dump/restore drill
+- [x] 39-06-PLAN.md — Track 39-E (part 1): Redis `7.4` -> `8.10-alpine` across compose and k8s with Lettuce 7 & Spring Cache parity proof
 
 **Wave 4 (Tailwind CSS 4)**
 - [x] 39-07-PLAN.md — Track 39-E (part 2): Tailwind CSS `3.4.1` -> `4.3.3` config migration with 4-viewport (`390/768/1280/1920`) visual parity proof
