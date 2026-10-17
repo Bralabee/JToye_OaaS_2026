@@ -1,5 +1,5 @@
 import apiClient from "@/lib/api-client"
-import type { FinancialSummary, FinancialTransaction } from "@/types/api"
+import type { FinancialSummary, FinancialTransaction, Order } from "@/types/api"
 
 /**
  * Finance reads scoped to one shop or the whole tenant (37-12, UI-SPEC § B5; server 37-11).
@@ -95,6 +95,30 @@ export async function fetchFinanceTransactions(
     totalPages: res.data?.totalPages || 0,
     totalElements: res.data?.totalElements || 0,
     scope: readScope(res.data?.scope),
+  }
+}
+
+/**
+ * GET a recent orders sample (up to 100 newest orders) for the finance query's shop scope
+ * to power GAP-GTM-07 Repeat Buyer % and V81 unverified-contact telemetry.
+ * Non-blocking: any network or permission failure resolves to [] so the ledger and
+ * summary still render.
+ */
+export async function fetchFinanceOrdersSample(query: FinanceQuery): Promise<Order[]> {
+  try {
+    const shopParam = query.shopId ? `&shopId=${encodeURIComponent(query.shopId)}` : ""
+    const res = await apiClient.get(`/api/v1/orders?page=0&size=100&sort=createdAt,desc${shopParam}`)
+    const raw = res?.data?.content
+    if (!Array.isArray(raw)) return []
+    return raw.filter(
+      (item): item is Order =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        typeof (item as Order).status === "string" &&
+        typeof (item as Order).totalAmountPennies === "number"
+    )
+  } catch {
+    return []
   }
 }
 
