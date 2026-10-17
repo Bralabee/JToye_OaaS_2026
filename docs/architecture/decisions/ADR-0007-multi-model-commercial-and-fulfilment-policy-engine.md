@@ -1,6 +1,6 @@
 # ADR-0007: Malleable Multi-Model Commercial, Settlement & Fulfilment Policy Engine
 
-- **Status:** Proposed / Accepted for Phase 30 & Post-v2.3 Commercial Evolution (2026-10-17)
+- **Status:** Accepted (2026-10-17)
 - **Deciders:** J'Toye engineering & product strategy (owner decision, 2026-10-17)
 - **Tracking:** Extends [ADR-0001](ADR-0001-onboarding-approval-and-stripe-money-flow.md) (#102, #178), Phase 30 (`PAY-01`..`PAY-04`), Cohort B discovery (#428), and WhatsApp channel seam (#208)
 - **Related:**
@@ -22,9 +22,9 @@ In [ADR-0001](ADR-0001-onboarding-approval-and-stripe-money-flow.md), J'Toye Oaa
 While that binary split was sufficient for the initial Phase 18 onboarding slice, our UK African food market analysis and codebase audit (at Schema **V86**) revealed three structural tensions:
 
 1. **Go-To-Market Reality vs. Current Payment Routing:**
-   Our highest-probability commercial wedge (`78%–85%` projected survival/success) is **Assisted Direct-Order & Scheduled Fulfilment Vertical SaaS** where the **Vendor is the legal Merchant of Record (MoR)** (`£39/location/month + 0.5% GTV`). However, `StripeConnectService.resolveDestinationAccount` (`StripeConnectService.java:170-198`) currently routes connected-account payments **only** for `MARKETPLACE` tenants (via destination charges where J'Toye is MoR), leaving `WHITE_LABEL` tenants on a single-account fallback.
+   Our highest-probability commercial wedge (`78%–85%` projected survival/success) is **Assisted Direct-Order & Scheduled Fulfilment Vertical SaaS** where the **Vendor is the legal Merchant of Record (MoR)** (`£39/location/month + 0.5% GTV`). However, `StripeConnectService.resolveDestinationAccount` (`core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java:170-194`) currently routes connected-account payments **only** for `MARKETPLACE` tenants (via destination charges where J'Toye is MoR), leaving `WHITE_LABEL` tenants on a single-account fallback.
 2. **Dual-Rhythm Kitchen Operations (Counter Takeaway + Scheduled Batch/Catering):**
-   Established UK West African food operators rarely operate purely on-demand *or* purely as caterers. The same kitchen often runs **immediate counter/delivery service** (`Cohort A`) during evening/weekday windows and **advance batch pre-orders** (`Cohort B` — weekend 2L/4L soup bowls, party jollof coolers, and catering trays with cut-off times and prep deposits). Currently, `ShopAvailabilityPolicy.requireTakingOrders` (`ShopAvailabilityPolicy.java:234-242`) enforces immediate open-now trading only (`openNow == true`), blocking customers from placing advance pre-orders for Saturday when browsing on a Wednesday night.
+   Established UK West African food operators rarely operate purely on-demand *or* purely as caterers. The same kitchen often runs **immediate counter/delivery service** (`Cohort A`) during evening/weekday windows and **advance batch pre-orders** (`Cohort B` — weekend 2L/4L soup bowls, party jollof coolers, and catering trays with cut-off times and prep deposits). Currently, `ShopAvailabilityPolicy.requireTakingOrders` (`core-java/src/main/java/uk/jtoye/core/storefront/ShopAvailabilityPolicy.java:234-242`) enforces immediate open-now trading only (`openNow == true`), blocking customers from placing advance pre-orders for Saturday when browsing on a Wednesday night.
 3. **Future Business Model Extensibility Without Rewrites:**
    As J'Toye OaaS scales beyond its initial London cluster, we want to support additional commercial archetypes — such as **Curated Weekly Batch Drops** (PeerPlates / DabbaDrop / HomeCooks style), **Pay-As-You-Go Weekend Kitchens** (higher transaction fee, `£0` base subscription), and **Community/Agency White-Label Resellers** — without littering `PaymentService`, `PublicStorefrontService`, `OrderService`, and `ShopAvailabilityPolicy` with brittle `if (model == ...)` branches or invasive database rewrites.
 
@@ -89,9 +89,9 @@ Governs who the legal seller/MoR is on the card transaction and how `PaymentServ
 
 | Mode | Legal Merchant of Record (MoR) | Stripe Connect Mechanics | Target Use Case |
 | :--- | :--- | :--- | :--- |
-| **`DIRECT_CHARGE_VENDOR_MOR`** *(Default Go-To-Market)* | **The Vendor** ( verified via `V71` `trader_identity`) | `PaymentIntent.create(params, RequestOptions.builder().setStripeAccount(vendorStripeAccountId).build())` with `application_fee_amount = round(total * platformFeeBps / 10000)`. Stripe processing fees (`1.5% + 20p`) are deducted directly on the vendor's connected account. | Assisted Direct-Order Vertical SaaS (`WHITE_LABEL` / Direct Storefront). J'Toye never touches customer funds and carries zero food-liability or chargeback exposure. |
+| **`DIRECT_CHARGE_VENDOR_MOR`** *(Default Go-To-Market)* | **The Vendor** (verified via `V71` `trader_identity`) | `PaymentIntent.create(params, RequestOptions.builder().setStripeAccount(vendorStripeAccountId).build())` with `application_fee_amount = round(total * platformFeeBps / 10000)`. Stripe processing fees (`1.5% + 20p`) are deducted directly on the vendor's connected account. | Assisted Direct-Order Vertical SaaS (`WHITE_LABEL` / Direct Storefront). J'Toye never touches customer funds and carries zero food-liability or chargeback exposure. |
 | **`DESTINATION_CHARGE_PLATFORM_MOR`** *(Shipped in #102)* | **J'Toye Platform** | `PaymentIntent.create` on J'Toye's platform account with `transfer_data[destination] = vendorStripeAccountId` and `application_fee_amount`. | Managed Marketplace (`MARKETPLACE`) or curated multi-vendor campaigns where J'Toye provides unified customer support and settlement. |
-| **`SPLIT_DEPOSIT_VENDOR_MOR`** | **The Vendor** | Direct charge capturing `depositBps` (e.g. `5000` = 50%) on order creation (`PaymentStatus.PARTIALLY_PAID`), stamping `deposit_amount_pennies` and `balance_due_pennies`. Dispatches a single-use payment link (`PAY-04`) to the customer's verified phone/email before the prep cut-off. | Cohort B Catering, Event Trays, and High-Value Weekend Batch Coolers (`£100+`). Protects the kitchen against ingredient-purchase defaults. |
+| **`SPLIT_DEPOSIT_VENDOR_MOR`** | **The Vendor** | Direct charge capturing `depositBps` (e.g. `5000` = 50%) on order creation (`PaymentStatus.PARTIALLY_PAID`), stamping `deposit_amount_pennies` and `balance_due_pennies`. Dispatches a single-use payment link (`PAY-04`) to the customer's verified phone/email before the prep cut-off. To preserve `V78` `uq_fin_tx_tenant_order` (`(tenant_id, order_id, entry_kind)`), the ledger writes the single `SALE` row upon full settlement (`CAPTURED`) or keys split tranches explicitly. | Cohort B Catering, Event Trays, and High-Value Weekend Batch Coolers (`£100+`). Protects the kitchen against ingredient-purchase defaults. |
 
 ### Axis 2: Fulfilment Timing & Capacity Policy (`FulfilmentTimingMode`)
 
@@ -100,7 +100,7 @@ Extends `ShopAvailabilityPolicy` (`V80`) and `FulfilmentPolicy` (`V83`) so a sho
 | Mode | Checkout Gate Behaviour | Capacity Control | Target Use Case |
 | :--- | :--- | :--- | :--- |
 | **`IMMEDIATE_ONLY`** *(Current V80 behaviour)* | Calls `ShopAvailabilityPolicy.requireTakingOrders(shop)` (`openNow == true`). Refuses with `409 shop-closed` when paused or outside `opening_schedule`. | Governed by live kitchen pause (`orders_paused_until` / `orders_paused_indefinitely`) and `OrderLimits` (`V81`). | Pure walk-in / on-demand evening takeaways. |
-| **`SCHEDULED_SLOTS_ONLY`** | Allows checkout 24/7 (even when `openNow == false`) **provided** the request carries a valid `scheduledSlotId` whose `cutoff_at > now` and whose atomic `reserved_units + order.unitCount <= max_units`. | Per-slot capacity (`max_orders`, `max_units`) in `shop_fulfilment_slots` (`V87`) with `SELECT ... FOR UPDATE` or optimistic `@Version`. | Weekend batch prep kitchens (PeerPlates / DabbaDrop style), Friday/Saturday soup litre drops, and pop-up kitchens. |
+| **`SCHEDULED_SLOTS_ONLY`** | Allows checkout 24/7 (even when `openNow == false`) **provided** the request carries a valid `scheduledSlotId` whose `cutoff_at > now` and whose atomic `reserved_units + order.unitCount <= max_units`. | Per-slot capacity (`max_orders`, `max_units`) in `shop_fulfilment_slots` (`V87`) with `SELECT ... FOR UPDATE` or optimistic `@Version` + DB `CHECK` bounds. | Weekend batch prep kitchens (PeerPlates / DabbaDrop style), Friday/Saturday soup litre drops, and pop-up kitchens. |
 | **`HYBRID_IMMEDIATE_AND_SLOTS`** *(Recommended UK West African Default)* | Accepts `IMMEDIATE` orders when `openNow == true`, **and** accepts `SCHEDULED` orders 24/7 against published future `shop_fulfilment_slots`. When `openNow == false`, the storefront defaults the picker to `"Pre-Order for Next Available Slot"` instead of dead-ending the buyer. | Live pause governs `IMMEDIATE` orders; slot caps govern `SCHEDULED` orders independently. | Established UK West African restaurants/takeaways that serve daily meals *and* weekend batch bowls/catering trays. |
 
 ### Axis 3: Discovery & Storefront Surface Policy (`StorefrontSurfaceMode`)
@@ -174,13 +174,15 @@ To preserve full backward compatibility with all **86 existing Flyway migrations
    - Do not break existing `vendor_onboarding.model` CHECK constraints or tests.
    - Map `WHITE_LABEL` default to `DIRECT_CHARGE_VENDOR_MOR` once the tenant's Stripe Connect account is `ENABLED`, and `MARKETPLACE` to `DESTINATION_CHARGE_PLATFORM_MOR`.
 2. **Additive Flyway Migration (`V87__scheduled_fulfilment_slots_and_commercial_profile.sql`):**
-   - **`shop_fulfilment_slots` table (ENABLE + FORCE RLS via `current_tenant_id()`):**
+   - **`shop_fulfilment_slots` table (`ENABLE + FORCE ROW LEVEL SECURITY`):**
      - `id UUID PRIMARY KEY`, `tenant_id UUID NOT NULL`, `shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE`
      - `service_date DATE NOT NULL`, `window_start TIME NOT NULL`, `window_end TIME NOT NULL`
      - `cutoff_at TIMESTAMPTZ NOT NULL` (orders refused after this instant)
      - `max_orders INT`, `max_units INT`, `reserved_orders INT NOT NULL DEFAULT 0`, `reserved_units INT NOT NULL DEFAULT 0`
+     - `CHECK (reserved_orders >= 0 AND reserved_units >= 0 AND (max_orders IS NULL OR reserved_orders <= max_orders) AND (max_units IS NULL OR reserved_units <= max_units))`
      - `deposit_bps INT NOT NULL DEFAULT 10000` (`10000` = 100% upfront; `5000` = 50% catering deposit)
-     - `version BIGINT NOT NULL DEFAULT 0` (`@Version` optimistic lock to prevent slot overbooking under concurrent checkouts)
+     - `version BIGINT NOT NULL DEFAULT 0` (`@Version` optimistic lock to prevent slot overbooking under concurrent checkouts; cancelled/voided/abandoned orders idempotently decrement reserved capacity)
+     - **RLS policies:** Strict `tenant_id = current_tenant_id()` for vendor `ALL` operations, plus either a public `FOR SELECT` policy scoped to `EXISTS (SELECT 1 FROM shops s WHERE s.id = shop_fulfilment_slots.shop_id AND s.published = true)` (mirroring `shop_announcements_public_read`) or transaction-local tenant GUC pinning after `findBySlugAndPublishedTrue` (`TraderIdentityService` precedent), proven under `NOSUPERUSER NOBYPASSRLS`.
    - **Additive columns on `orders` (+ `orders_aud` Envers mirrors):**
      - `fulfilment_slot_id UUID REFERENCES shop_fulfilment_slots(id)` (NULL = immediate order)
      - `scheduled_for_date DATE`, `scheduled_window_label VARCHAR(64)` (snapshot at order time, mirroring V30 `product_name` and V63 `allergen_mask` snapshots so a later slot edit never rewrites what the customer bought)
@@ -188,8 +190,8 @@ To preserve full backward compatibility with all **86 existing Flyway migrations
    - **Additive columns on `shops` (+ `shops_aud` mirrors):**
      - `fulfilment_timing_mode VARCHAR(32) NOT NULL DEFAULT 'IMMEDIATE_ONLY'` (`IMMEDIATE_ONLY | SCHEDULED_SLOTS_ONLY | HYBRID_IMMEDIATE_AND_SLOTS`)
 3. **Consolidated Kitchen "Cook Sheet" Read Projection (`OrderCookSheetService`):**
-   - Pure read-side aggregation query (`GROUP BY product_id, product_name, allergen_mask`) over `orders` + `order_items` filtered by `(tenant_id, shop_id, scheduled_for_date, fulfilment_slot_id)` and active statuses (`CONFIRMED`, `PREPARING`, `READY`).
-   - Requires **zero new tables** and gives batch/catering kitchens an instant production tally (`"38x Jollof Rice Large, 14x Egusi 2L Bowl, 6x Suya Platter"`) plus combined PPDS label batch printing (`AllergenLabelPdfService`).
+   - Pure read-side aggregation query (`GROUP BY product_id, product_name, allergen_mask`) over `orders` + `order_items` filtered by `(tenant_id, shop_id, scheduled_for_date, fulfilment_slot_id)`, active statuses (`CONFIRMED`, `PREPARING`, `READY`), **and `orders.voided_at IS NULL`** (`V78` invariant so voided orders are never prepped).
+   - Preserves `products.may_contain_mask` (`V74`) separate from `order_items.allergen_mask` (`V63`) during batch PPDS printing (`AllergenLabelPdfService`) and surfaces any customer `orders.allergy_note` (`V73`).
 
 ---
 
