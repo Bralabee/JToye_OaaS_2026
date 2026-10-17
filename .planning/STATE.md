@@ -1339,6 +1339,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-50 (owner, 2026-10-14): fix both 37-50 findings on the 37-G PR branch before it opens; bump CACHE_KEY_FORMAT_VERSION on any cached DTO field addition, not only unreadable formats
 - [Phase 37]: 37-56: withFullStop (frontend/lib/sentence-end.ts) is the one TypeScript rule for ending a sentence with a vendor- or person-supplied value; six call sites routed; __tests__/sentence-end-call-sites.test.ts guard fails on any other free-text value before a literal sentence full stop
 - [Phase 37]: 37-56: G376_BASE = 36f9aee357b4d96f3718239d4d76903ae41a9099 (evidence/37-56-g376-base.txt), read by 37-59's cut
+- [Phase 37]: Owner ruling 2026-10-17 (37-31 H4): PublicStorefrontService.placeGuestOrder skips cashOrderCaps.checkIp and leaves orders.client_ip_digest null when contactVerified is true (3/email and 3/phone caps still enforced; no proxy-peer IP collisions through /api/customer-orders)
+- [Phase 37]: Owner ruling 2026-10-17 (T-37-107): core-api serviceAccountsEnabled is false (and service-account-core-api enabled is false) in infra/keycloak/realm-export.template.json so KEYCLOAK_CLIENT_SECRET cannot mint a machine token on the human OIDC client ID
+- [Phase 37]: Owner ruling 2026-10-17 (staging/production trusted-proxies & CLIENT_IP_HMAC_KEY): keep security.trusted-proxies "" in k8s/{staging,production}/configmap-patch.yaml (INV-12 WARN, fail-closed) until Phase 29 Wave 7 live cluster bring-up verifies externalTrafficPolicy: Local on ingress-nginx and measures the live ingress pod CIDR, alongside minting environment-isolated 64-hex client-ip-credentials/hmac-key and dsar-credentials/encryption-key Secrets
 
 ### Pending Todos
 

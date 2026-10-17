@@ -62,8 +62,13 @@ Three failure shapes recur, each stated with the assertion to make **instead**:
 
 Clients and their `.env` keys: `core-api`→`KEYCLOAK_CLIENT_SECRET`,
 `edge-api`→`EDGE_API_CLIENT_SECRET`, `integration-catalog-ro`→`INTEGRATION_CATALOG_RO_SECRET`,
-`integration-orders-rw`→`INTEGRATION_ORDERS_RW_SECRET`. All four are confidential with
-`serviceAccountsEnabled`, so `client_credentials` is the acceptance instrument.
+`integration-orders-rw`→`INTEGRATION_ORDERS_RW_SECRET`. All four are confidential; the three machine
+clients (`edge-api`, `integration-catalog-ro`, `integration-orders-rw`) have `serviceAccountsEnabled: true`,
+while `core-api` has `serviceAccountsEnabled: false` (`T-37-107`, so `KEYCLOAK_CLIENT_SECRET` cannot mint a
+machine token). `client_credentials` is still the acceptance instrument for all four: KeyCloak authenticates
+the client secret before checking whether a service account is enabled, so `core-api` returns `401 invalid_client`
+for the superseded secret and `400 unauthorized_client` (`"Client not enabled to retrieve service account"`) for
+the current secret.
 
 ```bash
 # 0. capture the OLD secrets (for the same-run superseded arm) BEFORE editing .env.
@@ -95,8 +100,8 @@ docker compose -f docker-compose.full-stack.yml up -d --force-recreate --no-deps
 tok(){ curl -s -o /dev/null -w '%{http_code}' -d grant_type=client_credentials \
         -d client_id="$1" --data-urlencode client_secret="$2" \
         http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token; }
-tok <client> "$OLD_SECRET"   # SUPERSEDED — must be 401 (invalid_client)
-tok <client> "$NEW_SECRET"   # CURRENT    — must be 200 (token issued)
+tok <client> "$OLD_SECRET"   # SUPERSEDED — must be 401 (invalid_client) for all 4 clients
+tok <client> "$NEW_SECRET"   # CURRENT    — must be 200 for edge-api / integration-*, or 400 (unauthorized_client) for core-api
 ```
 
 ---
