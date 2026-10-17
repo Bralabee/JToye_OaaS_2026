@@ -17,9 +17,12 @@ Full codebase analysis generated on 2026-04-01 via comprehensive crawl of every 
 | [REMEDIATION-BACKLOG-2026-07-08.md](REMEDIATION-BACKLOG-2026-07-08.md) | Prioritized P0-P3 remediation backlog distilled from the 2026-07-08 four-agent enterprise-readiness audit (verified against main @ 805e02e) |
 | [MESSAGING-BROKER-EVALUATION-2026-07-26.md](MESSAGING-BROKER-EVALUATION-2026-07-26.md) | RabbitMQ vs Redpanda vs NATS, assessed against the actual topology. Verdict: stay on RabbitMQ (decision recorded in ADR-0003). Also records the five real messaging-layer defects that became Phase 27, and the verified finding that PostgreSQL logical decoding bypasses RLS |
 | [WHATSAPP-BUSINESS-PLATFORM-EVALUATION-2026-08-07.md](WHATSAPP-BUSINESS-PLATFORM-EVALUATION-2026-08-07.md) | The 2026 WhatsApp Business Platform changes assessed against the integration as actually built (edge-go inbound webhook + INERT core-java outbound stub). Verdict: connect, don't build — catalogs and the `order` webhook replace the free-text parser, but Meta provides no multi-tenant routing, so Embedded Signup is the real remaining phase. Records nine defects, including a webhook that cannot be subscribed (no `GET` challenge handler) and a BSUID identity assumption that 2026 breaks |
+| [BUSINESS_MODEL_DECISION_GUIDE.md](BUSINESS_MODEL_DECISION_GUIDE.md) | Authoritative commercial positioning, 2026 UK African food market & competitor analysis (`PeerPlates`, `HomeCooks`, `DabbaDrop`, `ChopNow`, `Chowdeck`, `Orda`, `Flipdish`), code-verified Schema `V86` capabilities, 7-item Go-To-Market Blocker Register (`GTM-BLK-01`..`07`), and the `ADR-0007` malleable multi-model policy matrix |
+| [flipdish-vs-jtoye-teardown.md](flipdish-vs-jtoye-teardown.md) | 7-dimension code-verified teardown comparing Flipdish (1,622 Trustpilot reviews, Companies House filings) against J'Toye OaaS across customer service, reliability, pricing transparency, setup time, marketing lock-in, UK compliance, and kitchen integration |
 
 ## Usage
 
 - Reference these documents when planning new features or onboarding
 - Update after significant changes to keep analysis current
-- Use GAPS_AND_IMPROVEMENTS.md as a living backlog for continuous improvement
+- Use `BUSINESS_MODEL_DECISION_GUIDE.md` and `GAPS_AND_IMPROVEMENTS.md` (`GAP-GTM-01`..`07`) as the single source of truth for commercial positioning and Go-To-Market readiness
+

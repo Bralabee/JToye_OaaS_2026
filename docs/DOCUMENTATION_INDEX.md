@@ -1,8 +1,8 @@
 # Documentation Index — J'Toye OaaS 2026
 
-**Last reconciled:** 2026-07-26
-**Milestone:** v2.3 (`vendor-ops-ai-interleaved`) — build complete, phases 21–26
-**Schema:** Flyway V59 · **Test suite:** 1736 logical invocations (source of truth: `docs/metrics.json`,
+**Last reconciled:** 2026-10-17
+**Milestone:** v2.3 (`vendor-ops-ai-interleaved`) — active go-to-market & operational readiness
+**Schema:** Flyway V86 · **Test suite:** 6158 logical invocations (source of truth: `docs/metrics.json`,
 enforced by the `docs-freshness` CI gate)
 
 > Sections below are **not globally numbered**. A continuous 1..N sequence across sections has to be
@@ -28,6 +28,7 @@ enforced by the `docs-freshness` CI gate)
 | **An alert fired — what do I do?** | [runbooks/alerts.md](runbooks/alerts.md) |
 | Docker networking issues? | [troubleshooting/DOCKER_IPTABLES_ISSUE.md](troubleshooting/DOCKER_IPTABLES_ISSUE.md) |
 | What business model should J'Toye pursue? | [analysis/BUSINESS_MODEL_DECISION_GUIDE.md](analysis/BUSINESS_MODEL_DECISION_GUIDE.md) |
+| How does J'Toye support multiple business models? | [architecture/decisions/ADR-0007-multi-model-commercial-and-fulfilment-policy-engine.md](architecture/decisions/ADR-0007-multi-model-commercial-and-fulfilment-policy-engine.md) |
 | How does J'Toye compare to Flipdish? | [analysis/flipdish-vs-jtoye-teardown.md](analysis/flipdish-vs-jtoye-teardown.md) |
 | What pages exist in the frontend? | [SITEMAP.md](SITEMAP.md) |
 | What's the project overview? | [README.md](../README.md) |
@@ -37,12 +38,12 @@ enforced by the `docs-freshness` CI gate)
 ## Product & Architecture
 
 > **Start here for the current state.** The five documents below were produced by a two-round
-> supervised codebase tour (2026-08-19) and describe the system **as it runs today**, every claim
+> supervised codebase tour (2026-08-19, updated 2026-10-17 at V86) and describe the system **as it runs today**, every claim
 > measured against the tree. `SYSTEM_DESIGN_V2.md` is target-state/aspirational by contrast.
 
 | Document | Covers |
 |---|---|
-| [PRD.md](PRD.md) | Product requirements — personas, surfaces, compliance wedge, GTM posture, what it does NOT do yet (current-state, measured) |
+| [PRD.md](PRD.md) | Product requirements — reframed business position, personas, surfaces, compliance wedge, GTM posture, and multi-model evolution (current-state, measured at V86) |
 | [architecture/ESSENTIAL_ARCHITECTURE.md](architecture/ESSENTIAL_ARCHITECTURE.md) | The one read for a new engineer — the five things you must not get wrong |
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Current-state system architecture, layer by layer (companion to the PRD) |
 | [HOW_IT_WORKS.md](HOW_IT_WORKS.md) | End-to-end runtime walkthrough — a request's life, the money path, async, GDPR, verification |
@@ -64,9 +65,12 @@ enforced by the `docs-freshness` CI gate)
 | ADR | Status | Decision |
 |---|---|---|
 | [ADR-0001](architecture/decisions/ADR-0001-onboarding-approval-and-stripe-money-flow.md) | Accepted | Onboarding approval gates + Stripe money flow (marketplace destination charges) |
-| [ADR-0002](architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md) | **Proposed** | Managed vs in-cluster manifests for stateful infra. Needs owner sign-off; the RabbitMQ half is still unbuilt |
+| [ADR-0002](architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md) | **Accepted** | Managed vs in-cluster manifests for stateful infra (`2027-01-16` revisit horizon) |
 | [ADR-0003](architecture/decisions/ADR-0003-messaging-broker-selection.md) | Accepted | Remain on RabbitMQ — Redpanda and NATS assessed and rejected, with revisit triggers |
 | [ADR-0004](architecture/decisions/ADR-0004-knowledge-graph-strategy.md) | Accepted | Relational ingredient/entity graph in the existing Postgres — Apache AGE and Neo4j assessed and rejected on tenant-wall grounds, with revisit triggers |
+| [ADR-0005](architecture/decisions/ADR-0005-customer-realm-identity-providers.md) | Accepted | Customer-realm social Identity Providers kept deliberately unpopulated until HTTPS domain cutover |
+| [ADR-0006](architecture/decisions/ADR-0006-spring-boot-4-migration.md) | Accepted | Spring Boot 4.1.1 / Spring Framework 7 / Jackson 3 migration and explicit modular starters |
+| [ADR-0007](architecture/decisions/ADR-0007-multi-model-commercial-and-fulfilment-policy-engine.md) | Accepted | Malleable multi-model commercial, settlement & fulfilment policy engine (`Settlement`, `FulfilmentTiming`, `Surface`, `Billing` axes + `V87` scheduled slots) |
 
 ---
 

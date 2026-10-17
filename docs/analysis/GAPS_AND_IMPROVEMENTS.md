@@ -1,104 +1,39 @@
-# Gaps, Discrepancies & Improvement Opportunities
+# Gaps, Discrepancies & Strategic Implementation Roadmap
 
-> **Generated**: 2026-04-01  
-> **Method**: Full codebase audit -- code vs docs vs config cross-referenced
-
----
-
-## Discrepancies
-
-| Area | Docs Claim | Code Reality | Severity | Status |
-|------|-----------|-------------|----------|--------|
-| ~~**Build version**~~ | ~~v1.1.0 (README badge)~~ | ~~`0.1.0-SNAPSHOT` (build.gradle.kts)~~ | ~~Medium~~ | FIXED 2026-04-01 |
-| **Git tags** | v1.1.0 referenced in docs | Only `v0.1.0` tag exists | Medium | Open |
-| ~~**Spring Boot version**~~ | ~~AI_CONTEXT.md says 3.3.4~~ | ~~build.gradle.kts has 3.4.2~~ | ~~Low~~ | FIXED 2026-04-01 |
-| **Readiness score** | PROJECT_STATUS says 92/100 | README says 100/100 | Low | Open |
-| **Edge rate limit config** | .env.example lists RATE_LIMIT_RPS/BURST | Code hardcodes 20/40 | Low | Open |
+> **Originally Generated**: 2026-04-01  
+> **Last Reconciled**: 2026-10-17 (Schema **V86**, **6,158+** logical test invocations across Java, Jest, Go, Playwright, and MCP vitest)  
+> **Method**: Full top-to-bottom codebase audit (`core-java`, `frontend`, `edge-go`, `mcp-server`, `k8s`) cross-referenced against [`docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`](BUSINESS_MODEL_DECISION_GUIDE.md) and [`ADR-0007`](../architecture/decisions/ADR-0007-multi-model-commercial-and-fulfilment-policy-engine.md).
 
 ---
 
-## Feature Gaps
+## 1. Active Strategic & Go-To-Market Gaps (October 2026 — Must Not Be Omitted)
 
-### High Priority (Functional)
+While the core multi-tenant platform, UK food-safety compliance floor (`V63`, `V69`, `V71`, `V73`, `V74`), GDPR DSAR automation (`V62`–`V75`), abuse resistance (`V81`), per-shop RBAC (`V52`, `V77`, `V85`), and 301 slug continuity (`V86`) are **shipped and verified**, the following **seven high-leverage commercial & operational bridges** currently stand between the codebase and repeatable UK West African market success:
 
-1. **RabbitMQ unused**: Provisioned in Docker Compose and K8s but zero application code references. Either wire it up or remove it to avoid confusion.
-
-2. **WhatsApp webhook incomplete**: Signature verification works in edge-go but handler only logs -- no forwarding to Core API implemented.
-
-3. **No pagination UI**: All frontend pages fetch `?size=100` with no page navigation, infinite scroll, or "load more". Will fail silently for tenants with >100 records.
-
-4. **OrderDto excludes items**: `OrderMapper` intentionally omits `OrderItem` list. Frontend can't display order line items.
-
-5. **No order update endpoint**: Orders can only be created and transitioned through states. Fields (customer, notes) can't be edited after creation.
-
-6. **Financial transactions not linked to orders**: No FK from `FinancialTransaction` to `Order`, no automatic transaction creation on order completion.
-
-### Medium Priority (Robustness)
-
-7. **No token refresh**: NextAuth stores refresh token but doesn't implement silent rotation when access token expires. Long sessions will fail with 401.
-
-8. **Customer ID not used in order creation**: Order entity has `customerId` FK but `CreateOrderRequest` takes denormalized name/email/phone. No customer lookup integration.
-
-9. **No search/filter in frontend**: No text search, status filter, or date range filter on any dashboard page.
-
-10. **No batch delete**: No bulk operations in any controller.
-
-### Low Priority (Polish)
-
-11. ~~**Version alignment**~~: FIXED 2026-04-01 -- build.gradle.kts aligned to 1.1.0, Spring Boot refs updated to 3.4.2.
-
-12. ~~**AI_CONTEXT.md stale**~~: FIXED 2026-04-01 -- Updated to Spring Boot 3.4.2.
-
-13. **Test page exposed**: `dashboard/test/page.tsx` is a debug page showing raw session data -- should be removed or gated.
-
-14. **No dark mode toggle**: Tailwind config supports class-based dark mode but no UI toggle exists.
-
-15. **No loading skeletons**: Pages show spinner during load rather than skeleton placeholders.
+| Gap ID | Priority | Area | Current Code Reality (`V86`) | Required Implementation (`V87+` / Phases 29, 30, 32) |
+| :--- | :--- | :--- | :--- | :--- |
+| **`GAP-GTM-01`** | **P0 (Blocker)** | **Multi-Model Settlement Strategy (`ADR-0007` Axis 1)** | `StripeConnectService.resolveDestinationAccount` (`StripeConnectService.java:170-198`) routes connected-account payments **only** when `VendorOnboarding.model == MARKETPLACE` (destination charges, platform as MoR). `WHITE_LABEL` / Direct SaaS tenants fall back to the single platform account. | Implement `SettlementStrategy` (`DIRECT_CHARGE_VENDOR_MOR`, `DESTINATION_CHARGE_PLATFORM_MOR`, `SPLIT_DEPOSIT_VENDOR_MOR`) in `PaymentService` (`Phase 30`, `PAY-01`..`PAY-03`) so Direct SaaS vendors are the legal & technical Merchant of Record on their connected Stripe account. |
+| **`GAP-GTM-02`** | **P0 (Blocker)** | **Advance Pre-Orders & Scheduled Fulfilment Slots (`ADR-0007` Axis 2)** | `ShopAvailabilityPolicy.requireTakingOrders` (`ShopAvailabilityPolicy.java:234-242`) enforces immediate open-now trading (`openNow == true`), returning `409 shop-closed` outside live hours. | Add `V87__scheduled_fulfilment_slots_and_commercial_profile.sql` (`shop_fulfilment_slots` with `ENABLE + FORCE RLS`, `cutoff_at`, `max_orders`, `max_units`, `@Version` optimistic lock) and `FulfilmentTimingMode` (`IMMEDIATE_ONLY`, `SCHEDULED_SLOTS_ONLY`, `HYBRID_IMMEDIATE_AND_SLOTS`) so customers can pre-order weekend 2L/4L soup bowls, coolers, and catering trays 24/7. |
+| **`GAP-GTM-03`** | **P1 (High)** | **Consolidated Kitchen "Cook Sheet" Aggregator** | `/dashboard/kitchen` (`OrderService` / STOMP KDS) renders individual order tickets (`New`, `Confirmed`, `Preparing`, `Ready`). | Add `OrderCookSheetService` read projection (`GROUP BY product_id, product_name, allergen_mask` per `scheduled_for_date` and `fulfilment_slot_id`) + `/dashboard/kitchen/cook-sheet` view with 1-click batch PPDS PDF label export (`AllergenLabelPdfService`). |
+| **`GAP-GTM-04`** | **P1 (High)** | **Catering Deposits & Verified-Contact Payment Links (`PAY-04`)** | `Order` captures a single `totalAmountPennies` payment intent (`PaymentStatus.PENDING` → `COMPLETED`). No partial deposit state or phone verification column exists yet. | Add `deposit_amount_pennies` & `balance_due_pennies` on `orders` (`V87`), `PARTIALLY_PAID` state handling, and single-use expiring balance payment links dispatched to verified phone/email (`PAY-04`, `#461`, `#462`). |
+| **`GAP-GTM-05`** | **P1 (High)** | **SaaS Subscription & Usage Metering (`PAY-02`)** | `Tenant.plan` (`V48` `STANDARD | PREMIUM | INTERNAL`) exists, but recurring Stripe Billing for `£39/location/month + 0.5% GTV` (or flat `£79–£149/mo` / `£0 + 6%` PAYG preset) is not yet wired. | Implement `BillingPlanMode` (`ADR-0007` Axis 4) and Stripe Subscription + metered usage invoicing in Phase 30 (`PAY-02`). |
+| **`GAP-GTM-06`** | **P1 (High)** | **WhatsApp-to-Checkout Pre-Order Link Bridge (`#208`)** | `edge-go` verifies WhatsApp HMAC signatures and `core-java` has the `COMMS-07` `NotificationChannel` seam (`Phase 22`), defaulting to OFF. | Build the **"Generate WhatsApp Pre-Order Checkout Link"** action in the vendor dashboard and WhatsApp webhook responder so DM enquiries convert into allergen-acknowledged, pre-paid Stripe checkout sessions without fragile conversational AI parsing. |
+| **`GAP-GTM-07`** | **P1 (High)** | **Production Domain Cutover (`Phase 29`) & Merchant ROI Telemetry (`Phase 32`)** | Public domains (`jtoye.co.uk` / `olajay.co.uk`) await live AKS/ingress cutover (`DPLY-01`..`DPLY-05`). Finance page shows revenue/VAT (`V79`) but does not quantify commission saved vs. aggregators. | Complete Phase 29 live ingress + TLS + monitoring cutover, and add the **Merchant Value & ROI Telemetry Card** on `/dashboard/finance` (`Direct GTV`, `Est. Commission Saved vs. 28% Aggregator`, `Phantom Cash Orders Blocked by V81`, `Repeat Buyer %`). |
 
 ---
 
-## Architecture Opportunities
+## 2. Historical Audit Ledger (April 2026 Findings — Now Resolved)
 
-### Short Term
-- **Wire RabbitMQ**: Use for async order state change notifications, audit event publishing, or WhatsApp message forwarding
-- **Add OrderItemDto**: Create a full order detail endpoint that includes items
-- **Implement token refresh**: Add NextAuth token rotation callback
+Every functional, robustness, and documentation gap identified in the original `2026-04-01` audit has been closed and verified by automated gates:
 
-### Medium Term
-- **Event-driven architecture**: Order state changes publish events to RabbitMQ, consumed by notification service
-- **Real-time updates**: WebSocket or SSE for order status changes on dashboard
-- **Reporting service**: Aggregate financial transactions for tenant reporting
-
-### Long Term
-- **Multi-region**: PostgreSQL read replicas with tenant-aware routing
-- **Tenant onboarding**: Self-service tenant registration and provisioning
-- **Payment integration**: Stripe/payment gateway integration with FinancialTransaction
-
----
-
-## Documentation Gaps
-
-1. No API contract/OpenAPI spec exported to docs (only available via running Swagger UI)
-2. No sequence diagrams for key flows (auth, order creation, batch sync)
-3. No ADR (Architecture Decision Records) documenting why RLS over schema-per-tenant
-4. No runbook for incident response
-5. No capacity planning guide
-
----
-
-## Security Observations
-
-All positive -- no critical security issues found:
-- RLS enforcement verified at startup
-- Non-superuser application role
-- JWT validation with proper issuer/signature checks
-- HMAC-SHA256 for webhook verification
-- Rate limiting at multiple layers
-- Non-root Docker containers
-- Security headers in K8s ingress
-- Audit trail on all domain entities
-
-Minor notes:
-- `NEXTAUTH_SECRET` has a default value in .env.local.example and docker-compose (should be randomized per environment)
-- Keycloak admin password is `admin123` in all configs (acceptable for dev, not for staging/prod)
-- Redis password visible in docker-compose.full-stack.yml (acceptable for local dev)
+| Original Item (2026-04-01) | Resolution Status | Evidence in Current Codebase (`V86`) |
+| :--- | :--- | :--- |
+| **1. RabbitMQ unused** | **CLOSED** (`Phases 22, 24, 27, 38, 39`) | Bound across `onboarding.events`, `payment.events` (`V46`), `media.events` (`V58`), and STOMP KDS relay (`StompDestinations.java`) on RabbitMQ `4.3.6` with Jackson 3 `JacksonJsonMessageConverter` (`BOOT4-06`). |
+| **2. WhatsApp webhook incomplete** | **SCAFFOLDED** (`Phase 22`, `COMMS-07`) | `NotificationChannel` seam + off-by-default WhatsApp adapter shipped in `core-java`; pre-order link bridge tracked under `GAP-GTM-06` (`#208`). |
+| **3. No pagination UI** | **CLOSED** (`Phases 23, 37`) | Server-side pagination + shop-scoped `?shopId=` filtering wired across Products, Orders, Customers, Promotions, Announcements, and Webhook deliveries (`23-18`, `37-G`). |
+| **4. OrderDto excludes items** | **CLOSED** (`Phases 12, 31, 37`) | `OrderDetailDto` carries full `OrderItemDto` lines, V30 `product_name` snapshots, V63 `allergen_mask` snapshots, and V84 guest tracking RLS (`order_items_guest_tracking`). |
+| **5. Financial transactions not linked to orders** | **CLOSED** (`Phases 14, 37`) | Linked via `order_id` (`V26`), `entry_kind` (`SALE | REVERSAL | MANUAL`, `V78`), and `shop_id` (`V79`) with automatic VAT-aware ledger recording and void reversal. |
+| **6. No token refresh** | **CLOSED** (`Phases 15, 34, 37`) | NextAuth silent rotation, `useSyncExternalStore` customer session store (`34-03`), and KDS silent refresh + full-screen signed-out alarm (`RWO-021`). |
+| **7. Customer ID not used in order creation** | **CLOSED** (`Phases 16, 39`) | Orders link to `customers` with per-shop scoping (`V85` `customers.origin_shop_id`, `39-08`). |
+| **8. No search/filter in frontend** | **CLOSED** (`Phases 23, 33, 37`) | Full-text + 3-tier postcode proximity search (`V61` `PostcodeGeocoder`), plus status, shop, and date filtering across dashboard views. |
+| **9. OpenAPI snapshot & ADRs missing** | **CLOSED** (`Phases 18–39`) | `core-java/openapi-snapshot.json` enforced by CI breaking-change gate; `ADR-0001` through `ADR-0007` committed under `docs/architecture/decisions/`; incident & provisioning runbooks under `docs/runbooks/`. |
