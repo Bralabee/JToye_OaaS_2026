@@ -125,6 +125,7 @@ class PhoneVerificationAndPaymentLinkTest {
                 tenantId, "+447700900123"))
                 .thenReturn(Optional.of(savedChallenge.get()));
         lenient().when(challengeRepository.consumeAttemptIfAvailable(any(UUID.class))).thenReturn(1);
+        lenient().when(challengeRepository.markVerified(any(UUID.class), any(OffsetDateTime.class))).thenReturn(1);
 
         Customer customer = new Customer("Ada Lovelace", "ada@example.com");
         customer.setTenantId(tenantId);
@@ -136,18 +137,22 @@ class PhoneVerificationAndPaymentLinkTest {
         when(orderRepository.findByTenantIdAndCustomerPhoneIsNotNullAndStatusIn(eq(tenantId), any()))
                 .thenReturn(List.of(openOrder));
 
-        // Fail first with a wrong OTP — attempts increments from 0 to 1
+        // Fail first with a wrong OTP — consumeAttemptIfAvailable increments in DB, while the
+        // managed entity must NOT be dirtied in memory (preventing Hibernate auto-flush overwrite)
         assertThatThrownBy(() -> phoneVerificationService.verifyOtp(tenantId, "+447700900123", "000000"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Invalid verification code");
-        assertThat(savedChallenge.get().getAttempts()).isEqualTo(1);
+        assertThat(savedChallenge.get().getAttempts())
+                .as("Managed challenge entity must not be dirtied in memory after atomic DB increment")
+                .isZero();
 
-        // Pass with the real OTP
+        // Pass with the real OTP — markVerified updates verified_at atomically without saveAndFlush
         PhoneVerificationService.VerifyResult verified = phoneVerificationService.verifyOtp(
                 tenantId, "07700900123", challenge.testPreviewOtp());
 
         assertThat(verified.verified()).isTrue();
         assertThat(verified.phoneNormalized()).isEqualTo("+447700900123");
+        verify(challengeRepository).markVerified(eq(savedChallenge.get().getId()), any(OffsetDateTime.class));
         assertThat(customer.isPhoneVerified()).isTrue();
         assertThat(customer.getPhoneVerifiedAt()).isNotNull();
         assertThat(openOrder.isPhoneVerified()).isTrue();

@@ -177,15 +177,18 @@ public class PhoneVerificationService {
                     "Maximum verification attempts exceeded. Please request a new code.");
         }
 
-        // A-4 (PR #949 round 1): the database decides whether an attempt is left. N parallel
+        // A-4 (PR #949 round 1/2): the database decides whether an attempt is left. N parallel
         // guesses can all read the same in-memory count; only max_attempts of them get a row.
-        if (challengeRepository.consumeAttemptIfAvailable(challenge.getId()) != 1) {
+        // Never mutate the managed entity in memory so Hibernate auto-flush cannot overwrite
+        // the atomic DB counter on commit.
+        UUID challengeId = challenge.getId();
+        byte[] expected = challenge.getOtpSha256().getBytes(StandardCharsets.UTF_8);
+        byte[] actual = sha256Hex(otp).getBytes(StandardCharsets.UTF_8);
+
+        if (challengeRepository.consumeAttemptIfAvailable(challengeId) != 1) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                     "Maximum verification attempts exceeded. Please request a new code.");
         }
-        challenge.setAttempts(challenge.getAttempts() + 1);
-        byte[] expected = challenge.getOtpSha256().getBytes(StandardCharsets.UTF_8);
-        byte[] actual = sha256Hex(otp).getBytes(StandardCharsets.UTF_8);
 
         if (!MessageDigest.isEqual(expected, actual)) {
             // The attempt is already committed by the conditional UPDATE above
@@ -193,8 +196,7 @@ public class PhoneVerificationService {
             throw new IllegalArgumentException("Invalid verification code.");
         }
 
-        challenge.setVerifiedAt(now);
-        challengeRepository.saveAndFlush(challenge);
+        challengeRepository.markVerified(challengeId, now);
 
         // Stamp any matching Customer rows in this tenant
         List<Customer> customers = customerRepository.findByTenantIdAndPhoneIsNotNull(tenantId);
