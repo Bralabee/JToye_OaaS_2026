@@ -146,11 +146,13 @@ public final class IntegrationTestSupport {
                 throw new IllegalStateException("ensureDowngradableTestRole step1 failed: " + step1.getStderr());
             }
             String swapSql = String.format(
-                    "DO $$ DECLARE v_oid oid; BEGIN "
+                    "DO $$ DECLARE v_oid oid; v_new_oid oid; BEGIN "
                             + "SELECT oid INTO v_oid FROM pg_roles WHERE rolname = '%s'; "
                             + "IF v_oid = 10 THEN "
                             + "ALTER ROLE \"%s\" RENAME TO \"_jtoye_bootstrap_superuser\"; "
                             + "CREATE ROLE \"%s\" SUPERUSER CREATEDB CREATEROLE INHERIT LOGIN PASSWORD '%s'; "
+                            + "SELECT oid INTO v_new_oid FROM pg_roles WHERE rolname = '%s'; "
+                            + "UPDATE pg_catalog.pg_default_acl SET defaclrole = v_new_oid WHERE defaclrole = 10; "
                             + "ALTER DATABASE \"%s\" OWNER TO \"%s\"; "
                             + "END IF; "
                             + "END $$;",
@@ -158,6 +160,7 @@ public final class IntegrationTestSupport {
                     user.replace("\"", "\"\""),
                     user.replace("\"", "\"\""),
                     pass.replace("'", "''"),
+                    user.replace("'", "''"),
                     db.replace("\"", "\"\""),
                     user.replace("\"", "\"\""));
             Container.ExecResult step2 = postgres.execInContainer(
@@ -182,6 +185,9 @@ public final class IntegrationTestSupport {
      */
     public static void registerPostgresTestProperties(DynamicPropertyRegistry registry,
                                                       PostgreSQLContainer<?> postgres) {
+        if (postgres.isRunning()) {
+            ensureDowngradableTestRole(postgres);
+        }
         registry.add("spring.datasource.url", () -> {
             ensureDowngradableTestRole(postgres);
             return postgres.getJdbcUrl();
