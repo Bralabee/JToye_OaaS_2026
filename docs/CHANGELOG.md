@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Phase 37 Owner Decisions: Verified-Contact Cash-Order IP-Cap Exemption & `core-api` Service Account Hardening — 2026-10-17
+### Phase 37 Owner Decisions: Verified-Contact Cash-Order IP-Cap Exemption & `core-api` Service Account Hardening (#947) — 2026-10-17
 
 Resolves the remaining Phase 37 owner decisions (`37-31` H4, `T-37-107`, and Phase 29 staging/production operator handoff).
 
