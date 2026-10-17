@@ -50,6 +50,7 @@ import { basketAllergenAttribution, basketAllergenFlags, indexProductsById } fro
 import {
   FulfilmentSlotPicker,
   describeSlotCheckoutError,
+  isCheckoutBlockedByAvailability,
 } from "@/components/storefront/fulfilment-slot-picker"
 // FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
 import {
@@ -809,7 +810,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               if (cancelled) return
               const list = Array.isArray(slotsRes.data) ? slotsRes.data : []
               setFulfilmentSlots(list)
-              if (res.data.fulfilmentTimingMode === "SCHEDULED_SLOTS_ONLY") {
+              if (
+                res.data.fulfilmentTimingMode === "SCHEDULED_SLOTS_ONLY" ||
+                (res.data.fulfilmentTimingMode === "HYBRID_IMMEDIATE_AND_SLOTS" &&
+                  res.data.openNow === false)
+              ) {
                 const firstOpen = list.find(
                   (s) => s.active && (s.remainingOrders === null || s.remainingOrders > 0)
                 )
@@ -844,13 +849,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const sellerVatUndeclared = shop !== null && !sellerVatRegistered
 
   // 37-22 (UI-SPEC K3 "Checkout", D-15): the shop's SERVER answer at page load. When it says the shop
-  // is not taking orders (paused, or openNow false), the K3 notice sits at the top of step 1 and
-  // Place order is disabled with that notice as its permanent explanation (aria-describedby) — the
-  // `belowMinimum` precedent: disabled only where the reason is on screen beside it. A shop that did
-  // not load, or a payload without openNow, disables nothing: the server still decides at submit,
-  // and its typed refusal is handled below (the checkout race).
+  // is not taking orders (paused, or openNow false for an immediate order), the K3 notice sits at the
+  // top of step 1 and Place order is disabled with that notice as its permanent explanation
+  // (aria-describedby) — the `belowMinimum` precedent: disabled only where the reason is on screen
+  // beside it. Under V87 (ADR-0007), scheduled slot pre-orders are permitted when `openNow === false`
+  // (unless the shop is explicitly paused).
   const shopAvailability = shop ? readShopAvailability(shop) : null
-  const notTakingOrders = shopAvailability?.kind === "paused" || shopAvailability?.kind === "closed"
+  const notTakingOrders = isCheckoutBlockedByAvailability({
+    availabilityKind: shopAvailability?.kind,
+    timingMode: shop?.fulfilmentTimingMode,
+    selectedSlotId,
+  })
 
   // The snapshot above is the ONLY thing that disables Place order, and it was read once, on mount.
   // A customer who opened checkout during a 20-minute pause and waited it out would otherwise keep a

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### GAP-GTM-02 & GAP-GTM-03 (Frontend UI): Kitchen "Cook Sheet" Prep View & Storefront Scheduled Fulfilment Slot Picker — 2026-10-17
+### GAP-GTM-02 & GAP-GTM-03 (Frontend UI): Kitchen "Cook Sheet" Prep View & Storefront Scheduled Fulfilment Slot Picker (#945) — 2026-10-17
 
 Completes the customer-facing and kitchen-facing UI for `ADR-0007` (`V87`, #943) on `/dashboard/kitchen` and `/shop/[slug]/checkout`.
 

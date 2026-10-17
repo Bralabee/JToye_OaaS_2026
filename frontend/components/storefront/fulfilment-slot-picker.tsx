@@ -51,6 +51,31 @@ export function describeSlotCheckoutError(
   }
 }
 
+/**
+ * Mirrors `PublicStorefrontService.validateStorefrontTimingAndAvailability` (V87 / ADR-0007):
+ * - A `paused` shop blocks all storefront checkout orders (both immediate and scheduled pre-orders).
+ * - A `closed` shop (`openNow === false`) blocks immediate preparation (`IMMEDIATE_ONLY`, or
+ *   `HYBRID_IMMEDIATE_AND_SLOTS` when `selectedSlotId === null`), but PERMITS scheduled slot
+ *   pre-orders (`SCHEDULED_SLOTS_ONLY`, or `HYBRID_IMMEDIATE_AND_SLOTS` with `selectedSlotId !== null`).
+ */
+export function isCheckoutBlockedByAvailability(params: {
+  availabilityKind: string | null | undefined
+  timingMode: FulfilmentTimingMode | null | undefined
+  selectedSlotId: string | null
+}): boolean {
+  const { availabilityKind, timingMode, selectedSlotId } = params
+  if (availabilityKind === "paused") {
+    return true
+  }
+  if (availabilityKind === "closed") {
+    const allowsClosedPreOrder =
+      timingMode === "SCHEDULED_SLOTS_ONLY" ||
+      (timingMode === "HYBRID_IMMEDIATE_AND_SLOTS" && selectedSlotId !== null)
+    return !allowsClosedPreOrder
+  }
+  return false
+}
+
 export interface FulfilmentSlotPickerProps {
   timingMode?: FulfilmentTimingMode | null
   slots: readonly FulfilmentSlotDto[]

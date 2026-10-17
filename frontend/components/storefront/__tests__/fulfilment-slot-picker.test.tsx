@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react"
 import {
   FulfilmentSlotPicker,
   describeSlotCheckoutError,
+  isCheckoutBlockedByAvailability,
   SLOT_REQUIRED_PROBLEM_TYPE,
   SLOT_CLOSED_PROBLEM_TYPE,
   SLOT_CUTOFF_PASSED_PROBLEM_TYPE,
@@ -159,6 +160,58 @@ describe("FulfilmentSlotPicker (GAP-GTM-03 / V87)", () => {
       /window just sold out/i
     )
     expect(describeSlotCheckoutError({ type: "https://jtoye.uk/errors/other" })).toBeNull()
+  })
+
+  it("permits scheduled slot pre-orders when shop is closed (openNow false) while blocking immediate ASAP orders and paused shops", () => {
+    // Paused always blocks regardless of timingMode or slot selection
+    expect(
+      isCheckoutBlockedByAvailability({
+        availabilityKind: "paused",
+        timingMode: "SCHEDULED_SLOTS_ONLY",
+        selectedSlotId: "slot-open",
+      })
+    ).toBe(true)
+
+    // Closed blocks IMMEDIATE_ONLY and HYBRID without a selected slot
+    expect(
+      isCheckoutBlockedByAvailability({
+        availabilityKind: "closed",
+        timingMode: "IMMEDIATE_ONLY",
+        selectedSlotId: null,
+      })
+    ).toBe(true)
+    expect(
+      isCheckoutBlockedByAvailability({
+        availabilityKind: "closed",
+        timingMode: "HYBRID_IMMEDIATE_AND_SLOTS",
+        selectedSlotId: null,
+      })
+    ).toBe(true)
+
+    // Closed permits SCHEDULED_SLOTS_ONLY and HYBRID with a selected slot
+    expect(
+      isCheckoutBlockedByAvailability({
+        availabilityKind: "closed",
+        timingMode: "SCHEDULED_SLOTS_ONLY",
+        selectedSlotId: "slot-open",
+      })
+    ).toBe(false)
+    expect(
+      isCheckoutBlockedByAvailability({
+        availabilityKind: "closed",
+        timingMode: "HYBRID_IMMEDIATE_AND_SLOTS",
+        selectedSlotId: "slot-open",
+      })
+    ).toBe(false)
+
+    // Open or unknown availability never blocks
+    expect(
+      isCheckoutBlockedByAvailability({
+        availabilityKind: "open",
+        timingMode: "IMMEDIATE_ONLY",
+        selectedSlotId: null,
+      })
+    ).toBe(false)
   })
 })
 
