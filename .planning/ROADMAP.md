@@ -655,7 +655,15 @@ engaged on, so the order is paid before production.
      violable and must be removed or gated deliberately, not left as a silent default. The link must
      be single-use and expiring — it is a bearer credential. (PAY-04)
 
-**UI hint**: yes (billing/subscription surface)
+> **2026-10-17 Strategic & Multi-Model Alignment ([`ADR-0007`](../docs/architecture/decisions/ADR-0007-multi-model-commercial-and-fulfilment-policy-engine.md), [`BUSINESS_MODEL_DECISION_GUIDE.md`](../docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md)):**
+> When planning Phase 30 (`/gsd-plan-phase 30`), implement money-flow and fulfilment timing through the four composable policy axes defined in `ADR-0007` so the platform launches with our highest-probability model (Assisted Direct-Order + Scheduled Batch/Catering Vertical SaaS, Vendor as MoR) and supports future commercial archetypes via configuration rather than code rewrites:
+> - **`GAP-GTM-01` (`SettlementStrategy` — Axis 1):** Extend `PaymentService` and `StripeConnectService` beyond `MARKETPLACE` destination charges (`#102`) to support **`DIRECT_CHARGE_VENDOR_MOR`** (`Stripe-Account` header + `application_fee_amount` on the vendor's connected account, making the vendor the legal Merchant of Record for `WHITE_LABEL`/Direct SaaS) and **`SPLIT_DEPOSIT_VENDOR_MOR`** (capturing `depositBps` upfront for Cohort B catering/batch coolers and issuing a `PAY-04` balance payment link before slot cut-off).
+> - **`GAP-GTM-02` (`FulfilmentTimingPolicy` & `V87` Scheduled Slots — Axis 2):** Add `shop_fulfilment_slots` (`ENABLE + FORCE RLS`, `service_date`, `window_start`, `window_end`, `cutoff_at`, `max_orders`, `max_units`, `@Version`) and `shops.fulfilment_timing_mode` (`IMMEDIATE_ONLY | SCHEDULED_SLOTS_ONLY | HYBRID_IMMEDIATE_AND_SLOTS`) so customers can place advance weekend batch/catering pre-orders 24/7 even when `ShopAvailabilityPolicy.openNow` is `false`.
+> - **`GAP-GTM-03` (Consolidated Kitchen "Cook Sheet" Aggregator):** Add `OrderCookSheetService` read projection (`GROUP BY product_id, product_name, allergen_mask` per scheduled date/slot) + `/dashboard/kitchen/cook-sheet` with batch PPDS PDF label export.
+> - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
+> - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
+
+**UI hint**: yes (billing/subscription surface, scheduled slot picker, and kitchen cook sheet)
 
 ### Phase 31: Consumer-Safety and Legal Floor
 
@@ -838,8 +846,9 @@ locality — #460.)
      **#428 Wave 1 (catering discovery) has produced its recorded finding** — either a validated
      wedge or a documented decision that catering is not it. Both are successful outcomes; the
      failure mode is reaching production with the Cohort B question still unasked. (GTM-02)
+  3. **In-product Merchant Value & ROI Telemetry (`GAP-GTM-07`, added 2026-10-17 per [`BUSINESS_MODEL_DECISION_GUIDE.md`](../docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md) §5):** `/dashboard/finance` surfaces a shop-scoped and tenant-wide ROI card reporting `Direct GTV Processed`, `Estimated Commission Saved vs. 28% Aggregator`, `Phantom Cash Orders Blocked (V81)`, and `Repeat Customer Rate`, separated by immediate (`Cohort A`) vs. scheduled pre-order/catering (`Cohort B`) orders so operators see quantifiable monthly savings before their 90-day renewal gate.
 
-**UI hint**: no
+**UI hint**: yes (Merchant ROI telemetry summary card on `/dashboard/finance`)
 
 ### Phase 35: Horizontal Layout Contract - tiered content widths across dashboard, index, detail and marketing surfaces
 
