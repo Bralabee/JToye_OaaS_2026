@@ -610,6 +610,24 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("startPreparation - Blocks unpaid payment-link / card order from entering PREPARING (#461 / PAY-04)")
+    void testStartPreparation_BlocksUnpaidPaymentLinkOrder() {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setPaymentStatus(PaymentStatus.PENDING);
+        testOrder.setPaymentReference("pi_unpaid_link_01");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.CONFIRMED, OrderEvent.START_PREP))
+                .thenReturn(OrderStatus.PREPARING);
+
+        InvalidStateTransitionException ex = assertThrows(
+                InvalidStateTransitionException.class,
+                () -> orderService.startPreparation(orderId)
+        );
+        assertTrue(ex.getMessage().contains("cannot enter kitchen preparation until upfront or deposit payment is completed"));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
     @DisplayName("markOrderReady - Transitions PREPARING to READY")
     void testMarkOrderReady_Success() {
         // Given

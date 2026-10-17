@@ -1,0 +1,130 @@
+{
+  "generated_at": "2026-10-17T13:33:59Z",
+  "livemode": false,
+  "PAY_01_refund_proof": {
+    "payment_intent_id": "pi_3URXkHDBRetDCIGQ0XaaTGUa",
+    "payment_intent_status": "succeeded",
+    "amount_captured_pennies": 2400,
+    "refund_id": "re_3URXkHDBRetDCIGQ0O3oh4zy",
+    "refund_status": "succeeded",
+    "refund_amount_pennies": 100,
+    "refund_currency": "gbp",
+    "refund_reason": "requested_by_customer"
+  },
+  "PAY_02_recurring_billing_proof": {
+    "SAAS_HYBRID_STANDARD": {
+      "subscription_id": "sub_1URXjbDBRetDCIGQAUrclx7j",
+      "subscription_status": "active",
+      "invoice_id": "in_1URXjbDBRetDCIGQNQgUctSo",
+      "invoice_status": "paid",
+      "amount_paid_pennies": 3900,
+      "currency": "gbp",
+      "platform_fee_bps": 50
+    },
+    "SAAS_FLAT_PREDICTABLE": {
+      "subscription_id": "sub_1URXjhDBRetDCIGQcbXrM9QA",
+      "subscription_status": "active",
+      "invoice_id": "in_1URXjhDBRetDCIGQ1pjFdDY8",
+      "invoice_status": "paid",
+      "amount_paid_pennies": 7900,
+      "currency": "gbp",
+      "platform_fee_bps": 0
+    },
+    "BATCH_PAYG_STARTER": {
+      "base_monthly_pennies": 0,
+      "platform_fee_bps": 600,
+      "payment_intent_id": "pi_3URXjjDBReCFyfl50meoQppp",
+      "order_amount_pennies": 5000,
+      "application_fee_amount_pennies": 300,
+      "status": "succeeded"
+    },
+    "WALK_SETUP_STEPDOWN_AND_TEST_CLOCK": {
+      "test_clock_id": "clock_1URXjkDBRetDCIGQfnXFaDoW",
+      "test_clock_status": "ready",
+      "initial_setup_invoice_id": "in_1URXjnDBRetDCIGQ92TXdzs3",
+      "initial_setup_amount_paid_pennies": 19500,
+      "renewal_invoice_id": "in_1URXjtDBRetDCIGQ3M6E6ooP",
+      "renewal_amount_paid_pennies": 19500,
+      "canceled_subscription_id": "sub_1URXjnDBRetDCIGQAE2YIpSx",
+      "canceled_subscription_status": "canceled"
+    }
+  },
+  "PAY_03_connected_account_loop_proof": {
+    "connected_account": {
+      "id": "acct_1URWuCDBReCFyfl5",
+      "country": "GB",
+      "default_currency": "gbp",
+      "charges_enabled": true,
+      "payouts_enabled": true,
+      "capabilities": {
+        "card_payments": "active",
+        "transfers": "active"
+      }
+    },
+    "DIRECT_CHARGE_VENDOR_MOR": {
+      "payment_intent_id": "pi_3URXk5DBReCFyfl51VYkh9Zw",
+      "charge_id": "ch_3URXk5DBReCFyfl51YKXYMGV",
+      "amount_pennies": 4000,
+      "application_fee_amount_pennies": 20,
+      "status": "succeeded",
+      "refund_id": "re_3URXk5DBReCFyfl51SkKyVtm",
+      "refund_amount_pennies": 1000,
+      "refund_status": "succeeded"
+    },
+    "DESTINATION_CHARGE_PLATFORM_MOR": {
+      "payment_intent_id": "pi_3URXk7DBRetDCIGQ14j9x0Bc",
+      "charge_id": "ch_3URXk7DBRetDCIGQ1oY01luK",
+      "amount_pennies": 4000,
+      "application_fee_amount_pennies": 200,
+      "transfer_id": "tr_3URXhVDBRetDCIGQ0Q5PbFe5",
+      "transfer_amount_pennies": 4000,
+      "transfer_destination": "acct_1URWuCDBReCFyfl5",
+      "connected_payout_id": "po_1URXk9DBReCFyfl5wT7HFaW5",
+      "connected_payout_amount_pennies": 1500,
+      "connected_payout_status": "paid",
+      "connected_payout_destination": "ba_1URWuKDBReCFyfl5CHUFDgvK",
+      "reverse_transfer_refund_id": "re_3URXk7DBRetDCIGQ1mC6B54H",
+      "reverse_transfer_refund_status": "succeeded",
+      "transfer_reversal_id": "trr_1URXkCDBRetDCIGQvw0yUsJC"
+    }
+  },
+  "PAY_04_verified_phone_payment_links_proof": {
+    "UPFRONT_LINK": {
+      "payment_intent_id": "pi_3URXkEDBRetDCIGQ1C4SPBHj",
+      "amount_pennies": 3250,
+      "status": "succeeded",
+      "metadata": {
+        "order_number": "ORD-PAY04-UPFRONT",
+        "payment_link_purpose": "UPFRONT",
+        "phone_verified": "true",
+        "recipient_phone": "+447700900123"
+      }
+    },
+    "SPLIT_DEPOSIT_LINK": {
+      "payment_intent_id": "pi_3URXkFDBReCFyfl51yr0NA9y",
+      "amount_pennies": 4000,
+      "application_fee_amount_pennies": 20,
+      "status": "succeeded",
+      "metadata": {
+        "order_number": "ORD-PAY04-SPLIT",
+        "payment_link_purpose": "DEPOSIT",
+        "phone_verified": "true",
+        "recipient_phone": "+447700900456",
+        "settlement_mode": "SPLIT_DEPOSIT_VENDOR_MOR"
+      }
+    },
+    "SPLIT_BALANCE_LINK": {
+      "payment_intent_id": "pi_3URXkGDBReCFyfl50xY8SgIo",
+      "amount_pennies": 4000,
+      "application_fee_amount_pennies": 20,
+      "status": "succeeded",
+      "metadata": {
+        "order_number": "ORD-PAY04-SPLIT",
+        "payment_link_purpose": "BALANCE",
+        "phone_verified": "true",
+        "recipient_phone": "+447700900456",
+        "settlement_mode": "SPLIT_DEPOSIT_VENDOR_MOR"
+      }
+    }
+  }
+}

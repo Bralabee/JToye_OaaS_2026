@@ -693,7 +693,7 @@ class PaymentServiceTest {
                         3000L,
                         7000L
                 )));
-        when(stripeConnectService.applicationFeePennies(7000L)).thenReturn(175L);
+        when(stripeConnectService.applicationFeePennies(tenantId, 7000L)).thenReturn(175L);
 
         PaymentIntent mockIntent = mock(PaymentIntent.class);
         when(mockIntent.getId()).thenReturn("pi_bal_1");
@@ -721,6 +721,36 @@ class PaymentServiceTest {
             assertEquals("acct_caterer_1", optionsCaptor.getValue().getStripeAccount());
             assertEquals(PaymentService.balanceIntentIdempotencyKey(testOrder),
                     optionsCaptor.getValue().getIdempotencyKey());
+        }
+    }
+
+    @Test
+    @DisplayName("PAY-04 / A-1: retrieveClientSecret(order, piId) routes with RequestOptions.setStripeAccount for direct-charge vendor MOR orders")
+    void retrieveClientSecret_directChargeOrder_passesConnectedStripeAccount() throws Exception {
+        when(stripeConnectService.resolveSettlementRouting(testOrder))
+                .thenReturn(Optional.of(new SettlementRoutingDecision(
+                        SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR,
+                        "acct_vendor_direct_1",
+                        1500L,
+                        8L,
+                        null,
+                        null
+                )));
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getClientSecret()).thenReturn("pi_direct_123_secret_abc");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.retrieve(eq("pi_direct_123"), any(com.stripe.net.RequestOptions.class)))
+                    .thenReturn(mockIntent);
+
+            String secret = paymentService.retrieveClientSecret(testOrder, "pi_direct_123");
+            assertEquals("pi_direct_123_secret_abc", secret);
+
+            ArgumentCaptor<com.stripe.net.RequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.net.RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.retrieve(eq("pi_direct_123"), optionsCaptor.capture()));
+            assertEquals("acct_vendor_direct_1", optionsCaptor.getValue().getStripeAccount());
         }
     }
 

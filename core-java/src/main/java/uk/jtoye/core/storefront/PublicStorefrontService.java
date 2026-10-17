@@ -1682,7 +1682,7 @@ public class PublicStorefrontService {
      * @throws ResourceNotFoundException if the slug is unknown or the shop is unpublished
      * @throws TenantAccessDeniedException if an upstream tenant contradicts the slug tenant
      */
-    Shop resolvePublicShopForSlug(String slug) {
+    public Shop resolvePublicShopForSlug(String slug) {
         Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
 
