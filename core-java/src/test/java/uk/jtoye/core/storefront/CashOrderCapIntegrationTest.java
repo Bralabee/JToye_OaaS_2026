@@ -378,6 +378,63 @@ class CashOrderCapIntegrationTest {
     }
 
     @Test
+    @DisplayName("37-31 H4: six signed-in cash orders sharing one proxy peer IP all succeed (201) with client_ip_digest = NULL, while a fourth order for one verified email is still refused 429 on EMAIL")
+    void verifiedContactCashOrders_sharingOneProxyPeer_skipIpCapAndStoreNullDigest_whileEmailCapRemainsEnforced() throws Exception {
+        UUID jollof = seedProduct("SKU-3727-CV-PROXY", "Jollof Rice", 1000L);
+        String tag = UUID.randomUUID().toString();
+        String firstVerifiedEmail = null;
+        String firstVerifiedToken = null;
+        String firstVerifiedPhone = null;
+
+        // Place 6 open cash orders (> per-ip cap of 5) from the SAME socket peer (armPeer, simulating the
+        // Next.js /api/customer-orders proxy container), each authenticated by its own customer token.
+        for (int i = 1; i <= 6; i++) {
+            String email = "verified-proxy-" + i + "-" + tag + "@example.com";
+            String token = "verified-proxy-token-" + i + "-" + tag;
+            String phone = uniquePhone();
+            doReturn(email).when(customerJwtVerifier).verifiedEmail(token);
+            if (i == 1) {
+                firstVerifiedEmail = email;
+                firstVerifiedToken = token;
+                firstVerifiedPhone = phone;
+            }
+
+            MvcResult created = perform(
+                    post(ordersUrl(SHOP_SLUG))
+                            .header("X-Customer-Token", token)
+                            .header("Idempotency-Key", "cv-proxy-" + i + "-" + tag),
+                    storefrontBody(email, phone, List.of(line(jollof, 1))));
+            assertThat(created.getResponse().getStatus())
+                    .as("signed-in order " + i + " of 6 from shared proxy peer must not trip the 5-per-IP cap: " + responseText(created))
+                    .isEqualTo(201);
+            assertThat(contactVerifiedByEmail(email)).isTrue();
+            UUID orderId = orderIdByEmail(email);
+            String storedDigest = inTenant(() -> jdbcTemplate.queryForObject(
+                    "SELECT client_ip_digest FROM orders WHERE tenant_id = ? AND id = ?", String.class, TENANT_ID, orderId));
+            assertThat(storedDigest).as("verified-contact order must not record the proxy peer IP digest").isNull();
+        }
+
+        // The per-email cap (3) still bounds each verified customer: placing orders 2 and 3 for the first
+        // verified customer succeeds, and the 4th is refused 429 on EMAIL.
+        for (int i = 2; i <= PER_EMAIL_CAP; i++) {
+            MvcResult created = perform(
+                    post(ordersUrl(SHOP_SLUG))
+                            .header("X-Customer-Token", firstVerifiedToken)
+                            .header("Idempotency-Key", "cv-proxy-repeat-" + i + "-" + tag),
+                    storefrontBody(firstVerifiedEmail, firstVerifiedPhone, List.of(line(jollof, 1))));
+            assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+        }
+        MvcResult fourthForSameVerifiedEmail = perform(
+                post(ordersUrl(SHOP_SLUG))
+                        .header("X-Customer-Token", firstVerifiedToken)
+                        .header("Idempotency-Key", "cv-proxy-repeat-4-" + tag),
+                storefrontBody(firstVerifiedEmail, firstVerifiedPhone, List.of(line(jollof, 1))));
+        JsonNode problem = assertProblem(fourthForSameVerifiedEmail, 429, PROBLEM_TYPE, PROBLEM_CODE);
+        assertThat(problem.path("axis").asString()).isEqualTo("EMAIL");
+    }
+
+
+    @Test
     @DisplayName("T-37-69: a verified token for ANOTHER email does not verify this order's contact (false), and it is still placed (201)")
     void guestOrderWithATokenForAnotherEmail_recordsContactVerifiedFalse() throws Exception {
         UUID jollof = seedProduct("SKU-3727-CV-OTHER", "Jollof Rice", 1000L);

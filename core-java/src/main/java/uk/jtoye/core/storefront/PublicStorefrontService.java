@@ -1470,13 +1470,17 @@ public class PublicStorefrontService {
         // folded, the same normalisation the caps use), false otherwise. The vendor writer leaves it NULL
         // ("not recorded"), which is a different fact from false and renders no badge (Pitfall 12).
         String verifiedNormalised = CashOrderCaps.normaliseEmail(verifiedEmail);
-        order.setContactVerified(verifiedNormalised != null
-                && verifiedNormalised.equals(CashOrderCaps.normaliseEmail(request.getCustomerEmail())));
-        // 37-28 (D-27): the keyed digest of the client address, on EVERY storefront order (card too — it
+        boolean contactVerified = verifiedNormalised != null
+                && verifiedNormalised.equals(CashOrderCaps.normaliseEmail(request.getCustomerEmail()));
+        order.setContactVerified(contactVerified);
+        // 37-28 (D-27): the keyed digest of the client address, on unverified storefront orders (card too — it
         // is the record the per-IP cap counts once a card order's status opens, and the retention sweep,
         // the terminal-state null and erasure all treat the two branches alike). Null when the caller had
-        // no address. The vendor writer (OrderService) leaves it NULL: no customer connection to record.
-        order.setClientIpDigest(clientIpDigest);
+        // no address, or when contactVerified is true (37-31 H4 owner decision: signed-in customer orders
+        // arrive through the Next.js /api/customer-orders proxy whose peer is the frontend container/pod, so
+        // recording the peer digest on verified orders would consume that shared proxy IP bucket).
+        // The vendor writer (OrderService) leaves it NULL: no customer connection to record.
+        order.setClientIpDigest(contactVerified ? null : clientIpDigest);
 
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows
@@ -1565,7 +1569,12 @@ public class PublicStorefrontService {
             // 37-28 (D-27, the third axis): how many open cash orders this CONNECTION already holds at the
             // shop, counted on the keyed digest — the axis that bounds a flood inventing a fresh email and
             // phone per order. Same placement and the same rollback contract as the two above.
-            cashOrderCaps.checkIp(tenantId, shop.getId(), clientIpDigest);
+            // 37-31 H4 owner decision: skipped when contactVerified is true (a verified customer token proved
+            // customerEmail, already bounded by checkEmailAndPhone; signed-in orders arrive via the frontend
+            // server-to-server proxy and must not collide on the proxy peer's IP bucket).
+            if (!contactVerified) {
+                cashOrderCaps.checkIp(tenantId, shop.getId(), clientIpDigest);
+            }
             // COD fallback — no online payment. UNCHANGED by #538: this
             // branch still mutates in place and is persisted by the single
             // save below, exactly as before.

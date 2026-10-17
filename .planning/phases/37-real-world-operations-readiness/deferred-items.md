@@ -606,7 +606,7 @@ where it must be resolved.
   cannot be reached (the "+" is disabled with "Max {n} per order"); `/legal/retention` lists R-16 "Up to 72
   hours…"; a signed-in customer's order shows no badge and the request went to `/api/customer-orders?shop=`.
 - **Signed-in orders through the proxy and the per-IP cap (37-30, found; a server or operator decision, not the frontend's).**
-  status: open
+  status: resolved 2026-10-17 (owner ruling: skip `cashOrderCaps.checkIp` and leave `orders.client_ip_digest` `null` when `contactVerified == true` in `PublicStorefrontService.placeGuestOrder`)
   **What:** the access token is an HttpOnly cookie, so a signed-in customer's order is posted through
   `POST /api/customer-orders?shop=` (the `/orders/mine` shape), and core then sees the FRONTEND CONTAINER as
   the socket peer. `ClientIpResolver` (37-24, D-19) reads `X-Forwarded-For` only from a peer declared in
@@ -614,13 +614,10 @@ where it must be resolved.
   read its own socket peer, so unless an ingress sets the header AND the frontend's range is declared trusted,
   every signed-in customer's cash order at a shop is digested under ONE address (the frontend's) and the per-IP
   cap (5 open) can refuse legitimate signed-in customers. The route forwards the chain it receives, which is
-  enough once the two conditions hold. **Recommendation (research-then-recommend ruling 2026-10-10):** the
-  principled fix is in `CashOrderCaps` — do not count or check the IP axis for an order whose contact is
-  VERIFIED (the IP axis exists for anonymous floods; a verified contact is already bounded by the email axis),
-  which also removes the dependency on proxy topology; the operator alternative is declaring the frontend's
-  range in `TRUSTED_PROXY_CIDRS` per environment behind an ingress that sets `X-Forwarded-For`. Either is a
-  one-line decision for the owner before the first shared environment takes signed-in cash orders; 37-31's IP-cap
-  spec must place its six orders as a GUEST (direct to core) or it measures the frontend's address.
+  enough once the two conditions hold. **Resolution (2026-10-17):** `PublicStorefrontService.placeGuestOrder` now
+  skips `cashOrderCaps.checkIp(...)` and leaves `orders.client_ip_digest` `null` when `contactVerified` is `true`
+  (covered by `PublicStorefrontServiceTest#createGuestOrder_cashCheckout_verifiedContact_skipsIpCapAndDoesNotRecordDigest`
+  and `CashOrderCapIntegrationTest#verifiedContactCashOrders_sharingOneProxyPeer_skipIpCapAndStoreNullDigest_whileEmailCapRemainsEnforced`).
 - **The reject dialog's single-order path uses /bulk-cancel, not the single cancel's optional body (37-30, recorded decision).**
   status: resolved
   **What:** the dispatch named "the optional {reasonCode} body on the single cancel"; the dialog sends every
@@ -924,3 +921,28 @@ where it must be resolved.
   whole suite. Options for a later plan: run gap specs as separate invocations with a refill
   gap, or pass a sized `RATE_LIMIT_PER_MINUTE` in the gate's own command like the nightly.
   Evidence: `evidence/37-59-g376-runtime.md` section 12.
+
+## Owner rulings 2026-10-17 (on the remaining Phase 37 items)
+
+- **Per-IP cash-order cap for signed-in customers (`37-30` / `37-31` H4): skip IP cap & digest when `contactVerified == true`.**
+  `PublicStorefrontService.placeGuestOrder` now skips `cashOrderCaps.checkIp(...)` and leaves
+  `orders.client_ip_digest` `null` when `contactVerified` is `true` (proven by a verified customer-realm
+  token matching the order's email). Verified-contact cash orders remain bounded by `checkEmailAndPhone`
+  (3 open orders per email and 3 per phone), while eliminating proxy-peer IP collisions through
+  `POST /api/customer-orders` regardless of `TRUSTED_PROXY_CIDRS`.
+  status: ruled
+- **Keycloak `core-api` `serviceAccountsEnabled` (`T-37-107`): turned OFF (`false`).**
+  `infra/keycloak/realm-export.template.json` now sets `"serviceAccountsEnabled" : false` on `core-api`
+  and `"enabled" : false` on `service-account-core-api`, and `docs/runbooks/credential-rotation.md`
+  documents the `400 unauthorized_client` rotation probe for `core-api`. When `main` is merged into
+  `phase-29-research`, flip `"serviceAccountsEnabled": false` in `k8s/base/keycloak/realm-import-configmap.yaml`
+  as well.
+  status: ruled
+- **Staging/production `security.trusted-proxies` and `CLIENT_IP_HMAC_KEY`: keep `""` in git (`INV-12` `WARN`, fail-closed) until Phase 29 Wave 7 live cluster bring-up.**
+  `k8s/staging/configmap-patch.yaml` and `k8s/production/configmap-patch.yaml` retain `security.trusted-proxies: ""`
+  until Phase 29 Wave 7 verifies `externalTrafficPolicy: Local` on the `ingress-nginx-controller` Service and
+  measures the live `ingress-nginx` pod CIDR; at the same Phase 29 bring-up step, mint environment-isolated
+  64-hex `client-ip-credentials/hmac-key` and `dsar-credentials/encryption-key` Secrets (and add both to
+  `scripts/staging-secrets.sh` on `phase-29-research`).
+  status: ruled
+
