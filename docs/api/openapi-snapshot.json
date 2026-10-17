@@ -645,6 +645,101 @@
         },
         "type" : "object"
       },
+      "CookSheetAllergyAlert" : {
+        "properties" : {
+          "acknowledged" : {
+            "type" : "boolean"
+          },
+          "allergyNote" : {
+            "type" : "string"
+          },
+          "customerName" : {
+            "type" : "string"
+          },
+          "orderId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CookSheetDto" : {
+        "properties" : {
+          "allergyAlerts" : {
+            "description" : "Orders in this batch carrying a customer allergyNote (V73), requiring individual attention.",
+            "items" : {
+              "$ref" : "#/components/schemas/CookSheetAllergyAlert"
+            },
+            "type" : "array"
+          },
+          "fulfilmentSlotId" : {
+            "description" : "Optional scheduled fulfilment slot ID filter applied.",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "items" : {
+            "description" : "Aggregated per-product batch prep rows, ordered by totalQuantity descending then productName.",
+            "items" : {
+              "$ref" : "#/components/schemas/CookSheetItemRow"
+            },
+            "type" : "array"
+          },
+          "scheduledForDate" : {
+            "description" : "Optional scheduled fulfilment date filter applied.",
+            "format" : "date",
+            "type" : "string"
+          },
+          "shopId" : {
+            "description" : "Shop ID this cook sheet was generated for.",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "totalOrders" : {
+            "description" : "Total active non-voided orders included in this cook sheet.",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "totalUnits" : {
+            "description" : "Total units across all aggregated line items.",
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CookSheetItemRow" : {
+        "properties" : {
+          "allergenMask" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "allergenNames" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "orderCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "productId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "productName" : {
+            "type" : "string"
+          },
+          "totalQuantity" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "CopyProductsRequest" : {
         "description" : "Copy products from one shop to another shop of the same tenant. Allergen data (declared mask, emphasis spans, may-contain mask, ingredients), price, VAT rate, label fields and photos are carried verbatim. Idempotent: a product the target already has is skipped.",
         "properties" : {
@@ -845,6 +940,55 @@
         "required" : [
           "email",
           "name"
+        ],
+        "type" : "object"
+      },
+      "CreateFulfilmentSlotRequest" : {
+        "properties" : {
+          "cutoffAt" : {
+            "description" : "Pre-order cutoff timestamp after which new orders for this slot are refused",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "maxOrders" : {
+            "description" : "Optional maximum number of orders accepted in this slot",
+            "format" : "int32",
+            "minimum" : 1,
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "maxUnits" : {
+            "description" : "Optional maximum number of units/bowls accepted in this slot",
+            "format" : "int32",
+            "minimum" : 1,
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "serviceDate" : {
+            "description" : "Service date for the fulfilment window (YYYY-MM-DD)",
+            "format" : "date",
+            "type" : "string"
+          },
+          "windowEnd" : {
+            "description" : "End time of the fulfilment window (HH:mm, UK time; must be after windowStart)",
+            "format" : "time-local",
+            "type" : "string"
+          },
+          "windowStart" : {
+            "description" : "Start time of the fulfilment window (HH:mm, UK time)",
+            "format" : "time-local",
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "cutoffAt",
+          "serviceDate",
+          "windowEnd",
+          "windowStart"
         ],
         "type" : "object"
       },
@@ -1230,6 +1374,16 @@
           "deliveryInfo" : {
             "type" : "string"
           },
+          "depositBps" : {
+            "description" : "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR. Absent keeps the stored value (10000 on create).",
+            "format" : "int32",
+            "maximum" : 10000,
+            "minimum" : 1000,
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
           "description" : {
             "maxLength" : 5000,
             "minLength" : 0,
@@ -1244,6 +1398,18 @@
             "minimum" : 0,
             "type" : [
               "integer",
+              "null"
+            ]
+          },
+          "fulfilmentTimingMode" : {
+            "description" : "Whether the shop accepts immediate orders only (IMMEDIATE_ONLY), scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS). Absent keeps the stored value (IMMEDIATE_ONLY on create).",
+            "enum" : [
+              "IMMEDIATE_ONLY",
+              "SCHEDULED_SLOTS_ONLY",
+              "HYBRID_IMMEDIATE_AND_SLOTS"
+            ],
+            "type" : [
+              "string",
               "null"
             ]
           },
@@ -1312,6 +1478,18 @@
           },
           "published" : {
             "type" : "boolean"
+          },
+          "settlementPolicyMode" : {
+            "description" : "Optional shop-level settlement policy override (DIRECT_CHARGE_VENDOR_MOR | DESTINATION_CHARGE_PLATFORM_MOR | SPLIT_DEPOSIT_VENDOR_MOR). Absent keeps the stored value.",
+            "enum" : [
+              "DIRECT_CHARGE_VENDOR_MOR",
+              "DESTINATION_CHARGE_PLATFORM_MOR",
+              "SPLIT_DEPOSIT_VENDOR_MOR"
+            ],
+            "type" : [
+              "string",
+              "null"
+            ]
           },
           "slug" : {
             "description" : "The shop's web address (/shop/{slug}). Absent or blank keeps the current one on update and generates one on create. Lower-case letters, digits and single hyphens, at most 100 characters.",
@@ -2148,6 +2326,91 @@
         },
         "type" : "object"
       },
+      "FulfilmentSlotDto" : {
+        "properties" : {
+          "active" : {
+            "description" : "Whether the slot is active for new reservations",
+            "type" : "boolean"
+          },
+          "cutoffAt" : {
+            "description" : "Pre-order cutoff timestamp after which new orders for this slot are refused",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "description" : "Slot UUID",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "maxOrders" : {
+            "description" : "Maximum orders allowed in this slot (null = unbounded)",
+            "format" : "int32",
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "maxUnits" : {
+            "description" : "Maximum units/bowls allowed in this slot (null = unbounded)",
+            "format" : "int32",
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "remainingOrders" : {
+            "description" : "Remaining order capacity (null = unbounded)",
+            "format" : "int32",
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "remainingUnits" : {
+            "description" : "Remaining unit capacity (null = unbounded)",
+            "format" : "int32",
+            "type" : [
+              "integer",
+              "null"
+            ]
+          },
+          "reservedOrders" : {
+            "description" : "Orders currently reserved in this slot",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "reservedUnits" : {
+            "description" : "Units currently reserved in this slot",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "serviceDate" : {
+            "description" : "Scheduled service date (YYYY-MM-DD)",
+            "format" : "date",
+            "type" : "string"
+          },
+          "shopId" : {
+            "description" : "Shop UUID",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "windowEnd" : {
+            "description" : "Window end time (HH:mm, UK time)",
+            "format" : "time-local",
+            "type" : "string"
+          },
+          "windowLabel" : {
+            "description" : "Formatted human-readable window label (e.g. '2026-10-24 14:00-18:00')",
+            "type" : "string"
+          },
+          "windowStart" : {
+            "description" : "Window start time (HH:mm, UK time)",
+            "format" : "time-local",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "GateDto" : {
         "properties" : {
           "checkedAt" : {
@@ -2232,12 +2495,27 @@
             },
             "type" : "array"
           },
+          "balanceDuePennies" : {
+            "description" : "Remaining balance due in pennies when settled under SPLIT_DEPOSIT_VENDOR_MOR.",
+            "format" : "int64",
+            "type" : "integer"
+          },
           "clientSecret" : {
             "type" : "string"
           },
           "deliveryFeePennies" : {
             "format" : "int64",
             "type" : "integer"
+          },
+          "depositAmountPennies" : {
+            "description" : "Upfront deposit amount in pennies when settled under SPLIT_DEPOSIT_VENDOR_MOR.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fulfilmentSlotId" : {
+            "description" : "Reserved scheduled fulfilment slot UUID, when placed for a scheduled slot.",
+            "format" : "uuid",
+            "type" : "string"
           },
           "itemCount" : {
             "format" : "int32",
@@ -2259,6 +2537,15 @@
               "type" : "string"
             },
             "type" : "array"
+          },
+          "scheduledForDate" : {
+            "description" : "Scheduled service date (YYYY-MM-DD), when placed for a scheduled slot.",
+            "format" : "date",
+            "type" : "string"
+          },
+          "scheduledWindowLabel" : {
+            "description" : "Human-readable scheduled window label (e.g. '2026-10-24 14:00-18:00').",
+            "type" : "string"
           },
           "shopName" : {
             "type" : "string"
@@ -2368,6 +2655,11 @@
             "format" : "int64",
             "minimum" : 0,
             "type" : "integer"
+          },
+          "fulfilmentSlotId" : {
+            "description" : "Optional scheduled fulfilment slot UUID (ADR-0007 / GAP-GTM-02). Required when the shop's fulfilmentTimingMode is SCHEDULED_SLOTS_ONLY; permitted when HYBRID_IMMEDIATE_AND_SLOTS; refused when IMMEDIATE_ONLY.",
+            "format" : "uuid",
+            "type" : "string"
           },
           "fulfilmentType" : {
             "maxLength" : 20,
@@ -2860,6 +3152,11 @@
             "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name); null until acknowledged.",
             "type" : "string"
           },
+          "balanceDuePennies" : {
+            "description" : "Remaining balance due in pennies on fulfilment under SPLIT_DEPOSIT_VENDOR_MOR (V87).",
+            "format" : "int64",
+            "type" : "integer"
+          },
           "contactVerified" : {
             "description" : "Whether the storefront request that placed this order carried a verified customer token for its customerEmail. true = verified; false = an unverified storefront contact; absent = not recorded (pre-V81, or a vendor / REST API / MCP order).",
             "type" : "boolean"
@@ -2880,6 +3177,16 @@
           "deliveryFeePennies" : {
             "format" : "int64",
             "type" : "integer"
+          },
+          "depositAmountPennies" : {
+            "description" : "Upfront deposit charged in pennies under SPLIT_DEPOSIT_VENDOR_MOR (V87).",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fulfilmentSlotId" : {
+            "description" : "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).",
+            "format" : "uuid",
+            "type" : "string"
           },
           "fulfilmentType" : {
             "enum" : [
@@ -2934,6 +3241,15 @@
               "$ref" : "#/components/schemas/RefundDto"
             },
             "type" : "array"
+          },
+          "scheduledForDate" : {
+            "description" : "Target calendar date for a scheduled batch/pre-order (V87).",
+            "format" : "date",
+            "type" : "string"
+          },
+          "scheduledWindowLabel" : {
+            "description" : "Human-readable fulfilment window label captured at checkout (e.g. 'Saturday 12:00-16:00').",
+            "type" : "string"
           },
           "shopId" : {
             "format" : "uuid",
@@ -3009,6 +3325,11 @@
             "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name). Absent until acknowledged.",
             "type" : "string"
           },
+          "balanceDuePennies" : {
+            "description" : "Remaining balance due in pennies on fulfilment under SPLIT_DEPOSIT_VENDOR_MOR (V87).",
+            "format" : "int64",
+            "type" : "integer"
+          },
           "contactVerified" : {
             "description" : "Whether the storefront request that placed this order carried a verified customer token for its customerEmail. true = verified; false = a storefront order with no such token (an unverified contact); absent = not recorded (the order predates the fact, or was placed by the vendor, the REST API or MCP, where there is no customer contact to verify).",
             "type" : "boolean"
@@ -3029,6 +3350,16 @@
           "deliveryFeePennies" : {
             "format" : "int64",
             "type" : "integer"
+          },
+          "depositAmountPennies" : {
+            "description" : "Upfront deposit charged in pennies under SPLIT_DEPOSIT_VENDOR_MOR (V87).",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fulfilmentSlotId" : {
+            "description" : "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).",
+            "format" : "uuid",
+            "type" : "string"
           },
           "fulfilmentType" : {
             "enum" : [
@@ -3074,6 +3405,15 @@
               "STOREFRONT",
               "VENDOR"
             ],
+            "type" : "string"
+          },
+          "scheduledForDate" : {
+            "description" : "Target calendar date for a scheduled batch/pre-order (V87).",
+            "format" : "date",
+            "type" : "string"
+          },
+          "scheduledWindowLabel" : {
+            "description" : "Human-readable fulfilment window label captured at checkout (e.g. 'Saturday 12:00-16:00').",
             "type" : "string"
           },
           "shopId" : {
@@ -4331,6 +4671,15 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "fulfilmentTimingMode" : {
+            "description" : "Whether the shop accepts immediate orders only (IMMEDIATE_ONLY), scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS).",
+            "enum" : [
+              "IMMEDIATE_ONLY",
+              "SCHEDULED_SLOTS_ONLY",
+              "HYBRID_IMMEDIATE_AND_SLOTS"
+            ],
+            "type" : "string"
+          },
           "hoursSource" : {
             "description" : "Where the hours came from. NEEDS_REVIEW: some original text could not be read and those days stay open until the vendor saves hours (D-25); openNow already accounts for it.",
             "enum" : [
@@ -5272,6 +5621,11 @@
           "deliveryInfo" : {
             "type" : "string"
           },
+          "depositBps" : {
+            "description" : "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR.",
+            "format" : "int32",
+            "type" : "integer"
+          },
           "description" : {
             "type" : "string"
           },
@@ -5282,6 +5636,15 @@
             "description" : "A DELIVERY order whose items reach this subtotal (pennies, inclusive) pays no fee. Absent: no free-delivery threshold.",
             "format" : "int64",
             "type" : "integer"
+          },
+          "fulfilmentTimingMode" : {
+            "description" : "Whether the shop accepts immediate orders only (IMMEDIATE_ONLY), scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS).",
+            "enum" : [
+              "IMMEDIATE_ONLY",
+              "SCHEDULED_SLOTS_ONLY",
+              "HYBRID_IMMEDIATE_AND_SLOTS"
+            ],
+            "type" : "string"
           },
           "hoursSource" : {
             "description" : "Where the opening schedule came from: STRUCTURED (the vendor saved it), MIGRATED_FROM_TEXT, NEEDS_REVIEW (some free-text hours could not be read; those days stay open until the vendor saves hours, D-25) or LEGACY_ALWAYS_OPEN (no hours were ever set; open at any time). Absent: no hours yet.",
@@ -5363,6 +5726,15 @@
           },
           "published" : {
             "type" : "boolean"
+          },
+          "settlementPolicyMode" : {
+            "description" : "Optional shop-level settlement policy override (DIRECT_CHARGE_VENDOR_MOR | DESTINATION_CHARGE_PLATFORM_MOR | SPLIT_DEPOSIT_VENDOR_MOR).",
+            "enum" : [
+              "DIRECT_CHARGE_VENDOR_MOR",
+              "DESTINATION_CHARGE_PLATFORM_MOR",
+              "SPLIT_DEPOSIT_VENDOR_MOR"
+            ],
+            "type" : "string"
           },
           "slug" : {
             "type" : "string"
@@ -9264,6 +9636,62 @@
         ]
       }
     },
+    "/api/v1/orders/cook-sheet" : {
+      "get" : {
+        "description" : "Aggregates active accepted non-voided orders (CONFIRMED, PREPARING, READY) for a shop by product with total units, order count, V63 recorded allergen declaration, and V73 per-order allergy alerts (ADR-0007 / GAP-GTM-03). Optional scheduledForDate and fulfilmentSlotId narrow the batch to a specific scheduled cook day or slot. Requires STAFF on the shop.",
+        "operationId" : "getCookSheet",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "shopId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "scheduledForDate",
+            "required" : false,
+            "schema" : {
+              "format" : "date",
+              "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "fulfilmentSlotId",
+            "required" : false,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CookSheetDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Consolidated kitchen Cook Sheet for one shop",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
     "/api/v1/orders/customer/{customerId}" : {
       "get" : {
         "description" : "Returns paginated orders for a specific customer of the authenticated tenant",
@@ -12756,6 +13184,41 @@
         ]
       }
     },
+    "/api/v1/public/shops/{slug}/slots" : {
+      "get" : {
+        "description" : "Returns active, future scheduled fulfilment slots for a published shop (ADR-0007 / GAP-GTM-02).",
+        "operationId" : "getShopSlots",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/FulfilmentSlotDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Get available fulfilment slots",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/staff-invites/accept" : {
       "post" : {
         "description" : "Single use. For a NEW address, creates the account with the given names and password, then grants exactly the invited role and shop; for an address that already has an account in this business, grants it with no password. The grant is always the invitation's, never the request's. After a 201 the client starts the ordinary sign-in with the invited email as the login hint (D-26).",
@@ -13698,6 +14161,183 @@
           }
         ],
         "summary" : "Pause storefront orders",
+        "tags" : [
+          "Shops"
+        ]
+      }
+    },
+    "/api/v1/shops/{id}/slots" : {
+      "get" : {
+        "description" : "Returns all scheduled fulfilment slots for this shop, ordered by serviceDate and windowStart. Requires STAFF on the shop.",
+        "operationId" : "listSlots",
+        "parameters" : [
+          {
+            "description" : "Shop ID",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/FulfilmentSlotDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List scheduled fulfilment slots",
+        "tags" : [
+          "Shops"
+        ]
+      },
+      "post" : {
+        "description" : "Creates a capacity-bounded scheduled fulfilment slot for pre-orders, batch drops, or catering windows. Requires SHOP_MANAGER on the shop.",
+        "operationId" : "createSlot",
+        "parameters" : [
+          {
+            "description" : "Shop ID",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateFulfilmentSlotRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FulfilmentSlotDto"
+                }
+              }
+            },
+            "description" : "Slot created"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Validation error"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No SHOP_MANAGER grant on this shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Shop not found"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Create scheduled fulfilment slot",
+        "tags" : [
+          "Shops"
+        ]
+      }
+    },
+    "/api/v1/shops/{id}/slots/{slotId}" : {
+      "delete" : {
+        "description" : "Marks a scheduled fulfilment slot inactive so no further pre-orders can reserve it, while preserving historical links on existing orders. Requires SHOP_MANAGER on the shop.",
+        "operationId" : "deactivateSlot",
+        "parameters" : [
+          {
+            "description" : "Shop ID",
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "Slot ID",
+            "in" : "path",
+            "name" : "slotId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FulfilmentSlotDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Deactivate scheduled fulfilment slot",
         "tags" : [
           "Shops"
         ]
@@ -15355,6 +15995,41 @@
           }
         },
         "summary" : "Submit a review",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/shops/{slug}/slots" : {
+      "get" : {
+        "description" : "Returns active, future scheduled fulfilment slots for a published shop (ADR-0007 / GAP-GTM-02).",
+        "operationId" : "getShopSlots_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/FulfilmentSlotDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Get available fulfilment slots",
         "tags" : [
           "Public Storefront"
         ]

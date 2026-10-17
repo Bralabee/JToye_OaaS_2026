@@ -1782,4 +1782,69 @@ class PublicStorefrontServiceTest {
 
         assertTrue(ex.getMessage().contains("old-unpublished"));
     }
+
+    @Test
+    @DisplayName("ADR-0007 / GAP-GTM-02: createGuestOrder with fulfilmentSlotId on HYBRID shop succeeds when closed now and reserves slot")
+    void createGuestOrder_closedShopWithScheduledSlotOnHybridShop_succeedsAndReservesSlot() {
+        // FIXED_CLOCK is Monday 12:00 BST; shop is only open Saturdays 14:00-18:00
+        giveStructuredHours(schedule("sat", "14:00", "18:00"));
+        publishedShop.setFulfilmentTimingMode(uk.jtoye.core.shop.FulfilmentTimingMode.HYBRID_IMMEDIATE_AND_SLOTS);
+        publishedShop.setDeliveryFeePennies(0L);
+
+        uk.jtoye.core.shop.ShopFulfilmentSlotService mockSlotService =
+                mock(uk.jtoye.core.shop.ShopFulfilmentSlotService.class);
+        PublicStorefrontService slotAwareService = new PublicStorefrontService(
+                shopRepository, shopSlugAliasRepository, productRepository, orderRepository,
+                eventPublisher, entityManager, paymentService, announcementRepository,
+                idempotencyService, postcodeGeocoder, new OrderNumberGenerator(),
+                traderIdentityService, new ShopAvailabilityPolicy(FIXED_CLOCK),
+                new OrderLimits(50, 200, 50, 100_000L), new CashOrderCaps(orderRepository, 3, 3, 5),
+                new ClientIpDigester(TEST_HMAC_KEY), mockSlotService, 5.0, 50.0);
+
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("2L Party Jollof Bowl", 2500L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UUID slotId = UUID.randomUUID();
+        doAnswer(inv -> {
+            Order o = inv.getArgument(2);
+            o.setFulfilmentSlotId(slotId);
+            o.setScheduledForDate(LocalDate.of(2026, 10, 17));
+            o.setScheduledWindowLabel("2026-10-17 14:00-18:00");
+            return null;
+        }).when(mockSlotService).reserveSlotForOrder(eq(publishedShop), eq(slotId), any(Order.class));
+
+        GuestOrderRequest request = deliveryRequest(product);
+        request.setFulfilmentSlotId(slotId);
+
+        GuestOrderConfirmation confirmation =
+                slotAwareService.createGuestOrder("test-shop-abc12345", request);
+
+        verify(mockSlotService).reserveSlotForOrder(eq(publishedShop), eq(slotId), any(Order.class));
+        assertEquals(slotId, confirmation.getFulfilmentSlotId());
+        assertEquals(LocalDate.of(2026, 10, 17), confirmation.getScheduledForDate());
+        assertEquals("2026-10-17 14:00-18:00", confirmation.getScheduledWindowLabel());
+    }
+
+    @Test
+    @DisplayName("ADR-0007 / GAP-GTM-02: createGuestOrder with fulfilmentSlotId still refuses when shop is PAUSED")
+    void createGuestOrder_pausedShopWithScheduledSlot_stillRefusesWithShopClosedException() {
+        publishedShop.setOrdersPausedIndefinitely(true);
+        publishedShop.setFulfilmentTimingMode(uk.jtoye.core.shop.FulfilmentTimingMode.HYBRID_IMMEDIATE_AND_SLOTS);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        Product product = availableProduct("2L Party Jollof Bowl", 2500L);
+        GuestOrderRequest request = deliveryRequest(product);
+        request.setFulfilmentSlotId(UUID.randomUUID());
+
+        uk.jtoye.core.exception.ShopClosedException ex = assertThrows(
+                uk.jtoye.core.exception.ShopClosedException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request));
+        assertEquals("PAUSED", ex.getReason());
+    }
 }
+

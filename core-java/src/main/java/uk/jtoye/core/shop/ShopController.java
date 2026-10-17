@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -17,7 +18,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.shop.dto.CreateFulfilmentSlotRequest;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
+import uk.jtoye.core.shop.dto.FulfilmentSlotDto;
 import uk.jtoye.core.shop.dto.PauseOrdersRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
@@ -36,9 +39,16 @@ import java.util.UUID;
 @SecurityRequirement(name = "tenant-header")
 public class ShopController {
     private final ShopService shopService;
+    private final ShopFulfilmentSlotService slotService;
 
     public ShopController(ShopService shopService) {
+        this(shopService, null);
+    }
+
+    @Autowired
+    public ShopController(ShopService shopService, @jakarta.annotation.Nullable ShopFulfilmentSlotService slotService) {
         this.shopService = shopService;
+        this.slotService = slotService;
     }
 
     /**
@@ -217,5 +227,54 @@ public class ShopController {
             @Parameter(description = "Shop ID") @PathVariable UUID id) {
         shopService.deleteShop(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * List scheduled fulfilment slots for a shop (ADR-0007 / GAP-GTM-02).
+     * GET /shops/{id}/slots
+     */
+    @GetMapping("/{id}/slots")
+    @Operation(summary = "List scheduled fulfilment slots",
+            description = "Returns all scheduled fulfilment slots for this shop, ordered by serviceDate and windowStart. Requires STAFF on the shop.")
+    public ResponseEntity<List<FulfilmentSlotDto>> listSlots(
+            @Parameter(description = "Shop ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(slotService.listVendorSlots(id));
+    }
+
+    /**
+     * Create a scheduled fulfilment slot for a shop (ADR-0007 / GAP-GTM-02).
+     * POST /shops/{id}/slots
+     */
+    @PostMapping("/{id}/slots")
+    @Operation(summary = "Create scheduled fulfilment slot",
+            description = "Creates a capacity-bounded scheduled fulfilment slot for pre-orders, batch drops, or catering windows. Requires SHOP_MANAGER on the shop.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Slot created"),
+            @ApiResponse(responseCode = "400", description = "Validation error"),
+            @ApiResponse(responseCode = "403", description = "No SHOP_MANAGER grant on this shop"),
+            @ApiResponse(responseCode = "404", description = "Shop not found")
+    })
+    public ResponseEntity<FulfilmentSlotDto> createSlot(
+            @Parameter(description = "Shop ID") @PathVariable UUID id,
+            @Valid @RequestBody CreateFulfilmentSlotRequest req) {
+        FulfilmentSlotDto slot = slotService.createSlot(id, req);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{slotId}")
+                .buildAndExpand(slot.id())
+                .toUri();
+        return ResponseEntity.created(location).body(slot);
+    }
+
+    /**
+     * Deactivate a scheduled fulfilment slot (ADR-0007 / GAP-GTM-02).
+     * DELETE /shops/{id}/slots/{slotId}
+     */
+    @DeleteMapping("/{id}/slots/{slotId}")
+    @Operation(summary = "Deactivate scheduled fulfilment slot",
+            description = "Marks a scheduled fulfilment slot inactive so no further pre-orders can reserve it, while preserving historical links on existing orders. Requires SHOP_MANAGER on the shop.")
+    public ResponseEntity<FulfilmentSlotDto> deactivateSlot(
+            @Parameter(description = "Shop ID") @PathVariable UUID id,
+            @Parameter(description = "Slot ID") @PathVariable UUID slotId) {
+        return ResponseEntity.ok(slotService.deactivateSlot(id, slotId));
     }
 }

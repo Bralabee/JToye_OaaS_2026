@@ -9,12 +9,16 @@ import com.stripe.param.AccountLinkCreateParams;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.onboarding.OnboardingModel;
 import uk.jtoye.core.onboarding.VendorOnboardingRepository;
+import uk.jtoye.core.order.Order;
 import uk.jtoye.core.payment.dto.ConnectAccountDto;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.tenant.StripeConnectStatus;
 import uk.jtoye.core.tenant.Tenant;
 import uk.jtoye.core.tenant.TenantRepository;
@@ -25,18 +29,28 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Stripe Connect integration (issue #102 [P2-11] AC2, ADR-0001 Decision 2):
+ * Stripe Connect integration (issue #102 [P2-11] AC2, ADR-0001 Decision 2,
+ * extended by ADR-0007 / GAP-GTM-01):
  * Express connected-account creation + onboarding links, the
- * {@code account.updated} capability sync, and the destination-charge routing
- * decision consumed by {@link PaymentService#createPaymentIntent}.
+ * {@code account.updated} capability sync, and multi-model settlement routing
+ * consumed by {@link PaymentService#createPaymentIntent}.
  *
- * <p><b>Money flow (ADR-0001 Decision 2):</b> MARKETPLACE → destination
- * charges (platform is merchant of record; funds route to the vendor's
- * connected account, platform keeps an application fee). WHITE_LABEL → direct
- * charges + application fee on the vendor's OWN account — NOT implemented in
- * this slice (J'Toye must never hold white-label customer money, so
- * white-label tenants deliberately get NO routing here and keep today's
- * behaviour until the direct-charge flow ships).
+ * <p><b>Money flow (ADR-0001 Decision 2 &amp; ADR-0007 §1):</b>
+ * <ul>
+ *   <li>{@link SettlementPolicyMode#DIRECT_CHARGE_VENDOR_MOR} (default for
+ *       {@link OnboardingModel#WHITE_LABEL}, Cohort A &amp; B): creates a direct
+ *       charge on the vendor's connected Stripe account ({@code Stripe-Account}
+ *       header on {@code RequestOptions}) with {@code application_fee_amount};
+ *       the Vendor is the legal Merchant of Record.</li>
+ *   <li>{@link SettlementPolicyMode#DESTINATION_CHARGE_PLATFORM_MOR} (default for
+ *       {@link OnboardingModel#MARKETPLACE}, Cohort D): creates a platform charge
+ *       with {@code transfer_data[destination]} and {@code application_fee_amount};
+ *       J'Toye Platform is the Merchant of Record.</li>
+ *   <li>{@link SettlementPolicyMode#SPLIT_DEPOSIT_VENDOR_MOR} (Cohort C catering):
+ *       creates a direct charge on the vendor's connected Stripe account for
+ *       {@code deposit_bps} of the order total and records
+ *       {@code depositAmountPennies} + {@code balanceDuePennies}.</li>
+ * </ul>
  *
  * <p>All Stripe calls go through the SDK statics (house pattern — see
  * {@code PaymentService}); the API key is set once per JVM by
@@ -50,13 +64,23 @@ public class StripeConnectService {
     private final StripeProperties stripeProperties;
     private final TenantRepository tenantRepository;
     private final VendorOnboardingRepository vendorOnboardingRepository;
+    private final ShopRepository shopRepository;
 
     public StripeConnectService(StripeProperties stripeProperties,
                                 TenantRepository tenantRepository,
                                 VendorOnboardingRepository vendorOnboardingRepository) {
+        this(stripeProperties, tenantRepository, vendorOnboardingRepository, null);
+    }
+
+    @Autowired
+    public StripeConnectService(StripeProperties stripeProperties,
+                                TenantRepository tenantRepository,
+                                VendorOnboardingRepository vendorOnboardingRepository,
+                                ShopRepository shopRepository) {
         this.stripeProperties = stripeProperties;
         this.tenantRepository = tenantRepository;
         this.vendorOnboardingRepository = vendorOnboardingRepository;
+        this.shopRepository = shopRepository;
     }
 
     // ------------------------------------------------------------------
@@ -164,8 +188,86 @@ public class StripeConnectService {
     }
 
     // ------------------------------------------------------------------
-    // Destination-charge routing decision (consumed by PaymentService)
+    // Settlement routing decisions (consumed by PaymentService)
     // ------------------------------------------------------------------
+
+    /**
+     * Resolves the multi-model {@link SettlementRoutingDecision} for an {@link Order}
+     * (ADR-0007 / GAP-GTM-01).
+     *
+     * <p>Looks up the order's {@link Shop} (when {@code shopRepository} and {@code order.getShopId()}
+     * are available) to honour shop-level {@link SettlementPolicyMode} and {@code depositBps}
+     * overrides before falling back to the tenant's {@link OnboardingModel}.
+     */
+    @Transactional(readOnly = true)
+    public Optional<SettlementRoutingDecision> resolveSettlementRouting(Order order) {
+        if (order == null || order.getTenantId() == null) {
+            return Optional.empty();
+        }
+        Shop shop = (shopRepository != null && order.getShopId() != null)
+                ? shopRepository.findById(order.getShopId()).orElse(null)
+                : null;
+        long totalPennies = order.getTotalAmountPennies() != null ? order.getTotalAmountPennies() : 0L;
+        return resolveSettlementRouting(order.getTenantId(), shop, totalPennies);
+    }
+
+    /**
+     * Resolves the multi-model {@link SettlementRoutingDecision} for a tenant, optional shop,
+     * and order total in pennies (ADR-0007 / GAP-GTM-01).
+     *
+     * <ul>
+     *   <li>If the shop explicitly sets {@link Shop#getSettlementPolicyMode()}, that mode wins.</li>
+     *   <li>Otherwise {@link OnboardingModel#WHITE_LABEL} maps to
+     *       {@link SettlementPolicyMode#DIRECT_CHARGE_VENDOR_MOR} (Vendor is Merchant of Record)
+     *       and {@link OnboardingModel#MARKETPLACE} maps to
+     *       {@link SettlementPolicyMode#DESTINATION_CHARGE_PLATFORM_MOR} (Platform is MoR).</li>
+     *   <li>Returns {@link Optional#empty()} when the tenant has no {@code ENABLED} connected
+     *       Stripe account or no onboarding model/shop policy is configured.</li>
+     * </ul>
+     */
+    @Transactional(readOnly = true)
+    public Optional<SettlementRoutingDecision> resolveSettlementRouting(UUID tenantId,
+                                                                        Shop shop,
+                                                                        long orderTotalPennies) {
+        SettlementPolicyMode mode = (shop != null) ? shop.getSettlementPolicyMode() : null;
+        if (mode == null) {
+            Optional<OnboardingModel> modelOpt = vendorOnboardingRepository.findByTenantId(tenantId)
+                    .map(uk.jtoye.core.onboarding.VendorOnboarding::getModel);
+            if (modelOpt.isEmpty()) {
+                return Optional.empty();
+            }
+            mode = (modelOpt.get() == OnboardingModel.MARKETPLACE)
+                    ? SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR
+                    : SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR;
+        }
+
+        Optional<String> accountIdOpt = tenantRepository.findById(tenantId)
+                .filter(t -> t.getStripeConnectStatus() == StripeConnectStatus.ENABLED)
+                .map(Tenant::getStripeAccountId)
+                .filter(accountId -> accountId != null && !accountId.isBlank());
+        if (accountIdOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        String accountId = accountIdOpt.get();
+
+        if (mode == SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR) {
+            int depositBps = (shop != null && shop.getDepositBps() != null
+                    && shop.getDepositBps() >= 1000 && shop.getDepositBps() <= 10_000)
+                    ? shop.getDepositBps()
+                    : 10_000;
+            long depositAmount = (depositBps >= 10_000 || orderTotalPennies <= 0)
+                    ? orderTotalPennies
+                    : Math.max(1L, orderTotalPennies * depositBps / 10_000L);
+            long balanceDue = Math.max(0L, orderTotalPennies - depositAmount);
+            long fee = applicationFeePennies(depositAmount);
+            return Optional.of(new SettlementRoutingDecision(
+                    mode, accountId, depositAmount, fee, depositAmount, balanceDue));
+        }
+
+        long fee = applicationFeePennies(orderTotalPennies);
+        return Optional.of(new SettlementRoutingDecision(
+                mode, accountId, orderTotalPennies, fee, null, null));
+    }
 
     /**
      * Returns the connected-account id to route a destination charge to, or
@@ -194,7 +296,7 @@ public class StripeConnectService {
     }
 
     /**
-     * Platform application fee for a destination charge, in pennies:
+     * Platform application fee for a connected charge, in pennies:
      * {@code amount * platformFeeBps / 10_000}, floored (long integer math —
      * never fractional pennies). Returns 0 when no fee is configured.
      */

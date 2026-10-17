@@ -147,8 +147,15 @@ public class PaymentService {
                             + "creating its PaymentIntent (issue #538).");
         }
 
+        java.util.Optional<SettlementRoutingDecision> routingOpt =
+                stripeConnectService.resolveSettlementRouting(order);
+
+        long chargeAmountPennies = routingOpt
+                .map(SettlementRoutingDecision::chargeAmountPennies)
+                .orElseGet(() -> order.getTotalAmountPennies() != null ? order.getTotalAmountPennies() : 0L);
+
         PaymentIntentCreateParams.Builder builder = PaymentIntentCreateParams.builder()
-                .setAmount(order.getTotalAmountPennies())
+                .setAmount(chargeAmountPennies)
                 .setCurrency(stripeProperties.getCurrency())
                 .setDescription("Order " + order.getOrderNumber())
                 .putMetadata("order_id", order.getId().toString())
@@ -160,32 +167,54 @@ public class PaymentService {
                                 .build()
                 );
 
-        java.util.Optional<String> destination =
-                stripeConnectService.resolveDestinationAccount(order.getTenantId());
-        destination.ifPresent(accountId -> {
-            builder.setTransferData(PaymentIntentCreateParams.TransferData.builder()
-                    .setDestination(accountId)
-                    .build());
-            long fee = stripeConnectService.applicationFeePennies(order.getTotalAmountPennies());
-            if (fee > 0) {
-                builder.setApplicationFeeAmount(fee);
+        RequestOptions.RequestOptionsBuilder requestOptionsBuilder = RequestOptions.builder()
+                .setIdempotencyKey(intentIdempotencyKey(order));
+
+        if (routingOpt.isPresent()) {
+            SettlementRoutingDecision decision = routingOpt.get();
+            builder.putMetadata("settlement_mode", decision.mode().name());
+            if (decision.depositAmountPennies() != null && decision.balanceDuePennies() != null) {
+                order.setDepositAmountPennies(decision.depositAmountPennies());
+                order.setBalanceDuePennies(decision.balanceDuePennies());
             }
-        });
+            if (decision.applicationFeePennies() > 0) {
+                builder.setApplicationFeeAmount(decision.applicationFeePennies());
+            }
+            if (decision.usesDirectChargeHeader()) {
+                requestOptionsBuilder.setStripeAccount(decision.connectedAccountId());
+            } else if (decision.usesDestinationTransfer()) {
+                builder.setTransferData(PaymentIntentCreateParams.TransferData.builder()
+                        .setDestination(decision.connectedAccountId())
+                        .build());
+            }
+        } else {
+            java.util.Optional<String> destination =
+                    stripeConnectService.resolveDestinationAccount(order.getTenantId());
+            destination.ifPresent(accountId -> {
+                builder.setTransferData(PaymentIntentCreateParams.TransferData.builder()
+                        .setDestination(accountId)
+                        .build());
+                long fee = stripeConnectService.applicationFeePennies(order.getTotalAmountPennies());
+                if (fee > 0) {
+                    builder.setApplicationFeeAmount(fee);
+                }
+            });
+        }
 
         // See the "Idempotency" note above: without this header an SDK network
         // retry can create a second (and third) PaymentIntent for one checkout.
-        RequestOptions requestOptions = RequestOptions.builder()
-                .setIdempotencyKey(intentIdempotencyKey(order))
-                .build();
+        RequestOptions requestOptions = requestOptionsBuilder.build();
 
         PaymentIntent intent = PaymentIntent.create(builder.build(), requestOptions);
 
-        if (destination.isPresent()) {
-            log.info("Created destination-charge PaymentIntent {} for order {} (amount: {} pennies, destination: {})",
-                    intent.getId(), order.getOrderNumber(), order.getTotalAmountPennies(), destination.get());
+        if (routingOpt.isPresent()) {
+            SettlementRoutingDecision decision = routingOpt.get();
+            log.info("Created {} PaymentIntent {} for order {} (chargeAmount: {} pennies, connectedAccount: {})",
+                    decision.mode(), intent.getId(), order.getOrderNumber(),
+                    chargeAmountPennies, decision.connectedAccountId());
         } else {
             log.info("Created PaymentIntent {} for order {} (amount: {} pennies)",
-                    intent.getId(), order.getOrderNumber(), order.getTotalAmountPennies());
+                    intent.getId(), order.getOrderNumber(), chargeAmountPennies);
         }
 
         return new PaymentIntentResult(intent.getId(), intent.getClientSecret());
@@ -330,23 +359,36 @@ public class PaymentService {
                     order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
                     OrderStatus.DRAFT, OrderStatus.PENDING);
 
+            boolean isSplitDepositWithBalance = order.getDepositAmountPennies() != null
+                    && order.getBalanceDuePennies() != null
+                    && order.getBalanceDuePennies() > 0;
+            long capturedAmountPennies = isSplitDepositWithBalance
+                    ? order.getDepositAmountPennies()
+                    : order.getTotalAmountPennies();
+
             // Publish payment succeeded event (for audit, analytics, reconciliation)
             paymentEventPublisher.publishSucceeded(
                     order.getId(), order.getTenantId(), order.getOrderNumber(),
-                    intent.getId(), order.getTotalAmountPennies(), "gbp");
+                    intent.getId(), capturedAmountPennies, "gbp");
 
             // Create financial transaction record — canonical ledger owner for
-            // card orders (Issue #81 BUG 3). Idempotent on orderId, so the later
+            // full-payment card orders (Issue #81 BUG 3). Idempotent on orderId, so the later
             // COMPLETED transition is a no-op. Rate is the order's resolved
             // (predominant) rate, not a hardcoded STANDARD literal (BUG 2).
-            financialTransactionService.createTransaction(
-                    new CreateTransactionRequest(
-                            order.getTotalAmountPennies(),
-                            order.getVatRate(),
-                            "Payment " + intent.getId() + " for Order " + order.getOrderNumber(),
-                            order.getId(),
-                            order.getShopId()   // Phase 37-11: the SALE belongs to the order's shop
-                    ));
+            // ADR-0007 §1.3 (R-4): for SPLIT_DEPOSIT_VENDOR_MOR catering orders where
+            // balanceDuePennies > 0 remains to be collected prior to fulfilment, defer the
+            // full-order SALE ledger row to the COMPLETED transition in OrderService so a
+            // partial deposit never writes an overstated full-gross SALE row prematurely.
+            if (!isSplitDepositWithBalance) {
+                financialTransactionService.createTransaction(
+                        new CreateTransactionRequest(
+                                order.getTotalAmountPennies(),
+                                order.getVatRate(),
+                                "Payment " + intent.getId() + " for Order " + order.getOrderNumber(),
+                                order.getId(),
+                                order.getShopId()   // Phase 37-11: the SALE belongs to the order's shop
+                        ));
+            }
 
             log.info("Payment succeeded for order {} — PI: {}, method: {}",
                     order.getOrderNumber(), intent.getId(), paymentMethodDesc);

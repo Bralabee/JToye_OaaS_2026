@@ -2,6 +2,8 @@ package uk.jtoye.core.shop.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
+import uk.jtoye.core.payment.SettlementPolicyMode;
+import uk.jtoye.core.shop.FulfilmentTimingMode;
 import uk.jtoye.core.shop.HoursSource;
 import uk.jtoye.core.shop.OpeningSchedule;
 
@@ -80,6 +82,18 @@ public class ShopDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Boolean offersCollection;
 
+    @Schema(description = "Whether the shop accepts immediate orders only (IMMEDIATE_ONLY), scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS).")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private FulfilmentTimingMode fulfilmentTimingMode;
+
+    @Schema(description = "Optional shop-level settlement policy override (DIRECT_CHARGE_VENDOR_MOR | DESTINATION_CHARGE_PLATFORM_MOR | SPLIT_DEPOSIT_VENDOR_MOR).")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private SettlementPolicyMode settlementPolicyMode;
+
+    @Schema(description = "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer depositBps;
+
     private Boolean published;
     private String tags;
 
@@ -133,6 +147,12 @@ public class ShopDto {
     public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
     public Boolean getOffersCollection() { return offersCollection; }
     public void setOffersCollection(Boolean offersCollection) { this.offersCollection = offersCollection; }
+    public FulfilmentTimingMode getFulfilmentTimingMode() { return fulfilmentTimingMode; }
+    public void setFulfilmentTimingMode(FulfilmentTimingMode fulfilmentTimingMode) { this.fulfilmentTimingMode = fulfilmentTimingMode; }
+    public SettlementPolicyMode getSettlementPolicyMode() { return settlementPolicyMode; }
+    public void setSettlementPolicyMode(SettlementPolicyMode settlementPolicyMode) { this.settlementPolicyMode = settlementPolicyMode; }
+    public Integer getDepositBps() { return depositBps; }
+    public void setDepositBps(Integer depositBps) { this.depositBps = depositBps; }
     public Boolean getPublished() { return published; }
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }

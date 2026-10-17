@@ -2,6 +2,7 @@ package uk.jtoye.core.storefront.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
+import uk.jtoye.core.shop.FulfilmentTimingMode;
 import uk.jtoye.core.shop.HoursSource;
 import uk.jtoye.core.shop.OpeningSchedule;
 
@@ -116,6 +117,10 @@ public class PublicShopDto {
             + "A line above it is refused 422 order-limit-exceeded on every order path; the storefront stepper stops here.")
     private Integer maxLineQuantity;
 
+    @Schema(description = "Whether the shop accepts immediate orders only (IMMEDIATE_ONLY), scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS).")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private FulfilmentTimingMode fulfilmentTimingMode;
+
     public String getSlug() { return slug; }
     public void setSlug(String slug) { this.slug = slug; }
     public String getName() { return name; }
@@ -174,4 +179,6 @@ public class PublicShopDto {
     public void setOffersCollection(boolean offersCollection) { this.offersCollection = offersCollection; }
     public Integer getMaxLineQuantity() { return maxLineQuantity; }
     public void setMaxLineQuantity(Integer maxLineQuantity) { this.maxLineQuantity = maxLineQuantity; }
+    public FulfilmentTimingMode getFulfilmentTimingMode() { return fulfilmentTimingMode; }
+    public void setFulfilmentTimingMode(FulfilmentTimingMode fulfilmentTimingMode) { this.fulfilmentTimingMode = fulfilmentTimingMode; }
 }
