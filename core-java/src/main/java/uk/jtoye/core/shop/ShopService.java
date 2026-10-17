@@ -174,6 +174,12 @@ public class ShopService {
         if (shop.getOffersCollection() == null) {
             shop.setOffersCollection(true);
         }
+        if (shop.getFulfilmentTimingMode() == null) {
+            shop.setFulfilmentTimingMode(FulfilmentTimingMode.IMMEDIATE_ONLY);
+        }
+        if (shop.getDepositBps() == null) {
+            shop.setDepositBps(10000);
+        }
         requireSomeFulfilmentOffered(shop);
 
         // #460 link 3a: derive the coordinate from the address BEFORE the row is written,

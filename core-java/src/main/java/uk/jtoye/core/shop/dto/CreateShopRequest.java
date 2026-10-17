@@ -4,11 +4,14 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
+import uk.jtoye.core.payment.SettlementPolicyMode;
+import uk.jtoye.core.shop.FulfilmentTimingMode;
 import uk.jtoye.core.shop.OpeningSchedule;
 
 import java.util.List;
@@ -142,6 +145,20 @@ public class CreateShopRequest {
     private Boolean published;
     private String tags;
 
+    @Schema(description = "Whether the shop accepts immediate orders only (IMMEDIATE_ONLY), scheduled slots only (SCHEDULED_SLOTS_ONLY), or both (HYBRID_IMMEDIATE_AND_SLOTS). Absent keeps the stored value (IMMEDIATE_ONLY on create).",
+            nullable = true)
+    private FulfilmentTimingMode fulfilmentTimingMode;
+
+    @Schema(description = "Optional shop-level settlement policy override (DIRECT_CHARGE_VENDOR_MOR | DESTINATION_CHARGE_PLATFORM_MOR | SPLIT_DEPOSIT_VENDOR_MOR). Absent keeps the stored value.",
+            nullable = true)
+    private SettlementPolicyMode settlementPolicyMode;
+
+    @Schema(description = "Deposit basis points (1000..10000) charged at checkout when settlementPolicyMode is SPLIT_DEPOSIT_VENDOR_MOR. Absent keeps the stored value (10000 on create).",
+            nullable = true, minimum = "1000", maximum = "10000")
+    @Min(value = 1000, message = "depositBps must be between 1000 and 10000")
+    @Max(value = 10000, message = "depositBps must be between 1000 and 10000")
+    private Integer depositBps;
+
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getAddress() { return address; }
@@ -187,4 +204,10 @@ public class CreateShopRequest {
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+    public FulfilmentTimingMode getFulfilmentTimingMode() { return fulfilmentTimingMode; }
+    public void setFulfilmentTimingMode(FulfilmentTimingMode fulfilmentTimingMode) { this.fulfilmentTimingMode = fulfilmentTimingMode; }
+    public SettlementPolicyMode getSettlementPolicyMode() { return settlementPolicyMode; }
+    public void setSettlementPolicyMode(SettlementPolicyMode settlementPolicyMode) { this.settlementPolicyMode = settlementPolicyMode; }
+    public Integer getDepositBps() { return depositBps; }
+    public void setDepositBps(Integer depositBps) { this.depositBps = depositBps; }
 }

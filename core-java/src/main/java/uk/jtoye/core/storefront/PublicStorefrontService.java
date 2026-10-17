@@ -160,6 +160,7 @@ public class PublicStorefrontService {
      * reaches this class — the controller resolves it and this service digests it before any write.
      */
     private final ClientIpDigester clientIpDigester;
+    private final uk.jtoye.core.shop.ShopFulfilmentSlotService slotService;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -181,7 +182,30 @@ public class PublicStorefrontService {
                 entityManager, paymentService, announcementRepository, idempotencyService,
                 postcodeGeocoder, orderNumberGenerator, traderIdentityService,
                 availabilityPolicy, orderLimits, cashOrderCaps, clientIpDigester,
-                defaultRadiusKm, maxRadiusKm);
+                null, defaultRadiusKm, maxRadiusKm);
+    }
+
+    public PublicStorefrontService(ShopRepository shopRepository,
+                                   uk.jtoye.core.shop.ShopSlugAliasRepository shopSlugAliasRepository,
+                                   ProductRepository productRepository,
+                                   OrderRepository orderRepository, OrderEventPublisher eventPublisher,
+                                   EntityManager entityManager, PaymentService paymentService,
+                                   ShopAnnouncementRepository announcementRepository,
+                                   IdempotencyService idempotencyService,
+                                   PostcodeGeocoder postcodeGeocoder,
+                                   OrderNumberGenerator orderNumberGenerator,
+                                   TraderIdentityService traderIdentityService,
+                                   ShopAvailabilityPolicy availabilityPolicy,
+                                   OrderLimits orderLimits,
+                                   CashOrderCaps cashOrderCaps,
+                                   ClientIpDigester clientIpDigester,
+                                   @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
+                                   @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
+        this(shopRepository, shopSlugAliasRepository, productRepository, orderRepository, eventPublisher,
+                entityManager, paymentService, announcementRepository, idempotencyService,
+                postcodeGeocoder, orderNumberGenerator, traderIdentityService,
+                availabilityPolicy, orderLimits, cashOrderCaps, clientIpDigester,
+                null, defaultRadiusKm, maxRadiusKm);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -199,6 +223,7 @@ public class PublicStorefrontService {
                                    OrderLimits orderLimits,
                                    CashOrderCaps cashOrderCaps,
                                    ClientIpDigester clientIpDigester,
+                                   uk.jtoye.core.shop.ShopFulfilmentSlotService slotService,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -220,6 +245,7 @@ public class PublicStorefrontService {
         this.orderLimits = orderLimits;
         this.cashOrderCaps = cashOrderCaps;
         this.clientIpDigester = clientIpDigester;
+        this.slotService = slotService;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -647,6 +673,22 @@ public class PublicStorefrontService {
     }
 
     /**
+     * List active, future scheduled fulfilment slots for a published shop (V87, ADR-0007 / GAP-GTM-02).
+     */
+    public List<uk.jtoye.core.shop.dto.FulfilmentSlotDto> getShopSlots(String slug) {
+        log.debug("Fetching fulfilment slots for shop: {}", slug);
+        Shop shop = resolvePublicShopForSlug(slug);
+        try {
+            if (slotService == null) {
+                return List.of();
+            }
+            return slotService.listAvailablePublicSlots(shop.getId());
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
      * List orders for a customer email, paginated (Issue #95 — the previous
      * unbounded list allowed a single unauthenticated request to pull a
      * customer's entire order history). Sets session variable for RLS policy;
@@ -867,11 +909,10 @@ public class PublicStorefrontService {
         // cross-tenant spoof with 403 before Order/OrderItem rows are minted.
         Shop shop = resolvePublicShopForSlug(slug);
         try {
-            // 37-20 (D-15/D-25): the ONE open/paused/closed decision. A paused or closed shop refuses the
-            // order, typed 409 shop-closed, before the idempotency reservation below, so a refusal leaves no
-            // reservation and no order behind. It replaces validateShopIsOpen, which failed OPEN on hours it
-            // could not read and knew nothing of a pause.
-            availabilityPolicy.requireTakingOrders(shop);
+            // 37-20 (D-15/D-25) + V87 (ADR-0007 / GAP-GTM-02): evaluate open/paused/closed together with
+            // the shop's FulfilmentTimingMode and optional scheduled fulfilmentSlotId before the idempotency
+            // reservation below, so a refusal leaves no reservation and no order behind.
+            validateStorefrontTimingAndAvailability(shop, request);
 
             String idempotencyKey = resolveGuestIdempotencyKey(request.getIdempotencyKey(), headerIdempotencyKey);
             if (idempotencyKey == null) {
@@ -903,6 +944,52 @@ public class PublicStorefrontService {
             // stamped row count so the runtime role would fail loudly rather than silently.
             TenantContext.clear();
         }
+    }
+
+    /**
+     * V87 (ADR-0007 / GAP-GTM-02): enforces the shop's {@link uk.jtoye.core.shop.FulfilmentTimingMode}
+     * alongside {@link ShopAvailabilityPolicy}.
+     *
+     * <ul>
+     *   <li>When {@code request.getFulfilmentSlotId() != null}:
+     *     <ul>
+     *       <li>If the shop is {@code IMMEDIATE_ONLY}, refuses with 400 ({@code IllegalArgumentException}).</li>
+     *       <li>If the shop is {@code SCHEDULED_SLOTS_ONLY} or {@code HYBRID_IMMEDIATE_AND_SLOTS}, refuses ONLY
+     *           if the shop has explicitly paused orders ({@code Reason.PAUSED} -> 409 {@code shop-closed});
+     *           permits pre-ordering when the shop is outside its live opening hours ({@code CLOSED_NOW},
+     *           {@code CLOSED_TODAY}, {@code NO_HOURS}).</li>
+     *     </ul>
+     *   </li>
+     *   <li>When {@code request.getFulfilmentSlotId() == null}:
+     *     <ul>
+     *       <li>If the shop is {@code SCHEDULED_SLOTS_ONLY}, refuses with 400 ({@code IllegalArgumentException}).</li>
+     *       <li>Otherwise ({@code IMMEDIATE_ONLY} or {@code HYBRID_IMMEDIATE_AND_SLOTS}), requires the shop to be
+     *           open right now via {@link ShopAvailabilityPolicy#requireTakingOrders(Shop)}.</li>
+     *     </ul>
+     *   </li>
+     * </ul>
+     */
+    private void validateStorefrontTimingAndAvailability(Shop shop, GuestOrderRequest request) {
+        uk.jtoye.core.shop.FulfilmentTimingMode timingMode = shop.getFulfilmentTimingMode() != null
+                ? shop.getFulfilmentTimingMode()
+                : uk.jtoye.core.shop.FulfilmentTimingMode.IMMEDIATE_ONLY;
+        boolean hasScheduledSlot = request != null && request.getFulfilmentSlotId() != null;
+
+        if (hasScheduledSlot) {
+            if (timingMode == uk.jtoye.core.shop.FulfilmentTimingMode.IMMEDIATE_ONLY) {
+                throw new IllegalArgumentException("This shop does not accept scheduled slot pre-orders.");
+            }
+            ShopAvailabilityPolicy.Availability availability = availabilityPolicy.evaluate(shop);
+            if (!availability.openNow() && availability.reason() == ShopAvailabilityPolicy.Reason.PAUSED) {
+                availabilityPolicy.requireTakingOrders(shop);
+            }
+            return;
+        }
+
+        if (timingMode == uk.jtoye.core.shop.FulfilmentTimingMode.SCHEDULED_SLOTS_ONLY) {
+            throw new IllegalArgumentException("This shop requires selecting a scheduled fulfilment slot.");
+        }
+        availabilityPolicy.requireTakingOrders(shop);
     }
 
     /**
@@ -1001,7 +1088,7 @@ public class PublicStorefrontService {
         }
         OrderAllergenSnapshot.OrderAllergenView replayedSnapshot =
                 OrderAllergenSnapshot.viewOf(existingOrder.getItems());
-        return new GuestOrderConfirmation(
+        GuestOrderConfirmation confirmation = new GuestOrderConfirmation(
                 existingOrder.getOrderNumber(),
                 existingOrder.getStatus().name(),
                 existingOrder.getSubtotalPennies(),
@@ -1025,6 +1112,12 @@ public class PublicStorefrontService {
                 replayedSnapshot.declaredNames(),
                 replayedSnapshot.flags()
         );
+        confirmation.setFulfilmentSlotId(existingOrder.getFulfilmentSlotId());
+        confirmation.setScheduledForDate(existingOrder.getScheduledForDate());
+        confirmation.setScheduledWindowLabel(existingOrder.getScheduledWindowLabel());
+        confirmation.setDepositAmountPennies(existingOrder.getDepositAmountPennies());
+        confirmation.setBalanceDuePennies(existingOrder.getBalanceDuePennies());
+        return confirmation;
     }
 
     /**
@@ -1323,6 +1416,16 @@ public class PublicStorefrontService {
 
         order.calculateTotal();
 
+        // V87 (ADR-0007 / GAP-GTM-02): when the customer selected a scheduled fulfilment slot,
+        // validate cut-off + fulfilment type and atomically reserve 1 unit of capacity inside
+        // this transaction before persisting or charging.
+        if (request.getFulfilmentSlotId() != null) {
+            if (slotService == null) {
+                throw new IllegalStateException("Scheduled slot service is not configured");
+            }
+            slotService.reserveSlotForOrder(shop, request.getFulfilmentSlotId(), order);
+        }
+
         // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
         // If not configured, fall back to COD — order goes straight to PENDING.
         String clientSecret = null;
@@ -1445,7 +1548,7 @@ public class PublicStorefrontService {
         // the same read model the kitchen display uses, so the confirmation and the ticket cannot
         // disagree. The acknowledged set is the column 31.1-03 wrote in this transaction.
         OrderAllergenSnapshot.OrderAllergenView recordedSnapshot = OrderAllergenSnapshot.viewOf(order.getItems());
-        return new GuestOrderConfirmation(
+        GuestOrderConfirmation confirmation = new GuestOrderConfirmation(
                 order.getOrderNumber(),
                 order.getStatus().name(),
                 order.getSubtotalPennies(),
@@ -1465,6 +1568,12 @@ public class PublicStorefrontService {
                 recordedSnapshot.declaredNames(),
                 recordedSnapshot.flags()
         );
+        confirmation.setFulfilmentSlotId(order.getFulfilmentSlotId());
+        confirmation.setScheduledForDate(order.getScheduledForDate());
+        confirmation.setScheduledWindowLabel(order.getScheduledWindowLabel());
+        confirmation.setDepositAmountPennies(order.getDepositAmountPennies());
+        confirmation.setBalanceDuePennies(order.getBalanceDuePennies());
+        return confirmation;
     }
 
     /**
@@ -1569,6 +1678,7 @@ public class PublicStorefrontService {
         // 37-26 (D-20, theme 6): the SAME configured ceiling placeGuestOrder refuses on, so the basket
         // stepper stops exactly where checkout would say no, and never from a client-side constant.
         dto.setMaxLineQuantity(orderLimits.maxLineQuantity());
+        dto.setFulfilmentTimingMode(shop.getFulfilmentTimingMode());
         return dto;
     }
 

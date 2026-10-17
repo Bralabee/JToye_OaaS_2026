@@ -44,12 +44,21 @@ public class OrderController {
     private final OrderService orderService;
     private final OrderSseService sseService;
     private final IdempotencyService idempotencyService;
+    private final OrderCookSheetService cookSheetService;
 
     public OrderController(OrderService orderService, OrderSseService sseService,
                            IdempotencyService idempotencyService) {
+        this(orderService, sseService, idempotencyService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderController(OrderService orderService, OrderSseService sseService,
+                           IdempotencyService idempotencyService,
+                           @jakarta.annotation.Nullable OrderCookSheetService cookSheetService) {
         this.orderService = orderService;
         this.sseService = sseService;
         this.idempotencyService = idempotencyService;
+        this.cookSheetService = cookSheetService;
     }
 
     /**
@@ -171,6 +180,26 @@ public class OrderController {
             @RequestParam UUID shopId,
             Pageable pageable) {
         return ResponseEntity.ok(orderService.getKitchenBoard(shopId, pageable));
+    }
+
+    /**
+     * Consolidated kitchen "Cook Sheet" batch-prep summary (V87, ADR-0007 / GAP-GTM-03).
+     * GET /orders/cook-sheet?shopId=...&scheduledForDate=...&fulfilmentSlotId=...
+     */
+    @GetMapping("/cook-sheet")
+    @Operation(summary = "Consolidated kitchen Cook Sheet for one shop",
+            description = "Aggregates active accepted non-voided orders (CONFIRMED, PREPARING, READY) for a shop "
+                    + "by product with total units, order count, V63 recorded allergen declaration, and V73 "
+                    + "per-order allergy alerts (ADR-0007 / GAP-GTM-03). Optional scheduledForDate and "
+                    + "fulfilmentSlotId narrow the batch to a specific scheduled cook day or slot. Requires STAFF on the shop.")
+    public ResponseEntity<uk.jtoye.core.order.dto.CookSheetDto> getCookSheet(
+            @RequestParam UUID shopId,
+            @RequestParam(required = false) java.time.LocalDate scheduledForDate,
+            @RequestParam(required = false) UUID fulfilmentSlotId) {
+        if (cookSheetService == null) {
+            throw new IllegalStateException("Cook sheet service is not configured");
+        }
+        return ResponseEntity.ok(cookSheetService.getCookSheet(shopId, scheduledForDate, fulfilmentSlotId));
     }
 
     /**

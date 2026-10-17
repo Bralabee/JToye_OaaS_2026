@@ -339,4 +339,102 @@ class StripeConnectServiceTest {
         stripeProperties.setPlatformFeeBps(0);
         assertEquals(0L, service.applicationFeePennies(1500L));
     }
+
+    // ------------------------------------------------------------------
+    // ADR-0007 / GAP-GTM-01 — Multi-model settlement policy routing
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("resolveSettlementRouting defaults WHITE_LABEL tenant to DIRECT_CHARGE_VENDOR_MOR (Stripe-Account header)")
+    void resolveSettlementRouting_whiteLabelDefault_directChargeVendorMor() {
+        tenant.setStripeAccountId("acct_wl_1");
+        tenant.setStripeConnectStatus(StripeConnectStatus.ENABLED);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(vendorOnboardingRepository.findByTenantId(tenantId))
+                .thenReturn(Optional.of(onboarding(OnboardingModel.WHITE_LABEL)));
+
+        uk.jtoye.core.shop.Shop shop = new uk.jtoye.core.shop.Shop();
+        shop.setTenantId(tenantId);
+
+        Optional<SettlementRoutingDecision> decisionOpt =
+                service.resolveSettlementRouting(tenantId, shop, 4000L);
+
+        assertTrue(decisionOpt.isPresent());
+        SettlementRoutingDecision decision = decisionOpt.get();
+        assertEquals(SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR, decision.mode());
+        assertEquals("acct_wl_1", decision.connectedAccountId());
+        assertEquals(4000L, decision.chargeAmountPennies());
+        assertEquals(100L, decision.applicationFeePennies()); // 2.5% of 4000p
+        assertNull(decision.depositAmountPennies());
+        assertNull(decision.balanceDuePennies());
+        assertTrue(decision.usesDirectChargeHeader());
+        assertFalse(decision.usesDestinationTransfer());
+    }
+
+    @Test
+    @DisplayName("resolveSettlementRouting defaults MARKETPLACE tenant to DESTINATION_CHARGE_PLATFORM_MOR (transfer_data)")
+    void resolveSettlementRouting_marketplaceDefault_destinationChargePlatformMor() {
+        tenant.setStripeAccountId("acct_mkt_1");
+        tenant.setStripeConnectStatus(StripeConnectStatus.ENABLED);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(vendorOnboardingRepository.findByTenantId(tenantId))
+                .thenReturn(Optional.of(onboarding(OnboardingModel.MARKETPLACE)));
+
+        uk.jtoye.core.shop.Shop shop = new uk.jtoye.core.shop.Shop();
+        shop.setTenantId(tenantId);
+
+        Optional<SettlementRoutingDecision> decisionOpt =
+                service.resolveSettlementRouting(tenantId, shop, 4000L);
+
+        assertTrue(decisionOpt.isPresent());
+        SettlementRoutingDecision decision = decisionOpt.get();
+        assertEquals(SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR, decision.mode());
+        assertEquals("acct_mkt_1", decision.connectedAccountId());
+        assertEquals(4000L, decision.chargeAmountPennies());
+        assertEquals(100L, decision.applicationFeePennies());
+        assertFalse(decision.usesDirectChargeHeader());
+        assertTrue(decision.usesDestinationTransfer());
+    }
+
+    @Test
+    @DisplayName("resolveSettlementRouting honours shop SPLIT_DEPOSIT_VENDOR_MOR override and computes deposit + balance due")
+    void resolveSettlementRouting_shopOverride_splitDepositVendorMor() {
+        tenant.setStripeAccountId("acct_cater_1");
+        tenant.setStripeConnectStatus(StripeConnectStatus.ENABLED);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+
+        uk.jtoye.core.shop.Shop shop = new uk.jtoye.core.shop.Shop();
+        shop.setTenantId(tenantId);
+        shop.setSettlementPolicyMode(SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR);
+        shop.setDepositBps(3000); // 30% upfront deposit
+
+        Optional<SettlementRoutingDecision> decisionOpt =
+                service.resolveSettlementRouting(tenantId, shop, 10_000L);
+
+        assertTrue(decisionOpt.isPresent());
+        SettlementRoutingDecision decision = decisionOpt.get();
+        assertEquals(SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR, decision.mode());
+        assertEquals("acct_cater_1", decision.connectedAccountId());
+        assertEquals(3000L, decision.chargeAmountPennies());
+        assertEquals(3000L, decision.depositAmountPennies());
+        assertEquals(7000L, decision.balanceDuePennies());
+        assertEquals(75L, decision.applicationFeePennies()); // 2.5% of 3000p deposit
+        assertTrue(decision.usesDirectChargeHeader());
+        assertFalse(decision.usesDestinationTransfer());
+    }
+
+    @Test
+    @DisplayName("resolveSettlementRouting returns empty when connected account is not ENABLED")
+    void resolveSettlementRouting_disabledAccount_returnsEmpty() {
+        tenant.setStripeAccountId("acct_pending_1");
+        tenant.setStripeConnectStatus(StripeConnectStatus.PENDING);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+
+        uk.jtoye.core.shop.Shop shop = new uk.jtoye.core.shop.Shop();
+        shop.setTenantId(tenantId);
+        shop.setSettlementPolicyMode(SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR);
+
+        assertEquals(Optional.empty(), service.resolveSettlementRouting(tenantId, shop, 5000L));
+    }
 }
+

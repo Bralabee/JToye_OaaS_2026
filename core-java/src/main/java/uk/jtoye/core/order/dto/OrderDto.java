@@ -150,6 +150,45 @@ public class OrderDto {
     public Boolean getContactVerified() { return contactVerified; }
     public void setContactVerified(Boolean contactVerified) { this.contactVerified = contactVerified; }
 
+    // ------------------------------------------------------------------
+    // V87 (ADR-0007 / GAP-GTM-01 & GAP-GTM-02): scheduled fulfilment slot and split-deposit columns.
+    // NON_NULL so golden fixtures and pre-V87 / immediate full-payment orders omit them cleanly.
+    // ------------------------------------------------------------------
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).")
+    private UUID fulfilmentSlotId;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Target calendar date for a scheduled batch/pre-order (V87).")
+    private java.time.LocalDate scheduledForDate;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Human-readable fulfilment window label captured at checkout (e.g. 'Saturday 12:00-16:00').")
+    private String scheduledWindowLabel;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Upfront deposit charged in pennies under SPLIT_DEPOSIT_VENDOR_MOR (V87).")
+    private Long depositAmountPennies;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Remaining balance due in pennies on fulfilment under SPLIT_DEPOSIT_VENDOR_MOR (V87).")
+    private Long balanceDuePennies;
+
+    public UUID getFulfilmentSlotId() { return fulfilmentSlotId; }
+    public void setFulfilmentSlotId(UUID fulfilmentSlotId) { this.fulfilmentSlotId = fulfilmentSlotId; }
+
+    public java.time.LocalDate getScheduledForDate() { return scheduledForDate; }
+    public void setScheduledForDate(java.time.LocalDate scheduledForDate) { this.scheduledForDate = scheduledForDate; }
+
+    public String getScheduledWindowLabel() { return scheduledWindowLabel; }
+    public void setScheduledWindowLabel(String scheduledWindowLabel) { this.scheduledWindowLabel = scheduledWindowLabel; }
+
+    public Long getDepositAmountPennies() { return depositAmountPennies; }
+    public void setDepositAmountPennies(Long depositAmountPennies) { this.depositAmountPennies = depositAmountPennies; }
+
+    public Long getBalanceDuePennies() { return balanceDuePennies; }
+    public void setBalanceDuePennies(Long balanceDuePennies) { this.balanceDuePennies = balanceDuePennies; }
+
     public OffsetDateTime getVoidedAt() { return voidedAt; }
     public void setVoidedAt(OffsetDateTime voidedAt) { this.voidedAt = voidedAt; }
 

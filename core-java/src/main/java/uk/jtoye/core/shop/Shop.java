@@ -2,6 +2,7 @@ package uk.jtoye.core.shop;
 
 import jakarta.annotation.Nullable;
 import jakarta.persistence.*;
+import uk.jtoye.core.payment.SettlementPolicyMode;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.envers.Audited;
@@ -106,6 +107,31 @@ public class Shop {
     @Column(name = "offers_collection", nullable = false)
     private Boolean offersCollection = true;
 
+    /**
+     * ADR-0007 / V87: Governs whether this shop takes immediate orders only, scheduled slots only, or both.
+     * Default {@link FulfilmentTimingMode#IMMEDIATE_ONLY}, preserving pre-V87 behaviour for every shop.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfilment_timing_mode", nullable = false, length = 32)
+    private FulfilmentTimingMode fulfilmentTimingMode = FulfilmentTimingMode.IMMEDIATE_ONLY;
+
+    /**
+     * ADR-0007 / V87: Optional shop-level settlement policy override. When {@code null}, the shop inherits
+     * from its tenant's {@code OnboardingModel} ({@code WHITE_LABEL} -> {@code DIRECT_CHARGE_VENDOR_MOR},
+     * {@code MARKETPLACE} -> {@code DESTINATION_CHARGE_PLATFORM_MOR}).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "settlement_policy_mode", length = 40)
+    private SettlementPolicyMode settlementPolicyMode;
+
+    /**
+     * ADR-0007 / V87: Upfront deposit basis points (1000..10000) charged at checkout when
+     * {@link #settlementPolicyMode} is {@link SettlementPolicyMode#SPLIT_DEPOSIT_VENDOR_MOR}.
+     * Default 10000 (100%).
+     */
+    @Column(name = "deposit_bps", nullable = false)
+    private Integer depositBps = 10000;
+
     @Column(nullable = false)
     private Boolean published = false;
 
@@ -172,6 +198,12 @@ public class Shop {
     public void setOffersDelivery(Boolean offersDelivery) { this.offersDelivery = offersDelivery; }
     public Boolean getOffersCollection() { return offersCollection; }
     public void setOffersCollection(Boolean offersCollection) { this.offersCollection = offersCollection; }
+    public FulfilmentTimingMode getFulfilmentTimingMode() { return fulfilmentTimingMode; }
+    public void setFulfilmentTimingMode(FulfilmentTimingMode fulfilmentTimingMode) { this.fulfilmentTimingMode = fulfilmentTimingMode; }
+    public SettlementPolicyMode getSettlementPolicyMode() { return settlementPolicyMode; }
+    public void setSettlementPolicyMode(SettlementPolicyMode settlementPolicyMode) { this.settlementPolicyMode = settlementPolicyMode; }
+    public Integer getDepositBps() { return depositBps; }
+    public void setDepositBps(Integer depositBps) { this.depositBps = depositBps; }
     public Boolean getPublished() { return published; }
     public void setPublished(Boolean published) { this.published = published; }
     public String getTags() { return tags; }

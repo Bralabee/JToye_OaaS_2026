@@ -166,6 +166,41 @@ public class OrderDetailDto {
     public Boolean getContactVerified() { return contactVerified; }
     public void setContactVerified(Boolean contactVerified) { this.contactVerified = contactVerified; }
 
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Scheduled fulfilment slot ID when the order was placed for a future batch window (V87).")
+    private UUID fulfilmentSlotId;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Target calendar date for a scheduled batch/pre-order (V87).")
+    private java.time.LocalDate scheduledForDate;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Human-readable fulfilment window label captured at checkout (e.g. 'Saturday 12:00-16:00').")
+    private String scheduledWindowLabel;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Upfront deposit charged in pennies under SPLIT_DEPOSIT_VENDOR_MOR (V87).")
+    private Long depositAmountPennies;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    @Schema(description = "Remaining balance due in pennies on fulfilment under SPLIT_DEPOSIT_VENDOR_MOR (V87).")
+    private Long balanceDuePennies;
+
+    public UUID getFulfilmentSlotId() { return fulfilmentSlotId; }
+    public void setFulfilmentSlotId(UUID fulfilmentSlotId) { this.fulfilmentSlotId = fulfilmentSlotId; }
+
+    public java.time.LocalDate getScheduledForDate() { return scheduledForDate; }
+    public void setScheduledForDate(java.time.LocalDate scheduledForDate) { this.scheduledForDate = scheduledForDate; }
+
+    public String getScheduledWindowLabel() { return scheduledWindowLabel; }
+    public void setScheduledWindowLabel(String scheduledWindowLabel) { this.scheduledWindowLabel = scheduledWindowLabel; }
+
+    public Long getDepositAmountPennies() { return depositAmountPennies; }
+    public void setDepositAmountPennies(Long depositAmountPennies) { this.depositAmountPennies = depositAmountPennies; }
+
+    public Long getBalanceDuePennies() { return balanceDuePennies; }
+    public void setBalanceDuePennies(Long balanceDuePennies) { this.balanceDuePennies = balanceDuePennies; }
+
     public OffsetDateTime getVoidedAt() { return voidedAt; }
     public void setVoidedAt(OffsetDateTime voidedAt) { this.voidedAt = voidedAt; }
 

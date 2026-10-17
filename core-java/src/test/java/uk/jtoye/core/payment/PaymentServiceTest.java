@@ -545,4 +545,134 @@ class PaymentServiceTest {
             verify(stripeConnectService, never()).handleAccountUpdated(any());
         }
     }
+
+    // ------------------------------------------------------------------
+    // ADR-0007 / GAP-GTM-01 — Direct Charge & Split Deposit Routing
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("ADR-0007: createPaymentIntent routes DIRECT_CHARGE_VENDOR_MOR via Stripe-Account header without transfer_data")
+    void createPaymentIntent_directChargeVendorMor_setsStripeAccountHeaderWithoutTransferData() throws Exception {
+        when(stripeProperties.getCurrency()).thenReturn("gbp");
+        when(stripeConnectService.resolveSettlementRouting(testOrder))
+                .thenReturn(Optional.of(new SettlementRoutingDecision(
+                        SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR,
+                        "acct_vendor_direct",
+                        1500L,
+                        37L,
+                        null,
+                        null
+                )));
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_direct_1");
+        when(mockIntent.getClientSecret()).thenReturn("pi_direct_1_secret");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                            any(com.stripe.net.RequestOptions.class)))
+                    .thenReturn(mockIntent);
+
+            PaymentIntentResult result = paymentService.createPaymentIntent(testOrder);
+            assertEquals("pi_direct_1", result.paymentIntentId());
+
+            ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> paramsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
+            ArgumentCaptor<com.stripe.net.RequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.net.RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.create(paramsCaptor.capture(), optionsCaptor.capture()));
+
+            assertEquals(1500L, paramsCaptor.getValue().getAmount());
+            assertEquals(37L, paramsCaptor.getValue().getApplicationFeeAmount());
+            assertNull(paramsCaptor.getValue().getTransferData(),
+                    "DIRECT_CHARGE_VENDOR_MOR must use Stripe-Account header, not destination transfer_data");
+            assertEquals("DIRECT_CHARGE_VENDOR_MOR", paramsCaptor.getValue().getMetadata().get("settlement_mode"));
+            assertEquals("acct_vendor_direct", optionsCaptor.getValue().getStripeAccount());
+        }
+    }
+
+    @Test
+    @DisplayName("ADR-0007: createPaymentIntent routes SPLIT_DEPOSIT_VENDOR_MOR by charging deposit and stamping balanceDuePennies")
+    void createPaymentIntent_splitDepositVendorMor_chargesDepositAndStampsBalanceOnOrder() throws Exception {
+        testOrder.setTotalAmountPennies(10_000L);
+        when(stripeProperties.getCurrency()).thenReturn("gbp");
+        when(stripeConnectService.resolveSettlementRouting(testOrder))
+                .thenReturn(Optional.of(new SettlementRoutingDecision(
+                        SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR,
+                        "acct_caterer_1",
+                        3000L,
+                        75L,
+                        3000L,
+                        7000L
+                )));
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_dep_1");
+        when(mockIntent.getClientSecret()).thenReturn("pi_dep_1_secret");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                            any(com.stripe.net.RequestOptions.class)))
+                    .thenReturn(mockIntent);
+
+            paymentService.createPaymentIntent(testOrder);
+
+            ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> paramsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
+            ArgumentCaptor<com.stripe.net.RequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.net.RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.create(paramsCaptor.capture(), optionsCaptor.capture()));
+
+            assertEquals(3000L, paramsCaptor.getValue().getAmount());
+            assertEquals(75L, paramsCaptor.getValue().getApplicationFeeAmount());
+            assertEquals("SPLIT_DEPOSIT_VENDOR_MOR", paramsCaptor.getValue().getMetadata().get("settlement_mode"));
+            assertEquals("acct_caterer_1", optionsCaptor.getValue().getStripeAccount());
+            assertEquals(3000L, testOrder.getDepositAmountPennies());
+            assertEquals(7000L, testOrder.getBalanceDuePennies());
+        }
+    }
+
+    @Test
+    @DisplayName("ADR-0007: handlePaymentIntentSucceeded defers full-order SALE ledger row when balanceDuePennies > 0")
+    void handlePaymentSucceeded_splitDepositWithBalance_defersFullSaleLedgerRowUntilCompleted() throws Exception {
+        testOrder.setTotalAmountPennies(10_000L);
+        testOrder.setDepositAmountPennies(3000L);
+        testOrder.setBalanceDuePennies(7000L);
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_dep_succ");
+        when(mockIntent.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString()
+        ));
+        when(mockIntent.getLatestCharge()).thenReturn(null);
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockIntent));
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.succeeded");
+        when(mockEvent.getId()).thenReturn("evt_dep_succ");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any()))
+                    .thenReturn(mockEvent);
+
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+            when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            paymentService.handleWebhookEvent("{}", "sig_test");
+
+            assertEquals(OrderStatus.PENDING, testOrder.getStatus());
+            assertEquals(PaymentStatus.CAPTURED, testOrder.getPaymentStatus());
+            verify(paymentEventPublisher).publishSucceeded(
+                    eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                    eq("pi_dep_succ"), eq(3000L), eq("gbp"));
+            verify(financialTransactionService, never()).createTransaction(any());
+        }
+    }
 }
+
