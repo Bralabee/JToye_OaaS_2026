@@ -1,11 +1,14 @@
 package uk.jtoye.core.customer;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,6 +35,47 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
      * Find customer by phone (tenant-scoped).
      */
     Optional<Customer> findByPhone(String phone);
+
+    /**
+     * Option C (Phase 39-08): per-shop customer narrowing for non-{@code allShops} callers.
+     * Matches customers in {@code tenantId} whose {@code originShopId} is in {@code shopIds}
+     * OR who have at least one order placed at a shop in {@code shopIds}.
+     */
+    @Query("""
+            SELECT c FROM Customer c
+            WHERE c.tenantId = :tenantId
+              AND (c.originShopId IN :shopIds
+                   OR EXISTS (
+                       SELECT 1 FROM Order o
+                       WHERE o.tenantId = :tenantId
+                         AND o.customerId = c.id
+                         AND o.shopId IN :shopIds
+                   ))
+            """)
+    Page<Customer> findTenantScopedInGrantSet(@Param("tenantId") UUID tenantId,
+                                              @Param("shopIds") Collection<UUID> shopIds,
+                                              Pageable pageable);
+
+    /**
+     * Option C (Phase 39-08): single-customer lookup narrowed to {@code shopIds} for
+     * non-{@code allShops} callers. Out-of-scope customer IDs return {@link Optional#empty()}
+     * so callers translate to HTTP 404 (no existence oracle).
+     */
+    @Query("""
+            SELECT c FROM Customer c
+            WHERE c.id = :id
+              AND c.tenantId = :tenantId
+              AND (c.originShopId IN :shopIds
+                   OR EXISTS (
+                       SELECT 1 FROM Order o
+                       WHERE o.tenantId = :tenantId
+                         AND o.customerId = c.id
+                         AND o.shopId IN :shopIds
+                   ))
+            """)
+    Optional<Customer> findByIdAndTenantScopedInGrantSet(@Param("id") UUID id,
+                                                         @Param("tenantId") UUID tenantId,
+                                                         @Param("shopIds") Collection<UUID> shopIds);
 
     /**
      * Every customer id + email for ONE tenant — the projection the DSAR fan-out matches subject

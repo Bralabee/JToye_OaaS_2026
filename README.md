@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-6198%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-6218%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -21,7 +21,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 | **Backend** | Spring Boot 4, Java 25, MapStruct 1.6.3, Redis Caching, Spring State Machine |
 | **Edge** | Go 1.27, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
-| **Auth** | Keycloak 24 (OAuth2/OIDC) |
+| **Auth** | Keycloak 26 (OAuth2/OIDC) |
 | **Infrastructure** | Docker, Kubernetes, Redis, RabbitMQ |
 
 ### Key Features
@@ -288,14 +288,14 @@ inert placeholder — every deploy re-pins to `:<git-sha>` and a premortem guard
 that static default ever survives to an `apply`, so it is intentionally not version-tracked.
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
-- Backend (Java): 2826 `@Test` methods across 403 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
+- Backend (Java): 2843 `@Test` methods across 405 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 112 `Test*` functions across 14 files ✅
-- Frontend (Jest): 3003 `it/test` blocks across 253 files ✅
+- Frontend (Jest): 3006 `it/test` blocks across 253 files ✅
 - Frontend E2E (Playwright): 187 `test()` blocks across 44 specs ✅
 - MCP server (vitest): 70 `it/test` blocks across 8 files ✅
-- **Total: 6198 logical test invocations** ✅
+- **Total: 6218 logical test invocations** ✅
 
-Database schema version: **V84** (Flyway).
+Database schema version: **V86** (Flyway).
 
 > These numbers are guarded end-to-end by two CI gates in
 > `.github/workflows/docs-freshness.yml`: `scripts/docs-freshness.sh` asserts

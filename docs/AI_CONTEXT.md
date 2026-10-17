@@ -9,7 +9,7 @@ Stack
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion, Jest/React Testing Library
 - Database: PostgreSQL 15 with Row‑Level Security (RLS)
 - Cache: Redis (Spring Cache abstraction, tenant-aware key generation)
-- Identity: Keycloak 24 (realm: jtoye-dev)
+- Identity: Keycloak 26 (realm: jtoye-dev)
 - Observability: Prometheus metrics, Zipkin distributed tracing, structured JSON logging
 
 Prime Directives

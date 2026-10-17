@@ -32,7 +32,7 @@
 services:
   # Prometheus - Metrics collection and storage
   prometheus:
-    image: prom/prometheus:v2.48.0
+    image: prom/prometheus:v3.13.4
     container_name: jtoye-prometheus
     # Shell wrapper renders prometheus.yml.tmpl -> prometheus.yml at start, because
     # Prometheus has no native env-var substitution in scrape configs. Same idiom as
@@ -45,8 +45,6 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
     environment:
       # The core-java actuator port differs by runtime: 9091 in prod/k8s (separate
       # management port) vs the app port in dev/compose. This Prometheus serves the
@@ -81,7 +79,7 @@ services:
 
   # Grafana - Visualization and dashboards
   grafana:
-    image: grafana/grafana:10.2.2
+    image: grafana/grafana:13.2.4
     container_name: jtoye-grafana
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
@@ -90,7 +88,6 @@ services:
       # Host port is env-tunable (GRAFANA_PORT): cohabiting stacks on this
       # machine may already hold 3001.
       - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3001}
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -112,7 +109,7 @@ services:
   # Config is rendered from alertmanager.yml.tmpl by entrypoint.sh at container start,
   # because Alertmanager has no native env-var substitution (see RESEARCH Pitfall 1).
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.34.1
     container_name: jtoye-alertmanager
     entrypoint:
       - /bin/sh
@@ -160,7 +157,7 @@ services:
 
   # Redis Exporter - Cache metrics (referenced by prometheus.yml redis scrape job)
   redis-exporter:
-    image: oliver006/redis_exporter:v1.58.0
+    image: oliver006/redis_exporter:v1.94.0
     container_name: jtoye-redis-exporter
     environment:
       REDIS_ADDR: "redis://redis:6379"
@@ -180,7 +177,7 @@ services:
 
   # PostgreSQL Exporter - Database metrics
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.15.0
+    image: prometheuscommunity/postgres-exporter:v0.20.1
     container_name: jtoye-postgres-exporter
     environment:
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_EXPORTER_USER:-jtoye}:${POSTGRES_EXPORTER_PASSWORD:?POSTGRES_EXPORTER_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-jtoye}?sslmode=${POSTGRES_EXPORTER_SSLMODE:-require}"

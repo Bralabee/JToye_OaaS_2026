@@ -21,6 +21,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -428,6 +429,37 @@ public class ShopAccessService {
         } catch (ShopAccessDeniedException | ResourceNotFoundException refused) {
             return false;
         }
+    }
+
+    /**
+     * True when the caller has tenant-wide ("all shops") reach in the pinned tenant (Phase 39-08,
+     * Option C customer narrowing): either {@link #isGroupAdmin()} is true (realm admin, declared
+     * system caller, allowlisted machine client, honoured tenant-wide GROUP_ADMIN, or strict-OFF
+     * implicit admin) OR the caller holds a tenant-wide ({@code shop_id IS NULL}) STAFF /
+     * SHOP_MANAGER grant (37-05). Mirrors {@link EffectiveAccess#allShops()}.
+     */
+    public boolean hasAllShopsAccess() {
+        if (isGroupAdmin()) {
+            return true;
+        }
+        return self().resolveMembership(requireVendorUserId()).tenantWideRole() != null;
+    }
+
+    /**
+     * For a per-shop {@code SHOP_MANAGER} caller creating a customer without an explicit
+     * {@code originShopId} (Phase 39-08, Option C), returns the deterministic (lowest UUID)
+     * shop ID on which the caller holds at least {@link ShopRole#SHOP_MANAGER}, so the newly
+     * created customer is immediately visible and editable within the caller's grant set.
+     */
+    public Optional<UUID> defaultManagedShopId() {
+        if (hasAllShopsAccess()) {
+            return Optional.empty();
+        }
+        Membership m = self().resolveMembership(requireVendorUserId());
+        return m.perShopRole().entrySet().stream()
+                .filter(e -> e.getValue().satisfies(ShopRole.SHOP_MANAGER))
+                .map(Map.Entry::getKey)
+                .min(Comparator.naturalOrder());
     }
 
     /**

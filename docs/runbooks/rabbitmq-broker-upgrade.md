@@ -1,7 +1,7 @@
 # Runbook — RabbitMQ broker upgrade and rollback
 
 Owner: unassigned (see ADR-0002). Written by plan 27-02, 2026-07-29, when the dev/compose broker
-moved **3.12.14 → 4.3.4**.
+moved **3.12.14 → 4.3.4** (patched in place **4.3.4 → 4.3.6** by plan 39-02, 2026-10-16).
 
 > **This file is deliberately allowlisted from the AC-2 / AC-12 "no 3.x version strings" rules.**
 > It must name `3.12` and `3.13` to document the upgrade chain at all. A rule that forbids the
@@ -49,7 +49,7 @@ The supported path is **3.12 → 3.13 → 4.2 → 4.3**. It cannot be shortened:
 ## 3. What the dev/compose stack actually did — FRESH INSTALL, and why you may not be able to
 
 The compose broker took the vendor-sanctioned **fresh-install** path: snapshot the volume, destroy
-it, recreate on 4.3.4, let the application re-declare the topology. That is safe *here* because all
+it, recreate on 4.3.4 (subsequently patched in place to 4.3.6), let the application re-declare the topology. That is safe *here* because all
 12 durable queues, 4 DLX exchanges and every binding are re-declared at boot by Spring's
 `RabbitAdmin` from `RabbitMQConfig.java` — the topology is **code**, not data.
 
@@ -57,9 +57,9 @@ it, recreate on 4.3.4, let the application re-declare the topology. That is safe
 a broker holding real traffic, the fresh-install path is not available; use the 3.13 → 4.2 → 4.3
 chain in §2, or drain first.
 
-## 4. Rollback — from 4.3.4 there is only the tarball
+## 4. Rollback — from 4.3.x there is only the tarball
 
-**There is no downgrade path from 4.3.4 to 3.12.14.** 4.3 is Khepri-only and has no Mnesia reader at
+**There is no downgrade path from 4.3.x to 3.12.14.** 4.3 is Khepri-only and has no Mnesia reader at
 all. The volume snapshot is the only way back.
 
 ### 4.1 The hostname requirement — read this before restoring anything
@@ -89,7 +89,7 @@ SNAP_DEPTH=$(docker exec jtoye-rabbitmq rabbitmqctl list_queues name messages --
 STAMP=$(date -u +%Y%m%dT%H%M%SZ); SNAP="rabbitmq_data-$(docker exec jtoye-rabbitmq rabbitmqctl version)-${STAMP}.tar.gz"
 
 docker compose -f docker-compose.full-stack.yml stop rabbitmq     # a live Mnesia dir is not tar-consistent
-docker run --rm -v jtoye_oaas_2026_rabbitmq_data:/from:ro -v "$PWD/.evidence":/to alpine:3.20 \
+docker run --rm -v jtoye_oaas_2026_rabbitmq_data:/from:ro -v "$PWD/.evidence":/to alpine:3.24 \
   tar -C /from -czf "/to/${SNAP}" .
 printf '%s\n' "$SNAP_NODE_HOST" > ".evidence/${SNAP}.node-host"   # THE SIDECAR
 printf '%s\n' "$SNAP_DEPTH"     > ".evidence/${SNAP}.depth"
@@ -131,7 +131,7 @@ services:
 YAML
 
 docker volume create jtoye_oaas_2026_rabbitmq_data 2>/dev/null || true
-docker run --rm -v jtoye_oaas_2026_rabbitmq_data:/to -v "$PWD/.evidence":/from:ro alpine:3.20 \
+docker run --rm -v jtoye_oaas_2026_rabbitmq_data:/to -v "$PWD/.evidence":/from:ro alpine:3.24 \
   tar -C /to -xzf "/from/${SNAP}"
 docker compose -f docker-compose.full-stack.yml -f /tmp/docker-compose.rollback.yml \
   up -d --force-recreate rabbitmq
@@ -209,6 +209,6 @@ Someone with cluster access must:
    messages.
 3. Record the result against the `rabbitmq-k8s` row in `infra/dependency-horizons.yaml`, which is
    currently `pin: unknown`, `owner: UNASSIGNED`, with a dated `manual_review` that **expires
-   2026-10-26** and turns the horizon gate red by itself if nobody acts.
+   2027-01-16** and turns the horizon gate red by itself if nobody acts.
 4. Settle the in-cluster cluster-operator question in ADR-0002, still *Proposed* and unsigned since
    2026-07-12.

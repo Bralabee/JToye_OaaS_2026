@@ -46,8 +46,8 @@ import java.util.UUID;
  *       customer belongs to the whole business, and removing one is irreversible.</li>
  * </ul>
  * The {@code customers:write} scope checks on the mutations are unchanged; the grant checks sit
- * beside them, not instead of them. Which customers a granted user sees (option C, per-shop
- * narrowing) is a separate ruling, deferred to Phase 39.
+ * beside them, not instead of them. Under Option C (Phase 39-08, RWO-CUST-OPT-C), non-{@code allShops}
+ * callers are narrowed to customers originating at or having ordered from their granted shops.
  */
 @RestController
 @RequestMapping("/customers")
@@ -114,6 +114,9 @@ public class CustomerController {
             @Parameter(hidden = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         shopAccessService.requireAnyRole(ShopRole.SHOP_MANAGER);
+        if (req.originShopId() != null) {
+            shopAccessService.require(req.originShopId(), ShopRole.SHOP_MANAGER);
+        }
         CustomerDto dto;
         int status;
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
@@ -178,8 +181,26 @@ public class CustomerController {
             String phone,
             Integer allergenRestrictions,
             OffsetDateTime createdAt,
-            OffsetDateTime updatedAt
-    ) {}
+            OffsetDateTime updatedAt,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            UUID originShopId
+    ) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public CustomerDto {}
+
+        public CustomerDto(
+                UUID id,
+                UUID tenantId,
+                String name,
+                String email,
+                String phone,
+                Integer allergenRestrictions,
+                OffsetDateTime createdAt,
+                OffsetDateTime updatedAt
+        ) {
+            this(id, tenantId, name, email, phone, allergenRestrictions, createdAt, updatedAt, null);
+        }
+    }
 
     // QA BE-2: @Size caps match the DB varchar lengths (name/email 255, phone 50) so an
     // over-length value fails bean validation with a clear 400, instead of reaching the
@@ -189,8 +210,22 @@ public class CustomerController {
             @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String name,
             @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String email,
             @jakarta.validation.constraints.Size(max = 50) String phone,
-            Integer allergenRestrictions
-    ) {}
+            Integer allergenRestrictions,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            UUID originShopId
+    ) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public CreateCustomerRequest {}
+
+        public CreateCustomerRequest(
+                String name,
+                String email,
+                String phone,
+                Integer allergenRestrictions
+        ) {
+            this(name, email, phone, allergenRestrictions, null);
+        }
+    }
 
     public record UpdateCustomerRequest(
             @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 255) String name,

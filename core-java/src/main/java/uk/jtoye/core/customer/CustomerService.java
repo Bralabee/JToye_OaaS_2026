@@ -15,14 +15,18 @@ import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Service for customer management operations.
- * All operations are automatically tenant-scoped via RLS policies.
+ * All operations are automatically tenant-scoped via RLS policies, and narrowed
+ * to granted shops for non-{@code allShops} callers (Phase 39-08, Option C).
  *
  * Note: Customers are NOT cached as they change frequently and contain
  * privacy-sensitive data. Following the caching strategy from AI_CONTEXT.md.
@@ -34,10 +38,18 @@ public class CustomerService {
 
     private final CustomerRepository customerRepository;
     private final CustomerMapper customerMapper;
+    private final ShopAccessService shopAccessService;
 
-    public CustomerService(CustomerRepository customerRepository, CustomerMapper customerMapper) {
+    public CustomerService(CustomerRepository customerRepository,
+                           CustomerMapper customerMapper,
+                           ShopAccessService shopAccessService) {
         this.customerRepository = customerRepository;
         this.customerMapper = customerMapper;
+        this.shopAccessService = shopAccessService;
+    }
+
+    private boolean hasAllShopsAccess() {
+        return shopAccessService.isGroupAdmin() || shopAccessService.hasAllShopsAccess();
     }
 
     /**
@@ -50,12 +62,20 @@ public class CustomerService {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
 
-        log.debug("Creating customer for tenant {}: name={}, email={}",
-                tenantId, request.name(), request.email());
+        UUID originShopId = request.originShopId();
+        if (originShopId != null) {
+            shopAccessService.require(originShopId, ShopRole.SHOP_MANAGER);
+        } else if (!hasAllShopsAccess()) {
+            originShopId = shopAccessService.defaultManagedShopId().orElse(null);
+        }
+
+        log.debug("Creating customer for tenant {}: name={}, email={}, originShopId={}",
+                tenantId, request.name(), request.email(), originShopId);
 
         // Create customer entity
         Customer customer = new Customer();
         customer.setTenantId(tenantId);
+        customer.setOriginShopId(originShopId);
         customer.setName(request.name());
         customer.setEmail(request.email());
         customer.setPhone(request.phone());
@@ -75,39 +95,59 @@ public class CustomerService {
     }
 
     /**
-     * Get customer by ID (tenant-scoped).
+     * Get customer by ID (tenant-scoped, and narrowed to granted shops for non-allShops callers).
      * Not cached due to privacy concerns and frequent updates.
      */
     @Transactional(readOnly = true)
     public Optional<CustomerDto> getCustomerById(UUID customerId) {
         log.debug("Fetching customer by ID: {}", customerId);
-        return customerRepository.findById(customerId)
+        if (hasAllShopsAccess()) {
+            return customerRepository.findById(customerId)
+                    .map(customerMapper::toDto);
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Optional.empty();
+        }
+        return customerRepository.findByIdAndTenantScopedInGrantSet(customerId, tenantId, granted)
                 .map(customerMapper::toDto);
     }
 
     /**
-     * Get all customers (tenant-scoped, pageable).
+     * Get all customers (tenant-scoped, pageable, narrowed to granted shops for non-allShops callers).
      * Returns customers sorted by creation date (newest first by default).
      */
     @Transactional(readOnly = true)
     public Page<CustomerDto> getAllCustomers(Pageable pageable) {
         log.debug("Fetching all customers with pagination: page={}, size={}",
                 pageable.getPageNumber(), pageable.getPageSize());
-        return customerRepository.findAll(pageable)
+        if (hasAllShopsAccess()) {
+            return customerRepository.findAll(pageable)
+                    .map(customerMapper::toDto);
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return customerRepository.findTenantScopedInGrantSet(tenantId, granted, pageable)
                 .map(customerMapper::toDto);
     }
 
     /**
-     * Update an existing customer (tenant-scoped).
-     * RLS ensures we can only update customers belonging to our tenant.
+     * Update an existing customer (tenant-scoped, narrowed to granted shops for non-allShops callers).
+     * RLS ensures we can only update customers belonging to our tenant; Option C narrowing returns
+     * 404 when the customer ID is outside a non-allShops caller's grant set.
      * Automatically updates the updatedAt timestamp.
      */
     public CustomerDto updateCustomer(UUID customerId, UpdateCustomerRequest request) {
         log.debug("Updating customer {}: name={}, email={}",
                 customerId, request.name(), request.email());
 
-        Customer customer = customerRepository.findById(customerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
+        Customer customer = findScopedCustomerOrThrow(customerId);
 
         // Update customer fields
         customer.setName(request.name());
@@ -127,6 +167,21 @@ public class CustomerService {
                 customer.getId(), customer.getEmail(), customer.getAllergenRestrictions());
 
         return customerMapper.toDto(customer);
+    }
+
+    private Customer findScopedCustomerOrThrow(UUID customerId) {
+        if (hasAllShopsAccess()) {
+            return customerRepository.findById(customerId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
+        }
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        if (granted.isEmpty()) {
+            throw new ResourceNotFoundException("Customer not found: " + customerId);
+        }
+        return customerRepository.findByIdAndTenantScopedInGrantSet(customerId, tenantId, granted)
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
     }
 
     /**

@@ -93,41 +93,43 @@ dependencies:
     eol_date: "2027-11-11"
 
   - id: alpine
-    pin: "alpine:3.20"
-    sites: ["docker-compose.full-stack.yml:96"]
+    pin: "alpine:3.24"
+    sites:
+      - "docker-compose.full-stack.yml:96"
+      - "infra/docker-compose.yml:48"
+      - "infra/docker-compose.hostnet.yml:5"
     kind: image
     owner: maintainer
     eol_slug: alpine-linux
-    eol_cycle: "3.20"
-    eol_date: "2026-04-01"
-    exemption:
-      reason: >-
-        Alpine 3.20 went EOL 2026-04-01. This pin is the seed/init helper in the dev compose
-        stack only — it is not a build base and ships in nothing. 3.22 is current. Deferred
-        because the upgrade is trivial but untested against the seed scripts, and doing it
-        blind during an ops-spine phase would risk the local stack every other 27-xx plan
-        measures against.
-      expires: "2026-11-30"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "3.24"
+    eol_date: "2028-06-01"
+    note: >-
+      UPGRADED BY 39-02 (2026-10-16): 3.20 -> 3.24 (EOL 2028-06-01 per endoflife.date).
+      This pin is the keycloak-realm-render init helper across all three compose files
+      (full-stack, hybrid start-dev.sh, and hostnet). All three sites are now declared
+      so H-5 prevents silent skew across the hybrid/hostnet compose files. The DEFERRED-27
+      exemption is REMOVED (H-4 fails an exemption on a row that is not breaching).
 
   - id: keycloak
-    pin: "quay.io/keycloak/keycloak:24.0.5"
-    sites: ["docker-compose.full-stack.yml:145"]
+    pin: "quay.io/keycloak/keycloak:26.8.1"
+    sites:
+      - "docker-compose.full-stack.yml:145"
+      - "infra/docker-compose.yml:71"
+      - "infra/docker-compose.hostnet.yml:26"
     kind: image
     owner: maintainer
     eol_slug: keycloak
-    eol_cycle: "24.0"
-    eol_date: "2024-06-10"
-    exemption:
-      reason: >-
-        Keycloak 24.0 went EOL 2024-06-10 (777 days past). Upgrading is NOT a tag bump: KC 25+
-        changes the admin API and the user-profile handling this repo already has a recorded
-        trap for (unmanaged tenant_id attributes are stripped on admin-API user creation), the
-        realm import path is Postgres-backed, and JWT issuer/JWKS split-horizon has caused a
-        total live-auth outage here before. It needs its own plan with a live auth rehearsal,
-        not a line in an ops-spine phase.
-      expires: "2026-12-31"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "26.8"
+    eol_date: "false"
+    note: >-
+      UPGRADED BY 39-04 (2026-10-16): 24.0.5 (EOL 2024-06-10) -> 26.8.1 (cycle 26.8,
+      `eol: false`). Hostname v2 configured with `KC_HOSTNAME: http://localhost:8085` (replacing
+      the deprecated v1 `KC_HOSTNAME_PORT` option so split-horizon issuer `http://localhost:8085/realms/...`
+      is preserved) and `KC_LEGACY_OBSERVABILITY_INTERFACE: "true"` so `/health/ready` and
+      `/metrics` remain on port 8080 for compose healthcheck and Prometheus scrape parity.
+      All three compose sites (`docker-compose.full-stack.yml`, `infra/docker-compose.yml`,
+      `infra/docker-compose.hostnet.yml`) are tracked in `sites:` so H-5 prevents silent skew.
+      The final DEFERRED-27 exemption is REMOVED (`active-exemptions=0`).
 
   - id: redis
     pin: "redis:7-alpine"
@@ -145,7 +147,7 @@ dependencies:
     eol_date: "2029-12-01"
 
   - id: rabbitmq
-    pin: "rabbitmq:4.3.4-management-alpine"
+    pin: "rabbitmq:4.3.6-management-alpine"
     sites: ["docker-compose.full-stack.yml:224"]
     kind: image
     owner: maintainer
@@ -153,46 +155,26 @@ dependencies:
     eol_cycle: "4.3"
     eol_date: "false"
     eol_source: vendor
-    vendor_eol: "2026-11-30"
+    vendor_eol: "2027-01-31"
     vendor_source: "https://www.rabbitmq.com/release-information"
     note: >-
-      UPGRADED BY 27-02 (2026-07-29): 3.12.14 -> 4.3.4, by FRESH INSTALL. There is no in-place
-      3.12 -> 4.x path (the chain is 3.12 -> 3.13 -> 4.2 -> 4.3) and 4.3 has no Mnesia reader
-      at all, so the volume was snapshotted, destroyed and recreated; the topology is code
-      (RabbitAdmin re-declares from RabbitMQConfig), not data. Procedure and rollback:
-      docs/runbooks/rabbitmq-broker-upgrade.md. 27-00's past-horizon exemption is REMOVED, not
-      re-dated: H-4 fails an exemption on a row that is no longer past horizon, so leaving it
-      would itself be a violation.
+      UPGRADED BY 27-02 (2026-07-29): 3.12.14 -> 4.3.4, by FRESH INSTALL. PATCHED BY 39-02
+      (2026-10-16): 4.3.4 -> 4.3.6 (the newest upstream release in the 4.3 series; no 4.4 series
+      exists upstream yet). There is no in-place 3.12 -> 4.x path (the chain is 3.12 -> 3.13 ->
+      4.2 -> 4.3) and 4.3 has no Mnesia reader at all, so the initial 3.12 -> 4.3 move was a
+      fresh install; 4.3.4 -> 4.3.6 is an in-series Khepri patch. Procedure and rollback:
+      docs/runbooks/rabbitmq-broker-upgrade.md.
 
       VENDOR OVERRIDE, AND IT IS LOAD-BEARING — HANDED TO 27-00 (D-10 item 2 / D-H.5).
       `eol_date` here is the VENDOR date. The endoflife.date catalogue returns
       `"eol": false` and `"extendedSupport": true` for cycle 4.3 — verified live, on the exact
-      pin this row adopts — while the vendor publishes community support ending 2026-11-30.
-      Under a rule that treats catalogue-vs-vendor disagreement as always a NOTE, this gate
-      stays green straight through 2026-11-30 with no code change: the gate reporting clean on
-      a finding. The rule 27-00's gate must honour is narrower: both concrete dates -> NOTE
-      (the old 3.12 case, 2024-02-21 vs 2024-02-29); catalogue `false`/`null`/boolean where the
-      vendor publishes a DATE -> FAIL (exit 1), naming the row and both values.
-
-      4.3's community window closes 2026-11-30, so at HORIZON_WARN_DAYS=90 this row goes RED
-      ~2026-09-01 (in-window) and RED again on 2026-12-01 (past EOL) with no commit in between. Intended, and already stated
-      in this file's header. It is a treadmill, and the mechanism is what makes it survivable.
-
-      2026-09-02: the predicted in-window breach arrived — 89 days to the horizon, Operational Contracts red on
-      every PR with no code change. Deferred under the exemption below; tracked in #724.
-    exemption:
-      reason: >-
-        Vendor community support for 4.3 ends 2026-11-30 and this row entered the 90-day window on
-        2026-09-02, exactly as the header of check-dependency-horizons.sh predicted. There is
-        nothing to upgrade TO: endoflife.date lists 4.3 as the newest cycle (latest 4.3.5) and
-        Docker Hub has no rabbitmq:4.4* tag (measured 2026-09-02; vendor cadence puts 4.4 around
-        October 2026). This exemption ends ON the horizon, not after it: on 2026-12-01 the row is
-        past EOL AND this block is expired, so the gate goes red again with no commit. That is the
-        treadmill working; the tracking issue is the work that steps off it. The 4.3.4 -> 4.3.5
-        patch is deliberately NOT bundled: it moves no date, it is a runtime change, and this PR
-        unblocks merges on the eve of a QA remediation round.
-      expires: "2026-11-30"
-      tracked_by: "#724"
+      pin this row adopts — while the vendor publishes community support ending 2027-01-31
+      (extended by upstream from the earlier 2026-11-30 estimate; re-verified 2026-10-16 against
+      https://www.rabbitmq.com/release-information). Because 2027-01-31 is 107 days out (outside
+      the 90-day HORIZON_WARN_DAYS window until ~2026-11-02), the #724 exemption is REMOVED here
+      (H-4 fails a stale exemption on a row outside the warn window). When the row re-enters the
+      90-day window around 2026-11-02, either upgrade to 4.4 if published by then or re-open a
+      dated exemption under #724.
 
   - id: azurite
     pin: "mcr.microsoft.com/azure-storage/azurite:${AZURITE_IMAGE_TAG:-3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5}"
@@ -261,45 +243,36 @@ dependencies:
   #  27-02's draft manifest omitted this entire block. 27-02 now consumes THIS file (D-B),
   #  so the omission is closed here rather than inherited.
   - id: prometheus
-    pin: "prom/prometheus:v2.48.0"
+    pin: "prom/prometheus:v3.13.4"
     sites: ["infra/monitoring/docker-compose.monitoring.yml:35"]
     kind: image
     owner: maintainer
     eol_slug: prometheus
-    eol_cycle: "2.48"
-    eol_date: "2023-12-28"
-    exemption:
-      reason: >-
-        Prometheus 2.48 went EOL 2023-12-28 (942 days past — the oldest breach in this file).
-        Deferred deliberately for ONE phase: 27-00 Task 1 and Task 4 have just re-templated
-        prometheus.yml and alertmanager.yml, and 27-03 is about to rewrite the alert rules
-        this server evaluates. Moving to 3.x mid-flight would change PromQL evaluation and
-        remote-write behaviour underneath two plans that are using this server as their
-        measuring instrument. Upgrade after 27-03 lands, not before.
-      expires: "2026-12-31"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "3.13"
+    eol_date: "2027-07-31"
+    note: >-
+      Upgraded 2026-10-16 (39-03) from 2.48.0 (EOL 2023-12-28) to Prometheus 3.13 LTS
+      (v3.13.4, cycle 3.13 EOL 2027-07-31). 3.13 LTS was selected over 3.15 short-term
+      because 3.15 has lts=false and EOL 2026-11-06 (21 days from upgrade date, which
+      immediately breaches HORIZON_WARN_DAYS=90). DEFERRED-27 exemption retired.
 
   - id: grafana
-    pin: "grafana/grafana:10.2.2"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:84"]
+    pin: "grafana/grafana:13.2.4"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:82"]
     kind: image
     owner: maintainer
     eol_slug: grafana
-    eol_cycle: "10.2"
-    eol_date: "2024-07-24"
-    exemption:
-      reason: >-
-        Grafana 10.2 went EOL 2024-07-24 (733 days past). Dev-stack visualisation only — it
-        is not on the request path and holds no tenant data; the dashboards it renders are
-        provisioned from files in this repo, so the blast radius of a bad upgrade is the
-        dashboards, not the platform. Deferred with prometheus so the monitoring stack moves
-        as one piece after 27-03, rather than one component at a time.
-      expires: "2026-12-31"
-      tracked_by: "DEFERRED-27"
+    eol_cycle: "13.2"
+    eol_date: "2027-05-18"
+    note: >-
+      Upgraded 2026-10-16 (39-03) from 10.2.2 (EOL 2024-07-24) to 13.2.4 (cycle 13.2 EOL
+      2027-05-18). Removed obsolete GF_INSTALL_PLUGINS=grafana-piechart-panel (Angular
+      plugin removed in Grafana 11+; native piechart v2 panel is built in). DEFERRED-27
+      exemption retired.
 
   - id: alertmanager
-    pin: "prom/alertmanager:v0.27.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:115"]
+    pin: "prom/alertmanager:v0.34.1"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:112"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -308,16 +281,15 @@ dependencies:
       `prometheus-alertmanager`, both measured 2026-07-27). Alertmanager versions
       independently of Prometheus, so the `prometheus` row's horizon does NOT cover it —
       which is precisely the assumption that let it be omitted from 27-02's draft.
-      Re-checked 2026-10-16 (39-01): upstream latest is v0.34.1 (published 2026-09-17);
-      coupled upgrade with Prometheus 3.13 LTS and Grafana 13.2 is owned by 39-03-PLAN.md.
+      Upgraded 2026-10-16 (39-03) from v0.27.0 to v0.34.1 (published 2026-09-17).
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/prometheus/alertmanager/releases"
 
   - id: redis-exporter
-    pin: "oliver006/redis_exporter:v1.58.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:163"]
+    pin: "oliver006/redis_exporter:v1.94.0"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:160"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -326,16 +298,15 @@ dependencies:
       docs/ops/terminal-states.yaml TS-16: this image's compose entry drifted from its
       RUNNING container for 20 days without any gate noticing, because
       check-runtime-freshness.sh scopes itself to BUILT services.
-      Re-checked 2026-10-16 (39-01): upstream latest is v1.94.0 (published 2026-10-15);
-      coupled upgrade owned by 39-03-PLAN.md.
+      Upgraded 2026-10-16 (39-03) from v1.58.0 to v1.94.0 (published 2026-10-15).
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-27"
       url: "https://github.com/oliver006/redis_exporter/releases"
 
   - id: postgres-exporter
-    pin: "prometheuscommunity/postgres-exporter:v0.15.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:183"]
+    pin: "prometheuscommunity/postgres-exporter:v0.20.1"
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:180"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -343,8 +314,7 @@ dependencies:
       Third-party exporter, endoflife.date 404 (measured 2026-07-27). Its credential fault
       (register TS-13) was masked for weeks behind a green `up` — a reminder that "the
       container is running" says nothing about whether it works.
-      Re-checked 2026-10-16 (39-01): upstream latest is v0.20.1 (published 2026-07-08);
-      coupled upgrade owned by 39-03-PLAN.md.
+      Upgraded 2026-10-16 (39-03) from v0.15.0 to v0.20.1 (published 2026-07-08).
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-27"

@@ -610,9 +610,9 @@ class CustomerAccessGateIntegrationTest {
             UUID customerId = UUID.randomUUID();
             String name = "Seeded Customer " + customerId;
             String email = "seeded-" + customerId + "@example.com";
-            jdbc.update("INSERT INTO customers (id, tenant_id, name, email, phone, allergen_restrictions, created_at, updated_at) "
-                            + "VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW())",
-                    customerId, tenant, name, email, "07700900000");
+            jdbc.update("INSERT INTO customers (id, tenant_id, origin_shop_id, name, email, phone, allergen_restrictions, created_at, updated_at) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), NOW())",
+                    customerId, tenant, shopId, name, email, "07700900000");
             return new Fixture(tenant, shopId, customerId, name, email);
         }
     }

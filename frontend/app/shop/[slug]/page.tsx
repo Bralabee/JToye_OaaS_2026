@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { headers } from "next/headers"
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { loadShopDetail } from "@/lib/storefront-server"
 import { resolvePublicOrigin } from "@/lib/public-origin"
 import { serialiseJsonLd, shopStructuredData } from "@/lib/structured-data"
@@ -50,6 +50,9 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const result = await loadShopDetail(slug)
+  if (result.state === "redirect") {
+    permanentRedirect(`/shop/${encodeURIComponent(result.canonicalSlug)}`)
+  }
   const origin = resolvePublicOrigin()
   const metadataBase = origin ? new URL(origin) : undefined
   const canonical = `/shop/${slug}`
@@ -134,6 +137,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ShopDetailPage({ params }: Props) {
   const { slug } = await params
   const result = await loadShopDetail(slug)
+  if (result.state === "redirect") {
+    permanentRedirect(`/shop/${encodeURIComponent(result.canonicalSlug)}`)
+  }
 
   // A slug that does not exist answers a REAL 404 rather than a 200 carrying
   // "Shop not found" — a soft 404 keeps dead storefronts in the index. The

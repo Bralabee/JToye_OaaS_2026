@@ -45,7 +45,7 @@ Production-ready monitoring stack using Prometheus for metrics collection and Gr
 
 ### 4. **Alertmanager** (Port 9093) — added in phase 9
 - **Purpose**: Alert routing, grouping, and notification delivery
-- **Image**: `prom/alertmanager:v0.27.0`
+- **Image**: `prom/alertmanager:v0.34.1`
 - **Config**: rendered at container start from `alertmanager/alertmanager.yml.tmpl` via a sed-based `entrypoint.sh` wrapper (Alertmanager has no native env-var substitution)
 - **Destination**: email via Mailhog (dev) or real SMTP relay (prod). Override via:
   - `ALERTMANAGER_SMTP_SMARTHOST` (default `mailhog:1025`)

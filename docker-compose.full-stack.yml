@@ -93,7 +93,7 @@ services:
   # so NO literal client secret / seed password is ever committed. Runs once,
   # exits 0; keycloak waits on service_completed_successfully.
   keycloak-realm-render:
-    image: alpine:3.20
+    image: alpine:3.24
     container_name: jtoye-keycloak-realm-render
     environment:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set (renders realm core-api client + feeds frontend NextAuth)}
@@ -142,7 +142,7 @@ services:
 
   # Keycloak Identity Provider
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.8.1
     container_name: jtoye-keycloak
     command: ["start-dev", "--import-realm"]
     environment:
@@ -158,8 +158,8 @@ services:
       KC_DB_POOL_MAX_SIZE: "20"
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
-      KC_HOSTNAME: localhost
-      KC_HOSTNAME_PORT: "8085"
+      KC_HOSTNAME: http://localhost:8085
+      KC_LEGACY_OBSERVABILITY_INTERFACE: "true"
       KC_HOSTNAME_STRICT: "false"
       JAVA_OPTS: "-Xms512m -Xmx1024m"
     ports:
@@ -216,12 +216,12 @@ services:
 
   # RabbitMQ Message Queue
   rabbitmq:
-    # 4.3 series — community support ends 2026-11-30. The horizon is tracked in
+    # 4.3 series — community support ends 2027-01-31. The horizon is tracked in
     # infra/dependency-horizons.yaml and 27-00's gate fails the build before it lapses.
     # There is no in-place 3.12 -> 4.x path (3.12 -> 3.13 -> 4.2 -> 4.3, and 4.3 has no
     # Mnesia reader at all), so this moved by fresh install; see
     # docs/runbooks/rabbitmq-broker-upgrade.md.
-    image: rabbitmq:4.3.4-management-alpine
+    image: rabbitmq:4.3.6-management-alpine
     container_name: jtoye-rabbitmq
     hostname: jtoye-rabbitmq   # RabbitMQ keys its data dir by rabbit@$(hostname). Without this,
                                # every --force-recreate gets a new container-id hostname, orphans

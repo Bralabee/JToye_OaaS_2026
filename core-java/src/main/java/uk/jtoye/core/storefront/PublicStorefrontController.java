@@ -173,9 +173,24 @@ public class PublicStorefrontController {
     }
 
     @GetMapping("/shops/{slug}")
-    @Operation(summary = "Get shop details", description = "Get full details of a published shop by its URL slug.")
-    public ResponseEntity<PublicShopDto> getShop(@PathVariable String slug) {
-        return ResponseEntity.ok(storefrontService.getShopBySlug(slug));
+    @Operation(summary = "Get shop details", description = "Get full details of a published shop by its URL slug. "
+            + "When the slug is a recorded alias of a published shop that changed its web address (V86), "
+            + "returns 301 Moved Permanently with Location and X-Shop-Canonical-Slug pointing to the canonical shop resource.")
+    public ResponseEntity<PublicShopDto> getShop(@PathVariable String slug, HttpServletRequest request) {
+        try {
+            return ResponseEntity.ok(storefrontService.getShopBySlug(slug));
+        } catch (uk.jtoye.core.exception.ShopSlugRedirectException redirect) {
+            String requestUri = request != null ? request.getRequestURI() : null;
+            String prefix = requestUri != null && requestUri.startsWith("/api/v1/public/")
+                    ? "/api/v1/public/shops/"
+                    : "/public/shops/";
+            String encodedCanonical = org.springframework.web.util.UriUtils.encodePathSegment(
+                    redirect.getCanonicalSlug(), java.nio.charset.StandardCharsets.UTF_8);
+            return ResponseEntity.status(HttpStatus.MOVED_PERMANENTLY)
+                    .location(java.net.URI.create(prefix + encodedCanonical))
+                    .header("X-Shop-Canonical-Slug", redirect.getCanonicalSlug())
+                    .build();
+        }
     }
 
     @GetMapping("/shops/{slug}/config")

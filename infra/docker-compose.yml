@@ -45,7 +45,7 @@ services:
   # so NO literal client secret / seed password is ever committed. Runs once,
   # exits 0; keycloak waits on service_completed_successfully.
   keycloak-realm-render:
-    image: alpine:3.20
+    image: alpine:3.24
     container_name: jtoye-keycloak-realm-render
     environment:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set (renders realm core-api client)}
@@ -68,7 +68,7 @@ services:
       - jtoye-net
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.8.1
     container_name: jtoye-keycloak
     command: ["start-dev", "--import-realm"]
     environment:

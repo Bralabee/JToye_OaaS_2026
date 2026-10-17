@@ -94,6 +94,7 @@ class ShopReservedSlugAccountTest {
                 .withInitializer(ctx -> ctx.getBeanFactory()
                         .setConversionService(ApplicationConversionService.getSharedInstance()))
                 .withBean(ShopRepository.class, () -> repository)
+                .withBean(ShopSlugAliasRepository.class, () -> mock(ShopSlugAliasRepository.class))
                 .withBean(ShopMapper.class, () -> mapper)
                 .withBean(StorageService.class, () -> mock(StorageService.class))
                 .withBean(TenantCacheEvictor.class, () -> mock(TenantCacheEvictor.class))

@@ -7,7 +7,7 @@
 
 **Primary:**
 - Java 25 (Temurin) — Core API (`core-java/`), toolchain pinned in `core-java/build.gradle.kts:13` (`JavaLanguageVersion.of(25)`) and root `build.gradle.kts:9`. Docker build/runtime stages use `eclipse-temurin:25-jdk-alpine` / `eclipse-temurin:25-jre-alpine` (`core-java/Dockerfile`). CI pins `java-version: '25'` / `distribution: 'temurin'` via `actions/setup-java@v6` in `.github/workflows/ci-cd.yaml` (4 jobs: test, integration-tests, code-review-gate-checks, and one more).
-- TypeScript 5.9.3 — Frontend (`frontend/package.json` `devDependencies.typescript`), Next.js 16.3.8 + React 19.3.0. `frontend/tsconfig.json` strict mode, `target: ES2017`.
+- TypeScript 5.9.3 — Frontend (`frontend/package.json` `devDependencies.typescript`), Next.js 16.4.0 + React 19.3.0. `frontend/tsconfig.json` strict mode, `target: ES2017`.
 - Go 1.27 — Edge API gateway (`edge-go/go.mod:3` `go 1.27.0`; `edge-go/Dockerfile` builds on `golang:1.27-alpine`; CI pins `go-version: '1.27'` via `actions/setup-go@v7`). The prose in CLAUDE.md, AGENTS.md, README and the guides trailed one minor version behind the manifest until it was corrected in `9d4f53e8` (the superseded number is deliberately not written here — the `Go` row is total over its form, so naming it would make this sentence fail the rule it is describing); `scripts/check-doc-versions.sh` now carries a `Go` row so that claim cannot drift unnoticed again.
 
 **Secondary:**
@@ -45,7 +45,7 @@
 - Spring Cache + Spring Data Redis (Lettuce 7) — tenant-aware caching. Cache keys carry a `v4:` format version (`v4:{region}::tenant:…`), so a Boot-3.5 entry is never read after the deploy.
 - SpringDoc OpenAPI 3.1.1 (`springdoc-openapi-starter-webmvc-ui`, the Boot-4 line) — Swagger UI and the served OpenAPI document; the committed snapshot was regenerated on 3.1.1 (38-14).
 - Spring AOP — cross-cutting concerns (tenant pinning, caching).
-- Next.js 16.3.8 + React 19.3.0 — Frontend framework (file-based routing, standalone output build).
+- Next.js 16.4.0 + React 19.3.0 — Frontend framework (file-based routing, standalone output build).
 - Gin v1.12.0 — Go HTTP routing/middleware for the edge gateway (`edge-go/go.mod:6`).
 
 **Testing:**
@@ -54,26 +54,26 @@
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
 - JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:579` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
 - Jest 30.5.2 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.2 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
-- jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
-- @playwright/test 1.63.0 — E2E browser automation (`frontend/playwright.config.ts`).
+- jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.14.0 — Accessibility testing.
+- @playwright/test 1.64.0 — E2E browser automation (`frontend/playwright.config.ts`).
 - vitest ^4 — MCP server unit tests (`mcp-server/package.json`).
 
 **Build/Dev:**
 - Spring Boot Gradle Plugin 4.1.1 — bootJar packaging, redirected to `core-java/build-local/` (`layout.buildDirectory.set(file("build-local"))`) — `core-java/build/` is a stale artifact directory, never read.
 - Flyway 12 (Boot-managed 12.4.0): `flyway-core` + `flyway-database-postgresql` — schema migration. Under Boot 4 the Flyway auto-configuration is its own module, so `spring-boot-starter-flyway` is declared explicitly; without it 0 of 67 migrations apply and `RlsContractTest` goes 4/7 red (38-03, 38-04).
 - Lombok + MapStruct 1.6.3 (+ `lombok-mapstruct-binding` 0.2.0) — boilerplate reduction / compile-time DTO mapping.
-- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.3.8`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
-- TailwindCSS 3.4.1 + PostCSS 8.5.12 — Frontend styling.
+- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.4.0`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
+- TailwindCSS 4.3.3 + `@tailwindcss/postcss` 4.3.3 + PostCSS 8.5.12 — Frontend styling.
 - tsx ^4 — MCP server dev-mode TS execution (`mcp-server/package.json` `dev` script).
 - cross-env 10.1.0 — cross-platform env var injection for `npm run dev`.
 
 ## Key Dependencies
 
 **Critical:**
-- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:351`) — explicit pin, not Boot-managed.
-- Azure Storage Blob SDK 12.35.1 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.6 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
-- Stripe Java SDK 33.4.2 — Payment intents, Connect (destination charges), webhook signature verification.
-- @stripe/react-stripe-js 6.12.0 + @stripe/stripe-js 9.17.0 — Frontend Stripe Elements integration.
+- PostgreSQL JDBC Driver 42.7.14 (`core-java/build.gradle.kts:351`) — explicit pin, not Boot-managed.
+- Azure Storage Blob SDK 12.36.0 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.7 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
+- Stripe Java SDK 34.0.0 — Payment intents, Connect (destination charges), webhook signature verification.
+- @stripe/react-stripe-js 7.0.0 + @stripe/stripe-js 10.0.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
 - @modelcontextprotocol/sdk ^1.29.0 — MCP server protocol implementation (`mcp-server/package.json`).
 - golang-jwt/jwt/v5 v5.3.1 — Edge gateway JWT validation against Keycloak JWKS.
@@ -84,17 +84,17 @@
 - Resilience4j 2.4.0 (`resilience4j-spring-boot4`, the Boot-4 artifact) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `core-java/src/main/resources/application.yml:904-956`, `resilience4j:` at 950).
 - Bucket4j 8.10.1 (`bucket4j-core`, `bucket4j-redis`) — Redis-backed token-bucket rate limiting.
 - Micrometer Prometheus + Micrometer Tracing (Brave/Zipkin bridge, via `spring-boot-starter-zipkin`) — metrics + distributed tracing. Boot 4 reads the Zipkin endpoint from `management.tracing.export.zipkin.endpoint` (renamed in 38-11; `ZIPKIN_ENDPOINT` drives it again).
-- com.sksamuel.scrimage 4.6.8 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.15.2 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.
+- com.sksamuel.scrimage 4.6.8 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.15.3 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.
 - OpenPDF 2.0.3 (`com.github.librepdf:openpdf`) — PDF generation for allergen labels (JasperReports was removed 2026-07-27 as unused, closing 3 Trivy HIGHs).
-- Framer Motion 13.4.6, GSAP 3.15.0 (+`@gsap/react` 2.1.2) — animation.
+- Framer Motion 14.0.0, GSAP 3.15.0 (+`@gsap/react` 2.1.2) — animation.
 - Recharts 3.10.1 — dashboard charts.
 - Radix UI (`@radix-ui/react-*`) — headless component primitives.
-- Zod 4.6.5 (core-java's DTOs use Bean Validation instead) / 4.x in frontend and mcp-server — schema validation.
-- React Hook Form 7.89.0 + @hookform/resolvers 5.9.1 — form state.
-- @stomp/stompjs 7.3.0 + @microsoft/fetch-event-source 2.0.1 — Frontend real-time (STOMP over WebSocket, SSE consumption).
+- Zod 4.6.7 (core-java's DTOs use Bean Validation instead) / 4.x in frontend and mcp-server — schema validation.
+- React Hook Form 7.90.0 + @hookform/resolvers 5.9.1 — form state.
+- @stomp/stompjs 7.4.0 + @microsoft/fetch-event-source 2.0.1 — Frontend real-time (STOMP over WebSocket, SSE consumption).
 - pino ^10 — MCP server structured logging.
 - express ^5 — MCP server HTTP host (Streamable HTTP transport).
-- prometheus/client_golang v1.24.1 — Edge gateway Prometheus metrics.
+- prometheus/client_golang v1.25.0 — Edge gateway Prometheus metrics.
 - uber/zap v1.28.0 — Edge gateway structured logging.
 - swaggo/swag v1.16.6 + gin-swagger v1.6.1 — Edge gateway OpenAPI docs (`/openapi.json`, `/docs`).
 
@@ -132,17 +132,17 @@
 - Kubernetes via Kustomize: `k8s/base` + `k8s/staging` / `k8s/production` overlays. Images pushed to `ghcr.io/bralabee/jtoye-{core-java,edge-go,frontend,pg-backup}`; `newTag` in overlay `kustomization.yaml` defaults to `2.1.0` but CI pins the exact full-sha tag at deploy time via `kustomize edit set image`.
 - PostgreSQL 15+ (managed/external in prod).
 - Redis 7+ (external/managed).
-- RabbitMQ 4.3.4-management-alpine pinned in compose; **the deployed staging/production broker version is unverified from this repository** (see `docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) — minimum supported is 3.13+. RabbitMQ 4.3 community support ends **2026-11-30**, tracked in `infra/dependency-horizons.yaml`.
-- Keycloak 24.0.5 (external IdP in prod).
+- RabbitMQ 4.3.6-management-alpine pinned in compose; **the deployed staging/production broker version is unverified from this repository** (see `docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) — minimum supported is 3.13+. RabbitMQ 4.3 community support ends **2027-01-31**, tracked in `infra/dependency-horizons.yaml`.
+- Keycloak 26.8.1 (external IdP in prod).
 - Azure Blob Storage for image storage and backups (Workload Identity, raw Blob endpoint; `docs/runbooks/azure-blob-provisioning.md`) — Azurite 3.37.0 is the local/nightly emulator.
 - SMTP provider (Mailhog is dev-only, e.g. SendGrid/SES in prod).
 
 ## Observability Stack (self-hosted, compose-based)
 
-- Prometheus v2.48.0 (`prom/prometheus`) — `infra/monitoring/docker-compose.monitoring.yml:35`.
-- Grafana 10.2.2 (`grafana/grafana`) — `infra/monitoring/docker-compose.monitoring.yml:84`.
-- Alertmanager v0.27.0 (`prom/alertmanager`) — `infra/monitoring/docker-compose.monitoring.yml:115`.
-- redis_exporter v1.58.0, postgres_exporter v0.15.0 — infra metric exporters.
+- Prometheus v3.13.4 (`prom/prometheus`) — `infra/monitoring/docker-compose.monitoring.yml:35`.
+- Grafana 13.2.4 (`grafana/grafana`) — `infra/monitoring/docker-compose.monitoring.yml:82`.
+- Alertmanager v0.34.1 (`prom/alertmanager`) — `infra/monitoring/docker-compose.monitoring.yml:112`.
+- redis_exporter v1.94.0, postgres_exporter v0.20.1 — infra metric exporters.
 - No hosted/SaaS error tracker (no Sentry or equivalent) is wired into either `core-java/build.gradle.kts` or `frontend/package.json`.
 
 ## Security Scanning / Supply Chain (CI)

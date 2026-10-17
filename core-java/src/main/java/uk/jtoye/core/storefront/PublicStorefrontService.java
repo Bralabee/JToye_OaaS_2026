@@ -87,6 +87,7 @@ public class PublicStorefrontService {
     public static final String GUEST_ORDER_ENDPOINT = "storefront.orders.create";
 
     private final ShopRepository shopRepository;
+    private final uk.jtoye.core.shop.ShopSlugAliasRepository shopSlugAliasRepository;
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
     private final OrderEventPublisher eventPublisher;
@@ -176,7 +177,32 @@ public class PublicStorefrontService {
                                    ClientIpDigester clientIpDigester,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
+        this(shopRepository, null, productRepository, orderRepository, eventPublisher,
+                entityManager, paymentService, announcementRepository, idempotencyService,
+                postcodeGeocoder, orderNumberGenerator, traderIdentityService,
+                availabilityPolicy, orderLimits, cashOrderCaps, clientIpDigester,
+                defaultRadiusKm, maxRadiusKm);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PublicStorefrontService(ShopRepository shopRepository,
+                                   uk.jtoye.core.shop.ShopSlugAliasRepository shopSlugAliasRepository,
+                                   ProductRepository productRepository,
+                                   OrderRepository orderRepository, OrderEventPublisher eventPublisher,
+                                   EntityManager entityManager, PaymentService paymentService,
+                                   ShopAnnouncementRepository announcementRepository,
+                                   IdempotencyService idempotencyService,
+                                   PostcodeGeocoder postcodeGeocoder,
+                                   OrderNumberGenerator orderNumberGenerator,
+                                   TraderIdentityService traderIdentityService,
+                                   ShopAvailabilityPolicy availabilityPolicy,
+                                   OrderLimits orderLimits,
+                                   CashOrderCaps cashOrderCaps,
+                                   ClientIpDigester clientIpDigester,
+                                   @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
+                                   @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
+        this.shopSlugAliasRepository = shopSlugAliasRepository;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
@@ -566,11 +592,26 @@ public class PublicStorefrontService {
      * list/near/search endpoints, which share {@link #toPublicShopDto}, stay one query per page.
      * {@link TraderIdentityService#findPublicSeller} pins the SHOP's tenant in its own transaction
      * and never touches {@code TenantContext} on this request thread.
+     *
+     * <p>Phase 39-09 (V86, RWO-028): when {@code slug} is not a published shop's current slug,
+     * checks {@code shop_slug_alias} for a historical alias whose target shop is {@code published = true}
+     * and raises {@link uk.jtoye.core.exception.ShopSlugRedirectException} so the controller answers
+     * HTTP 301 Moved Permanently to the current canonical slug. An unpublished shop's alias returns
+     * HTTP 404 Not Found and never discloses the shop's existence or current slug.
      */
     public PublicShopDto getShopBySlug(String slug) {
         log.debug("Fetching published shop: {}", slug);
-        Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
+        Optional<Shop> published = shopRepository.findBySlugAndPublishedTrue(slug);
+        if (published.isEmpty()) {
+            if (shopSlugAliasRepository != null) {
+                Optional<String> canonicalSlug = shopSlugAliasRepository.findPublishedCanonicalSlugByOldSlug(slug);
+                if (canonicalSlug.isPresent() && !canonicalSlug.get().equals(slug)) {
+                    throw new uk.jtoye.core.exception.ShopSlugRedirectException(slug, canonicalSlug.get());
+                }
+            }
+            throw new ResourceNotFoundException("Shop not found: " + slug);
+        }
+        Shop shop = published.get();
         PublicShopDto dto = toPublicShopDto(shop);
         dto.setSeller(traderIdentityService.findPublicSeller(shop.getTenantId(), shop));
         return dto;

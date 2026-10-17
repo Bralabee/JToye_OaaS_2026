@@ -1,0 +1,105 @@
+# Phase 39 Plan 39-03 — Observability Stack Upgrade Evidence
+# Recorded: 2026-10-16T22:01:30+01:00
+# Worktree: /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39 (branch: feature/phase-39-wave-b-infra-observability)
+
+## 1. Prometheus v3.13.4 LTS — Version, Config Render, Rule Check & TSDB Startup
+
+Command:
+docker run --rm -v /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39/infra/monitoring/prometheus:/src:ro --entrypoint sh prom/prometheus:v3.13.4 -ec 'prometheus --version && mkdir -p /tmp/prom && cp /src/prometheus.yml.tmpl /src/alerts.yml /src/entrypoint.sh /tmp/prom/ && sed -i "s|/etc/prometheus|/tmp/prom|g; s|exec /bin/prometheus|exit 0; exec /bin/prometheus|g" /tmp/prom/entrypoint.sh && CORE_JAVA_METRICS_PORT=9090 EDGE_GO_METRICS_PORT=9101 sh /tmp/prom/entrypoint.sh && promtool check config /tmp/prom/prometheus.yml && promtool check rules /tmp/prom/alerts.yml'
+
+Output (rc=0):
+prometheus, version 3.13.4 (branch: HEAD, revision: a200ce052bd89c8ffdfaa9d9b72a238a02e9f018)
+  build user:       root@a522a866ab80
+  build date:       20260928-14:15:18
+  go version:       go1.26.8
+  platform:         linux/amd64
+  tags:             stringlabels
+Checking /tmp/prom/prometheus.yml
+  SUCCESS: 1 rule files found
+ SUCCESS: /tmp/prom/prometheus.yml is valid prometheus config file syntax
+
+Checking /tmp/prom/alerts.yml
+  SUCCESS: 19 rules found
+
+## 2. Alertmanager v0.34.1 — Version & 3-Arm Entrypoint Config Verification
+
+Command:
+docker run --rm -v /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39/infra/monitoring/alertmanager:/src:ro --entrypoint sh prom/alertmanager:v0.34.1 -ec '...'
+
+Output (rc=0):
+alertmanager, version 0.34.1 (branch: HEAD, revision: 73c6bfe7393929211294c1954f30d8ed78e4d0ad)
+  build user:       root@68a5f2da6323
+  build date:       20260917-07:53:02
+  go version:       go1.26.8
+  platform:         linux/amd64
+  tags:             netgo
+=== ARM: unconfigured ===
+Checking '/tmp/unconfigured/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 0 inhibit rules
+ - 1 receivers
+ - 0 templates
+
+=== ARM: mute_only ===
+alertmanager entrypoint: notification mute ACTIVE for alertname=~^(NoOrdersCreated|ServiceDown)$ — rules still evaluate and still show as firing; only the notification is withheld
+Checking '/tmp/mute_only/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 0 inhibit rules
+ - 2 receivers
+ - 0 templates
+
+=== ARM: slack_and_mute ===
+alertmanager entrypoint: notification mute ACTIVE for alertname=~^(NoOrdersCreated)$ — rules still evaluate and still show as firing; only the notification is withheld
+alertmanager entrypoint: Slack receiver ENABLED on #ops (email remains the default route)
+Checking '/tmp/slack_and_mute/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 0 inhibit rules
+ - 3 receivers
+ - 0 templates
+
+## 3. Grafana 13.2.4 — Health Endpoint & Provisioned Dashboard Verification
+
+Command:
+docker run --rm -e GF_SECURITY_ADMIN_USER=admin -e GF_SECURITY_ADMIN_PASSWORD=StrongTestPassword123! -e GF_USERS_ALLOW_SIGN_UP=false -v /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39/infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro -v /home/sanmi/IdeaProjects/JToye_OaaS_2026-agy-phase39/infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro --entrypoint sh grafana/grafana:13.2.4 -ec '/run.sh >/tmp/grafana.log 2>&1 & G_PID=$!; for i in $(seq 1 20); do if wget -qO- http://localhost:3000/api/health 2>/dev/null | grep -q "13.2.4"; then break; fi; sleep 1; done; wget -qO- http://localhost:3000/api/health; echo ""; wget -qO- --header="Authorization: Basic $(printf "admin:StrongTestPassword123!" | base64)" http://localhost:3000/api/search; echo ""; kill $G_PID 2>/dev/null || true'
+
+Output (rc=0):
+{
+  "database": "ok",
+  "version": "13.2.4",
+  "commit": "0e79aef9d91abf3bdadae9af15763029072fb45b"
+}
+[{"id":3515584641781760,"uid":"stomp-relay-dashboard","orgId":1,"title":"STOMP Broker Relay","uri":"db/stomp-broker-relay","url":"/d/stomp-relay-dashboard/stomp-broker-relay","slug":"","type":"dash-db","tags":["messaging","rabbitmq","stomp"],"isStarred":false,"sortMeta":0,"isDeleted":false}]
+
+## 4. Exporters — Binary Versions
+
+- `oliver006/redis_exporter:v1.94.0`: `Redis Metrics Exporter v1.94.0    build date: 2026-10-15-15:46:49    sha1: 2b90c6ba93557a2961eb9d3cc7d68d9b8eb15d2c    Go: go1.27.2    GOOS: linux    GOARCH: amd64` (rc=0)
+- `prometheuscommunity/postgres-exporter:v0.20.1`: `postgres_exporter, version 0.20.1 (branch: HEAD, revision: a2eb70ef7280a569f144ffcb8cb343fa4ed3168e, go1.26.4)` (rc=0)
+
+## 5. Fail-Before-Pass Break Arms & Passing Gate Outputs
+
+### Break Arm 1: `scripts/check-alert-rules.sh` against broken PromQL (`up{ == 0`) on `prom/prometheus:v3.13.4`
+Output (rc=1):
+FAIL: S-1 promtool check rules failed:
+Checking /rules/broken-alerts.yml
+  FAILED:
+/rules/broken-alerts.yml: 25:15: group "api_alerts", rule 2, "ServiceDown": could not parse expression: 1:5: parse error: unexpected "=" in label matching, expected identifier or "}"
+  promtool: rc=1, 0 rules found
+FAILED: 1 static alert-rule violation(s).
+BREAK_ARM_ALERT_RULES_RC=1
+
+### Break Arm 2: `scripts/check-dependency-horizons.sh` against `prometheus/3.15` short-term cycle (`eol: 2026-11-06`, 21 days)
+Output (rc=1):
+FAIL: H-3 prometheus: prometheus/3.15 approaching 2026-11-06 (catalogue, 21 days)
+BREAK_ARM_H3_RC=1
+
+### Passing Gate Suite (`rc=0`):
+- `scripts/check-dependency-horizons.sh`: `violations=0`, `active-exemptions=1` (only `keycloak` remains for `39-04`), `pin-not-at-site=0`, `site-unresolvable=0`, `rc=0`.
+- `scripts/check-alert-rules.sh`: `promtool: rc=0, 19 rules found`, `PASS: 19 live rule(s) valid, labelled, annotated and documented; 3 dormant rule(s) documented`, `rc=0`.
+- `scripts/check-doc-versions.sh`: `PASS: all 153 version claim(s) across 7 doc(s) match the build files`, `rc=0`.
+- `scripts/check-doc-citations.sh`: `PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable)`, `rc=0`.

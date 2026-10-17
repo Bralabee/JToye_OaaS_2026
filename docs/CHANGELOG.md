@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 39-04: Keycloak 26.8.1 Upgrade (#937) — 2026-10-16
+
+Upgrades the identity provider from `quay.io/keycloak/keycloak:24.0.5` (EOL `2024-06-10`) to `quay.io/keycloak/keycloak:26.8.1` (`eol: false`, cycle `26.8`) across all three compose topologies and retires the final `DEFERRED-27` horizon exemption (`active-exemptions=0`).
+
+- **Hostname v2 & observability parity (`docker-compose.full-stack.yml`, `infra/docker-compose.yml`, `infra/docker-compose.hostnet.yml`, `infra/keycloak/realm-export.template.json`).** Aligns Keycloak 26 with `KC_HOSTNAME: http://localhost:8085`, `KC_HOSTNAME_STRICT: "false"`, and `KC_LEGACY_OBSERVABILITY_INTERFACE: "true"` so split-horizon OIDC discovery (`http://localhost:8085/realms/jtoye-dev` & `jtoye-customers`), `/health/ready` (`UP`), and `/metrics` on internal port `8080` remain intact.
+- **Horizon gate clean (`infra/dependency-horizons.yaml`).** Updates `keycloak` to `26.8.1` across all 3 compose files and deletes the last `DEFERRED-27` exemption (`violations=0`, `active-exemptions=0`).
+
+### Phase 39-07: Tailwind CSS 4.3.3 (`@tailwindcss/postcss`) Migration (#936) — 2026-10-16
+
+Migrates the Next.js 16 frontend from Tailwind CSS `3.4.1` to Tailwind CSS `4.3.3` (`@tailwindcss/postcss`), preserving all custom design tokens, horizontal layout-width tiers (`1800px` / `1400px` / `1280px`), `@container` queries, and `@media (hover: hover)` gating.
+
+- **PostCSS & CSS-first entry (`frontend/postcss.config.mjs`, `frontend/app/globals.css`).** Replaces `tailwindcss: {}` with `"@tailwindcss/postcss": {}` and switches `@tailwind base/components/utilities` to `@import "tailwindcss" source(none);` + `@config "../tailwind.config.ts";`, keeping explicit `@layer base` border-color (`border-border` on `*, ::after, ::before, ::backdrop, ::file-selector-button`) and enabled button `cursor: pointer` rules for v3 visual parity.
+- **v4 `.container` retirement & test-content exclusion (`frontend/tailwind.config.ts`, `scripts/check-layout-width-contract.sh`).** Adds `blocklist: ["container"]` alongside `corePlugins: { container: false }` (enforced by `G-3b` and `layout-widths-css.test.ts` after proving Tailwind v4 ignores `corePlugins.container: false`), and excludes `!**/__tests__/**` and `!**/*.{test,spec}.{js,ts,jsx,tsx}` from `content` scanning.
+- **Oklch palette & CSSOM layer adapters.** Updates contrast test suites (`contrast-literals`, `dashboard-pending-badge-contrast`, `cluster-g-contrast-sites`, `staff-page`) to convert `tailwindcss/colors` v4 `oklch(...)` strings to sRGB and updates `mobile-instrument-contract.spec.ts` to walk `CSSLayerBlockRule` (`@layer utilities`).
+
+### Phase 39-02 & 39-03: Alpine 3.24, RabbitMQ 4.3.6 & Observability Stack Upgrade (#935) — 2026-10-16
+
+Upgrades the local/compose init helpers, RabbitMQ broker, and 5-component observability stack onto supported releases, retiring four of the five dependency-horizon exemptions (`alpine`, `rabbitmq`, `prometheus`, `grafana`).
+
+- **Init containers & broker (`39-02`).** All three Alpine `keycloak-realm-render` init containers move from `alpine:3.20` (EOL `2026-04-01`) to `alpine:3.24` (horizon `2028-06-01`, `DEFERRED-27` retired), and the compose broker moves from `rabbitmq:4.3.4-management-alpine` to `4.3.6-management-alpine` (`vendor_eol: 2027-01-31`, `#724` retired).
+- **Observability stack (`39-03`).** `infra/monitoring/docker-compose.monitoring.yml` moves Prometheus from `v2.48.0` (EOL `2023-12-28`) to `v3.13.4` LTS (cycle `3.13`, horizon `2027-07-31`; chosen over short-term `3.15` whose `2026-11-06` EOL breaches the 90-day warn window), Grafana from `10.2.2` (EOL `2024-07-24`) to `13.2.4` (horizon `2027-05-18`, obsolete `grafana-piechart-panel` plugin install removed), Alertmanager from `v0.27.0` to `v0.34.1`, `redis-exporter` from `v1.58.0` to `v1.94.0`, and `postgres-exporter` from `v0.15.0` to `v0.20.1` (`DEFERRED-27` exemptions on Prometheus and Grafana retired).
+
+### Phase 39-09: Old-slug 301 aliases (#933) — 2026-10-16
+
+Printed links and QR codes pointing at a shop's old storefront URL now redirect permanently (`301 Moved Permanently`) to the shop's new slug after a deliberate slug change.
+
+- **Retired-slug alias registry (`V86`).** `shop_slug_alias` (`old_slug` PK, `shop_id` FK `ON DELETE CASCADE`, `created_at` + `idx_shop_slug_alias_shop_id`) records displaced slugs whenever `ShopService.updateShop` changes a shop's slug, deletes any self-alias if the shop reverts to an earlier slug (`A -> B -> A`), and blocks any other shop from claiming a retired slug on create or update.
+- **Storefront `301` redirect (`PublicStorefrontController` & Next.js `/shop/[slug]`).** When an anonymous storefront request arrives for a retired slug whose target shop is still `PUBLISHED`, the API responds `301 Moved Permanently` with `Location` and `X-Shop-Canonical-Slug` pointing to the current canonical slug (and Next.js SSR triggers `permanentRedirect('/shop/' + encodeURIComponent(result.canonicalSlug))`), while aliases pointing at unpublished or deleted shops return `404`.
+
+### Phase 39-08: Per-shop customer narrowing (#927) — 2026-10-16
+
+A shop manager or staff member now sees and acts on only the customers of the shops they hold a grant on, without adding a join table.
+
+- **Origin shop and order history (`V85`).** `customers.origin_shop_id` (`REFERENCES shops(id) ON DELETE SET NULL`, mirrored on `customers_aud`) records the shop a customer started at, backfilled from each customer's earliest order inside a per-tenant `set_config('app.current_tenant_id', ...)` loop under `FORCE ROW LEVEL SECURITY` and proven under `NOSUPERUSER NOBYPASSRLS`.
+- **Scoped customer reads, edits and order linking.** Non-`allShops` callers (`SHOP_MANAGER` and `STAFF`) list, view, edit and link onto orders only customers whose `origin_shop_id` is in their granted shop set or who have placed an order at a shop in their granted shop set; out-of-scope customer IDs return `404` (`ResourceNotFoundException`).
+- **Automatic origin stamping.** Creating a customer as a single-shop manager defaults `originShopId` to that shop (or verifies `SHOP_MANAGER` on an explicit `originShopId`), and linking an orderless customer onto their first order backfills `originShopId` when still `NULL`. Group-admin customer deletion and GDPR erasure stay tenant-wide.
+
 ### Phase 37: UAT gaps G-37-12..G-37-15 (#925) — 2026-10-16
 
 Four gaps the owner's acceptance test of Phase 37 found on the vendor dashboard are closed.

@@ -67,6 +67,7 @@ export type { ShopDetail } from "@/types/storefront"
  */
 export type StorefrontLoad<T> =
   | { state: "ok"; data: T; headers?: Headers }
+  | { state: "redirect"; canonicalSlug: string }
   | { state: "notfound" }
   | { state: "defer" }
 
@@ -79,19 +80,40 @@ export type ShopList = PageResponse<PublicShop>
  * no `next.revalidate` beside it). The shop payload carries the server's live answer about
  * whether the shop is taking orders (`openNow`, `pausedUntil`), so a cached page could show
  * "Open now" for a shop that paused a minute ago. There is no revalidate window to tune.
+ *
+ * `redirect: "manual"` (39-09, RWO-028): when a vendor changes their shop's slug, core-java
+ * answers `301 Moved Permanently` on the retired slug (`V86__shop_slug_alias.sql`). Manual
+ * redirect mode surfaces the 301 to `loadShopDetail` so `/shop/[slug]` can issue a real
+ * Next.js `permanentRedirect("/shop/<canonicalSlug>")` instead of silently following the
+ * shop endpoint while `/products` 404s on the old slug.
  */
-const NO_STORE: RequestInit = { cache: "no-store" }
+const NO_STORE: RequestInit = { cache: "no-store", redirect: "manual" }
 
 /**
  * One fetch, decoded, never throwing.
  *
- * `notfound` is returned ONLY for a real 404. Everything else that is not a 2xx
- * — including 429 — becomes `defer`, because the caller must not present a
- * non-answer as an authoritative one.
+ * `notfound` is returned ONLY for a real 404. `redirect` is returned when core-java answers
+ * 301 Moved Permanently for a retired shop slug alias (39-09). Everything else that is not a
+ * 2xx — including 429 — becomes `defer`, because the caller must not present a non-answer as
+ * an authoritative one.
  */
 async function getJson<T>(path: string): Promise<StorefrontLoad<T>> {
   try {
     const res = await fetch(`${coreBaseUrl()}${path}`, NO_STORE)
+    if (res.status === 301) {
+      const canonical =
+        res.headers?.get("x-shop-canonical-slug")?.trim() ||
+        res.headers
+          ?.get("location")
+          ?.split("/")
+          .filter(Boolean)
+          .pop()
+          ?.trim()
+      if (canonical) {
+        return { state: "redirect", canonicalSlug: decodeURIComponent(canonical) }
+      }
+      return { state: "defer" }
+    }
     if (res.status === 404) return { state: "notfound" }
     if (!res.ok) return { state: "defer" }
     const body = (await res.json()) as T
@@ -172,6 +194,7 @@ export const loadShopDetail = cache(async function loadShopDetail(
     getOptional<PublicAnnouncement[]>(`/public/shops/${encoded}/announcements`, []),
   ])
 
+  if (shopRes.state === "redirect") return shopRes
   if (shopRes.state === "notfound") return { state: "notfound" }
   if (shopRes.state !== "ok") return { state: "defer" }
   // A shop that exists with an unreadable menu is still a defer, not an empty

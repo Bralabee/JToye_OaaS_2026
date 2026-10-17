@@ -55,7 +55,7 @@ describe("globals.css — prefers-reduced-motion covers the Tailwind pulse (A11Y
   })
 
   it("is declared AFTER @tailwind utilities so the equal-specificity override wins the cascade", () => {
-    const utilitiesAt = css.indexOf("@tailwind utilities")
+    const utilitiesAt = css.indexOf('@import "tailwindcss"')
     const pulseAt = css.search(/\.animate-pulse\s*\{[^}]*animation\s*:\s*none/)
     expect(utilitiesAt).toBeGreaterThanOrEqual(0)
     expect(pulseAt).toBeGreaterThan(utilitiesAt)

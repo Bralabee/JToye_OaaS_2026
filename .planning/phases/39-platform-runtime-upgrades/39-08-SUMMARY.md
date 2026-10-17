@@ -1,0 +1,21 @@
+# Phase 39 Plan 08: Option C Per-Shop Customer Narrowing Summary
+
+**Completed:** 2026-10-16
+**Plan:** `39-08-PLAN.md` (Wave 1, Track `39-F` Part 1 — Option C per-shop customer narrowing, deferred by owner ruling `2026-10-10` in `quick 261010-ppb`)
+
+## What Was Done
+
+1. **Flyway Migration `V85__customer_origin_shop_scope.sql`:**
+   - Added nullable `customers.origin_shop_id UUID REFERENCES shops(id) ON DELETE SET NULL` and `customers_aud.origin_shop_id UUID` in [`core-java/src/main/resources/db/migration/V85__customer_origin_shop_scope.sql`](../../../core-java/src/main/resources/db/migration/V85__customer_origin_shop_scope.sql) (no FK on `customers_aud` so Envers audit history survives shop deletion), plus partial index `idx_customers_tenant_origin_shop ON customers (tenant_id, origin_shop_id) WHERE origin_shop_id IS NOT NULL`.
+   - Backfilled `customers.origin_shop_id` from each customer's earliest order (`ORDER BY o.created_at ASC, o.id ASC LIMIT 1`) inside a `DO $$` per-tenant loop pinning `perform set_config('app.current_tenant_id', t.id::text, true)` so the `UPDATE` executes under `FORCE ROW LEVEL SECURITY` (`NOSUPERUSER NOBYPASSRLS`).
+2. **Entity, DTOs, and Golden Wire / Idempotency Compatibility:**
+   - Mapped `originShopId` on [`Customer.java`](../../../core-java/src/main/java/uk/jtoye/core/customer/Customer.java), [`CustomerMapper.java`](../../../core-java/src/main/java/uk/jtoye/core/customer/CustomerMapper.java), and the inner records `CustomerController.CustomerDto` and `CustomerController.CreateCustomerRequest` in [`CustomerController.java`](../../../core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java) with `@JsonInclude(JsonInclude.Include.NON_NULL)` and backward-compatible 8-arg / 4-arg overloaded constructors so `Jackson3WireContractTest` and `IdempotencyFingerprintGoldenTest` remain byte-identical when `originShopId` is `null`.
+   - Added `shopAccessService.require(req.originShopId(), ShopRole.SHOP_MANAGER)` in `CustomerController.create` before the `Idempotency-Key` replay branch so an ungranted shop ID is rejected with HTTP 403 before any idempotency lookup or reservation.
+3. **Per-Shop Customer Narrowing Across `ShopAccessService`, `CustomerRepository`, `CustomerService`, and `OrderService`:**
+   - Added `hasAllShopsAccess()` and `defaultManagedShopId()` on [`ShopAccessService.java`](../../../core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java).
+   - Added `findTenantScopedInGrantSet` and `findByIdAndTenantScopedInGrantSet` on [`CustomerRepository.java`](../../../core-java/src/main/java/uk/jtoye/core/customer/CustomerRepository.java) matching `c.originShopId IN :shopIds OR EXISTS (SELECT 1 FROM Order o WHERE o.tenantId = :tenantId AND o.customerId = c.id AND o.shopId IN :shopIds)`.
+   - In [`CustomerService.java`](../../../core-java/src/main/java/uk/jtoye/core/customer/CustomerService.java): narrowed `getAllCustomers`, `getCustomerById`, and `updateCustomer` to `grantedShopIds()` when `!hasAllShopsAccess()` (returning 404 when out of scope), and in `createCustomer` defaulted `originShopId` to `shopAccessService.defaultManagedShopId()` when omitted by a per-shop `SHOP_MANAGER`.
+   - In [`OrderService.java`](../../../core-java/src/main/java/uk/jtoye/core/order/OrderService.java): narrowed `createOrder` and `updateOrder` customer lookups via `resolveScopedCustomer` (returning 404 when out of scope) and backfilled `customer.setOriginShopId(shop.getId())` in `createOrder` when `customer.getOriginShopId() == null`.
+4. **TDD Fail-Before-Pass Verification (`NOSUPERUSER NOBYPASSRLS`):**
+   - Created [`CustomerOriginShopScopeIntegrationTest.java`](../../../core-java/src/test/java/uk/jtoye/core/customer/CustomerOriginShopScopeIntegrationTest.java) with 5 integration test arms and updated `Fixture.seed` in [`CustomerAccessGateIntegrationTest.java`](../../../core-java/src/test/java/uk/jtoye/core/customer/CustomerAccessGateIntegrationTest.java).
+   - Recorded RED (`5 tests completed, 4 failed`, `rc=1`) before wiring the service predicates, then verified GREEN (`5 tests completed, 0 failed`, `rc=0`) alongside `CustomerAccessGateIntegrationTest` (22/22), `VanishedRowStatusIntegrationTest`, `RlsContractTest`, `OpenApiSnapshotTest`, `Jackson3WireContractTest`, and `IdempotencyFingerprintGoldenTest`.

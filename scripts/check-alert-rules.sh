@@ -75,7 +75,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RULES_FILE="${1:-$REPO_ROOT/infra/monitoring/prometheus/alerts.yml}"
 RUNBOOK="${2:-$REPO_ROOT/docs/runbooks/alerts.md}"
-PROM_IMAGE="${PROM_IMAGE:-prom/prometheus:v2.48.0}"
+PROM_IMAGE="${PROM_IMAGE:-prom/prometheus:v3.13.4}"
 
 VIOLATIONS=0
 violation() { echo "FAIL: $*" >&2; VIOLATIONS=$((VIOLATIONS + 1)); }

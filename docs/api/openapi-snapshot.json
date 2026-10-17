@@ -832,6 +832,10 @@
             "minLength" : 0,
             "type" : "string"
           },
+          "originShopId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
           "phone" : {
             "maxLength" : 50,
             "minLength" : 0,
@@ -1660,6 +1664,10 @@
             "type" : "string"
           },
           "name" : {
+            "type" : "string"
+          },
+          "originShopId" : {
+            "format" : "uuid",
             "type" : "string"
           },
           "phone" : {
@@ -12389,7 +12397,7 @@
     },
     "/api/v1/public/shops/{slug}" : {
       "get" : {
-        "description" : "Get full details of a published shop by its URL slug.",
+        "description" : "Get full details of a published shop by its URL slug. When the slug is a recorded alias of a published shop that changed its web address (V86), returns 301 Moved Permanently with Location and X-Shop-Canonical-Slug pointing to the canonical shop resource.",
         "operationId" : "getShop",
         "parameters" : [
           {
@@ -14993,7 +15001,7 @@
     },
     "/public/shops/{slug}" : {
       "get" : {
-        "description" : "Get full details of a published shop by its URL slug.",
+        "description" : "Get full details of a published shop by its URL slug. When the slug is a recorded alias of a published shop that changed its web address (V86), returns 301 Moved Permanently with Location and X-Shop-Canonical-Slug pointing to the canonical shop resource.",
         "operationId" : "getShop_1",
         "parameters" : [
           {

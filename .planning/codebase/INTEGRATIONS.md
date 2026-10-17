@@ -67,15 +67,15 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 
 ## Message Queue
 
-- RabbitMQ 4.3.4-management-alpine (LOCAL-DEV compose pin) — AMQP `5672`, management UI `15672`, STOMP `61613`, all loopback-only by default.
+- RabbitMQ 4.3.6-management-alpine (LOCAL-DEV compose pin) — AMQP `5672`, management UI `15672`, STOMP `61613`, all loopback-only by default.
   - Client: Spring AMQP, `com.rabbitmq:amqp-client` pinned to 5.34.0 via `rabbit-amqp-client.version` Gradle property.
   - Transactional outbox pattern for at-least-once delivery: `payment_event_outbox` (existing) and `media_event_outbox` (V58, Phase 24) — each with its own flusher (`PaymentEventOutboxFlusher`, dedicated media flusher), exponential backoff + resurrect.
   - STOMP relay mode (`stomp.broker.mode`) — `in-memory` in compose (default), RabbitMQ STOMP relay in k8s for multi-replica SSE/KDS fan-out.
-  - **STAGING/PROD broker version is unverified from this repository** — minimum supported 3.13+, RabbitMQ 4.3 community support ends 2026-11-30 (tracked `infra/dependency-horizons.yaml`, deferred to 2026-11-30 under issue #724/PR #725).
+  - **STAGING/PROD broker version is unverified from this repository** — minimum supported 3.13+, RabbitMQ 4.3 community support ends 2027-01-31 (tracked in `infra/dependency-horizons.yaml`, upgraded to 4.3.6 in Phase 39-02).
 
 ## Authentication & Identity
 
-**Auth Provider: Keycloak 24.0.5** (two realms, dual-issuer split-horizon pattern throughout)
+**Auth Provider: Keycloak 26.8.1** (two realms, dual-issuer split-horizon pattern throughout)
 - `jtoye-dev` realm — staff/vendor identity (dashboard admin users). Frontend NextAuth.js (`next-auth` 5.0.0-beta.32, `frontend/auth.ts`) uses the `next-auth/providers/keycloak` provider.
 - `jtoye-customers` realm — B2C customer identity (Phase 18 realm split), storefront sign-in / order history. Separate `CustomerJwtVerifier` on the backend, separate `customer-auth.ts` on the frontend.
 - Google identity provider — federated into the `jtoye-customers` realm (ADR-0005), **disabled by default** (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` empty by default in the realm-render template).
@@ -86,7 +86,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - MCP server: Bearer pass-through only — forwards the caller's own token verbatim to core-java, validates nothing itself (RLS in core is the sole isolation boundary; T-20-04 SSRF guard keeps `CORE_BASE_URL` a fixed internal service name).
 - Keycloak admin API (deprovisioning) — `jtoye.keycloak.admin.enabled` (default false), disables an offboarded tenant's Keycloak users post-commit (best-effort, `REQUIRES_NEW` after the offboard transaction).
 - LOCAL-DEV: Keycloak container backed by the shared Postgres, realm JSON rendered from a template at container start (`keycloak-realm-render` service, `envsubst`) so no secret is committed.
-- STAGING/PROD: external Keycloak 24.0+ instance (deployment target unverified from this repo beyond the version floor).
+- STAGING/PROD: external Keycloak 26.8+ instance (deployment target unverified from this repo beyond the version floor).
 
 ## Vendor-Scoped Access / Machine Clients
 
@@ -100,7 +100,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 **Metrics:**
 - Micrometer + Prometheus registry (`io.micrometer:micrometer-registry-prometheus`) on core-java, exposed at `/actuator/prometheus` (base profile: disabled by default, opt-in per non-prod profile; prod serves it on a **separate internal management port 9091**, never the public app port).
 - Edge gateway: `prometheus/client_golang` v1.24.1, served on a dedicated metrics port (`EDGE_MANAGEMENT_PORT`, default `9101`) — deliberately not published under compose `ports:`, reached over the bridge network by container name only.
-- Self-hosted scrape/dashboard/alert stack (`infra/monitoring/docker-compose.monitoring.yml`): Prometheus v2.48.0, Grafana 10.2.2, Alertmanager v0.27.0, plus `redis_exporter` v1.58.0 and `postgres_exporter` v0.15.0.
+- Self-hosted scrape/dashboard/alert stack (`infra/monitoring/docker-compose.monitoring.yml`): Prometheus v3.13.4, Grafana 13.2.4, Alertmanager v0.34.1, plus `redis_exporter` v1.94.0 and `postgres_exporter` v0.20.1.
 
 **Tracing:**
 - Micrometer Tracing with the Brave bridge (`micrometer-tracing-bridge-brave`) + `zipkin-reporter-brave`.

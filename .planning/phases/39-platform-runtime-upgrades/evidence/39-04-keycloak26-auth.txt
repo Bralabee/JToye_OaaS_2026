@@ -1,0 +1,139 @@
+# Phase 39 Plan 04 — Keycloak 26.8.1 Upgrade & Live Realm / OIDC Auth Verification Evidence
+Date: 2026-10-16
+
+## 1. Runtime Version Verification (`quay.io/keycloak/keycloak:26.8.1`)
+Command:
+`docker run --rm --entrypoint /opt/keycloak/bin/kc.sh quay.io/keycloak/keycloak:26.8.1 --version`
+Output (rc=0):
+```
+Keycloak 26.8.1
+JVM: 21.0.12.1 (Red Hat, Inc. OpenJDK 64-Bit Server VM 21.0.12.1+1-LTS)
+OS: Linux 6.8.0-147-generic amd64
+```
+
+## 2. Hostname v2 & Legacy Observability Interface Verification (`KC_HOSTNAME=http://localhost:8085`, `KC_LEGACY_OBSERVABILITY_INTERFACE=true`)
+Started `quay.io/keycloak/keycloak:26.8.1` (`start-dev --import-realm`) importing both rendered realms (`infra/keycloak/realm-export.json` and `infra/keycloak/realm-export-customers.json`) and custom theme mount (`infra/keycloak/themes`).
+- Readiness check (`GET /health/ready` on port 8080):
+```json
+{
+    "status": "UP",
+    "checks": [
+        {
+            "name": "Graceful Shutdown",
+            "status": "UP"
+        },
+        {
+            "name": "Keycloak Initialized",
+            "status": "UP"
+        },
+        {
+            "name": "Keycloak database connections async health check",
+            "status": "UP"
+        }
+    ]
+}
+```
+- Metrics endpoint (`GET /metrics` on port 8080):
+  `143` `# TYPE` metric families returned on port 8080 (`rc=0`), preserving Prometheus scrape compatibility (`infra/monitoring/prometheus/prometheus.yml.tmpl:131`).
+
+## 3. Split-Horizon OIDC Discovery Verification (`jtoye-dev` & `jtoye-customers`)
+- `GET /realms/jtoye-dev/.well-known/openid-configuration` (rc=0):
+```json
+{
+  "issuer": "http://localhost:8085/realms/jtoye-dev",
+  "jwks_uri": "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/certs",
+  "token_endpoint": "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/token"
+}
+```
+- `GET /realms/jtoye-customers/.well-known/openid-configuration` (rc=0):
+```json
+{
+  "issuer": "http://localhost:8085/realms/jtoye-customers",
+  "jwks_uri": "http://localhost:8085/realms/jtoye-customers/protocol/openid-connect/certs",
+  "token_endpoint": "http://localhost:8085/realms/jtoye-customers/protocol/openid-connect/token"
+}
+```
+
+## 4. Admin REST API User Profile & Managed `tenant_id` Attribute Retention
+- `GET /admin/realms/jtoye-dev/users/profile` (`tenant_id` declaration, rc=0):
+```json
+{
+  "name": "tenant_id",
+  "displayName": "Business",
+  "validations": {
+    "length": {
+      "min": 36,
+      "max": 36
+    }
+  },
+  "permissions": {
+    "view": [
+      "admin"
+    ],
+    "edit": [
+      "admin"
+    ]
+  },
+  "multivalued": false
+}
+```
+- `POST /admin/realms/jtoye-dev/users` (`probe-39-04` with `attributes.tenant_id=["00000000-0000-0000-0000-000000000001"]`):
+  `POST /admin/realms/jtoye-dev/users status: 201`
+- `GET /admin/realms/jtoye-dev/users?username=probe-39-04&exact=true` (rc=0):
+```json
+{
+  "username": "probe-39-04",
+  "email": "probe-39-04@jtoye.local",
+  "attributes": {
+    "tenant_id": [
+      "00000000-0000-0000-0000-000000000001"
+    ]
+  }
+}
+```
+
+## 5. Live OIDC Token Issuance & Claim Verification
+- Service Account (`integration-orders-rw`, `grant_type=client_credentials`, rc=0):
+```json
+{
+  "iss": "http://localhost:8085/realms/jtoye-dev",
+  "azp": "integration-orders-rw",
+  "aud": [
+    "core-api",
+    "account"
+  ],
+  "tenant_id": "00000000-0000-0000-0000-000000000001",
+  "scope": "customers:write email catalog:read orders:write profile"
+}
+```
+- Seed User (`admin-user`, `grant_type=password`, `client_id=core-api`, rc=0):
+```json
+{
+  "iss": "http://localhost:8085/realms/jtoye-dev",
+  "azp": "core-api",
+  "preferred_username": "admin-user",
+  "email": "admin@jtoye.com",
+  "tenant_id": "00000000-0000-0000-0000-000000000001",
+  "realm_access": {
+    "roles": [
+      "admin"
+    ]
+  }
+}
+```
+
+## 6. `KeycloakAdminClientTest` & Dependency Horizon Gate (`active-exemptions=0`)
+- `./gradlew :core-java:test --tests "uk.jtoye.core.tenant.keycloak.KeycloakAdminClientTest" --no-daemon`: `BUILD SUCCESSFUL in 8s` (`rc=0`).
+- `conda run -n jtoye-ops bash scripts/check-dependency-horizons.sh` (`rc=0`):
+```
+H-3 keycloak: keycloak/26.8 has no declared horizon (eol: false) — nothing to breach today
+dependency-horizons summary
+  manifest    rows=28  discovered-pins=22
+  H-1 coverage   missing-row=0
+  H-5 sites      pin-not-at-site=0          (NOTE class, advisory — run --refresh)
+                 site-unresolvable=0          (VOID class)
+  H-2/H-3        violations=0  active-exemptions=0
+  H-6 UNKNOWN    rows=7  (printed above; each passes only while its review is unexpired)
+  warn window    HORIZON_WARN_DAYS=90
+OK: every pinned artifact carries a resolved, in-window or explicitly-deferred horizon.
+```

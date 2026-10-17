@@ -182,7 +182,29 @@ class RlsContractTest {
             //
             // Exempted BY ADDITION, per the standing instruction above; the schema-walk
             // assertion itself is untouched.
-            "dsar_access_export"
+            "dsar_access_export",
+
+            // V86 (Phase 39 / plan 39-09, RWO-028, owner ruling 2026-10-10): historical
+            // shop URL slug aliases (`old_slug PRIMARY KEY -> shop_id REFERENCES shops(id)
+            // ON DELETE CASCADE`) so printed QR codes and shared links survive a deliberate
+            // web-address change via HTTP 301 redirect. Deliberately NOT tenant-scoped for
+            // two load-bearing reasons:
+            //  1. An anonymous storefront visitor requests `/shop/{old_slug}` (or
+            //     `GET /api/v1/public/shops/{old_slug}`) BEFORE any tenant is known — no
+            //     JWT, no TenantContext, no `app.current_tenant_id` GUC on the connection.
+            //     A FORCE'd tenant-pinned RLS policy would return zero rows to every
+            //     anonymous caller and silently disable 301 redirects platform-wide while
+            //     tests stayed green.
+            //  2. Shop slugs are globally unique across all tenants (`idx_shops_slug`), and
+            //     retired slugs in `shop_slug_alias` must also be globally unique and visible
+            //     across tenants on write so another tenant cannot claim a shop's retired
+            //     slug and hijack its printed QR codes.
+            // The table holds no personal data (only the URL slug string, `shop_id`, and
+            // `created_at`), and public resolution joins `shops` with `published = true`,
+            // so an unpublished shop's alias returns 404 and never leaks the shop's
+            // existence or current slug. Exempted BY ADDITION; the schema-walk assertion
+            // itself is untouched.
+            "shop_slug_alias"
     );
 
     /**

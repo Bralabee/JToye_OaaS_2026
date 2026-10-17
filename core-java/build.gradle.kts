@@ -283,8 +283,8 @@ dependencies {
     // Explicit latest-GA versions rather than azure-sdk-bom 1.3.8, which lags one patch.
     // Coordinates checked against Maven Central and github.com/Azure/azure-sdk-for-java
     // (36-RESEARCH.md, Package Legitimacy Audit).
-    implementation("com.azure:azure-storage-blob:12.35.1")
-    implementation("com.azure:azure-identity:1.18.6") {
+    implementation("com.azure:azure-storage-blob:12.36.0")
+    implementation("com.azure:azure-identity:1.18.7") {
         // Desktop token-cache persistence only; it pulls jna + jna-platform native libraries that
         // WorkloadIdentityCredential never loads (assumption A1, proven by 36-06's
         // credential-build test).
@@ -307,8 +307,8 @@ dependencies {
     implementation("com.sksamuel.scrimage:scrimage-webp:4.6.8")
     // Read-only WebP ImageIO plugin — lets ImageReader header-read + decode-VERIFY
     // a WebP *upload* (stock JDK ImageIO cannot read WebP at all). Cannot encode.
-    implementation("com.twelvemonkeys.imageio:imageio-webp:3.15.2")
-    implementation("com.twelvemonkeys.imageio:imageio-core:3.15.2")
+    implementation("com.twelvemonkeys.imageio:imageio-webp:3.15.3")
+    implementation("com.twelvemonkeys.imageio:imageio-core:3.15.3")
 
     // Spring WebFlux for non-blocking HTTP client (Claude API calls)
     implementation("org.springframework.boot:spring-boot-starter-webflux")
@@ -330,7 +330,7 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-spring-boot4:2.4.0")
 
     // Stripe payment processing
-    implementation("com.stripe:stripe-java:33.4.2")
+    implementation("com.stripe:stripe-java:34.0.0")
 
     // PDF generation for allergen labels
     implementation("com.github.librepdf:openpdf:2.0.3")
@@ -348,7 +348,7 @@ dependencies {
     // OpenPDF (see com.github.librepdf:openpdf above), not JasperReports.
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
-    implementation("org.postgresql:postgresql:42.7.13")
+    implementation("org.postgresql:postgresql:42.7.14")
     // springdoc 3.x is the Boot-4 line (2.8.x is Boot-3 only); 3.1.1 supersedes dependabot #739.
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
 
