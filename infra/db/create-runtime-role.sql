@@ -58,7 +58,22 @@ $$;
 
 -- Correct the attributes + password even on an existing role. A role accidentally
 -- created SUPERUSER or BYPASSRLS is brought back into line by a re-run.
-ALTER ROLE jtoye_runtime WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD :'runtime_password';
+--
+-- NOSUPERUSER is applied only when the role actually IS a superuser. PostgreSQL
+-- 16+ refuses ANY ALTER ROLE that names the SUPERUSER attribute — NOSUPERUSER
+-- included — unless the caller is a superuser, and on a managed server (Azure
+-- Database for PostgreSQL) this file runs as the server admin, which is not one:
+-- measured on postgres:18 as a CREATEROLE non-superuser, the unconditional form
+-- failed "permission denied to alter role ... Only roles with the SUPERUSER
+-- attribute may change the SUPERUSER attribute" and the file never reached its
+-- grants (scripts/staging-db-bootstrap.sh --selftest, Phase 29 plan 29-07). Only
+-- a superuser can have made the role a superuser, so only a superuser ever has
+-- anything to correct here, and the conditional changes nothing for it.
+SELECT rolsuper AS runtime_is_superuser FROM pg_roles WHERE rolname = 'jtoye_runtime' \gset
+\if :runtime_is_superuser
+ALTER ROLE jtoye_runtime WITH NOSUPERUSER;
+\endif
+ALTER ROLE jtoye_runtime WITH LOGIN NOBYPASSRLS PASSWORD :'runtime_password';
 
 -- ---- database- and schema-level --------------------------------------------
 GRANT CONNECT ON DATABASE jtoye TO jtoye_runtime;

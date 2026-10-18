@@ -38,7 +38,21 @@
 
 \set ON_ERROR_STOP on
 
--- RED skeleton: passwords arrive as psql -v variables
+\getenv app_password JTOYE_APP_PASSWORD
+\getenv runtime_password JTOYE_RUNTIME_PASSWORD
+\getenv keycloak_password KEYCLOAK_DB_PASSWORD
+\if :{?app_password}
+\else
+DO $$ BEGIN RAISE EXCEPTION 'JTOYE_APP_PASSWORD is not set in the psql environment'; END $$;
+\endif
+\if :{?runtime_password}
+\else
+DO $$ BEGIN RAISE EXCEPTION 'JTOYE_RUNTIME_PASSWORD is not set in the psql environment'; END $$;
+\endif
+\if :{?keycloak_password}
+\else
+DO $$ BEGIN RAISE EXCEPTION 'KEYCLOAK_DB_PASSWORD is not set in the psql environment'; END $$;
+\endif
 
 SELECT current_database() = 'jtoye' AS in_jtoye \gset
 \if :in_jtoye
@@ -55,6 +69,7 @@ BEGIN
 END
 $$;
 ALTER ROLE jtoye_app WITH LOGIN PASSWORD :'app_password';
+GRANT jtoye_app TO CURRENT_USER;
 
 GRANT CONNECT, CREATE, TEMPORARY ON DATABASE jtoye TO jtoye_app;
 -- The new owner must hold CREATE on the database, granted just above.
@@ -94,6 +109,7 @@ BEGIN
 END
 $$;
 ALTER ROLE keycloak WITH LOGIN PASSWORD :'keycloak_password';
+GRANT keycloak TO CURRENT_USER;
 ALTER DATABASE keycloak OWNER TO keycloak;
 
 -- ---- the attribute assertions (cluster-wide, so checked once) ----------------

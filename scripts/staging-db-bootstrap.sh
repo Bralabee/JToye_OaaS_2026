@@ -295,7 +295,7 @@ kv_object_for() {
 
 run_stage() {
   case "$STAGE" in
-    pre)      run_psql jtoye /sql/db/managed-pre-bootstrap.sql -v app_password="$JTOYE_APP_PASSWORD" -v runtime_password="$JTOYE_RUNTIME_PASSWORD" -v keycloak_password="$KEYCLOAK_DB_PASSWORD" ;;
+    pre)      run_psql jtoye /sql/db/managed-pre-bootstrap.sql ;;
     post)     post_sql | run_psql jtoye - ;;
     monitor)  monitor_sql | run_psql jtoye - ;;
     readback) readback_sql | run_psql jtoye - -A -F '|' ;;
@@ -441,7 +441,9 @@ SQL
   d12="$(diff "$tmp/cap1" "$tmp/cap2" | command grep -c '^[<>]' || true)"
   d23="$(diff "$tmp/cap2" "$tmp/cap3" | command grep -c '^[<>]' || true)"
   d24="$(diff "$tmp/cap2" "$tmp/cap4" | command grep -c '^[<>]' || true)"
-  ddp_rows="$(command grep -c 'jtoye_runtime=' "$tmp/cap2" || true)"
+  # \ddp rows in unaligned form: owner|schema|type|privileges. Exactly the two
+  # FOR ROLE jtoye_app defaults name jtoye_runtime (tables arwd, sequences rwU).
+  ddp_rows="$(command grep -cE '^jtoye_app[|]public[|](table|sequence)[|].*jtoye_runtime=' "$tmp/cap2" || true)"
   if [ "$r1" -ne 0 ] || [ "$r2" -ne 0 ]; then
     st_result "FAIL pre-idempotent pre rc=${r1}/${r2}: $(first_err "$tmp/pre1.out")"; fails=$((fails + 1))
   elif [ "$d12" -ne 0 ]; then
@@ -450,8 +452,8 @@ SQL
     st_result "FAIL pre-idempotent control: a planted default GRANT left the capture unchanged, so the diff cannot fail"; fails=$((fails + 1))
   elif [ "$d24" -ne 0 ]; then
     st_result "FAIL pre-idempotent control restore: revoking the planted GRANT left ${d24} line(s) different"; fails=$((fails + 1))
-  elif [ "$ddp_rows" -lt 2 ]; then
-    st_result "FAIL pre-idempotent \\ddp shows ${ddp_rows} jtoye_runtime default(s), want tables + sequences"; fails=$((fails + 1))
+  elif [ "$ddp_rows" -ne 2 ]; then
+    st_result "FAIL pre-idempotent \\ddp shows ${ddp_rows} FOR ROLE jtoye_app default(s) for jtoye_runtime, want 2 (tables, sequences)"; fails=$((fails + 1))
   else
     pre_ok=1
     st_result "PASS pre-idempotent rc=0/0 diff_lines=0 control_diff_lines=${d23} restored_diff_lines=0 runtime_defaults=${ddp_rows}"
@@ -500,7 +502,9 @@ SQL
     standin post >"$tmp/post1.out" 2>&1 || post_rc=$?
     rb="$(standin readback 2>"$tmp/rb.err")" || rb_rc=$?
     printf '%s\n' "$rb" > "$tmp/rb.out"
-    got="$(awk -F'|' '$1=="jtoye_app"||$1=="jtoye_backup"||$1=="jtoye_runtime"{print $1"="$3}' "$tmp/rb.out" | sort | tr '\n' ' ')"
+    # The pg_roles rows only: rolname|rolsuper|rolbypassrls|rolcanlogin (the
+    # \ddp rows also start with jtoye_app, but their later fields are not t/f).
+    got="$(awk -F'|' 'NF==4 && $2~/^[tf]$/ && $3~/^[tf]$/ && ($1=="jtoye_app"||$1=="jtoye_backup"||$1=="jtoye_runtime"){print $1"="$3}' "$tmp/rb.out" | sort | tr '\n' ' ')"
     want="jtoye_app=f jtoye_backup=t jtoye_runtime=f "
     { as_role jtoye_runtime JTOYE_RUNTIME_PASSWORD jtoye <<<'SELECT count(*) FROM postcode_centroid;' \
       && as_role jtoye_backup JTOYE_BACKUP_PASSWORD jtoye <<<'SELECT count(*) FROM postcode_centroid;'; } >"$tmp/read.out" 2>&1 || read_rc=$?
@@ -576,7 +580,12 @@ if [ -n "$TEST_CONTAINER" ]; then
   exit 0
 fi
 
-# Real mode: the subscription guard in THIS shell, before any read.
+# Real mode: never the test double (its canned answers would be fed to psql as
+# passwords), then the subscription guard in THIS shell, before any read.
+AZ_PATH="$(command -v az 2>/dev/null || true)"
+if [ -n "$AZ_PATH" ] && [ -f "$(dirname "$AZ_PATH")/.az-guard-stub" ]; then
+  void "[live] az on PATH is the az_guard_stub at '${AZ_PATH}'; real mode reads real Key Vault values (use --test-container or --selftest for a stand-in)"
+fi
 # shellcheck source=scripts/lib/azure-guard.sh
 . "$SCRIPT_DIR/lib/azure-guard.sh"
 GUARD_RC=0
