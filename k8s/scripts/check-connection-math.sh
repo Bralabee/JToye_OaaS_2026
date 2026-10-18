@@ -50,6 +50,110 @@ extract_number() {
 }
 
 # ---------------------------------------------------------------------------
+# --selftest: proves the per-target reserve (D-25) can FAIL, and that a
+# missing, non-numeric or absent target row is a PARSE ERROR, never a default.
+# Each arm writes a synthetic budget config, re-invokes this gate with
+# CONNECTION_BUDGET_CONF pointing at it, and judges the inner rc and output.
+# One verdict line per arm: `ARM <name> ok` or `ARM <name> WRONG <detail>`;
+# inner gate output is echoed only on WRONG, indented so no line starts `ARM`.
+# CONNECTION_MATH_SELFTEST_FORMAT=tap prints the same verdicts as TAP 13.
+# ---------------------------------------------------------------------------
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+
+selftest_conf() {
+    # selftest_conf <file> <k8s-staging row, or "" to leave the row out>
+    {
+        echo "# check-connection-math.sh --selftest fixture"
+        echo "compose          compose  3   selftest: self-hosted Postgres default reserve"
+        if [[ -n "$2" ]]; then echo "$2"; fi
+        echo "k8s-production   compose  3   selftest: unchanged production row"
+    } > "$1"
+}
+
+run_gate() {
+    # run_gate <config file>; sets GATE_OUT (stdout+stderr) and GATE_RC
+    GATE_RC=0
+    GATE_OUT="$(CONNECTION_BUDGET_CONF="$1" bash "$SELF" 2>&1)" || GATE_RC=$?
+}
+
+selftest() {
+    local fmt="${CONNECTION_MATH_SELFTEST_FORMAT:-text}" tmp n=0 wrong=0
+    SELFTEST_TMP="$(mktemp -d)"
+    trap 'rm -rf "${SELFTEST_TMP:-}"' EXIT
+    tmp="$SELFTEST_TMP"
+    [[ "$fmt" == tap ]] && { echo "TAP version 13"; echo "1..4"; }
+
+    verdict() {
+        # verdict <arm> <ok|WRONG> [detail] — inner output comes from GATE_OUT
+        local arm="$1" status="$2" detail="${3:-}" msg
+        n=$(( n + 1 ))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$status" == ok ]]; then echo "ok $n - $arm"; return; fi
+            msg="$detail :: $(tr '\n' ' ' <<<"$GATE_OUT")"
+            echo "not ok $n - $arm"
+            echo "  ---"
+            echo "  message: '${msg//\'/\'\'}'"
+            echo "  ..."
+        else
+            if [[ "$status" == ok ]]; then echo "ARM $arm ok"; return; fi
+            echo "ARM $arm WRONG $detail"
+            sed 's/^/    /' <<<"$GATE_OUT"
+        fi
+        wrong=$(( wrong + 1 ))
+    }
+
+    # Arm d25: max_connections 200 for k8s-staging. Under the OLD fixed reserve
+    # of 3 the staging demand fits (157 line); under Azure Flexible Server's 15
+    # it must not (148 line). The demand is read from the reserve-3 run and the
+    # premise (old line >= demand > new line) is asserted, so the arm cannot
+    # pass vacuously if the pool or maxReplicas later moves.
+    local old_line=$(( (200 - 3) * 80 / 100 )) new_line=$(( (200 - 15) * 80 / 100 )) demand
+    selftest_conf "$tmp/d25-old.conf" "k8s-staging      200      3   selftest: the old fixed reserve"
+    run_gate "$tmp/d25-old.conf"
+    demand="$(sed -nE '/^k8s[- ]staging .*= [0-9]+ /{s/.*= ([0-9]+) .*/\1/p;q}' <<<"$GATE_OUT")"
+    if (( GATE_RC != 0 )); then
+        verdict d25 WRONG "reserved=3 at max_connections=200 should PASS (rc 0), got rc=$GATE_RC"
+    elif ! [[ "$demand" =~ ^[0-9]+$ ]] || (( demand > old_line || demand <= new_line )); then
+        verdict d25 WRONG "premise lost: k8s-staging demand '${demand:-unreadable}' must be in ($new_line, $old_line]"
+    else
+        selftest_conf "$tmp/d25-new.conf" "k8s-staging      200      15  selftest: Azure Flexible Server reserve"
+        run_gate "$tmp/d25-new.conf"
+        if (( GATE_RC != 1 )); then
+            verdict d25 WRONG "reserved=15 at max_connections=200 should FAIL rc 1 ($demand > $new_line), got rc=$GATE_RC"
+        elif ! grep -q 'k8s-staging' <<<"$GATE_OUT" || ! grep -qF "$demand > $new_line" <<<"$GATE_OUT"; then
+            verdict d25 WRONG "rc 1 but the output does not name k8s-staging and '$demand > $new_line'"
+        else
+            verdict d25 ok
+        fi
+    fi
+
+    # Parse arms: each must exit 2 with a PARSE ERROR naming k8s-staging.
+    local arm row
+    for arm in missing non-numeric absent-target; do
+        case "$arm" in
+            missing)       row="k8s-staging      429" ;;
+            non-numeric)   row="k8s-staging      429      fifteen  selftest: a word, not a count" ;;
+            absent-target) row="" ;;
+        esac
+        selftest_conf "$tmp/$arm.conf" "$row"
+        run_gate "$tmp/$arm.conf"
+        if (( GATE_RC != 2 )); then
+            verdict "$arm" WRONG "expected PARSE ERROR rc 2, got rc=$GATE_RC"
+        elif ! grep -qE '^PARSE ERROR: .*k8s-staging' <<<"$GATE_OUT"; then
+            verdict "$arm" WRONG "rc 2 but no PARSE ERROR line names k8s-staging"
+        else
+            verdict "$arm" ok
+        fi
+    done
+
+    (( wrong == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest" ]]; then
+    if selftest; then exit 0; else exit 1; fi
+fi
+
+# ---------------------------------------------------------------------------
 # Inputs parsed from the real files
 # ---------------------------------------------------------------------------
 MAX_CONNECTIONS=$(extract_number "$COMPOSE" \
