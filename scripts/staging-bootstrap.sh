@@ -418,6 +418,16 @@ fetch_and_verify() {
   echo "${label}: fetching ${url}" >&2
   curl -fsSL --proto '=https' --max-time 120 -o "$dest" "$url" \
     || void "could not download ${label} from ${url}; a failed download is VOID, and no other artefact is substituted"
+  [ -s "$dest" ] || void "${label}: the download from ${url} is empty"
+  local got bytes
+  got=$(sha256sum "$dest" | awk '{print $1}')
+  bytes=$(wc -c < "$dest" | tr -d '[:space:]')
+  if [ "$got" != "$want" ]; then
+    echo "${label}: expected sha256 ${want}" >&2
+    echo "${label}: actual   sha256 ${got} (${bytes} bytes)" >&2
+    refuse digest "${label} from ${url} does not match its pinned sha256. Either the upstream artefact changed under a pinned tag or what arrived is not what was pinned. NOTHING has been applied: every artefact is verified before any stage runs."
+  fi
+  echo "OK: ${label} verified: ${bytes} bytes, sha256 ${got}" >&2
   printf '%s' "$dest"
 }
 

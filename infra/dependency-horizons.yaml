@@ -572,6 +572,44 @@ dependencies:
       expires: "2027-01-18"
       url: "https://github.com/kubernetes/kubernetes/tree/master/test/images/agnhost"
 
+  - id: cert-manager
+    pin: "https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml"
+    sites: ["scripts/staging-bootstrap.sh:100"]
+    kind: image
+    owner: maintainer
+    eol_slug: cert-manager
+    eol_cycle: "1.21"
+    eol_date: "false"
+    note: >-
+      The cert-manager v1.21.2 release manifest (controller, webhook and cainjector images
+      quay.io/jetstack/cert-manager-*:v1.21.2), applied by scripts/staging-bootstrap.sh
+      --stage cert-manager from this URL only after its sha256 matches
+      e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f (1,034,400 bytes,
+      re-downloaded and hashed 2026-10-18). The pin is the URL, so bumping the release in
+      the script without this row is H-5 drift. Slug measured 2026-10-18 with
+      `curl -o /dev/null -w '%{http_code} %{redirect_url}'`: `200 ` (direct); cycle 1.21
+      `eol: false`, latest 1.21.2.
+
+  - id: rabbitmq-cluster-operator
+    pin: "https://github.com/rabbitmq/cluster-operator/releases/download/v2.23.1/cluster-operator.yml"
+    sites: ["scripts/staging-bootstrap.sh:103"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      The RabbitMQ cluster operator v2.23.1 release manifest (image
+      ghcr.io/rabbitmq/cluster-operator:2.23.1, requests 200m/500Mi), applied by
+      scripts/staging-bootstrap.sh --stage rabbitmq-operator after its sha256 matches
+      ae35a547751656bc64bb734026249a845d226d96aba5a73783e05c5ec3444687 (360,452 bytes,
+      re-downloaded and hashed 2026-10-18). Upgrading it rolls every RabbitmqCluster:
+      pause reconciliation first. endoflife.date has no product for it: `rabbitmq-cluster-operator`
+      and `rabbitmq-operator` both return 404 (measured 2026-10-18). The broker it runs is
+      the separate `rabbitmq-k8s` row (plan 29-10 pins it).
+    manual_review:
+      last_checked: "2026-10-18"
+      expires: "2027-01-18"
+      url: "https://github.com/rabbitmq/cluster-operator/releases"
+
   # ------------------------------------------------------------------ out of repo
   #  The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
   #  `pin: unknown` + `manual_review` is the honest state, not a placeholder for forgotten

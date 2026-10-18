@@ -700,6 +700,35 @@ jobs:
       - name: Prove INV-7 catches planted NetworkPolicy holes (--selftest-inv7)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv7
 
+      # k8s/platform/* (Phase 29, plan 29-03: Traefik, the ClusterIssuers, the CI
+      # deployer RBAC, the ACME probe) sits at depth 3, so the gates above never
+      # discover it — deliberately, to keep it out of the goldens. The bootstrap
+      # applies it to the staging cluster, so it gets its own render check here:
+      # every kustomization renders, renders SOMETHING (an empty render would make
+      # the Secret count vacuous), and holds no `kind: Secret`.
+      - name: Assert every k8s/platform kustomization renders and holds no Secret (29-03)
+        run: |
+          bad=0; n=0
+          for d in k8s/platform/*/; do
+            [ -f "$d/kustomization.yaml" ] || continue
+            n=$((n + 1))
+            r=$(kubectl kustomize "$d"); rc=$?
+            kinds=$(grep -cE '^kind: ' <<<"$r" || true)
+            secrets=$(grep -cx 'kind: Secret' <<<"$r" || true)
+            echo "$d rc=$rc kinds=$kinds secrets=$secrets"
+            if [ "$rc" -ne 0 ] || [ "$kinds" -eq 0 ] || [ "$secrets" -ne 0 ]; then bad=$((bad + 1)); fi
+          done
+          echo "platform_kustomizations=$n bad=$bad"
+          [ "$n" -ge 4 ] && [ "$bad" -eq 0 ]
+
+      # The staging bootstrap's guards are shown refusing before anything trusts
+      # them (29-03): no context, the employer's sipbihs2aks, an unreadable or
+      # ambiguous identity file, a stale or re-pointed server URL, a tampered
+      # upstream manifest, a missing kubelogin, and a dry run that mutates nothing
+      # — each against stub kubectl/kubelogin/curl, so no cluster and no network.
+      - name: Prove the staging bootstrap guards refuse (29-03 --selftest)
+        run: bash scripts/staging-bootstrap.sh --selftest
+
       - name: Assert the staging/production render matches its reviewed golden
         run: |
           chmod +x ./k8s/scripts/render-golden.sh
