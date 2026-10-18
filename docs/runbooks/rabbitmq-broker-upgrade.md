@@ -1,6 +1,6 @@
 # Runbook — RabbitMQ broker upgrade and rollback
 
-Owner: unassigned (see ADR-0002). Written by plan 27-02, 2026-07-29, when the dev/compose broker
+Owner: unassigned. ADR-0002 (Accepted 2026-08-10) puts the staging/production broker in-cluster under the RabbitMQ cluster operator, which Phase 29 builds. Written by plan 27-02, 2026-07-29, when the dev/compose broker
 moved **3.12.14 → 4.3.4** (patched in place **4.3.4 → 4.3.6** by plan 39-02, 2026-10-16).
 
 > **This file is deliberately allowlisted from the AC-2 / AC-12 "no 3.x version strings" rules.**
@@ -210,5 +210,6 @@ Someone with cluster access must:
 3. Record the result against the `rabbitmq-k8s` row in `infra/dependency-horizons.yaml`, which is
    currently `pin: unknown`, `owner: UNASSIGNED`, with a dated `manual_review` that **expires
    2027-01-16** and turns the horizon gate red by itself if nobody acts.
-4. Settle the in-cluster cluster-operator question in ADR-0002, still *Proposed* and unsigned since
-   2026-07-12.
+4. The in-cluster cluster-operator route in ADR-0002 was accepted on 2026-08-10 (recorded on main
+   2026-10-18). What remains is building it: Phase 29 ships the operator manifest with a declared
+   broker version.

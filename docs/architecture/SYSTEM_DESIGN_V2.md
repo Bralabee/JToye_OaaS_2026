@@ -865,9 +865,13 @@ jobs:
 > size-floor check; since Phase 36 no in-job prune, retention is the backup container's
 > immutability + soft delete + lifecycle rule; restore drill proven locally 2026-07-10 — RPO
 > ≤ 24h, RTO ≈ minutes). WAL-based PITR and DB HA are tracked in **#101**;
-> the managed-vs-manifest decision is **ADR-0002 (Proposed)**.
+> the managed-vs-manifest decision is **ADR-0002 (Accepted 2026-08-10)**.
 
-The diagram below is the **TARGET** architecture, kept for planning purposes:
+> **Superseded by ADR-0002.** The accepted decision is managed Azure PostgreSQL Flexible Server,
+> with PITR and HA by provider configuration. The self-hosted Patroni / PgBouncer / WAL-G target
+> below will not be built. It is kept only as the historical planning record (ADR-0002, Consequences).
+
+The diagram below was the **TARGET** architecture before ADR-0002 was accepted:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -892,7 +896,7 @@ The diagram below is the **TARGET** architecture, kept for planning purposes:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Key Decisions (TARGET — not yet implemented, see #101 / ADR-0002):**
+**Key Decisions (former TARGET — superseded by ADR-0002; see #101):**
 - **Synchronous replication** to 1 replica (zero data loss)
 - **Asynchronous replication** to 2nd replica (performance)
 - **PgBouncer** in transaction mode (connection pooling)

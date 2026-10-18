@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ADR-0002 Reference Sweep: No Live Doc Still Calls It Proposed — 2026-10-18
+
+- **`SYSTEM_DESIGN_V2.md`, `FAILURE_MODES.md`, `docs/runbooks/rabbitmq-broker-upgrade.md`, `infra/dependency-horizons.yaml`.** These follow from #953's round-1 review, which recorded six findings. Every live reference now says ADR-0002 is Accepted (2026-08-10). SYSTEM_DESIGN_V2's Patroni / PgBouncer / WAL-G block is labelled superseded, as the ADR's own Consequences require. The runbook's step 4 and the `rabbitmq-k8s` horizon note now say the operator route is decided and the row closes when Phase 29 ships the manifest. Historical records (older changelog entries, the archived handoff) are left as written.
+- **ADR-0002's 2026-10-18 section.** It cites its source (`phase-29-research` @ `9555dcd6`, 29-CONTEXT.md D-09). It corrects the backup failure mode: a plain `pg_dump` without BYPASSRLS fails with an error; only a dump run with `--enable-row-security`, or a plain `SELECT`, reads zero rows. The Redis product and tier are now a Phase 29 input, after the retirement schedule is checked, instead of the "Basic" pin.
+
 ### ADR-0002 Recorded as Accepted on Main (#953) — 2026-10-18
 
-- **`docs/architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md`.** Status is now **Accepted (2026-08-10)**. The owner signed the hybrid proposal as proposed on 2026-08-10: managed Azure PostgreSQL Flexible Server, Azure Cache for Redis, and in-cluster RabbitMQ through the cluster operator. Until now the sign-off was recorded only on the `phase-29-research` branch, which the salvage audit ruled is re-planned rather than merged. A dated section records the acceptance. The branch's August pins (operator, broker, cert-manager and PostgreSQL versions) are deliberately not carried over: Phase 29 re-derives them on main. Docs-only; no code, config or gate changes.
+- **`docs/architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md`.** Status is now **Accepted (2026-08-10)**. The owner signed the hybrid proposal as proposed on 2026-08-10: managed Azure PostgreSQL Flexible Server, managed Azure Cache, and in-cluster RabbitMQ through the cluster operator. Until now the sign-off was recorded only on the `phase-29-research` branch, which the salvage audit ruled is re-planned rather than merged. A dated section records the acceptance. The branch's August pins (operator, broker, cert-manager and PostgreSQL versions) are deliberately not carried over: Phase 29 re-derives them on main. Docs-only; no code, config or gate changes.
 
 ### Mail STARTTLS Property Spelled the Way JavaMail Reads It (DEF-29-6) (#952) — 2026-10-17
 

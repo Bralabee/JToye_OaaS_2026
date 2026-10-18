@@ -551,8 +551,10 @@ dependencies:
       and saying so is more useful than inventing a name. Re-checked 2026-10-16 against
       https://www.rabbitmq.com/release-information: 4.3.6 (released 16 Sept 2026) is the newest
       upstream release (no 4.4 series published yet), and the vendor extended 4.3 End of
-      Community Support to 31 Jan 2027 (2027-01-31). See ADR-0002 and
-      docs/runbooks/rabbitmq-broker-upgrade.md.
+      Community Support to 31 Jan 2027 (2027-01-31). ADR-0002 was ACCEPTED on 2026-08-10 (recorded on
+      main 2026-10-18), choosing the in-cluster RabbitMQ cluster operator. The route is decided; this
+      row closes when Phase 29 ships that manifest with a declared broker pin, not before. See ADR-0002
+      and docs/runbooks/rabbitmq-broker-upgrade.md.
     manual_review:
       last_checked: "2026-10-16"
       expires: "2027-01-16"

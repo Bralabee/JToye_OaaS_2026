@@ -120,9 +120,10 @@ Re-checked ahead of the `2026-10-26` `rabbitmq-k8s` `manual_review` expiry:
 ## 2026-10-18 — Accepted (owner sign-off of 2026-08-10, recorded on main)
 
 The owner signed this ADR **as proposed** on **2026-08-10**, during the Phase 29 discussion: the
-hybrid of option 3. PostgreSQL goes to Azure Database for PostgreSQL Flexible Server, Redis to Azure
-Cache Basic, and RabbitMQ in-cluster through the RabbitMQ cluster operator. That sign-off is
-decision D-09 in the Phase 29 context, which exists only on the `phase-29-research` branch. The
+hybrid of option 3. PostgreSQL goes to Azure Database for PostgreSQL Flexible Server, Redis to managed
+Azure Cache, and RabbitMQ in-cluster through the RabbitMQ cluster operator. That sign-off is
+decision D-09 in the Phase 29 context, which exists only on the `phase-29-research` branch
+(commit `9555dcd6`, `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-CONTEXT.md`, D-09). The
 2026-10-17 salvage audit ruled that branch is re-planned on main, not merged. So until now the
 acceptance existed only off main, and every section above still read Proposed. This entry records
 it on main. The Status line is changed to match. Every section above is left as written, per this
@@ -136,9 +137,14 @@ What this entry does **not** carry over from the branch, deliberately:
   Phase 29, re-planned on main, re-derives and records them.
 - **The PostgreSQL version floor stays a Phase 29 input.** It is not decided here. The branch found
   that the `jtoye_backup` role (`BYPASSRLS`, `infra/backups/create-backup-role.sql`) cannot be
-  created by `azure_pg_admin` on PostgreSQL 15 or earlier. A dump taken without that role reads
-  zero tenant rows under FORCE RLS. So the managed server must be at least 16. Phase 29 verifies
-  this against current Microsoft documentation before provisioning.
+  created by `azure_pg_admin` on PostgreSQL 15 or earlier. Without that role the backup cannot read
+  tenant data. A plain `pg_dump` (default `row_security=off`) fails with an error on the first
+  FORCE-RLS table. A dump run with `--enable-row-security`, or any plain `SELECT`, silently
+  returns zero tenant rows. So the managed server must be at least 16. Phase 29 verifies this
+  against current Microsoft documentation before provisioning.
+- **The managed Redis product and tier are Phase 29 inputs too.** The original decision says only
+  "Azure Cache". Phase 29 checks Microsoft's retirement schedule for Azure Cache for Redis, and
+  the alternative Azure Managed Redis, before choosing a product and tier.
 
 The `rabbitmq-k8s` horizon row (`infra/dependency-horizons.yaml`) stays as it is. Accepting the
 operator route decides *how* the broker's version becomes declared in-repo; the row closes when
