@@ -88,10 +88,39 @@ _az_guard_ready() {
   return 0
 }
 
-# RED placeholder (TDD): always passes, makes no read-back.
+# az_guard_init — assert the id, then read the subscription back and assert its
+# name and state. The read carries the pin LAST, the same position the wrappers
+# use, so every line a stub logs for a guarded script ends with the pin.
+# Sets AZ_GUARD_OK=1 in the CALLER's shell on success.
 az_guard_init() {
+  local out rc=0 name state
+  AZ_GUARD_OK=0
+  _az_guard_id_ok || return 1
+  if ! command -v az >/dev/null 2>&1; then
+    echo "VOID: az not found on PATH" >&2
+    return 2
+  fi
+  out=$(command az account show --query '{name:name,state:state}' -o tsv --subscription "$JTOYE_AZURE_SUBSCRIPTION_ID" 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
+    _az_guard_refuse "could not read subscription ${JTOYE_AZURE_SUBSCRIPTION_ID} back (az rc=${rc}); run 'az login' to the J'Toye tenant first"
+    return 1
+  fi
+  out="${out%$'\r'}"
+  case "$out" in
+    *$'\t'*) name="${out%%$'\t'*}"; state="${out#*$'\t'}" ;;
+    *)       name="$out"; state="" ;;
+  esac
+  if [ "$name" != "$JTOYE_SUBSCRIPTION_NAME_EXPECTED" ]; then
+    _az_guard_refuse "subscription ${JTOYE_AZURE_SUBSCRIPTION_ID} reports name '${name}', not '${JTOYE_SUBSCRIPTION_NAME_EXPECTED}'"
+    return 1
+  fi
+  if [ "$state" != "Enabled" ]; then
+    _az_guard_refuse "subscription '${name}' reports state '${state}', not Enabled"
+    return 1
+  fi
   AZ_GUARD_OK=1
   export AZ_GUARD_OK
+  echo "OK: subscription pinned: ${name} (${JTOYE_AZURE_SUBSCRIPTION_ID}), state ${state}"
   return 0
 }
 
@@ -110,10 +139,15 @@ az_mutate() {
   return "$rc"
 }
 
-# RED placeholder (TDD): replaces the caller's shell.
+# az_read — a pinned read. stdout is the CLI's, unchanged; nothing is logged or
+# echoed here, so a caller reading a secret captures it into a variable or a
+# mode-600 file and it never reaches the terminal. Returns the CLI's status
+# (3 = not found, as az reports a missing resource).
 az_read() {
-  [ "${AZ_GUARD_OK:-0}" = "1" ] || return 1
-  exec az "$@" --subscription "$JTOYE_AZURE_SUBSCRIPTION_ID"
+  local rc=0
+  _az_guard_ready || return 1
+  command az "$@" --subscription "$JTOYE_AZURE_SUBSCRIPTION_ID" || rc=$?
+  return "$rc"
 }
 
 # az_guard_stub DIR — write the test-double CLI into DIR.
