@@ -768,7 +768,13 @@ test.describe("UAT gap G-37-6, live (37-59) @desktop-only", () => {
           return { pages: shown.length, current: shown.filter((b) => b.getAttribute("aria-current") === "page").length }
         })
         annotate(testInfo, "pagination-window-1280", pageWindow)
-        expect.soft(pageWindow.pages, "the five-page window at 1280").toBe(5)
+        // paginationWindow clamps to the ends, so the window holds min(5, totalPages) pages:
+        // a fresh nightly volume has two pages of orders, the shared dev DB has eight (2026-10-18).
+        const totalPages = Math.ceil(total / 20)
+        const expectedWindow = Math.min(5, totalPages)
+        expect
+          .soft(pageWindow.pages, `the ${expectedWindow}-page window at 1280 (${totalPages} pages in total)`)
+          .toBe(expectedWindow)
         expect.soft(pageWindow.current, "exactly one aria-current page at 1280").toBe(1)
       }
     }
