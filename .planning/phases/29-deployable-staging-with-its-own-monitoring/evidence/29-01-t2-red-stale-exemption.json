@@ -1,0 +1,10 @@
+{
+ "command": "AZ_PIN_SELFTEST_FORMAT=tap bash scripts/check-az-subscription-pin.sh --selftest",
+ "exitCode": 1,
+ "output": "TAP version 13\n1..9\nnot ok 1 - raw-call\n  ---\n  message: 'expected rc 1, got 0: '\n  ...\nnot ok 2 - prefixed\n  ---\n  message: 'expected rc 1, got 0: '\n  ...\nnot ok 3 - not-a-call\n  ---\n  message: 'expected zero findings and a findings=0 SUMMARY: '\n  ...\nnot ok 4 - empty-tree\n  ---\n  message: 'expected rc 2 (VOID), got 0: '\n  ...\nnot ok 5 - exempt-pass\n  ---\n  message: 'expected exactly one EXEMPT line, for check-media-content-types.sh: '\n  ...\nnot ok 6 - unlisted\n  ---\n  message: 'expected rc 1, got 0: '\n  ...\nnot ok 7 - exempt-non-storage\n  ---\n  message: 'expected rc 1, got 0: '\n  ...\nnot ok 8 - stale-exemption\n  ---\n  message: 'expected rc 1, got 0: '\n  ...\nnot ok 9 - guard-lib-outside-wrapper\n  ---\n  message: 'expected rc 1, got 0: '\n  ...",
+ "targetTest": "stale-exemption",
+ "targetFile": "scripts/check-az-subscription-pin.sh",
+ "expected": "FAIL: an exemption row that matches no call must fail; the placeholder reports clean",
+ "actual": "not ok - stale-exemption",
+ "semanticAssessment": "Target arm executed (TAP not ok for stale-exemption) and failed on its planned rc assertion: the placeholder scan() returns 0 with no output, so the gate reports clean on a planted violation. That is the intended RED reason (gate stubbed to always exit 0). Trees were built (cp -a of scripts/) and the gate was invoked with --root; not a load, syntax or fixture fault."
+}
