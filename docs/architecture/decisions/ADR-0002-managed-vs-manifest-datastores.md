@@ -1,6 +1,6 @@
 # ADR-0002: Managed services vs in-cluster manifests for stateful infrastructure
 
-**Status:** Proposed (2026-07-12) — needs owner sign-off before #101 implementation starts
+**Status:** Accepted (2026-08-10) — signed by the owner as proposed; recorded on main 2026-10-18 (see the last section)
 **Refs:** #101 (no PITR / no DB HA), #98 (observability), #100 (sealed secrets), SYSTEM_DESIGN_V2 §3.2/§7.1
 
 ## Context
@@ -116,3 +116,30 @@ Re-checked ahead of the `2026-10-26` `rabbitmq-k8s` `manual_review` expiry:
 - `rabbitmq-k8s.manual_review` in [`infra/dependency-horizons.yaml`](../../../infra/dependency-horizons.yaml)
   is refreshed to `last_checked: "2026-10-16"`, `expires: "2027-01-16"` (90-day cadence). Status of
   this ADR remains `Proposed` pending owner sign-off.
+
+## 2026-10-18 — Accepted (owner sign-off of 2026-08-10, recorded on main)
+
+The owner signed this ADR **as proposed** on **2026-08-10**, during the Phase 29 discussion: the
+hybrid of option 3. PostgreSQL goes to Azure Database for PostgreSQL Flexible Server, Redis to Azure
+Cache Basic, and RabbitMQ in-cluster through the RabbitMQ cluster operator. That sign-off is
+decision D-09 in the Phase 29 context, which exists only on the `phase-29-research` branch. The
+2026-10-17 salvage audit ruled that branch is re-planned on main, not merged. So until now the
+acceptance existed only off main, and every section above still read Proposed. This entry records
+it on main. The Status line is changed to match. Every section above is left as written, per this
+file's convention that dated records are appended, not edited.
+
+What this entry does **not** carry over from the branch, deliberately:
+
+- **Concrete pins.** The branch named an operator version, a broker image, a cert-manager version
+  and a PostgreSQL major version for the managed server. They were measured in August against an
+  estate that is being deleted, and the dev stack has since moved to PostgreSQL 18 and RabbitMQ 4.3.6.
+  Phase 29, re-planned on main, re-derives and records them.
+- **The PostgreSQL version floor stays a Phase 29 input.** It is not decided here. The branch found
+  that the `jtoye_backup` role (`BYPASSRLS`, `infra/backups/create-backup-role.sql`) cannot be
+  created by `azure_pg_admin` on PostgreSQL 15 or earlier. A dump taken without that role reads
+  zero tenant rows under FORCE RLS. So the managed server must be at least 16. Phase 29 verifies
+  this against current Microsoft documentation before provisioning.
+
+The `rabbitmq-k8s` horizon row (`infra/dependency-horizons.yaml`) stays as it is. Accepting the
+operator route decides *how* the broker's version becomes declared in-repo; the row closes when
+Phase 29 actually ships that manifest, not when this entry lands.
