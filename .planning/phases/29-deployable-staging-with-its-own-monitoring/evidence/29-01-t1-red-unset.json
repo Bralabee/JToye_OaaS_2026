@@ -1,0 +1,10 @@
+{
+ "command": "AZ_GUARD_SELFTEST_FORMAT=tap bash -c 'source scripts/lib/azure-guard.sh && az_guard_selftest'",
+ "exitCode": 1,
+ "output": "TAP version 13\n1..8\nnot ok 1 - unset\n  ---\n  message: 'expected init/mutate/read rc \"1 1 1\", got \"<no output>\"'\n  ...\nnot ok 2 - empty\n  ---\n  message: 'expected init/mutate/read rc \"1 1 1\", got \"<no output>\"'\n  ...\nnot ok 3 - wrong-id\n  ---\n  message: 'value \"00000000-0000-0000-0000-000000000000\" gave \"<no output>\"; value \"c483d353-5f61-4587-a790-addb9ab5fb94 \" gave \"<no output>\"; value \" c483d353-5f61-4587-a790-addb9ab5fb94\" gave \"<no output>\"; value \"C483D353-5F61-4587-A790-ADDB9AB5FB94\" gave \"<no output>\"; value \"c483d353-5f61-4587-a790-addb9ab5fb9\" gave \"<no output>\"; value \"JToye Digital Production\" gave \"<no output>\"; an inherited AZ_GUARD_OK=1 with a wrong id gave \"<no output>\"; '\n  ...\nnot ok 4 - wrong-name\n  ---\n  message: 'expected init/mutate rc \"1 1\", got \"0 0\"'\n  ...\nnot ok 5 - disabled\n  ---\n  message: 'expected init/mutate rc \"1 1\", got \"0 0\"'\n  ...\nnot ok 6 - pinned-argv\n  ---\n  message: 'first logged line is not az_guard_init\"s pinned account-show read: \"group create -n azg-selftest -l uksouth --subscription c483d353-5f61-4587-a790-addb9ab5fb94\"'\n  ...\nok 7 - no-echo\nnot ok 8 - returns-to-caller\n  ---\n  message: 'expected both sentinels with rc=3, got \"<no output>\"'\n  ...",
+ "targetTest": "unset",
+ "targetFile": "scripts/lib/azure-guard.sh",
+ "expected": "FAIL: the guard stubbed to always pass lets an unset subscription through",
+ "actual": "not ok - unset",
+ "semanticAssessment": "Target arm executed (TAP line 1 not ok) and failed on its planned assertion: init/mutate/read rc expected 1 1 1, got no output, because the RED az_guard_init always passes and the RED az_read execs the stub, replacing the arm shell. That is the intended reason (guard stubbed to pass). Not a load, syntax or fixture fault: no-echo passes in the same run, proving the stub and harness work."
+}
