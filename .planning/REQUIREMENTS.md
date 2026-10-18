@@ -118,8 +118,8 @@ Recorded here 2026-08-01 for completeness. Phase 27 was executed and closed 7/7 
 - [ ] **DPLY-01**: A real Keycloak vendor login through the ingress to a rendered dashboard, on a resolvable public hostname, with real seeded rows.
 - [ ] **DPLY-02**: The deploy knot closed or per-issue deferred with a reason — #99, #100, #292, #293, #299, #301, #302, #271.
 - [ ] **DPLY-03**: Prometheus, Alertmanager and Grafana running **in k8s**, with `check-alert-liveness.sh` and `check-alert-metrics.sh` exit 0 against staging. `k8s/` ships zero monitoring manifests today (Phase 27 `deferred-items.md` §5) — everything Phase 27 built is compose-scoped, so a staging deploy today is unmonitored.
-- [ ] **DPLY-04**: PITR (#101) with a restore proven by row count, two-arm — arm A must show a zero-row dump passing the pipeline's own byte and `pg_restore --list` checks. Blocked on **ADR-0002 sign-off**.
-- [ ] **DPLY-05**: NetworkPolicies enforced, not merely rendered (#297 Calico), with a denied connection captured.
+- [ ] **DPLY-04**: PITR (#101) with a restore proven by row count, two-arm — arm A must show a zero-row or partial dump passing the pipeline's own byte and `pg_restore --list` checks. ADR-0002 sign-off RESOLVED (Accepted, #953).
+- [ ] **DPLY-05**: NetworkPolicies enforced, not merely rendered (#297, an enforcing engine: Calico or AKS-native Cilium), with a denied connection captured.
 
 ### Money path (PAY) — Phase 30 (governed by [`ADR-0007`](../docs/architecture/decisions/ADR-0007-multi-model-commercial-and-fulfilment-policy-engine.md))
 
@@ -394,7 +394,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | DPLY-01 | Phase 29 | not yet planned | Not started |
 | DPLY-02 | Phase 29 | not yet planned | Not started |
 | DPLY-03 | Phase 29 | not yet planned | Not started |
-| DPLY-04 | Phase 29 | not yet planned | Not started — blocked on ADR-0002 sign-off |
+| DPLY-04 | Phase 29 | not yet planned | Not started (ADR-0002 Accepted, #953) |
 | DPLY-05 | Phase 29 | not yet planned | Not started |
 | PAY-01 | Phase 30 | no plans (PR #949) | Open — refunds executed in Stripe test mode via API (`30-VERIFICATION.md`), but the criterion is the refund E2E: `vendor-refund-flow.spec.ts` is still `ALLOW` in `scripts/gates/e2e-skip-budget.conf`; #61 open |
 | PAY-02 | Phase 30 | no plans (PR #949) | Evidenced — test-mode invoices retrieved by id for three of the four `BillingPlanMode` presets (`SAAS_HYBRID_STANDARD`, `SAAS_FLAT_PREDICTABLE`, `WALK_SETUP_STEPDOWN`); `BATCH_PAYG_STARTER` has no subscription invoice, only a PaymentIntent carrying its 6% `application_fee_amount` (`30-VERIFICATION.md`, V88); unticked pending owner acceptance; #102 open |
