@@ -820,7 +820,7 @@ kubectl logs -f -n ingress-nginx -l app.kubernetes.io/component=controller
 
 # Check TLS certificate status
 kubectl get certificate -n jtoye-production
-kubectl describe certificate jtoye-tls -n jtoye-production
+kubectl describe certificate jtoye-api-tls jtoye-app-tls -n jtoye-production   # one per host (plan 29-08)
 ```
 
 ### Database Connection Issues

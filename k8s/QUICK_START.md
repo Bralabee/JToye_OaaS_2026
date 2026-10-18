@@ -317,7 +317,7 @@ kubectl describe pod <pod-name> -n jtoye-production
 kubectl get endpoints -n jtoye-production
 
 # TLS not working?
-kubectl describe certificate jtoye-tls -n jtoye-production
+kubectl describe certificate jtoye-api-tls jtoye-app-tls -n jtoye-production   # one per host (plan 29-08)
 
 # Database connection issues?
 kubectl logs -f deployment/core-java -n jtoye-production | grep -i "database\|connection"

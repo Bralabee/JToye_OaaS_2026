@@ -68,7 +68,7 @@ metadata:
     nginx.ingress.kubernetes.io/cors-allow-origin: "http://app.jtoye.local"
 spec:
   # A null value deletes the whole TLS block (verified P-4). Necessary, not
-  # cosmetic: `secretName: jtoye-tls` would never exist locally, and nginx
+  # cosmetic: the base Secrets (jtoye-api-tls, jtoye-app-tls) would never exist locally, and nginx
   # silently falls back to its own self-signed default certificate — so the
   # browser gets a cert warning on a hostname the developer then distrusts.
   tls: null

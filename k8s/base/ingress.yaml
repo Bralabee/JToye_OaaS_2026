@@ -44,17 +44,25 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
 spec:
   ingressClassName: nginx
-  # TLS: exactly the two hosts this controller actually serves.
+  # TLS: exactly the two hosts this controller actually serves, ONE CERTIFICATE
+  # PER HOST (Phase 29 plan 29-08, Pitfall 4, D-07).
   #
-  # A THIRD host used to sit in this SAN list — the Keycloak hostname — alongside
-  # a rule routing it to a Service named `keycloak`. See the note above `rules:`
-  # for why both were removed. The SAN entry mattered on its own: all three names
-  # share ONE `secretName: jtoye-tls`, and cert-manager issues that certificate as
-  # a single order covering every SAN. An HTTP-01 challenge for a hostname whose
-  # DNS points at the managed identity provider rather than at this controller
-  # cannot be answered here, and a failed challenge fails the WHOLE order — so a
-  # dangling SAN could block or stall renewal for api and app too, taking the
-  # platform's real certificate down with it.
+  # cert-manager issues one Certificate per tls entry, and one ACME order covers
+  # every host in that entry. Until 29-08 api and app shared one entry and one
+  # Secret (jtoye-tls), so a single failed HTTP-01 challenge (DNS for one host
+  # not yet added, or pointing elsewhere) failed the WHOLE order and left BOTH
+  # hosts without a certificate. A third host, the Keycloak hostname, once sat in
+  # that list too; see the note above `rules:` for why it was removed, which is
+  # exactly that failure. With one entry per host, each host is its own order:
+  # DNS can be added host by host, and one host's failed challenge or renewal
+  # cannot take the other down.
+  #
+  # THIS Ingress owns both certificates. The SSE Ingress (sse-ingress.yaml)
+  # serves the api host too and REFERENCES jtoye-api-tls without the cert-manager
+  # annotation: two Certificates writing one Secret would fight over it.
+  # INV-15 in k8s/scripts/check-render-invariants.sh asserts, on staging and
+  # production: one host per tls entry, and no two cert-manager-managed entries
+  # sharing a Secret.
   #
   # Keep this list in lockstep with `rules:` below: a host belongs here only if a
   # rule routes it to a Service that exists in the render. CI asserts the
@@ -62,8 +70,10 @@ spec:
   tls:
   - hosts:
     - api.olajay.co.uk
+    secretName: jtoye-api-tls
+  - hosts:
     - app.olajay.co.uk
-    secretName: jtoye-tls
+    secretName: jtoye-app-tls
   # Host rules.
   #
   # REMOVED (Phase 26 / plan 26-04, 26-REVIEWS.md Adjudication B — a CONFIRMED

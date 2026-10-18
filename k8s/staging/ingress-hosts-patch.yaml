@@ -27,20 +27,45 @@
 # If the base reorders or adds a rule, `kustomize build` FAILS LOUDLY on a missing
 # path rather than silently mis-patching — which is the behaviour we want.
 #
-# The secret NAME keeps its `jtoye-` prefix: that is the product identifier
+# The secret NAMES keep their `jtoye-` prefix: that is the product identifier
 # (J'TOYE DIGITAL LTD), not the domain. Only hostnames moved.
+#
+# PER-HOST TLS (plan 29-08, Pitfall 4, D-06/D-07). /spec/tls is REPLACED whole:
+# one entry and one Secret per staging host, so each host is its own ACME order
+# and DNS can be added host by host. Base has the same shape with the production
+# hosts; replacing the list (instead of indexing into it) means a base reorder
+# cannot silently pair a staging host with the wrong Secret. INV-15 asserts one
+# host per entry and no shared cert-manager Secret on the render.
+#
+# STAGING IS NOT FOR CRAWLERS (D-08 applied to search engines; T-29-29). The
+# configuration-snippet is REPLACED with base's six security headers plus
+# X-Robots-Tag noindex, nofollow: staging holds a real-looking storefront that
+# must never be indexed as if it were the live product. The six base lines are
+# copied, not inherited (a JSON6902 replace cannot append to a block scalar), so
+# INV-15 also fails a staging snippet that has drifted from base's header lines.
+# Production keeps base's snippet with no X-Robots-Tag: it is indexable once live.
 - op: replace
   path: /metadata/annotations/nginx.ingress.kubernetes.io~1cors-allow-origin
   value: "https://app-staging.olajay.co.uk"
 - op: replace
-  path: /spec/tls/0/hosts/0
-  value: api-staging.olajay.co.uk
+  path: /metadata/annotations/nginx.ingress.kubernetes.io~1configuration-snippet
+  value: |
+    more_set_headers "X-Frame-Options: DENY";
+    more_set_headers "X-Content-Type-Options: nosniff";
+    more_set_headers "X-XSS-Protection: 1; mode=block";
+    more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+    more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+    more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+    more_set_headers "X-Robots-Tag: noindex, nofollow";
 - op: replace
-  path: /spec/tls/0/hosts/1
-  value: app-staging.olajay.co.uk
-- op: replace
-  path: /spec/tls/0/secretName
-  value: jtoye-staging-tls
+  path: /spec/tls
+  value:
+    - hosts:
+        - api-staging.olajay.co.uk
+      secretName: jtoye-staging-api-tls
+    - hosts:
+        - app-staging.olajay.co.uk
+      secretName: jtoye-staging-app-tls
 - op: replace
   path: /spec/rules/0/host
   value: api-staging.olajay.co.uk

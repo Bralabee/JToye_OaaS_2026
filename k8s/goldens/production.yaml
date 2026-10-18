@@ -1403,14 +1403,15 @@ spec:
   tls:
   - hosts:
     - api.olajay.co.uk
+    secretName: jtoye-api-tls
+  - hosts:
     - app.olajay.co.uk
-    secretName: jtoye-tls
+    secretName: jtoye-app-tls
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
@@ -1449,7 +1450,7 @@ spec:
   tls:
   - hosts:
     - api.olajay.co.uk
-    secretName: jtoye-tls
+    secretName: jtoye-api-tls
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

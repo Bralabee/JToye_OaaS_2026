@@ -278,7 +278,7 @@ Read this before treating a green local run as a production guarantee. **A local
 validity and the ingress path. It proves none of the following.**
 
 **TLS and HSTS — not proven.** The local overlay sets `tls: null` and `ssl-redirect: "false"` on both
-Ingresses, because there is no cert-manager here. `secretName: jtoye-tls` would never exist and nginx
+Ingresses, because there is no cert-manager here. the base Secrets (`jtoye-api-tls`, `jtoye-app-tls`) would never exist and nginx
 would silently serve its own self-signed fallback certificate. So local says nothing about TLS
 termination, certificate issuance or renewal, or HSTS. (ASVS V9 is deliberately degraded locally.)
 
