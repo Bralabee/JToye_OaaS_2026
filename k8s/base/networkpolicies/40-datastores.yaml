@@ -1,15 +1,24 @@
 ---
 # 40-datastores.yaml
 #
-# Policies for workloads we DO ship that interact with datastores or that
-# belong in the "infrastructure adjacency" bucket.
+# Policy for the datastore-adjacent workload we ship: the `pg-backup` CronJob.
 #
-# NOTE: Postgres, Redis, RabbitMQ, Alertmanager themselves live in the
-# `jtoye-infrastructure` namespace and are NOT managed by this kustomization.
-# This file's job is to:
-#   1. Constrain the `pg-backup` CronJob workload we DO ship.
-#   2. Document the expected policy shape for the infra-namespace maintainer
-#      (see comments at bottom) so the other team mirrors the boundary.
+# Postgres is NOT a pod in any environment this kustomization targets: the
+# deployed database is Azure Database for PostgreSQL Flexible Server with public
+# access (ADR-0002, Phase 29 D-09), reached on its public endpoint. Redis,
+# RabbitMQ, Keycloak, Mailpit and Alertmanager run in the application namespace
+# itself (plans 29-10, 29-22, 29-23), so there is no separate infrastructure
+# namespace to mirror policies into — the former `jtoye-infrastructure`
+# mirror notes at the bottom of this file are gone with that namespace.
+#
+# Ingress: none. No pod-to-pod nor external client can talk TO pg-backup.
+# Egress (ORDER IS LOAD-BEARING — index 1 is the replacement target):
+#   0. DNS to kube-dns.
+#   1. Postgres: ipBlock 0.0.0.0/0 except RFC1918 on app-config `db.port` only
+#      (replaced at render time; same shape and rationale as core-java-allow's
+#      egress.1, Phase 29 Blocker D, accepted as T-29-05).
+#   2. Public 443/TCP: the Azure Blob BACKUP account (jtoyestgbackup in staging)
+#      and the Entra ID token endpoint for Workload Identity.
 #
 # Enforces STRIDE T-15-03 (pg-backup has no ingress surface).
 
@@ -34,7 +43,7 @@ spec:
   # No ingress: key => no pod-to-pod nor external can talk TO pg-backup.
   # Kubelet health checks are exempt per K8s >= 1.21 semantics.
   egress:
-    # DNS
+    # egress.0 — DNS
     - to:
         - namespaceSelector:
             matchLabels:
@@ -48,7 +57,7 @@ spec:
         - protocol: TCP
           port: 53
     # -------------------------------------------------------------------------
-    # POSTGRES — its own egress rule, holding exactly ONE port. Issue #271.
+    # egress.1 — POSTGRES — its own egress rule, holding exactly ONE port. #271.
     #
     # pg-backup reads DB_PORT from the SAME `postgres-credentials` Secret key as
     # core-java (pg-backup-cronjob.yaml `key: port`), so it had the identical
@@ -59,22 +68,35 @@ spec:
     # The port below is OVERWRITTEN at render time from app-config `db.port` by
     # the `replacements:` block in k8s/base/kustomization.yaml (and in each
     # overlay's). See networkpolicies/20-core-java.yaml for the full rationale,
-    # including why splitting the rule changes no security posture.
+    # including why the peer is an ipBlock (the managed server's public IP) and
+    # why splitting the rule changes no security posture.
+    #
+    # ISSUE #271 ON THE OTHER SIDE. The managed server listens on the port the
+    # `postgres-credentials` Secret `port` key names, and its own firewall
+    # admits the cluster's outbound IP. app-config `db.port` must equal that
+    # Secret value; a mismatch denies the connection from this side just as
+    # completely as a wrong server port would from the other. That agreement is
+    # an operator check for staging/production (the Secret is never rendered).
     # -------------------------------------------------------------------------
     - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: jtoye-infrastructure
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
       ports:
         - protocol: TCP
           port: 5432   # Postgres — replaced from app-config db.port
-    # Public 443: the Azure Blob BACKUP account (<account>.blob.core.windows.net,
-    # app-config backup.blob.endpoint — a different account and region from media,
-    # Phase 36 D-01) plus the Entra ID token endpoint (login.microsoftonline.com)
-    # that Workload Identity exchanges the projected token at. Workload Identity
-    # needs no IMDS (169.254.169.254) egress. Neither host has pinnable IPs, hence
-    # the RFC1918-excluding 0.0.0.0/0 on 443 only. The in-cluster object-store rule
-    # (port 9000) was removed in Phase 36: there is no in-cluster target.
+    # egress.2 — Public 443: the Azure Blob BACKUP account
+    # (<account>.blob.core.windows.net, app-config backup.blob.endpoint — a
+    # different account and region from media, Phase 36 D-01) plus the Entra ID
+    # token endpoint (login.microsoftonline.com) that Workload Identity exchanges
+    # the projected token at. Workload Identity needs no IMDS (169.254.169.254)
+    # egress. Neither host has pinnable IPs, hence the RFC1918-excluding
+    # 0.0.0.0/0 on 443 only. A private endpoint on the backup account would need
+    # its own scoped ipBlock, declared in INV-7's NETPOL_IPBLOCK_EXPECTED
+    # (36-PHASE29-HANDOFF.md §5).
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -85,53 +107,3 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-
-# -----------------------------------------------------------------------------
-# Notes for jtoye-infrastructure namespace maintainer (not applied by this
-# kustomization — copy into that namespace's kustomization):
-#
-# ISSUE #271 APPLIES TO THIS MIRROR TOO, and nothing in this repository can
-# enforce it. The `port: 5432` in the example below is the DEFAULT, not a
-# constant: it must equal this platform's app-config `db.port` (and the
-# `postgres-credentials` Secret `port` key, which is the value core-java and
-# pg-backup actually dial). An INGRESS policy in the infrastructure namespace
-# that admits 5432 while the app dials 5433 denies the connection just as
-# completely as an egress policy that does — from the other side, and outside
-# every gate this repository runs. Read the port off app-config rather than
-# copying the digits below.
-#
-# apiVersion: networking.k8s.io/v1
-# kind: NetworkPolicy
-# metadata:
-#   name: postgres-only-from-jtoye-app
-#   namespace: jtoye-infrastructure
-# spec:
-#   podSelector:
-#     matchLabels:
-#       app: postgresql-primary
-#   policyTypes: [Ingress]
-#   ingress:
-#     - from:
-#         - namespaceSelector:
-#             matchLabels:
-#               kubernetes.io/metadata.name: jtoye-production
-#           podSelector:
-#             matchExpressions:
-#               - key: app
-#                 operator: In
-#                 values: [core-java, pg-backup]
-#         - namespaceSelector:
-#             matchLabels:
-#               kubernetes.io/metadata.name: jtoye-staging
-#           podSelector:
-#             matchExpressions:
-#               - key: app
-#                 operator: In
-#                 values: [core-java, pg-backup]
-#       ports:
-#         - protocol: TCP
-#           port: 5432
-#
-# Mirror for redis (6379), rabbitmq (5672, 61613), alertmanager (9093). All
-# accept ONLY from app=core-java and, where relevant, pg-backup.
-# -----------------------------------------------------------------------------

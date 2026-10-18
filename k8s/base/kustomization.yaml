@@ -36,6 +36,9 @@ resources:
   - networkpolicies/30-edge-go.yaml
   - networkpolicies/40-datastores.yaml
   - networkpolicies/50-observability.yaml
+  # cert-manager HTTP-01 solver pods (Phase 29 D-07): admitted from the ingress
+  # controller only, no egress. Without it default-deny fails every ACME order.
+  - networkpolicies/60-acme-http01-solver.yaml
 
 # Common labels applied to all resources.
 #

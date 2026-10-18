@@ -1438,6 +1438,37 @@ metadata:
   labels:
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: acme-http01-solver-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: production
+  name: acme-http01-solver-allow
+  namespace: jtoye-production
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: traefik
+    ports:
+    - port: 8089
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: core-java-allow
     app.kubernetes.io/part-of: jtoye-platform
     environment: production
@@ -1461,22 +1492,49 @@ spec:
     - port: 5432
       protocol: TCP
     to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
   - ports:
     - port: 6379
       protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: redis
+  - ports:
     - port: 5672
       protocol: TCP
     - port: 61613
       protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: rabbitmq
+  - ports:
+    - port: 1025
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: mailpit
+  - ports:
     - port: 9093
       protocol: TCP
     to:
-    - namespaceSelector:
+    - podSelector:
         matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+          app: alertmanager
+  - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
   - ports:
     - port: 443
       protocol: TCP
@@ -1501,12 +1559,16 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: monitoring
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+          kubernetes.io/metadata.name: traefik
     ports:
     - port: 9090
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9091
       protocol: TCP
   podSelector:
     matchLabels:
@@ -1573,6 +1635,13 @@ spec:
         matchLabels:
           app: core-java
   - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
+  - ports:
     - port: 443
       protocol: TCP
     to:
@@ -1586,17 +1655,14 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+          kubernetes.io/metadata.name: traefik
     ports:
     - port: 8080
       protocol: TCP
   - from:
-    - namespaceSelector:
+    - podSelector:
         matchLabels:
-          kubernetes.io/metadata.name: monitoring
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+          app: prometheus
     ports:
     - port: 8080
       protocol: TCP
@@ -1644,6 +1710,13 @@ spec:
         matchLabels:
           app: core-java
   - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
+  - ports:
     - port: 443
       protocol: TCP
     to:
@@ -1657,7 +1730,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+          kubernetes.io/metadata.name: traefik
     ports:
     - port: 3000
       protocol: TCP
@@ -1730,9 +1803,12 @@ spec:
     - port: 5432
       protocol: TCP
     to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
   - ports:
     - port: 443
       protocol: TCP
