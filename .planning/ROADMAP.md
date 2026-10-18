@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 3/28 | Context gathered 2026-10-18 | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 4/28 | Context gathered 2026-10-18 | — |
 | 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
@@ -592,14 +592,14 @@ and hosting-target decisions; DPLY-04's **ADR-0002 sign-off** blocker is RESOLVE
 | **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
 | **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
 
-**Plans:** 3/28 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
+**Plans:** 4/28 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
 
 Plans:
 **Wave 1**
 - [x] 29-01-PLAN.md — Structural subscription pin (guard library + CI gate) and the compute/identity provisioning script
 - [x] 29-02-PLAN.md — NetworkPolicies for an enforcing cluster (Blockers D/F, Traefik namespace, ACME solver), INV-7 rewritten
 - [x] 29-03-PLAN.md — Platform bootstrap: Traefik with the Ingress-NGINX provider, cert-manager issuers, operator, scoped CI RBAC, horizons
-- [ ] 29-05-PLAN.md — TDD: connection budget per target (D-25)
+- [x] 29-05-PLAN.md — TDD: connection budget per target (D-25)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 29-04-PLAN.md — Staging realm transform + import for the vendor and customer realms (Blocker H)
