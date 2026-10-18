@@ -481,7 +481,8 @@ years past its last security patch, which is exactly what was found for RabbitMQ
 Note it **cannot** see the staging/production RabbitMQ broker: that broker is provisioned outside
 this repository and carries no manifest here, so its row is `pin: unknown` / `owner: UNASSIGNED`
 with a dated `manual_review`. See [`docs/runbooks/rabbitmq-broker-upgrade.md`](../docs/runbooks/rabbitmq-broker-upgrade.md)
-§7 for the operator action and ADR-0002 for the open ownership question.
+§7 for the operator action. ADR-0002 (Accepted 2026-08-10) settles the route: the in-cluster
+RabbitMQ cluster operator, which Phase 29 builds.
 
 **Why `.Metadata.LastTagTime` and not `.Created`.** Docker preserves the original
 `.Created` across a fully-cached rebuild and across a `docker pull`. Measured on

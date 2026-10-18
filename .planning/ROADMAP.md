@@ -379,8 +379,8 @@ milestone opened, and `STATE.md` kept the milestone `in-progress` throughout. Al
 starts until they land: (1) the production domain (`jtoye.co.uk` is registered but parked at
 Namecheap — HTTPS times out, nothing serves the application; measured 2026-08-08;
 `FRONTEND_PUBLIC_*` point at `olajay.co.uk`; parking A records only — nothing serving the app); (2) the hosting target; (3) Stripe
-test-mode keys, which gate Phase 30 entirely; (4) **ADR-0002 sign-off**, still `Proposed`, which
-gates DPLY-04.
+test-mode keys, which gate Phase 30 entirely; (4) **ADR-0002 sign-off**, which
+gated DPLY-04. RESOLVED: signed 2026-08-10, recorded Accepted on main 2026-10-18 (#953).
 
 ### Phase 27: Operational Maturity — messaging as the first instance
 

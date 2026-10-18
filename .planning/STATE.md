@@ -821,7 +821,7 @@ Execution order: 21 → 22 → 23 → 24 → 25 → 26 (locked; Comms inserted a
 
 **Go-to-market closure, added 2026-08-01 (v2.3 stays OPEN).** Order: 28 → 29 → 32, with **30 and 31 running in parallel alongside 29**. Phase 28 is first because it determines what is safe to deploy and is cheap. Phase 29 is the long pole and must carry its own monitoring — `k8s/` ships no Prometheus, Alertmanager or Grafana today, so everything Phase 27 built stops at the compose boundary. Phase 32 depends on 29 + 30 + 31.
 
-Four **blocking decisions** gate 29–32 and none are engineering tasks: the production domain (`jtoye.co.uk` unregistered, `FRONTEND_PUBLIC_*` point at `olajay.co.uk`, no A records), the hosting target, Stripe test-mode keys (gates Phase 30 entirely), and **ADR-0002 sign-off** (still `Proposed`, gates DPLY-04).
+Four **blocking decisions** gate 29–32 and none are engineering tasks: the production domain (`jtoye.co.uk` unregistered, `FRONTEND_PUBLIC_*` point at `olajay.co.uk`, no A records), the hosting target, Stripe test-mode keys (gates Phase 30 entirely), and **ADR-0002 sign-off** (gated DPLY-04; RESOLVED: signed 2026-08-10, recorded Accepted on main 2026-10-18, #953).
 
 Cohort B (catering, **#428**) and the ingredient graph (**#427**) sit **after** go-to-market and gate nothing here — except #427 Wave 1, which is LGL-03 inside Phase 31.
 

@@ -138,9 +138,11 @@ What this entry does **not** carry over from the branch, deliberately:
 - **The PostgreSQL version floor stays a Phase 29 input.** It is not decided here. The branch found
   that the `jtoye_backup` role (`BYPASSRLS`, `infra/backups/create-backup-role.sql`) cannot be
   created by `azure_pg_admin` on PostgreSQL 15 or earlier. Without that role the backup cannot read
-  tenant data. A plain `pg_dump` (default `row_security=off`) fails with an error on the first
-  FORCE-RLS table. A dump run with `--enable-row-security`, or any plain `SELECT`, silently
-  returns zero tenant rows. So the managed server must be at least 16. Phase 29 verifies this
+  tenant data. A plain `pg_dump` (default `row_security=off`) run by a role that is neither the
+  owner nor BYPASSRLS errors on the first table with RLS enabled. With `--enable-row-security`
+  it produces a PARTIAL dump that looks plausible: with no tenant set, only the rows the policies
+  admit with no tenant (published storefront data) and the RLS-exempt tables are captured. Orders,
+  customers and the ledger are missing. So the managed server must be at least 16. Phase 29 verifies this
   against current Microsoft documentation before provisioning.
 - **The managed Redis product and tier are Phase 29 inputs too.** The original decision says only
   "Azure Cache". Phase 29 checks Microsoft's retirement schedule for Azure Cache for Redis, and

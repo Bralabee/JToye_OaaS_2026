@@ -1472,10 +1472,15 @@ PostgreSQL:
   WAL Archive: NONE — no archive_command, no WAL-G, no pgBackRest
   Test Restore: Drill proven locally 2026-07-10 (RTO ≈ minutes); NOT automated
   PITR: NO — worst-case data loss (RPO) is up to 24 hours
-  Gap tracking: '#101 (PITR + DB HA), ADR-0002 (managed vs manifest)'
+  Gap tracking: '#101 (PITR + DB HA); route settled by ADR-0002 (Accepted 2026-08-10): managed PostgreSQL'
 ```
 
-**TARGET (aspirational — requires #101):**
+> **Superseded by ADR-0002 (Accepted 2026-08-10).** PostgreSQL PITR and backups come from the
+> managed Flexible Server's configuration, and Redis from the managed cache. The self-hosted WAL
+> streaming and incremental plan below will not be built. It is kept only as the historical
+> planning record.
+
+**Former TARGET (pre-ADR-0002 — requires #101):**
 
 ```yaml
 # Backup Schedule
