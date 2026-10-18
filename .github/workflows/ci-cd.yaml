@@ -732,6 +732,14 @@ jobs:
       - name: Prove the staging bootstrap guards refuse (29-03 --selftest)
         run: bash scripts/staging-bootstrap.sh --selftest
 
+      # Plan 29-04: the staging realm assertion suite refuses the raw dev template
+      # and passes the staging transform of BOTH templates, built-in tokens survive,
+      # a surviving secret placeholder is named, and --apply refuses no context, the
+      # employer context and a stale server before the Azure guard is sourced (stub
+      # kubectl/kubelogin/curl/az, so no cluster, no network, no Azure).
+      - name: Prove the staging realm transform and import guards (29-04 --selftest)
+        run: bash scripts/staging-realm-import.sh --selftest
+
       - name: Assert the staging/production render matches its reviewed golden
         run: |
           chmod +x ./k8s/scripts/render-golden.sh
