@@ -80,10 +80,68 @@ list_kv_objects() {
 # ===========================================================================
 # Guards. Every one runs before any network call.
 # ===========================================================================
+#
+# 1. staging_kube_guard (scripts/lib/staging-kube-guard.sh, plan 29-03): the ONE
+#    implementation of the context checks. No copy of them lives here.
+# 2. The API base, byte for byte.
+# 3. The profile guard (D-26): DemoDataSeeder is @Profile("dev")
+#    (core-java/src/main/java/uk/jtoye/core/dev/DemoDataSeeder.java:112), so the
+#    seed refuses unless EVERY Ready core-java pod's own container env says
+#    SPRING_PROFILES_ACTIVE=prod. The pods are read, not the Deployment template:
+#    during a rollout the template describes pods that may not be serving yet,
+#    while the old ones still answer. The env is a literal value
+#    (k8s/base/core-java-deployment.yaml), so a pod's spec is what its process
+#    runs with. Zero Ready pods is a refusal: an unverifiable profile is refused,
+#    never assumed. Anything else that could add a profile (an env value or an
+#    argument mentioning spring.profiles, or SPRING_PROFILES_INCLUDE) is refused
+#    too, because it would make the literal check a half-truth.
 run_guards() {
-  # RED skeleton: no guards yet.
-  [ -n "$KUBE_CONTEXT" ] || usage_error "--context is required"
-  return 0
+  # shellcheck source=lib/staging-kube-guard.sh
+  source "$SCRIPT_DIR/lib/staging-kube-guard.sh"
+  staging_kube_guard "$KUBE_CONTEXT" "$IDENTITY_FILE" || exit $?
+  echo "OK: context '${KUBE_CONTEXT}' passed staging_kube_guard"
+
+  if [ "$API_BASE" != "$STAGING_API" ]; then
+    refuse api-base "--api '${API_BASE}' is not ${STAGING_API}; the seed writes staging test data and nothing else"
+  fi
+
+  need_tool jq
+  local pods rc=0 verdict n bad
+  pods=$(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get pods -l app=core-java -o json 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$pods" ]; then
+    refuse profile "could not read the core-java pods in ${NAMESPACE} (kubectl rc=${rc}); an unverifiable profile is refused"
+  fi
+  rc=0
+  verdict=$(jq -r '
+    [.items[]? | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))] as $ready
+    | [ $ready[] | (.metadata.name // "<unnamed>") as $n
+        | [.spec.containers[]? | select(.name == "core-java")] as $c
+        | if ($c | length) != 1 then "\($n): \($c | length) core-java containers"
+          else
+            ([$c[0].env[]? | select(.name == "SPRING_PROFILES_ACTIVE")]) as $e
+            | ([$c[0].env[]? | select(.name == "SPRING_PROFILES_INCLUDE")] | length) as $inc
+            | ([($c[0].env[]? | .value // empty), ($c[0].args[]?), ($c[0].command[]?)]
+                | map(select(ascii_downcase | contains("spring.profiles"))) | length) as $ovr
+            | if ($e | length) != 1 then "\($n): \($e | length) SPRING_PROFILES_ACTIVE entries"
+              elif $e[0].valueFrom != null then "\($n): SPRING_PROFILES_ACTIVE is not a literal value"
+              elif $e[0].value != "prod" then "\($n): SPRING_PROFILES_ACTIVE=\($e[0].value // "")"
+              elif $inc > 0 then "\($n): SPRING_PROFILES_INCLUDE is set"
+              elif $ovr > 0 then "\($n): an env value or argument sets spring.profiles"
+              else empty end
+          end ] as $bad
+    | "\($ready | length)\t\($bad | join("; "))"' <<<"$pods") || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$verdict" ]; then
+    refuse profile "the core-java pod list could not be parsed (jq rc=${rc}); an unverifiable profile is refused"
+  fi
+  n="${verdict%%$'\t'*}"
+  bad="${verdict#*$'\t'}"
+  if [ "$n" = "0" ]; then
+    refuse profile "no Ready core-java pod in ${NAMESPACE}, so the running profile cannot be verified"
+  fi
+  if [ -n "$bad" ]; then
+    refuse profile "${bad} (DemoDataSeeder is @Profile(\"dev\") and must never run against staging, D-26)"
+  fi
+  echo "OK: all ${n} Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod"
 }
 
 # ===========================================================================
