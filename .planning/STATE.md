@@ -5,10 +5,10 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: executing
-stopped_at: "Completed 29-01-PLAN.md (structural subscription pin + compute/identity provisioning script, dry-run only); next 29-02"
-last_updated: "2026-10-18T21:16:00.000Z"
+stopped_at: "Completed 29-02-PLAN.md (NetworkPolicies for an enforcing cluster, config-driven controller namespace, INV-7 exact rule set); next 29-03"
+last_updated: "2026-10-18T21:40:00.000Z"
 last_activity: 2026-10-18
-state_head: edc2c94d3b8b14418600287bbbbf54a5807059d6
+state_head: d3939ea4e96a4be00fadf30be84ad4f281d6a479
 progress:
   total_phases: 20
   completed_phases: 17
@@ -29,6 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 29 (Deployable Staging, With Its Own Monitoring) — EXECUTING
+- 29-02 DONE 2026-10-18 (commits 5596c625, a2af7c41, ccfc2932 RED, 9df744f8 GREEN; SUMMARY d3939ea4): base NetworkPolicies rewritten for the enforcing topology — core-java-allow admits the controller ns on 9090 and app=prometheus on 9091 (Blocker F), Postgres egress stays at spec.egress.1 (one port from db.port) to ipBlock 0.0.0.0/0 except RFC1918 (Blocker D), Redis/RabbitMQ/Mailpit/Alertmanager/Keycloak are same-namespace podSelectors, no NetworkPolicy names jtoye-infrastructure (np_docs 6->7, infra 5->0); new acme-http01-solver-allow (8089 from controller ns, no egress); app-config `ingress.controller-namespace` (traefik base/staging/production, ingress-nginx local) via a replacement repeated in k8s/local (traefik=4 / ingress-nginx=4; break arm restored by sha); INV-7 rewritten as NETPOL_RULES_EXPECTED (sel/types/in|eg:peer:port multiset per policy per target) + NETPOL_IPBLOCK_EXPECTED (one shape, 443 + db.port) + dialect check + stale hygiene; `--selftest-inv7` RED 0/5 (old gate VOID) -> GREEN 5/5 CLEAN rc=0, wired in ci-cd.yaml k8s-validate. Pod-label contract in networkpolicies/README.md for 29-10/12/22/23/24.
 - 29-01 DONE 2026-10-18 (commits 198c89b2..93844d71, SUMMARY e881168c): `scripts/lib/azure-guard.sh` (az_guard_init equality + pinned read-back, az_mutate/az_read append `--subscription c483d353-…` LAST, az_guard_stub with `.az-guard-stub` marker, selftest 8/8, RED first); `scripts/check-az-subscription-pin.sh` (raw az outside the wrappers = finding, empty discovery = VOID, one AZ_PIN_EXEMPT row for the Azurite `az storage` listing, stale row = finding; selftest 9/9; wired in ci-cd.yaml ops-contracts; gate-enforcement rc 1 -> 0); `scripts/azure-staging-provision.sh` (decision-gated on 29-ESTATE-DECISIONS.md, stub-only dry-run, Cilium/overlay/ephemeral/WI/KV CSI/Entra RBAC local accounts disabled; 57/57 dry-run calls pinned). NOTHING created in Azure. Open for 29-09: BYO outbound IP permission, operator UPN resolution (guest/MSA), live tsv layout.
 - 29 CONTEXT RE-GATHERED ON MAIN 2026-10-18: `29-CONTEXT.md` carries the August D-01..D-10, D-13 and D-16..D-19 (D-11/D-12 superseded by Phase 36 Blob; PG16 now a floor) and adds D-20..D-28: staging mail to Mailpit with STARTTLS required (cluster-CA truststore, two-arm proof); Azure Key Vault + Secrets Store CSI via Workload Identity, write-once generator (closes #100/#300); Azure Managed Redis if measured within £150, else in-cluster single pod (Azure Cache Basic creation blocked since 2026-10-01); seed via real onboarding + culinary pack + one order; staging-only test vendor; Stripe TEST webhook wired. Fresh AKS (the August estate is to be deleted by the owner).
 - 29 PLANNED 2026-10-18 on branch `docs/29-plan-on-main` (research d5818bf7, patterns b1605ee4, plans d1c34940 → revisions 46994fe0, a29e442e): 28 plans in 14 waves, 29-14 is the tracer; owner checkpoints DNS 29-11, Stripe TEST 29-13, cost 29-19, WORM 29-20, Zoho 29-25, dispositions 29-27, review+merge 29-28. Next: `/gsd-execute-phase 29`.
@@ -993,6 +994,8 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- [Phase 29-02]: The ingress-controller namespace is app-config `ingress.controller-namespace` (traefik in base/staging/production, ingress-nginx in k8s/local) copied into the four controller namespaceSelectors by a kustomize replacement; an overlay that patches the key repeats the replacement (the #271 rule).
+- [Phase 29-02]: INV-7 asserts every rendered NetworkPolicy's full tuple multiset (incl. sel: and types:) against NETPOL_RULES_EXPECTED; any new or changed rule edits that table and the README flow matrix in the same commit. Only networking.k8s.io/v1 NetworkPolicy is allowed (no Cilium CRDs). Pod labels app=keycloak|redis|mailpit|prometheus|alertmanager|grafana, app.kubernetes.io/name=rabbitmq are a cross-plan contract.
 - [Phase 29-01]: Network-policy engine is Cilium, chosen at AKS creation (`--network-dataplane cilium --network-policy cilium`); manifests stay networking.k8s.io/v1 NetworkPolicy (29-02 pins the dialect).
 - [Phase 29-01]: Every Azure CLI call goes through az_mutate/az_read from scripts/lib/azure-guard.sh; a raw az call in scripts/ fails CI (check-az-subscription-pin.sh). Operator roles go only to a signed-in user (user.type asserted), never to jtoye-ci.
 - [Phase 38 D-01]: Jackson 3 throughout core-java; Jackson 2 survives only as a BOM floor (2.22.3) for transitive users. Idempotency hashing uses the frozen `IdempotencyJson` mapper, which must not be edited without a dual-hash window.
@@ -1439,8 +1442,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-18T21:16:00Z
-Stopped at: Completed 29-01-PLAN.md (Phase 29 wave 1, plan 1 of 28); next 29-02
+Last session: 2026-10-18T21:40:00Z
+Stopped at: Completed 29-02-PLAN.md (Phase 29 wave 1, plan 2 of 28); next 29-03
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
