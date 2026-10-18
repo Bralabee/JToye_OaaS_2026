@@ -156,7 +156,9 @@ az_read() {
 #   DIR/.az-guard-stub  the marker a --dry-run requires on PATH's az
 #   Answers: $AZ_STUB_ANSWERS, when set, is a file of tab-separated rows
 #     <extended regex matched against the argv line> TAB <exit code> TAB <stdout>
-#   first match wins; exit 3 is how a row says "not found", as az does. With no
+#   first match wins; backslash escapes in <stdout> are expanded (printf %b), so
+#   `\n` and `\t` give a multi-line or tab-separated answer; exit 3 is how a row
+#   says "not found", as az does. With no
 #   file or no matching row, `account show --query {name:name,state:state}` answers
 #   "$AZ_STUB_ACCOUNT_NAME<TAB>$AZ_STUB_ACCOUNT_STATE" (defaults: the expected
 #   name, Enabled) so az_guard_init passes, a call carrying `--output none` exits
@@ -200,7 +202,7 @@ if [ -n "${AZ_STUB_ANSWERS:-}" ]; then
       ''|*[!0-9]*) echo "az stub: answers row exit code is not a number: $row" >&2; exit 2 ;;
     esac
     if [[ "$line" =~ $re ]]; then
-      [ -z "$out" ] || printf '%s\n' "$out"
+      [ -z "$out" ] || printf '%b\n' "$out"
       exit "$code"
     fi
   done < "$AZ_STUB_ANSWERS"
