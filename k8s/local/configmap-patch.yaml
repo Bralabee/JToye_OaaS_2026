@@ -150,6 +150,18 @@ data:
   # enforced rather than described.
   db.port: "5433"
 
+  # --- Ingress-controller namespace for the NetworkPolicy derivation (D-29) ---
+  # Base says "traefik", the controller of record for every deployed
+  # environment. Locally the controller is the minikube ingress-nginx addon
+  # (k8s/LOCAL.md: minikube v1.36.0 bundles controller v1.12.2), which runs in
+  # the `ingress-nginx` namespace — so the local render keeps naming the
+  # controller it actually runs. Like db.port, no container reads this key: its
+  # consumer is the `replacements:` block in kustomization.yaml, which writes it
+  # into the controller namespaceSelector of frontend-allow, core-java-allow,
+  # edge-go-allow and acme-http01-solver-allow. That block is repeated in this
+  # overlay because this overlay patches the key (the measured #271 rule).
+  ingress.controller-namespace: "ingress-nginx"
+
   # --- Media storage: the Azurite emulator path (Phase 36) ------------------
   #
   # Local runs the connection-string auth mode against the HOST Azurite (the

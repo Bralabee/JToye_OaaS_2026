@@ -61,6 +61,7 @@ data:
   frontend.url: https://app.olajay.co.uk
   gdpr.dsar.export-download-base-url: https://app.olajay.co.uk/data-request/download
   gdpr.dsar.verify-base-url: https://app.olajay.co.uk/data-request/confirm
+  ingress.controller-namespace: traefik
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.customer-realm: jtoye-customers

@@ -140,3 +140,60 @@ replacements:
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+
+# =============================================================================
+# Phase 29 D-29(c) — the ingress-controller NAMESPACE is DERIVED too, by the
+# #271 mechanism applied to the controller.
+#
+# THE DEFECT CLASS. Four NetworkPolicies admit traffic from the controller's
+# namespace, and each used to carry its own literal (`ingress-nginx`). The
+# controller of record became Traefik in namespace `traefik` (D-29), and the
+# local minikube addon still runs in `ingress-nginx`: one fact that varies per
+# target, written four times per file set. A missed literal is a policy that
+# silently admits nothing from the real controller — under an enforcing CNI the
+# whole public surface (or every certificate order) goes dark, with no error
+# anywhere but a timeout.
+#
+# WHAT THIS DOES. app-config `ingress.controller-namespace` is the single
+# render-time declaration; this copies it into the controller namespaceSelector
+# of each of the four policies.
+#
+# THE fieldPath INDICES ARE LOAD-BEARING, exactly as above: `spec.ingress.0`
+# (frontend-allow, edge-go-allow, acme-http01-solver-allow) and `spec.ingress.1`
+# (core-java-allow — ingress.0 is the frontend/edge-go pod rule) address the
+# authored rule order in networkpolicies/*.yaml, and `from.0` the only peer of
+# that rule. Inserting an ingress rule ahead of one of them retargets the
+# replacement onto the wrong rule; INV-7 asserts every rendered (direction,
+# peer, port) tuple per policy per target, which is what catches it.
+#
+# STAGING AND PRODUCTION DO NOT PATCH THIS KEY, so this base pass is the one
+# that governs them (a base replacement runs before overlay patches, measured
+# for #271), and they need no repeated block. AN OVERLAY THAT PATCHES THE KEY
+# MUST REPEAT THIS BLOCK — k8s/local does, because it patches it to
+# `ingress-nginx`.
+# =============================================================================
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.ingress\.controller-namespace
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: frontend-allow
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.ingress.1.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+      - select:
+          kind: NetworkPolicy
+          name: edge-go-allow
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+      - select:
+          kind: NetworkPolicy
+          name: acme-http01-solver-allow
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name

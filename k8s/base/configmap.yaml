@@ -94,6 +94,28 @@ data:
   # ---------------------------------------------------------------------------
   db.port: "5432"
 
+  # --- Phase 29 D-29: the ingress-controller NAMESPACE the NetworkPolicies admit
+  #
+  # The namespace every NetworkPolicy admits ingress from: frontend-allow and
+  # edge-go-allow (their only external entry), core-java-allow (browsers call
+  # the API host and the SSE stream directly, through the controller — Blocker
+  # F) and acme-http01-solver-allow (cert-manager's HTTP-01 challenge). Like
+  # db.port above, NO container reads it: its consumer is the `replacements:`
+  # block in k8s/base/kustomization.yaml, which writes it into those four
+  # namespaceSelectors, so moving to another controller is this one value and
+  # not four policy edits that can drift apart.
+  #
+  # "traefik": Traefik v3 with its Kubernetes Ingress-NGINX provider is the
+  # controller of record for every deployed environment (owner ruling D-29,
+  # 2026-10-18; the nginx.ingress.kubernetes.io/* annotations stay the source of
+  # truth). Staging and production inherit this value. k8s/local overrides it
+  # to "ingress-nginx" because its minikube addon runs in that namespace, and
+  # repeats the replacement in its own kustomization.yaml (a base replacement
+  # does not re-run against an overlay's patched ConfigMap — the measured #271
+  # rule). INV-7 in k8s/scripts/check-render-invariants.sh reads this key from
+  # every render and fails a target whose policies name anything else.
+  ingress.controller-namespace: "traefik"
+
   # --- Issue #506: the SERVER-SIDE core API base for the frontend -------------
   #
   # api.url above is the BROWSER's view of core. It is baked into the frontend
