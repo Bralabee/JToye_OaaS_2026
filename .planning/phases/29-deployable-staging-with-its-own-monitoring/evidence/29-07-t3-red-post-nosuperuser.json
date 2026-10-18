@@ -1,0 +1,10 @@
+{
+  "command": "BOOTSTRAP_SELFTEST_FORMAT=tap bash scripts/staging-db-bootstrap.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..5\nnot ok 1 - pre-idempotent\n  ---\n  message: 'pre rc=3/3: psql:/sql/db/managed-pre-bootstrap.sql:61: ERROR:  must be able to SET ROLE \"jtoye_app\"'\n  ...\nnot ok 2 - owners-can-create\n  ---\n  message: 'pre stage did not complete, so neither owner exists to create anything'\n  ...\nnot ok 3 - post-before-migration-fails\n  ---\n  message: 'rc=3 for the wrong reason: psql:/sql/db/create-runtime-role.sql:61: ERROR:  permission denied to alter role'\n  ...\nnot ok 4 - post-readback\n  ---\n  message: 'pre stage did not complete, so jtoye_app cannot run the simulated migration'\n  ...\nnot ok 5 - no-password-in-argv\n  ---\n  message: '3 distinct password(s) visible in docker inspect Path/Args/Cmd of 3 psql container(s)'\n  ...",
+  "targetTest": "post-before-migration-fails",
+  "targetFile": "scripts/staging-db-bootstrap.sh",
+  "expected": "ok - post-before-migration-fails: --stage post before postcode_centroid exists exits non-zero naming that table",
+  "actual": "not ok 3 - post-before-migration-fails   ---   message: 'rc=3 for the wrong reason: psql:/sql/db/create-runtime-role.sql:61: ERROR:  permission denied to alter role'   ...",
+  "semanticAssessment": "Target arm executed and failed on its reason assertion, and the reason is a finding rather than a harness fault: infra/db/create-runtime-role.sql line 61 (ALTER ROLE jtoye_runtime WITH LOGIN NOSUPERUSER NOBYPASSRLS ...) is refused for the non-superuser admin stand-in with 'permission denied to alter role' (PostgreSQL 16+ lets only a superuser name the SUPERUSER attribute in ALTER ROLE, NOSUPERUSER included), so the file can never reach its line-84 TRUNCATE grant on a managed server. The arm requires the postcode_centroid reason, so it refused to count this as the ordering proof. GREEN fixes line 61 at the source (Rule 1 deviation)."
+}

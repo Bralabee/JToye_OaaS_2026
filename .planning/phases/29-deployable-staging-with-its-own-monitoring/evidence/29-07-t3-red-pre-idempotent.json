@@ -1,0 +1,10 @@
+{
+  "command": "BOOTSTRAP_SELFTEST_FORMAT=tap bash scripts/staging-db-bootstrap.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..5\nnot ok 1 - pre-idempotent\n  ---\n  message: 'pre rc=3/3: psql:/sql/db/managed-pre-bootstrap.sql:61: ERROR:  must be able to SET ROLE \"jtoye_app\"'\n  ...\nnot ok 2 - owners-can-create\n  ---\n  message: 'pre stage did not complete, so neither owner exists to create anything'\n  ...\nnot ok 3 - post-before-migration-fails\n  ---\n  message: 'rc=3 for the wrong reason: psql:/sql/db/create-runtime-role.sql:61: ERROR:  permission denied to alter role'\n  ...\nnot ok 4 - post-readback\n  ---\n  message: 'pre stage did not complete, so jtoye_app cannot run the simulated migration'\n  ...\nnot ok 5 - no-password-in-argv\n  ---\n  message: '3 distinct password(s) visible in docker inspect Path/Args/Cmd of 3 psql container(s)'\n  ...",
+  "targetTest": "pre-idempotent",
+  "targetFile": "scripts/staging-db-bootstrap.sh",
+  "expected": "ok - pre-idempotent: --stage pre twice as the CREATEROLE non-superuser stand-in exits 0 both times and the second run changes nothing",
+  "actual": "not ok 1 - pre-idempotent   ---   message: 'pre rc=3/3: psql:/sql/db/managed-pre-bootstrap.sql:61: ERROR:  must be able to SET ROLE \"jtoye_app\"'   ...",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion for the intended reason: the skeleton SQL omits GRANT jtoye_app TO CURRENT_USER, and PostgreSQL 18 refused the ownership hand-over with 'must be able to SET ROLE \"jtoye_app\"' (managed-pre-bootstrap.sql:61, ALTER SCHEMA public OWNER TO jtoye_app). Not a harness fault: the stand-in started, the setup ran, and psql reached line 61 of the file."
+}
