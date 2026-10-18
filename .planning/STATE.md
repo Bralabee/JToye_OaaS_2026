@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: executing
-stopped_at: "Completed 29-04-PLAN.md (staging realm transform infra/keycloak/staging-realm.jq over the one template each + scripts/staging-realm-import.sh: assertion suite offline|apply|live|live-existing, --list-kv-objects, --apply through a port-forward behind staging_kube_guard, selftest 9 arms wired in k8s-validate); next 29-06"
-last_updated: "2026-10-18T22:40:00.000Z"
+stopped_at: "Completed 29-06-PLAN.md (scripts/staging-seed.sh --stage vendor through product APIs only: staging_kube_guard + exact API base + Ready-pod prod-profile guard, per-run realm-admin operator deleted on every exit, vendor GROUP_ADMIN via /api/v1/staff/grant under strict scoping, selftest 11 arms wired in k8s-validate); next 29-07"
+last_updated: "2026-10-18T23:05:00.000Z"
 last_activity: 2026-10-18
-state_head: ac17e460d5aef3e6d6da069a685f6a5d76f4bfe3
+state_head: 6b94e85b
 progress:
   total_phases: 20
   completed_phases: 17
   total_plans: 282
-  completed_plans: 259
+  completed_plans: 260
   percent: 85
 ---
 
@@ -29,6 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 29 (Deployable Staging, With Its Own Monitoring) — EXECUTING
+- 29-06 DONE 2026-10-18 (commits 3841db98 RED, 860d9d14 GREEN, 2a099d72 Task 2; SUMMARY 6b94e85b): scripts/staging-seed.sh builds the staging test vendor through product APIs only (no SQL: seed=0 vs control 21). Guards before any network call: staging_kube_guard (29-03, sourced), --api byte-equal https://api-staging.olajay.co.uk, and every Ready core-java pod (pods, never the template; zero Ready = refused) on a literal SPRING_PROFILES_ACTIVE=prod with no profile override (DemoDataSeeder @Profile dev, D-26). Vendor stage: az_guard_init + 4 az_read into mode-600 files, Keycloak port-forward by PID, per-run seed-operator-<UTC> realm admin (openssl rand password) DELETEd by the EXIT trap on every path, tenant by name, operator + vendor tenant_id read back by content (partialImport fallback), vendor token tenant_id claim checked, GROUP_ADMIN via /api/v1/staff/grant (MEASURED: strict scoping provisions nothing JIT; RESEARCH OQ2 was wrong), shop staging-test-kitchen open every day, one culinary pack BEFORE submit, trader identity SOLE_TRADER, onboarding MARKETPLACE sole trader -> WAIVE review gates (never TRADER_IDENTITY/ALLERGEN_DATA_COMPLETE) -> approve -> go-live, timestamped read-back. Selftest 11/11 (RED_EVIDENCE_OK x4; operator-deleted-on-failure: 500 on the seed at line 20, DELETE at 21; operator-deleted-on-success) in k8s-validate; break arms each red. LIVE run is 29-14's.
 - 29-04 DONE 2026-10-18 (commits c5af00f1 RED, d3a47641 GREEN, b8073aea Task 2; SUMMARY ac17e460): infra/keycloak/staging-realm.jq derives jtoye-staging (service-account users only, core-api URIs exact to https://app-staging.olajay.co.uk, edge-api/integration-* URIs empty, integration-* disabled #301, Mailpit :1025 STARTTLS, core-api SA off, tenant_id admin-only) and jtoye-customers (storefront-client on the staging host, verifyEmail true, Google disabled/empty) from the ONE template each. scripts/staging-realm-import.sh: --assert one jq program for render and live read-back (modes offline/apply/live/live-existing; raw dev template refused with 24 defects, built-ins 53/53 and 11/11 by multiset), --list-kv-objects (6 objects for 29-13), --apply = staging_kube_guard before the Azure guard is sourced, az_read x6, render+assert, port-forward svc/keycloak 18080:8080 19000:9000 by PID, admin API at 127.0.0.1 only, POST/skip/--recreate, read-back asserted. Selftest 9/9 in k8s-validate; break arms (guard removed, azure sourced first, value echoed) each red. LIVE run deferred to 29-14 by design. README: no frontend client ever existed (git log -G, test-client control).
 - 29-05 DONE 2026-10-18 (commits dbae41a8 RED, 2927aa3b GREEN, 6ac75809 docs; SUMMARY b83954a6): k8s/scripts/connection-budget.conf rows compose compose/3, k8s-staging 429/15 (Flexible Server B2s; 429 measured on the August server, 29-14 re-measures with SHOW max_connections), k8s-production compose/3 (UNCHANGED until Phase 32). check-connection-math.sh: RESERVED literal deleted, per-target budget lines (157/331/157), CONNECTION_BUDGET_CONF override, PARSE ERROR rc 2 on missing/non-numeric/leading-zero/duplicate/unknown/absent row; INFO counterfactual every run: k8s-production at reserve 15 needs 155, budget 148, Phase 32 must size max_connections >= 209 (computed; 208/209 boundary measured). --selftest RED 0/4 (RED_EVIDENCE_OK x4) -> GREEN 4/4, wired as a k8s-validate step (deviation: ci-cd.yaml not in files_modified). DEPLOYMENT.md budget section per target, demand table corrected to pool 12 / 155. No pool or maxReplicas changed.
 - 29-03 DONE 2026-10-18 (commits ab7f2550, 8e5c593c, 3f4de8f3 RED, c78412c4 GREEN; SUMMARY b6357ecd): k8s/platform/{traefik,cert-manager,rbac,acme-probe} (depth 3, bootstrap-applied, own CI render/no-Secret step). Traefik v3.7.15@digest, Ingress-NGINX provider, IngressClass nginx, watchNamespace jtoye-staging, LB on jtoye-stg-ingress-ip with eTP Local; measured in the v3.7.15 source: allowSnippetAnnotations off SKIPS the whole Ingress (set true), proxy-body-size inert without buffering (proxyrequestbuffering=true), publishService unresolvable outside the watched ns (not set, no ingresses/status grant); RBAC = ClusterRole list/watch ingressclasses + Role in jtoye-staging. supported-annotations.txt (86 rows, v3.7) + README D-29(a) table: 20 in-use annotations, missing=0. ClusterIssuers letsencrypt-staging/prod; CI RBAC Namespace jtoye-staging by resourceNames + CRUD on SPC/Certificate/Issuer/RabbitmqCluster (token __CI_PRINCIPAL_OBJECT_ID__); acme-probe agnhost 2.66.1. scripts/lib/staging-kube-guard.sh (staging_kube_guard, for 29-04/29-06) + scripts/staging-bootstrap.sh (stages, digests verified before any stage, --dry-run, --selftest RED 2/7 -> GREEN 7/7). Horizons K8S_GLOB_DIRS + rows traefik/agnhost/cert-manager/rabbitmq-cluster-operator. NOTHING applied to any cluster. Open: check-doc-citations C-3 red since 29-02 (deferred-items.md).
@@ -997,6 +998,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- [Phase 29-06]: The staging seed creates rows only through product APIs; under strict scoping a realm-admin operator (per run, deleted on every exit) creates the tenant, grants the vendor GROUP_ADMIN through /api/v1/staff/grant, resolves review gates (WAIVE, never the facts-only TRADER_IDENTITY/ALLERGEN_DATA_COMPLETE) and approves; the vendor does everything else; the run refuses unless every Ready core-java pod runs the prod profile.
 - [Phase 29-04]: Staging realms are derived by a committed jq transform over the one template and imported by scripts/staging-realm-import.sh through a kubectl port-forward (never --import-realm, never the public auth host); the SAME assertion program runs on the render and on the admin-API read-back, and a skipped existing realm is asserted in mode live-existing (post-import users allowed, template seed users never).
 - [Phase 29-05]: The Postgres reserve is per-target configuration (k8s/scripts/connection-budget.conf: self-hosted 3, Azure Flexible Server 15), never a script literal; every target needs its own row (absent = PARSE ERROR). When Phase 32 provisions production, its row becomes the measured max_connections with reserve 15, sized >= the value the gate's INFO counterfactual prints (209 today).
 - [Phase 29-03]: Traefik runs with allowSnippetAnnotations=true and proxyRequestBuffering=true (both measured necessary in the v3.7.15 source) and without publishService; platform objects live in k8s/platform/<component>, applied only by scripts/staging-bootstrap.sh.
@@ -1449,8 +1451,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-18T22:40:00Z
-Stopped at: Completed 29-04-PLAN.md (Phase 29 wave 2 started, 5 of 28 plans); next 29-06
+Last session: 2026-10-18T23:05:00Z
+Stopped at: Completed 29-06-PLAN.md (Phase 29 wave 2, 6 of 28 plans); next 29-07
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
