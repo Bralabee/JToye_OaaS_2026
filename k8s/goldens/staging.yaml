@@ -53,6 +53,8 @@ data:
   backup.blob.prefix: backups
   cors.allowed-origins: https://app-staging.olajay.co.uk
   db.port: "5432"
+  db.ssl-factory: org.postgresql.ssl.DefaultJavaSSLFactory
+  db.ssl-mode: verify-full
   edge.rate-limit.burst: "400"
   edge.rate-limit.rps: "200"
   edge.rate-limit.tenant.burst: "20"
@@ -306,6 +308,26 @@ spec:
             secretKeyRef:
               key: password
               name: postgres-credentials
+        - name: DB_MIGRATION_USER
+          valueFrom:
+            secretKeyRef:
+              key: migration-username
+              name: postgres-credentials
+        - name: DB_MIGRATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: migration-password
+              name: postgres-credentials
+        - name: DB_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              key: db.ssl-mode
+              name: app-config
+        - name: DB_SSL_FACTORY
+          valueFrom:
+            configMapKeyRef:
+              key: db.ssl-factory
+              name: app-config
         - name: DB_POOL_SIZE
           value: "12"
         - name: JTOYE_RABBIT_DEFAULT_PREFETCH

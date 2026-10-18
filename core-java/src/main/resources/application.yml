@@ -11,7 +11,16 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jtoye}
+    # Phase 29 plan 29-08 (T-29-27): the TLS mode is CONFIG. The defaults are
+    # pgjdbc's own (sslmode=prefer, LibPQFactory), so an environment that sets
+    # neither key connects exactly as before — local compose Postgres serves no
+    # TLS. Every k8s render supplies DB_SSL_MODE=verify-full and
+    # DB_SSL_FACTORY=org.postgresql.ssl.DefaultJavaSSLFactory (app-config
+    # db.ssl-mode / db.ssl-factory): the managed Flexible Server requires TLS and
+    # the JVM default truststore verifies its certificate and host name.
+    # spring.flyway.url below is a placeholder onto this key, so Flyway verifies
+    # the same server. Proven from the resolved config by DatasourceTlsPropertyTest.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jtoye}?sslmode=${DB_SSL_MODE:prefer}&sslfactory=${DB_SSL_FACTORY:org.postgresql.ssl.LibPQFactory}
     username: ${DB_USER:jtoye_app}
     password: ${DB_PASSWORD:}
     hikari:

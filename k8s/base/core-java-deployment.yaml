@@ -110,6 +110,38 @@ spec:
             secretKeyRef:
               name: postgres-credentials
               key: password
+        # Blocker E (Phase 29 plan 29-08; Phase 28 SEC-04 / #552, D-01): the
+        # migrator/runtime split, wired in k8s. DB_USER above is the DML-only
+        # runtime role (jtoye_runtime) and DatabaseConfigurationValidator refuses
+        # to start as a role that owns any public table; Flyway needs CREATE on
+        # the schema, so it migrates as the owner role named here (jtoye_app).
+        # Without this pair spring.flyway.user falls back to DB_USER and Flyway
+        # runs as the DML-only role, which fails on a fresh database. Neither is
+        # optional: every environment's secret source supplies both keys (Key
+        # Vault in staging, plan 29-12; scripts/k8s-local-secrets.sh locally), and
+        # check-env-contract.sh requires them.
+        - name: DB_MIGRATION_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: migration-username
+        - name: DB_MIGRATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: migration-password
+        # T-29-27: TLS to Postgres is config (application.yml datasource.url).
+        # Base sets verify-full + DefaultJavaSSLFactory; k8s/local patches prefer.
+        - name: DB_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: db.ssl-mode
+        - name: DB_SSL_FACTORY
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: db.ssl-factory
         # Issue #94 [P2-3]: Hikari pool sized against the HPA replica CEILING.
         # (maxReplicas 10 + surge 1) × 12 + Keycloak 20 + pg-backup 1 +
         # exporter 2 = 155 ≤ 0.8 × (max_connections 200 − 3 reserved) = 157.

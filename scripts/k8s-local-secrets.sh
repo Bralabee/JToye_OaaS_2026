@@ -113,6 +113,13 @@ REQUIRED_VALUES=(
   POSTGRES_DB
   DB_USER
   DB_PASSWORD
+  # Plan 29-08 (Blocker E): core-java's Deployment now reads
+  # postgres-credentials migration-username/migration-password with no
+  # optional flag, so a .env without the migrator pair would leave the pod
+  # unschedulable (CreateContainerConfigError). Same names, same requirement
+  # as scripts/verify-env.sh.
+  DB_MIGRATION_USER
+  DB_MIGRATION_PASSWORD
   DB_BACKUP_PASSWORD
   REDIS_PASSWORD
   RABBITMQ_USER
@@ -314,6 +321,11 @@ echo "OK: role ${BACKUP_ROLE} exists with rolbypassrls = t"
 # DEF-2: postgres-credentials `username` is bound to DB_USER (the NOSUPERUSER
 # application role), NEVER to POSTGRES_USER (the superuser). Injecting the
 # superuser would silently bypass every RLS policy in the cluster.
+#
+# Plan 29-08 (Blocker E): `migration-username` / `migration-password` are the
+# compose OWNER role (jtoye_app), from the same .env pair compose's core-java
+# uses (DB_MIGRATION_USER / DB_MIGRATION_PASSWORD). Flyway migrates as it;
+# the pool keeps DB_USER.
 # ---------------------------------------------------------------------------
 echo "--- secrets ---"
 
@@ -323,6 +335,8 @@ apply_secret postgres-credentials \
   "--from-literal=database=$POSTGRES_DB" \
   "--from-literal=username=$DB_USER" \
   "--from-literal=password=$DB_PASSWORD" \
+  "--from-literal=migration-username=$DB_MIGRATION_USER" \
+  "--from-literal=migration-password=$DB_MIGRATION_PASSWORD" \
   "--from-literal=backup-username=$BACKUP_ROLE" \
   "--from-literal=backup-password=$DB_BACKUP_PASSWORD"
 
@@ -386,7 +400,7 @@ echo "backups: host Azurite; blobctl creates the private backup container on the
 echo "secrets created (${#CREATED[@]}):"
 for s in "${CREATED[@]}"; do
   case "$s" in
-    postgres-credentials)   echo "  - $s: host, port, database, username, password, backup-username, backup-password" ;;
+    postgres-credentials)   echo "  - $s: host, port, database, username, password, migration-username, migration-password, backup-username, backup-password" ;;
     redis-credentials)      echo "  - $s: password" ;;
     rabbitmq-credentials)   echo "  - $s: username, password, stomp-login, stomp-passcode" ;;
     keycloak-credentials)   echo "  - $s: admin-username, admin-password, frontend-client-secret" ;;

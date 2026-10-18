@@ -150,6 +150,12 @@ data:
   # enforced rather than described.
   db.port: "5433"
 
+  # Plan 29-08: the compose Postgres serves no TLS, so local keeps pgjdbc's own
+  # defaults (opportunistic, unverified). Base sets verify-full for the managed
+  # server; without this patch every local pod would fail its first connection.
+  db.ssl-mode: "prefer"
+  db.ssl-factory: "org.postgresql.ssl.LibPQFactory"
+
   # --- Ingress-controller namespace for the NetworkPolicy derivation (D-29) ---
   # Base says "traefik", the controller of record for every deployed
   # environment. Locally the controller is the minikube ingress-nginx addon

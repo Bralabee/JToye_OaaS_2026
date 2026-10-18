@@ -94,6 +94,20 @@ data:
   # ---------------------------------------------------------------------------
   db.port: "5432"
 
+  # --- Phase 29 plan 29-08 (T-29-27): TLS to Postgres, VERIFIED ---------------
+  # core-java's datasource URL carries ?sslmode=${DB_SSL_MODE}&sslfactory=
+  # ${DB_SSL_FACTORY} (application.yml), and the Deployment reads both keys here.
+  # Azure Database for PostgreSQL Flexible Server requires TLS, and ASVS V9 wants
+  # the server's certificate checked, not merely used: verify-full checks the
+  # chain AND the host name. DefaultJavaSSLFactory validates against the JVM
+  # default truststore (pgjdbc's LibPQFactory would look for
+  # ~/.postgresql/root.crt, which no image ships). The truststore plan 29-22
+  # builds is the JDK's cacerts PLUS the cluster CA (D-30), so the public CA that
+  # signs the managed server stays trusted. k8s/local patches both back to
+  # pgjdbc's defaults, because the compose Postgres serves no TLS.
+  db.ssl-mode: "verify-full"
+  db.ssl-factory: "org.postgresql.ssl.DefaultJavaSSLFactory"
+
   # --- Phase 29 D-29: the ingress-controller NAMESPACE the NetworkPolicies admit
   #
   # The namespace every NetworkPolicy admits ingress from: frontend-allow and
