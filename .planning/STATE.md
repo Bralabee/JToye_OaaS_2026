@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: executing
-stopped_at: "Completed 29-05-PLAN.md (per-target Postgres connection budget from k8s/scripts/connection-budget.conf, D-25; --selftest d25/missing/non-numeric/absent-target wired in k8s-validate); wave 1 done, next 29-04"
-last_updated: "2026-10-18T22:20:00.000Z"
+stopped_at: "Completed 29-04-PLAN.md (staging realm transform infra/keycloak/staging-realm.jq over the one template each + scripts/staging-realm-import.sh: assertion suite offline|apply|live|live-existing, --list-kv-objects, --apply through a port-forward behind staging_kube_guard, selftest 9 arms wired in k8s-validate); next 29-06"
+last_updated: "2026-10-18T22:40:00.000Z"
 last_activity: 2026-10-18
-state_head: b83954a6f51a9c86adffe0fc4db1a808e187bde4
+state_head: ac17e460d5aef3e6d6da069a685f6a5d76f4bfe3
 progress:
   total_phases: 20
   completed_phases: 17
   total_plans: 282
-  completed_plans: 258
+  completed_plans: 259
   percent: 85
 ---
 
@@ -29,6 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 29 (Deployable Staging, With Its Own Monitoring) — EXECUTING
+- 29-04 DONE 2026-10-18 (commits c5af00f1 RED, d3a47641 GREEN, b8073aea Task 2; SUMMARY ac17e460): infra/keycloak/staging-realm.jq derives jtoye-staging (service-account users only, core-api URIs exact to https://app-staging.olajay.co.uk, edge-api/integration-* URIs empty, integration-* disabled #301, Mailpit :1025 STARTTLS, core-api SA off, tenant_id admin-only) and jtoye-customers (storefront-client on the staging host, verifyEmail true, Google disabled/empty) from the ONE template each. scripts/staging-realm-import.sh: --assert one jq program for render and live read-back (modes offline/apply/live/live-existing; raw dev template refused with 24 defects, built-ins 53/53 and 11/11 by multiset), --list-kv-objects (6 objects for 29-13), --apply = staging_kube_guard before the Azure guard is sourced, az_read x6, render+assert, port-forward svc/keycloak 18080:8080 19000:9000 by PID, admin API at 127.0.0.1 only, POST/skip/--recreate, read-back asserted. Selftest 9/9 in k8s-validate; break arms (guard removed, azure sourced first, value echoed) each red. LIVE run deferred to 29-14 by design. README: no frontend client ever existed (git log -G, test-client control).
 - 29-05 DONE 2026-10-18 (commits dbae41a8 RED, 2927aa3b GREEN, 6ac75809 docs; SUMMARY b83954a6): k8s/scripts/connection-budget.conf rows compose compose/3, k8s-staging 429/15 (Flexible Server B2s; 429 measured on the August server, 29-14 re-measures with SHOW max_connections), k8s-production compose/3 (UNCHANGED until Phase 32). check-connection-math.sh: RESERVED literal deleted, per-target budget lines (157/331/157), CONNECTION_BUDGET_CONF override, PARSE ERROR rc 2 on missing/non-numeric/leading-zero/duplicate/unknown/absent row; INFO counterfactual every run: k8s-production at reserve 15 needs 155, budget 148, Phase 32 must size max_connections >= 209 (computed; 208/209 boundary measured). --selftest RED 0/4 (RED_EVIDENCE_OK x4) -> GREEN 4/4, wired as a k8s-validate step (deviation: ci-cd.yaml not in files_modified). DEPLOYMENT.md budget section per target, demand table corrected to pool 12 / 155. No pool or maxReplicas changed.
 - 29-03 DONE 2026-10-18 (commits ab7f2550, 8e5c593c, 3f4de8f3 RED, c78412c4 GREEN; SUMMARY b6357ecd): k8s/platform/{traefik,cert-manager,rbac,acme-probe} (depth 3, bootstrap-applied, own CI render/no-Secret step). Traefik v3.7.15@digest, Ingress-NGINX provider, IngressClass nginx, watchNamespace jtoye-staging, LB on jtoye-stg-ingress-ip with eTP Local; measured in the v3.7.15 source: allowSnippetAnnotations off SKIPS the whole Ingress (set true), proxy-body-size inert without buffering (proxyrequestbuffering=true), publishService unresolvable outside the watched ns (not set, no ingresses/status grant); RBAC = ClusterRole list/watch ingressclasses + Role in jtoye-staging. supported-annotations.txt (86 rows, v3.7) + README D-29(a) table: 20 in-use annotations, missing=0. ClusterIssuers letsencrypt-staging/prod; CI RBAC Namespace jtoye-staging by resourceNames + CRUD on SPC/Certificate/Issuer/RabbitmqCluster (token __CI_PRINCIPAL_OBJECT_ID__); acme-probe agnhost 2.66.1. scripts/lib/staging-kube-guard.sh (staging_kube_guard, for 29-04/29-06) + scripts/staging-bootstrap.sh (stages, digests verified before any stage, --dry-run, --selftest RED 2/7 -> GREEN 7/7). Horizons K8S_GLOB_DIRS + rows traefik/agnhost/cert-manager/rabbitmq-cluster-operator. NOTHING applied to any cluster. Open: check-doc-citations C-3 red since 29-02 (deferred-items.md).
 - 29-02 DONE 2026-10-18 (commits 5596c625, a2af7c41, ccfc2932 RED, 9df744f8 GREEN; SUMMARY d3939ea4): base NetworkPolicies rewritten for the enforcing topology — core-java-allow admits the controller ns on 9090 and app=prometheus on 9091 (Blocker F), Postgres egress stays at spec.egress.1 (one port from db.port) to ipBlock 0.0.0.0/0 except RFC1918 (Blocker D), Redis/RabbitMQ/Mailpit/Alertmanager/Keycloak are same-namespace podSelectors, no NetworkPolicy names jtoye-infrastructure (np_docs 6->7, infra 5->0); new acme-http01-solver-allow (8089 from controller ns, no egress); app-config `ingress.controller-namespace` (traefik base/staging/production, ingress-nginx local) via a replacement repeated in k8s/local (traefik=4 / ingress-nginx=4; break arm restored by sha); INV-7 rewritten as NETPOL_RULES_EXPECTED (sel/types/in|eg:peer:port multiset per policy per target) + NETPOL_IPBLOCK_EXPECTED (one shape, 443 + db.port) + dialect check + stale hygiene; `--selftest-inv7` RED 0/5 (old gate VOID) -> GREEN 5/5 CLEAN rc=0, wired in ci-cd.yaml k8s-validate. Pod-label contract in networkpolicies/README.md for 29-10/12/22/23/24.
@@ -996,6 +997,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- [Phase 29-04]: Staging realms are derived by a committed jq transform over the one template and imported by scripts/staging-realm-import.sh through a kubectl port-forward (never --import-realm, never the public auth host); the SAME assertion program runs on the render and on the admin-API read-back, and a skipped existing realm is asserted in mode live-existing (post-import users allowed, template seed users never).
 - [Phase 29-05]: The Postgres reserve is per-target configuration (k8s/scripts/connection-budget.conf: self-hosted 3, Azure Flexible Server 15), never a script literal; every target needs its own row (absent = PARSE ERROR). When Phase 32 provisions production, its row becomes the measured max_connections with reserve 15, sized >= the value the gate's INFO counterfactual prints (209 today).
 - [Phase 29-03]: Traefik runs with allowSnippetAnnotations=true and proxyRequestBuffering=true (both measured necessary in the v3.7.15 source) and without publishService; platform objects live in k8s/platform/<component>, applied only by scripts/staging-bootstrap.sh.
 - [Phase 29-03]: staging_kube_guard (scripts/lib/staging-kube-guard.sh) is the one kube-context guard: every cluster-mutating staging script sources it; upstream manifests are applied only after their pinned sha256 matches, and the pin is the horizon row pin.
@@ -1447,8 +1449,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-18T22:20:00Z
-Stopped at: Completed 29-05-PLAN.md (Phase 29 wave 1 complete, 4 of 28 plans); next 29-04
+Last session: 2026-10-18T22:40:00Z
+Stopped at: Completed 29-04-PLAN.md (Phase 29 wave 2 started, 5 of 28 plans); next 29-06
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
