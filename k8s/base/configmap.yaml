@@ -279,16 +279,19 @@ data:
   # as is `core-api` (.env / .env.example both set KEYCLOAK_CLIENT_ID=core-api).
   # A hardcoded `frontend` therefore started an OIDC flow against a client that
   # does not exist in that realm, which DEF-5's D-16 ingress login has to pass
-  # through. Only the local overlay patches this key; see
-  # k8s/local/configmap-patch.yaml.
+  # through.
   #
-  # SOURCE: byte-identical to the literal it replaces, so the staging and
-  # production renders resolve to the SAME string they did before — the render
-  # gains a ConfigMap key and an env SOURCE, never a changed value. Asserted on
-  # the production render (T-26-48: a silently changed OIDC client identity is
-  # an elevation-of-privilege surface, so the value equality is a criterion,
-  # not an assumption).
-  keycloak.client-id: "frontend"
+  # BLOCKER A (Phase 29 plan 29-08): the base VALUE is now `core-api`, the
+  # realm's vendor client. Plan 26-08 kept `frontend` byte-identical to the
+  # literal it replaced, but that preserved a value that was wrong for EVERY
+  # environment: no realm derived from the template (jtoye-dev, the staging
+  # realm, production's) has a client named `frontend`, so a deployed login
+  # could only end in invalid_client. Staging and production now inherit the
+  # real client; k8s/local still patches the same value. T-26-48 / T-29-28 (an
+  # OIDC client identity is an elevation-of-privilege surface) is held by INV-14
+  # in k8s/scripts/check-render-invariants.sh: a deployed render whose client id
+  # is not a clientId in infra/keycloak/realm-export.template.json fails.
+  keycloak.client-id: "core-api"
 
   # --- CORS + token audience -------------------------------------------------
   # cors.allowed-origins pins the single platform origin. NOT a wildcard.

@@ -183,9 +183,10 @@ spec:
         # So the literal here named a client that does not exist in the realm
         # whose secret was being presented: an OIDC flow that cannot complete.
         #
-        # The base VALUE is unchanged (app-config/keycloak.client-id is the
-        # byte-identical string `frontend`), so staging and production resolve
-        # exactly as before; only k8s/local patches it to `core-api`.
+        # Phase 29 plan 29-08 (Blocker A): the base VALUE is now `core-api`
+        # too (app-config/keycloak.client-id), because `frontend` named no
+        # client in any environment's realm; INV-14 in
+        # k8s/scripts/check-render-invariants.sh holds it to the realm template.
         # ---------------------------------------------------------------------
         - name: KEYCLOAK_CLIENT_ID
           valueFrom:

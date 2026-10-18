@@ -65,13 +65,13 @@ data:
   gdpr.dsar.verify-base-url: https://app-staging.olajay.co.uk/data-request/confirm
   ingress.controller-namespace: traefik
   jwt.expected-audience: core-api
-  keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
+  keycloak.admin.base-url: http://keycloak.jtoye-staging.svc.cluster.local:8080
   keycloak.admin.customer-realm: jtoye-customers
-  keycloak.admin.enabled: "false"
+  keycloak.admin.enabled: "true"
   keycloak.admin.realms: jtoye-staging
   keycloak.admin.vendor-realm: jtoye-staging
-  keycloak.client-id: frontend
-  keycloak.issuer.uri: https://auth-staging.olajay.co.uk/realms/jtoye-staging
+  keycloak.client-id: core-api
+  keycloak.issuer.uri: http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-staging
   keycloak.public.issuer.uri: https://auth-staging.olajay.co.uk/realms/jtoye-staging
   log.level: DEBUG
   log.path: /var/log/jtoye
@@ -96,20 +96,20 @@ data:
   rabbit.media.concurrency: "1"
   rabbit.media.max.concurrency: "2"
   rabbit.media.prefetch: "2"
-  rabbitmq.host: rabbitmq.jtoye-infrastructure.svc.cluster.local
+  rabbitmq.host: rabbitmq.jtoye-staging.svc.cluster.local
   rabbitmq.port: "5672"
-  redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
+  redis.host: redis.jtoye-staging.svc.cluster.local
   redis.port: "6379"
   security.trusted-proxies: ""
   smtp.auth: "false"
-  smtp.host: email-smtp.eu-west-2.amazonaws.com
-  smtp.port: "587"
+  smtp.host: mailpit.jtoye-staging.svc.cluster.local
+  smtp.port: "1025"
   smtp.starttls: "true"
   sql.log.level: DEBUG
   staff.invite.accept-base-url: https://app-staging.olajay.co.uk/invite
   staff.invite.ttl-hours: "72"
   stomp.broker.mode: relay
-  stomp.broker.relay-host: rabbitmq.jtoye-infrastructure.svc.cluster.local
+  stomp.broker.relay-host: rabbitmq.jtoye-staging.svc.cluster.local
   stomp.broker.relay-port: "61613"
   storage.blob.auth-mode: workload-identity
   storage.blob.create-containers: "false"
@@ -237,7 +237,7 @@ metadata:
   name: core-java
   namespace: jtoye-staging
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: core-java
@@ -791,7 +791,7 @@ metadata:
   name: edge-go
   namespace: jtoye-staging
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: edge-go
@@ -928,7 +928,7 @@ metadata:
   name: frontend
   namespace: jtoye-staging
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -1180,7 +1180,7 @@ metadata:
   name: core-java-pdb
   namespace: jtoye-staging
 spec:
-  minAvailable: 2
+  minAvailable: 0
   selector:
     matchLabels:
       app: core-java
@@ -1202,7 +1202,7 @@ metadata:
   name: edge-go-pdb
   namespace: jtoye-staging
 spec:
-  minAvailable: 3
+  minAvailable: 0
   selector:
     matchLabels:
       app: edge-go
@@ -1224,7 +1224,7 @@ metadata:
   name: frontend-pdb
   namespace: jtoye-staging
 spec:
-  minAvailable: 2
+  minAvailable: 0
   selector:
     matchLabels:
       app: frontend
@@ -1270,7 +1270,7 @@ spec:
         averageUtilization: 70
         type: Utilization
     type: Resource
-  minReplicas: 3
+  minReplicas: 1
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
@@ -1304,7 +1304,7 @@ spec:
         averageUtilization: 70
         type: Utilization
     type: Resource
-  minReplicas: 5
+  minReplicas: 1
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
@@ -1332,7 +1332,7 @@ spec:
         averageUtilization: 70
         type: Utilization
     type: Resource
-  minReplicas: 3
+  minReplicas: 1
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment

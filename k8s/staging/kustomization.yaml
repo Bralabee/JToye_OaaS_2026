@@ -74,15 +74,25 @@ patches:
     target:
       kind: Ingress
       name: jtoye-sse-ingress
+  # HPA floors 1 and drain-safe PDBs (Pitfall 1, plan 29-08). The HPA owns the
+  # replica count; see scale-patch.yaml for why each value is what it is.
+  - path: scale-patch.yaml
 
-# Staging replicas (reduced for cost savings)
+# Deployment spec.replicas, set EQUAL to the HPA floor above (plan 29-08).
+# The old count 2 was misleading: the base HPA floor (3/5/3) won at runtime, so
+# the list described a scale staging never ran at. It is not deleted outright,
+# because the render would then carry the base spec.replicas 3/5/3, and every
+# `kubectl apply` resets a Deployment to its manifest replicas before the HPA
+# scales it back down (after the HPA's scale-down stabilisation window) — 11
+# pods requested at each deploy on a pool sized for the floors. At 1 the
+# manifest and the HPA floor agree, the same two-mechanism shape k8s/local uses.
 replicas:
   - name: core-java
-    count: 2
+    count: 1
   - name: edge-go
-    count: 2
+    count: 1
   - name: frontend
-    count: 2
+    count: 1
 
 # Issue #271 — the Postgres egress port follows app-config `db.port`.
 #

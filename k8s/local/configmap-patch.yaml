@@ -83,9 +83,11 @@ data:
   keycloak.public.issuer.uri: "http://localhost:8085/realms/jtoye-dev"
 
   # --- The realm's ACTUAL OIDC client (plan 26-08) ---------------------------
-  # Base holds `frontend`, which is byte-identical to the literal that used to be
-  # hardcoded in frontend-deployment.yaml. That client does NOT exist in the
-  # jtoye-dev realm:
+  # Since plan 29-08 (Blocker A) base holds `core-api` as well, so this line
+  # restates the inherited value; it is kept so the local login's client stays
+  # pinned here beside its redirect-URI note. Base USED to hold `frontend`, the
+  # literal once hardcoded in frontend-deployment.yaml. That client does NOT
+  # exist in the jtoye-dev realm:
   #   grep -c '"clientId" : "frontend"' infra/keycloak/realm-export.template.json
   # returns 0. The realm's confidential browser-flow client is `core-api`, which
   # is also what .env's KEYCLOAK_CLIENT_ID names and whose secret feeds the

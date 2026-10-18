@@ -70,7 +70,7 @@ data:
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
   keycloak.admin.vendor-realm: jtoye-prod
-  keycloak.client-id: frontend
+  keycloak.client-id: core-api
   keycloak.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   keycloak.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   log.level: INFO

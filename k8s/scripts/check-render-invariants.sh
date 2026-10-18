@@ -298,6 +298,19 @@
 #          refused and legitimate private ranges accepted before any render is
 #          judged, so a blind judge is a PARSE ERROR, never a pass.
 #
+#   INV-14 PHASE 29 plan 29-08, Blocker A / T-29-28, RENDER level, staging +
+#          production (WI_TARGETS). app-config keycloak.client-id — the frontend's
+#          KEYCLOAK_CLIENT_ID — must be a clientId in
+#          infra/keycloak/realm-export.template.json (the one template every
+#          deployed realm is derived from) that a confidential browser login can
+#          use: not a Keycloak built-in (account, admin-cli, …), enabled,
+#          standardFlowEnabled, not bearerOnly, not publicClient. The base value was
+#          `frontend` from plan 26-08 until 29-08: kept byte-identical to a
+#          hardcoded literal, it named a client NO realm has, so every deployed
+#          vendor login could only have ended in invalid_client while every gate
+#          stayed green. jq missing, the template missing or unparseable, or zero
+#          clients read is a PARSE ERROR. The live invalid_client arm is plan 29-14.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -433,6 +446,17 @@ parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
 # exit 0 only when all five are caught and CLEAN rc=0. INV7_SELFTEST_FORMAT=tap
 # renders TAP 13 instead (for the RED-evidence classifier).
 # ===========================================================================
+# selftest_stage <pristine k8s copy> <arm root> — lay out a throwaway repo root
+# the copy's own gate can run against: the k8s/ tree plus every file OUTSIDE k8s/
+# the gate reads (today only INV-14's realm template). The copy's REPO_ROOT is
+# <arm root>, so anything missing here would VOID every arm instead of judging it.
+selftest_stage() {
+    rm -rf "$2"; mkdir -p "$2/infra/keycloak"
+    cp -a "$1" "$2/k8s"
+    cp "$REPO_ROOT/infra/keycloak/realm-export.template.json" "$2/infra/keycloak/" \
+        || { echo "PARSE ERROR: selftest could not copy the realm template" >&2; exit 2; }
+}
+
 inv7_plant() {
     local arm="$1" k="$2" f before after
     case "$arm" in
@@ -513,7 +537,7 @@ inv7_selftest() {
     )
     for arm in "${ARMS[@]}"; do
         n=$((n + 1))
-        rm -rf "$st/arm"; mkdir -p "$st/arm"; cp -a "$st/pristine" "$st/arm/k8s"
+        selftest_stage "$st/pristine" "$st/arm"
         if ! inv7_plant "$arm" "$st/arm/k8s"; then
             caught=no; line="plant did not apply"
         else
@@ -537,7 +561,7 @@ inv7_selftest() {
             [[ "$caught" == yes ]] || echo "  ($line)" >&2
         fi
     done
-    rm -rf "$st/arm"; mkdir -p "$st/arm"; cp -a "$st/pristine" "$st/arm/k8s"
+    selftest_stage "$st/pristine" "$st/arm"
     if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
     n=$((n + 1))
     (( rc == 0 )) || bad=$((bad + 1))
@@ -708,6 +732,27 @@ declare -A WI_WORKLOAD_SA=(
   [Deployment/core-java]="core-java"
   [CronJob/pg-backup]="pg-backup"
 )
+
+# INV-14 (Phase 29 plan 29-08, Blocker A): the realm every deployed realm is
+# derived from (infra/keycloak/staging-realm.jq transforms this ONE template and
+# keeps its clients). Read once with jq; jq missing, the file missing or
+# unparseable, or zero clients extracted is a PARSE ERROR, never a pass.
+REALM_TEMPLATE="$REPO_ROOT/infra/keycloak/realm-export.template.json"
+# Keycloak's own per-realm clients. A vendor login naming one of these is a
+# misconfiguration even though the template "contains" it.
+KC_BUILTIN_CLIENTS=" account account-console admin-cli broker realm-management security-admin-console "
+command -v jq >/dev/null 2>&1 || parse_fail "INV-14: jq is not installed; the realm template's client list cannot be read."
+[[ -f "$REALM_TEMPLATE" ]] || parse_fail "INV-14: realm template not found: $REALM_TEMPLATE"
+# One TSV row per client: clientId, enabled, standardFlowEnabled, bearerOnly, publicClient.
+if ! REALM_CLIENTS_TSV=$(jq -r '.clients[] | [.clientId, (.enabled // false | tostring), (.standardFlowEnabled // false | tostring), (.bearerOnly // false | tostring), (.publicClient // false | tostring)] | @tsv' "$REALM_TEMPLATE" 2>&1); then
+    parse_fail "INV-14: jq could not read the clients of $REALM_TEMPLATE: $REALM_CLIENTS_TSV"
+fi
+[[ -n "$REALM_CLIENTS_TSV" ]] || parse_fail "INV-14: jq extracted 0 clients from $REALM_TEMPLATE — every client id would be reported missing, or (worse) a blind reader could pass. Fix the reader, do not delete the invariant."
+# The clients a vendor browser login may name: present in the template, not a
+# Keycloak built-in, enabled, authorization-code flow on, not bearer-only, and
+# confidential (the frontend presents keycloak-credentials/frontend-client-secret).
+REALM_LOGIN_CLIENTS=" $(awk -F'\t' -v b="$KC_BUILTIN_CLIENTS" 'index(b, " " $1 " ") == 0 && $2 == "true" && $3 == "true" && $4 == "false" && $5 == "false" { printf "%s ", $1 }' <<< "$REALM_CLIENTS_TSV")"
+[[ -n "${REALM_LOGIN_CLIENTS// /}" ]] || parse_fail "INV-14: the realm template has no client a vendor login could use (non-built-in, enabled, standard flow, confidential). Either the template lost core-api or the filter is blind."
 
 # INV-11 (Phase 36 D-08, code review WR-01): the storage-probe switch in every
 # spelling Spring's relaxed binding accepts, matched case-insensitively on the raw
@@ -1798,13 +1843,39 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
-    if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
+    # ---------------- INV-14 (29-08, Blocker A) ----------------
+    # Deployed targets only: the vendor login's OIDC client must be a client the
+    # realm template actually has, usable for a confidential browser login.
+    if is_wi_target "$rel"; then
+        inv14_cid="$(cfg_get "$TMP/cfg.tsv" keycloak.client-id)"
+        if [[ "$inv14_cid" == "(ABSENT)" || -z "$inv14_cid" ]]; then
+            echo "  FAIL [$rel] INV-14: app-config keycloak.client-id is ${inv14_cid:-empty}. The frontend's KEYCLOAK_CLIENT_ID is read from it; a deployed render must name the realm's vendor client." >&2
+            FAILED=1
+            inv14_msg="FAIL"
+        elif [[ "$REALM_LOGIN_CLIENTS" != *" $inv14_cid "* ]]; then
+            inv14_why="is not a clientId in the realm template"
+            if awk -F'\t' -v c="$inv14_cid" '$1 == c { f = 1 } END { exit !f }' <<< "$REALM_CLIENTS_TSV"; then
+                inv14_why="is in the realm template but is not usable for a vendor login (Keycloak built-in, disabled, no standard flow, bearer-only or public)"
+            fi
+            echo "  FAIL [$rel] INV-14: app-config keycloak.client-id '$inv14_cid' $inv14_why ($REALM_TEMPLATE)." >&2
+            echo "        Login clients the template offers:${REALM_LOGIN_CLIENTS% }. Blocker A: the base once named" >&2
+            echo "        'frontend', a client no realm has, so every deployed login could only end in invalid_client." >&2
+            FAILED=1
+            inv14_msg="FAIL"
+        else
+            inv14_msg="OK (keycloak.client-id '$inv14_cid' is a login client of the realm template)"
+        fi
+    else
+        inv14_msg="SKIP (not in WI_TARGETS)"
+    fi
+
+    if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
-          || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg" >&2
+          || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg"
     fi
 done
 
@@ -2258,4 +2329,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 and INV-14 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."
