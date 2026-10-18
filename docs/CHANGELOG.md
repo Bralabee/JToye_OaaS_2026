@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Nightly E2E Lane Green Again: Keycloak 25+ `basic` Scope, Cookie-Host Root, Clamped Pagination Window (#683) — 2026-10-18
+### Nightly E2E Lane Green Again: Keycloak 25+ `basic` Scope, Cookie-Host Root, G-37-6 Data Arms (#956) — 2026-10-18
 
 The scheduled full-stack Playwright lane was red from 2026-10-16 (1 failure) to 2026-10-18 (9 failures, 3 causes). Six of the seven failing specs passed on the shared dev stack, so each was reproduced from the nightly's own report artifacts and container logs, and the Keycloak cause was measured two-arm on throwaway 26.8.1 imports.
 
