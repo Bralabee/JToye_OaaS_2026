@@ -380,29 +380,52 @@ kubectl get hpa -n jtoye-production -w
 
 ### Database Connection Budget (issue #94)
 
-Postgres for this platform (managed in the `jtoye-infrastructure` namespace,
-NOT by this kustomization) **MUST run with `max_connections=200`** — the same
-explicit value the local compose stack sets (`docker-compose.full-stack.yml`).
-Do not leave it at the PG15 default (100): the budget below assumes 200.
+Each Postgres target has its own `max_connections` and its own count of
+connections the server reserves for itself. Both come from
+**`k8s/scripts/connection-budget.conf`**, one row per target (D-25). A
+self-hosted Postgres reserves 3 (`superuser_reserved_connections`). Azure
+Database for PostgreSQL Flexible Server reserves 15 for the service, so only
+`max_connections - 15` are usable. A missing, non-numeric, duplicated or absent
+target row is a PARSE ERROR (exit 2), never a default:
 
-Connection math at the HPA replica ceiling (per environment/namespace — each
-points at its own Postgres via the `postgres-credentials` secret):
+| Target | max_connections | Reserved | 80% budget line | Source |
+|--------|-----------------|----------|-----------------|--------|
+| `compose` | 200 (parsed from `docker-compose.full-stack.yml`) | 3 | 157 | self-hosted `postgres:18-alpine` |
+| `k8s-staging` | 429 | 15 | 331 | Flexible Server B2s; 429 measured on the August 2026 server, re-measured live by plan 29-14 (`SHOW max_connections;`) — update the row if it differs |
+| `k8s-production` | 200 (parsed from compose) | 3 | 157 | UNCHANGED until Phase 32 provisions the production Flexible Server |
+
+The production Postgres (managed in the `jtoye-infrastructure` namespace,
+NOT by this kustomization) **MUST run with `max_connections=200`**, the value
+its row reads from compose. Do not leave it at the PostgreSQL default (100):
+the production line assumes 200.
+
+Demand at the HPA replica ceiling (each namespace points at its own Postgres
+via the `postgres-credentials` secret, so each target must fit its own line):
 
 | Consumer                                   | Connections |
 |--------------------------------------------|-------------|
-| core-java: (maxReplicas 10 + surge 1) × pool 10 | 110    |
+| core-java: (maxReplicas 10 + surge 1) × pool 12 | 132    |
 | Keycloak (Agroal pool, capped)             | 20          |
 | pg-backup CronJob (pg_dump)                | 1           |
 | postgres-exporter                          | 2           |
-| **Total application demand**               | **133**     |
-| superuser_reserved_connections             | 3           |
-| **max_connections required**               | **200** (133 ≤ 157 = 80% of 197 usable → ~32% headroom) |
+| **Total k8s demand (staging and production)** | **155** (≤ 331 staging, ≤ 157 production) |
+| compose: 2 replicas × pool 20 + Keycloak 20 + exporter 2 + healthcheck 2 | 64 (≤ 157) |
 
-Every number in that table is parsed from the real files and re-asserted on
-every CI run by `k8s/scripts/check-connection-math.sh` (job `k8s-validate`).
-If you change `maxReplicas`, `DB_POOL_SIZE`, the Hikari profile defaults, or
+**Phase 32 counterfactual (printed by the gate on every run).** Production at
+Azure's reserve of 15 and today's `max_connections=200` has a budget line of
+148, below the 155 it needs. The gate prints this as
+`INFO counterfactual: k8s-production …`, computing the smallest
+`max_connections` that fits (209 today). Phase 32 must size the production
+Flexible Server at that value or above, or lower the pool.
+
+Every number above is parsed from the real files and re-asserted on every CI
+run by `k8s/scripts/check-connection-math.sh` (job `k8s-validate`), followed by
+its `--selftest`. The selftest proves the D-25 fail arm: `k8s-staging` at
+`max_connections` 200 passes with the old reserve of 3 (155 ≤ 157) and fails
+with 15 (155 > 148). It also proves the three parse arms. If you change
+`maxReplicas`, `DB_POOL_SIZE`, the Hikari profile defaults, or a target's
 `max_connections`, the gate fails until the math balances again with >=20%
-headroom. If load tests (#115) ever show 10 connections per pod saturating,
+headroom. If load tests (#115) ever show 12 connections per pod saturating,
 prefer introducing PgBouncer (transaction mode) in front of Postgres over
 inflating pool sizes.
 
@@ -426,7 +449,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 | Script | What it guarantees |
 |--------|--------------------|
 | `check-no-plaintext-secrets.sh` | `k8s/base` and every overlay build, and no build output contains a top-level `kind: Secret` or a `REPLACE_WITH_*` placeholder (outside the known non-secret `deployment.timestamp` annotation). Plaintext Secret material can never become a live kustomize resource (#100). |
-| `check-connection-math.sh` | HPA `maxReplicas` × Hikari pool (+ Keycloak + pg-backup + exporter + reserved slots) fits Postgres `max_connections` with ≥20% headroom, the k8s `DB_POOL_SIZE` env matches the `application-prod.yml` default, and the core-java HPA carries no memory metric (#94). See "Database Connection Budget" above. |
+| `check-connection-math.sh` | HPA `maxReplicas` × Hikari pool (+ Keycloak + pg-backup + exporter) fits each target's Postgres budget — `max_connections` minus that target's reserved slots, both from `k8s/scripts/connection-budget.conf` — with ≥20% headroom (`--selftest` proves the D-25 fail arm), the k8s `DB_POOL_SIZE` env matches the `application-prod.yml` default, and the core-java HPA carries no memory metric (#94). See "Database Connection Budget" above. |
 | `check-env-contract.sh` | The env contract in **both** directions for **all three built services** (core-java, edge-go, frontend — widened from core-java-only by #298). Direction (a): every env name a Deployment injects is read by that service (a wrong name silently resolves to the service's own default — this is how the AMQP pool authenticated as the wrong user). Direction (b): every name a service reads is supplied, or carries an **explicit allowlist entry with a reason**. Per-service specifics: core-java parses `${PLACEHOLDER}`s across `application*.yml` and fails a default that is absent, local-only, **or an unresolved Spring property chain**; edge-go parses `os.Getenv`/`getEnv` literals and uses the strong form (read-and-not-injected is a violation) because the weak default-shape form would have been vacuous for `JWT_EXPECTED_ISSUER`, whose default is a variable; the frontend parses literal `process.env.NAME` **plus** the names `env-validation.ts` declares for its dynamic `process.env[expr]` reads, and encodes the **build-time/runtime split** — a `NEXT_PUBLIC_*` name is supplied by an `ARG` in `frontend/Dockerfile`, and one that is *both* ARG-declared and injected as a runtime `env:` is a non-allowlistable dead-config violation (D-18). Every extractor is self-tested against a synthetic control, so a regex that matches nothing exits **2 (VOID)** instead of reporting a clean contract over an unexamined service. The allowlists are themselves gated: a blank reason, a duplicate, a now-unnecessary entry, or an `OPEN DEFECT` reason citing no issue number all fail; `OPEN DEFECT` entries are printed under their own heading on every run. Requires GNU `grep -P`. |
 | `check-render-invariants.sh` | Assertions on the kustomize **render**, which is what actually reaches a cluster: no hardcoded Postgres port in the base; no EnvVar carrying both `value` and `valueFrom` (accepted by `kubectl kustomize`, **rejected** by the API server at apply time); no common labels injected into the kube-dns DNS-egress `podSelector` (that selector then matches nothing and core-java loses all DNS egress under an enforcing CNI); no `localhost`/`127.0.0.1` literal, emulator connection string, emulator account name or storage account key in a non-local render; on staging and production, the Blob storage model (INV-8), no stored storage credential (INV-9) and Workload Identity on exactly the two Blob workloads (INV-10); and no DB **superuser** named as the `postgres-credentials` app username in `k8s/QUICK_START.md` or `k8s/base/secrets-template.yaml.example`. |
 | `render-golden.sh` | The `kubectl kustomize k8s/staging` and `k8s/production` output is byte-identical to the reviewed goldens in `k8s/goldens/`. A `k8s/base` edit that changes either render without a regenerated golden fails the PR. |
@@ -638,7 +661,7 @@ everywhere:
 | Gate | Job | What it pins |
 |---|---|---|
 | `k8s/scripts/check-no-plaintext-secrets.sh` | `k8s-validate` | No plaintext Secret material in any kustomize build (#100). |
-| `k8s/scripts/check-connection-math.sh` | `k8s-validate` | The DB connection budget fits `max_connections` with ≥20% headroom (#94). |
+| `k8s/scripts/check-connection-math.sh` | `k8s-validate` | The DB connection budget fits each target's `max_connections` minus its reserved slots (`connection-budget.conf`, D-25) with ≥20% headroom (#94). |
 | `k8s/scripts/check-env-contract.sh` | `k8s-validate` | The env contract in both directions for core-java, edge-go **and** the frontend (D-07/D-08, widened by #298), including the frontend's build-time/runtime channel split. |
 | `k8s/scripts/check-render-invariants.sh` | `k8s-validate` | Render-level invariants (DB port, kube-dns selector, no localhost literal, no DB superuser). |
 | `k8s/scripts/render-golden.sh` | `k8s-validate` | staging/production renders are byte-identical to their reviewed goldens. |
