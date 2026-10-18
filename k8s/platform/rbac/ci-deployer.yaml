@@ -1,0 +1,102 @@
+# k8s/platform/rbac/ci-deployer.yaml
+#
+# The in-cluster permissions of the CI deploy identity `jtoye-ci` (Phase 29, D-04
+# and D-32; issue #99: the deploy gate must be real, so the identity must be able
+# to apply the staging render, and no more).
+#
+# WHY KUBERNETES RBAC AS WELL AS AZURE RBAC. The cluster runs Entra ID + Azure RBAC
+# with local accounts disabled (D-32). plan 29-01's provisioning grants jtoye-ci
+# Azure's built-in "Azure Kubernetes Service RBAC Writer" on the jtoye-staging
+# namespace path, not Cluster Admin. That built-in role covers the BUILT-IN
+# namespaced kinds only. `kubectl apply -k k8s/staging` also needs:
+#   (a) the cluster-scoped Namespace object jtoye-staging, which the render
+#       carries (kustomize `namespace:` emits it). A namespace-path Azure role
+#       cannot reach a cluster-scoped object, so this file grants get/patch/update
+#       on that ONE Namespace, by resourceNames. No create: the bootstrap's
+#       namespace stage creates it, and `kubectl apply` only reads then patches an
+#       existing object. resourceNames cannot restrict create anyway, so leaving it
+#       out is also what keeps the grant to one object;
+#   (b) the custom-resource kinds the staging render applies: SecretProviderClass
+#       (D-23 Key Vault CSI), cert-manager Certificate and Issuer (D-20 Mailpit CA),
+#       and RabbitmqCluster (D-09). Built-in Writer does not cover CRD kinds, so a
+#       Role in jtoye-staging grants CRUD on exactly those four.
+# These are the measured minimum for the render as planned (D-32: "unless a step is
+# shown to need more"). Plan 29-11 records `kubectl auth can-i --as` for each verb
+# before and after this file is applied. A step that needs more adds a rule here
+# with its evidence; it is never widened to `*`.
+#
+# THE SUBJECT. Under AKS Entra integration a principal appears to Kubernetes RBAC
+# under its Entra object id. __CI_PRINCIPAL_OBJECT_ID__ is a TOKEN, not a value:
+# scripts/staging-bootstrap.sh --stage ci-rbac substitutes ci_principal_object_id
+# from k8s/staging/azure-identity.yaml (plan 29-09, read back from Azure), and
+# REFUSES to apply if the token survives. The object id is an identifier, not a
+# secret. It is substituted at apply time because it does not exist until the
+# estate is provisioned.
+#
+# Threat model: T-29-10 (no wildcard verb or resource, Namespace by resourceNames
+# only, custom resources in jtoye-staging only).
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jtoye-ci-namespace-jtoye-staging
+  labels:
+    app.kubernetes.io/name: jtoye-ci-deployer
+    app.kubernetes.io/part-of: jtoye-platform
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["jtoye-staging"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jtoye-ci-namespace-jtoye-staging
+  labels:
+    app.kubernetes.io/name: jtoye-ci-deployer
+    app.kubernetes.io/part-of: jtoye-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jtoye-ci-namespace-jtoye-staging
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: __CI_PRINCIPAL_OBJECT_ID__
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jtoye-ci-custom-resources
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: jtoye-ci-deployer
+    app.kubernetes.io/part-of: jtoye-platform
+rules:
+  - apiGroups: ["secrets-store.csi.x-k8s.io"]
+    resources: ["secretproviderclasses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "issuers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rabbitmq.com"]
+    resources: ["rabbitmqclusters"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jtoye-ci-custom-resources
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: jtoye-ci-deployer
+    app.kubernetes.io/part-of: jtoye-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jtoye-ci-custom-resources
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: __CI_PRINCIPAL_OBJECT_ID__

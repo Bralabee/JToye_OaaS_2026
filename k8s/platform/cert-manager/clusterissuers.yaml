@@ -1,0 +1,61 @@
+# k8s/platform/cert-manager/clusterissuers.yaml
+#
+# The two ACME issuers behind the per-host Let's Encrypt certificates (Phase 29,
+# D-07: HTTP-01 through the one static ingress IP; no DNS-01, no external-dns).
+#
+#   letsencrypt-staging  Let's Encrypt's STAGING directory. Untrusted certificates,
+#                        generous rate limits. Used first, by the ACME probe
+#                        (k8s/platform/acme-probe, plan 29-11), and by the staging
+#                        Ingresses until the chain is proven (T-29-11): a failed
+#                        challenge loop against the production directory burns the
+#                        real rate limits (5 failed validations per host per hour).
+#   letsencrypt-prod     The production directory. k8s/base/ingress.yaml and
+#                        sse-ingress.yaml already name this issuer.
+#
+# Both solve HTTP-01 through `ingressClassName: nginx`, the IngressClass Traefik's
+# Ingress-NGINX provider serves (k8s/platform/traefik). The solver pod lands in the
+# Certificate's namespace, where 60-acme-http01-solver.yaml admits port 8089 from
+# the controller namespace only.
+#
+# The account email is the platform alert mailbox, never a personal address in
+# git. The ACME account key lives in the Secret named by privateKeySecretRef,
+# which cert-manager creates in its own namespace on first registration; nothing
+# secret is in this file.
+#
+# Applied by scripts/staging-bootstrap.sh --stage issuers, after the cert-manager
+# stage has installed the CRDs and the webhook is Available.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/name: cert-manager-issuers
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: alerts@olajay.co.uk
+    privateKeySecretRef:
+      name: letsencrypt-staging-account
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app.kubernetes.io/name: cert-manager-issuers
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: alerts@olajay.co.uk
+    privateKeySecretRef:
+      name: letsencrypt-prod-account
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

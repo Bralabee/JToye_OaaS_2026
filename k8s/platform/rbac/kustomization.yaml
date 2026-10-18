@@ -1,0 +1,10 @@
+# k8s/platform/rbac — the CI deploy identity's in-cluster permissions (D-32, #99).
+#
+# Never applied with `kubectl apply -k` directly: the bindings carry the token
+# __CI_PRINCIPAL_OBJECT_ID__, which scripts/staging-bootstrap.sh --stage ci-rbac
+# substitutes from k8s/staging/azure-identity.yaml before applying, refusing if the
+# token survives the substitution.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ci-deployer.yaml
