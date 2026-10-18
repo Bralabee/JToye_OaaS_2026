@@ -5,11 +5,11 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: planning
-stopped_at: "Phase 29 context re-gathered on main (29-CONTEXT.md, D-20..D-28 new); ADR-0002 Accepted on main (#953,"
-last_updated: "2026-10-18T17:46:31.017Z"
+stopped_at: Phase 29 context re-gathered on main (29-CONTEXT.md, D-20..D-28 new); ADR-0002 Accepted on main (#953, #954); next /gsd-plan-phase 29
+last_updated: "2026-10-18T11:00:00.000Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 29 discussed on main — Mailpit+required STARTTLS, Key Vault+CSI secrets, Managed Redis if within £150, real-flow seed, Stripe test webhook
-state_head: fbfaffb8b7ca684512c9d16b74e833da042a1665
+state_head: 7109de2e
 progress:
   total_phases: 20
   completed_phases: 17
@@ -799,7 +799,7 @@ Status: Ready to plan
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
 Last activity: 2026-10-16 — Phase 37 complete, transitioned to Phase 29
 
-Progress: [█████████░] 85%
+Progress: [████████░░] 78%
 
 ## Milestone v2.3 Phase Map
 
