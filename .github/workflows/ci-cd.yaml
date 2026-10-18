@@ -653,7 +653,8 @@ jobs:
   #      and `valueFrom` (the API server rejects that apply), no common labels
   #      injected into the kube-dns DNS-egress podSelector (D-17 — a total DNS
   #      outage under an enforcing CNI), no localhost/storage-emulator literal in a
-  #      non-local render, and no DB superuser in the secret recipe or template.
+  #      non-local render, no DB superuser in the secret recipe or template, and
+  #      (INV-7) every rendered NetworkPolicy equal to its declared rule set.
   #   5. render-golden.sh — byte-compares the staging and production renders
   #      against the reviewed goldens in k8s/goldens/. A k8s/base edit that
   #      changes either render without a regenerated, reviewed golden fails the
@@ -690,6 +691,14 @@ jobs:
         run: |
           chmod +x ./k8s/scripts/check-render-invariants.sh
           ./k8s/scripts/check-render-invariants.sh
+
+      # INV-7 asserts the WHOLE NetworkPolicy allow-list (Phase 29, plan 29-02).
+      # This proves it can fail: five holes planted in a copy of k8s/ (an extra
+      # egress port, the dropped 9091 scrape rule, an undeclared policy, an
+      # undeclared ipBlock shape, a CiliumNetworkPolicy), each must exit 1 with
+      # the message naming it, and the clean copy must exit 0.
+      - name: Prove INV-7 catches planted NetworkPolicy holes (--selftest-inv7)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv7
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |

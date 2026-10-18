@@ -128,52 +128,70 @@
 #          local overlay's `rules:` replacement hides it. A local-only assertion
 #          would have missed the real defect entirely.
 #
-#   INV-7  ISSUE #271, RENDER level, EVERY target. The NetworkPolicy egress rules
-#          that PERMIT the Postgres connection must allow the port the render
-#          DECLARES — app-config `db.port` — and not a literal of their own.
+#   INV-7  ISSUE #271 + PHASE 29 (Blockers D/F, D-29), RENDER level, EVERY target.
+#          The rendered NetworkPolicy set must equal a DECLARED allow-list,
+#          exactly: per policy, per target, the full multiset of rule tuples.
 #
-#          THE DEFECT. Phase 26 made DB_PORT Secret-driven (DEF-1/INV-1 above) so
-#          a non-default Postgres port needs no manifest edit. The egress rules in
-#          networkpolicies/20-core-java.yaml and 40-datastores.yaml kept their own
-#          `port: 5432`. So the first environment to USE that flexibility — which
-#          is the reason the flexibility exists; the local overlay genuinely runs
-#          5433 — gets a NetworkPolicy denial under an enforcing CNI: every
-#          core-java replica CrashLooping and the nightly pg-backup dump failing,
-#          with logs pointing at the application layer rather than the network.
-#          Fixing one half of a coupling is what created the trap.
+#          HISTORY (#271). Phase 26 made DB_PORT Secret-driven (DEF-1/INV-1
+#          above) so a non-default Postgres port needs no manifest edit. The
+#          egress rules in networkpolicies/20-core-java.yaml and 40-datastores.yaml
+#          kept their own `port: 5432`. So the first environment to USE that
+#          flexibility — the local overlay genuinely runs 5433 — gets a
+#          NetworkPolicy denial under an enforcing CNI: every core-java replica
+#          CrashLooping and the nightly pg-backup dump failing, with logs pointing
+#          at the application layer rather than the network. Fixing one half of a
+#          coupling is what created the trap. INV-7 was born asserting the
+#          egress PORT multiset toward one infrastructure namespace with
+#          app-config `db.port` substituted, and that substitution is still here.
 #
-#          INVISIBLE TO EVERY OTHER GATE, which is why it needed a new one:
-#          check-env-contract.sh reads env names, not policy ports;
-#          validate-networkpolicies.py walks podSelectors, not ports; the goldens
-#          would have happily frozen the WRONG port. And it is invisible at
-#          RUNTIME too, in both directions — minikube's default CNI does not
-#          enforce NetworkPolicies at all (D-11), and staging/production have
-#          never been deployed. So a render-level assertion is not a convenience
-#          here, it is the only instrument that exists.
+#          WHY IT WAS REWRITTEN (Phase 29, plan 29-02). Asserting one
+#          namespace's egress ports left everything else unasserted, and that is
+#          where the real defects were: core-java admitted no traffic from the
+#          ingress controller and nothing on the 9091 scrape port (Blocker F),
+#          the Postgres peer was a namespace that exists nowhere while the
+#          managed server is a public IP (Blocker D), and the controller
+#          namespace was a literal in four files (D-29). None of those could make
+#          the old INV-7 fail. Measured on main before the rewrite: an undeclared
+#          policy, a CiliumNetworkPolicy and a narrowed ipBlock exception list
+#          each exited 0, and the 9091 rule did not exist to be dropped.
 #
-#          ASSERTION SHAPE IS LOAD-BEARING, twice over.
-#            1. It compares the COMPLETE port multiset of the rules targeting the
-#               `jtoye-infrastructure` namespace against an expected set with
-#               `db.port` substituted — not "is db.port somewhere in the list".
-#               The weak form passes on a tree where the replacement got
-#               retargeted onto Redis (db.port lands in the set, 6379 is lost);
-#               the exact form fails. The other four ports are literals here on
-#               purpose (the fifth, the retired object store's 9000, was removed in Phase 36 with the
-#               in-cluster object store it permitted): they are outside #271's scope, and an exact allow-list is
-#               strictly stronger than a partial one — a new datastore port must
-#               be added here in the same change, which is the right friction for
-#               an egress allow-list.
-#            2. Each rule is buffered and evaluated WHOLE. `kubectl kustomize`
-#               sorts map keys alphabetically, so within an egress rule `ports:`
-#               is emitted BEFORE the `to:` that says which namespace it applies
-#               to. A forward scan from the namespace line therefore sees none of
-#               that rule's ports — the same output-ordering trap that makes a
-#               `grep -A` scan unfalsifiable for INV-3.
-#            3. A rendered port must be BARE DIGITS. In NetworkPolicy semantics a
-#               STRING port is a NAMED port; `port: "5433"` renders happily,
-#               applies happily, and matches no traffic at all. The replacement
-#               source is a ConfigMap string, so this is a live failure mode of
-#               the mechanism itself, not a hypothetical.
+#          THE CONTRACT NOW.
+#            1. Every rendered NetworkPolicy matches exactly ONE row of
+#               NETPOL_RULES_EXPECTED (`<policy>@<target-glob>`); a policy with
+#               no row FAILS ("undeclared policy"), and a row whose policy is
+#               absent from a target it applies to FAILS.
+#            2. The rendered tuple multiset EQUALS the row's, with __DB_PORT__ =
+#               the target's app-config `db.port` and __INGRESS_NS__ = its
+#               app-config `ingress.controller-namespace` (both read from the
+#               render; absent = PARSE ERROR). Extra and missing tuples are each
+#               named. Tuples: `sel:<selector>` (which pods the policy selects),
+#               `types:<policyTypes>`, and `in|eg:<peer>:<port>` per (peer, port)
+#               pair of every rule, where peer is `ns=<name>`, `pod=<k>=<v>`,
+#               `nspod=<ns>/<k>=<v>`, `ip=<cidr>` or `*` (a rule with no
+#               from/to), and port is the number for TCP, `<n>/<PROTO>` otherwise,
+#               or `*` (a rule with no ports).
+#            3. Every ipBlock peer's (direction, cidr, except-list) shape is in
+#               NETPOL_IPBLOCK_EXPECTED, on a declared port only; a declared shape
+#               no target renders FAILS as stale.
+#            4. Every document whose kind ends in NetworkPolicy is kind
+#               NetworkPolicy at apiVersion networking.k8s.io/v1. The engine is
+#               Cilium (plan 29-01), and its own CRDs (CiliumNetworkPolicy and
+#               friends) would bypass every assertion above.
+#
+#          ASSERTION SHAPE IS LOAD-BEARING.
+#            a. Tuples are read through RENDER_PATHS_AWK (full key paths), never a
+#               forward scan: `kubectl kustomize` sorts map keys, so inside a rule
+#               `ports:` is emitted BEFORE the `to:` that says where it applies.
+#            b. A rendered port must be BARE DIGITS. In NetworkPolicy semantics a
+#               STRING port is a NAMED port: `port: "5433"` renders, applies, and
+#               matches no traffic. The db.port replacement source is a ConfigMap
+#               string, so this is a live failure mode of the mechanism.
+#            c. Zero NetworkPolicies extracted from a target is a PARSE ERROR
+#               (blind), never a pass.
+#          PROVEN FALSIFIABLE by `--selftest-inv7`: five planted holes (an extra
+#          egress port, the dropped 9091 rule, an undeclared policy, an
+#          undeclared ipBlock shape, a CiliumNetworkPolicy), each rc 1 with the
+#          message naming it, and the clean copy rc 0.
 #
 #          WHAT THIS DOES NOT PROVE. app-config `db.port` is the RENDER-TIME
 #          declaration; the value the pods actually dial is the
@@ -183,7 +201,8 @@
 #          scripts/k8s-local-secrets.sh refuses to create the local Secret on a
 #          mismatch — and is an operator step for staging/production, in the same
 #          shape as the RABBITMQ_USER pre-rollout check in
-#          k8s/base/core-java-deployment.yaml.
+#          k8s/base/core-java-deployment.yaml. Nor does a render prove
+#          ENFORCEMENT: that is plan 29-17's captured denial on the live cluster.
 #
 #   INV-8  PHASE 36 D-01/D-06/D-07/D-11, RENDER level, staging + production only
 #          (WI_TARGETS). The storage model is ENFORCED, not described: both
@@ -596,32 +615,62 @@ FORBIDDEN_RENDER_LITERALS=(
 )
 
 # ---------------------------------------------------------------------------
-# INV-7 (issue #271): the COMPLETE expected TCP egress port multiset toward the
-# `jtoye-infrastructure` namespace, per NetworkPolicy, sorted numerically.
+# INV-7 (issue #271, Phase 29 plan 29-02): the COMPLETE declared rule set of
+# every NetworkPolicy, per target. See the INV-7 header above for the tuple
+# grammar. Keyed `<policy metadata.name>@<target glob>`; the glob is matched
+# against the repo-relative target path (`*` = every target), and every rendered
+# policy must match EXACTLY one row. Order inside a value is irrelevant (both
+# sides are sorted); multiplicity is not (a duplicated rule is an extra tuple).
 #
-# __DB_PORT__ is substituted with the rendered app-config `db.port` of the target
-# under test — that substitution IS the invariant. Everything else is a literal,
-# deliberately: an exact allow-list is strictly stronger than "db.port is in
-# there somewhere", which passes on a tree where the kustomize replacement got
-# retargeted onto a neighbouring port.
+# __DB_PORT__ / __INGRESS_NS__ are substituted with the target's rendered
+# app-config db.port / ingress.controller-namespace — those substitutions ARE the
+# #271 and D-29 invariants. Everything else is a literal, deliberately: an exact
+# allow-list is strictly stronger than "the port is in there somewhere", which
+# passes on a tree where a kustomize replacement got retargeted onto a
+# neighbouring rule.
 #
-# Adding a datastore port to a policy MUST be accompanied by adding it here. That
-# is the intended friction: an egress allow-list is a security boundary, and a
-# gate that silently accepted new holes in it would not be one.
-#
-# The map is keyed by NetworkPolicy metadata.name, which the overlays do not
-# rename (only namespace and labels differ per target).
+# Adding, removing or widening a rule MUST be accompanied by the same edit here
+# and in k8s/base/networkpolicies/README.md's flow matrix. That is the intended
+# friction: an allow-list is a security boundary, and a gate that silently
+# accepted new holes in it would not be one. The pod labels named here are the
+# contract in that README ("The pod-label contract").
 # ---------------------------------------------------------------------------
-declare -A NETPOL_INFRA_EXPECTED=(
-  [core-java-allow]="__DB_PORT__ 5672 6379 9093 61613"
-  [pg-backup-allow]="__DB_PORT__"
+NETPOL_DNS_EG="eg:nspod=kube-system/k8s-app=kube-dns:53/UDP eg:nspod=kube-system/k8s-app=kube-dns:53"
+declare -A NETPOL_RULES_EXPECTED=(
+  [default-deny@*]="sel:* types:Egress,Ingress"
+  [frontend-allow@*]="sel:app=frontend types:Egress,Ingress
+      in:ns=__INGRESS_NS__:3000
+      $NETPOL_DNS_EG eg:pod=app=core-java:9090 eg:pod=app=keycloak:8080 eg:ip=0.0.0.0/0:443"
+  [core-java-allow@*]="sel:app=core-java types:Egress,Ingress
+      in:pod=app=frontend:9090 in:pod=app=edge-go:9090 in:ns=__INGRESS_NS__:9090 in:pod=app=prometheus:9091
+      $NETPOL_DNS_EG eg:ip=0.0.0.0/0:__DB_PORT__ eg:pod=app=redis:6379
+      eg:pod=app.kubernetes.io/name=rabbitmq:5672 eg:pod=app.kubernetes.io/name=rabbitmq:61613
+      eg:pod=app=mailpit:1025 eg:pod=app=alertmanager:9093 eg:pod=app=keycloak:8080 eg:ip=0.0.0.0/0:443"
+  [edge-go-allow@*]="sel:app=edge-go types:Egress,Ingress
+      in:ns=__INGRESS_NS__:8080 in:pod=app=prometheus:8080
+      $NETPOL_DNS_EG eg:pod=app=core-java:9090 eg:pod=app=keycloak:8080 eg:ip=0.0.0.0/0:443"
+  [pg-backup-allow@*]="sel:app.kubernetes.io/name=pg-backup types:Egress,Ingress
+      $NETPOL_DNS_EG eg:ip=0.0.0.0/0:__DB_PORT__ eg:ip=0.0.0.0/0:443"
+  [acme-http01-solver-allow@*]="sel:acme.cert-manager.io/http01-solver=true types:Egress,Ingress
+      in:ns=__INGRESS_NS__:8089"
+  # Plan 29-23 replaces the placeholder with the monitoring policies.
+  [observability-placeholder@*]="sel:app=nonexistent-placeholder types:Egress,Ingress"
 )
-# Phase 36: 9000 (the retired in-cluster object store) is gone from both lists. Azure Blob and the
-# Entra ID token endpoint are reached over each policy's public 443 rule, which is
-# not an infrastructure-namespace rule and so is not in this multiset. Re-adding
-# 9000 to either policy now FAILS INV-7 — an egress hole with no target is still a
-# hole.
-INFRA_NAMESPACE_LABEL="jtoye-infrastructure"
+
+# INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as
+# `<in|eg>|<cidr>|<except list, sorted, comma-joined>` -> the ports allowed on it.
+# One shape today: the RFC1918-excluding public range, egress, on 443 (Keycloak's
+# public host, Stripe, CDNs, Azure Blob, Entra ID) and on db.port (the managed
+# Postgres public endpoint, Blocker D, accepted as T-29-05). A private endpoint
+# (36-PHASE29-HANDOFF.md §5) would be a NEW, scoped row here, reviewed as a
+# NetworkPolicy change. Bolting another port onto the public shape, narrowing its
+# except list, or any ingress ipBlock FAILS.
+declare -A NETPOL_IPBLOCK_EXPECTED=(
+  ["eg|0.0.0.0/0|10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]="443 __DB_PORT__"
+)
+# Hygiene: rows and shapes used by at least one target (checked after the loop).
+declare -A INV7_ROW_USED=()
+declare -A INV7_SHAPE_USED=()
 
 # ---------------------------------------------------------------------------
 # INV-8 / INV-9 / INV-10 (Phase 36): the targets that ship to a real AKS cluster
@@ -966,75 +1015,6 @@ function flush(  i, kind, nm, indata, l, k, v) {
 END { flush() }
 '
 
-# --- awk: per-DOCUMENT walk emitting, for every NetworkPolicy, the ports of the
-#     egress rules that target the jtoye-infrastructure namespace (INV-7).
-#
-#     RULE-BUFFERED BY CONSTRUCTION, and that is the whole point. `kubectl
-#     kustomize` sorts map keys alphabetically, so inside an egress rule the
-#     `ports:` block is emitted BEFORE the `to:` block that says which namespace
-#     the rule applies to. Any scan that reads forward from the namespace line
-#     sees ZERO of that rule's ports and reports a clean run on a broken tree —
-#     the same output-ordering trap documented for INV-3. So each `  - ` rule is
-#     collected whole, then classified, then emitted.
-#
-#     Output records:
-#       POL  <TAB> <policy name>                 (one per NetworkPolicy seen)
-#       NP   <TAB> <policy name> <TAB> <port token as rendered, unstripped>
-NETPOL_INFRA_AWK='
-function meta_name(  i, v) {
-    for (i = 1; i <= n; i++)
-        if (buf[i] ~ /^  name: /) { v = buf[i]; sub(/^  name:[[:space:]]*/, "", v); return v }
-    return "(unnamed)"
-}
-function emit_rule(  j, isinfra, p) {
-    if (rn == 0) { return }
-    isinfra = 0
-    for (j = 1; j <= rn; j++)
-        if (rule[j] ~ /kubernetes\.io\/metadata\.name:[[:space:]]*INFRA_NS[[:space:]]*$/) isinfra = 1
-    if (isinfra)
-        for (j = 1; j <= rn; j++)
-            if (rule[j] ~ /^[[:space:]]*-[[:space:]]*port:[[:space:]]*/) {
-                p = rule[j]
-                sub(/^[[:space:]]*-[[:space:]]*port:[[:space:]]*/, "", p)
-                sub(/[[:space:]]*$/, "", p)
-                printf "NP\t%s\t%s\n", polname, p
-            }
-    rn = 0; delete rule
-}
-function flush(  i, kind, l, inegress) {
-    if (n == 0) return
-    kind = ""
-    for (i = 1; i <= n; i++)
-        if (buf[i] ~ /^kind: /) { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
-    if (kind == "NetworkPolicy") {
-        polname = meta_name()
-        inegress = 0; rn = 0; delete rule
-        for (i = 1; i <= n; i++) {
-            l = buf[i]
-            if (l ~ /^  egress:[[:space:]]*$/) { inegress = 1; continue }
-            if (inegress) {
-                # Any other spec-level key ends the egress list. In the render the
-                # next one is `  ingress:` (alphabetical), and `  policyTypes:`
-                # brings indent-2 list items of its own — so leaving on the first
-                # non-list key at indent 2 is what keeps `- Ingress` out of here.
-                if (l ~ /^  [A-Za-z]/) { emit_rule(); inegress = 0; continue }
-                if (l ~ /^  - /)       { emit_rule() }
-                rule[++rn] = l
-            }
-        }
-        emit_rule()
-        printf "POL\t%s\n", polname
-    }
-    n = 0; delete buf
-}
-/^---[[:space:]]*$/ { flush(); next }
-{ buf[++n] = $0 }
-END { flush() }
-'
-# The namespace label is a parameter of the platform, not of awk syntax, so it is
-# injected rather than duplicated as a second literal.
-NETPOL_INFRA_AWK="${NETPOL_INFRA_AWK//INFRA_NS/$INFRA_NAMESPACE_LABEL}"
-
 # --- awk: walk every document into full key PATHS (INV-8/9/10, LOC-7).
 #     Output: <kind> <TAB> <metadata.name> <TAB> <path> <TAB> <raw value>
 #     Path segments are joined with "::"; a sequence item becomes "[i]", indexed
@@ -1094,6 +1074,125 @@ function walk(l,   ind, rest, P) {
 /^---[[:space:]]*$/ { flush(); next }
 { buf[++n] = $0 }
 END { flush() }
+'
+
+# --- awk: NetworkPolicy rule TUPLES from the path walk (INV-7).
+#     Input: the RENDER_PATHS_AWK output (<kind> TAB <name> TAB <path> TAB <value>).
+#     Output records:
+#       DOC <TAB> <kind> <TAB> <name> <TAB> <apiVersion>   every *NetworkPolicy doc
+#       T   <TAB> <policy> <TAB> <tuple>                   see the INV-7 header
+#       IPB <TAB> <policy> <TAB> <dir>|<cidr>|<except> <TAB> <space-joined ports>
+#     Paths, not a forward scan: kustomize sorts map keys, so `ports:` precedes
+#     the `from:`/`to:` it belongs to. Label values and cidrs lose one pair of
+#     YAML quotes (they are strings either way); PORTS keep theirs, because a
+#     quoted port is a NAMED port and must be visible as such.
+NETPOL_TUPLES_AWK='
+function unq(v) { if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2); return v }
+function jsort(a, n,   i, j, t, s) {
+    for (i = 2; i <= n; i++) { t = a[i]; j = i - 1; while (j >= 1 && a[j] > t) { a[j + 1] = a[j]; j-- } a[j + 1] = t }
+    s = ""; for (i = 1; i <= n; i++) s = s (i > 1 ? "," : "") a[i]
+    return s
+}
+function labels(store, cnt, key,   a, k, n) {
+    n = cnt[key] + 0
+    for (k = 1; k <= n; k++) a[k] = store[key, k]
+    return jsort(a, n)
+}
+function peertok(pk,   ns, pod, t) {
+    if (pk in hasip) return "ip=" cidr[pk]
+    ns = ""; pod = ""
+    if (pk in hasns) {
+        if (pk in nsall) ns = "*"
+        else if (nsln[pk] == 1 && nsl[pk, 1] ~ /^kubernetes\.io\/metadata\.name=/) { ns = nsl[pk, 1]; sub(/^[^=]*=/, "", ns) }
+        else ns = "{" labels(nsl, nsln, pk) "}"
+    }
+    if (pk in haspod) pod = (pk in podall) ? "*" : labels(pdl, pdln, pk)
+    if (ns != "" && pod != "") t = "nspod=" ns "/" pod
+    else if (ns != "") t = "ns=" ns
+    else if (pod != "") t = "pod=" pod
+    else t = "?"
+    if (pk in pexpr) t = t "+expr"
+    if (pk in pother) t = t "+" pother[pk]
+    return t
+}
+function porttok(qk,   v, pr) {
+    v = (qk in pval) ? pval[qk] : "*"
+    if (qk in pend) v = v "-" pend[qk]
+    pr = (qk in pproto) ? pproto[qk] : "TCP"
+    return (pr == "TCP") ? v : v "/" pr
+}
+BEGIN { FS = "\t" }
+$1 ~ /NetworkPolicy$/ {
+    id = $1 SUBSEP $2
+    if (!(id in seen)) { seen[id] = 1; order[++nd] = id; dkind[id] = $1; dname[id] = $2 }
+    if ($3 == "apiVersion") api[id] = $4
+    if ($1 != "NetworkPolicy") next
+    n = split($3, P, "::")
+    if (P[1] != "spec") next
+    if (P[2] == "podSelector") {
+        if (n == 2 && $4 == "{}") selall[id] = 1
+        else if (n == 4 && P[3] == "matchLabels") sel[id, ++seln[id]] = P[4] "=" unq($4)
+        else if (n >= 3 && P[3] == "matchExpressions") selexpr[id] = 1
+        hassel[id] = 1
+    }
+    if (P[2] == "policyTypes" && n == 3) types[id, ++typen[id]] = $4
+    if ((P[2] == "ingress" || P[2] == "egress") && n >= 3) {
+        d = (P[2] == "ingress") ? "in" : "eg"
+        rk = id SUBSEP d SUBSEP P[3]
+        if (!(rk in rseen)) { rseen[rk] = 1; rules[id, ++rulen[id]] = rk; rdir[rk] = d }
+        if (n >= 5 && (P[4] == "from" || P[4] == "to")) {
+            pk = rk SUBSEP P[5]
+            if (!(pk in pseen)) { pseen[pk] = 1; peers[rk, ++peern[rk]] = pk }
+            if (n >= 6) {
+                if (P[6] == "namespaceSelector") hasns[pk] = 1
+                else if (P[6] == "podSelector") haspod[pk] = 1
+                else if (P[6] == "ipBlock") hasip[pk] = 1
+                else pother[pk] = P[6]
+            }
+            if (n == 6 && P[6] == "namespaceSelector" && $4 == "{}") nsall[pk] = 1
+            if (n == 6 && P[6] == "podSelector" && $4 == "{}") podall[pk] = 1
+            if (n == 8 && P[6] == "namespaceSelector" && P[7] == "matchLabels") nsl[pk, ++nsln[pk]] = P[8] "=" unq($4)
+            if (n == 8 && P[6] == "podSelector" && P[7] == "matchLabels") pdl[pk, ++pdln[pk]] = P[8] "=" unq($4)
+            if (n >= 7 && (P[6] == "namespaceSelector" || P[6] == "podSelector") && P[7] == "matchExpressions") pexpr[pk] = 1
+            if (n == 7 && P[6] == "ipBlock" && P[7] == "cidr") cidr[pk] = unq($4)
+            if (n == 8 && P[6] == "ipBlock" && P[7] == "except") exc[pk, ++excn[pk]] = unq($4)
+        }
+        if (n >= 6 && P[4] == "ports") {
+            qk = rk SUBSEP P[5]
+            if (!(qk in qseen)) { qseen[qk] = 1; ports[rk, ++portn[rk]] = qk }
+            if (n == 6 && P[6] == "port") pval[qk] = $4
+            if (n == 6 && P[6] == "protocol") pproto[qk] = $4
+            if (n == 6 && P[6] == "endPort") pend[qk] = $4
+        }
+    }
+}
+END {
+    for (i = 1; i <= nd; i++) {
+        id = order[i]
+        printf "DOC\t%s\t%s\t%s\n", dkind[id], dname[id], api[id]
+        if (dkind[id] != "NetworkPolicy") continue
+        nm = dname[id]
+        if (id in selall) s = "*"
+        else if (seln[id] + 0 > 0) s = labels(sel, seln, id)
+        else s = "?"
+        if (id in selexpr) s = s "+expr"
+        printf "T\t%s\tsel:%s\n", nm, s
+        printf "T\t%s\ttypes:%s\n", nm, labels(types, typen, id)
+        for (r = 1; r <= rulen[id] + 0; r++) {
+            rk = rules[id, r]; d = rdir[rk]
+            np = peern[rk] + 0; nq = portn[rk] + 0
+            plist = ""
+            for (q = 1; q <= nq; q++) plist = plist (q > 1 ? " " : "") porttok(ports[rk, q])
+            if (nq == 0) plist = "*"
+            for (p = 1; p <= (np > 0 ? np : 1); p++) {
+                if (np == 0) { pt = "*"; pk = "" } else { pk = peers[rk, p]; pt = peertok(pk) }
+                m = split(plist, PL, " ")
+                for (q = 1; q <= m; q++) printf "T\t%s\t%s:%s:%s\n", nm, d, pt, PL[q]
+                if (pk != "" && (pk in hasip)) printf "IPB\t%s\t%s|%s|%s\t%s\n", nm, d, cidr[pk], labels(exc, excn, pk), plist
+            }
+        }
+    }
+}
 '
 
 # cfg_get <cfg.tsv> <key> — the app-config value with ONE pair of surrounding
@@ -1335,8 +1434,8 @@ for dir in "${TARGETS[@]}"; do
     fi
 
     # ---------------- INV-7 ----------------
-    # Issue #271: the Postgres egress allowance must follow the RENDERED
-    # app-config db.port, in every target, in both policies.
+    # Issue #271 + Phase 29: the rendered NetworkPolicy set equals the declared
+    # allow-list exactly, in every target (see the INV-7 header).
     awk "$CONFIGMAP_DATA_AWK" "$render" > "$TMP/cfg.tsv"
     (( $(wc -l < "$TMP/cfg.tsv") > 0 )) || parse_fail "[$rel] INV-7 found no app-config data keys in the render — the ConfigMap shape changed and the port comparison has no source. Fix the parser, do not delete the invariant."
     # The rendered ConfigMap value keeps its quotes — kustomize QUOTES a
@@ -1350,60 +1449,125 @@ for dir in "${TARGETS[@]}"; do
     if [[ ! "$db_port" =~ ^[0-9]+$ ]]; then
         parse_fail "[$rel] INV-7: app-config 'db.port' is '$db_port', which is not a bare port number. A NetworkPolicy port that is not an integer is a NAMED port and matches no traffic."
     fi
+    ingress_ns=$(cfg_get "$TMP/cfg.tsv" "ingress.controller-namespace")
+    if [[ "$ingress_ns" == "(ABSENT)" || -z "$ingress_ns" ]]; then
+        parse_fail "[$rel] INV-7 found no app-config key 'ingress.controller-namespace' in the render. It is the single render-time declaration of the namespace every NetworkPolicy admits the ingress controller from (D-29) and the source of the kustomize replacement; without it the controller rules have nothing to compare against — restore the key, do not delete the invariant."
+    fi
+    if [[ ! "$ingress_ns" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
+        parse_fail "[$rel] INV-7: app-config 'ingress.controller-namespace' is '$ingress_ns', which is not a valid namespace name, so no namespaceSelector carrying it can match anything."
+    fi
 
-    awk "$NETPOL_INFRA_AWK" "$render" > "$TMP/netpol.tsv"
-    pol_seen=$(awk -F'\t' '$1 == "POL" { print $2 }' "$TMP/netpol.tsv" | sort -u | wc -l)
-    (( pol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships six; zero means the parser is blind and every port assertion below would pass vacuously. Fix the parser, do not delete the invariant."
+    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv7_paths.tsv"
+    awk "$NETPOL_TUPLES_AWK" "$TMP/inv7_paths.tsv" > "$TMP/netpol.tsv"
+    mapfile -t inv7_pols < <(awk -F'\t' '$1 == "DOC" && $2 == "NetworkPolicy" { print $3 }' "$TMP/netpol.tsv" | LC_ALL=C sort -u)
+    (( ${#inv7_pols[@]} > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships seven; zero means the parser is blind and every rule assertion below would pass vacuously. Fix the parser, do not delete the invariant."
 
     inv7_bad=0
-    inv7_checked=0
-    for pol in $(printf '%s\n' "${!NETPOL_INFRA_EXPECTED[@]}" | sort); do
-        # $'\t' rather than a literal tab: a stripped-whitespace edit would turn
-        # this into a pattern that never matches, and a never-matching presence
-        # check fails CLOSED here (parse_fail) — loud, but for the wrong reason.
-        if ! grep -qxF "POL"$'\t'"$pol" "$TMP/netpol.tsv"; then
-            parse_fail "[$rel] INV-7 expected a NetworkPolicy named '$pol' in the render and found none. Either the policy was renamed/removed (in which case update NETPOL_INFRA_EXPECTED in the SAME change) or the parser is blind — either way the egress-port assertion for it would never run."
+    inv7_tuples=0
+
+    # (4) the policy DIALECT: plain networking.k8s.io/v1 only.
+    while IFS='#' read -r fk fname fapi; do
+        [[ -n "$fk" ]] || continue
+        echo "  FAIL [$rel] INV-7: foreign NetworkPolicy kind '$fk' (apiVersion '${fapi:-<none>}') in document '$fname'." >&2
+        echo "        Only kind NetworkPolicy at networking.k8s.io/v1 is declared. A Cilium/Calico/admin" >&2
+        echo "        policy CRD is enforced by the engine but invisible to every assertion in this gate." >&2
+        inv7_bad=1
+    done < <(awk -F'\t' '$1 == "DOC" && !($2 == "NetworkPolicy" && $4 == "networking.k8s.io/v1") { print $2 "#" $3 "#" $4 }' "$TMP/netpol.tsv")
+
+    # (1) + (2) every rendered policy has exactly one row, and its tuples equal it.
+    declare -A inv7_seen=()
+    for pol in "${inv7_pols[@]}"; do
+        inv7_seen["$pol"]=1
+        row_key=""; nrow=0
+        for key in "${!NETPOL_RULES_EXPECTED[@]}"; do
+            [[ "${key%@*}" == "$pol" ]] || continue
+            # shellcheck disable=SC2053  # the glob is the point
+            [[ "$rel" == ${key#*@} ]] || continue
+            row_key="$key"; nrow=$((nrow + 1))
+        done
+        (( nrow <= 1 )) || parse_fail "[$rel] INV-7: NetworkPolicy '$pol' matches $nrow NETPOL_RULES_EXPECTED rows; exactly one may apply to a target."
+        if (( nrow == 0 )); then
+            echo "  FAIL [$rel] INV-7: undeclared policy '$pol' — no NETPOL_RULES_EXPECTED row applies to it in this target." >&2
+            echo "        Every rendered NetworkPolicy is part of the allow-list; declare its exact rule set." >&2
+            inv7_bad=1
+            continue
         fi
-        # Raw tokens first, so a QUOTED port (a named port in NetworkPolicy
-        # semantics — renders fine, applies fine, matches nothing) is caught
-        # before it is normalised away by the numeric sort.
-        mapfile -t raw_ports < <(awk -F'\t' -v p="$pol" '$1 == "NP" && $2 == p { print $3 }' "$TMP/netpol.tsv")
-        if (( ${#raw_ports[@]} == 0 )); then
-            parse_fail "[$rel] INV-7 found no '$INFRA_NAMESPACE_LABEL' egress ports on NetworkPolicy '$pol'. Either that policy lost its datastore egress entirely (core-java would have no database at all under an enforcing CNI) or the rule parser is blind. Fix it, do not delete the invariant."
-        fi
-        for tok in "${raw_ports[@]}"; do
-            if [[ ! "$tok" =~ ^[0-9]+$ ]]; then
-                echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' has a non-numeric egress port token '$tok'." >&2
+        INV7_ROW_USED["$row_key"]=1
+        row="${NETPOL_RULES_EXPECTED[$row_key]}"
+        row="${row//__DB_PORT__/$db_port}"
+        row="${row//__INGRESS_NS__/$ingress_ns}"
+        tr -s ' \n' '\n\n' <<<"$row" | sed '/^$/d' | LC_ALL=C sort > "$TMP/inv7_exp"
+        awk -F'\t' -v p="$pol" '$1 == "T" && $2 == p { print $3 }' "$TMP/netpol.tsv" | LC_ALL=C sort > "$TMP/inv7_act"
+        inv7_tuples=$((inv7_tuples + $(wc -l < "$TMP/inv7_act")))
+        while IFS= read -r tok; do
+            ptok="${tok##*:}"; ptok="${ptok%%/*}"
+            if [[ "$tok" == in:* || "$tok" == eg:* ]] && [[ "$ptok" != "*" && ! "$ptok" =~ ^[0-9]+(-[0-9]+)?$ ]]; then
+                echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' has a non-numeric port token in '$tok'." >&2
                 echo "        A STRING port in a NetworkPolicy is a NAMED port, not a number: it renders," >&2
                 echo "        applies, and matches NO traffic. The db.port replacement source is a" >&2
                 echo "        ConfigMap string, so this is a real failure mode of the mechanism." >&2
                 inv7_bad=1
             fi
-        done
-        actual=$(printf '%s\n' "${raw_ports[@]}" | sort -n | tr '\n' ' ')
-        expected=$(printf '%s\n' ${NETPOL_INFRA_EXPECTED[$pol]//__DB_PORT__/$db_port} | sort -n | tr '\n' ' ')
-        (( ++inv7_checked ))
-        if [[ "$actual" != "$expected" ]]; then
-            echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' allows egress ports [${actual% }] toward namespace '$INFRA_NAMESPACE_LABEL'; expected [${expected% }] (app-config db.port = $db_port)." >&2
+        done < "$TMP/inv7_act"
+        extra=$(LC_ALL=C comm -13 "$TMP/inv7_exp" "$TMP/inv7_act" | tr '\n' ' ')
+        missing=$(LC_ALL=C comm -23 "$TMP/inv7_exp" "$TMP/inv7_act" | tr '\n' ' ')
+        if [[ -n "$extra" ]]; then
+            echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' renders undeclared rule(s): ${extra% }" >&2
+            inv7_bad=1
+        fi
+        if [[ -n "$missing" ]]; then
+            echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' is missing declared rule(s): ${missing% }" >&2
+            inv7_bad=1
+        fi
+        if [[ -n "$extra$missing" ]]; then
+            echo "        declared ($row_key, db.port=$db_port, controller ns=$ingress_ns): $(tr '\n' ' ' < "$TMP/inv7_exp")" >&2
+            echo "        rendered: $(tr '\n' ' ' < "$TMP/inv7_act")" >&2
+        fi
+    done
+    # A declared row that applies to this target must be rendered in it.
+    for key in "${!NETPOL_RULES_EXPECTED[@]}"; do
+        # shellcheck disable=SC2053
+        [[ "$rel" == ${key#*@} ]] || continue
+        if [[ -z "${inv7_seen[${key%@*}]:-}" ]]; then
+            echo "  FAIL [$rel] INV-7: declared policy '${key%@*}' ($key) is absent from the render." >&2
             inv7_bad=1
         fi
     done
+    unset inv7_seen
+
+    # (3) ipBlock shapes and the ports on them.
+    while IFS='#' read -r ipol shape iports; do
+        [[ -n "$ipol" ]] || continue
+        if [[ -z "${NETPOL_IPBLOCK_EXPECTED[$shape]+set}" ]]; then
+            echo "  FAIL [$rel] INV-7: NetworkPolicy '$ipol' has an undeclared ipBlock '$shape' (direction|cidr|except) on port(s) [$iports]." >&2
+            echo "        Declared shapes: ${!NETPOL_IPBLOCK_EXPECTED[*]}. A narrowed except list re-opens a" >&2
+            echo "        cluster-internal range to the whole public rule; a new shape is a reviewed change." >&2
+            inv7_bad=1
+            continue
+        fi
+        INV7_SHAPE_USED["$shape"]=1
+        allowed=" ${NETPOL_IPBLOCK_EXPECTED[$shape]//__DB_PORT__/$db_port} "
+        read -r -a inv7_ipl <<<"$iports"   # read -a: no pathname expansion of a `*`
+        for ip_port in "${inv7_ipl[@]}"; do
+            if [[ "$allowed" != *" $ip_port "* ]]; then
+                echo "  FAIL [$rel] INV-7: NetworkPolicy '$ipol' allows ipBlock '$shape' on undeclared port '$ip_port' (declared:${allowed% })." >&2
+                inv7_bad=1
+            fi
+        done
+    done < <(awk -F'\t' '$1 == "IPB" { print $2 "#" $3 "#" $4 }' "$TMP/netpol.tsv")
 
     if (( inv7_bad != 0 )); then
-        echo "        ISSUE #271. DB_PORT is Secret-driven (DEF-1) so an environment can move its" >&2
-        echo "        Postgres port with no manifest edit — but THIS policy is what permits the" >&2
-        echo "        connection. If it does not follow, an enforcing CNI denies the connection and" >&2
-        echo "        every core-java replica CrashLoops (and the nightly pg-backup dump fails)," >&2
-        echo "        with a network denial that reads like an application fault." >&2
-        echo "        THE FIX IS NEVER TO EDIT THE PORT LITERAL IN THE POLICY. Set app-config" >&2
-        echo "        'db.port' and let the 'replacements:' block derive it. If this is an OVERLAY," >&2
-        echo "        check that overlay's own kustomization.yaml carries the replacements block:" >&2
-        echo "        kustomize does NOT re-run a base replacement against an overlay's patched" >&2
-        echo "        ConfigMap, so a base-only block leaves the overlay on the base port." >&2
+        echo "        INV-7 asserts the WHOLE allow-list. Change NETPOL_RULES_EXPECTED (and the README flow" >&2
+        echo "        matrix) in the same commit as the policy, never the other way round. THE PORT AND" >&2
+        echo "        THE CONTROLLER NAMESPACE ARE NEVER EDITED IN A POLICY: set app-config 'db.port' /" >&2
+        echo "        'ingress.controller-namespace' and let the 'replacements:' blocks derive them. If" >&2
+        echo "        this is an OVERLAY that patches either key, check that its own kustomization.yaml" >&2
+        echo "        repeats the replacement: kustomize does NOT re-run a base replacement against an" >&2
+        echo "        overlay's patched ConfigMap (issue #271)." >&2
         FAILED=1
         inv7_msg="FAIL"
     else
-        inv7_msg="OK ($inv7_checked policy/policies, db.port=$db_port honoured)"
+        inv7_msg="OK (${#inv7_pols[@]} policies, $inv7_tuples rule tuples exact, db.port=$db_port, controller ns=$ingress_ns)"
     fi
 
     # ---------------- INV-8 / INV-9 / INV-10 (Phase 36) ----------------
@@ -1648,6 +1812,22 @@ done
 # silently stop running. Every listed target must have been rendered and checked.
 for t in "${WI_TARGETS[@]}"; do
     [[ -n "${WI_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-8..INV-10: WI_TARGETS names '$t', but no kustomize target at that path was discovered, so its storage invariants never ran. Update WI_TARGETS in the SAME change that renames an overlay."
+done
+
+# INV-7 hygiene: a declared row or ipBlock shape that no target used is a
+# standing allowance for something that no longer exists — remove it rather than
+# leave a hole waiting for a policy to grow into it.
+for key in "${!NETPOL_RULES_EXPECTED[@]}"; do
+    if [[ -z "${INV7_ROW_USED[$key]:-}" ]]; then
+        echo "FAIL: INV-7: STALE NETPOL_RULES_EXPECTED row '$key' — no target renders that policy. Remove the row in the same change that removed the policy." >&2
+        FAILED=1
+    fi
+done
+for shape in "${!NETPOL_IPBLOCK_EXPECTED[@]}"; do
+    if [[ -z "${INV7_SHAPE_USED[$shape]:-}" ]]; then
+        echo "FAIL: INV-7: STALE NETPOL_IPBLOCK_EXPECTED shape '$shape' — no target renders it. Remove it rather than keep an unused allowance." >&2
+        FAILED=1
+    fi
 done
 echo
 
