@@ -48,13 +48,52 @@ KV_MAP=(
   "CORE_API_CLIENT_SECRET=keycloak-credentials--frontend-client-secret"
 )
 
+# The staging test data. The vendor's mail is captured by Mailpit, never
+# delivered (D-13, D-20).
 TENANT_NAME="J'Toye Staging Test Kitchen"
 VENDOR_USERNAME="vendor.staging@olajay.co.uk"
 SHOP_SLUG="staging-test-kitchen"
+# Sole trader (no company number): COMPANIES_HOUSE_API_KEY is not wired in k8s,
+# and the BUSINESS_VERIFIED gate waives itself for a sole trader.
+ONBOARDING_MODEL="MARKETPLACE"
+GATE_REASON="staging seed, scripted — D-26"
+# Gates the GO_LIVE guard requires PASSED on the facts; a human WAIVE never
+# substitutes for them, so the seed never resolves them (it fixes the data).
+NEVER_RESOLVED_GATES="TRADER_IDENTITY ALLERGEN_DATA_COMPLETE"
+
+# The public issuer core-java validates; the admin API only through the
+# port-forward (T-29-14), never the public auth host.
+TOKEN_ENDPOINT="https://auth-staging.olajay.co.uk/realms/${REALM}/protocol/openid-connect/token"
+ADMIN_BASE="http://127.0.0.1:18080"
+MGMT_BASE="http://127.0.0.1:19000"
+PF_PORTS=("18080:8080" "19000:9000")
+READY_DEADLINE_SECONDS="${STAGING_SEED_READY_DEADLINE_SECONDS:-300}"
+GATE_DEADLINE_SECONDS="${STAGING_SEED_GATE_DEADLINE_SECONDS:-180}"
+POLL_SECONDS="${STAGING_SEED_POLL_SECONDS:-2}"
 
 WORKDIR=""
+PF_PID=""
+OP_USERNAME=""
+OP_ID=""
+OP_CREATED=0
+
+# The temporary realm-admin operator is deleted on EVERY exit path (D-27,
+# T-29-17), before the port-forward it needs is killed. An operator that cannot
+# be deleted turns any status into a failure: a standing admin is never "done".
+# The EXIT trap's incoming status is captured first and re-asserted last, so a
+# VOID (2) is not turned into 1 by the trap's own last command.
 cleanup() {
   local rc=$?
+  set +e
+  if [ "$OP_CREATED" -eq 1 ]; then
+    if ! delete_operator; then
+      [ "$rc" -ne 0 ] || rc=1
+    fi
+  fi
+  if [ -n "${PF_PID:-}" ]; then
+    kill "$PF_PID" 2>/dev/null
+    wait "$PF_PID" 2>/dev/null
+  fi
   if [ -n "${WORKDIR:-}" ] && [ -d "${WORKDIR:-}" ]; then rm -rf "$WORKDIR"; fi
   exit "$rc"
 }
@@ -152,30 +191,546 @@ print_plan() {
 PLAN --stage vendor (dry-run: nothing below is called)
   target        api ${API_BASE}; context ${KUBE_CONTEXT}; namespace ${NAMESPACE}; realm ${REALM}
   01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: $(list_kv_objects | tr '\n' ' ')(values never printed)
-  02 kubectl    port-forward svc/keycloak 18080:8080 19000:9000 (PID captured; killed by PID on exit)
-  03 POST       /realms/master/protocol/openid-connect/token (master admin, through the port-forward)
-  04 POST       /admin/realms/${REALM}/users seed-operator-<UTC> + realm role admin (deleted on EVERY exit path)
-  05 POST       ${API_BASE#https://} token: password grant on core-api at the public issuer, operator
-  06 GET/POST   /api/v1/admin/tenants                       check: reuse by name "${TENANT_NAME}"
-  07 PUT        /admin/realms/${REALM}/users/<operator>       tenant_id attribute; operator token re-issued
-  08 GET/POST   /admin/realms/${REALM}/users                  check: reuse ${VENDOR_USERNAME}; tenant_id read back by content
-  09 GET/POST   /api/v1/staff/me, /api/v1/staff/grant         check: vendor groupAdmin before granting
-  10 GET/POST   /api/v1/shops                                 check: reuse slug ${SHOP_SLUG}
-  11 GET/POST   /api/v1/products/culinary-packs, /api/v1/products/culinary-packs/seed   check: shop has zero products
-  12 GET/PUT    /api/v1/trader-identity                       check: identical identity already on file
-  13 GET/POST   /api/v1/onboarding/me, /api/v1/onboarding, /api/v1/onboarding/submit   check: status
-  14 POST       /api/v1/onboarding/admin/{id}/gates/{gate}/resolve   check: only open gates; reason "staging seed, scripted — D-26"
-  15 POST       /api/v1/onboarding/admin/{id}/approve          check: status PENDING_APPROVAL
-  16 POST       /api/v1/onboarding/go-live                    check: status APPROVED (LIVE is skipped)
-  17 GET        read-back: tenant, shop + published, product count, onboarding status, vendor tenant_id
+  02 kubectl    port-forward svc/keycloak ${PF_PORTS[*]} (PID captured; killed by PID on exit)   check: GET ${MGMT_BASE}/health/ready
+  03 POST       ${ADMIN_BASE}/realms/master/protocol/openid-connect/token   master admin, through the port-forward only
+  04 POST       /admin/realms/${REALM}/users seed-operator-<UTC> + realm role admin   deleted on EVERY exit path
+  05 POST       ${TOKEN_ENDPOINT}   operator password grant on core-api (the public issuer)
+  06 GET/POST   /api/v1/admin/tenants   check: reuse by name "${TENANT_NAME}"
+  07 PUT        /admin/realms/${REALM}/users/<operator>   tenant_id attribute, read back; operator token re-issued
+  08 GET/POST   /admin/realms/${REALM}/users   check: reuse ${VENDOR_USERNAME}; tenant_id read back by content (partialImport fallback)
+  09 POST       ${TOKEN_ENDPOINT}   vendor password grant; the token's tenant_id claim must equal the tenant
+  10 GET/POST   /api/v1/staff/me, /api/v1/staff/grant   check: vendor already groupAdmin (strict scoping: no JIT grant, D-06)
+  11 GET/POST   /api/v1/shops   check: reuse slug ${SHOP_SLUG}
+  12 GET/POST   /api/v1/products/culinary-packs, /api/v1/products/culinary-packs/seed   check: the shop has zero products
+  13 GET/PUT    /api/v1/trader-identity   check: the same identity already on file
+  14 GET/POST   /api/v1/onboarding/me, /api/v1/onboarding (${ONBOARDING_MODEL}, sole trader), /api/v1/onboarding/submit   check: status
+  15 POST       /api/v1/onboarding/admin/{id}/gates/{gate}/resolve   WAIVE open gates only, never ${NEVER_RESOLVED_GATES// /, }; reason "${GATE_REASON}"
+  16 POST       /api/v1/onboarding/admin/{id}/approve   check: status PENDING_APPROVAL
+  17 POST       /api/v1/onboarding/go-live   check: status APPROVED (LIVE is skipped)
+  18 GET        read-back: tenant, shop + published, product count, onboarding status, vendor tenant_id
+  19 DELETE     /admin/realms/${REALM}/users/<operator>   on every exit, success or failure
 PLAN
 }
 
 # ===========================================================================
 # --stage vendor (live)
 # ===========================================================================
+#
+# Secrets: every Key Vault value goes to a mode-600 file in WORKDIR and travels
+# to curl as `name@file` or inside a body file, never in argv and never printed.
+# Bearer tokens travel in curl config files (-K), never in argv.
+#
+# Who does what. J'Toye has no platform-operator identity (recorded
+# architecture), and under strict scoping (access.strict-scoping "true", D-06) a
+# new user gets no access by itself: ungranted means no access, nothing is
+# provisioned just in time. So, exactly as a first tenant would be set up, a
+# realm admin creates the tenant, grants its owner GROUP_ADMIN through the staff
+# API, and later resolves the gates and approves; the owner does everything
+# else. That realm admin is seed-operator-<UTC>, created for this run only, with
+# a random in-memory password, and deleted by the EXIT trap (T-29-17).
+
+# kc_api METHOD PATH OUT [BODY] — Keycloak admin API through the port-forward.
+# Prints the HTTP status ("000" when curl could not connect). A 401 refreshes the
+# short-lived (60 s) master token once and retries.
+kc_api() {
+  local method="$1" path="$2" out="$3" body="${4:-}" code
+  code=$(_kc_call "$method" "$path" "$out" "$body")
+  if [ "$code" = 401 ]; then
+    admin_token >/dev/null 2>&1 || true
+    code=$(_kc_call "$method" "$path" "$out" "$body")
+  fi
+  echo "$code"
+}
+_kc_call() {
+  local method="$1" path="$2" out="$3" body="${4:-}" code rc=0
+  if [ -n "$body" ]; then
+    code=$(curl -sS -K "$WORKDIR/kc-auth.curlrc" -X "$method" -H 'Content-Type: application/json' \
+      --data-binary "@$body" -D "$WORKDIR/kc-headers" -o "$out" -w '%{http_code}' "${ADMIN_BASE}${path}") || rc=$?
+  else
+    code=$(curl -sS -K "$WORKDIR/kc-auth.curlrc" -X "$method" -D "$WORKDIR/kc-headers" \
+      -o "$out" -w '%{http_code}' "${ADMIN_BASE}${path}") || rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
+  echo "$code"
+}
+
+# admin_token — a master-realm admin token into kc-auth.curlrc. Username and
+# password are posted from mode-600 files, never argv.
+admin_token() {
+  local code rc=0 token
+  code=$(curl -sS -X POST -o "$WORKDIR/kc-token.json" -w '%{http_code}' \
+    --data-urlencode "grant_type=password" --data-urlencode "client_id=admin-cli" \
+    --data-urlencode "username@$WORKDIR/kv-admin-username" --data-urlencode "password@$WORKDIR/kv-admin-password" \
+    "${ADMIN_BASE}/realms/master/protocol/openid-connect/token") || rc=$?
+  if [ "$rc" -ne 0 ] || [ "$code" != 200 ]; then
+    rm -f "$WORKDIR/kc-token.json"
+    echo "FAIL: master admin token request returned HTTP ${code:-000} (curl rc=$rc)" >&2
+    return 1
+  fi
+  token=$(jq -r '.access_token // empty' "$WORKDIR/kc-token.json")
+  rm -f "$WORKDIR/kc-token.json"
+  [ -n "$token" ] || { echo "FAIL: the master token response carried no access_token" >&2; return 1; }
+  (umask 077 && printf 'header = "Authorization: Bearer %s"\n' "$token" > "$WORKDIR/kc-auth.curlrc")
+}
+
+# user_token WHO — a password grant on core-api at the public issuer, the token
+# core-java validates. WHO is operator or vendor; the username, password and
+# client secret come from mode-600 files. Writes WHO-auth.curlrc and WHO-token.
+user_token() {
+  local who="$1" code rc=0 token
+  code=$(curl -sS -X POST -o "$WORKDIR/$who-token.json" -w '%{http_code}' \
+    --data-urlencode "grant_type=password" --data-urlencode "client_id=core-api" \
+    --data-urlencode "client_secret@$WORKDIR/kv-client-secret" --data-urlencode "scope=openid" \
+    --data-urlencode "username@$WORKDIR/$who-username" --data-urlencode "password@$WORKDIR/$who-password" \
+    "$TOKEN_ENDPOINT") || rc=$?
+  if [ "$rc" -ne 0 ] || [ "$code" != 200 ]; then
+    rm -f "$WORKDIR/$who-token.json"
+    echo "FAIL: the $who token request to $TOKEN_ENDPOINT returned HTTP ${code:-000} (curl rc=$rc)" >&2
+    return 1
+  fi
+  token=$(jq -r '.access_token // empty' "$WORKDIR/$who-token.json")
+  rm -f "$WORKDIR/$who-token.json"
+  [ -n "$token" ] || { echo "FAIL: the $who token response carried no access_token" >&2; return 1; }
+  (umask 077 && printf '%s' "$token" > "$WORKDIR/$who-token" \
+    && printf 'header = "Authorization: Bearer %s"\n' "$token" > "$WORKDIR/$who-auth.curlrc")
+}
+
+# jwt_claim WHO CLAIM — read one claim out of WHO's access token (payload only;
+# the signature is core-java's to check, this is a read-back of what it will see).
+jwt_claim() {
+  local seg pad
+  seg=$(cut -d. -f2 < "$WORKDIR/$1-token" | tr '_-' '/+')
+  pad=$(( (4 - ${#seg} % 4) % 4 ))
+  while [ "$pad" -gt 0 ]; do seg="${seg}="; pad=$((pad - 1)); done
+  base64 -d <<<"$seg" 2>/dev/null | jq -r --arg c "$2" '.[$c] // empty' 2>/dev/null || true
+}
+
+# api WHO METHOD PATH OUT [BODY] — the public API as WHO. Prints the HTTP status;
+# a 401 re-issues WHO's token once and retries.
+api() {
+  local who="$1" method="$2" path="$3" out="$4" body="${5:-}" code
+  code=$(_api_call "$who" "$method" "$path" "$out" "$body")
+  if [ "$code" = 401 ]; then
+    user_token "$who" >/dev/null 2>&1 || true
+    code=$(_api_call "$who" "$method" "$path" "$out" "$body")
+  fi
+  echo "$code"
+}
+_api_call() {
+  local who="$1" method="$2" path="$3" out="$4" body="${5:-}" code rc=0
+  if [ -n "$body" ]; then
+    code=$(curl -sS -K "$WORKDIR/$who-auth.curlrc" -X "$method" -H 'Accept: application/json' \
+      -H 'Content-Type: application/json' --data-binary "@$body" -o "$out" -w '%{http_code}' "${API_BASE}${path}") || rc=$?
+  else
+    code=$(curl -sS -K "$WORKDIR/$who-auth.curlrc" -X "$method" -H 'Accept: application/json' \
+      -o "$out" -w '%{http_code}' "${API_BASE}${path}") || rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
+  echo "$code"
+}
+
+# fail_http WHAT CODE OUT — one failure line: the call, its status, and the
+# problem type/title/detail of the response (API data, never a secret).
+fail_http() {
+  local what="$1" code="$2" out="$3" why=""
+  if [ -s "$out" ]; then
+    why=$(jq -r '[.type, .title, .detail] | map(select(. != null)) | join(" | ")' "$out" 2>/dev/null | head -c 300 || true)
+  fi
+  echo "FAIL: $what returned HTTP $code${why:+: $why}" >&2
+  exit 1
+}
+
+# body FILE — the JSON on stdin, written mode 600.
+body() { (umask 077 && cat > "$1"); }
+
+# delete_operator — called from the EXIT trap. Never exits; returns 1 when the
+# operator may still exist, so the trap can make the run a failure.
+delete_operator() {
+  local code
+  if [ -z "$OP_ID" ]; then
+    code=$(kc_api GET "/admin/realms/$REALM/users?username=$OP_USERNAME&exact=true" "$WORKDIR/op-find.json")
+    if [ "$code" = 200 ]; then OP_ID=$(jq -r --arg u "$OP_USERNAME" '[.[] | select(.username == $u)][0].id // empty' "$WORKDIR/op-find.json" 2>/dev/null || true); fi
+    if [ -z "$OP_ID" ]; then
+      if [ "$code" = 200 ]; then
+        echo "OPERATOR-DELETED: ${OP_USERNAME} does not exist (it was never created)"
+        return 0
+      fi
+      echo "FAIL: could not look up the seed operator ${OP_USERNAME} (HTTP $code); it may still exist: delete it by hand in realm $REALM" >&2
+      return 1
+    fi
+  fi
+  code=$(kc_api DELETE "/admin/realms/$REALM/users/$OP_ID" "$WORKDIR/op-delete.json")
+  case "$code" in
+    204|404) echo "OPERATOR-DELETED: ${OP_USERNAME} (${OP_ID}) HTTP $code"; OP_CREATED=0; return 0 ;;
+    *) echo "FAIL: the seed operator ${OP_USERNAME} (${OP_ID}) was NOT deleted (HTTP $code); it holds realm admin: delete it by hand in realm $REALM now" >&2; return 1 ;;
+  esac
+}
+
 vendor_stage() {
-  void "the vendor stage is not implemented yet"
+  local row name obj v rc code t0
+
+  # 1. The subscription guard. JTOYE_AZURE_SUBSCRIPTION_ID is the caller's; this
+  #    script never sets it. A refusal exits before any Key Vault read.
+  # shellcheck source=lib/azure-guard.sh
+  source "$SCRIPT_DIR/lib/azure-guard.sh"
+  rc=0; az_guard_init >/dev/null || rc=$?
+  [ "$rc" -eq 0 ] || exit "$rc"
+  need_tool curl; need_tool openssl; need_tool base64
+  ensure_workdir
+
+  # 2. Key Vault reads into mode-600 files.
+  set +x
+  for row in "${KV_MAP[@]}"; do
+    name="${row%%=*}"; obj="${row#*=}"
+    rc=0; v=$(az_read keyvault secret show --vault-name "$KEY_VAULT_NAME" -n "$obj" --query value -o tsv) || rc=$?
+    if [ "$rc" -ne 0 ] || [ -z "$v" ]; then
+      refuse key-vault "could not read $obj from $KEY_VAULT_NAME (az rc=$rc); plan 29-13 generates it"
+    fi
+    case "$name" in
+      VENDOR_PASSWORD)        (umask 077 && printf '%s' "$v" > "$WORKDIR/vendor-password") ;;
+      KC_ADMIN_USERNAME)      (umask 077 && printf '%s' "$v" > "$WORKDIR/kv-admin-username") ;;
+      KC_ADMIN_PASSWORD)      (umask 077 && printf '%s' "$v" > "$WORKDIR/kv-admin-password") ;;
+      CORE_API_CLIENT_SECRET) (umask 077 && printf '%s' "$v" > "$WORKDIR/kv-client-secret") ;;
+    esac
+  done
+  v=""
+  (umask 077 && printf '%s' "$VENDOR_USERNAME" > "$WORKDIR/vendor-username")
+  echo "OK: read ${#KV_MAP[@]} Key Vault objects from $KEY_VAULT_NAME (values not shown)"
+
+  # 3. The port-forward, PID captured at start (never killed by a pattern).
+  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" port-forward svc/keycloak "${PF_PORTS[@]}" > "$WORKDIR/port-forward.log" 2>&1 &
+  PF_PID=$!
+  t0=$(date +%s)
+  while :; do
+    if ! kill -0 "$PF_PID" 2>/dev/null; then
+      PF_PID=""
+      echo "FAIL: the port-forward exited before Keycloak answered: $(head -c 300 "$WORKDIR/port-forward.log" | tr '\n' ' ')" >&2
+      exit 1
+    fi
+    code=$(curl -sS -o /dev/null -w '%{http_code}' "${MGMT_BASE}/health/ready" 2>/dev/null || true)
+    [ "$code" = 200 ] && break
+    if [ $(( $(date +%s) - t0 )) -ge "$READY_DEADLINE_SECONDS" ]; then
+      echo "FAIL: Keycloak was not ready within ${READY_DEADLINE_SECONDS}s (last ${MGMT_BASE}/health/ready status ${code:-none})" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  echo "OK: Keycloak ready through the port-forward (pid $PF_PID)"
+
+  # 4. The per-run realm-admin operator.
+  admin_token || exit 1
+  OP_USERNAME="seed-operator-$(date -u +%Y%m%dt%H%M%Sz)"
+  (umask 077 && printf '%s' "$OP_USERNAME" > "$WORKDIR/operator-username")
+  (umask 077 && openssl rand -base64 32 | tr -d '\n' > "$WORKDIR/operator-password") \
+    || void "openssl rand failed"
+  [ -s "$WORKDIR/operator-password" ] || void "openssl rand produced no password"
+  jq -n --arg u "$OP_USERNAME" --rawfile p "$WORKDIR/operator-password" '{
+      username: $u, enabled: true, emailVerified: true, firstName: "Seed", lastName: "Operator",
+      email: ($u + "@seed.invalid"), requiredActions: [],
+      credentials: [{type: "password", value: $p, temporary: false}] }' | body "$WORKDIR/op-create.json"
+  OP_CREATED=1
+  code=$(kc_api POST "/admin/realms/$REALM/users" "$WORKDIR/op-created.json" "$WORKDIR/op-create.json")
+  rm -f "$WORKDIR/op-create.json"
+  [ "$code" = 201 ] || fail_http "POST /admin/realms/$REALM/users ($OP_USERNAME)" "$code" "$WORKDIR/op-created.json"
+  OP_ID=$(command grep -i '^location:' "$WORKDIR/kc-headers" | tr -d '\r' | command sed 's#.*/##' | head -1 || true)
+  [ -n "$OP_ID" ] || { echo "FAIL: the operator create returned no Location" >&2; exit 1; }
+  code=$(kc_api GET "/admin/realms/$REALM/roles/admin" "$WORKDIR/role-admin.json")
+  [ "$code" = 200 ] || fail_http "GET /admin/realms/$REALM/roles/admin" "$code" "$WORKDIR/role-admin.json"
+  jq '[.]' "$WORKDIR/role-admin.json" | body "$WORKDIR/role-map.json"
+  code=$(kc_api POST "/admin/realms/$REALM/users/$OP_ID/role-mappings/realm" "$WORKDIR/role-mapped.json" "$WORKDIR/role-map.json")
+  [ "$code" = 204 ] || fail_http "POST role-mappings/realm admin for $OP_USERNAME" "$code" "$WORKDIR/role-mapped.json"
+  echo "OK: created the per-run operator $OP_USERNAME ($OP_ID) with realm role admin; it is deleted on exit"
+  user_token operator || exit 1
+
+  # 5. The tenant, by name.
+  local tenant_id n
+  code=$(api operator GET /api/v1/admin/tenants "$WORKDIR/tenants.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/admin/tenants" "$code" "$WORKDIR/tenants.json"
+  n=$(jq --arg n "$TENANT_NAME" '[.[] | select(.name == $n)] | length' "$WORKDIR/tenants.json")
+  if [ "$n" -gt 1 ]; then refuse tenant "$n tenants are named \"$TENANT_NAME\"; the seed cannot tell which is its own"; fi
+  if [ "$n" -eq 1 ]; then
+    tenant_id=$(jq -r --arg n "$TENANT_NAME" '.[] | select(.name == $n) | .id' "$WORKDIR/tenants.json")
+    echo "SKIP: tenant \"$TENANT_NAME\" exists ($tenant_id)"
+  else
+    jq -n --arg n "$TENANT_NAME" --arg e "$VENDOR_USERNAME" \
+      '{name: $n, contactName: "Staging Test Vendor", contactEmail: $e}' | body "$WORKDIR/tenant-create.json"
+    code=$(api operator POST /api/v1/admin/tenants "$WORKDIR/tenant.json" "$WORKDIR/tenant-create.json")
+    [ "$code" = 201 ] || fail_http "POST /api/v1/admin/tenants" "$code" "$WORKDIR/tenant.json"
+    tenant_id=$(jq -r '.id // empty' "$WORKDIR/tenant.json")
+    echo "CREATED: tenant \"$TENANT_NAME\" ($tenant_id)"
+  fi
+  [[ "$tenant_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "FAIL: the tenant id '$tenant_id' is not a UUID" >&2; exit 1; }
+
+  # 6. The operator acts inside that tenant from here on: core-java in prod reads
+  #    the tenant from the JWT only (TenantFilter is not loaded), so the operator
+  #    carries the tenant_id attribute, read back by content, and a fresh token.
+  set_tenant_attribute "$OP_ID" "$tenant_id" operator
+  user_token operator || exit 1
+
+  # 7. The vendor user: reused by username, else created with the Key Vault
+  #    password (non-temporary) and the tenant_id attribute.
+  local vendor_id existing
+  code=$(kc_api GET "/admin/realms/$REALM/users?username=$VENDOR_USERNAME&exact=true" "$WORKDIR/vendor-find.json")
+  [ "$code" = 200 ] || fail_http "GET users?username=$VENDOR_USERNAME" "$code" "$WORKDIR/vendor-find.json"
+  vendor_id=$(jq -r --arg u "$VENDOR_USERNAME" '[.[] | select(.username == $u)][0].id // empty' "$WORKDIR/vendor-find.json")
+  if [ -n "$vendor_id" ]; then
+    code=$(kc_api GET "/admin/realms/$REALM/users/$vendor_id" "$WORKDIR/vendor.json")
+    [ "$code" = 200 ] || fail_http "GET users/$vendor_id" "$code" "$WORKDIR/vendor.json"
+    existing=$(jq -r '.attributes.tenant_id[0] // empty' "$WORKDIR/vendor.json")
+    if [ -n "$existing" ] && [ "$existing" != "$tenant_id" ]; then
+      refuse vendor-tenant "$VENDOR_USERNAME already belongs to tenant $existing, not $tenant_id; the seed does not re-home a user"
+    fi
+    echo "SKIP: vendor user $VENDOR_USERNAME exists ($vendor_id)"
+    [ -n "$existing" ] || set_tenant_attribute "$vendor_id" "$tenant_id" vendor
+  else
+    jq -n --arg u "$VENDOR_USERNAME" --arg t "$tenant_id" --rawfile p "$WORKDIR/vendor-password" '{
+        username: $u, email: $u, enabled: true, emailVerified: true, firstName: "Staging", lastName: "Vendor",
+        requiredActions: [], attributes: {tenant_id: [$t]},
+        credentials: [{type: "password", value: $p, temporary: false}] }' | body "$WORKDIR/vendor-create.json"
+    code=$(kc_api POST "/admin/realms/$REALM/users" "$WORKDIR/vendor-created.json" "$WORKDIR/vendor-create.json")
+    rm -f "$WORKDIR/vendor-create.json"
+    [ "$code" = 201 ] || fail_http "POST /admin/realms/$REALM/users ($VENDOR_USERNAME)" "$code" "$WORKDIR/vendor-created.json"
+    vendor_id=$(command grep -i '^location:' "$WORKDIR/kc-headers" | tr -d '\r' | command sed 's#.*/##' | head -1 || true)
+    [ -n "$vendor_id" ] || { echo "FAIL: the vendor create returned no Location" >&2; exit 1; }
+    echo "CREATED: vendor user $VENDOR_USERNAME ($vendor_id)"
+    # The Keycloak user-profile trap (docs/security-scopes.md section 5, measured
+    # in 38-17): an unmanaged attribute is silently stripped on an admin-API
+    # create. Read it back by content.
+    code=$(kc_api GET "/admin/realms/$REALM/users/$vendor_id" "$WORKDIR/vendor.json")
+    [ "$code" = 200 ] || fail_http "GET users/$vendor_id" "$code" "$WORKDIR/vendor.json"
+    if [ "$(jq -r '.attributes.tenant_id[0] // empty' "$WORKDIR/vendor.json")" != "$tenant_id" ]; then
+      echo "NOTICE: tenant_id did not survive the admin-API create; re-writing the user through partialImport (imported users keep it)"
+      partial_import_vendor "$vendor_id" "$tenant_id"
+    fi
+  fi
+  code=$(kc_api GET "/admin/realms/$REALM/users/$vendor_id" "$WORKDIR/vendor.json")
+  [ "$code" = 200 ] || fail_http "GET users/$vendor_id" "$code" "$WORKDIR/vendor.json"
+  if [ "$(jq -r '.attributes.tenant_id[0] // empty' "$WORKDIR/vendor.json")" != "$tenant_id" ]; then
+    refuse tenant-attribute "$VENDOR_USERNAME has no tenant_id $tenant_id after the create and the partialImport fallback; every API call would be tenant-less"
+  fi
+  echo "OK: $VENDOR_USERNAME tenant_id reads back as $tenant_id"
+
+  # 8. The vendor's token carries the tenant, as core-java will read it.
+  user_token vendor || { echo "FAIL: the vendor could not sign in; if the user predates this run, its password may not be the Key Vault one" >&2; exit 1; }
+  if [ "$(jwt_claim vendor tenant_id)" != "$tenant_id" ]; then
+    refuse tenant-claim "the vendor's access token carries tenant_id '$(jwt_claim vendor tenant_id)', not $tenant_id"
+  fi
+
+  # 9. GROUP_ADMIN for the vendor (strict scoping: ungranted means no access).
+  #    The first call also records the vendor in user_directory, which a grant
+  #    requires (StaffManagementService.grant).
+  local vendor_sub
+  code=$(api vendor GET /api/v1/staff/me "$WORKDIR/staff-me.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/staff/me (vendor)" "$code" "$WORKDIR/staff-me.json"
+  vendor_sub=$(jq -r '.userId // empty' "$WORKDIR/staff-me.json")
+  if [ "$(jq -r '.groupAdmin' "$WORKDIR/staff-me.json")" = true ]; then
+    echo "SKIP: the vendor is already GROUP_ADMIN"
+  else
+    jq -n --arg u "$vendor_sub" '{userId: $u, shopId: null, role: "GROUP_ADMIN"}' | body "$WORKDIR/grant.json"
+    code=$(api operator POST /api/v1/staff/grant "$WORKDIR/granted.json" "$WORKDIR/grant.json")
+    case "$code" in 200|201) ;; *) fail_http "POST /api/v1/staff/grant (vendor GROUP_ADMIN)" "$code" "$WORKDIR/granted.json" ;; esac
+    code=$(api vendor GET /api/v1/staff/me "$WORKDIR/staff-me.json")
+    if [ "$code" != 200 ] || [ "$(jq -r '.groupAdmin' "$WORKDIR/staff-me.json")" != true ]; then
+      echo "FAIL: the vendor is not GROUP_ADMIN after the grant (HTTP $code)" >&2; exit 1
+    fi
+    echo "CREATED: GROUP_ADMIN grant for the vendor ($vendor_sub)"
+  fi
+
+  # 10. The shop, by slug. Open every day: a shop saved without hours takes no
+  #     storefront orders (37-20), and plan 29-18 places one.
+  local shop_id
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops" "$code" "$WORKDIR/shops.json"
+  shop_id=$(jq -r --arg s "$SHOP_SLUG" '[.content[]? | select(.slug == $s)][0].id // empty' "$WORKDIR/shops.json")
+  if [ -n "$shop_id" ]; then
+    echo "SKIP: shop $SHOP_SLUG exists ($shop_id)"
+  else
+    jq -n --arg n "$TENANT_NAME" --arg s "$SHOP_SLUG" --arg e "$VENDOR_USERNAME" '
+      ([{open: "00:00", close: "23:59"}]) as $w | {
+        name: $n, slug: $s, email: $e,
+        address: "1 Staging Test Street, Birmingham B1 1AA",
+        description: "Staging test kitchen, seeded by scripts/staging-seed.sh (D-26). Not a real business.",
+        openingSchedule: {mon: $w, tue: $w, wed: $w, thu: $w, fri: $w, sat: $w, sun: $w} }' | body "$WORKDIR/shop-create.json"
+    code=$(api vendor POST /api/v1/shops "$WORKDIR/shop.json" "$WORKDIR/shop-create.json")
+    [ "$code" = 201 ] || fail_http "POST /api/v1/shops" "$code" "$WORKDIR/shop.json"
+    shop_id=$(jq -r '.id // empty' "$WORKDIR/shop.json")
+    echo "CREATED: shop $SHOP_SLUG ($shop_id)"
+  fi
+
+  # 11. One culinary pack, before submit: the ALLERGEN_DATA_COMPLETE gate is
+  #     evaluated at submit and fails on a shop with no products.
+  local count key
+  code=$(api vendor GET "/api/v1/products?shopId=$shop_id&size=1" "$WORKDIR/products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/products?shopId=$shop_id" "$code" "$WORKDIR/products.json"
+  count=$(jq -r '.totalElements // 0' "$WORKDIR/products.json")
+  if [ "$count" -gt 0 ]; then
+    echo "SKIP: shop $SHOP_SLUG already has $count product(s)"
+  else
+    code=$(api vendor GET /api/v1/products/culinary-packs "$WORKDIR/packs.json")
+    [ "$code" = 200 ] || fail_http "GET /api/v1/products/culinary-packs" "$code" "$WORKDIR/packs.json"
+    key=$(jq -r '.[0].cuisineKey // empty' "$WORKDIR/packs.json")
+    [ -n "$key" ] || { echo "FAIL: GET /api/v1/products/culinary-packs listed no pack" >&2; exit 1; }
+    jq -n --arg s "$shop_id" --arg k "$key" '{shopId: $s, cuisineKeys: [$k]}' | body "$WORKDIR/seed.json"
+    code=$(api vendor POST /api/v1/products/culinary-packs/seed "$WORKDIR/seeded.json" "$WORKDIR/seed.json")
+    [ "$code" = 200 ] || fail_http "POST /api/v1/products/culinary-packs/seed ($key)" "$code" "$WORKDIR/seeded.json"
+    if [ "$(jq -r '.failed // 1' "$WORKDIR/seeded.json")" -ne 0 ] || [ "$(jq -r '.created // 0' "$WORKDIR/seeded.json")" -lt 1 ]; then
+      echo "FAIL: the culinary pack seed created $(jq -r '.created' "$WORKDIR/seeded.json") and failed $(jq -r '.failed' "$WORKDIR/seeded.json")" >&2; exit 1
+    fi
+    echo "CREATED: culinary pack $key: $(jq -r '.created' "$WORKDIR/seeded.json") product(s)"
+  fi
+
+  # 12. The trader identity (V71): a sole trader with a geographic UK address.
+  jq -n --arg n "$TENANT_NAME" '{legalName: $n, entityType: "SOLE_TRADER", addressLine1: "1 Staging Test Street",
+      addressLine2: null, addressCity: "Birmingham", addressPostcode: "B1 1AA", vatNumber: null}' | body "$WORKDIR/identity.json"
+  code=$(api vendor GET /api/v1/trader-identity "$WORKDIR/identity-now.json")
+  if [ "$code" = 200 ] && [ "$(jq -S '{legalName, entityType, addressLine1, addressLine2, addressCity, addressPostcode, vatNumber}' "$WORKDIR/identity-now.json")" = "$(jq -S . "$WORKDIR/identity.json")" ]; then
+    echo "SKIP: the trader identity is already on file"
+  else
+    case "$code" in 200|404) ;; *) fail_http "GET /api/v1/trader-identity" "$code" "$WORKDIR/identity-now.json" ;; esac
+    code=$(api vendor PUT /api/v1/trader-identity "$WORKDIR/identity-put.json" "$WORKDIR/identity.json")
+    case "$code" in 200|201) ;; *) fail_http "PUT /api/v1/trader-identity" "$code" "$WORKDIR/identity-put.json" ;; esac
+    echo "WRITTEN: trader identity (SOLE_TRADER, no VAT number)"
+  fi
+
+  # 13. Onboarding to LIVE.
+  onboard_to_live "$shop_id"
+
+  # 14. The read-back.
+  readback "$tenant_id" "$shop_id" "$vendor_id"
+}
+
+# set_tenant_attribute USER_ID TENANT_ID LABEL — GET the full representation, set
+# attributes.tenant_id, PUT it back (a partial PUT under the declarative user
+# profile can drop the required names), and read the attribute back by content.
+set_tenant_attribute() {
+  local id="$1" tenant="$2" label="$3" code
+  code=$(kc_api GET "/admin/realms/$REALM/users/$id" "$WORKDIR/attr-user.json")
+  [ "$code" = 200 ] || fail_http "GET users/$id ($label)" "$code" "$WORKDIR/attr-user.json"
+  jq --arg t "$tenant" '.attributes = ((.attributes // {}) + {tenant_id: [$t]})' "$WORKDIR/attr-user.json" | body "$WORKDIR/attr-put.json"
+  code=$(kc_api PUT "/admin/realms/$REALM/users/$id" "$WORKDIR/attr-done.json" "$WORKDIR/attr-put.json")
+  [ "$code" = 204 ] || fail_http "PUT users/$id tenant_id ($label)" "$code" "$WORKDIR/attr-done.json"
+  code=$(kc_api GET "/admin/realms/$REALM/users/$id" "$WORKDIR/attr-user.json")
+  if [ "$code" != 200 ] || [ "$(jq -r '.attributes.tenant_id[0] // empty' "$WORKDIR/attr-user.json")" != "$tenant" ]; then
+    if [ "$label" = vendor ]; then partial_import_vendor "$id" "$tenant"; return 0; fi
+    refuse tenant-attribute "the $label user's tenant_id did not read back as $tenant after the PUT (HTTP $code)"
+  fi
+  echo "OK: $label tenant_id set to $tenant and read back"
+}
+
+# partial_import_vendor USER_ID TENANT_ID — the fallback for the user-profile
+# trap: imported users keep their attributes, so the vendor is re-written
+# through the realm partialImport (OVERWRITE, same id, same Key Vault password).
+partial_import_vendor() {
+  local id="$1" tenant="$2" code
+  jq -n --arg id "$id" --arg u "$VENDOR_USERNAME" --arg t "$tenant" --rawfile p "$WORKDIR/vendor-password" '{
+      ifResourceExists: "OVERWRITE",
+      users: [{ id: $id, username: $u, email: $u, enabled: true, emailVerified: true,
+                firstName: "Staging", lastName: "Vendor", requiredActions: [], attributes: {tenant_id: [$t]},
+                credentials: [{type: "password", value: $p, temporary: false}] }] }' | body "$WORKDIR/partial.json"
+  code=$(kc_api POST "/admin/realms/$REALM/partialImport" "$WORKDIR/partial-done.json" "$WORKDIR/partial.json")
+  rm -f "$WORKDIR/partial.json"
+  [ "$code" = 200 ] || fail_http "POST /admin/realms/$REALM/partialImport (vendor)" "$code" "$WORKDIR/partial-done.json"
+}
+
+# onboard_to_live SHOP_ID — create (sole trader), submit, let the gate chain run,
+# WAIVE the gates a human reviews (never the two the go-live guard requires
+# PASSED on the facts), approve, go live. Every step reads the status first, so a
+# re-run resumes wherever the last one stopped.
+onboard_to_live() {
+  local shop_id="$1" code status onb_id t0 open gate g resubmitted=0 resolved=" "
+  t0=$(date +%s)
+  while :; do
+    code=$(api vendor GET /api/v1/onboarding/me "$WORKDIR/onb.json")
+    if [ "$code" = 404 ]; then
+      jq -n --arg m "$ONBOARDING_MODEL" --arg s "$shop_id" '{model: $m, shopId: $s}' | body "$WORKDIR/onb-create.json"
+      code=$(api vendor POST /api/v1/onboarding "$WORKDIR/onb.json" "$WORKDIR/onb-create.json")
+      [ "$code" = 201 ] || fail_http "POST /api/v1/onboarding" "$code" "$WORKDIR/onb.json"
+      echo "CREATED: onboarding ($ONBOARDING_MODEL, sole trader)"
+      continue
+    fi
+    [ "$code" = 200 ] || fail_http "GET /api/v1/onboarding/me" "$code" "$WORKDIR/onb.json"
+    status=$(jq -r '.status' "$WORKDIR/onb.json"); onb_id=$(jq -r '.id' "$WORKDIR/onb.json")
+    if [ "$(jq -r '.shopId' "$WORKDIR/onb.json")" != "$shop_id" ]; then
+      refuse onboarding "the tenant's onboarding gates shop $(jq -r '.shopId' "$WORKDIR/onb.json"), not $SHOP_SLUG ($shop_id)"
+    fi
+    case "$status" in
+      LIVE)
+        echo "OK: onboarding LIVE"
+        return 0 ;;
+      DRAFT)
+        code=$(api vendor POST /api/v1/onboarding/submit "$WORKDIR/onb-step.json")
+        [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/submit" "$code" "$WORKDIR/onb-step.json"
+        echo "OK: onboarding submitted" ;;
+      VERIFYING)
+        if [ "$(jq '[.gates[] | select(.status == "PENDING")] | length' "$WORKDIR/onb.json")" -eq 0 ]; then
+          open=$(jq -r '.gates[] | select(.status == "MANUAL_REVIEW" or .status == "FAILED") | .gateType' "$WORKDIR/onb.json")
+          for gate in $open; do
+            for g in $NEVER_RESOLVED_GATES; do
+              if [ "$gate" = "$g" ]; then
+                echo "FAIL: gate $gate is $(jq -r --arg g "$gate" '.gates[] | select(.gateType == $g) | "\(.status): \(.reason // "")"' "$WORKDIR/onb.json"); the go-live guard needs it PASSED on the facts, so the seed does not waive it" >&2
+                exit 1
+              fi
+            done
+            case "$resolved" in *" $gate "*) echo "FAIL: gate $gate is open again after it was resolved" >&2; exit 1 ;; esac
+            jq -n --arg r "$GATE_REASON" '{decision: "WAIVE", reason: $r}' | body "$WORKDIR/resolve.json"
+            code=$(api operator POST "/api/v1/onboarding/admin/$onb_id/gates/$gate/resolve" "$WORKDIR/resolved.json" "$WORKDIR/resolve.json")
+            [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/admin/$onb_id/gates/$gate/resolve" "$code" "$WORKDIR/resolved.json"
+            resolved="$resolved$gate "
+            echo "RESOLVED: gate $gate WAIVED (\"$GATE_REASON\")"
+          done
+        fi ;;
+      ACTION_REQUIRED)
+        if [ "$resubmitted" -eq 1 ]; then
+          echo "FAIL: onboarding is ACTION_REQUIRED again after a resubmit: $(jq -r '[.gates[] | select(.status == "FAILED") | "\(.gateType): \(.reason // "")"] | join("; ")' "$WORKDIR/onb.json")" >&2
+          exit 1
+        fi
+        code=$(api vendor POST /api/v1/onboarding/resubmit "$WORKDIR/onb-step.json")
+        [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/resubmit" "$code" "$WORKDIR/onb-step.json"
+        resubmitted=1
+        echo "OK: onboarding resubmitted after ACTION_REQUIRED" ;;
+      PENDING_APPROVAL)
+        code=$(api operator POST "/api/v1/onboarding/admin/$onb_id/approve" "$WORKDIR/onb-step.json")
+        [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/admin/$onb_id/approve" "$code" "$WORKDIR/onb-step.json"
+        echo "OK: onboarding approved" ;;
+      APPROVED)
+        code=$(api vendor POST /api/v1/onboarding/go-live "$WORKDIR/onb-step.json")
+        [ "$code" = 200 ] || fail_http "POST /api/v1/onboarding/go-live" "$code" "$WORKDIR/onb-step.json"
+        echo "OK: go-live accepted" ;;
+      *)
+        echo "FAIL: onboarding is $status, which the seed cannot advance" >&2
+        exit 1 ;;
+    esac
+    if [ $(( $(date +%s) - t0 )) -ge "$GATE_DEADLINE_SECONDS" ]; then
+      echo "FAIL: onboarding did not reach LIVE within ${GATE_DEADLINE_SECONDS}s (last status $status)" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+}
+
+# readback TENANT_ID SHOP_ID VENDOR_ID — what the API and Keycloak now hold.
+readback() {
+  local tenant_id="$1" shop_id="$2" vendor_id="$3" code
+  code=$(api operator GET /api/v1/admin/tenants "$WORKDIR/rb-tenants.json")
+  [ "$code" = 200 ] || fail_http "read-back GET /api/v1/admin/tenants" "$code" "$WORKDIR/rb-tenants.json"
+  code=$(api vendor GET "/api/v1/shops/$shop_id" "$WORKDIR/rb-shop.json")
+  [ "$code" = 200 ] || fail_http "read-back GET /api/v1/shops/$shop_id" "$code" "$WORKDIR/rb-shop.json"
+  code=$(api vendor GET "/api/v1/products?shopId=$shop_id&size=1" "$WORKDIR/rb-products.json")
+  [ "$code" = 200 ] || fail_http "read-back GET /api/v1/products" "$code" "$WORKDIR/rb-products.json"
+  code=$(api vendor GET /api/v1/onboarding/me "$WORKDIR/rb-onb.json")
+  [ "$code" = 200 ] || fail_http "read-back GET /api/v1/onboarding/me" "$code" "$WORKDIR/rb-onb.json"
+  code=$(kc_api GET "/admin/realms/$REALM/users/$vendor_id" "$WORKDIR/rb-vendor.json")
+  [ "$code" = 200 ] || fail_http "read-back GET users/$vendor_id" "$code" "$WORKDIR/rb-vendor.json"
+  echo "RESULT at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "  tenants named \"$TENANT_NAME\": $(jq --arg n "$TENANT_NAME" '[.[] | select(.name == $n)] | length' "$WORKDIR/rb-tenants.json") (id $tenant_id)"
+  echo "  shop: $(jq -r '"\(.id) slug \(.slug) published=\(.published)"' "$WORKDIR/rb-shop.json")"
+  echo "  products in the shop: $(jq -r '.totalElements' "$WORKDIR/rb-products.json")"
+  echo "  onboarding: $(jq -r '.status' "$WORKDIR/rb-onb.json")"
+  echo "  vendor $VENDOR_USERNAME tenant_id: $(jq -r '.attributes.tenant_id[0] // "<absent>"' "$WORKDIR/rb-vendor.json")"
+  if [ "$(jq -r '.published' "$WORKDIR/rb-shop.json")" != true ] || [ "$(jq -r '.status' "$WORKDIR/rb-onb.json")" != LIVE ]; then
+    echo "FAIL: the read-back does not show a published shop with a LIVE onboarding" >&2
+    exit 1
+  fi
 }
 
 # ===========================================================================
@@ -290,6 +845,9 @@ case "$method $base" in
   "GET /api/v1/products") key=products; code=200 ;;
   "GET /api/v1/products/culinary-packs") key=packs; code=200 ;;
   "POST /api/v1/products/culinary-packs/seed") key=seed; code=200 ;;
+  "GET /api/v1/shops/"*) key=shop; code=200 ;;
+  "GET /api/v1/trader-identity") key=identity; code=200 ;;
+  "GET /api/v1/onboarding/me") key=onboarding; code=200 ;;
 esac
 if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then key=problem; code=500; fi
 printf '%s %s -> %s\n' "$method" "$url" "$code" >> "$STUB_LOG_DIR/curl-flow.log"
@@ -454,6 +1012,76 @@ IDF
   fi
   if [ -z "$why" ]; then _st_result "PASS list-kv-objects rc=0 objects=4"
   else _st_result "FAIL list-kv-objects $why"; fails=$((fails + 1)); fi
+
+  # --- operator-deleted-on-failure: the whole vendor stage against the stubs,
+  #     with the culinary-pack seed answering 500. The stage must exit non-zero,
+  #     and the stub log must show the DELETE of the operator AFTER that 500.
+  local tid="11111111-2222-4333-8444-555555555555" sid="66666666-7777-4888-9999-000000000000" jwt
+  jwt="eyJhbGciOiJub25lIn0.$(jq -cn --arg t "$tid" '{sub: "vendor-0001", tenant_id: $t, azp: "core-api"}' \
+    | base64 | tr -d '\n=' | tr '/+' '_-').stub"
+  printf '{}' > "$ast/resp/empty.json"
+  printf '[]' > "$ast/resp/empty-list.json"
+  printf '{"access_token":"stub-admin-token","expires_in":60}' > "$ast/resp/admin-token.json"
+  jq -n --arg j "$jwt" '{access_token: $j, token_type: "Bearer"}' > "$ast/resp/user-token.json"
+  printf '{"id":"role-admin","name":"admin"}' > "$ast/resp/role-admin.json"
+  jq -n --arg t "$tid" '{id: "op-0001", username: "seed-operator-x", firstName: "Seed", lastName: "Operator", attributes: {tenant_id: [$t]}}' > "$ast/resp/operator.json"
+  jq -n --arg t "$tid" --arg u "$VENDOR_USERNAME" '{id: "vendor-0001", username: $u, attributes: {tenant_id: [$t]}}' > "$ast/resp/vendor.json"
+  jq -n --arg t "$tid" --arg u "$VENDOR_USERNAME" '[{id: "vendor-0001", username: $u, attributes: {tenant_id: [$t]}}]' > "$ast/resp/vendor-list.json"
+  jq -n --arg t "$tid" --arg n "$TENANT_NAME" '[{id: $t, name: $n, status: "ACTIVE"}]' > "$ast/resp/tenants.json"
+  printf '{"userId":"vendor-0001","groupAdmin":true}' > "$ast/resp/staff-me.json"
+  jq -n --arg s "$sid" --arg slug "$SHOP_SLUG" '{content: [{id: $s, slug: $slug, published: false}], totalElements: 1}' > "$ast/resp/shops.json"
+  printf '{"content":[],"totalElements":0}' > "$ast/resp/products.json"
+  printf '[{"cuisineKey":"nigerian","cuisineLabel":"Nigerian","dishCount":6,"dishes":[]}]' > "$ast/resp/packs.json"
+  printf '{"type":"https://api.jtoye.co.uk/errors/internal","title":"Internal Server Error","status":500}' > "$ast/resp/problem.json"
+
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STUB_FAIL_ON='^POST /api/v1/products/culinary-packs/seed$' \
+    STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${good[@]}"
+  why=""
+  local n500 ndel kv_reads pinned argv_leaks creates
+  n500=$(command grep -nE '^POST https://api-staging\.olajay\.co\.uk/api/v1/products/culinary-packs/seed -> 500$' "$ast/logs/curl-flow.log" | head -1 | cut -d: -f1 || true)
+  ndel=$(command grep -nE '^DELETE http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users/op-0001 -> 204$' "$ast/logs/curl-flow.log" | head -1 | cut -d: -f1 || true)
+  kv_reads=$(command grep -c '^keyvault secret show --vault-name jtoye-stg-kv ' "$ast/logs/az.log" || true)
+  pinned=$(command grep -c -- '--subscription c483d353-5f61-4587-a790-addb9ab5fb94$' "$ast/logs/az.log" || true)
+  argv_leaks=$(command grep -cF 'STUB-SECRET-' "$ast/logs/curl.log" || true)
+  creates=$(command grep -cE '^POST http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users -> 201$' "$ast/logs/curl-flow.log" || true)
+  if [ "$ST_RC" -eq 0 ]; then why="rc=0: the stage succeeded although the culinary-pack seed answered 500"
+  elif [ -z "$n500" ]; then why="no 500 on the culinary-pack seed in the stub log: $(tail -n 3 "$ast/logs/curl-flow.log" | tr '\n' '|') $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ -z "$ndel" ]; then why="the operator was never DELETEd: $(tail -n 3 "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ "$ndel" -le "$n500" ]; then why="the DELETE (line $ndel) does not follow the 500 (line $n500)"
+  elif [ "$creates" -ne 1 ]; then why="operator creates=$creates (want 1)"
+  elif ! command grep -qF 'OPERATOR-DELETED: seed-operator-' <<<"$ST_OUT"; then why="the deletion status was not printed"
+  elif [ "$kv_reads" -ne "${#KV_MAP[@]}" ]; then why="Key Vault reads=$kv_reads (want ${#KV_MAP[@]})"
+  elif [ "$pinned" -ne "$(_st_lines az)" ]; then why="$(_st_lines az) az calls, $pinned ending in the pin"
+  elif [ "$argv_leaks" -ne 0 ]; then why="$argv_leaks curl argv line(s) carry a Key Vault value"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="secret marker printed"
+  elif command grep -qE '/api/v1/onboarding|/api/v1/trader-identity' "$ast/logs/curl-flow.log"; then why="the stage went on past the failed seed"
+  fi
+  if [ -z "$why" ]; then
+    _st_result "PASS operator-deleted-on-failure rc=$ST_RC seed_500_line=$n500 operator_delete_line=$ndel kv_reads=$kv_reads pinned=$pinned argv_secrets=0"
+  else _st_result "FAIL operator-deleted-on-failure $why"; fails=$((fails + 1)); fi
+  if [ "${STAGING_SEED_SELFTEST_KEEP_LOG:-}" != "" ]; then cp "$ast/logs/curl-flow.log" "$STAGING_SEED_SELFTEST_KEEP_LOG"; fi
+
+  # --- operator-deleted-on-success: a re-run that finds everything in place
+  #     (onboarding already LIVE) seeds the empty shop, reads back, exits 0, and
+  #     still deletes the operator, last.
+  printf '{"created":6,"skipped":0,"failed":0,"items":[]}' > "$ast/resp/seed.json"
+  jq -n --arg s "$sid" --arg slug "$SHOP_SLUG" '{id: $s, slug: $slug, published: true}' > "$ast/resp/shop.json"
+  jq -n --arg n "$TENANT_NAME" '{id: "ti-1", legalName: $n, entityType: "SOLE_TRADER", addressLine1: "1 Staging Test Street",
+      addressLine2: null, addressCity: "Birmingham", addressPostcode: "B1 1AA", vatNumber: null, companyNumber: null}' > "$ast/resp/identity.json"
+  jq -n --arg s "$sid" '{id: "onb-1", status: "LIVE", model: "MARKETPLACE", shopId: $s, gates: []}' > "$ast/resp/onboarding.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 -- "${good[@]}"
+  why=""
+  local last
+  last=$(tail -n 1 "$ast/logs/curl-flow.log" 2>/dev/null || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$last" != "DELETE http://127.0.0.1:18080/admin/realms/jtoye-staging/users/op-0001 -> 204" ]; then why="the last call is not the operator DELETE: '$last'"
+  elif ! command grep -qF 'OPERATOR-DELETED: seed-operator-' <<<"$ST_OUT"; then why="the deletion status was not printed"
+  elif ! command grep -qE '^  onboarding: LIVE$' <<<"$ST_OUT" || ! command grep -qE '^RESULT at [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$' <<<"$ST_OUT"; then why="no timestamped read-back: $(command grep -A6 '^RESULT' <<<"$ST_OUT" | tr '\n' '|')"
+  elif command grep -qE '^(POST|PUT) .*/(trader-identity|onboarding)' "$ast/logs/curl-flow.log"; then why="a re-run wrote what already existed: $(command grep -E '^(POST|PUT) .*/(trader-identity|onboarding)' "$ast/logs/curl-flow.log" | head -1)"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="secret marker printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS operator-deleted-on-success rc=0 last_call=DELETE-operator readback=LIVE"
+  else _st_result "FAIL operator-deleted-on-success $why"; fails=$((fails + 1)); fi
 
   _st_render
   [ "$fails" -eq 0 ]

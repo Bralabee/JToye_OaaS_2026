@@ -740,6 +740,16 @@ jobs:
       - name: Prove the staging realm transform and import guards (29-04 --selftest)
         run: bash scripts/staging-realm-import.sh --selftest
 
+      # Plan 29-06: the staging seed refuses the production and local API bases,
+      # no context, a stale server URL (the shared staging_kube_guard), and any
+      # Ready core-java pod not running SPRING_PROFILES_ACTIVE=prod (a dev pod, a
+      # mixed rollout, no Ready pod: DemoDataSeeder must never run on staging);
+      # its dry run calls nothing; and its per-run realm-admin operator is
+      # DELETEd after a failing step and after a successful run, with no Key
+      # Vault value in any curl argv or output (stubs only: no cluster, no Azure).
+      - name: Prove the staging seed guards and operator cleanup (29-06 --selftest)
+        run: bash scripts/staging-seed.sh --selftest
+
       - name: Assert the staging/production render matches its reviewed golden
         run: |
           chmod +x ./k8s/scripts/render-golden.sh
