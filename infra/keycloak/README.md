@@ -100,6 +100,36 @@ rendered into the import at container start, never committed).
 
 This mapper extracts the `tenant_id` attribute from the user's groups and injects it into the JWT token claims.
 
+### The `basic` client scope: on Keycloak 25+ the `sub` claim is a mapper
+
+Since Keycloak 25 the `sub` and `auth_time` claims are no longer built into every token. They are
+protocol mappers on a realm client scope named `basic`, which Keycloak adds to a realm's default
+client scopes and to every existing client **when it migrates a database in place**. A realm file
+imported fresh with `--import-realm` gets nothing it does not declare: both templates here were
+exported from 24.0.5, so after the 26.8.1 upgrade (39-04) a fresh import issued access tokens with
+**no `sub` claim at all**, and both templates now declare the scope themselves.
+
+Why that is an outage and not a cosmetic gap: core-java's UUID-subject contract (23-16) reads the
+subject on every vendor request. Without it `ShopAccessService.requireVendorUserId()` answers the
+typed 403 (the Staff page shows "Only a Group admin can invite people" to the Group admin), and
+`TenantChannelInterceptor` denies every kitchen `SUBSCRIBE` with "subscriber subject is not a UUID",
+so the kitchen board sits on "Reconnecting". The shared compose runtime never showed it, because its
+Keycloak volume was upgraded in place and the migration had added the scope — only a fresh volume
+(the nightly E2E lane, red from 2026-10-16 to 2026-10-18; any new environment) imports the template.
+
+**Measured on two throwaway `quay.io/keycloak/keycloak:26.8.1` containers importing the rendered
+templates (2026-10-18), password grant for `admin-user` via `core-api`:**
+
+| Template | `basic` on `core-api` | `sub` in the access token |
+|---|---|---|
+| Before this change (control) | absent | **absent** |
+| This template | present | a UUID |
+
+Both templates declare the scope (`sub` → `oidc-sub-mapper`, `auth_time` →
+`oidc-usersessionmodel-note-mapper`, exactly as Keycloak 26 creates it), list it in
+`defaultDefaultClientScopes`, and carry it in every client's `defaultClientScopes`. A new client
+added to either template must list it too, or its tokens have no subject.
+
 ### User profile: `tenant_id` is a managed, admin-only attribute (Phase 37-08, D-07 / D-26)
 
 Accepting a staff invitation creates the invited person's account in `jtoye-dev` **through the
@@ -645,6 +675,15 @@ The `tenant_id` claim is used by the backend for multi-tenant data isolation via
 2. Check group has tenant_id attribute set
 3. Verify protocol mapper is configured correctly
 4. Check mapper is enabled for the client
+
+### Token has no `sub` claim (403 on every vendor write, kitchen stuck on "Reconnecting")
+
+**Problem:** `jwt.getSubject()` is null; the Staff page tells a Group admin only a Group admin can
+invite; core-java logs `subscriber subject is not a UUID`.
+**Cause:** the realm was imported fresh from a template without the `basic` client scope (see
+"The `basic` client scope" above). Keycloak 25+ only adds it on an in-place database migration.
+**Solution:** re-import the current template (it declares the scope), or in the admin console add
+the `basic` scope to the realm's default client scopes and to each client's default scopes.
 
 ### Token Validation Fails
 

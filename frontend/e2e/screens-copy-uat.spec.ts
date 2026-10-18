@@ -13,7 +13,8 @@
  *      every visible control sit inside the card and the viewport, each control is at least
  *      44 x 44 px, the nav does not scroll sideways and its root is at least 200 px wide; first,
  *      previous, next and last show at 390; the five-page window with one aria-current at 1280;
- *      "Go to next page" at 390 reaches "Showing 21-40".
+ *      "Go to next page" at 390 reaches the second page ("Showing 21-…": a full page on the dev
+ *      stack, a partial one on a fresh nightly volume).
  *   3. Item 4 (the void dialog), never mutating: opened through the real path (a list row opens
  *      /dashboard/orders/{id}; "Void order" there opens it) on a voidable order at 390, 768 and
  *      1280 px; it sits inside the viewport, nothing in it overflows sideways, its title is inside
@@ -45,9 +46,12 @@
  * WHAT A RUN CREATES on the shared dev stack: one invitation for a Staff role at Peckham Jollof Co.
  * in tenant …0001 (test 5), cancelled in the test and again in its `finally` if still listed; one
  * anonymous basket at Peckham Jollof Co. (test 4), cleared before its context closes. Nothing is
- * ordered and nothing is voided. Test 3 copies the page's own Authorization header into one local
- * variable, passed only to the request calls that list orders by status; it is never annotated,
- * attached, logged or written.
+ * voided. Nothing is ordered EXCEPT on a stack with no voidable order at all (a fresh nightly
+ * volume, 2026-10-18): test 3 then places one COLLECTION order at Peckham Jollof Co. as the vendor
+ * (submit: true, then confirm) and leaves it CONFIRMED, since the dialog it opens must be real and
+ * closing it without voiding is the test. Test 3 copies the page's own Authorization header into
+ * one local variable, passed only to its own request calls (the status lookups and that fixture
+ * order); it is never annotated, attached, logged or written.
  *
  * @desktop-only: the tests pin their own viewports with page.setViewportSize, so 375/390 px are
  * covered here too, and one run per stack keeps the invitation and basket fixtures single.
@@ -768,7 +772,13 @@ test.describe("UAT gap G-37-6, live (37-59) @desktop-only", () => {
           return { pages: shown.length, current: shown.filter((b) => b.getAttribute("aria-current") === "page").length }
         })
         annotate(testInfo, "pagination-window-1280", pageWindow)
-        expect.soft(pageWindow.pages, "the five-page window at 1280").toBe(5)
+        // paginationWindow clamps to the ends, so the window holds min(5, totalPages) pages:
+        // a fresh nightly volume has two pages of orders, the shared dev DB has eight (2026-10-18).
+        const totalPages = Math.ceil(total / 20)
+        const expectedWindow = Math.min(5, totalPages)
+        expect
+          .soft(pageWindow.pages, `the ${expectedWindow}-page window at 1280 (${totalPages} pages in total)`)
+          .toBe(expectedWindow)
         expect.soft(pageWindow.current, "exactly one aria-current page at 1280").toBe(1)
       }
     }
@@ -786,7 +796,8 @@ test.describe("UAT gap G-37-6, live (37-59) @desktop-only", () => {
     let stepError: string | null = null
     try {
       await nav.getByRole("button", { name: "Go to next page" }).click({ timeout: 10_000 })
-      await expect(page.getByText(/^Showing 21-40 of \d+$/)).toBeVisible({ timeout: 15_000 })
+      // "21-40" on a full second page, "21-N" on a partial one (a fresh nightly volume holds 21..40).
+      await expect(page.getByText(/^Showing 21-\d+ of \d+$/)).toBeVisible({ timeout: 15_000 })
       await nav.getByRole("button", { name: "Go to first page" }).click({ timeout: 10_000 })
       await expect(page.getByText(/^Showing 1-20 of \d+$/)).toBeVisible({ timeout: 15_000 })
     } catch (error) {
@@ -882,6 +893,47 @@ test.describe("UAT gap G-37-6, live (37-59) @desktop-only", () => {
         await next.click()
         await expect(page.getByText(new RegExp(`^Showing ${(p + 1) * 20 + 1}-`))).toBeVisible({ timeout: 15_000 })
       }
+    }
+    if (!target && authorization) {
+      // A fresh volume (the nightly) has no CONFIRMED-or-later order yet, so the instrument makes
+      // one the same way the dashboard would: placed as the vendor, submitted on creation
+      // (DRAFT -> PENDING, D-13) and accepted (PENDING -> CONFIRMED). Left in place: closing the
+      // void dialog without voiding is the test, and a voided fixture would not be voidable.
+      const headers = { Authorization: authorization, ...(tenantHeader ? { "X-Tenant-Id": tenantHeader } : {}) }
+      const shopsRes = await request.get(`${API}/api/v1/shops`, { headers })
+      expect(shopsRes.ok(), `GET /api/v1/shops answered ${shopsRes.status()}`).toBe(true)
+      const shopsBody = (await shopsRes.json()) as { content?: Array<{ id: string; slug: string }> } | Array<{ id: string; slug: string }>
+      const shops = Array.isArray(shopsBody) ? shopsBody : (shopsBody.content ?? [])
+      const shopId = shops.find((s) => s.slug === SHOP_SLUG)?.id ?? null
+      expect(shopId, `the vendor lists ${SHOP_SLUG}`).not.toBeNull()
+      const prodRes = await request.get(`${API}/api/v1/public/shops/${SHOP_SLUG}/products`)
+      expect(prodRes.ok(), `GET /public/shops/${SHOP_SLUG}/products answered ${prodRes.status()}`).toBe(true)
+      // The public products read answers a map of category -> products (measured at the 37-31 gate).
+      const prodBody = (await prodRes.json()) as unknown
+      const products: Array<{ id: string; inStock?: boolean }> = Array.isArray(prodBody)
+        ? (prodBody as Array<{ id: string; inStock?: boolean }>)
+        : Object.values(prodBody as Record<string, unknown>).flatMap((group) =>
+            Array.isArray(group) ? (group as Array<{ id: string; inStock?: boolean }>) : []
+          )
+      const product = products.find((p) => p.inStock !== false) ?? null  // PublicProductDto.inStock
+      expect(product, `${SHOP_SLUG} lists an available product`).not.toBeNull()
+      const createRes = await request.post(`${API}/api/v1/orders`, {
+        headers: { ...headers, "Idempotency-Key": crypto.randomUUID() },
+        data: {
+          shopId,
+          customerName: "G-37-6 void-dialog fixture",
+          customerEmail: `g376-void-${Date.now()}@example.test`,
+          fulfilmentType: "COLLECTION",
+          items: [{ productId: (product as { id: string }).id, quantity: 1 }],
+          submit: true,
+        },
+      })
+      expect(createRes.status(), "POST /api/v1/orders (submit: true) creates a PENDING order").toBe(201)
+      const createdOrder = (await createRes.json()) as OrderRow & { status?: string }
+      const confirmRes = await request.post(`${API}/api/v1/orders/${createdOrder.id}/confirm`, { headers })
+      expect(confirmRes.status(), "POST /api/v1/orders/{id}/confirm (PENDING -> CONFIRMED)").toBe(200)
+      target = { id: createdOrder.id, orderNumber: createdOrder.orderNumber ?? null, voidedAt: null }
+      source = "fixture order placed and confirmed as the vendor (no voidable order existed)"
     }
     expect(target, "VOID: no voidable order (CONFIRMED or later, not voided) was found; nothing was proven").not.toBeNull()
     const order = target as OrderRow
