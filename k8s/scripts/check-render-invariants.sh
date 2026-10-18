@@ -370,8 +370,10 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7]
 #   (run from anywhere; paths resolve relative to the repo root)
+#   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
+#                    catch each (see inv7_selftest below)
 
 set -euo pipefail
 
@@ -391,6 +393,149 @@ LOCAL_KUSTOMIZATION="$LOCAL_DIR/kustomization.yaml"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
+
+# ===========================================================================
+# --selftest-inv7 (Phase 29, plan 29-02): INV-7 shown CATCHING planted holes.
+#
+# A gate observed only passing may be incapable of failing. This arm copies the
+# whole k8s/ tree to a temp dir, plants ONE hole per arm in the copy, runs the
+# COPY's own gate (REPO_ROOT resolves from the script's location, so it renders
+# the planted tree, never this one) and requires rc 1 plus the INV-7 message
+# that names the hole. The unmodified copy must exit 0. Arms:
+#   extra-port         core-java-allow's Redis egress rule gains TCP 9000
+#   dropped-9091       core-java-allow loses its Prometheus 9091 ingress rule
+#   undeclared-policy  a NetworkPolicy with no NETPOL_RULES_EXPECTED row
+#   undeclared-ipblock core-java-allow's public-443 ipBlock loses one RFC1918
+#                      exception (a shape NETPOL_IPBLOCK_EXPECTED does not declare)
+#   foreign-kind       a CiliumNetworkPolicy in the render
+# A plant that does not change its file is reported caught=no: an arm that
+# planted nothing would otherwise "pass" on the clean tree.
+# Output: one `ARM <name> caught=yes|no` line per arm, then `CLEAN rc=<n>`;
+# exit 0 only when all five are caught and CLEAN rc=0. INV7_SELFTEST_FORMAT=tap
+# renders TAP 13 instead (for the RED-evidence classifier).
+# ===========================================================================
+inv7_plant() {
+    local arm="$1" k="$2" f before after
+    case "$arm" in
+        extra-port)
+            f="$k/base/networkpolicies/20-core-java.yaml"
+            before=$(cksum < "$f")
+            awk '{ print } /^          port: 6379$/ && !done { print "        - protocol: TCP"; print "          port: 9000"; done = 1 }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        dropped-9091)
+            f="$k/base/networkpolicies/20-core-java.yaml"
+            before=$(cksum < "$f")
+            awk '/# ingress.2 — Prometheus scrape/ { skip = 1 } skip && /port: 9091$/ { skip = 0; next } !skip { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        undeclared-policy)
+            f="$k/base/kustomization.yaml"
+            before=$(cksum < "$f")
+            cat > "$k/base/networkpolicies/99-planted.yaml" <<'YAML'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: planted-allow
+spec:
+  podSelector:
+    matchLabels:
+      app: core-java
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: planted
+      ports:
+        - protocol: TCP
+          port: 9090
+YAML
+            awk '{ print } /^  - networkpolicies\/60-acme-http01-solver.yaml$/ { print "  - networkpolicies/99-planted.yaml" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        undeclared-ipblock)
+            f="$k/base/networkpolicies/20-core-java.yaml"
+            before=$(cksum < "$f")
+            # Drop the LAST 192.168.0.0/16 exception in the file: the public-443
+            # rule's. Its (peer, port) tuple is unchanged, so only the ipBlock
+            # shape assertion can see this hole.
+            last=$(awk '/^              - 192\.168\.0\.0\/16$/ { l = NR } END { print l + 0 }' "$f")
+            if (( last > 0 )); then awk -v l="$last" 'NR != l' "$f" > "$f.new" && mv "$f.new" "$f"; fi ;;
+        foreign-kind)
+            f="$k/base/kustomization.yaml"
+            before=$(cksum < "$f")
+            cat > "$k/base/networkpolicies/98-planted-cilium.yaml" <<'YAML'
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: planted-cilium
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - world
+YAML
+            awk '{ print } /^  - networkpolicies\/60-acme-http01-solver.yaml$/ { print "  - networkpolicies/98-planted-cilium.yaml" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        *) return 1 ;;
+    esac
+    after=$(cksum < "$f")
+    [[ "$before" != "$after" ]]
+}
+
+inv7_selftest() {
+    local fmt="${INV7_SELFTEST_FORMAT:-plain}" st arm want out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv7 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(extra-port dropped-9091 undeclared-policy undeclared-ipblock foreign-kind)
+    declare -A WANT=(
+        [extra-port]="INV-7: NetworkPolicy 'core-java-allow' renders undeclared rule(s): eg:pod=app=redis:9000"
+        [dropped-9091]="INV-7: NetworkPolicy 'core-java-allow' is missing declared rule(s): in:pod=app=prometheus:9091"
+        [undeclared-policy]="INV-7: undeclared policy 'planted-allow'"
+        [undeclared-ipblock]="INV-7: NetworkPolicy 'core-java-allow' has an undeclared ipBlock"
+        [foreign-kind]="INV-7: foreign NetworkPolicy kind 'CiliumNetworkPolicy'"
+    )
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        rm -rf "$st/arm"; mkdir -p "$st/arm"; cp -a "$st/pristine" "$st/arm/k8s"
+        if ! inv7_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            # `if` form: under set -e a failing $(...) assignment would end the
+            # selftest itself, and rc must be the gate's, captured on the spot.
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"
+            if (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=1"
+            else
+                caught=no
+                line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-7|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    rm -rf "$st/arm"; mkdir -p "$st/arm"; cp -a "$st/pristine" "$st/arm/k8s"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv7" ]]; then
+    inv7_selftest; exit $?
+fi
 
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
