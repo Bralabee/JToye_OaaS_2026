@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### ADR-0002 Recorded as Accepted on Main — 2026-10-18
+### ADR-0002 Recorded as Accepted on Main (#953) — 2026-10-18
 
 - **`docs/architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md`.** Status is now **Accepted (2026-08-10)**. The owner signed the hybrid proposal as proposed on 2026-08-10: managed Azure PostgreSQL Flexible Server, Azure Cache for Redis, and in-cluster RabbitMQ through the cluster operator. Until now the sign-off was recorded only on the `phase-29-research` branch, which the salvage audit ruled is re-planned rather than merged. A dated section records the acceptance. The branch's August pins (operator, broker, cert-manager and PostgreSQL versions) are deliberately not carried over: Phase 29 re-derives them on main. Docs-only; no code, config or gate changes.
 
