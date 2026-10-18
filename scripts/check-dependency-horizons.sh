@@ -118,7 +118,16 @@ COMPOSE_FILES=(
   "docker-compose.full-stack.yml"
   "infra/monitoring/docker-compose.monitoring.yml"
 )
-K8S_GLOB_DIR="k8s/base"
+# Every k8s directory whose manifests carry `image:` pins. k8s/platform (Phase 29, plan
+# 29-03) holds the in-cluster platform objects the bootstrap script applies — Traefik, the
+# ACME probe — which are deliberately NOT kustomize gate targets (depth 3), so without this
+# entry their pins would be invisible to H-1. Each directory is discovered and VOID-checked
+# on its own: a directory that yields ZERO images is a broken pattern, not "no images", and
+# one populated directory must not be able to hide an empty one.
+K8S_GLOB_DIRS=(
+  "k8s/base"
+  "k8s/platform"
+)
 DOCKERFILES=(
   "core-java/Dockerfile"
   "edge-go/Dockerfile"
@@ -137,7 +146,9 @@ done
 for f in "${COMPOSE_FILES[@]}" "${DOCKERFILES[@]}"; do
   [ -r "$f" ] || void "declared source file not readable: $f"
 done
-[ -d "$K8S_GLOB_DIR" ] || void "declared k8s directory not readable: $K8S_GLOB_DIR"
+for d in "${K8S_GLOB_DIRS[@]}"; do
+  [ -d "$d" ] || void "declared k8s directory not readable: $d"
+done
 
 # ---------------------------------------------------------------- manifest -> JSON
 MAN_JSON=$(python3 -c '
@@ -169,10 +180,12 @@ for f in "${COMPOSE_FILES[@]}"; do
   DISCOVERED="$DISCOVERED$found"$'\n'
 done
 
-k8s_found=$(command grep -rhoE '^[[:space:]]*image:[[:space:]]*[^[:space:]#]+' "$K8S_GLOB_DIR" 2>/dev/null \
-            | command sed -E 's/^[[:space:]]*image:[[:space:]]*//' || true)
-[ -n "$k8s_found" ] || void "H-1 discovered ZERO images in $K8S_GLOB_DIR — the pattern broke"
-DISCOVERED="$DISCOVERED$k8s_found"$'\n'
+for d in "${K8S_GLOB_DIRS[@]}"; do
+  k8s_found=$(command grep -rhoE '^[[:space:]]*image:[[:space:]]*[^[:space:]#]+' "$d" 2>/dev/null \
+              | command sed -E 's/^[[:space:]]*image:[[:space:]]*//' || true)
+  [ -n "$k8s_found" ] || void "H-1 discovered ZERO images in $d — the pattern broke"
+  DISCOVERED="$DISCOVERED$k8s_found"$'\n'
+done
 
 for f in "${DOCKERFILES[@]}"; do
   found=$(command grep -hoE '^FROM[[:space:]]+[^[:space:]]+' "$f" 2>/dev/null \

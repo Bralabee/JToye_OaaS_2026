@@ -530,6 +530,29 @@ dependencies:
       a postgres major upgrade that forgets the backup image shows up as two rows disagreeing
       rather than as one silent skew.
 
+  # ------------------------------------------------------------------ k8s platform (Phase 29)
+  #  The in-cluster platform the staging bootstrap applies (scripts/staging-bootstrap.sh,
+  #  plan 29-03). Image pins under k8s/platform are discovered by H-1 through
+  #  K8S_GLOB_DIRS; the two upstream release manifests are pinned in the bootstrap script
+  #  by URL + sha256 and covered by H-5 at that site.
+  - id: traefik
+    pin: "traefik:v3.7.15@sha256:0f6150202bc1fed72a7bd2107460eaa510e5b8a905f3fdb5b84f2c8619c33368"
+    sites: ["k8s/platform/traefik/traefik.yaml:181"]
+    kind: image
+    owner: maintainer
+    eol_slug: traefik
+    eol_cycle: "3.7"
+    eol_date: "false"
+    note: >-
+      Staging ingress controller (D-29: Traefik v3 with its Ingress-NGINX provider).
+      Slug measured 2026-10-18 with `curl -o /dev/null -w '%{http_code} %{redirect_url}'`
+      against https://endoflife.date/api/traefik.json: `200 ` (direct, no redirect); cycle
+      3.7 `eol: false`, latest 3.7.15. v3.7.15 (released 2026-10-15) was the newest Traefik
+      release on that date; the digest is the multi-arch index digest read from
+      registry-1.docker.io the same day. A bump must re-read the provider's Annotations
+      Support table into k8s/platform/traefik/supported-annotations.txt (plan 29-08's render
+      invariant reads it).
+
   # ------------------------------------------------------------------ out of repo
   #  The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
   #  `pin: unknown` + `manual_review` is the honest state, not a placeholder for forgotten
