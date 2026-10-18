@@ -4,16 +4,16 @@ milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
-status: planning
-stopped_at: Phase 29 context re-gathered on main (29-CONTEXT.md, D-20..D-28 new); ADR-0002 Accepted on main (#953, #954); next /gsd-plan-phase 29
-last_updated: "2026-10-18T11:00:00.000Z"
+status: executing
+stopped_at: "Phase 29 planned on docs/29-plan-on-main: 28 plans in 14 waves, plan-checker passed after 3 revision rounds; next /gsd-execute-phase 29"
+last_updated: "2026-10-18T20:11:24.791Z"
 last_activity: 2026-10-18
-last_activity_desc: Phase 29 discussed on main — Mailpit+required STARTTLS, Key Vault+CSI secrets, Managed Redis if within £150, real-flow seed, Stripe test webhook
-state_head: 7109de2e
+last_activity_desc: "Phase 29 planned — 28 plans / 14 waves (29-14 tracer), full-read plan check passed, requirements 5/5 and decisions 28/28 covered"
+state_head: a29e442e5bee5206d9761ea4a43bbaa891388633
 progress:
   total_phases: 20
   completed_phases: 17
-  total_plans: 254
+  total_plans: 282
   completed_plans: 254
   percent: 85
 ---
@@ -29,8 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 ## Current Position
 
-Phase: 29 — Deployable Staging, With Its Own Monitoring
-- 29 CONTEXT RE-GATHERED ON MAIN 2026-10-18: `29-CONTEXT.md` carries the August D-01..D-10, D-13 and D-16..D-19 (D-11/D-12 superseded by Phase 36 Blob; PG16 now a floor) and adds D-20..D-28: staging mail to Mailpit with STARTTLS required (cluster-CA truststore, two-arm proof); Azure Key Vault + Secrets Store CSI via Workload Identity, write-once generator (closes #100/#300); Azure Managed Redis if measured within £150, else in-cluster single pod (Azure Cache Basic creation blocked since 2026-10-01); seed via real onboarding + culinary pack + one order; staging-only test vendor; Stripe TEST webhook wired. Fresh AKS (the August estate is to be deleted by the owner). Next: `/gsd-plan-phase 29`.
+Phase: 29 (Deployable Staging, With Its Own Monitoring) — READY TO EXECUTE
+- 29 CONTEXT RE-GATHERED ON MAIN 2026-10-18: `29-CONTEXT.md` carries the August D-01..D-10, D-13 and D-16..D-19 (D-11/D-12 superseded by Phase 36 Blob; PG16 now a floor) and adds D-20..D-28: staging mail to Mailpit with STARTTLS required (cluster-CA truststore, two-arm proof); Azure Key Vault + Secrets Store CSI via Workload Identity, write-once generator (closes #100/#300); Azure Managed Redis if measured within £150, else in-cluster single pod (Azure Cache Basic creation blocked since 2026-10-01); seed via real onboarding + culinary pack + one order; staging-only test vendor; Stripe TEST webhook wired. Fresh AKS (the August estate is to be deleted by the owner).
+- 29 PLANNED 2026-10-18 on branch `docs/29-plan-on-main` (research d5818bf7, patterns b1605ee4, plans d1c34940 → revisions 46994fe0, a29e442e): 28 plans in 14 waves, 29-14 is the tracer; owner checkpoints DNS 29-11, Stripe TEST 29-13, cost 29-19, WORM 29-20, Zoho 29-25, dispositions 29-27, review+merge 29-28. Next: `/gsd-execute-phase 29`.
 - Phase 39 (39-01..39-10) & ADR-0007 (GAP-GTM-01..04, 06, 07B) DONE 2026-10-17: Merged across PRs #926, #927 (V85), #933 (V86), #934..#937, #939 (PostgreSQL 18.6, Redis 8.10, Keycloak 26.8.1, Tailwind CSS 4.3.3, active-exemptions=0), #940 (ADR-0007), #941 (G-37-6), #942 (GAP-GTM-07B Merchant ROI card), #943 (V87 settlement policy engine, scheduled fulfilment slots, cook sheet API), #944 (GAP-GTM-04 balance payment links & GAP-GTM-06 WhatsApp pre-order links), #945 (Cook Sheet KDS UI & Storefront FulfilmentSlotPicker).
 - 37-59 DONE 2026-10-16 (G-37-6 live proof + PR cut): e2e/screens-copy-uat.spec.ts (5 tests, an arm each) RED on the pre-fix runtime on every gap assertion (finance 768/1024, pagination 32 px, "Co.." in the checkout intro and the invitation); void dialog found clean (2b not taken; the title check measured a leading-none font box, fixed). Rebuild: freshness 1 -> 0 (edge-go/mcp-server force-recreated), (min-width:55rem) rc 1 -> 0 in the served CSS, Sentences.class 0 -> 1 in the jar. GREEN 5/5; the finance arm was vacuous (forced nothing) and is fixed. Measured AT each container threshold the bound figure wrapped at 27/55/26/52rem, so raised to 28/57rem (stat) and 27/54rem (VAT), jest RED first; pagination held (20/4/4 px). Goods: desktop 11/11, dashboard-mobile 48/48. origin/main moved (#926): merged db2887ca, rebuilt, freshness 0; the combined goods line then drained the dev tenant rate-limit bucket (100/min, logged in deferred-items), each spec green alone. Metrics 6148 -> 6208. Tag cut/phase-37-uat-g376 = eaaf8dc2; PR branch phase-37-uat-g376 = 116ef333, ONE commit above origin/main, 25 paths all 'same base' + 4 metric files (6198), tsc/full jest 3003/Gradle 146 green, third verify clean with its fail direction; light-theme quick task excluded; NOT pushed. Evidence: evidence/37-59-g376-runtime.md.
 - 37-57 DONE 2026-10-16 (G-37-6 defect 2, Java half): uk.jtoye.core.common.Sentences (TERMINATORS .!?…, endsSentence, withFullStop, fullStopAfter; trim = isSpaceChar + 0x09-0x0D + 0xFEFF, never isWhitespace); SentencesTest 8 (37-56 table, every code unit 0x0000-0xFFFF vs the 25-entry list, parity with SENTENCE_TERMINATORS and TRAILING_SPACE_CODE_POINTS read from sentence-end.ts). Routed: sendStaffInvite, received/confirmed/preparing/completed leads, the on-behalf-of footer (6 withFullStop in EmailNotificationService, 1 on the RED tree), onboarding reason (text withFullStop, html fullStopAfter after </strong>, still sHtml-escaped). RED_EVIDENCE_OK x3 (task1; task2 as two records, one per JUnit report) then GREEN; arms A, B, C1 (names exactly U+001C-U+001F and U+FEFF), C2, footer (all six statuses) restored by sha256. Full unit 214 classes/1852 tests 0 failures; notification IT 7/22 green; existing tests 0 removed lines. +11 Java @Test, +1 file: metrics left to 37-59.
@@ -786,7 +787,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Ready to plan
+Status: Ready to execute
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -799,7 +800,7 @@ Status: Ready to plan
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
 Last activity: 2026-10-16 — Phase 37 complete, transitioned to Phase 29
 
-Progress: [████████░░] 78%
+Progress: [█████████░] 85%
 
 ## Milestone v2.3 Phase Map
 
