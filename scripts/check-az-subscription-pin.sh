@@ -105,8 +105,116 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-# RED placeholder (TDD): reports clean without looking.
+# Command-position call (bash ERE, matched with [[ =~ ]] — see WHAT IS A CALL).
+AZ_SEP='(^|[;&|`]|\$\()'
+AZ_ASSIGN="[A-Za-z_][A-Za-z0-9_]*=(\"[^\"]*\"|'[^']*'|[^[:space:]]*)"
+AZ_PFX="((\\([[:space:]]*)|((if|elif|while|until|then|do|else|!|\\{|command|exec|env|sudo|xargs|nohup|time|timeout[[:space:]]+[^[:space:]]+|${AZ_ASSIGN})[[:space:]]+))*"
+AZ_CALL_RE="${AZ_SEP}[[:space:]]*${AZ_PFX}az([[:space:]]|\$)"
+AZ_WRAP_RE='(^|[^A-Za-z0-9_])az_(mutate|read)([[:space:]]|$)'
+AZ_WRAPPER_DEF_RE='^(az_guard_init|az_mutate|az_read)\(\)[[:space:]]*\{'
+AZ_COMMENT_RE='^[[:space:]]*#'
+AZ_CONN_ASSIGN_RE='(^|[;&|[:space:]])(export[[:space:]]+)?AZURE_STORAGE_CONNECTION_STRING='
+# Cheap per-file prefilter (GNU grep ERE); the classification above decides.
+AZ_PREFILTER_RE='(^|[^A-Za-z0-9_.-])az([[:space:]]|$)|az_(mutate|read)'
+
 scan() {
+  local root="$1" f rel line n text rest sub i row rpath rsub rreason hit
+  local discovered=0 wrapper_calls=0 exempt=0 findings=0 scanned=0 in_wrapper uses assigns noncomment
+  local -a files=() hits=()
+
+  [ -d "$root/scripts" ] || void "no scripts/ directory under $root"
+  root="$(cd "$root" && pwd)" || void "cannot resolve $root"
+  [ -x /usr/bin/find ] || void "/usr/bin/find not found"
+
+  while IFS= read -r f; do files+=("$f"); done < <(/usr/bin/find "$root/scripts/" -type f -name '*.sh' | LC_ALL=C sort)
+  for i in "${!AZ_PIN_EXEMPT[@]}"; do hits[$i]=0; done
+
+  for f in "${files[@]}"; do
+    scanned=$((scanned + 1))
+    rel="${f#"$root"/}"
+    rel="${rel//\/\//\/}"
+    if [ "$rel" = "$GATE_REL" ]; then
+      echo "EXCLUDED $rel — the gate's own selftest fixtures"
+      continue
+    fi
+    command grep -qE -- "$AZ_PREFILTER_RE" "$f"
+    case $? in
+      0) ;;
+      1) continue ;;
+      *) void "grep failed reading $rel" ;;
+    esac
+
+    noncomment=$(command grep -vE -- "$AZ_COMMENT_RE" "$f")
+    assigns=0
+    if command grep -qE -- "$AZ_CONN_ASSIGN_RE" <<<"$noncomment"; then assigns=1; fi
+
+    n=0; uses=0; in_wrapper=0
+    while IFS= read -r line || [ -n "$line" ]; do
+      n=$((n + 1))
+      line="${line%$'\r'}"
+      if [ "$rel" = "$GUARD_LIB_REL" ]; then
+        if [[ $line =~ $AZ_WRAPPER_DEF_RE ]]; then
+          in_wrapper=1
+        elif [ "$in_wrapper" -eq 1 ] && [[ $line == "}"* ]]; then
+          in_wrapper=0
+          continue
+        fi
+      fi
+      [[ $line =~ $AZ_COMMENT_RE ]] && continue
+      if [ "$rel" != "$GUARD_LIB_REL" ] && [[ $line =~ $AZ_WRAP_RE ]]; then
+        wrapper_calls=$((wrapper_calls + 1))
+        uses=1
+      fi
+      [[ $line =~ $AZ_CALL_RE ]] || continue
+      uses=1
+      text="${line#"${line%%[![:space:]]*}"}"
+      text="${text:0:160}"
+      if [ "$in_wrapper" -eq 1 ]; then
+        continue
+      fi
+      rest="${line#*"${BASH_REMATCH[0]}"}"
+      rest="${rest#"${rest%%[![:space:]]*}"}"
+      sub="${rest%%[[:space:]]*}"
+      hit=""
+      for i in "${!AZ_PIN_EXEMPT[@]}"; do
+        row="${AZ_PIN_EXEMPT[$i]}"
+        rpath="${row%%|*}"; row="${row#*|}"
+        rsub="${row%%|*}"; rreason="${row#*|}"
+        if [ "$rel" = "$rpath" ] && [ "$rsub" = storage ] && [ "$sub" = "$rsub" ] && [ "$assigns" -eq 1 ]; then
+          hit="$i"
+          break
+        fi
+      done
+      if [ -n "$hit" ]; then
+        hits[$hit]=$((hits[$hit] + 1))
+        exempt=$((exempt + 1))
+        echo "EXEMPT $rel:$n — $rreason"
+      else
+        findings=$((findings + 1))
+        echo "FINDING $rel:$n — raw az call outside az_mutate/az_read (not pinned to the J'Toye subscription): $text"
+      fi
+    done < "$f"
+    [ "$uses" -eq 1 ] && discovered=$((discovered + 1))
+  done
+
+  for i in "${!AZ_PIN_EXEMPT[@]}"; do
+    if [ "${hits[$i]}" -eq 0 ]; then
+      row="${AZ_PIN_EXEMPT[$i]}"
+      findings=$((findings + 1))
+      echo "FINDING ${row%%|*} — stale exemption: AZ_PIN_EXEMPT row matches no call (path ${row%%|*}, subcommand $(r="${row#*|}"; printf '%s' "${r%%|*}")); delete the row or restore the call it names"
+    fi
+  done
+
+  if [ "$discovered" -eq 0 ]; then
+    void "discovered zero az-using scripts — the pattern broke (scanned $scanned *.sh under $root/scripts/); on this repo the exempt listing and the guard library always exist, so zero is never clean"
+  fi
+
+  echo "discovered : $discovered az-using script(s) of $scanned scanned"
+  echo "wrappers   : $wrapper_calls az_mutate/az_read call line(s) outside the library"
+  echo "exempt     : $exempt (AZ_PIN_EXEMPT rows: ${#AZ_PIN_EXEMPT[@]})"
+  echo "findings   : $findings"
+  echo "SUMMARY discovered=$discovered wrapper_calls=$wrapper_calls exempt=$exempt findings=$findings"
+  [ "$findings" -eq 0 ] || return 1
   return 0
 }
 

@@ -1008,6 +1008,23 @@ jobs:
           bash ./scripts/gates/object-store-residue-selftest.sh
           ./scripts/check-no-object-store-residue.sh
 
+      # Phase 29-01 (T-29-01, D-01/D-32). The az CLI's ambient default subscription on the
+      # operator host has been the EMPLOYER's, and an empty --subscription silently resolves
+      # to it. scripts/lib/azure-guard.sh pins every call (az_guard_init asserts the J'Toye
+      # id; az_mutate/az_read append --subscription); this makes "no raw az call anywhere in
+      # scripts/" a property every PR re-proves, not a habit. Its only admission is a declared
+      # AZ_PIN_EXEMPT row for a connection-string `az storage` data-plane call, printed and
+      # counted; a stale row fails. The selftest runs nine planted arms first (a raw call,
+      # four prefixed shapes, an empty tree that must VOID, a stale exemption, ...), so a
+      # gate that can no longer fail goes red here rather than passing quietly below.
+      #
+      # Static by construction: reads scripts/ only, invokes no az, no network, no stack.
+      - name: Assert the subscription-pin gate can fail (29-01 selftest)
+        run: bash scripts/check-az-subscription-pin.sh --selftest
+
+      - name: Assert no raw az call bypasses the subscription pin (29-01)
+        run: bash scripts/check-az-subscription-pin.sh
+
       # Plan 31-06 (LGL-01, D-08). docs/retention-manifest.json is the source of truth for a
       # LEGALLY OPERATIVE document — the published per-category retention schedule. A period
       # that quietly diverges from what the system does is a false statement in a document a
