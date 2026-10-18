@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 9/16 (on `phase-29-research`) | Paused | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? on main (re-plan; 9/16 archived on `phase-29-research`) | Context gathered 2026-10-18 | — |
 | 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
