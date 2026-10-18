@@ -5,11 +5,10 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: executing
-stopped_at: "Phase 29 planned on docs/29-plan-on-main: 28 plans in 14 waves, plan-checker passed after 3 revision rounds; next /gsd-execute-phase 29"
-last_updated: "2026-10-18T20:11:24.791Z"
+stopped_at: "Completed 29-01-PLAN.md (structural subscription pin + compute/identity provisioning script, dry-run only); next 29-02"
+last_updated: "2026-10-18T21:16:00.000Z"
 last_activity: 2026-10-18
-last_activity_desc: "Phase 29 planned — 28 plans / 14 waves (29-14 tracer), full-read plan check passed, requirements 5/5 and decisions 28/28 covered"
-state_head: a29e442e5bee5206d9761ea4a43bbaa891388633
+state_head: edc2c94d3b8b14418600287bbbbf54a5807059d6
 progress:
   total_phases: 20
   completed_phases: 17
@@ -25,11 +24,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-17)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 29 — Deployable Staging, With Its Own Monitoring (context re-gathered on main 2026-10-18; `phase-29-research` is the read-only archive)
+**Current focus:** Phase 29 — Deployable Staging, With Its Own Monitoring
 
 ## Current Position
 
-Phase: 29 (Deployable Staging, With Its Own Monitoring) — READY TO EXECUTE
+Phase: 29 (Deployable Staging, With Its Own Monitoring) — EXECUTING
+- 29-01 DONE 2026-10-18 (commits 198c89b2..93844d71, SUMMARY e881168c): `scripts/lib/azure-guard.sh` (az_guard_init equality + pinned read-back, az_mutate/az_read append `--subscription c483d353-…` LAST, az_guard_stub with `.az-guard-stub` marker, selftest 8/8, RED first); `scripts/check-az-subscription-pin.sh` (raw az outside the wrappers = finding, empty discovery = VOID, one AZ_PIN_EXEMPT row for the Azurite `az storage` listing, stale row = finding; selftest 9/9; wired in ci-cd.yaml ops-contracts; gate-enforcement rc 1 -> 0); `scripts/azure-staging-provision.sh` (decision-gated on 29-ESTATE-DECISIONS.md, stub-only dry-run, Cilium/overlay/ephemeral/WI/KV CSI/Entra RBAC local accounts disabled; 57/57 dry-run calls pinned). NOTHING created in Azure. Open for 29-09: BYO outbound IP permission, operator UPN resolution (guest/MSA), live tsv layout.
 - 29 CONTEXT RE-GATHERED ON MAIN 2026-10-18: `29-CONTEXT.md` carries the August D-01..D-10, D-13 and D-16..D-19 (D-11/D-12 superseded by Phase 36 Blob; PG16 now a floor) and adds D-20..D-28: staging mail to Mailpit with STARTTLS required (cluster-CA truststore, two-arm proof); Azure Key Vault + Secrets Store CSI via Workload Identity, write-once generator (closes #100/#300); Azure Managed Redis if measured within £150, else in-cluster single pod (Azure Cache Basic creation blocked since 2026-10-01); seed via real onboarding + culinary pack + one order; staging-only test vendor; Stripe TEST webhook wired. Fresh AKS (the August estate is to be deleted by the owner).
 - 29 PLANNED 2026-10-18 on branch `docs/29-plan-on-main` (research d5818bf7, patterns b1605ee4, plans d1c34940 → revisions 46994fe0, a29e442e): 28 plans in 14 waves, 29-14 is the tracer; owner checkpoints DNS 29-11, Stripe TEST 29-13, cost 29-19, WORM 29-20, Zoho 29-25, dispositions 29-27, review+merge 29-28. Next: `/gsd-execute-phase 29`.
 - Phase 39 (39-01..39-10) & ADR-0007 (GAP-GTM-01..04, 06, 07B) DONE 2026-10-17: Merged across PRs #926, #927 (V85), #933 (V86), #934..#937, #939 (PostgreSQL 18.6, Redis 8.10, Keycloak 26.8.1, Tailwind CSS 4.3.3, active-exemptions=0), #940 (ADR-0007), #941 (G-37-6), #942 (GAP-GTM-07B Merchant ROI card), #943 (V87 settlement policy engine, scheduled fulfilment slots, cook sheet API), #944 (GAP-GTM-04 balance payment links & GAP-GTM-06 WhatsApp pre-order links), #945 (Cook Sheet KDS UI & Storefront FulfilmentSlotPicker).
@@ -787,7 +787,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Ready to execute
+Status: Executing Phase 29
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -798,7 +798,7 @@ Status: Ready to execute
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-16 — Phase 37 complete, transitioned to Phase 29
+Last activity: 2026-10-18
 
 Progress: [█████████░] 85%
 
@@ -993,6 +993,8 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- [Phase 29-01]: Network-policy engine is Cilium, chosen at AKS creation (`--network-dataplane cilium --network-policy cilium`); manifests stay networking.k8s.io/v1 NetworkPolicy (29-02 pins the dialect).
+- [Phase 29-01]: Every Azure CLI call goes through az_mutate/az_read from scripts/lib/azure-guard.sh; a raw az call in scripts/ fails CI (check-az-subscription-pin.sh). Operator roles go only to a signed-in user (user.type asserted), never to jtoye-ci.
 - [Phase 38 D-01]: Jackson 3 throughout core-java; Jackson 2 survives only as a BOM floor (2.22.3) for transitive users. Idempotency hashing uses the frozen `IdempotencyJson` mapper, which must not be edited without a dual-hash window.
 - [Phase 38 D-02]: Explicit per-module Boot 4 starters, never `spring-boot-starter-classic`; module liveness tests fail by name if a module disappears.
 - [Phase 38 D-05]: `/.well-known/oauth-protected-resource` is suppressed (401 without credentials, 404 with them); RFC 9728 metadata stays out of scope.
@@ -1437,8 +1439,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-17T11:55:00Z
-Stopped at: Phase 37 (59/59, UAT 15/15, verification passed, G-37-6 merged as PR #941, forced-light quick-261016-edv + closeout merged), Phase 39 (10/10 plans, PRs #926, #927, #933..#937, #939), and ADR-0007 (GAP-GTM-01..04, 06, 07B, PRs #940, #942..#945, Schema V87) consolidated on main. Next phase per ROADMAP: 29 (its paused body lives on branch phase-29-research).
+Last session: 2026-10-18T21:16:00Z
+Stopped at: Completed 29-01-PLAN.md (Phase 29 wave 1, plan 1 of 28); next 29-02
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
