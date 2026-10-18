@@ -603,7 +603,7 @@ Spring's **in-memory** simple broker accepts arbitrary destination paths, so the
 there and invalid the moment it is relayed.
 
 **Why every k8s environment is affected while development is not.**
-`k8s/base/configmap.yaml:177` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
+`k8s/base/configmap.yaml:199` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
 nor `k8s/production/configmap-patch.yaml` overrides it, so **staging and production both inherit the
 broken path**. Meanwhile `docker-compose.full-stack.yml:310` passes
 `STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:639` reads
