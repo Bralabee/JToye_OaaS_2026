@@ -682,6 +682,9 @@ jobs:
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
 
+      - name: Prove the connection-math gate can fail (D-25 per-target reserve, parse arms)
+        run: ./k8s/scripts/check-connection-math.sh --selftest
+
       - name: Assert the core-java, edge-go and frontend env contracts hold in both directions (D-07/D-08)
         run: |
           chmod +x ./k8s/scripts/check-env-contract.sh
