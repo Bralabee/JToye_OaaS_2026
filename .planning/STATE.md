@@ -5,11 +5,11 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: planning
-stopped_at: Phase 29 context re-gathered on main (29-CONTEXT.md, D-20..D-28 new); ADR-0002 Accepted on main (#953, #954); next /gsd-plan-phase 29
-last_updated: "2026-10-18T11:00:00.000Z"
+stopped_at: "Phase 29 context re-gathered on main (29-CONTEXT.md, D-20..D-28 new); ADR-0002 Accepted on main (#953,"
+last_updated: "2026-10-18T17:46:31.017Z"
 last_activity: 2026-10-18
 last_activity_desc: Phase 29 discussed on main — Mailpit+required STARTTLS, Key Vault+CSI secrets, Managed Redis if within £150, real-flow seed, Stripe test webhook
-state_head: 7109de2e
+state_head: fbfaffb8b7ca684512c9d16b74e833da042a1665
 progress:
   total_phases: 20
   completed_phases: 17
@@ -799,7 +799,7 @@ Status: Ready to plan
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
 Last activity: 2026-10-16 — Phase 37 complete, transitioned to Phase 29
 
-Progress: [████████░░] 78%
+Progress: [█████████░] 85%
 
 ## Milestone v2.3 Phase Map
 
@@ -1430,6 +1430,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 261009-g8m | WINDOWS #29 ruling B: gate customer endpoints on any honoured grant under D-06 strict scoping, with RED-first Testcontainers arms, and re-cut the 37-B PR branch (phase-37-b-staff-access) from origin/main as one squash commit carrying the gate | 2026-10-09 | 29520bf2 | [261009-g8m-windows-29-ruling-b-gate-customer-endpoi](./quick/261009-g8m-windows-29-ruling-b-gate-customer-endpoi/) |
 | 261010-ppb | Owner rulings 2026-10-10 package: option E customer write floors, hours editor all-day pre-fill and copy, pause-403 copy, alarm cap, vendor realm SSO max 14h with D-14 amendment, record option C and slug follow-ups | 2026-10-10 | fa3552fa | [261010-ppb-owner-rulings-2026-10-10-package-option-](./quick/261010-ppb-owner-rulings-2026-10-10-package-option-/) |
 | 261016-edv | Force the light theme on the dashboard until a dashboard-wide dark pass ships | 2026-10-16 | e0c064fd | [261016-edv-force-the-light-theme-on-the-dashboard-u](./quick/261016-edv-force-the-light-theme-on-the-dashboard-u/) |
+| 49 | fix(keycloak): declare the basic client scope so a fresh realm import issues tokens with a sub (nightly E2E, 5 specs) | 2026-10-18 | fbfaffb8 | — |
+| 50 | fix(e2e): 5b resolves the live app tree by its main, not body's first non-hidden div (cookie-notice host since #924) | 2026-10-18 | fbfaffb8 | — |
+| 51 | fix(e2e): G-37-6 defect 3 expects the clamped min(5,totalPages) window; CHANGELOG entry for the nightly fix | 2026-10-18 | fbfaffb8 | — |
 
 ## Session Continuity
 
