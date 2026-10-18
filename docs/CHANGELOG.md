@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ADR-0002 Recorded as Accepted on Main (#953) — 2026-10-18
+
+- **`docs/architecture/decisions/ADR-0002-managed-vs-manifest-datastores.md`.** Status is now **Accepted (2026-08-10)**. The owner signed the hybrid proposal as proposed on 2026-08-10: managed Azure PostgreSQL Flexible Server, Azure Cache for Redis, and in-cluster RabbitMQ through the cluster operator. Until now the sign-off was recorded only on the `phase-29-research` branch, which the salvage audit ruled is re-planned rather than merged. A dated section records the acceptance. The branch's August pins (operator, broker, cert-manager and PostgreSQL versions) are deliberately not carried over: Phase 29 re-derives them on main. Docs-only; no code, config or gate changes.
+
 ### Mail STARTTLS Property Spelled the Way JavaMail Reads It (DEF-29-6) (#952) — 2026-10-17
 
 - **`spring.mail.properties.mail.smtp.starttls.enable` (`application.yml`, `MailStartTlsPropertyTest`).** The key was spelled `starttls.enabled`. JavaMail reads only `.enable`, so STARTTLS was silently off for every real SMTP server, while `SMTP_STARTTLS` / k8s `smtp.starttls: "true"` looked configurable. A new unit test runs the shipped `application.yml` through `MailSenderAutoConfiguration` and asserts on the sender's JavaMail properties: RED on the old spelling (`but was: null`), GREEN after. Local compose is unchanged (`SMTP_STARTTLS=false` for Mailhog).
