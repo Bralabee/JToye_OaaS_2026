@@ -113,6 +113,9 @@ done
 RG="jtoye-rg"
 LOCATION="uksouth"
 PG_NAME="jtoye-stg-pg"
+# D-25: the major is a one-way create parameter, so the create line spells it as
+# the literal `--version 18`; PG_VERSION is what the read-back expects and must
+# say the same.
 PG_VERSION="18"
 PG_TIER="Burstable"
 # Standard_B2s: max_connections 429, the k8s-staging row of
@@ -313,7 +316,7 @@ if [ "$SERVER_EXISTS" -eq 0 ]; then
   # --zonal-resiliency Disabled: the 2.91.0 spelling of "no high availability";
   # `--high-availability` is not an argument of this CLI version.
   az_mutate --no-echo postgres flexible-server create -g "$RG" -n "$PG_NAME" -l "$LOCATION" \
-    --version "$PG_VERSION" --tier "$PG_TIER" --sku-name "$PG_SKU" \
+    --version 18 --tier "$PG_TIER" --sku-name "$PG_SKU" \
     --storage-size "$PG_STORAGE_GB" --backup-retention "$PG_BACKUP_RETENTION_DAYS" \
     --zonal-resiliency Disabled \
     --admin-user "$PG_ADMIN_LOGIN" --admin-password "@$PW_FILE" \
