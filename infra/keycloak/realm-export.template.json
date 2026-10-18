@@ -582,7 +582,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "0b03f953-d44d-4e62-b927-64dfd23064df",
@@ -621,7 +621,7 @@
       "consentRequired" : false,
       "config" : { }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "7a4ac6a0-62df-4478-a4d4-d7803bc46461",
@@ -647,7 +647,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "71d46d3f-b0a2-452d-8c19-48d31fb5034d",
@@ -673,7 +673,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "04297f62-5a70-44ca-8776-df2aa9a6b21b",
@@ -770,7 +770,7 @@
         "introspection.token.claim" : "true"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "catalog:read", "catalog:write", "orders:write", "customers:write" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "catalog:read", "catalog:write", "orders:write", "customers:write", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "d0c5835f-543c-4b47-a554-4cad011884f9",
@@ -855,7 +855,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "173ef20b-1ffe-48c4-97fd-e4745b6e7657",
@@ -881,7 +881,7 @@
     "authenticationFlowBindingOverrides" : { },
     "fullScopeAllowed" : false,
     "nodeReRegistrationTimeout" : 0,
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "b56df31c-83c0-4943-9238-e74855cc5703",
@@ -928,7 +928,7 @@
         "jsonType.label" : "String"
       }
     } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "f5757cc0-994a-4b61-afb7-f73f71de8c15",
@@ -985,7 +985,7 @@
         "introspection.token.claim" : "true"
       }
     } ],
-    "defaultClientScopes" : [ "catalog:read", "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "catalog:read", "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   }, {
     "id" : "53e8576a-2f26-4be1-b5e4-e97b09cc3c26",
@@ -1042,10 +1042,44 @@
         "introspection.token.claim" : "true"
       }
     } ],
-    "defaultClientScopes" : [ "orders:write", "customers:write", "catalog:read", "web-origins", "acr", "roles", "profile", "email" ],
+    "defaultClientScopes" : [ "orders:write", "customers:write", "catalog:read", "web-origins", "acr", "roles", "profile", "email", "basic" ],
     "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
   } ],
   "clientScopes" : [ {
+      "name" : "basic",
+      "description" : "OpenID Connect scope for add all basic claims to the token",
+      "protocol" : "openid-connect",
+      "attributes" : {
+        "include.in.token.scope" : "false",
+        "display.on.consent.screen" : "false"
+      },
+      "protocolMappers" : [
+        {
+          "name" : "auth_time",
+          "protocol" : "openid-connect",
+          "protocolMapper" : "oidc-usersessionmodel-note-mapper",
+          "consentRequired" : false,
+          "config" : {
+            "user.session.note" : "AUTH_TIME",
+            "id.token.claim" : "true",
+            "introspection.token.claim" : "true",
+            "access.token.claim" : "true",
+            "claim.name" : "auth_time",
+            "jsonType.label" : "long"
+          }
+        },
+        {
+          "name" : "sub",
+          "protocol" : "openid-connect",
+          "protocolMapper" : "oidc-sub-mapper",
+          "consentRequired" : false,
+          "config" : {
+            "introspection.token.claim" : "true",
+            "access.token.claim" : "true"
+          }
+        }
+      ]
+    }, {
     "id" : "02dc904b-8484-4df8-8bb1-3e944bffba64",
     "name" : "catalog:read",
     "description" : "Read-only access to the product catalog surface (issue #206 [AI-4]). Emitted into the token scope claim; the resource server maps it to SCOPE_catalog:read.",
@@ -1596,7 +1630,7 @@
       }
     } ]
   } ],
-  "defaultDefaultClientScopes" : [ "role_list", "profile", "email", "roles", "web-origins", "acr" ],
+  "defaultDefaultClientScopes" : [ "role_list", "profile", "email", "roles", "web-origins", "acr", "basic" ],
   "defaultOptionalClientScopes" : [ "offline_access", "address", "phone", "microprofile-jwt" ],
   "browserSecurityHeaders" : {
     "contentSecurityPolicyReportOnly" : "",
