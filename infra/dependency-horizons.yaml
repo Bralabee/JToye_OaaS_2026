@@ -418,8 +418,8 @@ dependencies:
     pin: "go-version: '1.27'"
     sites:
       - ".github/workflows/ci-cd.yaml:53"
-      - ".github/workflows/ci-cd.yaml:939"
-      - ".github/workflows/ci-cd.yaml:1336"
+      - ".github/workflows/ci-cd.yaml:998"
+      - ".github/workflows/ci-cd.yaml:1412"
     kind: toolchain
     owner: maintainer
     eol_slug: go
@@ -609,6 +609,37 @@ dependencies:
       last_checked: "2026-10-18"
       expires: "2027-01-18"
       url: "https://github.com/rabbitmq/cluster-operator/releases"
+
+  # ------------------------------------------------------------------ Azure estate (Phase 29)
+  #  Cloud SKUs the staging provisioning scripts pin. Not images, but they age the same
+  #  way: a retired VM size stops being creatable and its running nodes are deallocated.
+  - id: aks-node-vm-sku
+    pin: "Standard_B2s"
+    sites: ["scripts/azure-staging-provision.sh:145"]
+    kind: toolchain
+    owner: maintainer
+    eol_slug: null
+    vendor_eol: "2028-11-15"
+    vendor_source: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"
+    note: >-
+      The AKS node size (NODE_VM_SIZE in scripts/azure-staging-provision.sh, plan 29-01):
+      3 x Standard_B2s nodes. B2s is B-series v1, which Microsoft has announced for
+      retirement on 2028-11-15. Read 2026-10-19 from the Microsoft Learn "Retirements and
+      capacity restrictions" table (row "B-series (V1)": Announced, announcement 10/15/25,
+      retirement 11/15/28; the older .../sizes/retirement/retired-sizes-list URL redirects
+      there). endoflife.date has no product for Azure VM sizes, so the horizon is the
+      vendor date held here under a dated manual_review (the gate evaluates no slug). The
+      successor family is not a drop-in today: Basv2 quota on this subscription is 0, and
+      Basv2 sizes support no ephemeral OS disk, which the cluster's 30 GiB ephemeral OS disks
+      rely on (29-RESEARCH State of the Art). kind is `toolchain` only because the schema
+      has no infrastructure kind; the gate treats image and toolchain rows identically.
+      The PostgreSQL Flexible Server compute (Burstable Standard_B2s,
+      scripts/azure-staging-datastores.sh) is a separate managed-service SKU and is not
+      covered by this row.
+    manual_review:
+      last_checked: "2026-10-19"
+      expires: "2027-01-19"
+      url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"
 
   # ------------------------------------------------------------------ out of repo
   #  The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
