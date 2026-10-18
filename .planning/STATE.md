@@ -5,11 +5,11 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: planning
-stopped_at: Phase 37, Phase 39, ADR-0007 and GTM track 2 (#948) merged; Phase 30 code merged as #949 (V88) but PAY-01/PAY-03 open; ready to re-plan Phase 29 on main
-last_updated: "2026-10-17T19:45:00.000Z"
-last_activity: 2026-10-17
-last_activity_desc: Phase 30 (#949) recorded in ROADMAP and REQUIREMENTS as partial — PAY-02/04 evidenced, PAY-01/03 open
-state_head: eaa6392a
+stopped_at: Phase 29 context re-gathered on main (29-CONTEXT.md, D-20..D-28 new); ADR-0002 Accepted on main (#953, #954); next /gsd-plan-phase 29
+last_updated: "2026-10-18T11:00:00.000Z"
+last_activity: 2026-10-18
+last_activity_desc: Phase 29 discussed on main — Mailpit+required STARTTLS, Key Vault+CSI secrets, Managed Redis if within £150, real-flow seed, Stripe test webhook
+state_head: 7109de2e
 progress:
   total_phases: 20
   completed_phases: 17
@@ -25,11 +25,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-17)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 29 — Deployable Staging, With Its Own Monitoring (note: paused body lives on `phase-29-research`)
+**Current focus:** Phase 29 — Deployable Staging, With Its Own Monitoring (context re-gathered on main 2026-10-18; `phase-29-research` is the read-only archive)
 
 ## Current Position
 
 Phase: 29 — Deployable Staging, With Its Own Monitoring
+- 29 CONTEXT RE-GATHERED ON MAIN 2026-10-18: `29-CONTEXT.md` carries the August D-01..D-10, D-13 and D-16..D-19 (D-11/D-12 superseded by Phase 36 Blob; PG16 now a floor) and adds D-20..D-28: staging mail to Mailpit with STARTTLS required (cluster-CA truststore, two-arm proof); Azure Key Vault + Secrets Store CSI via Workload Identity, write-once generator (closes #100/#300); Azure Managed Redis if measured within £150, else in-cluster single pod (Azure Cache Basic creation blocked since 2026-10-01); seed via real onboarding + culinary pack + one order; staging-only test vendor; Stripe TEST webhook wired. Fresh AKS (the August estate is to be deleted by the owner). Next: `/gsd-plan-phase 29`.
 - Phase 39 (39-01..39-10) & ADR-0007 (GAP-GTM-01..04, 06, 07B) DONE 2026-10-17: Merged across PRs #926, #927 (V85), #933 (V86), #934..#937, #939 (PostgreSQL 18.6, Redis 8.10, Keycloak 26.8.1, Tailwind CSS 4.3.3, active-exemptions=0), #940 (ADR-0007), #941 (G-37-6), #942 (GAP-GTM-07B Merchant ROI card), #943 (V87 settlement policy engine, scheduled fulfilment slots, cook sheet API), #944 (GAP-GTM-04 balance payment links & GAP-GTM-06 WhatsApp pre-order links), #945 (Cook Sheet KDS UI & Storefront FulfilmentSlotPicker).
 - 37-59 DONE 2026-10-16 (G-37-6 live proof + PR cut): e2e/screens-copy-uat.spec.ts (5 tests, an arm each) RED on the pre-fix runtime on every gap assertion (finance 768/1024, pagination 32 px, "Co.." in the checkout intro and the invitation); void dialog found clean (2b not taken; the title check measured a leading-none font box, fixed). Rebuild: freshness 1 -> 0 (edge-go/mcp-server force-recreated), (min-width:55rem) rc 1 -> 0 in the served CSS, Sentences.class 0 -> 1 in the jar. GREEN 5/5; the finance arm was vacuous (forced nothing) and is fixed. Measured AT each container threshold the bound figure wrapped at 27/55/26/52rem, so raised to 28/57rem (stat) and 27/54rem (VAT), jest RED first; pagination held (20/4/4 px). Goods: desktop 11/11, dashboard-mobile 48/48. origin/main moved (#926): merged db2887ca, rebuilt, freshness 0; the combined goods line then drained the dev tenant rate-limit bucket (100/min, logged in deferred-items), each spec green alone. Metrics 6148 -> 6208. Tag cut/phase-37-uat-g376 = eaaf8dc2; PR branch phase-37-uat-g376 = 116ef333, ONE commit above origin/main, 25 paths all 'same base' + 4 metric files (6198), tsc/full jest 3003/Gradle 146 green, third verify clean with its fail direction; light-theme quick task excluded; NOT pushed. Evidence: evidence/37-59-g376-runtime.md.
 - 37-57 DONE 2026-10-16 (G-37-6 defect 2, Java half): uk.jtoye.core.common.Sentences (TERMINATORS .!?…, endsSentence, withFullStop, fullStopAfter; trim = isSpaceChar + 0x09-0x0D + 0xFEFF, never isWhitespace); SentencesTest 8 (37-56 table, every code unit 0x0000-0xFFFF vs the 25-entry list, parity with SENTENCE_TERMINATORS and TRAILING_SPACE_CODE_POINTS read from sentence-end.ts). Routed: sendStaffInvite, received/confirmed/preparing/completed leads, the on-behalf-of footer (6 withFullStop in EmailNotificationService, 1 on the RED tree), onboarding reason (text withFullStop, html fullStopAfter after </strong>, still sHtml-escaped). RED_EVIDENCE_OK x3 (task1; task2 as two records, one per JUnit report) then GREEN; arms A, B, C1 (names exactly U+001C-U+001F and U+FEFF), C2, footer (all six statuses) restored by sha256. Full unit 214 classes/1852 tests 0 failures; notification IT 7/22 green; existing tests 0 removed lines. +11 Java @Test, +1 file: metrics left to 37-59.

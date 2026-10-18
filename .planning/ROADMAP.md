@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 9/16 (on `phase-29-research`) | Paused | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? on main (re-plan; 9/16 archived on `phase-29-research`) | Context gathered 2026-10-18 | — |
 | 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
@@ -550,7 +550,7 @@ deliberately sequenced after them so the role catalogue does not change under th
 **Goal**: A staging environment exists that a human can log into and that **alerts a human when it
 breaks** — the first runtime of this platform outside a laptop.
 **Depends on**: Phase 28 (do not deploy an untriaged exposure surface). Blocked on the production-domain
-and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-off**.
+and hosting-target decisions; DPLY-04's **ADR-0002 sign-off** blocker is RESOLVED (Accepted, #953).
 **Requirements**: DPLY-01, DPLY-02, DPLY-03, DPLY-04, DPLY-05
 **Success Criteria** (what must be TRUE):
 
@@ -571,11 +571,12 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
      in Phase 27 `deferred-items.md` §5. Everything Phase 27 built is compose-scoped, so a staging
      deploy today would be wholly unmonitored. (DPLY-03)
   4. PITR per #101, with a restore proven **by row count on a restored database**, two-arm. Arm A
-     must demonstrate that a zero-row dump still passes the pipeline's own byte-size and
-     `pg_restore --list` checks — 26-07's L4 measured exactly that (arm A `products 0` while clearing
+     must demonstrate that a zero-row or partial dump still passes the pipeline's own byte-size and
+     `pg_restore --list` checks (a non-BYPASSRLS `pg_dump` errors by default, while
+     `--enable-row-security` yields a plausible partial dump; ADR-0002 2026-10-18, #954) — 26-07's L4 measured exactly that (arm A `products 0` while clearing
      `MIN_BACKUP_BYTES` by 149×). A single green arm is not evidence. (DPLY-04)
-  5. NetworkPolicies are **enforced, not merely rendered** (#297 — install Calico; the Phase 26 D-17
-     prerequisite is already cleared), with a denied connection captured as the positive proof.
+  5. NetworkPolicies are **enforced, not merely rendered** (#297 — an enforcing engine chosen at cluster creation, Calico or
+     AKS-native Cilium; reconciled 2026-10-18; the Phase 26 D-17 prerequisite is already cleared), with a denied connection captured as the positive proof.
      Phase 26 recorded enforcement explicitly NOT PROVEN and that record must not be quietly
      inherited as a pass. (DPLY-05)
 
