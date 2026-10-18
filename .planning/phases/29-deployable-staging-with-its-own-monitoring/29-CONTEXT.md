@@ -196,6 +196,43 @@ real app-email delivery and SES (D-13).
   money-path proof stays Phase 30's, but needs no further deploy work afterwards. TEST mode
   only; live keys never enter staging.
 
+### Owner rulings at plan time (2026-10-18, after 29-RESEARCH.md)
+- **D-29: the staging ingress controller is Traefik v3 with its Kubernetes Ingress-NGINX
+  provider**, not the retired ingress-nginx and not Gateway API. The existing `nginx.ingress.kubernetes.io/*`
+  annotations stay the source of truth. The plan must (a) list every annotation the overlays use
+  that the Traefik provider does NOT document (research: `proxy-buffer-size`,
+  `proxy-buffers-number`, `proxy-connect-timeout`, `proxy-send-timeout`) and say for each what
+  replaces it or why its loss is accepted; (b) prove fidelity on the live edge — the security
+  headers by `curl -sI`, a CORS preflight, a 429 on burst — each shown FAILING first;
+  (c) update every NetworkPolicy `namespaceSelector` that names the ingress namespace. Phase 37's
+  trusted-proxies item now measures Traefik's pod CIDR and `externalTrafficPolicy: Local` on
+  Traefik's Service.
+- **D-30: D-21 stands literally — the cluster CA goes into a JVM-wide truststore** (owner chose
+  this over the mail-scoped `spring.mail.ssl.bundle`). The truststore MUST be the JDK's own
+  `cacerts` plus the cert-manager CA, built at pod start (init container or image step) — never
+  the CA alone, which would break Stripe, Entra and Blob TLS. Proof: STARTTLS to Mailpit
+  verifies, AND a public-TLS call (Stripe test API or Blob) still succeeds from the same pod;
+  a CA-only truststore is the break arm and must red the public call.
+- **D-31: the D-26 seed order is paid by a Stripe TEST PaymentIntent** and settles through the
+  D-28 webhook. No cash order in the seed.
+- **D-32: AKS uses Entra ID + Azure RBAC with local accounts disabled.** CI authenticates by
+  GitHub OIDC to the reused `jtoye-ci` identity (its `environment:staging` federated credential
+  is already correct) and `kubelogin`. Role assignments are scripted, least-privilege
+  (cluster-scoped RBAC Writer on the staging namespace path, not Cluster Admin, unless a step
+  is shown to need more).
+
+### Corrections measured 2026-10-18 (29-RESEARCH.md §Corrections; these override the text above)
+- DNS for `olajay.co.uk` is **Namecheap BasicDNS**, not Netlify/NS1 (D-05/D-07). The owner edits records.
+- Alert SMTP is **Zoho** `smtp.zoho.eu:587` from `alerts@olajay.co.uk` (D-17 said Gmail);
+  the external values are `ALERTMANAGER_SMTP_{FROM,USERNAME,PASSWORD,TO}` plus Stripe TEST.
+- The `jtoye-ci` identity was NOT deleted (D-04); it is reused (D-32).
+- k8s runs the **`prod`** Spring profile in every environment (`k8s/base/core-java-deployment.yaml:69-70`),
+  so the D-20 literal that governs the cluster is the one in `application-prod.yml`.
+- **#100 was closed by mistake** by docs PR #955; reopen it and close it on the D-23 evidence.
+- D-24 is resolved by measurement: **in-cluster Redis** (Managed Redis breaches the ceiling once
+  the LB meter bills). Owner checkpoint after 24 h of cluster life on the
+  `FreeTierInfrastructureCost` AKS meter and on `snackpass-pg`.
+
 ### Claude's Discretion
 - **D-25: managed PostgreSQL major version.** The floor is ≥ 16: `jtoye_backup` BYPASSRLS
   cannot be created by `azure_pg_admin` on 15 or earlier. Prefer the highest Azure-supported
