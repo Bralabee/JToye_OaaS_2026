@@ -243,3 +243,16 @@ regexes = [
   '''^\s*\+?## [0-9TZ:-]+ (before|after): secret uid=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} created=[0-9TZ:-]+ owners=[A-Za-z]+/[a-z0-9-]+\s*$''',
   '''^\s*\+?[0-9:.]+ secret=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} pods=\[[A-Za-z0-9:. -]*\]\s*$''',
 ]
+
+# ---- Phase 29-22 Mailpit message ids (2026-10-19) ----
+# evidence/29-22-mail-tls.txt records the id Mailpit assigned to the Keycloak SMTP test
+# message. It is Mailpit's own 22-character message identifier, not a credential.
+# generic-api-key reads "test message: ... id=<22 chars>" as a key (1 hit). Anchored on
+# the full line shape, so the same token anywhere else, or a real key on this line, fires.
+[[allowlists]]
+description = "Phase 29-22 evidence: Mailpit message id of the Keycloak SMTP test message (an identifier, not a credential)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''^\s*\+?[0-9TZ:-]+ Mailpit received the Keycloak test message: id=[A-Za-z0-9]{22} subject="[^"]*" to=[a-z0-9.@-]+ from=[a-z0-9.@-]+ date=[0-9TZ:-]+\s*$''',
+]
