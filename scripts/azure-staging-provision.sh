@@ -145,6 +145,8 @@ K8S_MINOR="1.36"
 NODE_VM_SIZE="Standard_B2s"
 NODE_COUNT=3
 QUOTA_FREE_VCPU_MIN=8          # 3 x B2s (2 vCPU) + 1 surge node during upgrades
+QUOTA_SURGE_VCPU_MIN=2         # re-run with the cluster already created: its 6 vCPU are
+                               # already counted as used, so only the surge node must fit
 PROVIDERS="Microsoft.KeyVault Microsoft.Storage"
 PROVIDER_DEADLINE_SECONDS=600
 WI_AUDIENCE="api://AzureADTokenExchange"
@@ -317,7 +319,7 @@ stage_providers() {
 }
 
 stage_network() {
-  local usage fields family_cur family_lim cores_cur cores_lim free_family free_cores name id
+  local usage fields family_cur family_lim cores_cur cores_lim free_family free_cores name id need need_why
   step "STAGE network: quota + static IPs"
   usage="$(read_required 'uksouth vCPU usage' vm list-usage -l "$LOCATION" \
     --query "[?name.value=='standardBSFamily' || name.value=='cores'].[name.value, currentValue, limit]" -o tsv)"
@@ -333,9 +335,18 @@ stage_network() {
       [[ $v =~ ^[0-9]+$ ]] || void "could not parse the uksouth quota read (got '$(printf '%s' "$usage" | tr '\n\t' '| ')')"
     done
     free_family=$((family_lim - family_cur)); free_cores=$((cores_lim - cores_cur))
-    [ "$free_family" -ge "$QUOTA_FREE_VCPU_MIN" ] || refuse quota "standardBSFamily has ${free_family} free vCPU in ${LOCATION}; ${QUOTA_FREE_VCPU_MIN} needed (3 x ${NODE_VM_SIZE} + 1 surge)"
-    [ "$free_cores" -ge "$QUOTA_FREE_VCPU_MIN" ] || refuse quota "regional cores have ${free_cores} free vCPU in ${LOCATION}; ${QUOTA_FREE_VCPU_MIN} needed"
-    ok "quota: standardBSFamily ${free_family} free, regional cores ${free_cores} free"
+    # A re-run after the cluster exists: its nodes already sit in currentValue, so
+    # demanding 8 free would refuse every re-run (measured on the first live
+    # re-run, 2026-10-19: "standardBSFamily has 4 free vCPU"). Only the upgrade
+    # surge node still has to fit. The probe reads, it never adopts: stage aks
+    # still asserts every one-way property of the existing cluster.
+    need="$QUOTA_FREE_VCPU_MIN"; need_why="3 x ${NODE_VM_SIZE} + 1 surge"
+    if exists "AKS cluster ${AKS_NAME} (quota already consumed by its nodes)" aks show -g "$RG" -n "$AKS_NAME" --query id -o tsv; then
+      need="$QUOTA_SURGE_VCPU_MIN"; need_why="1 surge ${NODE_VM_SIZE}; the 3 nodes of the existing cluster are already counted"
+    fi
+    [ "$free_family" -ge "$need" ] || refuse quota "standardBSFamily has ${free_family} free vCPU in ${LOCATION}; ${need} needed (${need_why})"
+    [ "$free_cores" -ge "$need" ] || refuse quota "regional cores have ${free_cores} free vCPU in ${LOCATION}; ${need} needed (${need_why})"
+    ok "quota: standardBSFamily ${free_family} free, regional cores ${free_cores} free (${need} needed: ${need_why})"
   fi
   for name in "$INGRESS_IP_NAME" "$OUTBOUND_IP_NAME"; do
     if want_create "public IP ${name}" network public-ip show -g "$RG" -n "$name" --query id -o tsv; then
