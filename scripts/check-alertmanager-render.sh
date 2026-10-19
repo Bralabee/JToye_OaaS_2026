@@ -119,6 +119,7 @@ STAGING_ENV=(
   "ALERTMANAGER_SINK_SMARTHOST=$STAGING_SINK"
   "ALERTMANAGER_SINK_CA_FILE=$STAGING_CA"
   "ALERTMANAGER_MUTE_ALERTNAMES=NoOrdersCreated"
+  "ALERTMANAGER_WEB_EXTERNAL_URL=http://alertmanager.jtoye-staging.svc.cluster.local:9093"
 )
 
 # render <outdir> <srcdir> <env...> — runs the entrypoint in the image; leaves
@@ -126,7 +127,8 @@ STAGING_ENV=(
 render() {
   local out="$1" src="$2"; shift 2
   mkdir -p "$out"; chmod 777 "$out"
-  local envargs=(-e ALERTMANAGER_RENDER_ONLY=1)
+  # Every arm runs with compose's external URL unless it passes its own (a later -e wins).
+  local envargs=(-e ALERTMANAGER_RENDER_ONLY=1 -e "ALERTMANAGER_WEB_EXTERNAL_URL=http://localhost:9093")
   local kv
   for kv in "$@"; do envargs+=(-e "$kv"); done
   # shellcheck disable=SC2016
@@ -296,20 +298,26 @@ arm_password_and_file_refused() {
   render "$o" "$src" "ALERTMANAGER_SMTP_SMARTHOST=$STAGING_SMARTHOST" "ALERTMANAGER_SMTP_REQUIRE_TLS=true" \
     "ALERTMANAGER_SMTP_USERNAME=$STAGING_USER" "ALERTMANAGER_SMTP_PASSWORD=$TESTPW" "ALERTMANAGER_SMTP_PASSWORD_FILE=$STAGING_PWFILE" \
     || { echo "docker run failed"; return 2; }
-  refused "$o" "FATAL" && echo "FATAL on PASSWORD and PASSWORD_FILE together"
+  refused "$o" "both ALERTMANAGER_SMTP_PASSWORD and ALERTMANAGER_SMTP_PASSWORD_FILE are set" && echo "FATAL on PASSWORD and PASSWORD_FILE together"
 }
 
 arm_username_without_password_refused() {
   local src="$1" o="$WORK/o-nopw-$RANDOM"
   render "$o" "$src" "ALERTMANAGER_SMTP_SMARTHOST=$STAGING_SMARTHOST" "ALERTMANAGER_SMTP_REQUIRE_TLS=true" \
     "ALERTMANAGER_SMTP_USERNAME=$STAGING_USER" || { echo "docker run failed"; return 2; }
-  refused "$o" "FATAL" && echo "FATAL on a username with no password"
+  refused "$o" "neither ALERTMANAGER_SMTP_PASSWORD nor ALERTMANAGER_SMTP_PASSWORD_FILE" && echo "FATAL on a username with no password"
 }
 
 arm_unreadable_ca_refused() {
   local src="$1" o="$WORK/o-ca-$RANDOM"
   render "$o" "$src" "${STAGING_ENV[@]}" "ALERTMANAGER_SINK_CA_FILE=/cluster-ca/absent.crt" || { echo "docker run failed"; return 2; }
-  refused "$o" "FATAL" && echo "FATAL on an unreadable sink CA file"
+  refused "$o" "the sink CA file /cluster-ca/absent.crt is not readable" && echo "FATAL on an unreadable sink CA file"
+}
+
+arm_external_url_required() {
+  local src="$1" o="$WORK/o-url-$RANDOM"
+  render "$o" "$src" "${COMPOSE_ENV[@]}" "ALERTMANAGER_WEB_EXTERNAL_URL=" || { echo "docker run failed"; return 2; }
+  refused "$o" "ALERTMANAGER_WEB_EXTERNAL_URL is not set" && echo "FATAL with no external URL (no loopback default in the file)"
 }
 
 arm_render_only() {
@@ -397,4 +405,5 @@ run_arm password-and-file-refused           arm_password_and_file_refused "$AM_D
 run_arm username-without-password-refused   arm_username_without_password_refused "$AM_DIR"
 run_arm unreadable-sink-ca-refused          arm_unreadable_ca_refused "$AM_DIR"
 run_arm render-only-exits-before-exec       arm_render_only "$AM_DIR"
+run_arm external-url-required               arm_external_url_required "$AM_DIR"
 finish run

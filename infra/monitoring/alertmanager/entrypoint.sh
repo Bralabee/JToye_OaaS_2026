@@ -26,6 +26,14 @@ set -eu
 : "${ALERTMANAGER_RENDERED:=/etc/alertmanager/alertmanager.yml}"
 : "${ALERTMANAGER_RENDER_ONLY:=0}"
 
+# The URL every notification links back to (--web.external-url). REQUIRED, with no default in
+# this file: compose passes the loopback URL on port 9093 that this file used to hard-code
+# (docker-compose.monitoring.yml, so compose's exec arguments are unchanged), and Kubernetes passes the
+# in-cluster Service URL. A default here would put a loopback literal into the staging render,
+# because this file IS in that render (a byte copy served by ConfigMap), and INV-4 of
+# k8s/scripts/check-render-invariants.sh refuses one there for good reason (DEF-6).
+: "${ALERTMANAGER_WEB_EXTERNAL_URL:=}"
+
 # fatal <message...> — one shape for every operator error below. Never prints a value that
 # could be a credential.
 fatal() {
@@ -42,6 +50,15 @@ yaml_safe() { # yaml_safe <VARNAME> <value>
     fatal "$1 contains a newline."
   fi
 }
+
+case "${ALERTMANAGER_WEB_EXTERNAL_URL}" in
+  http://?*|https://?*)
+    case "${ALERTMANAGER_WEB_EXTERNAL_URL}" in
+      *[[:space:]]*) fatal "ALERTMANAGER_WEB_EXTERNAL_URL contains whitespace." ;;
+    esac ;;
+  "") fatal "ALERTMANAGER_WEB_EXTERNAL_URL is not set (the URL notifications link back to; compose sets it in docker-compose.monitoring.yml)." ;;
+  *) fatal "ALERTMANAGER_WEB_EXTERNAL_URL '${ALERTMANAGER_WEB_EXTERNAL_URL}' is not an http(s) URL." ;;
+esac
 
 # __SMTP_AUTH_BLOCK__ (plan 29-24) — SMTP AUTH for the primary email_config, ADDITIVE.
 #
@@ -350,4 +367,4 @@ fi
 exec /bin/alertmanager \
   --config.file="${RENDERED}" \
   --storage.path=/alertmanager \
-  --web.external-url=http://localhost:9093
+  --web.external-url="${ALERTMANAGER_WEB_EXTERNAL_URL}"

@@ -131,6 +131,9 @@ services:
       # and referenced as auth_password_file, never inlined into the rendered config.
       - ALERTMANAGER_SMTP_USERNAME=${ALERTMANAGER_SMTP_USERNAME:-}
       - ALERTMANAGER_SMTP_PASSWORD=${ALERTMANAGER_SMTP_PASSWORD:-}
+      # The URL notifications link back to. entrypoint.sh requires it (plan 29-24); this default
+      # is the value it used to hard-code, so compose's alertmanager runs with the same arguments.
+      - ALERTMANAGER_WEB_EXTERNAL_URL=${ALERTMANAGER_WEB_EXTERNAL_URL:-http://localhost:9093}
       # Slack (phase 27, additive — email remains the default route). WITHOUT
       # THESE TWO LINES the template and entrypoint changes are completely
       # INERT: verified before the fix, the container received only the four
@@ -147,7 +150,8 @@ services:
       # This line is what makes the entrypoint's mute reachable at all: without it
       # a fully-configured .env reaches nothing (see the Slack note directly above,
       # which records that exact failure happening once already).
-      # Enforced local-only by scripts/check-alert-mute.sh (assertion M-5).
+      # Kept out of production by scripts/check-alert-mute.sh (assertion M-5): only the
+      # staging render may set it, to MUTE_ALLOWLIST names (plan 29-24).
       - ALERTMANAGER_MUTE_ALERTNAMES=${ALERTMANAGER_MUTE_ALERTNAMES:-}
     volumes:
       - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
