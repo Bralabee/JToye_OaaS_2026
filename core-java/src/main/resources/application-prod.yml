@@ -63,6 +63,23 @@ spring:
     # block, you are overriding the base, not replacing it.
     # Proven inherited by FreshChainMigrationIntegrationTest.
 
+  # D-20 (Phase 29, owner ruling 2026-10-18): STARTTLS is REQUIRED in staging and production.
+  # k8s runs THIS profile in every environment (k8s/base/core-java-deployment.yaml sets
+  # SPRING_PROFILES_ACTIVE=prod), so these are the values that govern every cluster.
+  # LITERALS on purpose, never ${SMTP_STARTTLS:...}: a missing ConfigMap entry or
+  # SMTP_STARTTLS=false must not fall back to opportunistic TLS — the silent class #952 fixed
+  # for .enable. With .required, a server that offers no STARTTLS fails the send instead of
+  # receiving credentials and mail in clear. Host, port, auth and credentials stay inherited
+  # from application.yml. Trust is the cluster CA in the JVM truststore (D-21); never add
+  # mail.smtp.ssl.trust here. Proven by MailStartTlsPropertyTest.
+  mail:
+    properties:
+      mail:
+        smtp:
+          starttls:
+            enable: true
+            required: true
+
 server:
   shutdown: graceful
   compression:
