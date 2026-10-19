@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### /business-model-guide and /competitive Reconciled to the October 2026 Positioning and V88 Pricing — 2026-10-19
+### /business-model-guide and /competitive Reconciled to the October 2026 Positioning and V88 Pricing (#966) — 2026-10-19
 
 Both public pages still carried their July 2026 facts. Each changed sentence below was contradicted by a cited source; every other sentence is byte-identical, and the four marketing bands on /business-model-guide are unchanged.
 
