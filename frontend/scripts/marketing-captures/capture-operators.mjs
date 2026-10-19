@@ -30,35 +30,52 @@
  *
  *   npm run build
  *   CORE_API_INTERNAL_URL=http://127.0.0.1:1 npx next start -p 3203 &
- *   CAPTURE_BASE_URL=http://localhost:3203 \
- *     node scripts/marketing-captures/capture-operators.mjs storefront slots
+ *   node scripts/marketing-captures/capture-operators.mjs --base-url http://localhost:3203 storefront slots
  *
- * Targets (default: all that can run): storefront, slots, kitchen, label.
+ * USAGE
+ *   node capture-operators.mjs [flags] [target ...]
  *
+ *   targets     storefront, slots, kitchen, label, selftest   (default: storefront slots)
+ *   --base-url URL        the app under capture                       (default http://localhost:3203)
+ *   --api-origin URL      the API origin the build was made with; every request to it is
+ *                         answered from fixtures                      (default http://localhost:9090)
+ *   --kitchen-path PATH   where the kitchen page is mounted           (default /capture-kitchen)
+ *   --kitchen-height PX   viewport height for kitchen (debug; also drops the 2x scale)
+ *   --label-pdf FILE      the rendered 62 mm label, required by `label`
+ *   --debug-dir DIR       also write kitchen-raw.png there
+ *   --help
+ *
+ * The script reads NO environment variables. That is deliberate and enforced: the
+ * frontend env contract gate (k8s/scripts/check-env-contract.sh) scans every
+ * non-test file under frontend/ for process.env reads and treats each as runtime
+ * deployment config that some manifest must supply.
+ *
+ * TARGETS
  *   storefront  /shop/adaeze-kitchen            -> storefront-menu.webp   (public)
  *   slots       checkout "Fulfilment Window"    -> slot-picker.webp       (public)
- *   kitchen     /dashboard/kitchen, cook sheet  -> kitchen-cook-sheet.webp
+ *   kitchen     the kitchen display, cook sheet -> kitchen-cook-sheet.webp
  *   label       the 62 mm PPDS label            -> ppds-label.webp
+ *   selftest    proves the request firewall blocks a write AND that a tripped firewall
+ *               leaves every committed image untouched (see "ORDER OF OPERATIONS")
  *
- * `kitchen` needs a signed-in vendor session because the dashboard is gated
- * server-side. Two ways, same page and same mocked data:
- *
- *   1. The e2e recipe (e2e/vendor-credentials.ts + vendorLogin()): export
- *      E2E_VENDOR_PASSWORD (or KC_SEED_USER_PASSWORD), optionally
- *      E2E_VENDOR_USERNAME (default admin-user), and run with the shared
- *      Keycloak up. The login is the only thing that leaves the machine's own
- *      stack; every dashboard API read is still answered by the fixtures.
- *   2. No credentials: see ./capture-kitchen-route/README.md. A throwaway,
- *      uncommitted route renders the same shell and the same kitchen page
- *      without the server-side session gate; run with CAPTURE_KITCHEN_PATH set
- *      to that route.
+ * `kitchen` renders the REAL dashboard shell and the REAL kitchen page, mounted on a
+ * throwaway route outside the server-side session gate for one build:
+ * ./capture-kitchen-route/README.md. The session endpoint answers a fictional owner and
+ * no sign-in happens. (A run that signs in as the dev vendor was dropped: the request
+ * firewall below aborts next-auth's POST and the Keycloak origin, and a documented
+ * path that cannot run is worse than none.)
  *
  * `label` rasterises page 1 of a real 62 mm PPDS label PDF (the file the
  * cook-sheet "62 mm label" button downloads). Generate it with the backend's
- * own renderer (see ./label-fixture/README.md) and pass LABEL_PDF=<path>. It
+ * own renderer (see ./label-fixture/README.md) and pass --label-pdf. It
  * is rasterised with poppler's `pdftoppm` (headless Chromium has no PDF
  * viewer, so "open it in the browser" is not available) and set on a plain
  * ground at 3:2. This target makes no network request at all.
+ *
+ * ORDER OF OPERATIONS. Every network target ends with `commit()`: assertClean() first, then
+ * the file write. A run whose firewall recorded a write attempt or a foreign host throws
+ * BEFORE any image is touched, so a bad run cannot overwrite a committed image. `selftest`
+ * runs that exact path against a temp directory and fails if the write happened.
  *
  * Output: WebP via sharp, each under 200 KB (the script fails if one is not).
  */
@@ -72,8 +89,27 @@ import sharp from "sharp"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const OUT_DIR = path.resolve(HERE, "../../public/marketing/operators")
-const BASE = process.env.CAPTURE_BASE_URL || "http://localhost:3203"
-const API_ORIGIN = process.env.CAPTURE_API_ORIGIN || "http://localhost:9090"
+const FLAGS = parseFlags(process.argv.slice(2))
+const BASE = FLAGS["base-url"] || "http://localhost:3203"
+const API_ORIGIN = FLAGS["api-origin"] || "http://localhost:9090"
+const KITCHEN_PATH = FLAGS["kitchen-path"] || "/capture-kitchen"
+const KITCHEN_HEIGHT = FLAGS["kitchen-height"] ? Number(FLAGS["kitchen-height"]) : null
+const LABEL_PDF = FLAGS["label-pdf"] || ""
+const DEBUG_DIR = FLAGS["debug-dir"] || ""
+
+function parseFlags(argv) {
+  const known = new Set(["base-url", "api-origin", "kitchen-path", "kitchen-height", "label-pdf", "debug-dir"])
+  const flags = { _: [] }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === "--help" || a === "-h") { flags.help = true; continue }
+    if (!a.startsWith("--")) { flags._.push(a); continue }
+    const name = a.slice(2)
+    if (!known.has(name) || i + 1 >= argv.length) { console.error(`unknown or valueless flag ${a} (see the header of this file)`); process.exit(2) }
+    flags[name] = argv[++i]
+  }
+  return flags
+}
 const MAX_BYTES = 200 * 1024
 const SLUG = "adaeze-kitchen"
 
@@ -139,21 +175,38 @@ const SHOP = {
   seller: { legalName: "Adaeze's Kitchen Ltd", entityType: "COMPANY", addressLines: ["Example Row", "London"], email: "hello@example.test" },
 }
 
-/** Two weekend slots. windowStart/windowEnd are plain HH:mm (the component prints them raw). */
-function slots() {
-  const day = (offset) => {
-    const d = new Date(); d.setDate(d.getDate() + offset)
-    while (d.getDay() !== 6 && d.getDay() !== 0) d.setDate(d.getDate() + 1)
-    return d
+/** Today's date in London as YYYY-MM-DD: the only zone this script reasons in. */
+function londonYmd(date) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(date)
+}
+/** A London wall-clock instant as an ISO string with the right offset for that date (BST or GMT). */
+function londonIso(ymd, hh) {
+  for (const offset of ["+01:00", "+00:00"]) {
+    const d = new Date(`${ymd}T${String(hh).padStart(2, "0")}:00:00${offset}`)
+    const back = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(d)
+    if (Number(back) === hh && londonYmd(d) === ymd) return d.toISOString()
   }
-  const sat = day(2)
-  while (sat.getDay() !== 6) sat.setDate(sat.getDate() + 1)
-  const sun = new Date(sat); sun.setDate(sat.getDate() + 1)
-  const ymd = (d) => d.toLocaleDateString("en-CA")
-  const cutoff = (d) => { const c = new Date(d); c.setDate(c.getDate() - 1); c.setHours(18, 0, 0, 0); return c.toISOString() }
-  const mk = (n, d, label, max, reserved) => ({
-    id: id(100 + n), shopId: SHOP_ID, serviceDate: ymd(d), windowStart: label.start, windowEnd: label.end,
-    windowLabel: label.text, cutoffAt: cutoff(d), maxOrders: max, maxUnits: null,
+  throw new Error(`no London offset for ${ymd} ${hh}:00`)
+}
+function addDays(ymd, n) {
+  const d = new Date(`${ymd}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Two weekend days of slots, computed ONCE. The Saturday is the first Saturday at least two
+ * days after today (London), so its cut-off (18:00 the day before) is always still ahead.
+ * windowStart/windowEnd are plain HH:mm (the component prints them raw). Everything that needs
+ * a slot's date, label or id (the cook sheet's scheduled order too) reads this list.
+ */
+const SLOT_LIST = (() => {
+  let sat = addDays(londonYmd(new Date()), 2)
+  while (new Date(`${sat}T12:00:00Z`).getUTCDay() !== 6) sat = addDays(sat, 1)
+  const sun = addDays(sat, 1)
+  const mk = (n, ymd, window, max, reserved) => ({
+    id: id(100 + n), shopId: SHOP_ID, serviceDate: ymd, windowStart: window.start, windowEnd: window.end,
+    windowLabel: window.text, cutoffAt: londonIso(addDays(ymd, -1), 18), maxOrders: max, maxUnits: null,
     reservedOrders: reserved, reservedUnits: 0, remainingOrders: max - reserved, remainingUnits: null, active: true,
   })
   return [
@@ -161,7 +214,8 @@ function slots() {
     mk(2, sat, { start: "17:00", end: "19:00", text: "Saturday evening batch" }, 30, 9),
     mk(3, sun, { start: "12:00", end: "14:00", text: "Sunday lunch batch" }, 30, 4),
   ]
-}
+})()
+const slots = () => SLOT_LIST
 
 // ---------------------------------------------------------------------------
 // Request firewall: mocked API, no writes, no foreign hosts.
@@ -234,18 +288,25 @@ function assertClean(ledger, label) {
 // Output
 // ---------------------------------------------------------------------------
 
-async function writeWebp(png, name, width, height) {
-  fs.mkdirSync(OUT_DIR, { recursive: true })
-  const file = path.join(OUT_DIR, name)
-  let q = 82
+async function writeWebp(png, name, width, height, outDir = OUT_DIR) {
+  fs.mkdirSync(outDir, { recursive: true })
+  const file = path.join(outDir, name)
   let buf
-  for (; q >= 40; q -= 6) {
+  let used = 0
+  for (const q of [82, 76, 70, 64, 58, 52, 46, 40]) {
+    used = q
     buf = await sharp(png).resize(width, height, { fit: "cover", position: "top" }).webp({ quality: q, effort: 6 }).toBuffer()
     if (buf.length <= MAX_BYTES) break
   }
-  if (buf.length > MAX_BYTES) throw new Error(`${name} is ${buf.length} bytes at quality ${q}, over ${MAX_BYTES}`)
+  if (buf.length > MAX_BYTES) throw new Error(`${name} is ${buf.length} bytes at the lowest quality tried (${used}), over ${MAX_BYTES}`)
   fs.writeFileSync(file, buf)
-  console.log(`wrote ${path.relative(process.cwd(), file)} ${width}x${height} q${q} ${(buf.length / 1024).toFixed(1)} KB`)
+  console.log(`wrote ${path.relative(process.cwd(), file)} ${width}x${height} q${used} ${(buf.length / 1024).toFixed(1)} KB`)
+}
+
+/** The ONLY way a network target writes an image: firewall verdict first, file second. */
+async function commit(ledger, label, png, name, width, height, outDir = OUT_DIR) {
+  assertClean(ledger, label)
+  await writeWebp(png, name, width, height, outDir)
 }
 
 async function dismissNotices(page) {
@@ -279,8 +340,7 @@ async function captureStorefront(browser) {
   await page.getByText("Jollof rice with chicken").first().waitFor({ timeout: 15000 })
   await page.waitForTimeout(600)
   const png = await page.screenshot({ clip: { x: 0, y: 0, width: 1280, height: 853 } })
-  await writeWebp(png, "storefront-menu.webp", 960, 640)
-  assertClean(ledger, "storefront")
+  await commit(ledger, "storefront", png, "storefront-menu.webp", 960, 640)
   await context.close()
 }
 
@@ -307,11 +367,16 @@ async function captureSlots(browser) {
   if (!box) throw new Error("slot picker has no box")
   // 3:2 crop centred on the picker with context around it.
   const w = 1000, h = Math.round((w * 2) / 3)
-  const x = Math.max(0, Math.round(box.x + box.width / 2 - w / 2))
-  const y = Math.max(0, Math.round(box.y - 40))
-  const png = await page.screenshot({ clip: { x, y, width: Math.min(w, 1280 - x), height: h } })
-  await writeWebp(png, "slot-picker.webp", 960, 640)
-  assertClean(ledger, "slots")
+  const x = Math.round(box.x + box.width / 2 - w / 2)
+  const y = Math.round(box.y - 40)
+  const clip = { x, y, width: w, height: h }
+  const VIEW = { width: 1280, height: 960 }
+  if (clip.x < 0 || clip.y < 0 || clip.x + clip.width > VIEW.width || clip.y + clip.height > VIEW.height) {
+    throw new Error(`slot-picker clip ${JSON.stringify(clip)} is outside the ${VIEW.width}x${VIEW.height} viewport`)
+  }
+  if (Math.abs(clip.width / clip.height - 3 / 2) > 0.005) throw new Error(`slot-picker clip is not 3:2: ${clip.width}x${clip.height}`)
+  const png = await page.screenshot({ clip })
+  await commit(ledger, "slots", png, "slot-picker.webp", 960, 640)
   await context.close()
 }
 
@@ -319,14 +384,7 @@ async function captureSlots(browser) {
 // Dashboard (kitchen display): fictional owner, one shop, five tickets, a cook sheet.
 // ---------------------------------------------------------------------------
 
-const KITCHEN_PATH = process.env.CAPTURE_KITCHEN_PATH || "/dashboard/kitchen"
 const iso = (minsAgo) => new Date(Date.now() - minsAgo * 60000).toISOString()
-
-function nextSaturday() {
-  const d = new Date()
-  do { d.setDate(d.getDate() + 1) } while (d.getDay() !== 6)
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(d)
-}
 
 const P = Object.fromEntries(PRODUCTS.map((p) => [p.n, p]))
 const allergenNames = (mask) => ["Gluten", "Crustaceans", "Eggs", "Fish", "Peanuts", "Soybeans", "Milk", "Nuts", "Celery", "Mustard", "Sesame", "Sulphites", "Lupin", "Molluscs"].filter((_, i) => (mask & (1 << i)) !== 0)
@@ -350,11 +408,13 @@ function order(n, number, status, customer, minsAgo, lines, extra = {}) {
   }
 }
 
-const SAT = nextSaturday()
+// The scheduled order is derived FROM the Saturday lunch slot, so its date, label and id can never
+// disagree with the slot list the picker shows.
+const SAT_SLOT = SLOT_LIST[0]
 const KITCHEN_ORDERS = [
   order(41, "AK-1041", "PENDING", "A. Okafor", 2, [[11, 2], [15, 2]]),
   order(42, "AK-1042", "PENDING", "B. Adeyemi", 1, [[13, 3], [14, 1]]),
-  order(43, "AK-1043", "CONFIRMED", "T. Bello", 9, [[11, 6], [13, 4]], { scheduledForDate: SAT, scheduledWindowLabel: "Saturday lunch batch", fulfilmentSlotId: id(101), depositAmountPennies: 2900, balanceDuePennies: 4350 }),
+  order(43, "AK-1043", "CONFIRMED", "T. Bello", 9, [[11, 6], [13, 4]], { scheduledForDate: SAT_SLOT.serviceDate, scheduledWindowLabel: SAT_SLOT.windowLabel, fulfilmentSlotId: SAT_SLOT.id, depositAmountPennies: 2900, balanceDuePennies: 4350 }),
   order(44, "AK-1044", "PREPARING", "C. Nwosu", 14, [[12, 1], [13, 2]]),
   order(45, "AK-1045", "READY", "D. Eze", 22, [[11, 1], [14, 2]]),
 ]
@@ -391,38 +451,16 @@ const KITCHEN_SHOP = {
   fulfilmentTimingMode: "HYBRID_IMMEDIATE_AND_SLOTS",
 }
 
-async function vendorSignIn(page) {
-  const user = process.env.E2E_VENDOR_USERNAME || "admin-user"
-  const pass = process.env.E2E_VENDOR_PASSWORD || process.env.KC_SEED_USER_PASSWORD || ""
-  if (!pass) throw new Error("no vendor credential: set E2E_VENDOR_PASSWORD (or KC_SEED_USER_PASSWORD), or use the throwaway route (CAPTURE_KITCHEN_PATH, see capture-kitchen-route/README.md)")
-  await page.goto(`${BASE}/auth/signin`, { waitUntil: "domcontentloaded" })
-  const sso = page.getByRole("button", { name: /sign in with keycloak/i })
-  await sso.waitFor({ timeout: 15000 })
-  await page.waitForLoadState("networkidle").catch(() => {})
-  await page.waitForTimeout(400)
-  await sso.click()
-  await page.waitForURL(/(openid-connect|\/dashboard)/, { timeout: 25000 })
-  if (!page.url().includes("/dashboard")) {
-    await page.fill("#username", user)
-    await page.fill("#password", pass)
-    await page.click("#kc-login")
-  }
-  await page.waitForURL(/\/dashboard/, { timeout: 30000 })
-}
-
 async function captureKitchen(browser) {
   const ledger = makeLedger()
-  const context = await browser.newContext({ viewport: { width: 1440, height: Number(process.env.CAPTURE_KITCHEN_HEIGHT || 900) }, deviceScaleFactor: process.env.CAPTURE_KITCHEN_HEIGHT ? 1 : 2, reducedMotion: "reduce" })
-  const viaThrowawayRoute = KITCHEN_PATH !== "/dashboard/kitchen"
-  // The session endpoint answers a fictional owner only on the throwaway route; on the real
-  // route the genuine session cookie is needed server-side, and the identity it carries
-  // (the dev vendor) is replaced in the browser by the same fictional answer.
+  const context = await browser.newContext({ viewport: { width: 1440, height: KITCHEN_HEIGHT || 900 }, deviceScaleFactor: KITCHEN_HEIGHT ? 1 : 2, reducedMotion: "reduce" })
+  // The dashboard's client code asks /api/auth/session who is signed in; the firewall answers a
+  // fictional owner. There is no sign-in: the page is mounted outside the server-side gate.
   await installFirewall(context, ledger, {
     api: (u, m) => kitchenApi(u, m) || storefrontApi(u),
     session: () => ({ user: { name: "Shop owner", email: "owner@example.test", tenantId: TENANT_ID }, expires: new Date(Date.now() + 864e5).toISOString(), accessToken: "capture-token", expiresAt: Math.floor(Date.now() / 1000) + 86400 }),
   })
   const page = await context.newPage()
-  if (!viaThrowawayRoute) await vendorSignIn(page)
   await page.goto(`${BASE}${KITCHEN_PATH}`, { waitUntil: "domcontentloaded" })
   await page.waitForTimeout(1500)
   await dismissNotices(page)
@@ -443,16 +481,15 @@ async function captureKitchen(browser) {
   })
   await page.waitForTimeout(400)
   const png = await page.screenshot()
-  if (process.env.CAPTURE_DEBUG_DIR) fs.writeFileSync(path.join(process.env.CAPTURE_DEBUG_DIR, "kitchen-raw.png"), png)
-  await writeWebp(png, "kitchen-cook-sheet.webp", 1280, 800)
-  assertClean(ledger, "kitchen")
+  if (DEBUG_DIR) fs.writeFileSync(path.join(DEBUG_DIR, "kitchen-raw.png"), png)
+  await commit(ledger, "kitchen", png, "kitchen-cook-sheet.webp", 1280, 800)
   await context.close()
 }
 
 async function captureLabel() {
-  const pdf = process.env.LABEL_PDF
-  if (!pdf || !fs.existsSync(pdf)) throw new Error("set LABEL_PDF to a rendered 62 mm label (see label-fixture/README.md)")
-  if (fs.readFileSync(pdf).subarray(0, 4).toString() !== "%PDF") throw new Error("LABEL_PDF is not a PDF")
+  const pdf = LABEL_PDF
+  if (!pdf || !fs.existsSync(pdf)) throw new Error("pass --label-pdf FILE, a rendered 62 mm label (see label-fixture/README.md)")
+  if (fs.readFileSync(pdf).subarray(0, 4).toString() !== "%PDF") throw new Error("--label-pdf is not a PDF")
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ppds-"))
   execFileSync("pdftoppm", ["-r", "600", "-png", "-f", "1", "-l", "1", pdf, path.join(tmp, "label")])
   const raster = path.join(tmp, fs.readdirSync(tmp).find((n) => n.endsWith(".png")))
@@ -476,10 +513,42 @@ async function captureLabel() {
   fs.rmSync(tmp, { recursive: true, force: true })
 }
 
-const TARGETS = { label: captureLabel, storefront: captureStorefront, slots: captureSlots, kitchen: captureKitchen }
+/**
+ * Proves two things against a throwaway output directory: the firewall really aborts a write
+ * (a POST fired from the page never leaves the browser), and commit() then REFUSES to write the
+ * image. It fails if the POST was not recorded, if commit() did not throw, or if any file appeared.
+ */
+async function selftest(browser) {
+  const ledger = makeLedger()
+  const context = await browser.newContext({ viewport: { width: 1280, height: 960 } })
+  await installFirewall(context, ledger, { api: storefrontApi })
+  const page = await context.newPage()
+  await page.goto(`${BASE}/shop/${SLUG}`, { waitUntil: "networkidle" })
+  const outcome = await page.evaluate(async () => {
+    try { await fetch("/api/selftest-write", { method: "POST", body: "x" }); return "reached-network" } catch { return "aborted" }
+  })
+  if (outcome !== "aborted") throw new Error(`selftest: the firewall let a POST through (${outcome})`)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-selftest-"))
+  let threw = false
+  try {
+    const png = await page.screenshot()
+    await commit(ledger, "selftest", png, "must-not-exist.webp", 960, 640, tmp)
+  } catch (e) {
+    threw = /non-GET requests were attempted/.test(String(e.message))
+  }
+  const left = fs.readdirSync(tmp)
+  fs.rmSync(tmp, { recursive: true, force: true })
+  await context.close()
+  if (!threw) throw new Error("selftest: commit() did not refuse a run with a recorded write")
+  if (left.length) throw new Error(`selftest: files were written despite the firewall: ${left.join(", ")}`)
+  console.log("[selftest] ok: POST aborted, commit() refused, nothing written")
+}
 
-const wanted = process.argv.slice(2)
-const names = wanted.length ? wanted : Object.keys(TARGETS)
+const TARGETS = { label: captureLabel, storefront: captureStorefront, slots: captureSlots, kitchen: captureKitchen, selftest }
+
+if (FLAGS.help) { console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("*/")[0]); process.exit(0) }
+const wanted = FLAGS._
+const names = wanted.length ? wanted : ["storefront", "slots"]
 for (const n of names) if (!TARGETS[n]) { console.error(`unknown target "${n}" (have: ${Object.keys(TARGETS).join(", ")})`); process.exit(2) }
 
 const browser = await chromium.launch()
