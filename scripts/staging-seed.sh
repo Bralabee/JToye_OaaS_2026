@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # staging-seed.sh — the staging seed, through the product's own APIs (Phase 29,
-# plan 29-06; DPLY-01; decisions D-26, D-27; threats T-29-17..T-29-20).
+# plans 29-06 and 29-18; DPLY-01; decisions D-26, D-27, D-28, D-31; threats
+# T-29-17..T-29-20, T-29-65..T-29-68).
 #
 # WHAT IT IS FOR
 #   DPLY-01 needs real seeded rows, and D-26 needs every one of them made the way a
@@ -11,8 +12,8 @@
 #   could make.
 #
 # USAGE
-#   scripts/staging-seed.sh --context NAME --stage vendor [--identity-file PATH]
-#                           [--api URL] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage vendor|order|all
+#                           [--identity-file PATH] [--api URL] [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -20,11 +21,19 @@
 #     --identity-file P  default k8s/staging/azure-identity.yaml (plan 29-09).
 #     --api URL          default https://api-staging.olajay.co.uk, and it must be
 #                        exactly that: any other value is REFUSED [api-base].
-#     --stage vendor     this plan. order and all are added by plan 29-18.
+#     --stage vendor     the tenant, the vendor, the shop, its dishes, onboarding
+#                        to LIVE (plan 29-06).
+#     --stage order      one storefront guest order paid by a Stripe TEST
+#                        PaymentIntent confirmed with pm_card_visa, settled by
+#                        the webhook (plan 29-18, D-31). Ends on one line:
+#                        SEED-ORDER order=… intent=pi_… status=… payment_status=…
+#                        livemode=… at=<ISO-8601 UTC>.
+#     --stage all        vendor, then order (the vendor stage's operator is
+#                        deleted before the order is placed).
 #     --dry-run          run every guard (they only read), then print the ordered
 #                        request plan; no Azure, Keycloak or API call is made.
-#     --list-kv-objects  the Key Vault object names the vendor stage reads, one
-#                        per line, C-locale sorted (offline; plan 29-13 writes them).
+#     --list-kv-objects  the Key Vault object names the stages read, one per
+#                        line, C-locale sorted (offline; plan 29-13 writes them).
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -60,6 +69,17 @@ GATE_REASON="staging seed, scripted — D-26"
 # Gates the GO_LIVE guard requires PASSED on the facts; a human WAIVE never
 # substitutes for them, so the seed never resolves them (it fixes the data).
 NEVER_RESOLVED_GATES="TRADER_IDENTITY ALLERGEN_DATA_COMPLETE"
+
+# The order stage (plan 29-18). The guest's mail is captured by Mailpit, never
+# delivered (29-22); the phone is in Ofcom's drama range, never a real line.
+STRIPE_API="https://api.stripe.com"
+STRIPE_KV_OBJECT="stripe-credentials--api-key"
+ORDER_IDEMPOTENCY_KEY="seed-order-staging-test-kitchen-v1"
+GUEST_NAME="Staging Test Guest"
+GUEST_EMAIL="guest.staging@olajay.co.uk"
+GUEST_PHONE="07700 900123"
+ORDER_RETURN_URL="https://app-staging.olajay.co.uk/order-complete"
+PAID_DEADLINE_SECONDS="${STAGING_SEED_PAID_DEADLINE_SECONDS:-120}"
 
 # The public issuer core-java validates; the admin API only through the
 # port-forward (T-29-14), never the public auth host.
@@ -113,7 +133,7 @@ ensure_workdir() {
 
 list_kv_objects() {
   local row
-  for row in "${KV_MAP[@]}"; do printf '%s\n' "${row#*=}"; done | LC_ALL=C sort
+  { for row in "${KV_MAP[@]}"; do printf '%s\n' "${row#*=}"; done; printf '%s\n' "$STRIPE_KV_OBJECT"; } | LC_ALL=C sort
 }
 
 # ===========================================================================
@@ -187,6 +207,25 @@ run_guards() {
 # --dry-run: the ordered request plan. Names only, never a value.
 # ===========================================================================
 print_plan() {
+  case "$STAGE" in vendor|all) print_vendor_plan ;; esac
+  case "$STAGE" in order|all) print_order_plan ;; esac
+}
+print_order_plan() {
+  cat <<PLAN
+PLAN --stage order (dry-run: nothing below is called)
+  target        api ${API_BASE}; Stripe ${STRIPE_API} (TEST only); shop ${SHOP_SLUG}
+  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)
+  02 GET        /api/v1/public/shops/${SHOP_SLUG}, /api/v1/public/shops/${SHOP_SLUG}/products   anonymous; first available dish
+  03 POST       /api/v1/public/shops/${SHOP_SLUG}/orders   Idempotency-Key ${ORDER_IDEMPOTENCY_KEY}; ${GUEST_EMAIL}; expected prices + allergen acknowledgement
+  04 GET        ${STRIPE_API}/v1/payment_intents/{id}   the intent from the client secret (or, on a replay, by order_number metadata); livemode false
+  05 POST       ${STRIPE_API}/v1/payment_intents/{id}/confirm   payment_method=pm_card_visa, return_url ${ORDER_RETURN_URL}; skipped if already succeeded
+  06 GET        ${STRIPE_API}/v1/payment_intents?limit=100   exactly one intent names the order
+  07 GET        /api/v1/public/orders/{orderNumber}?email=…   until paymentStatus CAPTURED (deadline ${PAID_DEADLINE_SECONDS}s)
+  08 GET        ${STRIPE_API}/v1/events?type=payment_intent.succeeded   the delivered event's id
+  09 print      SEED-ORDER order=… intent=… status=… payment_status=… livemode=… at=…
+PLAN
+}
+print_vendor_plan() {
   cat <<PLAN
 PLAN --stage vendor (dry-run: nothing below is called)
   target        api ${API_BASE}; context ${KUBE_CONTEXT}; namespace ${NAMESPACE}; realm ${REALM}
@@ -371,10 +410,7 @@ vendor_stage() {
 
   # 1. The subscription guard. JTOYE_AZURE_SUBSCRIPTION_ID is the caller's; this
   #    script never sets it. A refusal exits before any Key Vault read.
-  # shellcheck source=lib/azure-guard.sh
-  source "$SCRIPT_DIR/lib/azure-guard.sh"
-  rc=0; az_guard_init >/dev/null || rc=$?
-  [ "$rc" -eq 0 ] || exit "$rc"
+  azure_guard_once
   need_tool curl; need_tool openssl; need_tool base64
   ensure_workdir
 
@@ -731,6 +767,256 @@ readback() {
     echo "FAIL: the read-back does not show a published shop with a LIVE onboarding" >&2
     exit 1
   fi
+}
+
+# ===========================================================================
+# --stage order (live; plan 29-18, decisions D-28 and D-31)
+# ===========================================================================
+#
+# One storefront guest order, placed exactly as a customer's would be: the
+# anonymous public menu, the prices and the allergen set it shows, an
+# Idempotency-Key, and a card payment. D-31: the order is paid by a Stripe TEST
+# PaymentIntent, confirmed server-side with pm_card_visa, and settles through
+# the D-28 webhook (payment_intent.succeeded -> paymentStatus CAPTURED). There
+# is no cash order: an order that comes back without a client secret and has no
+# intent is a COD order, and the stage fails on it.
+#
+# The Stripe TEST key is read from Key Vault in memory (az_read, the same guard
+# as the vendor stage), refused unless it begins sk_test_, and travels to curl
+# only inside a mode-600 config file; it is never printed and never in argv.
+# The client secret is held in memory only to derive the intent id from it.
+# Every Stripe object read must say livemode false.
+#
+# A re-run with the same key replays the original confirmation: a paid order
+# comes back with no client secret, so the intent is found by its
+# order_number metadata, never created, and never confirmed again.
+
+# azure_guard_once — source the subscription guard and run az_guard_init in
+# THIS shell, once (--stage all reaches it from both stages).
+_AZ_GUARD_DONE=0
+azure_guard_once() {
+  local rc=0
+  [ "$_AZ_GUARD_DONE" -eq 0 ] || return 0
+  # shellcheck source=lib/azure-guard.sh
+  source "$SCRIPT_DIR/lib/azure-guard.sh"
+  az_guard_init >/dev/null || rc=$?
+  [ "$rc" -eq 0 ] || exit "$rc"
+  _AZ_GUARD_DONE=1
+}
+
+# pub_api METHOD PATH OUT [BODY] [HEADER...] — the public API, anonymously.
+pub_api() {
+  local method="$1" path="$2" out="$3" body="${4:-}" code rc=0
+  shift 3; [ "$#" -eq 0 ] || shift
+  local -a hdr=(-H 'Accept: application/json')
+  local h
+  for h in "$@"; do hdr+=(-H "$h"); done
+  if [ -n "$body" ]; then
+    code=$(curl -sS -X "$method" "${hdr[@]}" -H 'Content-Type: application/json' \
+      --data-binary "@$body" -o "$out" -w '%{http_code}' "${API_BASE}${path}") || rc=$?
+  else
+    code=$(curl -sS -X "$method" "${hdr[@]}" -o "$out" -w '%{http_code}' "${API_BASE}${path}") || rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
+  echo "$code"
+}
+
+# stripe_api METHOD PATH OUT [FORM-FIELD...] — Stripe, the key from the mode-600
+# config file. Form fields go through --data-urlencode; none is a secret.
+stripe_api() {
+  local method="$1" path="$2" out="$3" code rc=0 f
+  shift 3
+  local -a form=()
+  for f in "$@"; do form+=(--data-urlencode "$f"); done
+  code=$(curl -sS -K "$WORKDIR/stripe.curlrc" -X "$method" ${form[@]+"${form[@]}"} \
+    -o "$out" -w '%{http_code}' "${STRIPE_API}${path}") || rc=$?
+  if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
+  echo "$code"
+}
+
+# stripe_fail WHAT CODE OUT — Stripe's error type and message (never a secret).
+stripe_fail() {
+  local what="$1" code="$2" out="$3" why=""
+  [ -s "$out" ] && why=$(jq -r '[.error.type, .error.code, .error.message] | map(select(. != null)) | join(" | ")' "$out" 2>/dev/null | head -c 300 || true)
+  echo "FAIL: Stripe $what returned HTTP $code${why:+: $why}" >&2
+  exit 1
+}
+
+# assert_test_mode FILE WHAT — the object (or every object of a list) must read
+# livemode false. Anything else, including a missing field, is a refusal.
+assert_test_mode() {
+  local verdict
+  verdict=$(jq -r 'if .object == "list" then ([.data[]?.livemode] | if length == 0 then "empty" elif all(. == false) then "false" else "not-false" end)
+                   else (if .livemode == false then "false" else "livemode=\(.livemode)" end) end' "$1" 2>/dev/null || echo unparseable)
+  case "$verdict" in
+    false|empty) return 0 ;;
+    *) refuse stripe-mode "$2 does not read livemode false ($verdict); a live object must never exist in staging (D-28)" ;;
+  esac
+}
+
+# intents_for ORDER_NUMBER — sets INTENT_IDS (one per line) and INTENT_COUNT:
+# the TEST intents whose metadata names the order, from the newest 100 (the
+# seed's order is the only one it places). Called directly, never inside $(…),
+# so a refusal or a Stripe failure exits the script rather than a subshell.
+INTENT_IDS=""
+INTENT_COUNT=0
+intents_for() {
+  local code
+  code=$(stripe_api GET "/v1/payment_intents?limit=100" "$WORKDIR/pi-list.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents" "$code" "$WORKDIR/pi-list.json"
+  assert_test_mode "$WORKDIR/pi-list.json" "GET /v1/payment_intents"
+  INTENT_IDS=$(jq -r --arg o "$1" '.data[] | select(.metadata.order_number == $o) | .id' "$WORKDIR/pi-list.json")
+  INTENT_COUNT=$(jq -r --arg o "$1" '[.data[] | select(.metadata.order_number == $o)] | length' "$WORKDIR/pi-list.json")
+}
+
+order_stage() {
+  local key code rc
+
+  # 1. The subscription guard, then the Stripe TEST key into a mode-600 config
+  #    file. A key that is not sk_test_ is refused before any API call.
+  azure_guard_once
+  need_tool curl
+  ensure_workdir
+  set +x
+  rc=0; key=$(az_read keyvault secret show --vault-name "$KEY_VAULT_NAME" -n "$STRIPE_KV_OBJECT" --query value -o tsv) || rc=$?
+  key="${key//$'\r'/}"; key="${key//$'\n'/}"
+  if [ "$rc" -ne 0 ] || [ -z "$key" ]; then
+    refuse key-vault "could not read $STRIPE_KV_OBJECT from $KEY_VAULT_NAME (az rc=$rc); plan 29-13 writes it"
+  fi
+  case "$key" in
+    sk_test_*) ;;
+    *) key=""; refuse stripe-mode "$STRIPE_KV_OBJECT is not a TEST key (it must begin sk_test_); staging never holds a live key (D-28)" ;;
+  esac
+  if ! [[ "$key" =~ ^sk_test_[A-Za-z0-9]+$ ]]; then
+    key=""; refuse stripe-mode "$STRIPE_KV_OBJECT has characters a Stripe key never carries"
+  fi
+  (umask 077 && printf 'user = "%s:"\n' "$key" > "$WORKDIR/stripe.curlrc")
+  key=""
+  echo "OK: read the Stripe TEST key from $KEY_VAULT_NAME/$STRIPE_KV_OBJECT (sk_test_; value not shown)"
+
+  # 2. The public shop and menu, as a customer's browser reads them.
+  local fulfilment fee
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG" "$WORKDIR/pub-shop.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG" "$code" "$WORKDIR/pub-shop.json"
+  if [ "$(jq -r '.offersCollection' "$WORKDIR/pub-shop.json")" = true ]; then
+    fulfilment=COLLECTION; fee=0
+  elif [ "$(jq -r '.offersDelivery' "$WORKDIR/pub-shop.json")" = true ]; then
+    fulfilment=DELIVERY; fee=$(jq -r '.deliveryFeePennies // 0' "$WORKDIR/pub-shop.json")
+  else
+    echo "FAIL: $SHOP_SLUG offers neither collection nor delivery" >&2; exit 1
+  fi
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG/products" "$WORKDIR/pub-products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG/products" "$code" "$WORKDIR/pub-products.json"
+  local pick pid price mask title
+  pick=$(jq -c '[(if type == "object" and has("content") then .content[] elif type == "object" then .[][] else .[] end)
+                 | select(.inStock == true)][0] // empty' "$WORKDIR/pub-products.json")
+  [ -n "$pick" ] || { echo "FAIL: $SHOP_SLUG has no available product on its public menu; publish one as the vendor first" >&2; exit 1; }
+  pid=$(jq -r '.id' <<<"$pick"); price=$(jq -r '.pricePennies' <<<"$pick")
+  mask=$(jq -r '.allergenMask // 0' <<<"$pick"); title=$(jq -r '.title // .name // "?"' <<<"$pick")
+  [[ "$price" =~ ^[0-9]+$ ]] && [[ "$mask" =~ ^[0-9]+$ ]] || { echo "FAIL: the menu entry for $pid has no integer price or allergen mask" >&2; exit 1; }
+  echo "OK: basket = 1 x \"$title\" ($pid) at ${price}p, allergen mask $mask, $fulfilment, expected total $((price + fee))p"
+
+  # 3. The order, with the Idempotency-Key, the prices and the allergen set the
+  #    menu showed (the basket's union: one line, so its own mask).
+  jq -n --arg n "$GUEST_NAME" --arg e "$GUEST_EMAIL" --arg ph "$GUEST_PHONE" --arg f "$fulfilment" \
+        --arg p "$pid" --argjson pr "$price" --argjson m "$mask" --argjson t "$((price + fee))" '
+      {customerName: $n, customerEmail: $e, customerPhone: $ph, fulfilmentType: $f,
+       items: [{productId: $p, quantity: 1, expectedUnitPricePennies: $pr}],
+       acknowledgedAllergenMask: $m, expectedTotalPennies: $t}
+      + (if $f == "DELIVERY" then {addressLine1: "1 Staging Test Street", addressCity: "Birmingham", addressPostcode: "B1 1AA"} else {} end)' \
+    | body "$WORKDIR/guest-order.json"
+  code=$(pub_api POST "/api/v1/public/shops/$SHOP_SLUG/orders" "$WORKDIR/guest-order-out.json" "$WORKDIR/guest-order.json" \
+    "Idempotency-Key: $ORDER_IDEMPOTENCY_KEY")
+  [ "$code" = 201 ] || fail_http "POST /api/v1/public/shops/$SHOP_SLUG/orders" "$code" "$WORKDIR/guest-order-out.json"
+  local order_no ostatus cs intent
+  order_no=$(jq -r '.orderNumber // empty' "$WORKDIR/guest-order-out.json")
+  ostatus=$(jq -r '.status // empty' "$WORKDIR/guest-order-out.json")
+  cs=$(jq -r '.clientSecret // empty' "$WORKDIR/guest-order-out.json")
+  rm -f "$WORKDIR/guest-order-out.json"
+  [ -n "$order_no" ] || { echo "FAIL: the 201 carried no orderNumber" >&2; exit 1; }
+  echo "OK: order $order_no status $ostatus (Idempotency-Key $ORDER_IDEMPOTENCY_KEY; client secret $([ -n "$cs" ] && echo present || echo absent), not shown)"
+
+  # 4. Its intent: from the client secret on a first run (pi_X_secret_Y), else
+  #    by metadata. Exactly one intent may name the order.
+  if [ -n "$cs" ]; then
+    intent="${cs%%_secret_*}"
+    cs=""
+    [[ "$intent" =~ ^pi_[A-Za-z0-9]+$ ]] || { echo "FAIL: the client secret does not carry a PaymentIntent id" >&2; exit 1; }
+  else
+    intents_for "$order_no"
+    intent=$(head -n 1 <<<"$INTENT_IDS")
+    if [ -z "$intent" ]; then
+      echo "FAIL: order $order_no came back with no client secret and no TEST PaymentIntent names it: a cash (COD) order, which the seed must never place (D-31; is the Stripe key configured on core-java?)" >&2
+      exit 1
+    fi
+    echo "OK: replay: $order_no is $ostatus, so its intent was found by metadata ($intent); nothing is created"
+  fi
+
+  # 5. Confirm it with the TEST card, unless it already succeeded.
+  local pstatus
+  code=$(stripe_api GET "/v1/payment_intents/$intent" "$WORKDIR/pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$intent" "$code" "$WORKDIR/pi.json"
+  assert_test_mode "$WORKDIR/pi.json" "PaymentIntent $intent"
+  if [ "$(jq -r '.metadata.order_number // empty' "$WORKDIR/pi.json")" != "$order_no" ]; then
+    echo "FAIL: PaymentIntent $intent names order '$(jq -r '.metadata.order_number // ""' "$WORKDIR/pi.json")', not $order_no" >&2; exit 1
+  fi
+  pstatus=$(jq -r '.status' "$WORKDIR/pi.json")
+  case "$pstatus" in
+    succeeded)
+      echo "SKIP: PaymentIntent $intent already succeeded; not confirmed again" ;;
+    requires_payment_method|requires_confirmation)
+      code=$(stripe_api POST "/v1/payment_intents/$intent/confirm" "$WORKDIR/pi-confirm.json" \
+        "payment_method=pm_card_visa" "return_url=$ORDER_RETURN_URL")
+      [ "$code" = 200 ] || stripe_fail "POST /v1/payment_intents/$intent/confirm" "$code" "$WORKDIR/pi-confirm.json"
+      assert_test_mode "$WORKDIR/pi-confirm.json" "the confirmed PaymentIntent $intent"
+      echo "CONFIRMED: PaymentIntent $intent with pm_card_visa (status $(jq -r '.status' "$WORKDIR/pi-confirm.json"))" ;;
+    *)
+      echo "FAIL: PaymentIntent $intent is $pstatus, which the seed cannot settle" >&2; exit 1 ;;
+  esac
+  code=$(stripe_api GET "/v1/payment_intents/$intent" "$WORKDIR/pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$intent" "$code" "$WORKDIR/pi.json"
+  assert_test_mode "$WORKDIR/pi.json" "PaymentIntent $intent"
+  pstatus=$(jq -r '.status' "$WORKDIR/pi.json")
+  [ "$pstatus" = succeeded ] || { echo "FAIL: PaymentIntent $intent is $pstatus after the confirm, not succeeded" >&2; exit 1; }
+  echo "OK: PaymentIntent $intent succeeded, livemode false, amount $(jq -r '.amount' "$WORKDIR/pi.json") $(jq -r '.currency' "$WORKDIR/pi.json")"
+
+  # 6. One intent for this order, no more.
+  intents_for "$order_no"
+  [ "$INTENT_COUNT" -eq 1 ] || { echo "FAIL: $INTENT_COUNT TEST PaymentIntents name order $order_no (want exactly 1)" >&2; exit 1; }
+  echo "OK: exactly 1 TEST PaymentIntent names $order_no"
+
+  # 7. The webhook settled it: the public tracking API reads CAPTURED.
+  local t0 track tstatus tpay q
+  q=$(jq -rn --arg e "$GUEST_EMAIL" '$e | @uri')
+  t0=$(date +%s)
+  while :; do
+    code=$(pub_api GET "/api/v1/public/orders/$order_no?email=$q" "$WORKDIR/track.json")
+    if [ "$code" = 200 ]; then
+      tstatus=$(jq -r '.status // ""' "$WORKDIR/track.json"); tpay=$(jq -r '.paymentStatus // ""' "$WORKDIR/track.json")
+      track="HTTP 200 status $tstatus paymentStatus $tpay"
+      [ "$tpay" != CAPTURED ] || break
+    else
+      track="HTTP $code"
+    fi
+    if [ $(( $(date +%s) - t0 )) -ge "$PAID_DEADLINE_SECONDS" ]; then
+      echo "FAIL: order $order_no did not read paid within ${PAID_DEADLINE_SECONDS}s (deadline); last tracking read: $track" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  echo "OK: tracking reads $order_no $track after $(( $(date +%s) - t0 ))s"
+
+  # 8. The event Stripe delivered, by id (for the webhook evidence).
+  local evt
+  code=$(stripe_api GET "/v1/events?type=payment_intent.succeeded&limit=100" "$WORKDIR/events.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/events" "$code" "$WORKDIR/events.json"
+  assert_test_mode "$WORKDIR/events.json" "GET /v1/events"
+  evt=$(jq -c --arg i "$intent" '[.data[] | select(.data.object.id == $i)][0] // empty' "$WORKDIR/events.json")
+  [ -n "$evt" ] || { echo "FAIL: no payment_intent.succeeded event names $intent" >&2; exit 1; }
+  echo "STRIPE-EVENT id=$(jq -r '.id' <<<"$evt") type=payment_intent.succeeded intent=$intent pending_webhooks=$(jq -r '.pending_webhooks' <<<"$evt") created=$(jq -r '.created' <<<"$evt")"
+
+  # 9. The verdict, one machine-checkable line, last.
+  echo "SEED-ORDER order=$order_no intent=$intent status=$tstatus payment_status=$tpay livemode=$(jq -r '.livemode' "$WORKDIR/pi.json") at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
 # ===========================================================================
@@ -1112,10 +1398,10 @@ IDF
       {id: $b, title: "Pelau", pricePennies: 950, inStock: true, allergenMask: 9}]}' > "$ast/resp/pub-products.json"
   _st_pi() { jq -n --arg id "$1" --arg st "$2" --argjson lm "$3" --arg on "$4" \
       '{id: $id, object: "payment_intent", status: $st, livemode: $lm, amount: 950, currency: "gbp", metadata: {order_number: $on}}'; }
-  _st_order_fixtures() {   # STATUS CLIENT_SECRET(or "") INTENTS_FOR_THIS_ORDER PI_LIVEMODE PAYMENT_STATUS
+  _st_order_fixtures() {   # STATUS CLIENT_SECRET(or "") INTENTS_FOR_THIS_ORDER PI_LIVEMODE PAYMENT_STATUS [PI_STATUS_BEFORE_CONFIRM]
     jq -n --arg st "$1" --arg cs "$2" '{orderNumber: "ORD-STUB-0001", status: $st, totalAmountPennies: 950,
         clientSecret: (if $cs == "" then null else $cs end)}' > "$ast/resp/guest-order.json"
-    _st_pi pi_stub0001 requires_payment_method "$4" ORD-STUB-0001 > "$ast/resp/pi-before.json"
+    _st_pi pi_stub0001 "${6:-requires_payment_method}" "$4" ORD-STUB-0001 > "$ast/resp/pi-before.json"
     _st_pi pi_stub0001 succeeded "$4" ORD-STUB-0001 > "$ast/resp/pi-after.json"
     _st_pi pi_stub0001 succeeded "$4" ORD-STUB-0001 > "$ast/resp/pi-confirm.json"
     { local i=0; while [ "$i" -lt "$3" ]; do _st_pi "pi_stub000$((i + 1))" succeeded false ORD-STUB-0001; i=$((i + 1)); done
@@ -1130,10 +1416,20 @@ IDF
   local seed_re='^SEED-ORDER order=ORD-STUB-0001 intent=pi_stub0001 status=PENDING payment_status=CAPTURED livemode=false at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'
   local olast obody
 
-  # --- order-live-key: a LIVE Stripe key is refused before any API call ------
+  # --- order-live-key: a LIVE Stripe key is refused before any API call. The
+  #     prefix can only be seen once the key is read, so exactly one Key Vault
+  #     read (of the Stripe object) happens, and no curl at all.
   _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 1 false CAPTURED
   _st_run STUB_PODS_FILE="$ast/pods-prod.json" AZ_STUB_ANSWERS="$ast/answers-live.tsv" -- "${order_args[@]}"
-  if why=$(_st_refusal 1 "REFUSED [stripe-mode]" 1 1); then _st_result "PASS order-live-key rc=$ST_RC curl_calls=0 stripe_calls=0"
+  why=""
+  kv_reads=$(command grep -c '^keyvault secret show ' "$ast/logs/az.log" || true)
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$kv_reads" -ne 1 ] || ! command grep -qE '^keyvault secret show .*-n stripe-credentials--api-key ' "$ast/logs/az.log"; then why="Key Vault reads=$kv_reads (want exactly 1, of stripe-credentials--api-key)"
+  elif [ "$(_st_lines curl)" -ne 0 ]; then why="curl calls: $(_st_lines curl) (want 0)"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="the key was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS order-live-key rc=1 kv_reads=1 curl_calls=0"
   else _st_result "FAIL order-live-key $why"; fails=$((fails + 1)); fi
 
   # --- order-first-run: one order, confirmed once with pm_card_visa, paid ------
@@ -1160,7 +1456,7 @@ IDF
   else _st_result "FAIL order-first-run $why"; fails=$((fails + 1)); fi
 
   # --- order-replay: the key replays a paid order; nothing is confirmed again --
-  _st_order_fixtures PENDING "" 1 false CAPTURED
+  _st_order_fixtures PENDING "" 1 false CAPTURED succeeded
   _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 -- "${order_args[@]}"
   why=""
   olast=$(tail -n 1 <<<"$ST_OUT")
@@ -1285,9 +1581,8 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor) ;;
-  order|all) echo "VOID: --stage $STAGE is added by plan 29-18 (the order stage needs Stripe TEST settlement, D-31)" >&2; exit 2 ;;
-  "") usage_error "--stage vendor is required" ;;
+  vendor|order|all) ;;
+  "") usage_error "--stage vendor|order|all is required" ;;
   *) usage_error "--stage must be vendor, order or all" ;;
 esac
 
@@ -1296,4 +1591,13 @@ if [ "$DRY_RUN" -eq 1 ]; then
   print_plan
   exit 0
 fi
-vendor_stage
+case "$STAGE" in
+  vendor) vendor_stage ;;
+  order)  order_stage ;;
+  all)
+    vendor_stage
+    # The realm-admin operator exists only for the vendor stage: deleted here,
+    # before the order, not left standing until exit.
+    if [ "$OP_CREATED" -eq 1 ]; then delete_operator || exit 1; fi
+    order_stage ;;
+esac
