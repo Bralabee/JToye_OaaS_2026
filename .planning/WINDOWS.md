@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 17
+open_count: 18
 waived_count: 0
 fixed_count: 30
-total_count: 47
-last_updated: 2026-10-18T23:32:14.332Z
+total_count: 48
+last_updated: 2026-10-19T00:01:27.604Z
 ---
 
 # Broken Windows Ledger
@@ -62,6 +62,7 @@ last_updated: 2026-10-18T23:32:14.332Z
 | 45 | 37 | unrun-verify | frontend/app/shop/[slug]/shop-detail-client.tsx |  | 37-49: G1/G2 visual and live proof owed to 37-50 - the Collection only chip and the wrapped status row at a real 375px render, the web-address row and create preview at 375/768/1280, and a collection-only shop set in the live dialog then ordered at checkout on rebuilt images | fixed | closed by 37-50: the Collection only chip wraps under the open state and rating at 375/390/768/1280 with page scrollWidth equal to the viewport; the web-address row and the create preview at 390/768/1280 and a long slug at 375 stay inside the dialog; Brixton set collection-only in the live dialog while a Delivery checkout was open, which met the 422 copy, switched to the static row and ordered COLLECTION (evidence/37-50-gate-37G.md 2.5-2.7, evidence/37-50-screens/) | 2026-10-14T11:50:46.206Z | 2026-10-14T16:35:40.427Z |
 | 46 | 29 | unrun-verify | scripts/staging-db-bootstrap.sh |  | 29-07: role bootstrap proven only against a postgres:18 stand-in (fake_admin, a CREATEROLE CREATEDB BYPASSRLS non-superuser, not azure_pg_admin): A18 (admin may ALTER DEFAULT PRIVILEGES FOR ROLE jtoye_app after self-membership, pre-create uuid-ossp, own/ALTER schema public), BYPASSRLS for jtoye_backup, and --stage monitor (needs ADMIN OPTION on pg_monitor, failed without it on the stand-in) owed to the live readbacks of 29-14 and 29-23 | open |  | 2026-10-18T23:32:14.216Z |  |
 | 47 | 29 | unrun-verify | scripts/azure-staging-datastores.sh |  | 29-07: dry-run only; the live proofs are owed to 29-09 Task 2 / 29-14: the server holds the Key Vault pg-admin--password value (CLI @FILE expansion, cited from azure-cli 2.91.0 source), exactly one firewall rule, azure.extensions UUID-OSSP, and sslmode=verify-full sslrootcert=system with the mounted host CA bundle on the first --stage pre login | open |  | 2026-10-18T23:32:14.332Z |  |
+| 48 | 29 | deviation | k8s/staging/kustomization.yaml |  | 29-08: the plan said delete the staging replicas: block; kept at count 1 (= the HPA floor) instead, because deleting it renders base spec.replicas 3/5/3 and every kubectl apply would request 11 app pods on 3 x B2s until HPA scale-down stabilisation. Owner may prefer removing spec.replicas from base Deployments (affects production) - a separate decision | open |  | 2026-10-19T00:01:27.604Z |  |
 
 ````json
 [
@@ -673,6 +674,19 @@ last_updated: 2026-10-18T23:32:14.332Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-18T23:32:14.332Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 48,
+    "kind": "deviation",
+    "phase": "29",
+    "file": "k8s/staging/kustomization.yaml",
+    "line": null,
+    "description": "29-08: the plan said delete the staging replicas: block; kept at count 1 (= the HPA floor) instead, because deleting it renders base spec.replicas 3/5/3 and every kubectl apply would request 11 app pods on 3 x B2s until HPA scale-down stabilisation. Owner may prefer removing spec.replicas from base Deployments (affects production) - a separate decision",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-19T00:01:27.604Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
