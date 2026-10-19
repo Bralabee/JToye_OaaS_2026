@@ -1,0 +1,300 @@
+PLAN_BASE=93a63f69152a150b81c9385380b644be41f4ea47 2026-10-19T11:19:26Z
+# 29-29 evidence (D-34(b)): the public storefront serves the vendor's pipeline image.
+# Tasks 1-2 ran in a lane-B worktree (worktree-agent-ae894c6292ea59a30); Tasks 3-4 run in lane A.
+
+== Task 1 RED 2026-10-19T11:24:40Z (run started 2026-10-19T11:21:41Z) ==
+command: ./gradlew :core-java:integrationTest --tests '*PublicStorefrontMediaImageIntegrationTest' --rerun -> gradle rc=1
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="5" errors="0" timestamp="2026-10-19T11:23:22.936Z" hostname="sanmi-System-Product-Name" time="24.976">
+failed: case 1, case 2, case 3, case 10, case 14 (asset URL expected; null found, or the legacy URL for case 3); classified RED_EVIDENCE_OK in evidence/29-29-red-evidence.json
+29-29 CASE13 prepared-statement delta shopA=2 (products=10, media-bearing=8) shopB=2 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+measurement gate: pinned to A the downgraded role reads 8 media_asset rows (not 0), so the tenant pin admits the storefront read; no V89, no public-read policy
+
+== Task 1 GREEN at 40ceffbc (first verify, uncommitted tree identical to the commit) 2026-10-19T11:37:01Z (run started 2026-10-19T11:25:56Z) ==
+-- gradle tail (raw):
+BUILD SUCCESSFUL in 2m 8s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:26:04.565Z" hostname="sanmi-System-Product-Name" time="48.888">
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+case 12 answers: can an unpinned read see asset rows? no (0 and 0). Does the storefront need a public-read policy? no (pinned A reads all 8 of its assets).
+case 13 answers: one media query per menu (delta 3 = 2 before the fix + 1), equal for 10 products (8 media-bearing) and 1.
+GREEN_SHA=40ceffbcedf18d1637643a56046b0d8ae14be3dc 2026-10-19T11:37:07Z
+
+== Task 1 regression set (second verify) at 40ceffbc, finished 2026-10-19T11:36Z ==
+./gradlew :core-java:test --tests 'uk.jtoye.core.storefront.*' --tests 'uk.jtoye.core.media.*' --tests 'uk.jtoye.core.product.*' --rerun -> BUILD SUCCESSFUL (33 report files, 318 tests, 0 failures/errors)
+./gradlew :core-java:integrationTest --tests 'uk.jtoye.core.storefront.*' --tests 'uk.jtoye.core.media.*' --tests 'uk.jtoye.core.security.RlsContractTest' --tests 'uk.jtoye.core.integration.OpenApiSnapshotTest' --rerun -> BUILD SUCCESSFUL in 7m 18s (42 report files, 236 tests, 0 failures/errors)
+gradle rc=0 fresh-green reports=2/2
+<testsuite name="uk.jtoye.core.security.RlsContractTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:32:14.652Z">
+<testsuite name="uk.jtoye.core.integration.OpenApiSnapshotTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:28:53.970Z">
+docs/api/openapi-snapshot.json unchanged (no endpoint, field or annotation change). Runtime half check-openapi-snapshot-fresh.sh: N/A here (needs the compose runtime, which lane B does not rebuild; staging OpenAPI is auth-gated, #549).
+
+== BA-1: status predicate dropped from findPublicPrimaryObjectKeys (expect case 5 red) 2026-10-19T11:39:46Z (run started 2026-10-19T11:37:25Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 5: a PENDING and a FAILED primary show no image FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+14 tests completed, 2 failed
+> Task :core-java:integrationTest FAILED
+BUILD FAILED in 2m 10s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="2" errors="0" timestamp="2026-10-19T11:39:01.600Z" hostname="sanmi-System-Product-Name" time="26.429">
+RED: 29-29 — case 5 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/4a02f5f2-88d0-492b-9865-3007e5107340.webp"
+RED: 29-29 — case 14 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/4a02f5f2-88d0-492b-9865-3007e5107340.webp"
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-1 restore 2026-10-19T11:39:46Z: core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java hash-object=fd69e2283b015c64be965bd9d10ff3234e3b1308 HEAD:core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java=fd69e2283b015c64be965bd9d10ff3234e3b1308 MATCH
+
+== BA-2: flagged predicate dropped from findPublicPrimaryObjectKeys (expect cases 6 and 7 red) 2026-10-19T11:41:56Z (run started 2026-10-19T11:39:53Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 7: a flagged primary over a legacy image falls back to the legacy image_url (D-03a) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 6: a flagged ACTIVE primary is hidden publicly, while the vendor rule still sees its key FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 3 failed
+BUILD FAILED in 2m 2s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="3" errors="0" timestamp="2026-10-19T11:39:59.325Z" hostname="sanmi-System-Product-Name" time="47.123">
+RED: 29-29 — case 7 :: expected: "https://legacy.29-29.test/flagged-over-legacy.jpg"  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/996ee9db-9c03-4ad1-99d6-d7aa5258eac2.webp"
+RED: 29-29 — case 6 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/624086fb-1c78-43cd-8697-ab35d2d8883a.webp"
+RED: 29-29 — case 14 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/624086fb-1c78-43cd-8697-ab35d2d8883a.webp"
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-2 restore 2026-10-19T11:41:56Z: core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java hash-object=fd69e2283b015c64be965bd9d10ff3234e3b1308 HEAD:core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java=fd69e2283b015c64be965bd9d10ff3234e3b1308 MATCH
+
+== BA-3: per-row catch removed from PublicProductImageResolver (expect case 8 red: the menu no longer answers 200) 2026-10-19T11:44:07Z (run started 2026-10-19T11:42:04Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 9: a tenant-A join row naming tenant B's asset shows no image, and B appears nowhere in A's bodies FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 3: Both Dish shows the asset, never the legacy column, as imageUrl and imageUrls[0] FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 13: a menu read resolves every image in one query (prepared-statement deltas equal) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 1: the menu carries Asset Dish's ACTIVE derivative as imageUrl, then its flat gallery FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 4: Legacy Dish and Seed Dish (no media rows) are exactly what the flat columns say FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 7: a flagged primary over a legacy image falls back to the legacy image_url (D-03a) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 8: an ACTIVE row with a quarantine key is skipped; the menu answers 200 and names no quarantine object FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 6: a flagged ACTIVE primary is hidden publicly, while the vendor rule still sees its key FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 5: a PENDING and a FAILED primary show no image FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 10 failed
+BUILD FAILED in 2m 2s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="10" errors="0" timestamp="2026-10-19T11:42:10.885Z" hostname="sanmi-System-Product-Name" time="45.864">
+RED: 29-29 — case 9 :: expected: 200  but was: 400
+RED: 29-29 — case 3 :: expected: 200  but was: 400
+RED: 29-29 — case 13 :: expected: 200  but was: 400
+RED: 29-29 — case 1 :: expected: 200  but was: 400
+RED: 29-29 — case 4 :: expected: 200  but was: 400
+RED: 29-29 — case 7 :: expected: 200  but was: 400
+RED: 29-29 — case 8 :: expected: 200  but was: 400
+RED: 29-29 — case 6 :: expected: 200  but was: 400
+RED: 29-29 — case 5 :: expected: 200  but was: 400
+RED: 29-29 — case 14 :: expected: 200  but was: 400
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-3 restore 2026-10-19T11:44:07Z: core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java hash-object=64529fb424acd2c9e26fcde4a2df91ea86a15e82 HEAD:core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java=64529fb424acd2c9e26fcde4a2df91ea86a15e82 MATCH
+
+== BA-4: resolver tenant guard removed and getShopProducts resolves AFTER TenantContext.clear() (expect case 1 red, imageUrl null: V53's tenant policy, not a public-read policy, admits the rows) 2026-10-19T11:46:27Z (run started 2026-10-19T11:44:22Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 3: Both Dish shows the asset, never the legacy column, as imageUrl and imageUrls[0] FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 1: the menu carries Asset Dish's ACTIVE derivative as imageUrl, then its flat gallery FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 10: shop B's own menu resolves B's asset (case 9's control) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+14 tests completed, 4 failed
+> Task :core-java:integrationTest FAILED
+BUILD FAILED in 2m 4s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="4" errors="0" timestamp="2026-10-19T11:44:27.373Z" hostname="sanmi-System-Product-Name" time="49.169">
+RED: 29-29 — case 3 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/bbfc099e-393b-4d08-ab13-c07c7b42344c.webp"  but was: "https://legacy.29-29.test/both-dish.jpg"
+RED: 29-29 — case 1 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/82a1a694-595a-4486-a540-8373e31cb30f.webp"  but was: null
+RED: 29-29 — case 10 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292902/media/20bb407b-5bfb-4ca2-9696-721f31907894.webp"  but was: null
+RED: 29-29 — case 14 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/82a1a694-595a-4486-a540-8373e31cb30f.webp"  but was: null
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-4 restore 2026-10-19T11:46:27Z: core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java hash-object=64529fb424acd2c9e26fcde4a2df91ea86a15e82 HEAD:core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java=64529fb424acd2c9e26fcde4a2df91ea86a15e82 MATCH
+BA-4 restore 2026-10-19T11:46:27Z: core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java hash-object=7eb08197d92191a9863a4b8741b6b774cef9ad63 HEAD:core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java=7eb08197d92191a9863a4b8741b6b774cef9ad63 MATCH
+
+== BA-5: the batch replaced by a per-product findPrimaryActiveObjectKey loop (expect case 13 red, deltas differ, and case 6 red) 2026-10-19T11:48:45Z (run started 2026-10-19T11:46:38Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 13: a menu read resolves every image in one query (prepared-statement deltas equal) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 7: a flagged primary over a legacy image falls back to the legacy image_url (D-03a) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 6: a flagged ACTIVE primary is hidden publicly, while the vendor rule still sees its key FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 4 failed
+BUILD FAILED in 2m 7s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="4" errors="0" timestamp="2026-10-19T11:46:43.724Z" hostname="sanmi-System-Product-Name" time="49.464">
+RED: 29-29 — case 13 :: expected: 3L  but was: 12L
+RED: 29-29 — case 7 :: expected: "https://legacy.29-29.test/flagged-over-legacy.jpg"  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/57111daa-388c-4684-ad8e-efa55b48a05b.webp"
+RED: 29-29 — case 6 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/b2fbc6ca-697d-47d2-a825-59db59fb8fcd.webp"
+RED: 29-29 — case 14 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/b2fbc6ca-697d-47d2-a825-59db59fb8fcd.webp"
+29-29 CASE13 prepared-statement delta shopA=12 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-5 restore 2026-10-19T11:48:45Z: core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java hash-object=64529fb424acd2c9e26fcde4a2df91ea86a15e82 HEAD:core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java=64529fb424acd2c9e26fcde4a2df91ea86a15e82 MATCH
+
+== BA-6: additionalImageUrls dropped from imageUrls (expect cases 1 and 4 red) 2026-10-19T11:50:54Z (run started 2026-10-19T11:48:52Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 1: the menu carries Asset Dish's ACTIVE derivative as imageUrl, then its flat gallery FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 4: Legacy Dish and Seed Dish (no media rows) are exactly what the flat columns say FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 2 failed
+BUILD FAILED in 2m 1s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="2" errors="0" timestamp="2026-10-19T11:48:57.829Z" hostname="sanmi-System-Product-Name" time="47.292">
+RED: 29-29 — case 1 :: org.opentest4j.AssertionFailedError: [{"allergenMask":0,"category":null,"description":null,"dietaryTags":null,"featured":false,"id":"3e997310-3da2-42fc-a184-3948373a9ae4","imageUrl":"https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/me
+RED: 29-29 — case 4 :: org.opentest4j.AssertionFailedError: [Legacy Dish {"allergenMask":0,"category":null,"description":null,"dietaryTags":null,"featured":false,"id":"6f4940ff-a87b-4478-beab-8fcaf68952f7","imageUrl":"https://legacy.29-29.test/legacy-dish.jpg","imageUrls":["https://
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-6 restore 2026-10-19T11:50:54Z: core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java hash-object=7eb08197d92191a9863a4b8741b6b774cef9ad63 HEAD:core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java=7eb08197d92191a9863a4b8741b6b774cef9ad63 MATCH
+
+== Task 1 CLOSING clean run at 40ceffbc after all six arms restored (first verify) 2026-10-19T11:53:03Z (run started 2026-10-19T11:51:05Z) ==
+-- gradle tail (raw):
+BUILD SUCCESSFUL in 1m 58s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:51:09.419Z" hostname="sanmi-System-Product-Name" time="46.037">
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+
+== Task 1 acceptance checks 2026-10-19T11:53:17Z at HEAD 40ceffbc ==
+closing run: WARN event=public_media_key_refused lines in the report=12 (the Quarantine-Key Dish row skipped, the key never logged)
+untouched paths (vendor path, DTOs, contract, migrations, frontend app): rc=0  (expect 0)
+fail direction, PublicStorefrontService.java: rc=1  (expect 1)
+Flyway-head pipeline fail direction: 89  (expect 89)
+flyway head=V88
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+Fix by running: scripts/docs-freshness.sh --write   (then update README/PROJECT.md and commit)
+rc=1
+  ^ VOID for Task 1, not a Task 1 failure: Task 2's spec (frontend/e2e/staging-storefront-image.spec.ts) was already
+    drafted, UNTRACKED, in the working tree and docs-freshness counts its test() block. Re-run at 2026-10-19T11:53:27Z with
+    that untracked file parked outside the tree (so the tree equals the committed 40ceffbc):
+    flyway head=V88 | check-doc-metrics PASS: all 37 prose metric claim(s) | docs-freshness OK (total 6352) | rc=0
+    The spec was moved back at 2026-10-19T11:53:30Z; Task 2 regenerates the counts for it.
+WARN line check: 12 event=public_media_key_refused lines in the closing report, 0 of them contain "quarantine" (product id only).
+case 11 note: it guards the pre-existing SEC-01 slug gate (resolvePublicShopForSlug 404s before any media read); its fail direction is NOT constructed here (the gate is not this plan's code), so it is not counted as falsified.
+
+== Task 1 break-arm summary (each arm run alone on the committed GREEN tree, restored by `git checkout -- <file>`, restore proven by hash) ==
+BA-1 status predicate dropped        -> red: case 5 (FAILED asset's ordinary key shown), case 14      restore MATCH
+BA-2 flagged predicate dropped       -> red: case 6, case 7, case 14                                    restore MATCH
+BA-3 per-row catch removed           -> red: case 8 (menu 400, not 200) and every case reading A's menu: 1,3,4,5,6,7,9,13,14   restore MATCH
+BA-4 guard removed + resolve after TenantContext.clear() -> red: case 1 (imageUrl null), case 3, case 10, case 14   restore MATCH x2
+BA-5 per-product findPrimaryActiveObjectKey loop -> red: case 13 (delta 12 vs 3), case 6, case 7, case 14   restore MATCH
+BA-6 additionalImageUrls dropped     -> red: case 1, case 4                                             restore MATCH
+Closing clean run: tests=14 failures=0 errors=0 (same N as GREEN).
+
+== Task 2 BEFORE arm (read-only staging, context jtoye-stg-aks) 2026-10-19T11:54:47Z ==
+-- step 1 2026-10-19T11:54:47Z: RUNNING tags and rollout state
+core-java=ghcr.io/bralabee/jtoye-core-java:a784e7e2421c7aba164f3e7db858b1861b7df6be gen=3 observed=3 ready=1/1 updated=1
+frontend=ghcr.io/bralabee/jtoye-frontend:a784e7e2421c7aba164f3e7db858b1861b7df6be gen=5 observed=5 ready=1/1 updated=1
+edge-go=ghcr.io/bralabee/jtoye-edge-go:a784e7e2421c7aba164f3e7db858b1861b7df6be gen=1 observed=1 ready=1/1 updated=1
+kubectl rc=0
+RUNNING=a784e7e2421c7aba164f3e7db858b1861b7df6be
+git merge-base --is-ancestor GREEN_SHA RUNNING: rc=1  (expect 1: the runtime lacks the fix; 128 = unknown commit = VOID)
+-- step 2 2026-10-19T11:54:48Z: in-jar read (Task 2 second verify)
+resolver=0 control=1
+jar verify rc=0  (expect 0: resolver=0 control=1)
+-- step 3 2026-10-19T11:54:50Z: anonymous menu
+curl rc=0 http=200
+[{"title":"Pelau","imageUrl":null,"imageUrls":[]}]
+jq rc=0
+quarantine-shaped strings=0 media strings=0
+-- step 4 2026-10-19T11:54:50Z: anonymous GET of the derivative (positive control: the object exists)
+http=200 content_type=image/webp bytes=1438
+curl rc=0
+magic:  R I F F 226 005 \0 \0 W E B P
+-- step 5 2026-10-19T11:54:50Z: sorted menu titles (Task 4 continuity compares against this)
+Pelau
+title count=1
+-- step 6 2026-10-19T11:55:30Z: the committed spec (81073fdf) against the pre-fix runtime a784e7e2 (Task 2 third verify; verify rc=0 = red for the RIGHT reason)
+command: cd frontend && STAGING_E2E=1 PLAYWRIGHT_BASE_URL=https://app-staging.olajay.co.uk STAGING_SHOP_SLUG=staging-test-kitchen STAGING_MEDIA_PRODUCT_TITLE=Pelau STAGING_MEDIA_ASSET_ID=1475a89c-19a5-4fea-a233-23e28070bbe3 npx playwright test e2e/staging-storefront-image.spec.ts --reporter=list --output <tmp>/results
+--- raw output (temp artifact paths elided by Playwright's relative form) ---
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/staging-storefront-image.spec.ts --reporter=list --output /tmp/tmp.kEsDBOHPHK/results
+
+Running 2 tests using 1 worker
+
+TITLE_VISIBLE Pelau
+CWV project=mobile lcp_ms=2500 cls=0.0000 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen
+PAGE_TEXT_ON_FAILURE Cookies on J'Toye We use cookies and browser storage only where strictly necessary to run this site — there is nothing to accept or reject. Got it Cookie policy Skip to main content J J'Toye 0 items in basket Sign in Back J'Toye Staging Test Kitchen Open now 1 Staging Test Street, Birmingham B1 1AA vendor.staging@olajay.co.uk Free delivery Staging test kitchen, seeded by scripts/staging-seed.sh (D-26). Not a real business. Opening hours Mains Pelau A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconut. GF dairy-free No allergens de
+  ✘  1 [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (4.4s)
+TITLE_VISIBLE Pelau
+CWV project=desktop lcp_ms=2436 cls=0.0006 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen
+PAGE_TEXT_ON_FAILURE Cookies on J'Toye We use cookies and browser storage only where strictly necessary to run this site — there is nothing to accept or reject. Got it Cookie policy Skip to main content J J'Toye Shops For operators Track order 0 items in basket Sign in Back J'Toye Staging Test Kitchen Open now 1 Staging Test Street, Birmingham B1 1AA vendor.staging@olajay.co.uk Free delivery Staging test kitchen, seeded by scripts/staging-seed.sh (D-26). Not a real business. Opening hours Mains Pelau A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconu
+  ✘  2 [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (4.4s)
+
+
+  1) [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+
+    Error: NO_MEDIA_IMG: no <img> named "Pelau" — the storefront fell back to its placeholder, so the menu carried no image
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+      149 |       await page.getByRole("img", { name: title, exact: true }).count(),
+      150 |       `NO_MEDIA_IMG: no <img> named "${title}" — the storefront fell back to its placeholder, so the menu carried no image`,
+    > 151 |     ).toBeGreaterThan(0)
+          |       ^
+      152 |
+      153 |     const src = (await img.getAttribute("src")) ?? ""
+      154 |     expect(
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-ae894c6292ea59a30/frontend/e2e/staging-storefront-image.spec.ts:151:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+
+    Error: NO_MEDIA_IMG: no <img> named "Pelau" — the storefront fell back to its placeholder, so the menu carried no image
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+      149 |       await page.getByRole("img", { name: title, exact: true }).count(),
+      150 |       `NO_MEDIA_IMG: no <img> named "${title}" — the storefront fell back to its placeholder, so the menu carried no image`,
+    > 151 |     ).toBeGreaterThan(0)
+          |       ^
+      152 |
+      153 |     const src = (await img.getAttribute("src")) ?? ""
+      154 |     expect(
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-ae894c6292ea59a30/frontend/e2e/staging-storefront-image.spec.ts:151:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+    [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+playwright rc=1 title_visible=2 no_media_img=4 cwv_lines=2
+--- end raw output ---
+BEFORE CWV (Task 4 compares its mobile line against the mobile one here):
+CWV project=mobile lcp_ms=2500 cls=0.0000 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+CWV project=desktop lcp_ms=2436 cls=0.0006 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+Task 2 collection switch (first verify): list rc off=0 on=0; switch off: listed=432 spec=0 | switch on: spec=2 mobile=1 desktop=1
+Task 2 contracts (fourth verify): check-e2e-baseurl-contract PASS, check-playwright-mobile-contract PASS, check-doc-metrics PASS (37 claims), docs-freshness OK (6353), rc=0
+spec acceptance: grep -c STAGING_VENDOR = 0 (control: staging-login.spec.ts = 4); grep -c PLAYWRIGHT_BASE_URL = 3
+lane note: no rollout was in progress during these reads (all three Deployments observed=generation, ready=1/1, on a784e7e2); lane A's 29-15 did not perturb them.

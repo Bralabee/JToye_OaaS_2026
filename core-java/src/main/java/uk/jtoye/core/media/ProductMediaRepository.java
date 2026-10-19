@@ -68,6 +68,32 @@ public interface ProductMediaRepository extends JpaRepository<ProductMedia, UUID
             + "AND a.status = uk.jtoye.core.media.MediaAsset.Status.ACTIVE")
     Optional<String> findPrimaryActiveObjectKey(@Param("productId") UUID productId);
 
+    /** One row of {@link #findPublicPrimaryObjectKeys}: a product and its primary derivative's key. */
+    interface PrimaryObjectKey {
+        UUID getProductId();
+
+        String getObjectKey();
+    }
+
+    /**
+     * {@link #findPrimaryActiveObjectKey} batched for the PUBLIC storefront (29-29, D-34(b)): the same
+     * predicate verbatim (the primary join row, its asset ACTIVE) over a whole menu's product ids in ONE
+     * query, plus one public visibility predicate, {@code a.flagged = false}.
+     *
+     * <p>A flagged ACTIVE primary stays visible to the VENDOR (the D-04 review queue reads it through the
+     * unbatched rule above) but is not public until the vendor's Keep clears the flag. Reversible: it is
+     * this one predicate.
+     *
+     * <p>No tenant predicate here, deliberately: the caller's tenant pin and V53's FORCE RLS tenant
+     * policies on both tables scope the read, so a join row naming another tenant's asset joins nothing.
+     */
+    @Query("SELECT pm.productId AS productId, a.objectKey AS objectKey FROM ProductMedia pm, MediaAsset a "
+            + "WHERE a.id = pm.assetId AND pm.productId IN :productIds AND pm.primary = true "
+            + "AND a.status = uk.jtoye.core.media.MediaAsset.Status.ACTIVE "
+            + "AND a.flagged = false")
+    java.util.List<PrimaryObjectKey> findPublicPrimaryObjectKeys(
+            @Param("productIds") java.util.Collection<UUID> productIds);
+
     /**
      * The product's media assets in render order (IMG-04, 24-05): the {@code is_primary}
      * asset first, then the gallery assets by {@code sort_order}. Backs the product DTO
