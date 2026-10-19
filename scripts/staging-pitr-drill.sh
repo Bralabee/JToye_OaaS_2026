@@ -192,8 +192,27 @@ trap 'exit 143' TERM
 # jtoye-stg-pg-drill-<digits> server is admitted. Returns 1 (refused) before any
 # connection is attempted; callers run it first and stop on non-zero.
 target_guard() {
-  echo "VOID: target_guard is not implemented yet (plan 29-20 Task 1)" >&2
-  return 2
+  local action="$1" host="${2-}" h
+  h="$(printf '%s' "$host" | tr 'A-Z' 'a-z')"
+  h="${h%.}"
+  if [ -z "$h" ]; then
+    echo "REFUSED [source-write]: ${action} names no target host; refusing rather than letting libpq pick a default" >&2
+    return 1
+  fi
+  case "$h" in
+    "$SOURCE"|"$SOURCE_FQDN")
+      echo "REFUSED [source-write]: ${action} targets SOURCE (${SOURCE_FQDN}). Roles, databases, drops and restores go to RESTORED only; SOURCE's only drill writes are the two vendor-API markers" >&2
+      return 1 ;;
+  esac
+  case "$h" in
+    "${SOURCE}-drill-"[0-9]*"$PG_SUFFIX")
+      case "${h#"${SOURCE}-drill-"}" in
+        *[!0-9]*"$PG_SUFFIX") ;;
+        *) return 0 ;;
+      esac ;;
+  esac
+  echo "REFUSED [source-write]: ${action} targets '${host}', which is not a ${SOURCE}-drill-<RUN_ID>${PG_SUFFIX} server" >&2
+  return 1
 }
 
 # pipeline_snippet SCRIPT DUMP — the pipeline's own floor and listing lines, read
@@ -202,30 +221,68 @@ target_guard() {
 # assumed. Only fail() differs: the pipeline's also deletes the file, this one only
 # reports.
 pipeline_snippet() {
-  echo "VOID: pipeline_snippet is not implemented yet (plan 29-20 Task 1)" >&2
-  return 2
+  local f="$1" dump="$2" pat n line
+  local -a pats=(
+    '^MIN_BACKUP_BYTES="\$\{MIN_BACKUP_BYTES:-[0-9]+\}"$'
+    '^SIZE="\$\(stat -c%s "\$TMP"'
+    '^\[ "\$SIZE" -ge "\$MIN_BACKUP_BYTES" \] \|\| fail '
+    '^pg_restore --list "\$TMP" .*\|\| fail '
+  )
+  local -a lines=()
+  [ -r "$f" ] || { echo "VOID: pipeline script $f unreadable" >&2; return 2; }
+  for pat in "${pats[@]}"; do
+    n="$(command grep -cE -- "$pat" "$f")"
+    if [ "$n" != 1 ]; then
+      echo "VOID: the pipeline line /${pat}/ occurs ${n} times in ${f} (want exactly 1)" >&2
+      return 2
+    fi
+    line="$(command grep -E -- "$pat" "$f")"
+    lines+=("$line")
+  done
+  printf '%s\n' 'set -euo pipefail'
+  printf '%s\n' 'fail() { echo "PIPELINE REFUSED: $*"; exit 1; }'
+  printf 'TMP=%q\n' "$dump"
+  printf '%s\n' "${lines[@]}"
+  printf '%s\n' 'echo "PIPELINE PASS: ${SIZE} bytes, floor ${MIN_BACKUP_BYTES} bytes"'
 }
 
 # counts_json — psql -A output (header line, value line; tab-separated) on stdin ->
 # one JSON object keyed by column name.
 counts_json() {
-  echo "VOID: counts_json is not implemented yet (plan 29-20 Task 1)" >&2
-  return 2
+  jq -Rn '[inputs | select(length > 0) | split("\t")] as $r
+    | if ($r | length) != 2 then error("expected one header line and one value line, got \($r | length)")
+      else [$r[0], $r[1]] | transpose | map({(.[0]): .[1]}) | add end'
 }
 
 # compare_counts LABEL_A JSON_A LABEL_B JSON_B — by TABLE NAME. Prints one line per
 # table; returns 0 all equal, 1 any differ, 2 VOID (no tables, a missing table or a
 # non-numeric count on either side).
 compare_counts() {
-  echo "VOID: compare_counts is not implemented yet (plan 29-20 Task 1)" >&2
-  return 2
+  local la="$1" a="$2" lb="$3" b="$4" t va vb n=0 differ=0
+  for t in $COUNT_TABLES; do
+    n=$((n + 1))
+    va="$(jq -r --arg k "$t" '.[$k] // empty' <<<"$a" 2>/dev/null)"
+    vb="$(jq -r --arg k "$t" '.[$k] // empty' <<<"$b" 2>/dev/null)"
+    case "$va" in ''|*[!0-9]*) echo "VOID: ${la} has no numeric count for table ${t} ('${va}')" >&2; return 2 ;; esac
+    case "$vb" in ''|*[!0-9]*) echo "VOID: ${lb} has no numeric count for table ${t} ('${vb}')" >&2; return 2 ;; esac
+    if [ "$va" = "$vb" ]; then
+      printf '  %-10s %s=%s %s=%s equal\n' "$t" "$la" "$va" "$lb" "$vb"
+    else
+      printf '  %-10s %s=%s %s=%s DIFFERENT\n' "$t" "$la" "$va" "$lb" "$vb"
+      differ=1
+    fi
+  done
+  [ "$n" -gt 0 ] || { echo "VOID: the table list is empty; zero tables compare equal vacuously" >&2; return 2; }
+  return "$differ"
 }
 
 # trap_before_restore FILE — the plan's ordering check: the first non-comment line
 # naming the trap precedes the first non-comment line naming the restore.
 trap_before_restore() {
-  echo "VOID: trap_before_restore is not implemented yet (plan 29-20 Task 1)" >&2
-  return 2
+  # The two patterns are assembled from pieces so that THIS line does not itself
+  # match them: the restore the check finds is the real request, not this helper.
+  local tp="trap cleanup" rp="flexible-server"
+  awk -v tp="$tp EXIT" -v rp="$rp restore" '!/^[[:space:]]*#/ && index($0, tp) && !t {t=NR} !/^[[:space:]]*#/ && index($0, rp) && !r {r=NR} END {print "trap=" t " restore=" r; exit (t && r && t < r) ? 0 : 1}' "$1"
 }
 
 # ---------------------------------------------------------------------------
