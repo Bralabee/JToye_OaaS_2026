@@ -235,3 +235,67 @@ podCidr=[] prc=1
 VOID: the live podCidr could not be read
 VERIFY rc=2
 
+=== TASK 3 (D-29(a) observed column). Pre-edit row count N=21 (awk over git show HEAD:k8s/platform/traefik/README.md, the table under '## D-29(a)') ===
+
+=== TASK 3 certificates 11:11:31Z: kubectl --context jtoye-stg-aks -n jtoye-staging get certificate; openssl s_client app-staging ===
+jtoye-staging-api-tls True letsencrypt-prod notAfter 2027-01-17T08:45:51Z
+jtoye-staging-app-tls True letsencrypt-prod notAfter 2027-01-17T08:45:50Z
+jtoye-staging-auth-tls True letsencrypt-prod notAfter 2027-01-17T08:45:51Z
+issuer=C=US, O=Let's Encrypt, CN=YR1 ; subject=CN=app-staging.olajay.co.uk ; notAfter=Jan 17 08:45:50 2027 GMT
+
+=== TASK 3 redirect 11:10:08Z: curl -sS -o /dev/null -w '%{http_code} Location=%{redirect_url}' http://<host>/realms/jtoye-staging/.well-known/openid-configuration ===
+app-staging -> 308 Location=https://app-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration
+api-staging -> 308 Location=https://api-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration
+auth-staging -> 308 Location=https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration
+
+=== TASK 3 limit-connections: N requests at once to app-staging /robots.txt (curl --http2 --parallel --parallel-max N), 10-12 s apart so the 500-token rate bucket is full each time ===
+11:10:19 --parallel-immediate concurrency 40 (40 connections): 40 x 200, 0 x 429, max latency 1.52 s
+11:10:33 --parallel-immediate concurrency 100 (100 connections): 100 x 200, 0 x 429, max latency 3.55 s
+11:10:54 multiplexed concurrency 150 (2 new connections): 63 x 200, 87 x 429 (content-type empty), wall 0.80 s
+11:11:11 --parallel-immediate concurrency 150 (150 connections): 114 x 200, 36 x 429 (content-type empty), wall 4.67 s
+Reading: 150 requests cannot exhaust a 500-token bucket, so these 429s are the in-flight cap. ~50 in flight per client per Traefik replica (two replicas; 100 connections spread across both stayed under it).
+
+=== TASK 3 body-size 11:09:55Z: curl -X POST --data-binary @<N zero bytes> https://api-staging.olajay.co.uk/api/v1/edge-body-probe ===
+11534336 bytes (11 MiB): HTTP 413 content-type=[] uploaded=0 time=0.18s body: Request Entity Too Large
+10485760 bytes (10 MiB): HTTP 401 content-type=[application/problem+json;charset=UTF-8] uploaded=10485760 time=1.15s
+1048576 bytes (1 MiB): HTTP 401 content-type=[application/problem+json;charset=UTF-8] uploaded=1048576 time=0.51s
+Reading: the edge refuses above 10m on the declared length before reading the body; at and below 10m the request reaches core-java, whose own 401 answers.
+
+=== TASK 3 cors-headers 11:12:50Z: curl -sS -o /dev/null -D - -X OPTIONS -H 'Origin: https://app-staging.olajay.co.uk' -H 'Access-Control-Request-Method: GET' -H 'Access-Control-Request-Headers: authorization,content-type' https://api-staging.olajay.co.uk/api/v1/products ===
+HTTP/2 200 
+access-control-allow-credentials: true
+access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+access-control-allow-origin: https://app-staging.olajay.co.uk
+access-control-max-age: 86400
+content-length: 0
+date: Mon, 19 Oct 2026 11:12:50 GMT
+
+
+=== TASK 3 sse: authenticated curl -N held 90 s (vendor.staging@olajay.co.uk; password and client secret read from jtoye-stg-kv by az_read into mode-600 files in a private temp dir, deleted on exit; token never printed) ===
+token obtained for vendor.staging@olajay.co.uk (value not shown)
+11:08:16.739 +0.0s START curl -N --max-time 90 https://api-staging.olajay.co.uk/api/v1/orders/stream
+11:08:34.701 +18.0s RECV :keep-alive
+11:08:34.705 +18.0s RECV 
+11:08:59.696 +43.0s RECV :keep-alive
+11:08:59.698 +43.0s RECV 
+11:09:24.703 +68.0s RECV :keep-alive
+11:09:24.705 +68.0s RECV 
+11:09:46.746 +90.0s END curl rc=28 (curl: (28) Operation timed out after 90000 milliseconds with 39 bytes received )
+response headers:
+HTTP/2 200 
+cache-control: no-cache, no-store, max-age=0, must-revalidate
+content-type: text/event-stream
+Reading: keep-alive comments arrive incrementally every 25 s (proxy-buffering off). The stream outlived 60 s and was ended by curl's own --max-time (rc 28), not by the edge. A 60 s IDLE timeout would also be reset by the 25 s keep-alives, so this shows no 60 s total cap, not the 3600 value.
+
+=== TASK 3 not-observable ===
+proxy-connect-timeout, proxy-send-timeout: a distinguishing probe needs a backend that refuses to accept or stops reading; no public staging path behaves so. Configured, not externally observable.
+proxy-buffer-size, proxy-buffers-number: inert while response buffering is off (provider default, README fact 2). Configured, not externally observable.
+proxy-request-buffering off on the SSE path: the stream is a GET with no body. Not externally observable there.
+main-Ingress proxy-read-timeout 60: no public path holds a response that long. Not externally observable.
+
+=== TASK 3 verify (awk Observed-column check) ===
+pre-edit README (git show HEAD:k8s/platform/traefik/README.md): VOID: no Observed column header rc=2
+scratch copy with the proxy-buffering Observed cell blanked: rows=21 filled=20 rc=1
+committed README: rows=21 filled=21 rc=0
+
