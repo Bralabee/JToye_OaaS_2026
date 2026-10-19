@@ -1,0 +1,11 @@
+PLAN_BASE=93a63f69152a150b81c9385380b644be41f4ea47 2026-10-19T11:19:26Z
+# 29-29 evidence (D-34(b)): the public storefront serves the vendor's pipeline image.
+# Tasks 1-2 ran in a lane-B worktree (worktree-agent-ae894c6292ea59a30); Tasks 3-4 run in lane A.
+
+== Task 1 RED 2026-10-19T11:24:40Z (run started 2026-10-19T11:21:41Z) ==
+command: ./gradlew :core-java:integrationTest --tests '*PublicStorefrontMediaImageIntegrationTest' --rerun -> gradle rc=1
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="5" errors="0" timestamp="2026-10-19T11:23:22.936Z" hostname="sanmi-System-Product-Name" time="24.976">
+failed: case 1, case 2, case 3, case 10, case 14 (asset URL expected; null found, or the legacy URL for case 3); classified RED_EVIDENCE_OK in evidence/29-29-red-evidence.json
+29-29 CASE13 prepared-statement delta shopA=2 (products=10, media-bearing=8) shopB=2 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+measurement gate: pinned to A the downgraded role reads 8 media_asset rows (not 0), so the tenant pin admits the storefront read; no V89, no public-read policy
