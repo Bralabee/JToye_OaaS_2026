@@ -75,6 +75,160 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# ================================================================== --selftest
+# The runtime abstractions (plan 29-23) shown working against STUBS: stub curl answers as
+# Prometheus (prom.stub), Alertmanager (am.stub), Mailhog (mailhog.stub) and Mailpit
+# (mailpit.stub); stub docker and kubectl answer md5sum/stat/inspect. Every stub appends its argv
+# to one log, so an arm asserts WHICH command the gate ran, not only its exit code. Each arm runs
+# this script for real ("$BASH" "$SELF") with the stubs first on PATH; jq, python3 and md5sum stay
+# real. LIVENESS_SELFTEST_FORMAT=tap prints TAP 13 for the RED-evidence classifier.
+#
+#   compose-default-docker-exec  PROM_EXEC unset: L-0 is `docker exec jtoye-prometheus md5sum
+#                                /etc/prometheus/alerts.yml`, kubectl never runs, rc 0
+#   k8s-prom-exec-kubectl        PROM_EXEC=kubectl ... exec deploy/prometheus --: L-0 runs md5sum
+#                                through it, docker never runs, no copy command anywhere, rc 0
+#   mailhog-sink-calls           SINK=mailhog: the Mailhog /api/v2 messages and search calls, rc 0
+#   mailpit-unreachable-void     SINK=mailpit, Mailpit down: rc 2 and a VOID naming Mailpit, never
+#                                a PASS line
+#   mailpit-sink-found           SINK=mailpit, the probe found: /api/v1/messages and /api/v1/search
+#                                called, the search asks for the probe id, rc 0
+#   mailpit-counts-matches-only  SINK=mailpit, mailbox total 10 but messages_count 0: NOT found,
+#                                rc 1 (reading the mailbox total would be a permanent pass)
+#   unknown-sink-usage           SINK=bogus: rc 2 and a USAGE ERROR line, before any call
+#   l0-drift-void                the served md5 differs: rc 2, L-0 SOURCE DRIFT
+liveness_selftest() {
+  local fmt="${LIVENESS_SELFTEST_FORMAT:-plain}" st n=0 bad=0 tap=() line
+  st="$(mktemp -d)" || { echo "VOID: --selftest could not create a temp dir" >&2; return 2; }
+  # shellcheck disable=SC2064
+  trap "rm -rf '$st'" EXIT
+  mkdir -p "$st/bin"
+  for t in jq python3 md5sum; do
+    command -v "$t" >/dev/null 2>&1 || { echo "VOID: --selftest needs $t on PATH" >&2; return 2; }
+  done
+
+  cat > "$st/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+url="" method=GET data=()
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  case "${args[$i]}" in
+    http://*|https://*) url="${args[$i]}" ;;
+    --data-urlencode) i=$((i + 1)); data+=("${args[$i]}") ;;
+    -X) i=$((i + 1)); method="${args[$i]}" ;;
+  esac
+done
+echo "curl $method $url ${data[*]}" >> "$STUB_LOG"
+rest="${url#*://}"; host="${rest%%/*}"; path="/${rest#*/}"; path="${path%%\?*}"
+case "$host" in
+  prom.stub) case "$path" in
+      /-/healthy) echo ok ;;
+      /api/v1/targets) echo '{"data":{"activeTargets":[{"labels":{"job":"prometheus"},"health":"up","scrapeUrl":"http://p/metrics","lastError":""}]}}' ;;
+      /api/v1/query) echo '{"status":"success","data":{"result":[{"value":[0,"1"]}]}}' ;;
+      /api/v1/rules) echo '{"data":{"groups":[{"rules":[{"type":"alerting","name":"ServiceDown","labels":{"service":"platform"},"query":"up == 0"}]}]}}' ;;
+      /api/v1/series) echo '{"data":[{"__name__":"up","job":"prometheus"}]}' ;;
+      *) exit 22 ;;
+    esac ;;
+  am.stub) case "$path" in
+      /-/healthy) echo ok ;;
+      /metrics) printf '%s\n' 'alertmanager_notifications_total{integration="email"} 1' 'alertmanager_notifications_failed_total{integration="email"} 0' ;;
+      /api/v2/alerts) echo '{}' ;;
+      *) exit 22 ;;
+    esac ;;
+  mailhog.stub) [ "${STUB_MAILHOG:-up}" = down ] && exit 7
+    case "$path" in
+      /api/v2/messages) echo '{"total":1,"items":[]}' ;;
+      /api/v2/search) echo "{\"total\":${STUB_FOUND:-1}}" ;;
+      *) exit 22 ;;
+    esac ;;
+  mailpit.stub) [ "${STUB_MAILPIT:-up}" = down ] && exit 7
+    case "$path" in
+      /api/v1/messages) echo '{"total":10,"messages_count":10,"messages":[]}' ;;
+      /api/v1/search) echo "{\"total\":10,\"messages_count\":${STUB_FOUND:-1},\"messages\":[]}" ;;
+      *) exit 22 ;;
+    esac ;;
+  *) exit 6 ;;
+esac
+STUB
+  cat > "$st/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "${0##*/} $*" >> "$STUB_LOG"
+prev=""
+for a in "$@"; do
+  case "$prev" in
+    md5sum) echo "${STUB_SUM}  $a"; exit 0 ;;
+    -c) echo 4242; exit 0 ;;
+  esac
+  prev="$a"
+done
+case " $* " in *" inspect "*|*" get "*) exit 0 ;; esac
+exit 0
+STUB
+  cp "$st/bin/docker" "$st/bin/kubectl"
+  chmod +x "$st/bin/curl" "$st/bin/docker" "$st/bin/kubectl"
+
+  local fixture="$st/alerts.yml" sum
+  printf 'groups:\n  - name: g\n    rules:\n      - alert: ServiceDown\n        expr: up == 0\n' > "$fixture"
+  sum=$(md5sum "$fixture" | awk '{print $1}')
+
+  # arm <name> <want-rc> <check-shell> [VAR=value ...]: runs the gate with the stubs, then
+  # evaluates <check-shell> with $out (combined output) and $log (the stub argv log) set.
+  arm() {
+    local name="$1" want="$2" check="$3" out rc log why=""; shift 3
+    n=$((n + 1))
+    log="$st/$name.log"; : > "$log"
+    out=$(env PATH="$st/bin:$PATH" STUB_LOG="$log" STUB_SUM="$sum" \
+          ALERTS="$fixture" PROM_URL=http://prom.stub ALERTMANAGER_URL=http://am.stub \
+          MAILHOG_URL=http://mailhog.stub MAILPIT_URL=http://mailpit.stub \
+          LIVENESS_L3_TRIES=2 LIVENESS_L3_SLEEP=0 "$@" "$BASH" "$SELF" 2>&1); rc=$?
+    [ "$rc" -eq "$want" ] || why="want rc $want, got rc $rc"
+    if [ -z "$why" ] && ! eval "$check"; then why="check failed: $check"; fi
+    if [ -z "$why" ]; then
+      line="ARM $name ok"; [ "$fmt" = tap ] && tap+=("ok $n - $name")
+    else
+      bad=$((bad + 1))
+      line="ARM $name FAIL ($why) | log: $(tr '\n' ';' < "$log" | cut -c1-300) | out: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-300)"
+      [ "$fmt" = tap ] && tap+=("not ok $n - $name" "  ---" "  message: '${line//\'/}'" "  ...")
+    fi
+    [ "$fmt" = tap ] || echo "$line"
+  }
+
+  arm compose-default-docker-exec 0 \
+    'command grep -qxF "docker exec jtoye-prometheus md5sum /etc/prometheus/alerts.yml" "$log" && ! command grep -q "^kubectl " "$log"'
+  arm k8s-prom-exec-kubectl 0 \
+    'command grep -qxF "kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus -- md5sum /etc/prometheus/alerts.yml" "$log" && ! command grep -q "^docker " "$log" && ! command grep -qE "(^| )cp( |$)" "$log"' \
+    PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
+  arm mailhog-sink-calls 0 \
+    'command grep -q "^curl GET http://mailhog.stub/api/v2/messages" "$log" && command grep -q "^curl GET http://mailhog.stub/api/v2/search" "$log" && ! command grep -q "mailpit.stub" "$log"' \
+    SINK=mailhog
+  arm mailpit-unreachable-void 2 \
+    'command grep -q "^VOID: .*Mailpit" <<<"$out" && ! command grep -q "^PASS" <<<"$out"' \
+    SINK=mailpit STUB_MAILPIT=down
+  arm mailpit-sink-found 0 \
+    'command grep -q "^curl GET http://mailpit.stub/api/v1/messages" "$log" && command grep -q "^curl GET http://mailpit.stub/api/v1/search .*probe-" "$log" && ! command grep -q "mailhog.stub" "$log"' \
+    SINK=mailpit
+  arm mailpit-counts-matches-only 1 \
+    'command grep -q "^FAIL: L-3" <<<"$out" && command grep -q "^curl GET http://mailpit.stub/api/v1/search" "$log" && ! command grep -q "mailhog.stub" "$log"' \
+    SINK=mailpit STUB_FOUND=0
+  arm unknown-sink-usage 2 \
+    'command grep -q "^USAGE ERROR" <<<"$out" && ! [ -s "$log" ]' \
+    SINK=bogus
+  arm l0-drift-void 2 \
+    'command grep -q "L-0 SOURCE DRIFT" <<<"$out"' \
+    STUB_SUM=00000000000000000000000000000000
+
+  if [ "$fmt" = tap ]; then
+    printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+  else
+    echo "selftest: $((n - bad))/$n arms as expected"
+  fi
+  [ "$bad" -eq 0 ]
+}
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+if [ "${1:-}" = "--selftest" ]; then
+  set +e
+  liveness_selftest; exit $?
+fi
+
 PROM_URL="${PROM_URL:-http://localhost:9091}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://localhost:9093}"
 MAILHOG_URL="${MAILHOG_URL:-http://localhost:8025}"
