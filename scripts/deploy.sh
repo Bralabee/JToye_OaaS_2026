@@ -187,6 +187,12 @@ KCFG
   _st_kubectl_matching() { if [ -s "$st/logs/kubectl.log" ]; then command grep -cE -- "$1" "$st/logs/kubectl.log" || true; else echo 0; fi; }
   _st_beyond_config() { if [ -s "$st/logs/kubectl.log" ]; then command grep -vc '^config view ' "$st/logs/kubectl.log" || true; else echo 0; fi; }
   _st_snip() { head -c 220 <<<"$1" | tr '\n' ' '; }
+  # The three app images, judged by NAME rather than by line count: a render may
+  # run one image in several containers (core-java's truststore-builder init
+  # container runs the core-java image, plan 29-22), so the claim is "each of the
+  # three names is at the tag, and no app-image line is at any other tag".
+  _st_app_at_tag() { command grep -oE "image: ghcr.io/bralabee/jtoye-(core-java|frontend|edge-go):${sha}\$" | sort -u | wc -l; }
+  _st_app_off_tag() { command grep -E "image: ghcr.io/bralabee/jtoye-(core-java|frontend|edge-go)[:@]" | command grep -vcE ":${sha}\$" || true; }
 
   # --- no-context: a deploy without --context is a usage error, before any call
   _st_run -- staging --image-tag "$sha"
@@ -249,23 +255,24 @@ KCFG
   else _st_result "FAIL preflight-refusal $why"; fails=$((fails + 1)); fi
 
   # --- render-only: offline, no context, the committed overlay untouched -----
-  local h_before h_after n_app n_pg
+  local h_before h_after n_app n_off n_pg
   h_before=$(sha256sum "$st/repo/k8s/staging/kustomization.yaml" | cut -d' ' -f1)
   _st_run -- staging --render-only --image-tag "$sha"
   h_after=$(sha256sum "$st/repo/k8s/staging/kustomization.yaml" | cut -d' ' -f1)
-  n_app=$(command grep -cE "image: ghcr.io/bralabee/jtoye-(core-java|frontend|edge-go):${sha}\$" <<<"$ST_OUT" || true)
+  n_app=$(_st_app_at_tag <<<"$ST_OUT"); n_off=$(_st_app_off_tag <<<"$ST_OUT")
   n_pg=$(command grep -c 'image: ghcr.io/bralabee/jtoye-pg-backup:18-blob$' <<<"$ST_OUT" || true)
   why=""
   if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(_st_snip "$ST_ERR")"
   elif [ -z "$ST_OUT" ]; then why="empty render"
-  elif [ "$n_app" -ne 3 ]; then why="app image lines at the tag=$n_app (want 3)"
+  elif [ "$n_app" -ne 3 ]; then why="distinct app images at the tag=$n_app (want 3)"
+  elif [ "$n_off" -ne 0 ]; then why="app image lines at another tag=$n_off (want 0)"
   elif [ "$n_pg" -ne 1 ]; then why="pg-backup 18-blob lines=$n_pg (want 1)"
   elif [ "$h_before" != "$h_after" ]; then why="k8s/staging/kustomization.yaml changed: $h_before -> $h_after"
   elif [ "$(_st_kubectl_matching ' ?(apply|rollout|create|delete|patch|label) ')" -ne 0 ]; then why="a mutating kubectl call: $(command grep -E '(apply|rollout|create|delete|patch|label) ' "$st/logs/kubectl.log" | head -1)"
   elif [ "$(_st_lines preflight)" -ne 0 ]; then why="the preflight ran"
   elif [ -n "$(ls -A "$st/tmp")" ]; then why="the wrapper dir was left behind: $(ls -A "$st/tmp" | head -1)"
   fi
-  if [ -z "$why" ]; then _st_result "PASS render-only rc=0 app_images_at_tag=3 pg_backup_18_blob=1 kustomization_sha256=${h_after:0:16}(unchanged) mutating_calls=0"
+  if [ -z "$why" ]; then _st_result "PASS render-only rc=0 app_images_at_tag=3 app_lines_off_tag=0 pg_backup_18_blob=1 kustomization_sha256=${h_after:0:16}(unchanged) mutating_calls=0"
   else _st_result "FAIL render-only $why"; fails=$((fails + 1)); fi
 
   # --- rollout-failure: undo the failed Deployment, no DEPLOYED_SHA record ----
@@ -282,19 +289,22 @@ KCFG
   # --- deployed-sha: every rollout green -> the LAST stdout line is the record
   _st_run -- staging --context jtoye-stg-aks --image-tag "$sha"
   why=""
-  local last n_ctx n_all n_applied order
+  local last n_ctx n_all n_applied n_applied_off order
   last=$(tail -n 1 "$st/out")
   n_all=$(_st_beyond_config)
   n_ctx=$(_st_kubectl_matching '^--context jtoye-stg-aks ')
-  n_applied=0
-  [ -f "$st/logs/applied-render.yaml" ] && n_applied=$(command grep -cE "image: ghcr.io/bralabee/jtoye-(core-java|frontend|edge-go):${sha}\$" "$st/logs/applied-render.yaml" || true)
+  n_applied=0; n_applied_off=-1
+  if [ -f "$st/logs/applied-render.yaml" ]; then
+    n_applied=$(_st_app_at_tag < "$st/logs/applied-render.yaml"); n_applied_off=$(_st_app_off_tag < "$st/logs/applied-render.yaml")
+  fi
   order=$(awk '/^preflight/ { printf "preflight," } /^kubectl .* apply -k / { printf "apply," }' "$st/logs/calls.log")
   if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(_st_snip "$ST_ERR")"
   elif [ "$last" != "DEPLOYED_SHA=$sha" ]; then why="last stdout line is '$(_st_snip "$last")', want DEPLOYED_SHA=$sha"
   elif [ "$(command grep -c '^DEPLOYED_SHA=' "$st/out" || true)" -ne 1 ]; then why="DEPLOYED_SHA lines=$(command grep -c '^DEPLOYED_SHA=' "$st/out" || true) (want 1)"
   elif [ "$(_st_kubectl_matching ' apply -k ')" -ne 1 ]; then why="apply -k calls=$(_st_kubectl_matching ' apply -k ') (want 1)"
   elif [ "$n_ctx" -ne "$n_all" ]; then why="$n_all cluster calls, only $n_ctx through --context jtoye-stg-aks (an ambient-context call)"
-  elif [ "$n_applied" -ne 3 ]; then why="the applied render holds $n_applied app images at the tag (want 3)"
+  elif [ "$n_applied" -ne 3 ]; then why="the applied render holds $n_applied distinct app images at the tag (want 3)"
+  elif [ "$n_applied_off" -ne 0 ]; then why="the applied render holds $n_applied_off app image line(s) at another tag (want 0)"
   elif [ "$order" != "preflight,apply," ]; then why="call order '$order' (want the preflight before the apply)"
   elif [ "$(_st_kubectl_matching 'rollout status deployment/(core-java|edge-go|frontend)( |$)')" -ne 3 ]; then why="rollout status calls=$(_st_kubectl_matching 'rollout status deployment/(core-java|edge-go|frontend)( |$)') (want 3)"
   fi
