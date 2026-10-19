@@ -343,3 +343,15 @@ OWNER CHECKPOINT — the outward-facing writes, not run by this executor
 ======================================================================================
 (exact commands and their effects are in 29-21-SUMMARY.md, "Checkpoint"; after they run,
 re-run Task 2 verify 1 and 2 and the provision ci stage's read-back and append the output here)
+
+================ Checkpoint resolution (orchestrator, owner-approved 2026-10-19) ================
+## 2026-10-19T11:19:46Z write 1: scripts/azure-staging-provision.sh --stage ci rc=0; role set read back: AKS Cluster User Role (cluster), AKS RBAC Writer (ns jtoye-staging), Key Vault Reader (jtoye-stg-kv); no value-reading KV role
+## writes 2-4: gh environment staging + branch policy main + 3 env variables, all rc=0
+## verify 1 (was 404 before):
+staging true false
+main
+## gh variable list --env staging:
+AZURE_CLIENT_ID ec29905d-231c-43eb-9385-c6f7f72409db
+AZURE_SUBSCRIPTION_ID c483d353-5f61-4587-a790-addb9ab5fb94
+AZURE_TENANT_ID b56df236-36b2-49ab-a25f-050cbaa9787c
+## DEPLOY_STAGING_ENABLED present at repo level: 0 (must stay 0 until 29-27)

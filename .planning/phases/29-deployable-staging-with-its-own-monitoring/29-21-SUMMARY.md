@@ -3,7 +3,7 @@ phase: 29-deployable-staging-with-its-own-monitoring
 plan: 21
 subsystem: infra
 tags: [ci, deploy, oidc, kubelogin, key-vault, cr-02, smoke-test, github-environment, dply-02, "#99"]
-status: halted
+status: complete
 
 requires:
   - phase: 29-14
@@ -264,3 +264,13 @@ The committed principal ids are identifiers (T-29-32), like the client ids alrea
 - FOUND: scripts/check-frontend-baked-origin.sh, evidence/29-21-ci.txt, evidence/29-21-t1-red-production-origin.json, evidence/29-21-t1-red-names-only.json
 - FOUND (ancestors of HEAD): a5e10b92, 572bf11e, 0212e39c, 28007d65, 41f00b6d, 252780a6, 86807d2f, 7765770f
 - `git rev-list --count 36f199a7..7765770f` = 8
+
+## Checkpoint resolution (orchestrator, 2026-10-19)
+
+The owner approved the four outward writes in-session. The orchestrator ran them from the merged phase branch (merge 43125fbb). All four returned rc 0, and each read-back is appended to `evidence/29-21-ci.txt`:
+
+- Key Vault Reader is granted to jtoye-ci. Its role set is exactly three roles, none of which can read a secret value.
+- The `staging` environment exists, with custom branch policies, no reviewers, and `main` as its only allowed branch.
+- AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID are set on that environment.
+
+DEPLOY_STAGING_ENABLED is still unset, as 29-27 requires. A CI run is the only proof that the deploy job authenticates as jtoye-ci, and that run belongs to 29-27/29-28.
