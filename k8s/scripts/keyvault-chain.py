@@ -7,11 +7,17 @@ Usage (stdlib + PyYAML; run as `python3 k8s/scripts/keyvault-chain.py ...`):
 
     keyvault-chain.py check   <render.yaml> [--verbose]   rc 0 chain holds, 1 broken, 2 VOID
     keyvault-chain.py objects <render.yaml>               the derived Key Vault object list
+    keyvault-chain.py access  <render.yaml>               `<clientID> TAB <objectName>` per SPC object
 
 `objects` prints the sorted, de-duplicated objectNames of every SPC's parameters.objects, one per
 line, and ONLY when `check` holds: a list read from a broken chain would hand the write-once
 writer and the deploy preflight (plan 29-13) a wrong answer that looks right. Nobody writes that
 list by hand (D-23).
+
+`access` prints, under the same condition, one `<clientID>\t<objectName>` line per object each SPC
+names (sorted, de-duplicated): the per-identity grant list plan 29-13's `--assign-access` and its
+preflight read. A role on exactly these objects, at per-secret scope, is "each identity reads only
+its own SPC's objects" (T-29-50); the list comes from the same checked chain as `objects`.
 
 WHAT `check` ASSERTS (each rule is a defect class, not a style point)
 
@@ -312,7 +318,7 @@ def check(docs, verbose=False):
 
 
 def main(argv):
-    if len(argv) < 3 or argv[1] not in ("check", "objects"):
+    if len(argv) < 3 or argv[1] not in ("check", "objects", "access"):
         sys.stderr.write(__doc__.split("\n\n")[1] + "\n")
         return 2
     verbose = "--verbose" in argv[3:]
@@ -325,6 +331,10 @@ def main(argv):
     if argv[1] == "objects":
         for o in objects:
             print(o)
+        return 0
+    if argv[1] == "access":
+        for cid, o in sorted({(s["clientID"], o) for s in spcs.values() for o in s["objects"]}):
+            print(f"{cid}\t{o}")
         return 0
     print(f"OK: {len(spcs)} SecretProviderClasses, {len(consumers)} consumed (Secret, key) reference(s), "
           f"{len(objects)} Key Vault objects; every consumer mounts its one producer, every clientID is its "
