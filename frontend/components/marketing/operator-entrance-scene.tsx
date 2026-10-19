@@ -1,25 +1,28 @@
 "use client"
 
 import { type RefObject } from "react"
-import { gsap, ScrollTrigger, useGSAP } from "@/lib/gsap"
-import { canEnhance, DESKTOP_MOTION_QUERY, splitWords } from "@/lib/gsap-gate"
+import { gsap, useGSAP } from "@/lib/gsap"
+import {
+  canEnhance,
+  DESKTOP_MOTION_QUERY,
+  entranceIsSafeForMount,
+  splitWords,
+} from "@/lib/gsap-gate"
 
 /**
  * useOperatorEntranceScene — the `/for-operators` progressive-enhancement hook.
  *
- * ON-LOAD, NOT ON-SCROLL. The previous version (sketch 003-B) pinned the hero
- * and *scrubbed* the three Service-rail items in, so the page arrived with an
- * empty headline and an empty rail card and only filled as you scrolled — plus
- * a pinned horizontal pilot track that hijacked the wheel. That was rejected:
- * the page should land already populated, the way `/` does. So:
+ * ON-LOAD, NOT ON-SCROLL, AND ONE MOMENT. The page arrives populated, the way
+ * `/` does. Exactly two things move, both once, both on load:
  *
- *  - the headline splits and plays its word stagger immediately on load;
- *  - the three rail items deal in immediately on load (stagger), never hidden
- *    behind a scroll position;
- *  - NO ScrollTrigger pinning anywhere — the page scrolls normally;
- *  - the only scroll-linked touch left is the terms-band count-up, which fires
- *    once when that band (far below the fold) enters view and never hides text:
- *    the real figure is what is server-rendered.
+ *  - the headline splits and plays its word stagger;
+ *  - the hero image frame (`[data-op-media]`, which carries the price docket
+ *    `[data-op-figure]` with it) fades and rises into place.
+ *
+ * Nothing else animates. In particular there is no price count-up (a figure
+ * that climbs from 0 reads as a pricing error, and 0.5 rounded to 1 under the
+ * old `Math.round`), no ScrollTrigger of any kind, no pinning, and no scroll
+ * reveal: the page scrolls normally and `.pin-spacer` stays absent.
  *
  * Desktop-with-motion only (gated by `gsap.matchMedia(DESKTOP_MOTION_QUERY)`).
  *
@@ -29,13 +32,22 @@ import { canEnhance, DESKTOP_MOTION_QUERY, splitWords } from "@/lib/gsap-gate"
  * reduced-motion / jsdom / SSR (`canEnhance()` false or the query does not
  * match) NOTHING runs and the server-rendered content stays fully visible.
  *
+ * LATE-ARRIVAL contract (R-03, ported from `hero-scene.tsx`), the OPPOSITE
+ * failure to No-FOUC: both entrance blocks open by HIDING painted content
+ * (`autoAlpha: 0`). If this bundle hydrates late on a throttled load, that
+ * would blank a headline and image the visitor is already reading. So the
+ * verdict `entranceIsSafeForMount` is taken ONCE per mount, OUTSIDE
+ * `matchMedia` (the callback re-fires on every breakpoint change, which is not
+ * a new mount), and when it is "unsafe" both blocks are skipped. The word
+ * spans are still created, because specs hang assertions on `.gsap-word` and
+ * they are inert without the tweens. `[data-entrance="played"|"skipped"]`
+ * reports the verdict.
+ *
  * E2E signals: `[data-motion-active="desktop"]` on the scope (set in-branch,
- * removed in cleanup), `.gsap-word` spans, and
+ * removed in cleanup), `.gsap-word` spans, `[data-entrance]`, and
  * `[data-motion-decided="scene"|"static"]` on the scope — an INERT marker
  * (no stylesheet, no logic reads it) stamped once the enhancer has RUN and
  * decided either way, so absence assertions have a deterministic anchor.
- * There is deliberately no `.pin-spacer` any more — its absence is part of
- * the contract.
  */
 export function useOperatorEntranceScene<T extends HTMLElement>(
   scopeRef: RefObject<T | null>,
@@ -46,76 +58,51 @@ export function useOperatorEntranceScene<T extends HTMLElement>(
       const root = scopeRef.current
       if (!root) return
 
+      const animateEntrance = entranceIsSafeForMount(
+        typeof performance !== "undefined" ? performance.now() : 0,
+      )
+
       const mm = gsap.matchMedia()
       mm.add(DESKTOP_MOTION_QUERY, () => {
         root.setAttribute("data-motion-active", "desktop")
         root.setAttribute("data-motion-decided", "scene")
+        root.setAttribute("data-entrance", animateEntrance ? "played" : "skipped")
 
-        // Split-type headline entrance (hand-split, no SplitText plugin).
+        // Split-type headline entrance (hand-split, no SplitText plugin). The
+        // split is UNCONDITIONAL; only the hide-then-reveal is gated.
         const headline = root.querySelector<HTMLElement>("[data-op-headline]")
         if (headline) {
           const words = splitWords(headline)
-          gsap.set(words, { yPercent: 115, autoAlpha: 0 })
-          gsap.to(words, {
-            yPercent: 0,
+          if (animateEntrance) {
+            gsap.set(words, { yPercent: 115, autoAlpha: 0 })
+            gsap.to(words, {
+              yPercent: 0,
+              autoAlpha: 1,
+              duration: 0.7,
+              stagger: 0.04,
+              ease: "power3.out",
+              delay: 0.1,
+            })
+          }
+        }
+
+        // The hero image frame (and the docket pinned over it) rises 16px and
+        // fades in, a beat after the first words. Opacity and transform only.
+        const media = root.querySelector<HTMLElement>("[data-op-media]")
+        if (media && animateEntrance) {
+          gsap.set(media, { autoAlpha: 0, y: 16 })
+          gsap.to(media, {
             autoAlpha: 1,
-            duration: 0.7,
-            stagger: 0.04,
-            ease: "power3.out",
-            delay: 0.1,
-          })
-        }
-
-        // Service-rail items deal in on LOAD (they used to be scrubbed in by a
-        // pinned ScrollTrigger, which left the card blank until you scrolled).
-        const railItems = gsap.utils.toArray<HTMLElement>(
-          root.querySelectorAll("[data-rail-item]"),
-        )
-        if (railItems.length) {
-          gsap.set(railItems, { autoAlpha: 0, x: 24 })
-          gsap.to(railItems, {
-            autoAlpha: 1,
-            x: 0,
-            duration: 0.55,
-            stagger: 0.12,
-            delay: 0.35,
+            y: 0,
+            duration: 0.6,
+            delay: 0.25,
             ease: "power3.out",
           })
-        }
-
-        // Count-up on the terms-band numeric values. Fires once when the band
-        // (far below the fold) enters view; the server-rendered figure is real.
-        const counts = root.querySelectorAll<HTMLElement>("[data-count-to]")
-        if (counts.length) {
-          const termsBand = root.querySelector<HTMLElement>("[data-op-terms]")
-          ScrollTrigger.create({
-            trigger: termsBand ?? counts[0],
-            start: "top 80%",
-            once: true,
-            onEnter: () => {
-              counts.forEach((el) => {
-                const target = Number(el.getAttribute("data-count-to")) || 0
-                const proxy = { value: 0 }
-                gsap.to(proxy, {
-                  value: target,
-                  duration: 0.9,
-                  ease: "power3.out",
-                  onUpdate: () => {
-                    el.textContent = String(Math.round(proxy.value))
-                  },
-                })
-              })
-            },
-          })
-        }
-
-        // Recompute trigger positions once webfonts settle (CLS safety).
-        if (typeof document !== "undefined" && "fonts" in document) {
-          void document.fonts.ready.then(() => ScrollTrigger.refresh())
         }
 
         return () => {
           root.removeAttribute("data-motion-active")
+          root.removeAttribute("data-entrance")
           // matchMedia cleanup also runs on breakpoint change, so the marker
           // stays truthful if the desktop query stops matching mid-session.
           root.setAttribute("data-motion-decided", "static")
