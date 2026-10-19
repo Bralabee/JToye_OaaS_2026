@@ -407,3 +407,48 @@ $ bash -c all=$(for p in $(kubectl --context jtoye-stg-aks -n traefik get pods -
 WRN_lines=10 ERR_or_forbidden=0
 [rc=0]
 INGRESS IP FOR THE OWNER: 51.105.43.14
+
+===== TASK 2 (checkpoint:human-action) — DNS measured after Task 1; bounded poll every 60 s, deadline 600 s =====
+2026-10-19T06:33:14Z resolved_to_ingress=0/8
+2026-10-19T06:34:15Z resolved_to_ingress=0/8
+2026-10-19T06:35:15Z resolved_to_ingress=0/8
+2026-10-19T06:36:15Z resolved_to_ingress=0/8
+2026-10-19T06:37:16Z resolved_to_ingress=0/8
+2026-10-19T06:38:16Z resolved_to_ingress=0/8
+2026-10-19T06:39:16Z resolved_to_ingress=0/8
+2026-10-19T06:40:17Z resolved_to_ingress=0/8
+2026-10-19T06:41:17Z resolved_to_ingress=0/8
+2026-10-19T06:42:17Z resolved_to_ingress=0/8
+2026-10-19T06:43:18Z resolved_to_ingress=0/8
+DEADLINE reached (600 s) without all four records
+
+----- [2026-10-19T06:43:37Z] TASK 2 VERIFICATION at the deadline: four staging names, production api/app, at dns1, dns2 and 1.1.1.1; NS/MX controls
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-final.sh
+@dns1.registrar-servers.com A app-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A api-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A api-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@1.1.1.1 A app-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A api-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A auth-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A grafana-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+positive control NS @dns1: dns1.registrar-servers.com. dns2.registrar-servers.com. 
+positive control MX @dns1: 10 mx.zoho.eu. 20 mx2.zoho.eu. 50 mx3.zoho.eu. 
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792318860 43200 3600 604800 3601  (serial 1792318860 read as a Unix time is 2026-10-18T10:21:00Z; if the registrar uses time-based serials, the zone has not been saved since then — an inference, not a measurement)
+.uk delegation (nsa.nic.uk, norecurse): dns1.registrar-servers.com. dns2.registrar-servers.com. 
+[rc=0]
+
+RESULT (executor, 2026-10-19T06:44Z): Task 2 NOT satisfied. None of the four staging A records exists at the
+authoritative servers (NXDOMAIN with the aa flag at dns1 and dns2) or at 1.1.1.1, after a 600 s bounded poll. D-08 holds:
+api/app are NXDOMAIN (aa). Controls answer (NS, MX via Zoho, .uk delegation to registrar-servers). Task 3 NOT started;
+plan stopped at the Task 2 checkpoint (human-action). The platform from Task 1 stays applied; Traefik holds 51.105.43.14.
