@@ -50,7 +50,7 @@ only issues caused by the current task are fixed in it).
   Pitfall 10's `security.trusted-proxies`).
 
 - The public storefront never shows an image uploaded through the safe media pipeline (found during 29-14, 2026-10-19)
-  status: open
+  status: resolved by 29-29 (`40ceffbc`, deployed `6e95ee6c`): the anonymous staging menu now serves Pelau's ACTIVE pipeline derivative (asset 14add455, the vendor's 29-22 replacement of 1475a89c) as imageUrl and imageUrls[0], and the storefront renders it at naturalWidth 640 on mobile and desktop with a matching Product JSON-LD image (evidence/29-29-storefront-image.txt)
   **What:** measured live on staging at a784e7e2: a vendor PNG became an ACTIVE 640x480 WebP
   derivative on jtoyestgmedia (renders in Chromium, naturalWidth 640), the vendor product DTO
   returns it as `imageUrl`, but `GET /api/v1/public/shops/staging-test-kitchen/products`
