@@ -22,7 +22,10 @@
 #                    preamble and \ir — the same files compose uses
 #     --stage monitor  jtoye_monitor LOGIN IN ROLE pg_monitor (plan 29-23)
 #     --stage readback roles (rolsuper, rolbypassrls), \ddp, database and
-#                    public-schema owners, max_connections, printed raw
+#                    public-schema owners, max_connections, and, once a first
+#                    migration exists, who installed it (flyway_schema_history
+#                    grouped by installed_by: count, all-success, first/last),
+#                    printed raw
 #
 # THE MANAGED-SERVER ADMIN IS NOT A SUPERUSER
 #   azure_pg_admin is a pseudo-superuser. Measured on postgres:18 with a
@@ -256,6 +259,10 @@ SELECT datname, pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname 
 SELECT current_database() AS db, nspname, pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname = 'public';
 \\ddp
 SHOW max_connections;
+SELECT to_regclass('public.flyway_schema_history') IS NOT NULL AS has_flyway_history \\gset
+\\if :has_flyway_history
+SELECT 'flyway' AS kind, installed_by, count(*) AS migrations, bool_and(success) AS all_success, min(installed_on) AS first_installed, max(installed_on) AS last_installed FROM flyway_schema_history GROUP BY installed_by ORDER BY installed_by;
+\\endif
 \\connect keycloak
 SELECT current_database() AS db, nspname, pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname = 'public';
 SQL
