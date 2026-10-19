@@ -256,8 +256,11 @@ with `blobctl`. It never prunes and never deletes.
   cannot read, list or delete (provisioning runbook §6). So the job has **no post-upload read-back**
   — it cannot list what it wrote — and a compromised job cannot read, delete or replace old dumps,
   which hold every tenant's PII.
-- The database half is unchanged: `DB_USER` / `PGPASSWORD` come from the `postgres-credentials`
-  secret's `backup-username` / `backup-password` keys, and must be the BYPASSRLS role below.
+- The database half: `DB_USER` / `PGPASSWORD` come from the `pg-backup-credentials` secret's
+  `backup-username` / `backup-password` keys (with `host` / `port` / `database`), and must be the
+  BYPASSRLS role below. Since plan 29-12 the CronJob reads a Secret of its own name: in staging it
+  is synced from the same Key Vault objects as core-java's `postgres-credentials`
+  (`postgres-credentials--host`, …, `postgres-credentials--backup-password`).
 
 ### The image
 
@@ -371,7 +374,8 @@ export BACKUP_PW="$(<secret manager>)"
   | psql -U <superuser> -d jtoye -v ON_ERROR_STOP=1
 ```
 
-Put the same password in the `postgres-credentials` secret's `backup-password` key. There is **no
+Put the same password in the `pg-backup-credentials` secret's `backup-password` key (in staging, the
+Key Vault object `postgres-credentials--backup-password`). There is **no
 storage credential to create**: Blob access is the Workload Identity above. The kustomize builds
 ship no Secret objects (#100); see `docs/runbooks/sealed-secrets.md` for the required-secrets table.
 

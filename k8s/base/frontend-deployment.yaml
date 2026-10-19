@@ -23,6 +23,10 @@ spec:
         component: ui
         version: v1
     spec:
+      # Its own ServiceAccount (k8s/base/serviceaccounts.yaml, plan 29-12, D-23):
+      # in staging the frontend authenticates to Key Vault through Workload
+      # Identity as system:serviceaccount:<ns>:frontend, never as `default`.
+      serviceAccountName: frontend
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -193,11 +197,17 @@ spec:
             configMapKeyRef:
               name: app-config
               key: keycloak.client-id
+        # Phase 29 plan 29-12 (D-23): the frontend reads the client secret from a
+        # Secret of its OWN name. keycloak-credentials is core-java's; in staging
+        # every synced Secret has exactly one producing SecretProviderClass, so a
+        # second consumer reads its own Secret mapped to the SAME Key Vault object
+        # (keycloak-credentials--frontend-client-secret). Locally
+        # scripts/k8s-local-secrets.sh fills it from the same .env value.
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              name: keycloak-credentials
-              key: frontend-client-secret
+              name: frontend-oidc-credentials
+              key: client-secret
         # ---------------------------------------------------------------------
         # DEF-5 / D-13 (Phase 26 / INFRA-02): the split-horizon issuer contract.
         # frontend/auth.ts has ALWAYS split these two — the k8s manifests simply

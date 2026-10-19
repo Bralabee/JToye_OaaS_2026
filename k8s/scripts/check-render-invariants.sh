@@ -911,7 +911,7 @@ fi
 [[ -n "$REALM_CLIENTS_TSV" ]] || parse_fail "INV-14: jq extracted 0 clients from $REALM_TEMPLATE — every client id would be reported missing, or (worse) a blind reader could pass. Fix the reader, do not delete the invariant."
 # The clients a vendor browser login may name: present in the template, not a
 # Keycloak built-in, enabled, authorization-code flow on, not bearer-only, and
-# confidential (the frontend presents keycloak-credentials/frontend-client-secret).
+# confidential (the frontend presents frontend-oidc-credentials/client-secret, plan 29-12).
 REALM_LOGIN_CLIENTS=" $(awk -F'\t' -v b="$KC_BUILTIN_CLIENTS" 'index(b, " " $1 " ") == 0 && $2 == "true" && $3 == "true" && $4 == "false" && $5 == "false" { printf "%s ", $1 }' <<< "$REALM_CLIENTS_TSV")"
 [[ -n "${REALM_LOGIN_CLIENTS// /}" ]] || parse_fail "INV-14: the realm template has no client a vendor login could use (non-built-in, enabled, standard flow, confidential). Either the template lost core-api or the filter is blind."
 
@@ -1603,8 +1603,8 @@ for dir in "${TARGETS[@]}"; do
         echo "        The Postgres port is CONFIG, not a constant (GLOBAL_RULE_6): the host dev" >&2
         echo "        Postgres publishes 5433, so a hardcoded 5432 makes a local cluster impossible" >&2
         echo "        and makes every environment's port a manifest edit. Route DB_PORT through" >&2
-        echo "        postgres-credentials/port, exactly as k8s/base/pg-backup-cronjob.yaml already" >&2
-        echo "        does (grep 'key: port'). This asserts the SHAPE on the RENDER, so no quoting" >&2
+        echo "        postgres-credentials/port (pg-backup: its own pg-backup-credentials/port)," >&2
+        echo "        a secretKeyRef with 'key: port'. This asserts the SHAPE on the RENDER, so no quoting" >&2
         echo "        style evades it and no overlay can patch a literal back in unseen — the" >&2
         echo "        previous source-level 'value: \"5432\"' grep was evaded by 'value: '\''5432'\''" >&2
         echo "        with both gates still green (code review WR-01)." >&2
@@ -1935,7 +1935,7 @@ for dir in "${TARGETS[@]}"; do
         # ---- INV-9: no stored storage credential ----
         inv9_bad=0
         secret_refs=$(awk -F'\t' '$3 ~ /::secretKeyRef::name$/ || $3 ~ /::secretRef::name$/ || $3 ~ /::secret::secretName$/ || $3 ~ /::sources::\[[0-9]+\]::secret::name$/' "$TMP/paths.tsv")
-        [[ -n "$secret_refs" ]] || parse_fail "[$rel] INV-9 found 0 Secret references in the render. core-java and pg-backup both read postgres-credentials, so zero means the path walker is blind and the 'no storage Secret' assertion would pass vacuously. Fix it, do not delete the invariant."
+        [[ -n "$secret_refs" ]] || parse_fail "[$rel] INV-9 found 0 Secret references in the render. core-java reads postgres-credentials and pg-backup reads pg-backup-credentials, so zero means the path walker is blind and the 'no storage Secret' assertion would pass vacuously. Fix it, do not delete the invariant."
         secret_ref_count=$(wc -l <<< "$secret_refs")
         while IFS=$'\t' read -r k n pth v; do
             if [[ "${v,,}" =~ $STORAGE_SECRET_NAME_RE ]]; then

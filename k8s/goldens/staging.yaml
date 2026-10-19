@@ -33,6 +33,23 @@ kind: ServiceAccount
 metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: frontend
+  namespace: jtoye-staging
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
     app.kubernetes.io/component: identity
     app.kubernetes.io/managed-by: kustomize
@@ -2585,8 +2602,8 @@ spec:
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              key: frontend-client-secret
-              name: keycloak-credentials
+              key: client-secret
+              name: frontend-oidc-credentials
         - name: KEYCLOAK_ISSUER
           valueFrom:
             configMapKeyRef:
@@ -2640,6 +2657,7 @@ spec:
           readOnlyRootFilesystem: false
           runAsNonRoot: true
           runAsUser: 1001
+      serviceAccountName: frontend
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -2950,27 +2968,27 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: host
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: DB_PORT
               valueFrom:
                 secretKeyRef:
                   key: port
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   key: database
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
                   key: backup-username
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
                   key: backup-password
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: STORAGE_AUTH_MODE
               valueFrom:
                 configMapKeyRef:

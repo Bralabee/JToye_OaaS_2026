@@ -48,7 +48,10 @@ kind: Kustomization
 #      `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`.
 #      Secrets required before apply: postgres-credentials,
 #      redis-credentials, rabbitmq-credentials, keycloak-credentials,
-#      nextauth-secret. No object-store credential is among them any more
+#      nextauth-secret, frontend-oidc-credentials and pg-backup-credentials
+#      (the last two since plan 29-12: a second consumer reads a Secret of its
+#      own name; `scripts/k8s-local-secrets.sh --help` lists every name). No
+#      object-store credential is among them any more
 #      (Phase 36): the Azurite emulator string carries no key, so it is a
 #      local-only ConfigMap value wired by storage-env-patch.yaml, not a Secret.
 #

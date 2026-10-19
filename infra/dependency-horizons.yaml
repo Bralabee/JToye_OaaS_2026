@@ -504,7 +504,7 @@ dependencies:
 
   - id: jtoye-frontend
     pin: "ghcr.io/bralabee/jtoye-frontend:2.1.0"
-    sites: ["k8s/base/frontend-deployment.yaml:40"]
+    sites: ["k8s/base/frontend-deployment.yaml:44"]
     kind: first_party
     owner: maintainer
     eol_slug: null

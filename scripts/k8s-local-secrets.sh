@@ -56,6 +56,10 @@
 #   scripts/k8s-local-secrets.sh
 #   (normally invoked for you by scripts/k8s-local-up.sh, which is the single
 #   bring-up entry point)
+#   scripts/k8s-local-secrets.sh --help
+#   prints the usage and the NAMES of the Secrets this file creates, read from its
+#   own apply_secret/skip_secret calls, and exits 0 before any guard, .env read or
+#   cluster call (names only, never a value).
 #
 # EXIT CODES: 0 = done, 1 = a guard refused or a verification failed,
 #             2 = parse / tooling failure.
@@ -64,6 +68,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# --help: read-only, and it runs before every guard and every mutation below. The
+# Secret list is DERIVED from this file's own apply_secret/skip_secret lines, so it
+# cannot drift from what STEP 5 actually creates. An empty derivation is a parse
+# failure (exit 2), never an empty list printed as if it were the answer.
+case "${1:-}" in
+  -h|--help)
+    echo "usage: scripts/k8s-local-secrets.sh   (bootstraps the jtoye-local namespace; see the header of this file)"
+    _names="$(/usr/bin/awk '/^[[:space:]]*(apply_secret|skip_secret) [a-z0-9-]+/ { print $2 }' "${BASH_SOURCE[0]}" | LC_ALL=C sort -u)"
+    [ -n "$_names" ] || { echo "PARSE ERROR: no apply_secret/skip_secret call found in ${BASH_SOURCE[0]}" >&2; exit 2; }
+    echo "Secrets (names only; skipped ones depend on .env):"
+    printf '  - %s\n' $_names
+    exit 0
+    ;;
+esac
 
 # shellcheck source=scripts/lib/k8s-local-guards.sh
 . "$SCRIPT_DIR/lib/k8s-local-guards.sh"
@@ -360,6 +379,22 @@ apply_secret keycloak-credentials \
 apply_secret nextauth-secret \
   "--from-literal=secret=$NEXTAUTH_SECRET"
 
+# Plan 29-12 (D-23): the second consumer of a value reads a Secret of its OWN name.
+# In staging each synced Secret has exactly one producing SecretProviderClass, so
+# the frontend and the pg-backup CronJob no longer read core-java's
+# keycloak-credentials / postgres-credentials. Locally they carry the SAME values,
+# from the same .env names (keycloak-credentials/frontend-client-secret above, and
+# postgres-credentials host/port/database/backup-*), so nothing changes for a pod.
+apply_secret frontend-oidc-credentials \
+  "--from-literal=client-secret=$KEYCLOAK_CLIENT_SECRET"
+
+apply_secret pg-backup-credentials \
+  "--from-literal=host=$K8S_LOCAL_POD_HOST" \
+  "--from-literal=port=$K8S_LOCAL_DB_PORT" \
+  "--from-literal=database=$POSTGRES_DB" \
+  "--from-literal=backup-username=$BACKUP_ROLE" \
+  "--from-literal=backup-password=$DB_BACKUP_PASSWORD"
+
 # REQUIRED by core-java (no optional flag on the manifest ref): the D-19 key from .env,
 # validated in STEP 1b, so k8s/local and compose encrypt under the same key.
 apply_secret dsar-credentials \
@@ -405,6 +440,8 @@ for s in "${CREATED[@]}"; do
     rabbitmq-credentials)   echo "  - $s: username, password, stomp-login, stomp-passcode" ;;
     keycloak-credentials)   echo "  - $s: admin-username, admin-password, frontend-client-secret" ;;
     nextauth-secret)        echo "  - $s: secret" ;;
+    frontend-oidc-credentials) echo "  - $s: client-secret" ;;
+    pg-backup-credentials)  echo "  - $s: host, port, database, backup-username, backup-password" ;;
     dsar-credentials)       echo "  - $s: encryption-key" ;;
     client-ip-credentials)  echo "  - $s: hmac-key" ;;
     notification-credentials) echo "  - $s: unsubscribe-signing-secret" ;;
