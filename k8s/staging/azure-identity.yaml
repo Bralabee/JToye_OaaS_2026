@@ -1,0 +1,38 @@
+# k8s/staging/azure-identity.yaml: the Azure identifiers of the staging estate (plan 29-09).
+#
+# IDENTIFIERS ONLY, NEVER SECRETS. Every value below was READ BACK from Azure (az show/list through
+# scripts/lib/azure-guard.sh's az_read, pinned to subscription c483d353-5f61-4587-a790-addb9ab5fb94)
+# after the resources were created; none was typed. The raw read-backs are in
+# .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-09-provisioning.txt.
+# Committing them is threat T-29-32 (accepted): a client id or an IP is not a credential, and a
+# Workload Identity token still needs the federated subject, which an outsider cannot present.
+#
+# The config.kubernetes.io/local-config annotation makes kustomize consume this ConfigMap (as a
+# replacements source, plan 29-12) and filter it out of the build, so it is never applied to the
+# cluster. scripts/staging-bootstrap.sh, staging-seed.sh, staging-realm-import.sh and
+# scripts/lib/staging-kube-guard.sh read it directly. The API server key holds a bare host (no
+# scheme, no port), the IP keys hold IPv4 addresses, and the CI key holds the object id of jtoye-ci.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-identity
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  tenant_id: "b56df236-36b2-49ab-a25f-050cbaa9787c"
+  keyvault_name: "jtoye-stg-kv"
+  aks_api_server_fqdn: "jtoye-stg--jtoye-rg-c483d3-mkb3vdnc.hcp.uksouth.azmk8s.io"
+  aks_oidc_issuer_url: "https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/"
+  ingress_ip_address: "51.105.43.14"
+  outbound_ip_address: "40.120.43.119"
+  ci_principal_object_id: "4cce597e-719e-4181-b045-8ba024f5bc67"
+  client_id_core_java: "3a14636b-91d7-42cf-9b23-8d40d799a9c1"
+  client_id_pg_backup: "ca38c385-c0c1-467d-a638-88e62db7a65f"
+  client_id_frontend: "348fa334-898c-4640-a29a-49a71623ea5b"
+  client_id_keycloak: "ccf8147d-74da-4acd-ac06-4b0a3291e6e6"
+  client_id_secret_sync: "231ad919-8aad-4dd2-a6b5-0e2089edf4e4"
+  client_id_redis: "ec5b9f1a-2147-4f6f-a7d5-a8bd49b641e8"
+  client_id_postgres_exporter: "7d826f77-3088-45fd-a98e-0613159ae327"
+  client_id_redis_exporter: "8584f8ee-e2e0-4ac3-879e-56a4cadb4fed"
+  client_id_grafana: "d7e2365f-9d8b-4950-99e5-34b603f5c01c"
+  client_id_alertmanager: "eb0c4d74-032e-4ac8-9aa3-cfb59ee814b0"
