@@ -1,0 +1,35 @@
+# 29-15 evidence: the live staging edge (plan 29-15, D-29(b), Phase 37 trusted proxies)
+# Context: kube-context jtoye-stg-aks only; subscription c483d353 read-only (az_read).
+# Every block is the raw output of the command named in its header, with the UTC time it ran.
+
+=== TASK 1 RED 2026-10-19T10:59:18Z: stubbed arms, EDGE_FORMAT=tap bash scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms -> rc=1 ===
+TAP version 13
+1..6
+# check-staging-edge 2026-10-19T10:58:36Z mode=fail-arms context=jtoye-stg-aks
+not ok 1 - fail-arm-headers
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 2 - fail-arm-csp
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 3 - fail-arm-cors
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 4 - fail-arm-admin
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 5 - fail-arm-burst
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+ok 6 - probe-cleanup
+  ---
+  message: 'deleted by name and verified NotFound: ingress/fidelity-probe service/fidelity-probe networkpolicy/fidelity-probe-allow pod/fidelity-probe'
+  ...
+# FAIL: 5 of 6
+(classifier: gsd_run check tdd-red-evidence evidence/29-15-t1-red-stub-arms.json -> RED_EVIDENCE_OK target_test_failed)
+

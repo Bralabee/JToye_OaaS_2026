@@ -1,0 +1,10 @@
+{
+  "command": "EDGE_FORMAT=tap bash scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..6\n# check-staging-edge 2026-10-19T10:58:36Z mode=fail-arms context=jtoye-stg-aks\nnot ok 1 - fail-arm-headers\n  ---\n  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'\n  ...\nnot ok 2 - fail-arm-csp\n  ---\n  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'\n  ...\nnot ok 3 - fail-arm-cors\n  ---\n  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'\n  ...\nnot ok 4 - fail-arm-admin\n  ---\n  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'\n  ...\nnot ok 5 - fail-arm-burst\n  ---\n  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'\n  ...\nok 6 - probe-cleanup\n  ---\n  message: 'deleted by name and verified NotFound: ingress/fidelity-probe service/fidelity-probe networkpolicy/fidelity-probe-allow pod/fidelity-probe'\n  ...\n# FAIL: 5 of 6",
+  "targetTest": "fail-arm-headers",
+  "targetFile": "scripts/check-staging-edge.sh",
+  "expected": "ok - fail-arm-headers: the headers arm FAILS on the no-annotation probe route (agnhost behind /fidelity-probe), listing the six missing headers",
+  "actual": "not ok 1 - fail-arm-headers: PASSED on the probe route, so this arm cannot fail: STUB: not implemented",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion. The scaffolding is real: the context guard passed, all four staging hosts resolved, the scratch Pod/Service/NetworkPolicy/Ingress were applied live in jtoye-staging, and all three probe routes answered with agnhost NOW: bodies before any arm ran (an arm cannot be pointed at the frontend). Every arm is a stub that returns PASS, so the meta-check reports each fail arm as unable to fail (not ok 1..5) and exits 1. Not a harness fault: probe-cleanup ran and verified all four objects NotFound (ok 6)."
+}
