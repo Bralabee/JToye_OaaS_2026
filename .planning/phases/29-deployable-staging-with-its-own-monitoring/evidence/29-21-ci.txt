@@ -1,0 +1,345 @@
+# Plan 29-21 evidence: the deploy-staging job's real gate, part 1 (#99, DPLY-02)
+# Captured 2026-10-19 between 10:55Z and 11:15Z in worktree agent-a4601e69d2f2d0e93,
+# branch based on phase-29-deployable-staging 36f199a7.
+# Every Azure read went through scripts/lib/azure-guard.sh az_read after az_guard_init,
+# pinned to subscription c483d353-5f61-4587-a790-addb9ab5fb94. No Azure resource,
+# GitHub setting, environment, variable or secret was created or changed by this
+# executor. The writes Task 2 needs are listed at the end (OWNER CHECKPOINT).
+# Identifiers only: client ids, principal ids, resource ids and URLs are not credentials
+# (T-29-32); no secret value appears in this file.
+
+======================================================================================
+TASK 1 — deploy-staging rewrite, the extracted CR-02 guard, preflight --names-only
+======================================================================================
+
+## Cluster version (the kubectl pin is read, not guessed)
+# az aks show -g jtoye-rg -n jtoye-stg-aks --query [kubernetesVersion,currentKubernetesVersion] (az_read)
+rc=0
+1.36.4
+1.36.4
+# kubectl v1.36.4 exists upstream: GET https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl -> 200
+# (stable-1.36.txt said v1.36.5; the pin is the cluster's own patch, as the plan says)
+
+## Action and binary versions chosen (read-only gh calls)
+azure/login        latest release v3.1.0 (2026-09-10); commit a641126d1b8aa4d1fa005f4f92df94a3a4c4c906
+                   (gh api repos/Azure/login/commits/v3.1.0); action.yml: runs node24; inputs client-id,
+                   tenant-id, subscription-id, audience default api://AzureADTokenExchange
+Azure/kubelogin    latest release v0.2.21 (2026-10-09); asset kubelogin-linux-amd64.zip
+  published .sha256: 934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66
+  computed sha256  : 934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66
+  archive member   : bin/linux_amd64/kubelogin (54538280 bytes). Downloaded to a scratch dir, hashed, never run.
+azure/setup-kubectl unchanged: bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+
+## Read-back of the committed job lines (grep -n on .github/workflows/ci-cd.yaml after 41f00b6d)
+1782:      id-token: write
+1801:        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+1803:          version: 'v1.36.4'
+1919:        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+1930:          KUBELOGIN_VERSION="v0.2.21"
+1931:          KUBELOGIN_SHA256="934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66"
+1943:          az aks get-credentials --subscription "$AZURE_SUBSCRIPTION_ID" -g jtoye-rg -n jtoye-stg-aks --overwrite-existing
+1944:          kubelogin convert-kubeconfig -l azurecli
+1960:        run: bash scripts/staging-secrets-preflight.sh --names-only
+2058:          EXPECT_SWAGGER=false ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
+2088:          version: 'v1.28.0'        <- deploy-production, unchanged (Phase 32's), the verify's positive control
+
+## CR-02 guard: RED (stub body that always exits 0), commit a5e10b92
+# BAKED_ORIGIN_SELFTEST_FORMAT=tap bash scripts/check-frontend-baked-origin.sh --selftest
+TAP version 13
+1..5
+not ok 1 - production-origin
+  message: 'rc=0 (want 1): OK: (stub) .../k8s/staging '
+ok 2 - staging-origin
+not ok 3 - empty-origin
+not ok 4 - void-no-api-url
+not ok 5 - void-no-kubectl
+# SELFTEST: 1/5 (staging api.url=https://api-staging.olajay.co.uk)
+captured rc=1
+# gsd_run check tdd-red-evidence evidence/29-21-t1-red-production-origin.json -> RED_EVIDENCE_OK (target_test_failed)
+
+## CR-02 guard: GREEN, commit 572bf11e
+PASS production-origin rc=1 both-named
+PASS staging-origin rc=0
+PASS empty-origin rc=1
+PASS void-no-api-url rc=2
+PASS void-no-kubectl rc=2
+SELFTEST: 5/5 (staging api.url=https://api-staging.olajay.co.uk)
+rc=0
+# direct runs against the real overlay
+BAKED_API_URL=https://api.olajay.co.uk         --overlay k8s/staging    -> rc 1, names both origins
+BAKED_API_URL=https://api-staging.olajay.co.uk --overlay k8s/staging    -> rc 0
+BAKED_API_URL=                                 --overlay k8s/staging    -> rc 1 ("EMPTY API origin")
+BAKED_API_URL=https://api-staging.olajay.co.uk --overlay k8s/production -> rc 1 (what deploy-production's
+  inline CR-02 will now say about a staging-baked image: the correct fail-closed outcome, job off, D-08)
+# shellcheck: not installed on this host (command not found, rc 127) -> NOT RUN, not "clean"
+
+## Preflight --names-only: RED, commit 0212e39c (arms added, script unchanged)
+# PATH=<jtoye-ops>:$PATH STAGING_SECRETS_SELFTEST_FORMAT=tap bash scripts/staging-secrets-preflight.sh --selftest
+ok 1..8 (full, two-missing, operator-script-objects, ghost, missing-access, disabled, not-test-mode, empty-vault)
+not ok 9 - stale-identity                 message: 'rc=0'
+not ok 10 - names-only-no-value-read      message: 'rc=2: usage: .../staging-secrets-preflight.sh [--selftest] '
+not ok 11 - names-only-reports-gaps       message: 'rc=2'
+not ok 12 - names-only-unmapped           message: 'rc=2'
+not ok 13 - committed-principal-map       message: 'no principal_id_secret_sync; no principal_id_frontend; no principal_id_core_java; no principal_id_pg_backup; no principal_id_keycloak; no principal_id_redis; '
+ok 14 - guard-unpinned
+ok 15 - void-no-python
+# SELFTEST: 10/15 (derived objects=31, grants=35)
+captured rc=1
+# gsd_run check tdd-red-evidence evidence/29-21-t1-red-names-only.json -> RED_EVIDENCE_OK (target_test_failed)
+
+## Preflight --names-only: GREEN, commit 28007d65
+PASS full rc=0 gaps=0 test-mode=2
+PASS two-missing rc=1 lines=2
+PASS operator-script-objects rc=1 seed+realm named
+PASS ghost rc=1 MISSING ghost-credentials--key
+PASS missing-access rc=1 MISSING-ACCESS redis-credentials--password <principal>
+PASS disabled rc=1 MISSING postgres-credentials--host
+PASS not-test-mode rc=1
+PASS empty-vault rc=1 missing=31
+PASS stale-identity rc=1 STALE-IDENTITY named
+PASS forbidden-read-detector-control full mode reads values (detector fires)
+PASS names-only-no-value-read rc=0 gaps=0 forbidden-reads=0
+PASS names-only-reports-gaps rc=1 MISSING+MISSING-ACCESS
+PASS names-only-unmapped rc=1 unresolved-client-id
+PASS committed-principal-map every SPC clientID mapped
+PASS guard-unpinned rc=1 calls=0
+PASS void-no-python rc=2
+SELFTEST: 16/16 (derived objects=31, grants=35)
+rc=0
+# The first GREEN attempt was 14/16: the forbidden-read pattern and the per-object count were
+# written with a leading space, but the stub logs the bare argv ("keyvault secret show ..."),
+# so both could never match. Caught by the count arm; fixed by anchoring at line start, and a
+# control arm now proves the detector fires on the full mode's argv log.
+# Writer selftest (shares the stub lib): bash scripts/staging-secrets.sh --selftest -> 11/11 rc=0
+# Goldens: k8s/scripts/render-golden.sh -> all overlay renders match (azure-identity.yaml is
+#   local-config, filtered from the build); check-keyvault-chain.sh -> PASS (6 SPCs, 35 refs, 27 objects)
+
+## Break arm on the committed preflight (clean -> arm -> clean, restore checked by blob hash)
+committed blob 9e035d325eadab47ee21e275e0be74a1ecb57987
+arm: --names-only falls through to the value reads (its `exit 0` replaced)
+FAIL names-only-no-value-read the stub saw a forbidden read: 30:keyvault secret show --vault-name jtoye-stg-kv -n stripe-credentials--api-key --query value -o tsv ... 31:keyvault secret show ... -n stripe-credentials--webhook-secret ...
+SELFTEST: 15/16   rc=1
+restored with git checkout -- (file committed first): blob 9e035d325eadab47ee21e275e0be74a1ecb57987, 'BREAK ARM' count 0
+closing clean: SELFTEST: 16/16 rc=0
+
+## Why --names-only reads what it reads (Key Vault Reader, measured)
+# az role definition list --name "Key Vault Reader" (az_read): id 21090545-7ca7-4776-b22c-e363652d74d2
+actions: Microsoft.Authorization/*/read, Microsoft.Insights/alertRules/*, Microsoft.Resources/subscriptions/resourceGroups/read,
+         Microsoft.Support/*, Microsoft.KeyVault/checkNameAvailability/read, Microsoft.KeyVault/deletedVaults/read,
+         Microsoft.KeyVault/locations/*/read, Microsoft.KeyVault/vaults/*/read, Microsoft.KeyVault/operations/read
+dataActions: Microsoft.KeyVault/vaults/*/read, Microsoft.KeyVault/vaults/secrets/readMetadata/action
+-> secret list (readMetadata): allowed. keyvault show (vaults/read): NOT in the set, so the id is built.
+-> identity list (Microsoft.ManagedIdentity): NOT in the set, so principal ids are committed.
+-> role assignment list --all (subscription scope): NOT granted at that scope; --scope <vault>/secrets/<obj>
+   is covered by Authorization/*/read inherited from the vault. No value-read data action at all.
+# az role definition list --name "Azure Kubernetes Service RBAC Writer": dataActions include
+#   managedClusters/pods/* (so the job's kubectl exec health check is permitted), apps/deployments/*,
+#   namespaces/read.
+
+## Committed principal map is the live one (az identity list -g jtoye-rg, az_read)
+rc=0
+jtoye-ci                         clientId ec29905d-231c-43eb-9385-c6f7f72409db  principalId 4cce597e-719e-4181-b045-8ba024f5bc67
+jtoye-staging-alertmanager-id    clientId eb0c4d74-032e-4ac8-9aa3-cfb59ee814b0  principalId 2422de69-5161-4350-ab2b-7158625a0989
+jtoye-staging-backup-id          clientId ca38c385-c0c1-467d-a638-88e62db7a65f  principalId 14f5c6c4-5876-4dd8-88c1-0a4382f06ae0
+jtoye-staging-frontend-id        clientId 348fa334-898c-4640-a29a-49a71623ea5b  principalId ffa2def7-2ee2-4527-9434-6a0b3ecdd47b
+jtoye-staging-grafana-id         clientId d7e2365f-9d8b-4950-99e5-34b603f5c01c  principalId 99264ed4-8b66-48fc-b510-26af24baa3d2
+jtoye-staging-keycloak-id        clientId ccf8147d-74da-4acd-ac06-4b0a3291e6e6  principalId cb10b3d7-fe1a-4d7f-ad4f-d554ff1429fa
+jtoye-staging-media-id           clientId 3a14636b-91d7-42cf-9b23-8d40d799a9c1  principalId 033b06e0-d670-4009-a820-af379b62f27c
+jtoye-staging-pg-exporter-id     clientId 7d826f77-3088-45fd-a98e-0613159ae327  principalId 9180744f-9a6c-4bb1-8a39-c6574aa8b741
+jtoye-staging-redis-exporter-id  clientId 8584f8ee-e2e0-4ac3-879e-56a4cadb4fed  principalId 2d09e95f-7180-4164-819e-69e6cfa1758e
+jtoye-staging-redis-id           clientId ec5b9f1a-2147-4f6f-a7d5-a8bd49b641e8  principalId 14c35561-9066-44e8-aa8d-2e2f91ee46f3
+jtoye-staging-secret-sync-id     clientId 231ad919-8aad-4dd2-a6b5-0e2089edf4e4  principalId 018272ad-d224-4d71-b9a9-93df84da623d
+
+## Live, read-only preflight runs as the OPERATOR (both directions)
+# bash scripts/staging-secrets-preflight.sh   (operator, 2026-10-19T11:04:11Z)
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 31 objects, 35 grants, 0 gap(s)
+rc=0                                   <- 0 STALE-IDENTITY: every committed principal id is the live one
+# bash scripts/staging-secrets-preflight.sh --names-only   (operator, 2026-10-19T11:04:27Z)
+preflight: 31 objects, 35 grants, 0 gap(s) (names-only: no value read)
+rc=0
+# fail arm: identity-file copy with principal_id_core_java = 00000000-0000-0000-0000-000000000000
+#   --names-only (11:04:58Z): 21 x "MISSING-ACCESS <object> 00000000-0000-0000-0000-000000000000"
+#     (every object core-java's SPC names, e.g. postgres-credentials--password, dsar-credentials--encryption-key)
+#     preflight: 31 objects, 35 grants, 21 gap(s) (names-only: no value read)   rc=1
+#   full (11:05:19Z): STALE-IDENTITY principal_id_core_java committed 00000000-0000-0000-0000-000000000000 live 033b06e0-d670-4009-a820-af379b62f27c
+#     preflight: 31 objects, 35 grants, 1 gap(s)   rc=1
+# NOT PROVEN HERE: that jtoye-ci (Key Vault Reader only) can make these reads. The operator holds
+# Owner, so these runs prove the argv and the query shapes on the real CLI, not the CI identity's
+# permissions. The first CI run (plan 29-27) is the proof; the role-definition reasoning above is
+# why it is expected to pass.
+
+## Smoke test, Blocker G, live and read-only (GET/OPTIONS only) against https://api-staging.olajay.co.uk
+# EXPECT_SWAGGER=false bash scripts/smoke-test.sh https://api-staging.olajay.co.uk  -> rc 0
+Testing Swagger UI (expected NOT publicly exposed)... PASS (not exposed: HTTP 401)
+Testing API Docs (expected NOT publicly exposed)... PASS (not exposed: HTTP 401)
+Passed: 10  Failed: 0
+# EXPECT_SWAGGER=true (the old line)  -> rc 1
+Testing Swagger UI (expected reachable)... FAIL (Expected HTTP 302, got 401)
+Testing API Docs (expected reachable)... FAIL (Expected HTTP 200, got 401)
+Passed: 8  Failed: 2         <- the old job would have rolled back a healthy deploy here
+
+## Task 1 verify 2 (the plan's awk), all three directions
+# before the rewrite (tree at 28007d65):
+in deploy-staging: 1789:           version: 'v1.28.0'
+in deploy-staging: 1889:           echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+in deploy-staging: 1983:           EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
+in-staging=3 control-in-production=1
+rc=1
+# a copy with deploy-production's v1.28.0 replaced (positive control gone):
+in-staging=3 control-in-production=0
+rc=2
+# after the rewrite (41f00b6d):
+in-staging=0 control-in-production=1
+rc=0
+
+## Task 1 verify 1 (verbatim; python3 + PyYAML from the jtoye-ops env)
+SELFTEST: 5/5 (staging api.url=https://api-staging.olajay.co.uk)
+SELFTEST: 16/16 (derived objects=31, grants=35)
+check-gate-enforcement: gates 51, workflows 8, exempt 5 declared
+PASS: every gate either runs in CI or has a declared reason it cannot.
+rc=0
+# fail direction (committed workflow blob 75ed4f84, references to the guard renamed in the work tree):
+FAIL: 1 gate(s) are referenced by no workflow and carry no exemption:
+        check-frontend-baked-origin.sh (invokes: kubectl)
+break rc=1; restored with git checkout --: blob 75ed4f84ded320460142efcce846559d339b15db, 0 renamed refs; closing PASS
+
+## actionlint 1.7.12 on .github/workflows/ci-cd.yaml
+after the rewrite: rc 0, 0 lines of output
+base (36f199a7):   rc 0
+planted copy (id-token -> id-tokn): rc 1, "unknown permission scope "id-tokn"" [permissions]
+NOTE: shellcheck is not installed, so actionlint's run-script checks (shellcheck) did not run.
+
+## Other gates touched by the edits
+check-image-supply-chain.sh -> PASS (deploy-reference derivation intact)
+k8s/scripts/check-env-contract.sh -> PASS
+check-doc-citations.sh -> 46 verified, 0 violations
+check-az-subscription-pin.sh -> discovered=10 wrapper_calls=58 findings=0
+check-dependency-horizons.sh -> OK (scripts/azure-staging-provision.sh:145 still NODE_VM_SIZE)
+gitleaks 8.30.1 over 36f199a7..HEAD: 2 hits (principal_id_keycloak, principal_id_secret_sync,
+  generic-api-key) on the unchanged config; after the anchored allowlist widening (commit
+  86807d2f): rc 0. Fixtures: clean principal_id UUID rc 0; non-UUID value under
+  principal_id_* rc 1; a UUID under secret_sync_token rc 1.
+
+======================================================================================
+TASK 2 — GitHub staging environment and variables; jtoye-ci name-only vault access
+======================================================================================
+
+## jtoye-ci today (az_read, 2026-10-19T10:57Z)
+# az identity show -g jtoye-rg -n jtoye-ci --query [clientId,principalId,tenantId]
+ec29905d-231c-43eb-9385-c6f7f72409db
+4cce597e-719e-4181-b045-8ba024f5bc67
+b56df236-36b2-49ab-a25f-050cbaa9787c
+# az identity federated-credential show --identity-name jtoye-ci -g jtoye-rg -n gh-deploy-staging --query [issuer,subject,audiences[0]]
+https://token.actions.githubusercontent.com
+repo:Bralabee/JToye_OaaS_2026:environment:staging
+api://AzureADTokenExchange
+# az role assignment list --assignee-object-id 4cce597e-719e-4181-b045-8ba024f5bc67 --all
+Azure Kubernetes Service Cluster User Role  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/Microsoft.ContainerService/managedClusters/jtoye-stg-aks
+Azure Kubernetes Service RBAC Writer        /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/Microsoft.ContainerService/managedClusters/jtoye-stg-aks/namespaces/jtoye-staging
+-> Key Vault Reader NOT yet held (owner checkpoint). No Key Vault Secrets User.
+# az keyvault show -n jtoye-stg-kv --query id
+/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.KeyVault/vaults/jtoye-stg-kv
+
+## scripts/azure-staging-provision.sh --dry-run --stage ci (az_guard_stub; nothing created)
+DRY-RUN skip: existence probe for Azure Kubernetes Service Cluster User Role on stub-id; assumed ABSENT so the create argv is shown
+DRY-RUN skip: existence probe for Azure Kubernetes Service RBAC Writer on stub-id/namespaces/jtoye-staging; assumed ABSENT so the create argv is shown
+DRY-RUN skip: existence probe for Key Vault Reader on stub-id; assumed ABSENT so the create argv is shown
+DRY-RUN skip: read back jtoye-ci's role set: exactly Azure Kubernetes Service Cluster User Role (cluster), Azure Kubernetes Service RBAC Writer (namespace), Key Vault Reader (vault), and no role that reads a secret value
+--- stub argv log (8 calls) ---
+account show --query {name:name,state:state} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+identity show -g jtoye-rg -n jtoye-ci --query principalId -o tsv --subscription c483d353-...
+identity federated-credential show --identity-name jtoye-ci -g jtoye-rg -n gh-deploy-staging --query [issuer, subject] -o tsv --subscription c483d353-...
+aks show -g jtoye-rg -n jtoye-stg-aks --query id -o tsv --subscription c483d353-...
+keyvault show -n jtoye-stg-kv -g jtoye-rg --query id -o tsv --subscription c483d353-...
+role assignment create --assignee-object-id stub-id --assignee-principal-type ServicePrincipal --role Azure Kubernetes Service Cluster User Role --scope stub-id --output none --subscription c483d353-...
+role assignment create --assignee-object-id stub-id --assignee-principal-type ServicePrincipal --role Azure Kubernetes Service RBAC Writer --scope stub-id/namespaces/jtoye-staging --output none --subscription c483d353-...
+role assignment create --assignee-object-id stub-id --assignee-principal-type ServicePrincipal --role Key Vault Reader --scope stub-id --output none --subscription c483d353-...
+dry-run rc=0
+
+## The live read-back, exercised offline (a COPY of the script with only the 4-line
+## "live run refuses the stub" block removed, live mode, stub answers; no Azure contact)
+ARM exact                rc=0 creates=0 :: OK: jtoye-ci role set: Cluster User (cluster), RBAC Writer (namespace), Key Vault Reader (vault); no value-reading Key Vault role
+ARM today-before-grant   rc=1 creates=0 :: REFUSED [ci]: jtoye-ci role set reads back as [cluster user ... | rbac writer ...], want exactly [... key vault reader ...]
+ARM plus-secrets-user    rc=1 creates=0 :: REFUSED [ci]: jtoye-ci holds 1 Key Vault role(s) that can read or write a value; CI gets Key Vault Reader only (T-29-76)
+ARM absent-creates-three rc=0 creates=3 :: OK: jtoye-ci role set: ...
+
+## Workflow readers of the repository variables FRONTEND_PUBLIC_* (Task 2 verify 3, verbatim)
+# run 2026-10-19T11:10Z on the tree at 252780a6
+files rc=0 [.github/workflows/ci-cd.yaml] jobs=[build-and-push deploy-production deploy-staging ]
+verify3 exit=0
+# every non-comment reader line:
+.github/workflows/ci-cd.yaml:1690:            NEXT_PUBLIC_API_URL=${{ vars.FRONTEND_PUBLIC_API_URL }}
+.github/workflows/ci-cd.yaml:1691:            NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL=${{ vars.FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL }}
+.github/workflows/ci-cd.yaml:1692:            NEXT_PUBLIC_SUPPORT_EMAIL=${{ vars.FRONTEND_PUBLIC_SUPPORT_EMAIL }}
+.github/workflows/ci-cd.yaml:1693:            NEXT_PUBLIC_SUPPORT_URL=${{ vars.FRONTEND_PUBLIC_SUPPORT_URL }}
+.github/workflows/ci-cd.yaml:1694:            NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
+.github/workflows/ci-cd.yaml:1695:            NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${{ vars.FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE }}
+.github/workflows/ci-cd.yaml:1852:          BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
+.github/workflows/ci-cd.yaml:2109:          BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
+.github/workflows/ci-cd.yaml:2127:            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
+(9 lines; 10 at plan time: deploy-staging's echo moved into scripts/check-frontend-baked-origin.sh)
+# fail direction: a copy of .github/ with a reader planted in frontend-e2e
+files rc=0 [.github/workflows/ci-cd.yaml] jobs=[build-and-push deploy-production deploy-staging frontend-e2e ]
+verify3 exit=1
+
+ORDERING, recorded honestly: the plan says to enumerate the readers BEFORE any repository
+variable changes. FRONTEND_PUBLIC_API_URL and FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL were already
+set to the staging origins at 2026-10-19T08:05:27Z (gh variable list updatedAt), earlier in the
+orchestrator's session and not by this executor. This enumeration therefore ran AFTER the change.
+Its result is the same reader set the plan measured on 2026-10-18 (the same three jobs, ci-cd.yaml
+only), so the effect analysis below describes the change that was made.
+
+## Effect of the staging origins on each reader
+build-and-push    every frontend image built after 08:05:27Z, on every push to main, phase-*,
+                  phase/** and on a release, bakes https://api-staging.olajay.co.uk (and the
+                  staging customer realm). Nothing consumes such an image until
+                  DEPLOY_STAGING_ENABLED flips: k8s/base pins jtoye-frontend:2.1.0, the overlays
+                  pin via images:, k8s/local uses :local, and nothing pulls latest.
+deploy-staging    CR-02 now PASSES against k8s/staging (rc 0 with the live value, below), which is
+                  the point.
+deploy-production CR-02 now REFUSES (staging origin vs k8s/production api.url
+                  https://api.olajay.co.uk, rc 1 above). That is the correct fail-closed outcome
+                  for a staging-baked image; the job is off anyway (DEPLOY_ENABLED unset, D-08), and
+                  production's own baked origin is Phase 32's hand-off. Recorded, not changed.
+Why repository scope, not staging-environment scope: build-and-push declares no `environment:`, so
+an environment variable never reaches its build args; every frontend build would bake EMPTY
+origins and the frontend Dockerfile guard would fail it.
+
+## Repository variables (gh variable list, names and values; none are secrets), 11:11Z
+FRONTEND_PUBLIC_API_URL                  https://api-staging.olajay.co.uk                          updated 2026-10-19T08:05:27Z
+FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL    https://auth-staging.olajay.co.uk/realms/jtoye-customers  updated 2026-10-19T08:05:27Z
+FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE Crispins Manor Farm Lane, Michelmersh, Romsey, England, SO51 0NT  updated 2026-10-07
+(DEPLOY_STAGING_ENABLED absent; FRONTEND_PUBLIC_SUPPORT_EMAIL / _SUPPORT_URL /
+ _ONBOARDING_REVIEW_SLA_DAYS absent: optional, not environment origins, no staging value exists)
+Before (29-RESEARCH, measured 2026-10-18): FRONTEND_PUBLIC_API_URL = https://api.olajay.co.uk;
+FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL = https://auth.olajay.co.uk/realms/jtoye-customers.
+gh secret list: empty (no KUBE_CONFIG_STAGING; none is needed now).
+
+## Task 2 verify 2 (verbatim) and its fail direction
+rc=0 [FRONTEND_PUBLIC_API_URL=https://api-staging.olajay.co.uk]
+verify2 exit=0
+# the same jq filter and comparison on fixture lists:
+ARM today-shape  [FRONTEND_PUBLIC_API_URL=https://api-staging.olajay.co.uk] verify-exit=0
+ARM switch-early [DEPLOY_STAGING_ENABLED=true|FRONTEND_PUBLIC_API_URL=https://api-staging.olajay.co.uk] verify-exit=1
+ARM prod-origin  [FRONTEND_PUBLIC_API_URL=https://api.olajay.co.uk] verify-exit=1
+ARM no-variables [] verify-exit=1
+
+## CR-02 with the live repository variable
+# gh variable get FRONTEND_PUBLIC_API_URL rc=0 value=[https://api-staging.olajay.co.uk]
+OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url (https://api-staging.olajay.co.uk)
+live-variable rc=0
+wrong-variable (production origin) rc=1
+
+## GitHub environments today (gh api repos/Bralabee/JToye_OaaS_2026/environments)
+copilot, production. `staging` -> HTTP 404.
+## Task 2 verify 1 (verbatim), BEFORE the owner's writes: the RED direction
+env rc=1 [... "status":"404" ...] policies rc=1 [... "status":"404" ...]
+verify1 exit=1
+
+======================================================================================
+OWNER CHECKPOINT — the outward-facing writes, not run by this executor
+======================================================================================
+(exact commands and their effects are in 29-21-SUMMARY.md, "Checkpoint"; after they run,
+re-run Task 2 verify 1 and 2 and the provision ci stage's read-back and append the output here)
