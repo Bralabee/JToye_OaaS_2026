@@ -1,0 +1,148 @@
+# Plan 29-22 Task 4 (owner ruling D-33, 2026-10-19) — the testers' mail UI at https://mail-staging.olajay.co.uk, live on
+# jtoye-stg-aks (kube-context jtoye-stg-aks only; Key Vault jtoye-stg-kv in subscription c483d353-5f61-4587-a790-addb9ab5fb94,
+# every Azure call through scripts/lib/azure-guard.sh).
+# The mail-UI credential is NEVER printed, committed or put on argv: it is generated into Key Vault, read only into mode-600
+# files, handed to curl with -K and to the browser check through its environment. Message bodies, invite links and tokens are
+# never recorded; message IDs and subjects only. Screenshots stay under /tmp/claude-29-22 and are not committed.
+# Every line carries an ISO-8601 UTC timestamp.
+
+================ (1) PRE: the plan's marker check (third automated verify) on the header-only file — its fail direction, recorded by INDEX (a verbatim copy would plant the markers) ================
+2026-10-19T13:31:09Z pre marker check: rc=1 missing=15; markers and raw lines missing: 15 of 15 (all fifteen)
+
+================ (2) DNS at both registrar nameservers (the Task 4 precondition) ================
+2026-10-19T13:31:21Z dig @dns1.registrar-servers.com +short A mail-staging.olajay.co.uk -> [51.105.43.14] (status: NOERROR); ingress_ip_address in k8s/staging/azure-identity.yaml = 51.105.43.14
+2026-10-19T13:31:21Z DNS mail-staging dns1 OK
+2026-10-19T13:31:21Z dig @dns2.registrar-servers.com +short A mail-staging.olajay.co.uk -> [51.105.43.14] (status: NOERROR); ingress_ip_address in k8s/staging/azure-identity.yaml = 51.105.43.14
+2026-10-19T13:31:21Z DNS mail-staging dns2 OK
+2026-10-19T13:31:21Z control: grafana-staging at dns1 -> [51.105.43.14]
+
+================ (3) The Send API is OPEN before the lock (Mailpit as Task 1/3 deployed it), via svc/mailpit 18025:8025 ================
+2026-10-19T13:31:22Z live mailpit env names (no MP_SEND_API_AUTH_FILE yet): MP_SMTP_TLS_CERT MP_SMTP_TLS_KEY MP_SMTP_REQUIRE_STARTTLS MP_SMTP_DISABLE_RDNS MP_DISABLE_VERSION_CHECK MP_MAX_MESSAGES MP_DATABASE 
+2026-10-19T13:31:24Z POST /api/v1/send, no credential: {"ID":"6o10kpM5pp5Jg6tZUaCsEI"}  HTTP 200
+2026-10-19T13:31:24Z DELETE /api/v1/messages {IDs:[6o10kpM5pp5Jg6tZUaCsEI]}: HTTP 200; GET /api/v1/message/6o10kpM5pp5Jg6tZUaCsEI afterwards: HTTP 404
+2026-10-19T13:31:24Z SEND-API OPEN BEFORE LOCK (HTTP 200 with an ID, no credential; the message was then deleted by ID)
+
+================ (4) scripts/staging-secrets.sh --generate (the write-once writer) ================
+2026-10-19T13:32:15Z --generate: written: mailpit-ui-credentials--password (version 2914225a7c484ddcb352de4ac848afcc; value not printed)
+2026-10-19T13:32:15Z --generate: external (owner supplies via --set-external): stripe-credentials--api-key
+2026-10-19T13:32:15Z --generate: external (owner supplies via --set-external): stripe-credentials--webhook-secret
+2026-10-19T13:32:15Z --generate: written: mailpit-ui-credentials--auth (version 378e79c23e2646feb27eea27377b3165; value not printed)
+2026-10-19T13:32:15Z --generate: generate: 2 written, 29 exist (write-once, untouched), 2 external left to the owner
+2026-10-19T13:32:15Z --generate rc=0; 'exists (write-once)' lines: 29 (every other object untouched)
+
+================ (5) scripts/staging-secrets.sh --assign-access, then the preflight ================
+2026-10-19T13:32:34Z --assign-access: assigned: Key Vault Secrets User on mailpit-ui-credentials--auth to 018272ad-d224-4d71-b9a9-93df84da623d
+2026-10-19T13:32:34Z --assign-access: assign-access: 36 grants, 1 created, 35 existing, 0 deferred
+2026-10-19T13:32:35Z identity of client_id_secret_sync 231ad919-8aad-4dd2-a6b5-0e2089edf4e4: jtoye-staging-secret-sync-id	018272ad-d224-4d71-b9a9-93df84da623d
+2026-10-19T13:32:37Z role assignments at exactly the scope of mailpit-ui-credentials--auth: 1
+2026-10-19T13:32:38Z role assignments at exactly the scope of mailpit-ui-credentials--password: 0
+2026-10-19T13:32:52Z preflight: preflight: 33 objects, 36 grants, 0 gap(s)
+2026-10-19T13:32:52Z preflight rc=0
+
+================ (6) Deploy (manifest change only: scripts/deploy.sh at the same image tag) ================
+2026-10-19T13:33:01Z app build paths changed between efab17d7 and HEAD a5bd4af5: 0 file(s)
+2026-10-19T13:33:23Z deploy.sh: serviceaccount/mailpit unchanged
+2026-10-19T13:33:23Z deploy.sh: serviceaccount/secret-sync unchanged
+2026-10-19T13:33:23Z deploy.sh: service/mailpit unchanged
+2026-10-19T13:33:23Z deploy.sh: deployment.apps/mailpit configured
+2026-10-19T13:33:23Z deploy.sh: deployment.apps/secret-sync configured
+2026-10-19T13:33:23Z deploy.sh: certificate.cert-manager.io/mailpit-tls unchanged
+2026-10-19T13:33:23Z deploy.sh: ingress.networking.k8s.io/mailpit-ui created
+2026-10-19T13:33:23Z deploy.sh: networkpolicy.networking.k8s.io/mailpit-allow configured
+2026-10-19T13:33:23Z deploy.sh: networkpolicy.networking.k8s.io/secret-sync-allow unchanged
+2026-10-19T13:33:23Z deploy.sh: secretproviderclass.secrets-store.csi.x-k8s.io/mailpit-ui-kv created
+2026-10-19T13:33:23Z deploy.sh: mailpit-648cf6c66c-6swcb       1/1     Running   0          8s
+2026-10-19T13:33:23Z deploy.sh: secret-sync-6f6cfd8844-7qgm7   1/1     Running   0          3h2m
+2026-10-19T13:33:23Z deploy.sh: mailpit                     ClusterIP   10.0.80.50     <none>        1025/TCP,8025/TCP                        22m
+2026-10-19T13:33:23Z deploy.sh: mailpit-ui                  nginx   mail-staging.olajay.co.uk                                     80, 443   6s
+2026-10-19T13:33:23Z deploy.sh: DEPLOYED_SHA=efab17d79483b01f4397c9f82f34a36d1a2b4c11
+2026-10-19T13:33:23Z deploy.sh rc=0
+2026-10-19T13:33:24Z rollout status deploy/secret-sync (deadline 10 min): rc=0 deployment "secret-sync" successfully rolled out
+2026-10-19T13:33:25Z rollout status deploy/mailpit (deadline 10 min): rc=0 deployment "mailpit" successfully rolled out
+2026-10-19T13:33:44Z Secret mailpit-ui-credentials KEY NAMES (never a value): {"name":"mailpit-ui-credentials","keys":["auth"],"owner":["ReplicaSet"]}
+2026-10-19T13:33:44Z secret-sync pod: secret-sync-69869d5f6-4h7v2 Running
+2026-10-19T13:33:45Z certificate (end state READY): jtoye-staging-mail-tls Ready=True reason=Ready notAfter=2027-01-17T12:35:11Z
+2026-10-19T13:33:46Z challenges: No resources found in jtoye-staging namespace.
+2026-10-19T13:33:46Z CERT mail-staging READY
+2026-10-19T13:33:56Z HTTP-01 for the new host passed with default-deny and acme-http01-solver-allow in place (same namespace; no policy change needed), challenge gone after issuance
+2026-10-19T13:33:56Z rabbitmq-default-user after the secret-sync roll (key names only): rabbitmq-default-user keys=default_user.conf,password,username
+
+================ (7) One staff invitation through the D-22 arm-1 path (the Mailpit restart emptied its store) ================
+2026-10-19T13:33:58Z invitation (resend) as the vendor: HTTP 201 id=9f8a1697-dc10-481e-96e3-fdd7d36fe2e2 status=OPEN
+2026-10-19T13:33:58Z poll Mailpit (in-cluster search over the port-forward, 120 s): rc=0 id=0Envd096TzSNGGB5jHtj6v
+2026-10-19T13:33:58Z recorded message: id=0Envd096TzSNGGB5jHtj6v subject="Staging Vendor invited you to J'Toye Staging Test Kitchen on J'Toye"
+
+================ (8) scripts/staging-mail-ui.sh --probe --context jtoye-stg-aks --expect-message-id 0Envd096TzSNGGB5jHtj6v ================
+2026-10-19T13:35:01Z ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="J'Toye staging mail - test personas only, no real customer data"'
+2026-10-19T13:35:01Z ARM UI-2 PASS a random wrong password: HTTP 401
+2026-10-19T13:35:01Z ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk HTTP 200 total=1 expected-id=0Envd096TzSNGGB5jHtj6v found=yes
+2026-10-19T13:35:01Z ARM UI-4 PASS http://mail-staging.olajay.co.uk/: HTTP 308 Location 'https://mail-staging.olajay.co.uk/' shell=no
+2026-10-19T13:35:01Z ARM UI-5 PASS tcp ip:1025=failed host:1025=failed host:443=connected (control); traefik ports [80 443]; jtoye-staging LoadBalancer/NodePort services=0
+2026-10-19T13:35:01Z ARM UI-6 PASS SNI mail-staging.olajay.co.uk: issuer=CN=YR2,O=Let's Encrypt,C=US subject=CN=mail-staging.olajay.co.uk X509v3 Subject Alternative Name:      DNS:mail-staging.olajay.co.uk | control SNI unknown-staging.olajay.co.uk: issuer=CN=TRAEFIK DEFAULT CERT subject=CN=TRAEFIK DEFAULT CERT X509v3 Subject Alternative Name:      DNS:5fca2e9e1b22809f1c54aa00d449a68a.1ef61e78096d21148a8dc3c2188212d1.traefik.default 
+2026-10-19T13:35:01Z ARM UI-7 PASS webui HTTP 200 MessageRelay.Enabled=false; authenticated POST /api/v1/send HTTP 401; Ready pod mailpit-648cf6c66c-6swcb forbidden-env=0 MP_SEND_API_AUTH_FILE=1
+2026-10-19T13:35:01Z ARM UI-8 PASS authenticated burst 300x/20: 429=158 of 300; UNAUTH-429=0
+2026-10-19T13:35:01Z UNAUTH-429=0
+2026-10-19T13:35:01Z PROBE: 8/8 PASS
+2026-10-19T13:35:01Z probe rc=0
+2026-10-19T13:35:03Z through the port-forward after the lock: POST /api/v1/send HTTP 401 (no credential); control GET /api/v1/info HTTP 200 (the read API is not locked)
+2026-10-19T13:35:04Z send-api-lock init log: send-api-lock: wrote 72 bytes (a random credential nobody holds)
+
+================ (9) Browser check (scratch Node + frontend's installed @playwright/test chromium; credential through the ENVIRONMENT only) ================
+2026-10-19T13:35:35Z subject looked for: "Staging Vendor invited you to J'Toye Staging Test Kitchen on J'Toye"
+2026-10-19T13:35:35Z with the credential (env): UI-LIST subject-visible=yes http=200
+2026-10-19T13:35:35Z with the credential: rc=0
+2026-10-19T13:35:35Z fail arm, empty password: UI-LIST subject-visible=no http=401
+2026-10-19T13:35:35Z fail arm: rc=1 (screenshots under /tmp/claude-29-22, not committed)
+
+================ (10) ARM UI-9: the auth Secret unresolvable -> Traefik skips the route (fail closed) ================
+2026-10-19T13:35:53Z kubectl annotate: ingress.networking.k8s.io/mailpit-ui annotated
+2026-10-19T13:35:53Z auth-secret now: mailpit-ui-credentials-absent
+2026-10-19T13:35:54Z within 60 s (curl -k, this arm only): unauthenticated GET / HTTP 404 ui-shell=0; authenticated GET / HTTP 404 ui-shell=0
+2026-10-19T13:35:55Z certificate served for the host while the route is skipped: issuer=CN=YR2,O=Let's Encrypt,C=US
+2026-10-19T13:35:56Z traefik traefik-564ff689f8-k9tb9 log: 2026-10-19T13:35:53Z ERR Cannot resolve auth secret, skipping ingress error="getting secret mailpit-ui-credentials-absent: secret \"mailpit-ui-credentials-absent\" not found" ingress="jtoye-staging/mailpit-ui rule-0 path-0" namespace=jtoye-staging providerName=kubernetesingressnginx
+2026-10-19T13:35:57Z traefik traefik-564ff689f8-sg5dz log: 2026-10-19T13:35:53Z ERR Cannot resolve auth secret, skipping ingress error="getting secret mailpit-ui-credentials-absent: secret \"mailpit-ui-credentials-absent\" not found" ingress="jtoye-staging/mailpit-ui rule-0 path-0" namespace=jtoye-staging providerName=kubernetesingressnginx
+2026-10-19T13:36:07Z ARM UI-9 FAIL-CLOSED PASS (with its auth Secret unresolvable Traefik skipped the route: no 200 and no UI shell with or without the credential; it never served an unauthenticated UI)
+
+================ RESTORE mail-ui (scripts/deploy.sh at the same tag), verified by content ================
+2026-10-19T13:36:25Z deploy.sh: DEPLOYED_SHA=efab17d79483b01f4397c9f82f34a36d1a2b4c11
+2026-10-19T13:36:25Z deploy.sh rc=0
+2026-10-19T13:36:26Z auth-secret read back: mailpit-ui-credentials
+2026-10-19T13:36:56Z probe after restore: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="J'Toye staging mail - test personas only, no real customer data"'
+2026-10-19T13:36:56Z probe after restore: ARM UI-2 PASS a random wrong password: HTTP 401
+2026-10-19T13:36:56Z probe after restore: ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk HTTP 200 total=1 expected-id=0Envd096TzSNGGB5jHtj6v found=yes
+2026-10-19T13:36:56Z probe after restore: ARM UI-4 PASS http://mail-staging.olajay.co.uk/: HTTP 308 Location 'https://mail-staging.olajay.co.uk/' shell=no
+2026-10-19T13:36:56Z probe after restore: ARM UI-5 PASS tcp ip:1025=failed host:1025=failed host:443=connected (control); traefik ports [80 443]; jtoye-staging LoadBalancer/NodePort services=0
+2026-10-19T13:36:56Z probe after restore: ARM UI-6 PASS SNI mail-staging.olajay.co.uk: issuer=CN=YR2,O=Let's Encrypt,C=US subject=CN=mail-staging.olajay.co.uk X509v3 Subject Alternative Name:      DNS:mail-staging.olajay.co.uk | control SNI unknown-staging.olajay.co.uk: issuer=CN=TRAEFIK DEFAULT CERT subject=CN=TRAEFIK DEFAULT CERT X509v3 Subject Alternative Name:      DNS:5f058f0d6e732a2d68c2f78eb36f117b.ae56a74371b7402e4c63f69f19ed3ebc.traefik.default 
+2026-10-19T13:36:56Z probe after restore: ARM UI-7 PASS webui HTTP 200 MessageRelay.Enabled=false; authenticated POST /api/v1/send HTTP 401; Ready pod mailpit-648cf6c66c-6swcb forbidden-env=0 MP_SEND_API_AUTH_FILE=1
+2026-10-19T13:36:56Z probe after restore: ARM UI-8 PASS authenticated burst 300x/20: 429=158 of 300; UNAUTH-429=0
+2026-10-19T13:36:56Z probe after restore: UNAUTH-429=0
+2026-10-19T13:36:56Z probe after restore: PROBE: 8/8 PASS
+2026-10-19T13:36:56Z probe after restore rc=0
+2026-10-19T13:36:57Z RESTORE mail-ui VERIFIED (auth-secret read back = mailpit-ui-credentials; UI-1 401 and UI-3 200 again; probe 8/8)
+
+================ (11) Docs: the tester note (k8s/DEPLOYMENT.md), the staging URL block, the rotation entry ================
+2026-10-19T13:37:58Z fifth verify counts: pre-task docs rule=0 env-host=0 rotation=0 (fail direction); now rule=1 env-host=1 rotation=7
+2026-10-19T13:37:58Z fifth verify as written: citations-rc=1 first, on a PRE-EXISTING false citation (credential-rotation.md section 1 wrote 127.0.0.1:5433, which the gate reads as file 127.0.0.1 line 5433; the committed runbook fails the same scoped run); reworded to '127.0.0.1, port 5433'. Then citations-rc=2 (VOID: zero citations across the three docs). So the criterion as written cannot reach 0: these docs carry no file:line citation at all (the plan forbids them in the new prose).
+2026-10-19T13:37:58Z replacement (strictly stronger): CITATION_DOCS='the three docs + k8s/LOCAL.md' -> rc 0; DEPLOYMENT.md 0, ENVIRONMENT_STRATEGY.md 0, credential-rotation.md 0 citations and 0 violations; the control doc k8s/LOCAL.md 18 citations (11 verified, 7 uncheckable) shows the scanner sees; the default set: 46 verified, 0 violations
+
+================ (12) Leak scan of this file (staging-secrets.sh --leak-scan: every secret object in jtoye-stg-kv, the two mail-UI objects included) ================
+2026-10-19T13:38:07Z ANSI colour codes stripped from the Traefik log lines above (2 line(s)) before the scan and the commit
+2026-10-19T13:38:23Z leak-scan: leak-scan: 23 objects checked, 0 found (10 estate identifiers not secret, skipped)
+2026-10-19T13:38:23Z leak-scan rc=0; its fail direction is the writer's own selftest arm 'PASS leak-scan hit=1-named clean=0 missing=VOID empty=VOID' (12/12 at a5bd4af5)
+2026-10-19T13:38:23Z LEAK-SCAN CLEAN
+
+================ (13) CLOSING CLEAN ================
+2026-10-19T13:39:15Z closing probe: ARM UI-1 PASS no credentials: HTTP 401, WWW-Authenticate 'Basic realm="J'Toye staging mail - test personas only, no real customer data"'
+2026-10-19T13:39:15Z closing probe: ARM UI-2 PASS a random wrong password: HTTP 401
+2026-10-19T13:39:15Z closing probe: ARM UI-3 PASS credential: GET / HTTP 200 shell=yes; search to:staff.invite.staging@olajay.co.uk HTTP 200 total=1
+2026-10-19T13:39:15Z closing probe: ARM UI-4 PASS http://mail-staging.olajay.co.uk/: HTTP 308 Location 'https://mail-staging.olajay.co.uk/' shell=no
+2026-10-19T13:39:15Z closing probe: ARM UI-5 PASS tcp ip:1025=failed host:1025=failed host:443=connected (control); traefik ports [80 443]; jtoye-staging LoadBalancer/NodePort services=0
+2026-10-19T13:39:15Z closing probe: ARM UI-6 PASS SNI mail-staging.olajay.co.uk: issuer=CN=YR2,O=Let's Encrypt,C=US subject=CN=mail-staging.olajay.co.uk X509v3 Subject Alternative Name:      DNS:mail-staging.olajay.co.uk | control SNI unknown-staging.olajay.co.uk: issuer=CN=TRAEFIK DEFAULT CERT subject=CN=TRAEFIK DEFAULT CERT X509v3 Subject Alternative Name:      DNS:5f058f0d6e732a2d68c2f78eb36f117b.ae56a74371b7402e4c63f69f19ed3ebc.traefik.default 
+2026-10-19T13:39:15Z closing probe: ARM UI-7 PASS webui HTTP 200 MessageRelay.Enabled=false; authenticated POST /api/v1/send HTTP 401; Ready pod mailpit-648cf6c66c-6swcb forbidden-env=0 MP_SEND_API_AUTH_FILE=1
+2026-10-19T13:39:15Z closing probe: ARM UI-8 PASS authenticated burst 300x/20: 429=157 of 300; UNAUTH-429=0
+2026-10-19T13:39:15Z closing probe: UNAUTH-429=0
+2026-10-19T13:39:15Z closing probe: PROBE: 8/8 PASS
+2026-10-19T13:39:15Z closing probe rc=0
+2026-10-19T13:39:22Z Task 3 first verify (staging-login spec): rc=0 passed=[1 passed] skipped-flaky-failed-lines=0
+2026-10-19T13:39:22Z CLOSING CLEAN PASS (probe 8/8, spec 1 passed)
+2026-10-19T13:39:22Z final marker check (third automated verify, run last): rc=0 missing=0
