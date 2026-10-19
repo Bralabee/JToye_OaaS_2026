@@ -50,8 +50,6 @@ preflight() {
   # shellcheck disable=SC2064
   trap "rm -rf '$work'" EXIT
   ss_derive "$work" || exit 2
-  # RED: one source only (the render); the operator scripts' objects are not checked
-  python3 "$SS_REPO_ROOT/k8s/scripts/keyvault-chain.py" objects "$work/render.yaml" > "$work/objects"
 
   # shellcheck source=scripts/lib/azure-guard.sh
   . "$SCRIPT_DIR/lib/azure-guard.sh"

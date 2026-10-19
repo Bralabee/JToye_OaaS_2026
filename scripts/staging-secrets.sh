@@ -23,9 +23,11 @@
 #
 # NO VALUE ON ARGV, NO VALUE PRINTED (T-29-48)
 #   A value is written into a mode-600 file in a mode-700 `mktemp -d` directory (removed by
-#   an EXIT trap) by shell builtins or an openssl pipeline, and handed to
-#     az keyvault secret set ... --file FILE --encoding utf-8      (never --value)
-#   through az_mutate --no-echo. Output names objects and classes, never values.
+#   an EXIT trap) by shell builtins or an openssl pipeline, and handed through
+#   az_mutate --no-echo to
+#     az keyvault secret set ... --file FILE --encoding utf-8
+#   never with the inline-value flag, which would put the value on argv. Output names
+#   objects and classes, never values.
 #
 # USAGE (every Azure mode needs, in the CALLER's environment,
 #   JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94, and python3 + PyYAML,
@@ -82,7 +84,6 @@ guard() {
 
 # exists NAME -> 0 present, 1 absent; anything else refuses (a permission error is not "absent").
 exists() {
-  return 1  # RED: no existence check; every object is treated as absent and written again
   local rc=0
   az_read keyvault secret show --vault-name "$SS_KV_NAME" -n "$1" --query id -o tsv >/dev/null 2>"$WORK/show.err" || rc=$?
   case "$rc" in
