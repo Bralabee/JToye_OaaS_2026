@@ -35,8 +35,9 @@
 #   M-3  Every muted alertname is on MUTE_ALLOWLIST below, with a written reason.
 #   M-4  Every muted alertname still exists as a rule in alerts.yml. A mute naming
 #        a deleted rule is stale config that will silently outlive its subject.
-#   M-5  No file under k8s/ sets ALERTMANAGER_MUTE_ALERTNAMES. The mute is a local
-#        development affordance; NoOrdersCreated is a real production signal.
+#   M-5  No Kubernetes RENDER but k8s/staging sets ALERTMANAGER_MUTE_ALERTNAMES, and
+#        staging sets it only as a literal of MUTE_ALLOWLIST names (plan 29-24). The mute is
+#        a local and staging affordance; NoOrdersCreated is a real production signal.
 #   M-6  FUNCTIONAL. A synthetic MUTED alert produces NO email notification
 #        attempt, and a synthetic UNMUTED alert of the SAME severity produces one.
 #        Both arms are required — the second is what distinguishes "the mute works"
@@ -92,31 +93,110 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 # one locally that is not better served by fixing the underlying condition.
 # ---------------------------------------------------------------------------------
 MUTE_ALLOWLIST="
-NoOrdersCreated|info-severity business signal. Fires ~30 min after the last order, so a quiet local stack pages forever. The only alternative remedy (FORCE=1 scripts/seed-order-metric.sh) buys silence by writing a real order row into the dev database on every run. Correct and WANTED in production.
+NoOrdersCreated|info-severity business signal. Fires ~30 min after the last order, so a quiet local stack, and a quiet staging (plan 29-24, RESEARCH Pitfall 5: the real inbox, every 12h), pages forever. The only alternative remedy (FORCE=1 scripts/seed-order-metric.sh) buys silence by writing a real order row into the dev database on every run. Correct and WANTED in production.
 "
 
 echo "check-alert-mute: mode=$MODE container=$AM_CONTAINER"
 
 # =================================================================================
-# M-5 (static, runs in every mode) — the mute must not exist in k8s manifests.
+# M-5 (static, runs in every mode) — what each Kubernetes RENDER sets the mute to.
+#
+#   Every deployable overlay (k8s/<name>/kustomization.yaml: base, local, production,
+#   staging) is rendered and every container/initContainer env entry and ConfigMap data
+#   key NAMED ALERTMANAGER_MUTE_ALERTNAMES is read structurally (PyYAML):
+#     - any target other than k8s/staging setting it is a violation (production is where
+#       NoOrdersCreated is wanted; base and local ship no Alertmanager);
+#     - k8s/staging may set it only as a literal value (never valueFrom) whose names are
+#       ALL on MUTE_ALLOWLIST and valid alertnames (plan 29-24, RESEARCH Pitfall 5:
+#       NoOrdersCreated would page the real inbox twice a day on a quiet staging).
+#
+#   WHY A RENDER AND NOT A TEXT GREP (changed in plan 29-24). The grep this replaced
+#   flagged every FILE under k8s/ containing the variable's name. Since 29-24 the
+#   canonical entrypoint.sh is served to staging as a committed byte copy
+#   (k8s/copy-parity.conf), and that file must READ the variable, so the grep could only
+#   pass by breaking copy parity; it also flagged the staging golden. It could not tell a
+#   reader from a setter, nor production from staging. The render answers both.
 # =================================================================================
 if [ ! -d "$K8S_DIR" ]; then
   void "k8s directory not found at $K8S_DIR — cannot prove the mute is absent from deploy manifests (an unverifiable absence is not an absence)"
 fi
+command -v kubectl >/dev/null 2>&1 || void "kubectl not found — M-5 reads the kustomize RENDER of each overlay"
+command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1 \
+  || void "python3 with PyYAML not found — M-5 reads the render structurally (conda activate jtoye-ops)"
 
-# `grep -r` returns 1 on no-match, which is the PASS case here, so `|| true` is
-# correct — but the count is captured on its OWN statement. Reading $? after an
-# echo or inside a printf's $( ) reports that command's status instead, which is
-# 0 essentially always and would make this assertion incapable of failing.
-K8S_HITS="$(grep -rIl 'ALERTMANAGER_MUTE_ALERTNAMES' "$K8S_DIR" 2>/dev/null || true)"
-if [ -n "$K8S_HITS" ]; then
-  while IFS= read -r f; do
-    [ -z "$f" ] && continue
-    violation "M-5 $f sets ALERTMANAGER_MUTE_ALERTNAMES. The mute is a LOCAL development affordance; these alerts are real production signals."
-  done <<< "$K8S_HITS"
-else
-  echo "  M-5   no k8s manifest sets ALERTMANAGER_MUTE_ALERTNAMES"
-fi
+M5_TARGETS=()
+for kz in "$K8S_DIR"/*/kustomization.yaml; do
+  [ -f "$kz" ] && M5_TARGETS+=("$(dirname "$kz")")
+done
+M5_HAS_STAGING=0; M5_HAS_PROD=0
+for t in "${M5_TARGETS[@]}"; do
+  case "$(basename "$t")" in staging) M5_HAS_STAGING=1 ;; production) M5_HAS_PROD=1 ;; esac
+done
+[ "$M5_HAS_STAGING" = 1 ] && [ "$M5_HAS_PROD" = 1 ] \
+  || void "M-5 found ${#M5_TARGETS[@]} overlay(s) under $K8S_DIR and not both staging and production — the targets this assertion exists for"
+
+M5_ALLOWED="$(printf '%s\n' "$MUTE_ALLOWLIST" | sed -n 's/^\([A-Za-z][A-Za-z0-9_]*\)|.*/\1/p' | tr '\n' ' ')"
+M5_PY='
+import os, re, sys, yaml
+target, render = sys.argv[1], sys.argv[2]
+allowed = set(os.environ["M5_ALLOWED"].split())
+name = "ALERTMANAGER_MUTE_ALERTNAMES"
+hits = []
+def walk_pod(kind, n, spec):
+    for c in (spec.get("containers") or []) + (spec.get("initContainers") or []):
+        for e in c.get("env") or []:
+            if e.get("name") == name:
+                cn = c.get("name")
+                hits.append((f"{kind}/{n} container {cn}", e.get("value") if "valueFrom" not in e else None))
+docs = [d for d in yaml.safe_load_all(open(render)) if d]
+for d in docs:
+    k, n = d.get("kind"), (d.get("metadata") or {}).get("name")
+    sp = d.get("spec") or {}
+    if k == "CronJob":
+        sp = ((sp.get("jobTemplate") or {}).get("spec") or {})
+    tpl = (sp.get("template") or {}).get("spec") if isinstance(sp, dict) else None
+    if k == "Pod":
+        tpl = sp
+    if tpl:
+        walk_pod(k, n, tpl)
+    if k == "ConfigMap" and name in (d.get("data") or {}):
+        hits.append((f"ConfigMap/{n} data key", None))
+bad = []
+for where, val in hits:
+    if target != "staging":
+        bad.append(f"{where} sets {name} in k8s/{target}; only k8s/staging may mute, and production is where these alerts are wanted")
+    elif val is None:
+        bad.append(f"{where} sets {name} from a reference, not a reviewable literal")
+    else:
+        for a in [x.strip() for x in val.split(",") if x.strip()]:
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", a) or a not in allowed:
+                bad.append(f"{where} mutes {a!r}, which is not on MUTE_ALLOWLIST")
+for b in bad:
+    print("BAD " + b)
+for where, val in hits:
+    print(f"HIT {where}={val}")
+print(f"DOCS {len(docs)}")
+'
+M5_TOTAL_HITS=0
+for t in "${M5_TARGETS[@]}"; do
+  tn="$(basename "$t")"
+  m5_render="$(kubectl kustomize "$t" 2>/dev/null)" || void "M-5: kubectl kustomize $t failed"
+  [ -n "$m5_render" ] || void "M-5: the render of $t is empty"
+  # `|| m5_rc=$?` and not `; m5_rc=$?`: under set -e a failing assignment would exit 1 on the
+  # spot, silently, and read as a violation instead of the VOID it is.
+  m5_rc=0
+  m5_out="$(M5_ALLOWED="$M5_ALLOWED" python3 -c "$M5_PY" "$tn" <(printf '%s\n' "$m5_render") 2>&1)" || m5_rc=$?
+  [ "$m5_rc" -eq 0 ] || void "M-5: could not read the render of $t: $m5_out"
+  m5_docs="$(sed -n 's/^DOCS //p' <<< "$m5_out")"
+  [ "${m5_docs:-0}" -gt 0 ] || void "M-5: 0 documents read from the render of $t"
+  while IFS= read -r line; do
+    case "$line" in
+      BAD\ *) violation "M-5 ${line#BAD }" ;;
+      HIT\ *) M5_TOTAL_HITS=$((M5_TOTAL_HITS + 1)); echo "  M-5   k8s/$tn: ${line#HIT }" ;;
+    esac
+  done <<< "$m5_out"
+done
+echo "  M-5   ${#M5_TARGETS[@]} overlay render(s) read; $M5_TOTAL_HITS mute setting(s); allowed in k8s/staging only, names from MUTE_ALLOWLIST ($M5_ALLOWED)"
 
 if [ "$MODE" = "static" ]; then
   if [ "$VIOLATIONS" -gt 0 ]; then
