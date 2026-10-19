@@ -1,0 +1,299 @@
+# Prometheus for jtoye-staging (Phase 29 plan 29-23, DPLY-03 part A, D-16, D-19).
+#
+# ONE RULE CORPUS. The rules are prometheus/alerts.yml, a committed byte copy of
+# infra/monitoring/prometheus/alerts.yml (kustomize may not read outside its root), held equal by
+# scripts/check-k8s-copy-parity.sh. No PrometheusRule CRD and no operator: plain Deployments, as
+# D-16 rules.
+#
+# CLUSTER-INTERNAL ONLY (D-19, T-29-83). Prometheus has no authentication, so it has a ClusterIP
+# Service and no Ingress; prometheus-allow admits only Grafana pods (plan 29-24) on 9090. Reach the
+# UI from an operator host with:
+#     kubectl --context jtoye-stg-aks -n jtoye-staging port-forward svc/prometheus 19090:9090
+#
+# CONFIG AND RULES SIT SIDE BY SIDE IN /etc/prometheus. Both ConfigMaps are content-hashed
+# generators (kustomization.yaml), mounted through ONE projected volume because two volumes may not
+# share a mount path. The paths therefore match compose: /etc/prometheus/prometheus.yml and
+# /etc/prometheus/alerts.yml, which is the default PROM_ALERTS_PATH of check-alert-liveness.sh's
+# L-0. An edit to either file renames its ConfigMap and so rolls this Deployment; there is no
+# /-/reload, exactly as in compose.
+#
+# STORAGE: a 10Gi PersistentVolumeClaim on the default class (the cost table's E3 line), so metric
+# history survives a restart. retention.time is 7d (the plan's figure); retention.size 8GB keeps
+# the TSDB inside the volume whatever the series count does, because a full disk stops ingestion
+# entirely rather than dropping old blocks. ReadWriteOnce, so strategy Recreate: a second pod could
+# not attach the disk, and two Prometheus processes would each evaluate every rule.
+#
+# NO HPA AND NO PDB. Replicas of a Prometheus each scrape and evaluate everything on their own
+# TSDB, and a PDB over one replica blocks every node drain.
+#
+# SCRAPED PER POD. core-java and edge-go are reached through the HEADLESS Services below
+# (clusterIP None), whose DNS A records are the Ready pods, read by dns_sd_configs (DEF-29-8: a
+# ClusterIP scrape load-balances one constant `instance` across replicas, which makes rate()
+# unsound). The ordinary Services core-java and edge-go are untouched.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: monitoring
+# DNS service discovery needs no Kubernetes API access, so there is no token and no RBAC.
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+        component: monitoring
+    spec:
+      serviceAccountName: prometheus
+      automountServiceAccountToken: false
+      # Service link variables are never read here, and 29-14 measured one of them breaking
+      # core-java (REDIS_PORT=tcp://...); off on every new workload.
+      enableServiceLinks: false
+      securityContext:
+        # prom/prometheus runs as nobody (65534); fsGroup makes the volume writable by it.
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: prometheus
+        # = infra/monitoring/docker-compose.monitoring.yml pin; horizon row prom/prometheus.
+        image: prom/prometheus:v3.13.4
+        imagePullPolicy: IfNotPresent
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--storage.tsdb.retention.time=7d'
+          - '--storage.tsdb.retention.size=8GB'
+        ports:
+        - containerPort: 9090
+          name: http
+          protocol: TCP
+        readinessProbe:
+          # Not ready while the TSDB replays its WAL, when a query would get partial answers.
+          httpGet:
+            path: /-/ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        livenessProbe:
+          # Says nothing about the targets: a Prometheus whose targets are all down must stay
+          # alive to say so.
+          httpGet:
+            path: /-/healthy
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 4
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            memory: "1Gi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+          readOnly: true
+        - name: data
+          mountPath: /prometheus
+      volumes:
+      - name: config
+        projected:
+          sources:
+          # kustomize rewrites both names to the generated, content-hashed ConfigMaps.
+          - configMap:
+              name: prometheus-config
+          - configMap:
+              name: prometheus-alerts
+      - name: data
+        persistentVolumeClaim:
+          claimName: prometheus-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  labels:
+    app: prometheus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # No storageClassName: the cluster default (AKS managed-csi), the cost table's E3 line.
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+spec:
+  type: ClusterIP
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: http
+    protocol: TCP
+    name: http
+---
+# Headless: one DNS A record per Ready core-java pod, on the management port 9091 (actuator).
+# The `core-java` job's dns_sd_configs reads it. Nothing else should use this name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-java-metrics
+  labels:
+    app.kubernetes.io/name: core-java-metrics
+    app.kubernetes.io/component: monitoring
+spec:
+  clusterIP: None
+  selector:
+    app: core-java
+  ports:
+  - port: 9091
+    targetPort: 9091
+    protocol: TCP
+    name: management
+---
+# Headless: one DNS A record per Ready edge-go pod, on the app port 8080 (/metrics).
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-go-metrics
+  labels:
+    app.kubernetes.io/name: edge-go-metrics
+    app.kubernetes.io/component: monitoring
+spec:
+  clusterIP: None
+  selector:
+    app: edge-go
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+---
+# prometheus-allow. INV-7 row prometheus-allow@k8s/staging; k8s/base/networkpolicies/README.md
+# carries the same rows.
+#   Ingress: Grafana pods (plan 29-24), TCP 9090. Nothing else: no Ingress, no other reader.
+#   Egress:  kube-dns (dns_sd_configs and Service names), then each scrape target on its metrics
+#            port, then Alertmanager (plan 29-24) on 9093. The TARGET side of each scrape is
+#            admitted by that workload's own policy (core-java-allow 9091, edge-go-allow 8080,
+#            keycloak-allow 9000, rabbitmq-allow 15692, and the two exporter policies).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-allow
+  labels:
+    app.kubernetes.io/name: prometheus-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: grafana
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 9091
+    - to:
+        - podSelector:
+            matchLabels:
+              app: edge-go
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 9000
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 15692
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres-exporter
+      ports:
+        - protocol: TCP
+          port: 9187
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis-exporter
+      ports:
+        - protocol: TCP
+          port: 9121
+    - to:
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9093

@@ -30,6 +30,9 @@ components:
   # Its CA, trusted by core-java (JDK cacerts + CA, built at pod start, D-30) and by
   # Keycloak (KC_TRUSTSTORE_PATHS). AFTER ../keycloak, whose Deployment it patches.
   - ../components/cluster-ca-truststore
+  # Prometheus and its exporters with the compose rule corpus (plan 29-23, D-16). BEFORE
+  # ../azure-keyvault, whose workload patches reach the two exporter Deployments.
+  - ../components/monitoring
   # Key Vault -> Secrets Store CSI -> synced Secrets (plan 29-12, D-23). LAST, because
   # its workload patches reach the keycloak and redis Deployments the components
   # above add, and kustomize applies components in this order.

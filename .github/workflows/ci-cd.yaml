@@ -1156,10 +1156,12 @@ jobs:
       # file both runtimes serve (compose by bind mount, k8s by ConfigMap: the Keycloak
       # login theme now, the alert corpus and dashboards from plan 29-23) is a
       # committed COPY, declared with its canonical side in k8s/copy-parity.conf. The
-      # gate md5-compares every pair. The selftest runs first: twelve planted holes
+      # gate md5-compares every pair. The selftest runs first: eighteen planted holes
       # (a one-byte edit of a binary copy, a missing copy or canonical, no md5sum, an
-      # empty or comment-only list, a self-pair, a symlink copy, ...) must each exit
-      # with their rc, so a gate that can no longer fail goes red here.
+      # empty or comment-only list, a self-pair, a symlink copy, and since plan 29-23 a
+      # renamed job, a dropped label, zero jobs and no python3 for the `jobs` pair kind,
+      # which parses YAML with the runner's python3 + PyYAML) must each exit with their
+      # rc, so a gate that can no longer fail goes red here.
       #
       # Static by construction: reads committed files only, no stack, no network.
       - name: Assert the copy-parity gate can fail (29-10 selftest)

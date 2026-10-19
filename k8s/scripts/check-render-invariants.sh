@@ -1206,7 +1206,8 @@ declare -A NETPOL_RULES_EXPECTED=(
       $NETPOL_DNS_EG eg:ip=0.0.0.0/0:__DB_PORT__ eg:ip=0.0.0.0/0:443"
   [acme-http01-solver-allow@*]="sel:acme.cert-manager.io/http01-solver=true types:Egress,Ingress
       in:ns=__INGRESS_NS__:8089"
-  # Plan 29-23 replaces the placeholder with the monitoring policies.
+  # The base placeholder STAYS (plan 29-23): base, production and local ship no monitoring.
+  # The staging monitoring policies come from ../components/monitoring, rows below.
   [observability-placeholder@*]="sel:app=nonexistent-placeholder types:Egress,Ingress"
   # Staging-only platform components (plan 29-10, k8s/components/<name>/, listed
   # under `components:` in k8s/staging only). The manifest names the controller
@@ -1238,6 +1239,14 @@ declare -A NETPOL_RULES_EXPECTED=(
   [mailpit-allow@k8s/staging]="sel:app=mailpit types:Egress,Ingress
       in:pod=app=core-java:1025 in:pod=app=keycloak:1025 in:pod=app=alertmanager:1025
       in:ns=__INGRESS_NS__:8025"
+  # The staging monitoring (plan 29-23, ../components/monitoring, D-16/D-19). Prometheus is
+  # read only by Grafana (plan 29-24) and has no Ingress; it reaches each scrape target on its
+  # metrics port (the target's own policy admits app=prometheus there) and Alertmanager.
+  [prometheus-allow@k8s/staging]="sel:app=prometheus types:Egress,Ingress
+      in:pod=app=grafana:9090
+      $NETPOL_DNS_EG eg:pod=app=core-java:9091 eg:pod=app=edge-go:8080 eg:pod=app=keycloak:9000
+      eg:pod=app.kubernetes.io/name=rabbitmq:15692 eg:pod=app=postgres-exporter:9187
+      eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as

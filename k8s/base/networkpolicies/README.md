@@ -78,7 +78,7 @@ with that label in the SAME namespace. "public" means `ipBlock 0.0.0.0/0 except
 | `acme-http01-solver-allow` | ingress | namespace `<controller ns>` | TCP 8089 |
 | `observability-placeholder` | both | (selects no pod) | |
 
-### Staging-only component policies (plans 29-10, 29-12)
+### Staging-only component policies (plans 29-10, 29-12, 29-22, 29-23)
 
 These policies are not in this directory: they ship with the in-cluster platform
 components under `k8s/components/<name>/`, which only `k8s/staging` lists under
@@ -105,6 +105,15 @@ render none of them.
 | `mailpit-allow` | ingress | pods `app=core-java`, `app=keycloak`, `app=alertmanager` | TCP 1025 |
 | `mailpit-allow` | ingress | namespace `<controller ns>` (a literal `traefik` in the manifest; the row says `<controller ns>`, so a disagreement fails INV-7), for the D-33 authenticated testers' UI | TCP 8025 |
 | `mailpit-allow` | egress | nothing: no egress rule (plan 29-22; Mailpit relays and forwards nothing, and skips reverse DNS) | |
+| `prometheus-allow` | ingress | pod `app=grafana` (plan 29-24); no Ingress, D-19 | TCP 9090 |
+| `prometheus-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `prometheus-allow` | egress | pod `app=core-java` (per pod, through the headless `core-java-metrics`) | TCP 9091 |
+| `prometheus-allow` | egress | pod `app=edge-go` (per pod, through the headless `edge-go-metrics`) | TCP 8080 |
+| `prometheus-allow` | egress | pod `app=keycloak` | TCP 9000 |
+| `prometheus-allow` | egress | pod `app.kubernetes.io/name=rabbitmq` | TCP 15692 |
+| `prometheus-allow` | egress | pod `app=postgres-exporter` | TCP 9187 |
+| `prometheus-allow` | egress | pod `app=redis-exporter` | TCP 9121 |
+| `prometheus-allow` | egress | pod `app=alertmanager` (plan 29-24) | TCP 9093 |
 
 ## The pod-label contract
 

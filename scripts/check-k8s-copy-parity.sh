@@ -27,6 +27,16 @@
 #   comment-only drift, and it is the only comparison that means anything for a
 #   binary file (the theme's woff2 font).
 #
+#   ONE DELIBERATE EXCEPTION, its own pair kind (plan 29-23). For every
+#   `jobs <k8s-config> <compose-config>` line: the two Prometheus scrape configs
+#   cannot be byte-equal (their scrape TARGETS differ by runtime), but
+#   check-alert-liveness.sh maps each rule to a job by NAME, so the job_name set and
+#   what each job stamps on its series must not drift. compare_jobs (below) asserts
+#   the sorted job_name sets equal and, per job, labels (static labels plus
+#   source-less constant relabels), metrics_path, params and metric_relabel_configs
+#   equal. It parses YAML (python3 + PyYAML), so it is a narrow structural check,
+#   not a normaliser: anything it cannot read is VOID, never "equal".
+#
 # WHICH FILE IS CANONICAL
 #
 #   The RIGHT-HAND path of each line. When this gate fails, copy canonical -> copy,
@@ -52,7 +62,9 @@
 # EXIT CODES — uniform across this repo's gates
 #   0 = every declared pair is byte-identical (the count is printed)
 #   1 = at least one pair has DRIFTED (pair, both md5s and the canonical side named)
-#   2 = VOID: the list is missing, empty, comment-only or malformed; a path is
+#   2 = VOID: the list is missing, empty, comment-only or malformed; a jobs pair
+#       cannot be read (no python3/PyYAML, a file that does not parse, zero jobs,
+#       a duplicate job_name); a path is
 #       absolute, has a `..` segment, is a symlink or is listed twice; a copy or a
 #       canonical file is missing, unreadable, empty or not a regular file; or md5sum
 #       is not on PATH. A missing input is never clean: the natural bug here is a
@@ -64,7 +76,8 @@
 #   bash scripts/check-k8s-copy-parity.sh --selftest  # planted failure arms, then clean
 #   COPY_PARITY_ROOT / COPY_PARITY_CONF override the root and the list (the selftest
 #   uses them); COPY_PARITY_SELFTEST_FORMAT=tap prints TAP 13 for the RED-evidence
-#   classifier.
+#   classifier. COPY_PARITY_PYTHON names the interpreter for the jobs pairs
+#   (default python3; on the operator host run the gate inside the jtoye-ops env).
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -108,6 +121,97 @@ check_path() {
     return 0
 }
 
+# compare_jobs <k8s-config> <compose-config>: the `jobs` pair kind (plan 29-23).
+#
+# The two Prometheus scrape configs may NOT be byte-equal (their targets differ by runtime), but
+# scripts/check-alert-liveness.sh maps every rule to a job by NAME and VOIDs on a job it does not
+# know, so the names and what each job stamps on its series must not drift. Per pair, equal on
+# both sides:
+#   - the sorted set of job_name values;
+#   - per job, its LABELS: every static_configs[].labels entry, plus every relabel_configs rule
+#     that sets a constant (action replace, the default, with NO source_labels). The second form
+#     is how a dns_sd_configs job (which takes no `labels:` block) stamps the compose labels, so it
+#     must count as the same thing. A relabel WITH source_labels derives its value from the target
+#     and is not a constant label (compose's `instance` rule is one: per-pod `instance` in k8s is
+#     the DEF-29-8 fix, so it is deliberately outside the comparison);
+#   - per job, metrics_path (default /metrics), params and metric_relabel_configs, so a series
+#     filter changed on one side only (the SSE queue drop) cannot drift silently either.
+# rc 0 equal (one summary line on stdout), 1 differ (each difference on stderr), 2 VOID: python3
+# or PyYAML missing, a file that does not parse, ZERO jobs on either side, a duplicate job_name.
+compare_jobs() {
+    local py="${COPY_PARITY_PYTHON:-python3}"
+    command -v "$py" >/dev/null 2>&1 \
+        || { echo "VOID: $py not on PATH — the jobs pair cannot be evaluated (activate an env with PyYAML)" >&2; return 2; }
+    "$py" - "$1" "$2" <<'PY'
+import sys
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("VOID: PyYAML is not importable; the jobs pair cannot be evaluated\n")
+    sys.exit(2)
+
+def void(msg):
+    sys.stderr.write("VOID: " + msg + "\n")
+    sys.exit(2)
+
+def load(path):
+    try:
+        with open(path) as fh:
+            doc = yaml.safe_load(fh)
+    except Exception as exc:  # any parse error is VOID, never a difference
+        void("%s does not parse as YAML: %s" % (path, str(exc).splitlines()[0]))
+    if not isinstance(doc, dict):
+        void("%s is not a YAML mapping" % path)
+    sc = doc.get("scrape_configs")
+    if not isinstance(sc, list) or not sc:
+        void("%s declares zero jobs (no scrape_configs list) — refusing to compare job sets over nothing" % path)
+    jobs = {}
+    for j in sc:
+        if not isinstance(j, dict) or "job_name" not in j:
+            void("%s has a scrape_configs entry with no job_name" % path)
+        name = str(j["job_name"])
+        if name in jobs:
+            void("%s declares job_name %r twice" % (path, name))
+        labels = {}
+        def put(k, v):
+            labels.setdefault(str(k), set()).add(str(v))
+        for st in j.get("static_configs") or []:
+            for k, v in ((st or {}).get("labels") or {}).items():
+                put(k, v)
+        for r in j.get("relabel_configs") or []:
+            r = r or {}
+            if r.get("action", "replace") == "replace" and not r.get("source_labels") \
+                    and "target_label" in r and "replacement" in r:
+                put(r["target_label"], r["replacement"])
+        jobs[name] = {
+            "labels": {k: sorted(v) for k, v in labels.items()},
+            "metrics_path": str(j.get("metrics_path", "/metrics")),
+            "params": j.get("params") or {},
+            "metric_relabel_configs": j.get("metric_relabel_configs") or [],
+        }
+    return jobs
+
+k8s_path, compose_path = sys.argv[1], sys.argv[2]
+a, b = load(k8s_path), load(compose_path)
+diffs = []
+only_a, only_b = sorted(set(a) - set(b)), sorted(set(b) - set(a))
+if only_a or only_b:
+    diffs.append("job sets differ: only in the k8s config %s; only in the compose config %s"
+                 % (only_a or "[]", only_b or "[]"))
+for name in sorted(set(a) & set(b)):
+    for field in ("labels", "metrics_path", "params", "metric_relabel_configs"):
+        if a[name][field] != b[name][field]:
+            diffs.append("job %r %s differ: k8s %r vs compose %r" % (name, field, a[name][field], b[name][field]))
+if diffs:
+    sys.stderr.write("FAIL: jobs pair has DRIFTED (k8s %s vs compose %s)\n" % (k8s_path, compose_path))
+    for d in diffs:
+        sys.stderr.write("  " + d + "\n")
+    sys.exit(1)
+print("jobs=%d (%s), labels/metrics_path/params/metric_relabel_configs equal per job"
+      % (len(a), ",".join(sorted(a))))
+PY
+}
+
 run_check() {
     # Tooling first: without md5sum nothing below can be evaluated.
     command -v md5sum >/dev/null 2>&1 \
@@ -116,7 +220,7 @@ run_check() {
     [[ -e "$CONF" ]] || { echo "VOID: pair list not found: $CONF" >&2; return 2; }
     [[ -f "$CONF" && -r "$CONF" ]] || { echo "VOID: pair list not readable: $CONF" >&2; return 2; }
 
-    local -a copies=() canons=() f=()
+    local -a copies=() canons=() f=() jk8s=() jcompose=()
     local -A seen=()
     local raw line ln=0 voids=0
     while IFS= read -r raw || [[ -n "$raw" ]]; do
@@ -124,8 +228,24 @@ run_check() {
         line="${raw%%#*}"          # `#` starts a comment; paths may not contain one
         read -r -a f <<< "$line"
         (( ${#f[@]} == 0 )) && continue
+        # The `jobs` pair kind (plan 29-23): three fields, the first the literal `jobs`.
+        if (( ${#f[@]} == 3 )) && [[ "${f[0]}" == jobs ]]; then
+            check_path "${f[1]}" "$ln" || { voids=$((voids + 1)); continue; }
+            check_path "${f[2]}" "$ln" || { voids=$((voids + 1)); continue; }
+            if [[ "${f[1]}" == "${f[2]}" ]]; then
+                echo "VOID: $CONF:$ln jobs pair names the same path on both sides ('${f[1]}') — a file compared with itself proves nothing" >&2
+                voids=$((voids + 1)); continue
+            fi
+            if [[ -n "${seen[jobs:${f[1]}]+set}" ]]; then
+                echo "VOID: $CONF:$ln: jobs pair for '${f[1]}' is listed twice (first at line ${seen[jobs:${f[1]}]})" >&2
+                voids=$((voids + 1)); continue
+            fi
+            seen["jobs:${f[1]}"]="$ln"
+            jk8s+=("${f[1]}"); jcompose+=("${f[2]}")
+            continue
+        fi
         if (( ${#f[@]} != 2 )); then
-            echo "VOID: $CONF:$ln is malformed — want '<copy-path> <canonical-path>', got: $raw" >&2
+            echo "VOID: $CONF:$ln is malformed — want '<copy-path> <canonical-path>' or 'jobs <k8s-config> <compose-config>', got: $raw" >&2
             voids=$((voids + 1)); continue
         fi
         check_path "${f[0]}" "$ln" || { voids=$((voids + 1)); continue; }
@@ -142,7 +262,7 @@ run_check() {
         copies+=("${f[0]}"); canons+=("${f[1]}")
     done < "$CONF"
 
-    if (( ${#copies[@]} == 0 )); then
+    if (( ${#copies[@]} + ${#jk8s[@]} == 0 )); then
         echo "VOID: $CONF declares zero pairs — refusing to report parity over nothing" >&2
         return 2
     fi
@@ -176,6 +296,21 @@ run_check() {
         fi
     done
 
+    local jrc jout
+    for i in "${!jk8s[@]}"; do
+        c="${jk8s[$i]}"; k="${jcompose[$i]}"
+        check_side "jobs k8s config" "$c" || { voids=$((voids + 1)); continue; }
+        check_side "jobs compose config" "$k" || { voids=$((voids + 1)); continue; }
+        # Captured on the SAME statement as the invocation (see the md5 note above).
+        jout="$(compare_jobs "$ROOT/$c" "$ROOT/$k")"; jrc=$?
+        case "$jrc" in
+            0) ok_lines+=("  ok   jobs $c ~ $k  $jout") ;;
+            1) drift=$((drift + 1))
+               echo "  The right-hand path is canonical: change the job set or labels THERE first, then mirror the k8s side." >&2 ;;
+            *) voids=$((voids + 1)) ;;
+        esac
+    done
+
     echo "check-k8s-copy-parity  ($(date -u +%Y-%m-%dT%H:%M:%SZ))  list: $CONF"
     (( ${#ok_lines[@]} > 0 )) && printf '%s\n' "${ok_lines[@]}"
     if (( voids > 0 )); then
@@ -183,10 +318,10 @@ run_check() {
         return 2
     fi
     if (( drift > 0 )); then
-        echo "FAIL: $drift of ${#copies[@]} pairs drifted. A copy that differs from its canonical file means one runtime serves an edit the other never received." >&2
+        echo "FAIL: $drift of $(( ${#copies[@]} + ${#jk8s[@]} )) pairs drifted. A copy that differs from its canonical file means one runtime serves an edit the other never received." >&2
         return 1
     fi
-    echo "PASS: ${#copies[@]} pairs, all byte-equal."
+    echo "PASS: ${#copies[@]} pairs, all byte-equal; ${#jk8s[@]} jobs pair(s), job sets and labels equal."
     return 0
 }
 
@@ -212,13 +347,70 @@ selftest() {
         ln -s "$p" "$fb/$tool"
     done
 
+    # A second fake PATH WITH md5sum but without python3 (the no-python arm).
+    local fbp="$st/fakebin-nopy"
+    mkdir -p "$fbp"
+    for tool in wc date mktemp rm md5sum; do
+        p="$(command -v "$tool")" || { echo "VOID: --selftest needs '$tool' on PATH" >&2; return 2; }
+        ln -s "$p" "$fbp/$tool"
+    done
+
     build_tree() {   # $1 = root
         mkdir -p "$1/canon" "$1/copies"
+        # A jobs pair: the same three jobs, different targets, and one job (core-java) whose
+        # labels are static on the compose side and source-less relabels on the k8s side.
+        cat > "$1/canon/prom.tmpl" <<'YML'
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['self:9090']
+        labels:
+          service: 'prometheus'
+  - job_name: 'keycloak'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['kc:8080']
+        labels:
+          service: 'keycloak'
+          component: 'auth'
+  - job_name: 'core-java'
+    static_configs:
+      - targets: ['core-java:__PORT__']
+        labels:
+          service: 'core-api'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'core-java'
+YML
+        cat > "$1/copies/prom.yml" <<'YML'
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+        labels:
+          service: 'prometheus'
+  - job_name: 'keycloak'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['keycloak:9000']
+        labels:
+          service: 'keycloak'
+          component: 'auth'
+  - job_name: 'core-java'
+    dns_sd_configs:
+      - names: ['core-java-metrics.ns.svc.cluster.local']
+        type: 'A'
+        port: 9091
+    relabel_configs:
+      - target_label: service
+        replacement: 'core-api'
+YML
         printf 'parent=keycloak\nstyles=css/login.css css/jtoye.css\n' > "$1/canon/a.properties"
         printf '\x00\x01wOF2\xff\xfe\x10binary-font-bytes\x00' > "$1/canon/b.woff2"
         cp "$1/canon/a.properties" "$1/copies/a.properties"
         cp "$1/canon/b.woff2" "$1/copies/b.woff2"
-        printf '# selftest list\n\ncopies/a.properties   canon/a.properties   # text pair\ncopies/b.woff2 canon/b.woff2\n' > "$1/list.conf"
+        printf '# selftest list\n\ncopies/a.properties   canon/a.properties   # text pair\ncopies/b.woff2 canon/b.woff2\njobs copies/prom.yml canon/prom.tmpl\n' > "$1/list.conf"
     }
 
     # arm <name> <want-rc> <must-contain> <plant-shell> [env-path]
@@ -267,6 +459,13 @@ selftest() {
     arm symlink-copy 2 "is a symlink" "rm copies/a.properties && ln -s ../canon/a.properties copies/a.properties"
     arm escaping-path 2 "may not contain '..'" "printf 'copies/a.properties ../outside.txt\n' > list.conf"
     arm duplicate-copy 2 "listed twice" "printf 'copies/a.properties canon/a.properties\n' >> list.conf"
+    # The jobs pair kind (plan 29-23).
+    arm renamed-job 1 "only in the k8s config ['kc']" "sed -i \"s/job_name: 'keycloak'/job_name: 'kc'/\" copies/prom.yml"
+    arm dropped-label 1 "job 'keycloak' labels differ" "sed -i \"/component: 'auth'/d\" copies/prom.yml"
+    arm changed-relabel-label 1 "job 'core-java' labels differ" "sed -i \"s/replacement: 'core-api'/replacement: 'core-java'/\" copies/prom.yml"
+    arm zero-jobs 2 "declares zero jobs" "printf 'global: {}\n' > copies/prom.yml"
+    arm duplicate-job 2 "declares job_name 'keycloak' twice" "sed -i \"s/job_name: 'prometheus'/job_name: 'keycloak'/\" copies/prom.yml"
+    arm no-python 2 "python3 not on PATH" ":" "$fbp"
 
     # Clean: the unmodified tree passes and states its count.
     local root out rc
