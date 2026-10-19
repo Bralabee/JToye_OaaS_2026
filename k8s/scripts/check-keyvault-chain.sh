@@ -133,6 +133,12 @@ elif arm == "clientid-mismatch":
 elif arm == "sync-lifetime":
     container(find("Deployment", "frontend"), "frontend").setdefault("env", []).append(
         {"name": "PLANTED_RMQ", "valueFrom": {"secretKeyRef": {"name": "rabbitmq-default-user", "key": "username"}}})
+elif arm == "shared-identity":
+    # frontend's SPC AND ServiceAccount both carry keycloak's client id: consistent with
+    # each other (so rule (d) holds) but two workloads now share one identity.
+    kc = find("ServiceAccount", "keycloak")["metadata"]["annotations"]["azure.workload.identity/client-id"]
+    find("ServiceAccount", "frontend")["metadata"]["annotations"]["azure.workload.identity/client-id"] = kc
+    find("SecretProviderClass", "frontend-kv")["spec"]["parameters"]["clientID"] = kc
 elif arm == "object-not-mounted":
     so = find("SecretProviderClass", "redis-kv")["spec"]["secretObjects"][0]
     so["data"][0]["objectName"] = "redis-credentials--planted"
@@ -157,12 +163,13 @@ selftest() {
     "$KUBECTL" kustomize "$K8S_DIR/staging" > "$tmp/real.yaml" 2> "$tmp/err" || { cat "$tmp/err" >&2; void "the staging render failed"; }
     [[ -s "$tmp/real.yaml" ]] || void "the staging render is empty"
 
-    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime object-not-mounted zero-spc pyyaml-missing kubectl-missing)
+    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted zero-spc pyyaml-missing kubectl-missing)
     declare -A WANT=(
         [undeclared-key]="Deployment/core-java reads dsar-credentials/not-a-key"
         [two-producers]="Secret postgres-credentials has two producers"
         [clientid-mismatch]="Deployment/frontend mounts frontend-kv, whose clientID '00000000-0000-4000-8000-000000000000' differs"
         [sync-lifetime]="Deployment/frontend reads rabbitmq-default-user/username (env PLANTED_RMQ), produced by rabbitmq-kv, which Deployment/frontend does not mount"
+        [shared-identity]="ServiceAccounts frontend, keycloak share"
         [object-not-mounted]="which is not in its parameters.objects"
         [zero-spc]="the render holds no SecretProviderClass"
         [pyyaml-missing]="PyYAML is not importable"
