@@ -628,3 +628,373 @@ exit=1
 # Free for the workload: 3829m CPU and about 5636Mi memory. Against the Pitfall 2 workload estimate (about 2.5 vCPU / 4.6 GiB = 4710Mi),
 #   that is about 65% of the free CPU and about 84% of the free memory (August's figures were about 62% / 80%). It still fits, with less headroom;
 #   plan 29-11/29-12 should re-measure after the platform layer lands.
+
+### Task 3 read-back: postgres flexible-server show
+# at 2026-10-19T01:08:18Z  rc=0
+# az postgres flexible-server show -g jtoye-rg -n jtoye-stg-pg --query {v:version,minor:minorVersion,sku:sku.name,tier:sku.tier,state:state,fqdn:fullyQualifiedDomainName,backup:backup,storage:storage.storageSizeGb,public:network.publicNetworkAccess,admin:administratorLogin,ha:highAvailability.mode,location:location} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "admin": "jtoyepgadmin",
+  "backup": {
+    "backupRetentionDays": 7,
+    "earliestRestoreDate": "2026-10-19T01:02:46.244749+00:00",
+    "geoRedundantBackup": "Disabled"
+  },
+  "fqdn": "jtoye-stg-pg.postgres.database.azure.com",
+  "ha": "Disabled",
+  "location": "UK South",
+  "minor": "6",
+  "public": "Enabled",
+  "sku": "Standard_B2s",
+  "state": "Ready",
+  "storage": 32,
+  "tier": "Burstable",
+  "v": "18"
+}
+
+### firewall-rule list
+# at 2026-10-19T01:08:19Z  rc=0
+# az postgres flexible-server firewall-rule list -g jtoye-rg -s jtoye-stg-pg -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+EndIpAddress    Name                                 ResourceGroup    StartIpAddress
+--------------  -----------------------------------  ---------------  ----------------
+40.120.43.119   FirewallIPAddress_2026-10-19_2-1-40  jtoye-rg         40.120.43.119
+
+### firewall-rule count (AC: prints 1)
+# at 2026-10-19T01:08:20Z  rc=0
+# az postgres flexible-server firewall-rule list -g jtoye-rg -s jtoye-stg-pg --query length(@) -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+1
+
+### parameter azure.extensions
+# at 2026-10-19T01:08:21Z  rc=0
+# az postgres flexible-server parameter show -g jtoye-rg -s jtoye-stg-pg --name azure.extensions --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+UUID-OSSP
+
+### parameter require_secure_transport (T-29-34: TLS required)
+# at 2026-10-19T01:08:22Z  rc=0
+# az postgres flexible-server parameter show -g jtoye-rg -s jtoye-stg-pg --name require_secure_transport --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+on
+
+### db list
+# at 2026-10-19T01:08:23Z  rc=0
+# az postgres flexible-server db list -g jtoye-rg -s jtoye-stg-pg --query [].{name:name,charset:charset,collation:collation} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Name               Charset    Collation
+-----------------  ---------  -----------
+azure_maintenance  UTF8       en_US.utf8
+postgres           UTF8       en_US.utf8
+azure_sys          UTF8       en_US.utf8
+jtoye              UTF8       en_US.utf8
+keycloak           UTF8       en_US.utf8
+
+### Key Vault object pg-admin--password: metadata only (no value)
+# at 2026-10-19T01:08:24Z  rc=0
+# az keyvault secret show --vault-name jtoye-stg-kv -n pg-admin--password --query {id:id,enabled:attributes.enabled,created:attributes.created} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "created": "2026-10-19T00:56:33+00:00",
+  "enabled": true,
+  "id": "https://jtoye-stg-kv.vault.azure.net/secrets/pg-admin--password/ed164d3214bb4769852bafe1ac597d96"
+}
+
+### AC: the single firewall rule equals outbound_ip_address in k8s/staging/azure-identity.yaml (at 2026-10-19T01:08:36Z)
+identity outbound=40.120.43.119 firewall start/end=40.120.43.119 40.120.43.119 
+
+################ bash scripts/azure-staging-datastores.sh
+start 2026-10-19T00:56:30Z
+=== J'Toye staging estate: managed PostgreSQL jtoye-stg-pg (dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a: PG_ADMIN_LOGIN=jtoyepgadmin PG_PUBLIC_ACCESS=public
+OK: azure.extensions source: UUID-OSSP (from core-java/src/main/resources/db/migration)
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+=== STEP 2: existence probes (Key Vault secret pg-admin--password, server jtoye-stg-pg) ===
+secret_exists=0 server_exists=0
+
+=== STEP 3a: fresh estate: generate the admin password, write it to Key Vault, create jtoye-stg-pg ===
+OK: admin password written to jtoye-stg-kv/pg-admin--password (write-once; value not printed)
+WARNING: Checking the existence of the resource group 'jtoye-rg'...
+WARNING: Resource group 'jtoye-rg' exists ? : True 
+WARNING: Creating PostgreSQL Server 'jtoye-stg-pg' in group 'jtoye-rg'...
+WARNING: Your server 'jtoye-stg-pg' is using sku 'Standard_B2s' (Paid Tier). Please refer to https://aka.ms/postgres-pricing for pricing details
+WARNING: Configuring server firewall rule to accept connections from '40.120.43.119'...
+WARNING: Make a note of your password. If you forget, you would have to reset your password with "az postgres flexible-server update -n jtoye-stg-pg -g jtoye-rg -p <new-password>".
+WARNING: Try using 'az postgres flexible-server connect' command to test out connection.
+OK: server create issued (output suppressed: it carries the password)
+
+=== STEP 4: read back jtoye-stg-pg ===
+OK: jtoye-stg-pg: 18 Ready jtoyepgadmin Enabled Standard_B2s 
+
+=== STEP 5: firewall (exactly one rule = jtoye-stg-outbound-ip) ===
+OK: firewall: one rule, 40.120.43.119 - 40.120.43.119
+
+=== STEP 6: azure.extensions = UUID-OSSP ===
+OK: azure.extensions = UUID-OSSP
+
+=== STEP 7: databases (jtoye keycloak) ===
+WARNING: Creating database with utf8 charset and en_US.utf8 collation
+OK: database jtoye present
+WARNING: Creating database with utf8 charset and en_US.utf8 collation
+OK: database keycloak present
+
+=== STEP 8: max_connections ===
+max_connections=429 (connection-budget.conf k8s-staging=429)
+
+=== STEP 9: evidence (identifiers only, never a value) ===
+  server jtoye-stg-pg : 18 Ready jtoyepgadmin Enabled Standard_B2s 
+  firewall jtoye-stg-pg : FirewallIPAddress_2026-10-19_2-1-40 40.120.43.119 40.120.43.119
+  azure.extensions : UUID-OSSP
+  database jtoye : present
+  database keycloak : present
+  max_connections : 429
+  fqdn : jtoye-stg-pg.postgres.database.azure.com
+DONE: jtoye-stg-pg (dry-run=0)
+end 2026-10-19T01:03:34Z rc=0
+
+# password scan of the datastores log: 32-character [A-Za-z0-9] runs = 0 (control: a random 32-hex string counts 1); /tmp/jtoye-pgadmin.* after the run: none
+
+################ bash scripts/azure-staging-storage.sh (run 1: stopped at runbook section 6, UnsupportedFilter on the apostrophe in the custom role name; fixed in e3b32c79)
+start 2026-10-19T01:04:08Z
+=== J'Toye staging Blob estate (mode=provision, dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+STEP runbook §2.1: Microsoft.Storage registered, then check-name for jtoyestgmedia and jtoyestgbackup
+OK: Microsoft.Storage Registered
+OK: jtoyestgmedia: name available
+OK: jtoyestgbackup: name available
+
+STEP runbook §2.2: create jtoyestgmedia (uksouth) and jtoyestgbackup (ukwest), shared-key access disabled
+OK: jtoyestgmedia: uksouth true false tls1_2 true 
+OK: jtoyestgbackup: ukwest false false tls1_2 true 
+
+STEP runbook §3: containers: jtoye-images (blob), jtoye-quarantine (private), jtoye-db-backups (private)
+OK: jtoyestgmedia/jtoye-images: publicAccess Blob
+OK: jtoyestgmedia/jtoye-quarantine: publicAccess None
+OK: jtoyestgbackup/jtoye-db-backups: publicAccess None
+
+STEP runbook §4: backup data protection: soft delete 14 d, retention 30 d UNLOCKED, lifecycle delete after 35 d
+OK: soft delete: true 14 
+OK: retention policy: 30 Unlocked 
+WORM retention left UNLOCKED: the lock is a human step after the plan 29-20 drill (runbook §4.4)
+OK: lifecycle: 1 jtoye-db-backups/backups/ 35.0 
+
+STEP runbook §5: workload identities jtoye-staging-media-id and jtoye-staging-backup-id (read only; plan 29-01 creates them)
+OK: principal ids read (identifiers, not secrets): jtoye-staging-media-id=033b06e0-d670-4009-a820-af379b62f27c jtoye-staging-backup-id=14f5c6c4-5876-4dd8-88c1-0a4382f06ae0
+
+STEP runbook §6: container-scope RBAC: Storage Blob Data Contributor for jtoye-staging-media-id; J'Toye Backup Blob Writer for jtoye-staging-backup-id
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-images
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+ERROR: (UnsupportedFilter) The filter 'roleName eq 'J'Toye Backup Blob Writer'' is not supported. Supported filters are either roleName eq '{value}' or type eq 'BuiltInRole|CustomRole'.
+Code: UnsupportedFilter
+Message: The filter 'roleName eq 'J'Toye Backup Blob Writer'' is not supported. Supported filters are either roleName eq '{value}' or type eq 'BuiltInRole|CustomRole'.
+FAIL: could not read count of custom role J'Toye Backup Blob Writer (az rc=1)
+VOID: count of custom role J'Toye Backup Blob Writer is not a number: ''
+end 2026-10-19T01:05:27Z rc=2
+
+################ bash scripts/azure-staging-storage.sh (run 2: accounts, containers and policies read back, not recreated; custom role created and assigned by id)
+start 2026-10-19T01:07:07Z
+=== J'Toye staging Blob estate (mode=provision, dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+STEP runbook §2.1: Microsoft.Storage registered, then check-name for jtoyestgmedia and jtoyestgbackup
+OK: Microsoft.Storage Registered
+OK: storage account jtoyestgmedia already exists: read back, NOT recreated
+OK: storage account jtoyestgbackup already exists: read back, NOT recreated
+
+STEP runbook §2.2: create jtoyestgmedia (uksouth) and jtoyestgbackup (ukwest), shared-key access disabled
+OK: storage account jtoyestgmedia already exists: read back, NOT recreated
+OK: jtoyestgmedia: uksouth true false tls1_2 true 
+OK: storage account jtoyestgbackup already exists: read back, NOT recreated
+OK: jtoyestgbackup: ukwest false false tls1_2 true 
+
+STEP runbook §3: containers: jtoye-images (blob), jtoye-quarantine (private), jtoye-db-backups (private)
+OK: container jtoyestgmedia/jtoye-images already exists: read back, NOT recreated
+OK: jtoyestgmedia/jtoye-images: publicAccess Blob
+OK: container jtoyestgmedia/jtoye-quarantine already exists: read back, NOT recreated
+OK: jtoyestgmedia/jtoye-quarantine: publicAccess None
+OK: container jtoyestgbackup/jtoye-db-backups already exists: read back, NOT recreated
+OK: jtoyestgbackup/jtoye-db-backups: publicAccess None
+
+STEP runbook §4: backup data protection: soft delete 14 d, retention 30 d UNLOCKED, lifecycle delete after 35 d
+OK: soft delete: true 14 
+OK: retention policy on jtoye-db-backups already exists, state Unlocked: NOT recreated
+OK: retention policy: 30 Unlocked 
+WORM retention left UNLOCKED: the lock is a human step after the plan 29-20 drill (runbook §4.4)
+OK: lifecycle: 1 jtoye-db-backups/backups/ 35.0 
+
+STEP runbook §5: workload identities jtoye-staging-media-id and jtoye-staging-backup-id (read only; plan 29-01 creates them)
+OK: principal ids read (identifiers, not secrets): jtoye-staging-media-id=033b06e0-d670-4009-a820-af379b62f27c jtoye-staging-backup-id=14f5c6c4-5876-4dd8-88c1-0a4382f06ae0
+
+STEP runbook §6: container-scope RBAC: Storage Blob Data Contributor for jtoye-staging-media-id; J'Toye Backup Blob Writer for jtoye-staging-backup-id
+OK: Storage Blob Data Contributor for 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-images already present (1): NOT recreated
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-images
+OK: Storage Blob Data Contributor for 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-quarantine already present (1): NOT recreated
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+OK: custom role J'Toye Backup Blob Writer: /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/providers/Microsoft.Authorization/roleDefinitions/e728f8ca-6215-4f39-b050-4012fcf322f9
+OK: J'Toye Backup Blob Writer -> 14f5c6c4-5876-4dd8-88c1-0a4382f06ae0 at jtoyestgbackup/blobServices/default/containers/jtoye-db-backups
+
+DONE: Blob estate (dry-run=0). Record the runbook §8 read-backs next: scripts/azure-staging-storage.sh --readback
+end 2026-10-19T01:07:39Z rc=0
+
+################ Task 3 <verify> 2 as written: bash scripts/azure-staging-storage.sh --readback
+=== J'Toye staging Blob estate (mode=readback, dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+STEP runbook §8: read-backs (raw, 2026-10-19T01:07:45Z)
+--- account jtoyestgmedia (A10 allowBlobPublicAccess, A12 primaryLocation)
+{
+  "allowBlobPublicAccess": true,
+  "allowSharedKeyAccess": false,
+  "httpsOnly": true,
+  "location": "uksouth",
+  "minTls": "TLS1_2",
+  "name": "jtoyestgmedia",
+  "sku": "Standard_LRS"
+}
+--- account jtoyestgbackup (A10 allowBlobPublicAccess, A12 primaryLocation)
+{
+  "allowBlobPublicAccess": false,
+  "allowSharedKeyAccess": false,
+  "httpsOnly": true,
+  "location": "ukwest",
+  "minTls": "TLS1_2",
+  "name": "jtoyestgbackup",
+  "sku": "Standard_LRS"
+}
+--- container jtoyestgmedia/jtoye-images access level
+{
+  "name": "jtoye-images",
+  "publicAccess": "Blob"
+}
+--- container jtoyestgmedia/jtoye-quarantine access level
+{
+  "name": "jtoye-quarantine",
+  "publicAccess": "None"
+}
+--- container jtoyestgbackup/jtoye-db-backups access level
+{
+  "name": "jtoye-db-backups",
+  "publicAccess": "None"
+}
+--- retention policy on jtoye-db-backups (state, immutabilityPeriodSinceCreationInDays)
+{
+  "allowProtectedAppendWrites": false,
+  "allowProtectedAppendWritesAll": null,
+  "etag": "\"8df2d7d078badf5\"",
+  "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups/immutabilityPolicies/default",
+  "immutabilityPeriodSinceCreationInDays": 30,
+  "name": "default",
+  "resourceGroup": "jtoye-rg",
+  "state": "Unlocked",
+  "systemData": null,
+  "type": "Microsoft.Storage/storageAccounts/blobServices/containers/immutabilityPolicies"
+}
+--- blob soft delete on jtoyestgbackup
+{
+  "allowPermanentDelete": false,
+  "days": 14,
+  "enabled": true
+}
+--- lifecycle policy on jtoyestgbackup
+{
+  "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/managementPolicies/default",
+  "lastModifiedTime": "2026-10-19T01:07:24.839020+00:00",
+  "name": "DefaultManagementPolicy",
+  "policy": {
+    "rules": [
+      {
+        "definition": {
+          "actions": {
+            "baseBlob": {
+              "delete": {
+                "daysAfterCreationGreaterThan": null,
+                "daysAfterLastAccessTimeGreaterThan": null,
+                "daysAfterLastTierChangeGreaterThan": null,
+                "daysAfterModificationGreaterThan": 35.0
+              },
+              "enableAutoTierToHotFromCool": null,
+              "tierToArchive": null,
+              "tierToCold": null,
+              "tierToCool": null,
+              "tierToHot": null
+            },
+            "snapshot": null,
+            "version": null
+          },
+          "filters": {
+            "blobIndexMatch": null,
+            "blobTypes": [
+              "blockBlob"
+            ],
+            "prefixMatch": [
+              "jtoye-db-backups/backups/"
+            ]
+          }
+        },
+        "enabled": true,
+        "name": "delete-db-backups-after-35d",
+        "type": "Lifecycle"
+      }
+    ]
+  },
+  "resourceGroup": "jtoye-rg",
+  "systemData": null,
+  "type": "Microsoft.Storage/storageAccounts/managementPolicies"
+}
+--- role assignments at jtoyestgmedia/jtoye-images
+Principal                             Role                           Scope
+------------------------------------  -----------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-images
+--- role assignments at jtoyestgmedia/jtoye-quarantine
+Principal                             Role                           Scope
+------------------------------------  -----------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+--- role assignments at jtoyestgbackup/jtoye-db-backups
+Principal                             Role                       Scope
+------------------------------------  -------------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ca38c385-c0c1-467d-a638-88e62db7a65f  J'Toye Backup Blob Writer  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups
+--- every role assignment held by jtoye-staging-media-id (expect container scopes only)
+Principal                             Role                           Scope
+------------------------------------  -----------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-images
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+--- every role assignment held by jtoye-staging-backup-id (expect container scopes only)
+Principal                             Role                       Scope
+------------------------------------  -------------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ca38c385-c0c1-467d-a638-88e62db7a65f  J'Toye Backup Blob Writer  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups
+--- anonymous LIST of jtoyestgmedia/jtoye-images (#626: expect NOT 200, no EnumerationResults)
+HTTP 404
+EnumerationResults count: 0
+(the anonymous GET of a real derivative, runbook §8, needs an image core-java has written: plan 29-14)
+
+readback reads_failed=0
+rc=0
+
+################ Task 3 <verify> 2, fail direction: the same command with JTOYE_AZURE_SUBSCRIPTION_ID unset
+=== STEP 1: subscription guard ===
+REFUSED [subscription]: JTOYE_AZURE_SUBSCRIPTION_ID is unset; refusing to let the CLI resolve its ambient default, which on this host is EMPLOYER infrastructure
+rc=1
+verify exit=1
+
+### Task 3 <verify> 1 as written (at 2026-10-19T01:08:48Z)
+18
+Standard_B2s
+Ready
+rc=0
+# fail direction recorded before the create: the same read returned ResourceNotFound (rc 3), above.
+
+# The Blob functional proof (#626 anonymous GET of a real WebP derivative, upload -> WebP) runs in plan 29-14 once core-java is up.

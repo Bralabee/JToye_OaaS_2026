@@ -26,6 +26,7 @@ data:
   ingress_ip_address: "51.105.43.14"
   outbound_ip_address: "40.120.43.119"
   ci_principal_object_id: "4cce597e-719e-4181-b045-8ba024f5bc67"
+  pg_host: "jtoye-stg-pg.postgres.database.azure.com"
   client_id_core_java: "3a14636b-91d7-42cf-9b23-8d40d799a9c1"
   client_id_pg_backup: "ca38c385-c0c1-467d-a638-88e62db7a65f"
   client_id_frontend: "348fa334-898c-4640-a29a-49a71623ea5b"
