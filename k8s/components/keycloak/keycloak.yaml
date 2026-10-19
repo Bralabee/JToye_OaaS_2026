@@ -161,8 +161,13 @@ spec:
         # near 300 MB: 70% of the 1Gi limit plus that is ~1017Mi, i.e. at the limit.
         # 60% leaves ~110Mi headroom. ASSUMED, to be measured on the cluster in plan
         # 29-14 (container_memory_working_set_bytes against the limit).
+        # No -XX:MaxHeapFreeRatio here: G1's MinHeapFreeRatio defaults to 40, and a
+        # MaxHeapFreeRatio below it stops the JVM before Keycloak starts ("MinHeapFreeRatio
+        # (40) must be less than or equal to MaxHeapFreeRatio (30)"; measured live in
+        # 29-14, CrashLoopBackOff on the first staging deploy, and reproduced with
+        # `java -version` in this image: rc 1 with the flag, rc 0 without).
         - name: JAVA_OPTS_KC_HEAP
-          value: "-XX:MaxHeapFreeRatio=30 -XX:MaxRAMPercentage=60 -XX:InitialRAMPercentage=40"
+          value: "-XX:MaxRAMPercentage=60 -XX:InitialRAMPercentage=40"
         ports:
         - containerPort: 8080
           name: http

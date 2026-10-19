@@ -2788,7 +2788,7 @@ spec:
         - name: KC_CACHE
           value: local
         - name: JAVA_OPTS_KC_HEAP
-          value: -XX:MaxHeapFreeRatio=30 -XX:MaxRAMPercentage=60 -XX:InitialRAMPercentage=40
+          value: -XX:MaxRAMPercentage=60 -XX:InitialRAMPercentage=40
         image: quay.io/keycloak/keycloak:26.8.1
         imagePullPolicy: IfNotPresent
         livenessProbe:
