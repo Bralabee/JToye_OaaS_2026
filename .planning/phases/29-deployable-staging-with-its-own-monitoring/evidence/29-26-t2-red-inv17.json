@@ -1,0 +1,10 @@
+{
+  "command": "INV17_SELFTEST_FORMAT=tap bash k8s/scripts/check-render-invariants.sh --selftest-inv17",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..7\nnot ok 1 - literal-false\n  ---\n  message: 'expected rc 1 and INV-17: Deployment core-java container core-java sets CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL to false; got rc=0: '\n  ...\nnot ok 2 - configmap-false\n  ---\n  message: 'expected rc 1 and INV-17: Deployment core-java container core-java sets CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL to false (app-config key customer.jwt.require-verified-email); got rc=0: '\n  ...\nnot ok 3 - relaxed-spelling\n  ---\n  message: 'expected rc 1 and INV-17: Deployment core-java container core-java sets JTOYE_SECURITY_CUSTOMERJWT_REQUIREVERIFIEDEMAIL to false; got rc=0: '\n  ...\nnot ok 4 - dev-profile\n  ---\n  message: 'expected rc 1 and INV-17: Deployment core-java container core-java activates profile dev, whose application-dev.yml defaults require-verified-email to false; got rc=0: '\n  ...\nnot ok 5 - yaml-default-false\n  ---\n  message: 'expected rc 1 and INV-17: core-java/src/main/resources/application.yml defaults require-verified-email to false; got rc=0: '\n  ...\nnot ok 6 - yaml-line-missing\n  ---\n  message: 'expected rc 2 and PARSE ERROR: INV-17:; got rc=0: '\n  ...\nok 7 - clean\n",
+  "targetTest": "literal-false",
+  "targetFile": "k8s/scripts/check-render-invariants.sh",
+  "expected": "every planted arm is NOT caught (the gate has no INV-17 yet, so a planted require-verified-email=false render exits 0); the clean copy exits 0",
+  "actual": "1..7: arms 1-6 not ok (gate rc=0 on each planted copy, rc 2 expected for yaml-line-missing), 7 clean ok",
+  "semanticAssessment": "VALID RED: the harness ran every arm against a planted copy (each plant applied, else the arm would say 'plant did not apply'); each failed because the copy's own gate exited 0, i.e. no invariant refuses a disabled require-verified-email; the clean copy passing shows the harness and staging (now incl. application*.yml) are sound."
+}

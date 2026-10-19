@@ -483,12 +483,13 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv18]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
 #   --selftest-inv15 the same for INV-15 (inv15_selftest)
 #   --selftest-inv16 the same for INV-16 (inv16_selftest)
+#   --selftest-inv17 the same for INV-17 (inv17_selftest)
 #   --selftest-inv18 the same for INV-18 (inv18_selftest)
 
 set -euo pipefail
@@ -532,13 +533,17 @@ parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
 # ===========================================================================
 # selftest_stage <pristine k8s copy> <arm root> — lay out a throwaway repo root
 # the copy's own gate can run against: the k8s/ tree plus every file OUTSIDE k8s/
-# the gate reads (today only INV-14's realm template). The copy's REPO_ROOT is
+# the gate reads (INV-14's realm template, INV-17's application*.yml). The copy's REPO_ROOT is
 # <arm root>, so anything missing here would VOID every arm instead of judging it.
 selftest_stage() {
-    rm -rf "$2"; mkdir -p "$2/infra/keycloak"
+    rm -rf "$2"; mkdir -p "$2/infra/keycloak" "$2/core-java/src/main/resources"
     cp -a "$1" "$2/k8s"
     cp "$REPO_ROOT/infra/keycloak/realm-export.template.json" "$2/infra/keycloak/" \
         || { echo "PARSE ERROR: selftest could not copy the realm template" >&2; exit 2; }
+    # INV-17 (29-26) reads core-java's application*.yml for the
+    # require-verified-email default and the per-profile overrides.
+    cp "$REPO_ROOT"/core-java/src/main/resources/application*.yml "$2/core-java/src/main/resources/" \
+        || { echo "PARSE ERROR: selftest could not copy core-java's application*.yml" >&2; exit 2; }
 }
 
 inv7_plant() {
@@ -876,6 +881,116 @@ inv16_selftest() {
 
 if [[ "${1:-}" == "--selftest-inv16" ]]; then
     inv16_selftest; exit $?
+fi
+
+# ===========================================================================
+# --selftest-inv17 (Phase 29, plan 29-26, #859 / T-29-95): INV-17 shown CATCHING
+# planted holes. Same harness shape as --selftest-inv7/-inv15/-inv16/-inv18: the
+# k8s/ tree, the realm template and core-java's application*.yml are copied
+# (selftest_stage), ONE hole is planted per arm in the copy, and the COPY's own
+# gate must exit with the arm's rc AND print the message that names the hole. The
+# unmodified copy must exit 0. Arms:
+#   literal-false      base core-java sets CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL
+#                      to the literal "false"
+#   configmap-false    the env comes from app-config key
+#                      customer.jwt.require-verified-email, which staging and the
+#                      base (production) set to "false": the RENDERED value is read
+#   relaxed-spelling   JTOYE_SECURITY_CUSTOMERJWT_REQUIREVERIFIEDEMAIL "false",
+#                      the same property under Spring's relaxed env binding
+#   dev-profile        SPRING_PROFILES_ACTIVE "prod,dev": application-dev.yml
+#                      defaults the property to false and no env overrides it
+#   yaml-default-false application.yml's default flips to false
+#   yaml-line-missing  application.yml no longer names the property (PARSE ERROR,
+#                      rc 2: a reader that finds nothing never passes)
+# A plant that does not change its file is reported caught=no.
+# INV17_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv17_plant() {
+    local arm="$1" root="$2" f before f2
+    case "$arm" in
+        literal-false|configmap-false|relaxed-spelling|dev-profile) f="$root/k8s/base/core-java-deployment.yaml" ;;
+        yaml-default-false|yaml-line-missing) f="$root/core-java/src/main/resources/application.yml" ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        literal-false)
+            awk '{ print } !done && /^          value: "prod"$/ { print "        - name: CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL"; print "          value: \"false\""; done = 1 }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relaxed-spelling)
+            awk '{ print } !done && /^          value: "prod"$/ { print "        - name: JTOYE_SECURITY_CUSTOMERJWT_REQUIREVERIFIEDEMAIL"; print "          value: \"false\""; done = 1 }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        configmap-false)
+            awk '{ print } !done && /^          value: "prod"$/ { print "        - name: CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL"; print "          valueFrom:"; print "            configMapKeyRef:"; print "              name: app-config"; print "              key: customer.jwt.require-verified-email"; done = 1 }' "$f" > "$f.new" && mv "$f.new" "$f"
+            for f2 in "$root/k8s/base/configmap.yaml" "$root/k8s/staging/configmap-patch.yaml"; do
+                awk '{ print } !done && /^data:$/ { print "  customer.jwt.require-verified-email: \"false\""; done = 1 }' "$f2" > "$f2.new" && mv "$f2.new" "$f2"
+            done ;;
+        dev-profile)
+            awk '!done && /^          value: "prod"$/ { print "          value: \"prod,dev\""; done = 1; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        yaml-default-false)
+            awk '{ sub(/\$\{CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL:true\}/, "${CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL:false}"); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        yaml-line-missing)
+            awk '!/^[[:space:]]*require-verified-email:/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv17_selftest() {
+    local fmt="${INV17_SELFTEST_FORMAT:-plain}" st arm want wrc out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv17 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(literal-false configmap-false relaxed-spelling dev-profile yaml-default-false yaml-line-missing)
+    declare -A WANT=(
+        [literal-false]="INV-17: Deployment core-java container 'core-java' sets CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL to 'false'"
+        [configmap-false]="INV-17: Deployment core-java container 'core-java' sets CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL to 'false' (app-config key customer.jwt.require-verified-email)"
+        [relaxed-spelling]="INV-17: Deployment core-java container 'core-java' sets JTOYE_SECURITY_CUSTOMERJWT_REQUIREVERIFIEDEMAIL to 'false'"
+        [dev-profile]="INV-17: Deployment core-java container 'core-java' activates profile 'dev', whose application-dev.yml defaults require-verified-email to 'false'"
+        [yaml-default-false]="INV-17: core-java/src/main/resources/application.yml defaults require-verified-email to 'false'"
+        [yaml-line-missing]="PARSE ERROR: INV-17:"
+    )
+    declare -A WANT_RC=([yaml-line-missing]=2)
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv17_plant "$arm" "$st/arm"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"; wrc="${WANT_RC[$arm]:-1}"
+            if (( rc == wrc )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=$rc"
+            else
+                caught=no
+                line="expected rc $wrc and '$want'; got rc=$rc: $(awk '/INV-17|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv17" ]]; then
+    inv17_selftest; exit $?
 fi
 
 # ===========================================================================
