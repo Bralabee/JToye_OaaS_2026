@@ -30,6 +30,9 @@ WHAT `check` ASSERTS (each rule is a defect class, not a style point)
       of the ServiceAccount the pod runs as (one identity per workload, T-29-43); clientID and
       tenantId are GUIDs (an unreplaced REPLACED-BY-OVERLAY placeholder fails here, closed);
       keyvaultName matches ^[a-z0-9-]{3,24}$; every objectName matches ^[0-9A-Za-z-]{1,127}$.
+      And no two ServiceAccounts that mount an SPC share one client-id: a pair of workloads wired
+      to ONE identity is consistent with itself (each SPC still equals its own pod's SA), so only a
+      cross-workload comparison sees it (found by a real-tree break arm, plan 29-12).
   (e) each objectName maps back to exactly ONE canonical (Secret, key): the pair whose
       `<secret>--<key>` spelling (`_` and `.` mapped to `-`, 29-RESEARCH A6) it is. Two different
       pairs collapsing onto one object name would make two values share one vault entry.
@@ -267,6 +270,17 @@ def check(docs, verbose=False):
             elif sas[sa] != s["clientID"]:
                 errors.append(f"{wl} mounts {spc}, whose clientID {s['clientID']!r} differs from ServiceAccount "
                               f"{sa}'s {CLIENT_ID_ANNOTATION} {sas[sa]!r}: the fetch would run as another identity")
+    # (d') one identity per workload: the client-ids of the ServiceAccounts that mount an SPC
+    # are pairwise distinct.
+    by_client = {}
+    for wl, t in sorted(templates.items()):
+        if t["mounts"] and t["sa"] in sas and sas[t["sa"]]:
+            by_client.setdefault(sas[t["sa"]], set()).add(t["sa"])
+    for cid, names in sorted(by_client.items()):
+        if len(names) > 1:
+            errors.append(f"ServiceAccounts {', '.join(sorted(names))} share {CLIENT_ID_ANNOTATION} {cid!r}: "
+                          f"each secret-reading workload must have its own identity, so it can be granted only "
+                          f"its own Key Vault objects")
     for wl, t in sorted(templates.items()):
         for spc in sorted(t["mounts"]):
             if spc not in spcs:

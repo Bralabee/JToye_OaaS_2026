@@ -715,9 +715,10 @@ jobs:
       # has exactly one producing SecretProviderClass that the consuming pod mounts,
       # each SPC's clientID is its pod's ServiceAccount client-id, and every
       # identifier is GUID-shaped (an unreplaced placeholder fails). The selftest
-      # runs first: five planted breaks into a copy of the real staging render
+      # runs first: six planted breaks into a copy of the real staging render
       # (an undeclared key, two producers, a clientID mismatch, a consumer that
-      # does not mount its producer, an objectName not mounted) must each exit 1,
+      # does not mount its producer, two workloads sharing one identity, an
+      # objectName not mounted) must each exit 1,
       # three VOID arms (no SPC, no PyYAML, no kubectl) must exit 2, and the real
       # render must exit 0. python3 here is the runner's, with PyYAML (the same
       # interpreter ops-contracts' horizons gate uses).
