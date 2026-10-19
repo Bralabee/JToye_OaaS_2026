@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react"
 
 /**
- * The page must READ its prices from lib/pricing.ts (PR #966), not carry its
+ * The page must READ its prices from lib/pricing.ts (PR PR 966), not carry its
  * own copy. Proof by substitution: the module is mocked with figures no billing
  * code has, and every place the page prints a price must show the substitute.
  * A page with a local const would still print £39 / 0.5% / £99 and fail here.
