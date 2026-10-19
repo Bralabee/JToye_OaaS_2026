@@ -4,28 +4,32 @@ import { useRef } from "react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useOperatorEntranceScene } from "@/components/marketing/operator-entrance-scene"
 import { SafeImage } from "@/components/ui/safe-image"
+import { formatRate, PRICING } from "@/lib/pricing"
 
 /**
- * Every figure the page prints about price lives HERE, so a later owner ruling
- * is a one-line change and the hero docket and the pricing table can never
- * disagree: the docket reads the `primary` row. Source of truth is the billing
- * code, not the guides:
- * The three RECURRING tiers (Standard, Flat, Batch pay-as-you-go) mirror
- * BillingPlanMode as StripeBillingService bills them (javadoc + V88 migration
- * header). WALK_SETUP_STEPDOWN is internal and deliberately not printed. The
- * assisted setup line is a ONE-OFF fee from ADR-0007 axis 4, invoiced outside
- * StripeBillingService; it is not a billing tier. Do not add a recurring tier
- * the code does not bill.
+ * Every price figure comes from the shared module (lib/pricing.ts), the same
+ * one /business-model-guide and /competitive read, so a ruling is a change in
+ * that file and no page can drift from another. What stays here is display
+ * only: the tier labels and notes, and which row is the primary one (the hero
+ * docket reads it, so the docket and the table cannot disagree).
  */
-const PRICING = {
-  plans: [
-    { name: "Standard", note: "Most operators start here.", monthly: ["£39", "per location"], fee: ["0.5%", "of direct sales"], primary: true },
-    { name: "Flat", note: "One bill, whatever you sell.", monthly: ["£79–£149", "per location"], fee: ["0%", "of sales"], primary: false },
-    { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", monthly: ["£0", ""], fee: ["6%", "of direct sales"], primary: false },
-  ],
-  setup: "Assisted setup from £99, scoped to the work agreed.",
-  footnote: "Stripe card fees are charged on your own Stripe account, because you are the merchant of record.",
-} as const
+const PLANS = [
+  { name: "Standard", note: "Most operators start here.", monthly: [`£${PRICING.coreMonthly}`, "per location"], fee: [PRICING.usageLabel, "of direct sales"], primary: true },
+  { name: "Flat", note: "One bill, whatever you sell.", monthly: [`£${PRICING.flatLow}–£${PRICING.flatHigh}`, "per location"], fee: [formatRate(0), "of sales"], primary: false },
+  { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", monthly: ["£0", ""], fee: [PRICING.paygLabel, "of direct sales"], primary: false },
+] as const
+
+const SETUP_LINE = `Assisted setup from £${PRICING.setupFrom}, scoped to the work agreed.`
+const CARD_FEE_LINE = "Stripe card fees are charged on your own Stripe account, because you are the merchant of record."
+
+/**
+ * The margin sentence's illustration: the positioning guide's 28% aggregator
+ * commission on £10k a month of orders. These two are the guide's figures, not
+ * billed prices; the £2,800 is computed from them, never typed.
+ */
+const AGGREGATOR_RATE = 0.28
+const MONTHLY_ORDERS = 10_000
+const aggregatorBill = String(Math.round(AGGREGATOR_RATE * MONTHLY_ORDERS)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
 
 /** What is not live, and the date that statement was true. */
 const NOT_YET_LIVE_AS_OF = "19 October 2026"
@@ -115,7 +119,7 @@ export function OperatorPitch() {
   const rootRef = useRef<HTMLDivElement>(null)
   useOperatorEntranceScene(rootRef)
 
-  const standard = PRICING.plans.find((plan) => plan.primary) ?? PRICING.plans[0]
+  const standard = PLANS.find((plan) => plan.primary) ?? PLANS[0]
 
   return (
     <div ref={rootRef} className="min-h-screen bg-cream text-slate-900 selection:bg-amber-300 selection:text-oxblood">
@@ -157,7 +161,7 @@ export function OperatorPitch() {
       <section id="both-rhythms" aria-labelledby="rhythms-heading">
         <div data-width-tier="marketing" className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 pb-12 pt-[72px] sm:px-8 lg:pb-16 lg:pt-[88px]`}>
           <h2 id="rhythms-heading" className={H2_CLASS}>Both rhythms, one kitchen</h2>
-          <p className="mt-3 max-w-[40rem] text-slate-600">One menu, one ledger, one kitchen display. An established operator paying 28% aggregator commission on £10k a month of orders hands over £2,800 a month; the same orders through a direct storefront cost £39 + 0.5%, plus Stripe&apos;s card fees, which you would pay either way.</p>
+          <p className="mt-3 max-w-[40rem] text-slate-600">One menu, one ledger, one kitchen display. An established operator paying {Math.round(AGGREGATOR_RATE * 100)}% aggregator commission on £{MONTHLY_ORDERS / 1000}k a month of orders hands over £{aggregatorBill} a month; the same orders through a direct storefront cost £{PRICING.coreMonthly} + {PRICING.usageLabel}, plus Stripe&apos;s card fees, which you would pay either way.</p>
           <div className="mt-10 grid gap-10 md:grid-cols-2 md:gap-0">
             <div className="md:border-r md:border-cream-100 md:pr-10">
               <SafeImage src={IMAGES.counter.src} alt={IMAGES.counter.alt} width={IMAGES.counter.width} height={IMAGES.counter.height} className="h-auto w-full rounded-xl border border-cream-100" />
@@ -210,7 +214,7 @@ export function OperatorPitch() {
               </tr>
             </thead>
             <tbody className="max-md:block">
-              {PRICING.plans.map((plan) => (
+              {PLANS.map((plan) => (
                 <tr key={plan.name} className="max-md:block max-md:border-b max-md:border-oxblood/15 max-md:py-4">
                   <th scope="row" className={`text-left align-top text-base font-bold text-oxblood max-md:block max-md:py-0.5 md:border-b md:border-oxblood/15 md:py-4 md:pr-4 ${plan.primary ? "border-l-[3px] border-amber-500 pl-3.5 md:pl-3.5" : ""}`}>
                     {plan.name}
@@ -222,7 +226,7 @@ export function OperatorPitch() {
               ))}
             </tbody>
           </table>
-          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{PRICING.setup} {PRICING.footnote}</p>
+          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE}</p>
         </div>
       </section>
 

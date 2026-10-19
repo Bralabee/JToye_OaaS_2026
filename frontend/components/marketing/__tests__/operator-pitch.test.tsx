@@ -142,7 +142,7 @@ describe("OperatorPitch", () => {
     expect(imgs[0].closest("[data-op-media]")).not.toBeNull()
   })
 
-  it("pins the margin number to the Standard plan in the PRICING const, once", () => {
+  it("pins the margin number to the Standard plan in the shared PRICING module, once", () => {
     const { container } = render(<OperatorPitch />)
     const figure = container.querySelector("[data-op-figure]") as HTMLElement
     expect(figure).not.toBeNull()
