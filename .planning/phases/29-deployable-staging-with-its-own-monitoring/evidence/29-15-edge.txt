@@ -33,3 +33,131 @@ ok 6 - probe-cleanup
 # FAIL: 5 of 6
 (classifier: gsd_run check tdd-red-evidence evidence/29-15-t1-red-stub-arms.json -> RED_EVIDENCE_OK target_test_failed)
 
+=== TASK 1 GREEN: first normal run with burst on app-staging /robots.txt (2026-10-19T11:00:54Z) -> rc=1, kept as measured ===
+FAIL  [burst]
+        sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 200;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 22s (curl rc=0) -> 0 x 429 (edge 0, app 0), 0 x 503, 1500 x 2xx, 0 other; 429 content-types: 
+        NO EDGE 429: the burst was never limited at the edge
+FAIL: 1 of 5 check(s) failed
+(the 500m-CPU frontend held concurrency 40 to ~68 rps; the 500-token bucket never emptied. Burst retargeted to api-staging /api/v1/edge-burst-probe: Spring Security 401 before the app limiter; next run 416 edge 429s, rc=0)
+
+=== TASK 1 GREEN fail direction: bash scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms ===
+check-staging-edge  (2026-10-19T11:02:21Z)  mode=fail-arms  context=jtoye-stg-aks
+PASS  [fail-arm-headers]
+        FAILED on the probe route, as it must: https://app-staging.olajay.co.uk/fidelity-probe (HTTP 200): MISSING Strict-Transport-Security X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy X-Robots-Tag
+        https://api-staging.olajay.co.uk/fidelity-probe (HTTP 200): MISSING Strict-Transport-Security X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy X-Robots-Tag
+PASS  [fail-arm-csp]
+        FAILED on the probe route, as it must: https://app-staging.olajay.co.uk/fidelity-probe (HTTP 200): no Content-Security-Policy header
+PASS  [fail-arm-cors]
+        FAILED on the probe route, as it must: Origin https://app-staging.olajay.co.uk: HTTP 200, ACAO '<none>', ACAC '<none>' (NOT allowed with credentials)
+        Origin https://evil.example: HTTP 200, ACAO '<none>' (refused: not echoed)
+PASS  [fail-arm-admin]
+        FAILED on the probe route, as it must: https://auth-staging.olajay.co.uk/admin/: HTTP 200 (ROUTED: body starts 'NOW: 2026-10-19 11:02:27.005800506 +0000')
+        https://auth-staging.olajay.co.uk/admin/master/console/: HTTP 200 (ROUTED: body starts 'NOW: 2026-10-19 11:02:27.103917475 +0000')
+        https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration: HTTP 200, issuer https://auth-staging.olajay.co.uk/realms/jtoye-staging
+PASS  [fail-arm-burst]
+        FAILED on the probe route, as it must: sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 200;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 3s (curl rc=0) -> 0 x 429 (edge 0, app 0), 0 x 503, 1500 x 2xx, 0 other; 429 content-types: 
+        NO EDGE 429: the burst was never limited at the edge
+PASS  [probe-cleanup]
+        deleted by name and verified NotFound: ingress/fidelity-probe service/fidelity-probe networkpolicy/fidelity-probe-allow pod/fidelity-probe
+PASS: 6 of 6 check(s) hold on the live edge (mode=fail-arms)
+rc=0
+
+=== TASK 1 GREEN pass direction: bash scripts/check-staging-edge.sh --context jtoye-stg-aks ===
+check-staging-edge  (2026-10-19T11:02:50Z)  mode=normal  context=jtoye-stg-aks
+PASS  [headers]
+        https://app-staging.olajay.co.uk/ (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+        https://api-staging.olajay.co.uk/api/v1/public/shops (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+PASS  [csp]
+        Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-ZThlMzVmYzgtYWUwZC00NGY0LTk2MmMtZTAzMjM5OWNiOGZk' 'strict-dynamic' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:10000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api-staging.olajay.co.uk wss://api-staging.olajay.co.uk https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; base-uri 'self'; object-src 'none'
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+PASS  [cors]
+        Origin https://app-staging.olajay.co.uk: HTTP 200, ACAO 'https://app-staging.olajay.co.uk', ACAC 'true' (allowed with credentials)
+        Origin https://evil.example: HTTP 200, ACAO '<none>' (refused: not echoed)
+PASS  [admin]
+        https://auth-staging.olajay.co.uk/admin/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/admin/master/console/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration: HTTP 200, issuer https://auth-staging.olajay.co.uk/realms/jtoye-staging
+PASS  [burst]
+        sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 401;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 3s (curl rc=0) -> 759 x 429 (edge 759, app 0), 0 x 503, 0 x 2xx, 741 other; 429 content-types:  759 ;
+        layer that answered: edge (Traefik) 759, app (core-java) 0
+PASS: 5 of 5 check(s) hold on the live edge (mode=normal)
+rc=0
+
+=== TASK 1 raw curl -sI 2026-10-19T11:03:24Z ===
+$ curl -sI https://app-staging.olajay.co.uk/
+HTTP/2 200 
+access-control-allow-credentials: true
+cache-control: private, no-cache, no-store, max-age=0, must-revalidate
+content-security-policy: default-src 'self'; script-src 'self' 'nonce-MmJlZGY2YzktNTQ0ZC00OTRlLWFkYWQtMmRiZTU2OWE1NGU0' 'strict-dynamic' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:10000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api-staging.olajay.co.uk wss://api-staging.olajay.co.uk https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; base-uri 'self'; object-src 'none'
+content-type: text/html; charset=utf-8
+date: Mon, 19 Oct 2026 11:03:24 GMT
+link: </_next/static/media/7ddd198311ba7843-s.p.3kq6k02b2ysv1.woff2>; rel=preload; as="font"; crossorigin=""; nonce="MmJlZGY2YzktNTQ0ZC00OTRlLWFkYWQtMmRiZTU2OWE1NGU0"; type="font/woff2"
+permissions-policy: geolocation=(), microphone=(), camera=()
+referrer-policy: strict-origin-when-cross-origin
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch, Accept-Encoding
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-powered-by: Next.js
+x-robots-tag: noindex, nofollow
+x-xss-protection: 1; mode=block
+
+(set-cookie lines omitted: per-request CSRF values)
+$ curl -sI https://api-staging.olajay.co.uk/api/v1/public/shops
+HTTP/2 200 
+access-control-allow-credentials: true
+cache-control: no-cache, no-store, max-age=0, must-revalidate
+content-type: application/json
+date: Mon, 19 Oct 2026 11:03:24 GMT
+expires: 0
+permissions-policy: geolocation=(), microphone=(), camera=()
+pragma: no-cache
+referrer-policy: strict-origin-when-cross-origin
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+vary: origin,access-control-request-method,access-control-request-headers,accept-encoding
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-ratelimit-limit: 40
+x-ratelimit-remaining: 39
+x-ratelimit-reset: 1792407864
+x-robots-tag: noindex, nofollow
+x-xss-protection: 1; mode=block
+content-length: 1381
+
+
+=== TASK 1 CSP source-matcher table (src_matches SOURCE https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth; 0 = admits) ===
+1 https://auth-staging.olajay.co.uk/realms/jtoye-staging
+0 https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+0 https://auth-staging.olajay.co.uk
+1 https:/
+0 auth-staging.olajay.co.uk
+0 https:
+1 http:
+1 'self'
+0 https://*.olajay.co.uk
+1 https://auth-staging.olajay.co.uk:8443
+1 https://auth-staging.olajay.co.uk/realms/jtoye-customers/
+1 https://evil.olajay.co.uk
+Reading (#293): the served CSP lists each realm TWICE, bare and with a trailing slash. A CSP source with a path matches that path EXACTLY unless it ends in '/', so the bare https://auth-staging.olajay.co.uk/realms/jtoye-staging (row 1, rc 1) admits nothing the browser calls; the slash form (row 2, rc 0) admits the subtree /protocol/openid-connect/{auth,token}. The gate reports which source admitted each endpoint: always the slash form.
+
+=== TASK 1 check-gate-enforcement clean -> arm (registration line deleted) -> clean, 2026-10-19T11:03:24Z ===
+clean1 rc=0: PASS: every gate either runs in CI or has a declared reason it cannot.
+arm rc=1:
+check-gate-enforcement  (2026-10-19T11:03:09Z)
+  gates     : 51
+  workflows : 8
+  exempt    : 5 declared
+FAIL: 1 gate(s) are referenced by no workflow and carry no exemption:
+        check-staging-edge.sh (invokes: curl kubectl)
+      A gate that cannot fire on a pull request does not prevent anything.
+      Either add it to a workflow, or declare it in /home/sanmi/IdeaProjects/JToye_OaaS_2026/scripts/gates/gate-enforcement.conf with the reason
+      it cannot run on a hosted runner.
+restored by content: git hash-object cee2252cffeba30a38f55367903b94d626350ae1 == HEAD blob
+clean2 rc=0: PASS: every gate either runs in CI or has a declared reason it cannot.
+

@@ -32,8 +32,15 @@
 #            concurrency 40 on one HTTP/2 connection get at least one 429 from the EDGE (a
 #            non-problem+json body) and no 503. Every 429 is classified: edge (Traefik) or
 #            app (core-java's own limiter, application/problem+json). The burst targets
-#            app-staging /robots.txt, a static frontend answer behind jtoye-ingress, so
-#            core-java's limiter is not in the path and cannot be mistaken for the edge.
+#            api-staging /api/v1/edge-burst-probe, a path no controller serves: without a
+#            token Spring Security answers 401 in its filter chain, before core-java's
+#            RateLimitInterceptor, so the app limiter is not in the path and a 429 can only
+#            be the edge's. It must also be FAST: the bucket starts full at
+#            limit-rps x limit-burst-multiplier (500) and refills at 100/s, so 1500 requests
+#            draw a 429 only above ~150 rps. app-staging /robots.txt was measured first
+#            (2026-10-19): the 500m-CPU frontend held concurrency 40 to ~68 rps (1500 in
+#            22 s), the bucket never emptied and the arm read 0 x 429 — a statement about
+#            the backend, not the edge.
 #            Concurrency is 40, not 50, so the run stays under limit-connections (50
 #            in-flight per client): a 429 here is the limit-rps bucket, not the in-flight cap.
 #   admin    https://auth-staging/admin/ and /admin/master/console/ are 404 from the edge
@@ -49,8 +56,8 @@
 #   annotation at all (no snippet, no CORS, no limits). It reuses the three existing TLS
 #   Secrets and carries no cert-manager annotation, so no Certificate is requested. Routes:
 #
-#       app-staging  /fidelity-probe  -> headers, csp, burst arms
-#       api-staging  /fidelity-probe  -> headers, cors arms
+#       app-staging  /fidelity-probe  -> headers, csp arms
+#       api-staging  /fidelity-probe  -> headers, cors, burst arms
 #       auth-staging /admin           -> admin arm (an /admin route that answers 200)
 #
 #   Every arm is run against those routes and MUST report FAIL. An arm that PASSES there is
@@ -224,29 +231,223 @@ header_value() {
 # ---- the arms. Each sets ARM_DETAIL and returns 0 PASS, 1 FAIL, 2 VOID ------------------
 ARM_DETAIL=""
 
+REQUIRED_HEADERS=(Strict-Transport-Security X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy X-Robots-Tag)
+
+# arm_headers URL... — every URL carries all six headers, X-Robots-Tag with noindex
 arm_headers() {
-  ARM_DETAIL="STUB: not implemented"
-  return 0
+  local url h v verdict=0 missing
+  ARM_DETAIL=""
+  for url in "$@"; do
+    if ! fetch_headers "$url"; then
+      ARM_DETAIL+="curl rc=${FETCH_RC} on ${url}: the request did not complete"
+      return 2
+    fi
+    missing=()
+    for h in "${REQUIRED_HEADERS[@]}"; do
+      v=$(header_value "$h" "$HDRS") || v=""
+      [ -n "$v" ] || missing+=("$h")
+    done
+    v=$(header_value X-Robots-Tag "$HDRS") || v=""
+    if [ -n "$v" ] && [[ "${v,,}" != *noindex* ]]; then missing+=("X-Robots-Tag(noindex; got '${v}')"); fi
+    if ((${#missing[@]})); then
+      verdict=1
+      ARM_DETAIL+="${url} (HTTP ${CODE}): MISSING ${missing[*]}"$'\n'
+    else
+      ARM_DETAIL+="${url} (HTTP ${CODE}): all six present; X-Robots-Tag: ${v}"$'\n'
+    fi
+  done
+  return "$verdict"
 }
 
+# csp_directive NAME CSP -> the directive's source list (space separated); 1 if absent
+csp_directive() {
+  local name="$1" d
+  local -a parts
+  IFS=';' read -ra parts <<< "$2"
+  for d in "${parts[@]}"; do
+    d="${d#"${d%%[![:space:]]*}"}"
+    if [ "$d" = "$name" ] || [[ "$d" == "$name "* ]]; then
+      printf '%s' "${d#"$name"}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# src_matches SOURCE URL -> 0 when the CSP source expression admits URL. CSP3 source
+# matching for the shapes a host or scheme source can take: a scheme-source ("https:")
+# matches its scheme; a host-source matches scheme (or none), host (exact, or "*." suffix)
+# and port (none or 443 for https); its PATH matches EXACTLY unless it ends in "/", where it
+# matches the subtree, and a source with no path matches every path. Keywords ('self',
+# 'nonce-…') never match: 'self' is app-staging, never auth-staging.
+src_matches() {
+  local src="$1" url="$2"
+  local u_scheme="${url%%://*}" u_rest="${url#*://}"
+  local u_host="${u_rest%%/*}" u_path="/"
+  [[ "$u_rest" == */* ]] && u_path="/${u_rest#*/}"
+  case "$src" in
+    "'"*) return 1 ;;
+    *://*) ;;
+    *:) [ "${src%:}" = "$u_scheme" ]; return ;;
+  esac
+  local s_scheme="" s_rest="$src"
+  if [[ "$src" == *://* ]]; then s_scheme="${src%%://*}"; s_rest="${src#*://}"; fi
+  local s_host="${s_rest%%/*}" s_path=""
+  [[ "$s_rest" == */* ]] && s_path="/${s_rest#*/}"
+  if [ -n "$s_scheme" ] && [ "${s_scheme,,}" != "${u_scheme,,}" ]; then return 1; fi
+  case "$s_host" in
+    *:443) [ "${u_scheme,,}" = "https" ] || return 1; s_host="${s_host%:443}" ;;
+    *:\*) s_host="${s_host%:\*}" ;;
+    *:*) return 1 ;;
+  esac
+  if [[ "$s_host" == "*."* ]]; then
+    [[ "${u_host,,}" == *".${s_host#\*.}" ]] || return 1
+  else
+    [ "${s_host,,}" = "${u_host,,}" ] || return 1
+  fi
+  [ -z "$s_path" ] && return 0
+  if [[ "$s_path" == */ ]]; then [[ "$u_path" == "$s_path"* ]]; return; fi
+  [ "$u_path" = "$s_path" ]
+}
+
+CSP_TARGETS=(
+  "https://${AUTH_HOST}/realms/${REALM}/protocol/openid-connect/auth"
+  "https://${AUTH_HOST}/realms/${REALM}/protocol/openid-connect/token"
+)
+
+# arm_csp URL — connect-src AND form-action each admit both realm endpoints
 arm_csp() {
-  ARM_DETAIL="STUB: not implemented"
-  return 0
+  local url="$1" csp dir toks t target matched verdict=0
+  ARM_DETAIL=""
+  if ! fetch_headers "$url"; then
+    ARM_DETAIL="curl rc=${FETCH_RC} on ${url}: the request did not complete"
+    return 2
+  fi
+  if ! csp=$(header_value Content-Security-Policy "$HDRS") || [ -z "$csp" ]; then
+    ARM_DETAIL="${url} (HTTP ${CODE}): no Content-Security-Policy header"
+    return 1
+  fi
+  ARM_DETAIL+="Content-Security-Policy: ${csp}"$'\n'
+  for dir in connect-src form-action; do
+    if ! toks=$(csp_directive "$dir" "$csp"); then
+      ARM_DETAIL+="${dir}: ABSENT"$'\n'
+      verdict=1
+      continue
+    fi
+    for target in "${CSP_TARGETS[@]}"; do
+      matched=""
+      for t in $toks; do
+        if src_matches "$t" "$target"; then matched+="${t} "; fi
+      done
+      if [ -z "$matched" ]; then
+        ARM_DETAIL+="${dir}: NO source admits ${target}"$'\n'
+        verdict=1
+      else
+        ARM_DETAIL+="${dir}: ${target} admitted by ${matched% }"$'\n'
+      fi
+    done
+  done
+  return "$verdict"
 }
 
+# arm_cors URL — the app origin's preflight is allowed with credentials; a foreign one is not echoed
 arm_cors() {
-  ARM_DETAIL="STUB: not implemented"
-  return 0
+  local url="$1" acao acac verdict=0
+  local -a pre=(-X OPTIONS -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization,content-type")
+  ARM_DETAIL=""
+  if ! fetch_headers "$url" "${pre[@]}" -H "Origin: ${ALLOWED_ORIGIN}"; then
+    ARM_DETAIL="curl rc=${FETCH_RC} on the allowed-origin preflight to ${url}"
+    return 2
+  fi
+  acao=$(header_value Access-Control-Allow-Origin "$HDRS") || acao=""
+  acac=$(header_value Access-Control-Allow-Credentials "$HDRS") || acac=""
+  if [ "$acao" = "$ALLOWED_ORIGIN" ] && [ "${acac,,}" = "true" ]; then
+    ARM_DETAIL+="Origin ${ALLOWED_ORIGIN}: HTTP ${CODE}, ACAO '${acao}', ACAC '${acac}' (allowed with credentials)"$'\n'
+  else
+    ARM_DETAIL+="Origin ${ALLOWED_ORIGIN}: HTTP ${CODE}, ACAO '${acao:-<none>}', ACAC '${acac:-<none>}' (NOT allowed with credentials)"$'\n'
+    verdict=1
+  fi
+  if ! fetch_headers "$url" "${pre[@]}" -H "Origin: ${FOREIGN_ORIGIN}"; then
+    ARM_DETAIL+="curl rc=${FETCH_RC} on the foreign-origin preflight to ${url}"
+    return 2
+  fi
+  acao=$(header_value Access-Control-Allow-Origin "$HDRS") || acao=""
+  if [ -z "$acao" ] || { [ "$acao" != "$FOREIGN_ORIGIN" ] && [ "$acao" != "*" ]; }; then
+    ARM_DETAIL+="Origin ${FOREIGN_ORIGIN}: HTTP ${CODE}, ACAO '${acao:-<none>}' (refused: not echoed)"$'\n'
+  else
+    ARM_DETAIL+="Origin ${FOREIGN_ORIGIN}: HTTP ${CODE}, ACAO '${acao}' (ALLOWED: a foreign origin is echoed)"$'\n'
+    verdict=1
+  fi
+  return "$verdict"
 }
 
+# arm_burst URL — sub-limit control first (zero 429), then the burst (an edge 429, no 503)
 arm_burst() {
-  ARM_DETAIL="STUB: not implemented"
+  local url="$1" tmp i out rc lines sub429 n429 edge app n503 n2xx other t0 t1
+  ARM_DETAIL=""
+  tmp=$(mktemp -d) || { ARM_DETAIL="mktemp failed"; return 2; }
+  for ((i = 0; i < SUB_N; i++)); do printf 'url = "%s"\noutput = "/dev/null"\n' "$url"; done > "$tmp/sub.cfg"
+  for ((i = 0; i < BURST_N; i++)); do printf 'url = "%s"\noutput = "/dev/null"\n' "$url"; done > "$tmp/burst.cfg"
+
+  t0=$SECONDS
+  out=$(curl -s --http2 --rate "$SUB_RATE" --max-time "$CURL_TIMEOUT" -w '%{http_code} %{content_type}\n' -K "$tmp/sub.cfg" 2>/dev/null); rc=$?
+  t1=$SECONDS
+  lines=$(command grep -c '' <<< "$out")
+  if [ "$rc" -ne 0 ] || [ "$lines" -ne "$SUB_N" ]; then
+    ARM_DETAIL="sub-limit run incomplete: curl rc=${rc}, ${lines}/${SUB_N} responses"
+    rm -rf "$tmp"; return 2
+  fi
+  sub429=$(command grep -c '^429 ' <<< "$out")
+  ARM_DETAIL+="sub-limit: ${SUB_N} requests at ${SUB_RATE} in $((t1 - t0))s -> ${sub429} x 429; codes: $(cut -d' ' -f1 <<< "$out" | sort | uniq -c | tr -s ' ' | tr '\n' ';')"$'\n'
+
+  t0=$SECONDS
+  out=$(curl -s --http2 --parallel --parallel-max "$BURST_PAR" --max-time 120 -w '%{http_code} %{content_type}\n' -K "$tmp/burst.cfg" 2>/dev/null); rc=$?
+  t1=$SECONDS
+  rm -rf "$tmp"
+  lines=$(command grep -c '' <<< "$out")
+  if [ "$lines" -ne "$BURST_N" ]; then
+    ARM_DETAIL+="burst run incomplete: curl rc=${rc}, ${lines}/${BURST_N} responses"
+    return 2
+  fi
+  n429=$(command grep -c '^429 ' <<< "$out")
+  app=$(command grep -c '^429 application/problem+json' <<< "$out")
+  edge=$((n429 - app))
+  n503=$(command grep -c '^503 ' <<< "$out")
+  n2xx=$(command grep -c '^2[0-9][0-9] ' <<< "$out")
+  other=$((BURST_N - n429 - n503 - n2xx))
+  ARM_DETAIL+="burst: ${BURST_N} requests, concurrency ${BURST_PAR}, one HTTP/2 connection, $((t1 - t0))s (curl rc=${rc}) -> ${n429} x 429 (edge ${edge}, app ${app}), ${n503} x 503, ${n2xx} x 2xx, ${other} other; 429 content-types: $(command grep '^429 ' <<< "$out" | cut -d' ' -f2- | sort | uniq -c | tr -s ' ' | tr '\n' ';')"$'\n'
+
+  if [ "$sub429" -ne 0 ]; then ARM_DETAIL+="FALSE POSITIVE: the sub-limit rate drew ${sub429} x 429"$'\n'; return 1; fi
+  if [ "$edge" -lt 1 ]; then ARM_DETAIL+="NO EDGE 429: the burst was never limited at the edge"$'\n'; return 1; fi
+  if [ "$n503" -ne 0 ]; then ARM_DETAIL+="503 under burst: an NGINX-style refusal or an overloaded backend, not the edge's 429"$'\n'; return 1; fi
+  ARM_DETAIL+="layer that answered: edge (Traefik) ${edge}, app (core-java) ${app}"$'\n'
   return 0
 }
 
+# arm_admin ADMIN_URL — the admin paths are 404 at the edge; the realm's discovery is 200
 arm_admin() {
-  ARM_DETAIL="STUB: not implemented"
-  return 0
+  local admin_url="$1" verdict=0 u issuer
+  local want="https://${AUTH_HOST}/realms/${REALM}"
+  ARM_DETAIL=""
+  for u in "$admin_url" "https://${AUTH_HOST}/admin/master/console/"; do
+    if ! fetch_body "$u"; then ARM_DETAIL+="curl rc=${FETCH_RC} on ${u}"; return 2; fi
+    if [ "$CODE" = "404" ]; then
+      ARM_DETAIL+="${u}: HTTP 404 (not routed)"$'\n'
+    else
+      ARM_DETAIL+="${u}: HTTP ${CODE} (ROUTED: body starts '$(head -c 40 <<< "$BODY" | tr -d '\n')')"$'\n'
+      verdict=1
+    fi
+  done
+  u="https://${AUTH_HOST}/realms/${REALM}/.well-known/openid-configuration"
+  if ! fetch_body "$u"; then ARM_DETAIL+="curl rc=${FETCH_RC} on ${u}"; return 2; fi
+  issuer=$(jq -r '.issuer // empty' <<< "$BODY" 2>/dev/null) || issuer=""
+  if [ "$CODE" = "200" ] && [ "$issuer" = "$want" ]; then
+    ARM_DETAIL+="${u}: HTTP 200, issuer ${issuer}"$'\n'
+  else
+    ARM_DETAIL+="${u}: HTTP ${CODE}, issuer '${issuer:-<none>}', expected 200 and ${want}"$'\n'
+    verdict=1
+  fi
+  return "$verdict"
 }
 
 # ---- the scratch probe (only --fail-arms) -----------------------------------------------
@@ -466,7 +667,7 @@ if [ "$FAIL_ARMS" -eq 0 ]; then
   run_arm csp arm_csp "https://${APP_HOST}/"
   run_arm cors arm_cors "https://${API_HOST}/api/v1/products"
   run_arm admin arm_admin "https://${AUTH_HOST}/admin/"
-  run_arm burst arm_burst "https://${APP_HOST}/robots.txt"
+  run_arm burst arm_burst "https://${API_HOST}/api/v1/edge-burst-probe"
 else
   if ! command -v kubectl >/dev/null 2>&1; then echo "VOID: kubectl not on PATH" >&2; exit 2; fi
   PROBE_CREATED=1
@@ -490,7 +691,7 @@ else
   run_fail_arm csp arm_csp "https://${APP_HOST}${PROBE_PATH}"
   run_fail_arm cors arm_cors "https://${API_HOST}${PROBE_PATH}"
   run_fail_arm admin arm_admin "https://${AUTH_HOST}/admin/"
-  run_fail_arm burst arm_burst "https://${APP_HOST}${PROBE_PATH}"
+  run_fail_arm burst arm_burst "https://${API_HOST}${PROBE_PATH}"
   probe_delete
   left=$(probe_gone); grc=$?
   if [ "$grc" -eq 0 ]; then
