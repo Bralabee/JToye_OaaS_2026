@@ -224,19 +224,18 @@ cmd_set_external() {
   case "$v" in
     *[[:space:]]*) v=""; refuse external "the value for $name contains whitespace" ;;
   esac
-  case "$prefix" in
-    @email)
-      # One address: no list, no display name. [[ =~ ]] keeps the value off every argv.
-      [[ "$v" =~ ^[^@[:space:],\<\>\"\']+@[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$ ]] \
-        || { v=""; refuse external "the value for $name is not a single email address (local@domain.tld)"; } ;;
-    @nonempty) ;;
-    @*) v=""; refuse external "unknown external validator '$prefix' for $name" ;;
-    *)
-      case "$v" in
-        "$prefix"*) ;;
-        *) v=""; refuse external "the value for $name does not start with '$prefix' (D-28: only Stripe TEST credentials enter staging)" ;;
-      esac ;;
-  esac
+  # The kind's rule lives in ss_external_valid (shared with the preflight).
+  local vrc=0
+  ss_external_valid "$prefix" "$v" || vrc=$?
+  if [ "$vrc" -ne 0 ]; then
+    v=""
+    case "$vrc:$prefix" in
+      2:*)      refuse external "unknown external validator '$prefix' for $name" ;;
+      1:@email) refuse external "the value for $name is not a single email address (local@domain.tld)" ;;
+      1:@*)     refuse external "the value for $name does not satisfy $prefix" ;;
+      *)        refuse external "the value for $name does not start with '$prefix' (D-28: only Stripe TEST credentials enter staging)" ;;
+    esac
+  fi
   f="$WORK/value"; : > "$f"; chmod 600 "$f"
   printf '%s' "$v" > "$f"; v=""
   write_file "$name" "$f"

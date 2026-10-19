@@ -158,6 +158,26 @@ ss_classify() {
   return 0
 }
 
+# ss_external_valid KIND VALUE -> 0 when VALUE satisfies an external object's kind, 1 when it
+# does not, 2 for an unknown @-validator. ONE definition for the writer (which refuses) and
+# the preflight (which reports INVALID-VALUE / NOT-TEST-MODE), so the two cannot disagree:
+# 29-24 added @-kinds to the writer only, and the preflight read "@email" as a literal value
+# prefix and could pass on no vault at all (plan 29-25). The value stays off every argv.
+ss_external_valid() {
+  local kind="$1" v="$2"
+  [ -n "$v" ] || return 1
+  case "$v" in *[[:space:]]*) return 1 ;; esac
+  case "$kind" in
+    @email)
+      # One address: no list, no display name.
+      [[ "$v" =~ ^[^@[:space:],\<\>\"\']+@[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$ ]] || return 1 ;;
+    @nonempty) ;;
+    @*) return 2 ;;
+    *) case "$v" in "$kind"*) ;; *) return 1 ;; esac ;;
+  esac
+  return 0
+}
+
 # ss_is_secret NAME -> 0 when the object's VALUE is a secret (what a leak scan looks for).
 # Estate values are identifiers (`jtoye`, `5432`) that a correct evidence file contains, and
 # stomp-login copies the RabbitMQ user name.

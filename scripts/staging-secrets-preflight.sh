@@ -34,6 +34,8 @@
 #   MISSING <object>                      absent or disabled
 #   MISSING-ACCESS <object> <principal>   the identity lacks the role at that object's scope
 #   NOT-TEST-MODE <object>                the stored value lacks its required prefix
+#   INVALID-VALUE <object>                an @-validated owner value (@email, @nonempty) fails
+#                                         its validator (plan 29-25); the value is never printed
 #   STALE-IDENTITY <key> committed <p> live <q>   (full mode) the committed map is wrong
 #   test-mode: yes (<object>)
 #   preflight: <n> objects, <g> grants, <k> gap(s)[ (names-only: no value read)]
@@ -73,7 +75,7 @@ identity_map() {
 
 preflight() {
   local names_only="${1:-0}" idf="${STAGING_SECRETS_IDENTITY_FILE:-$SS_REPO_ROOT/$SS_IDENTITY_FILE_REL}"
-  local work rc=0 n e kvid cid obj pid c prefix v k live gaps=0 grants=0
+  local work rc=0 n e kvid cid obj pid c prefix v k live vrc gaps=0 grants=0
   umask 077
   work="$(mktemp -d "${TMPDIR:-/tmp}/jtoye-kvp.XXXXXXXX")" || void "mktemp -d failed"
   # shellcheck disable=SC2064
@@ -152,7 +154,8 @@ preflight() {
     exit 0
   fi
 
-  # 3. external prefixes (Stripe TEST mode), value in memory only
+  # 3. external values: a prefix kind (Stripe TEST mode) or an @-validator kind (the owner's
+  #    alert-mail values, plan 29-24), one rule shared with the writer; value in memory only
   while IFS= read -r n; do
     c=$(ss_classify "$n") || continue
     [ "${c%% *}" = external ] || continue
@@ -160,11 +163,14 @@ preflight() {
     awk -F'\t' -v n="$n" '$1 == n && tolower($2) == "true" { f = 1 } END { exit !f }' "$work/present" || continue
     rc=0; v=$(az_read keyvault secret show --vault-name "$SS_KV_NAME" -n "$n" --query value -o tsv 2>"$work/err") || rc=$?
     [ "$rc" -eq 0 ] || { cat "$work/err" >&2; void "could not read $n to check its mode"; }
-    case "$v" in
-      "$prefix"*) echo "test-mode: yes ($n)" ;;
-      *) echo "NOT-TEST-MODE $n"; gaps=$((gaps + 1)) ;;
-    esac
+    vrc=0; ss_external_valid "$prefix" "$v" || vrc=$?
     v=""
+    case "$vrc:$prefix" in
+      0:@*) ;;                                         # an owner value of a validated kind: no line
+      0:*)  echo "test-mode: yes ($n)" ;;
+      *:@*) echo "INVALID-VALUE $n"; gaps=$((gaps + 1)) ;;
+      *)    echo "NOT-TEST-MODE $n"; gaps=$((gaps + 1)) ;;
+    esac
   done < "$work/objects"
 
   echo "preflight: $(wc -l < "$work/objects") objects, $grants grants, $gaps gap(s)"
