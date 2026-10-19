@@ -78,12 +78,115 @@ SCRIPT_DIR="$(cd "$SCRIPT_DIR" && pwd)" || { echo "VOID: cannot resolve the scri
 DEFAULT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)" || { echo "VOID: cannot resolve the repo root" >&2; exit 2; }
 
 # ---------------------------------------------------------------------------
-# The comparison. RED STUB (plan 29-10 Task 2): reports parity without comparing
-# anything, so --selftest can be shown failing on every planted arm before the real
-# comparison exists.
+# The comparison. Every problem that stops a pair being evaluated is collected and
+# reported (VOID, rc 2, wins over drift); every evaluated pair is compared by md5.
 # ---------------------------------------------------------------------------
+
+# check_side <label> <path>: a path the gate can compare, or a VOID line on stderr.
+check_side() {
+    local label="$1" p="$2" f="$ROOT/$2"
+    if [[ -L "$f" ]]; then
+        echo "VOID: $label $p is a symlink — a symlinked copy compares the canonical file with itself" >&2; return 1
+    fi
+    [[ -e "$f" ]] || { echo "VOID: $label not found: $p — a missing input is never clean (exit 2, not 0)" >&2; return 1; }
+    [[ -f "$f" ]] || { echo "VOID: $label $p is not a regular file" >&2; return 1; }
+    [[ -r "$f" ]] || { echo "VOID: $label $p is not readable" >&2; return 1; }
+    # -s as well as -r: an EMPTY file is readable and would md5-match another empty file.
+    [[ -s "$f" ]] || { echo "VOID: $label $p is EMPTY — it would md5-match any other empty file" >&2; return 1; }
+    return 0
+}
+
+# check_path <path> <conf line no>: the path rules of k8s/copy-parity.conf.
+check_path() {
+    local p="$1" ln="$2"
+    case "$p" in
+        /*) echo "VOID: $CONF:$ln: '$p' may not be absolute (paths are repo-relative)" >&2; return 1 ;;
+    esac
+    if [[ "/$p/" == */../* ]]; then
+        echo "VOID: $CONF:$ln: '$p' may not contain '..' (a pair must stay inside the repo)" >&2; return 1
+    fi
+    return 0
+}
+
 run_check() {
-    echo "PASS: 0 pairs, all byte-equal (STUB: nothing was compared)"
+    # Tooling first: without md5sum nothing below can be evaluated.
+    command -v md5sum >/dev/null 2>&1 \
+        || { echo "VOID: md5sum not on PATH — the comparison cannot be evaluated" >&2; return 2; }
+    [[ -d "$ROOT" ]] || { echo "VOID: root not found: $ROOT" >&2; return 2; }
+    [[ -e "$CONF" ]] || { echo "VOID: pair list not found: $CONF" >&2; return 2; }
+    [[ -f "$CONF" && -r "$CONF" ]] || { echo "VOID: pair list not readable: $CONF" >&2; return 2; }
+
+    local -a copies=() canons=() f=()
+    local -A seen=()
+    local raw line ln=0 voids=0
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+        ln=$((ln + 1))
+        line="${raw%%#*}"          # `#` starts a comment; paths may not contain one
+        read -r -a f <<< "$line"
+        (( ${#f[@]} == 0 )) && continue
+        if (( ${#f[@]} != 2 )); then
+            echo "VOID: $CONF:$ln is malformed — want '<copy-path> <canonical-path>', got: $raw" >&2
+            voids=$((voids + 1)); continue
+        fi
+        check_path "${f[0]}" "$ln" || { voids=$((voids + 1)); continue; }
+        check_path "${f[1]}" "$ln" || { voids=$((voids + 1)); continue; }
+        if [[ "${f[0]}" == "${f[1]}" ]]; then
+            echo "VOID: $CONF:$ln names the same path on both sides ('${f[0]}') — a file compared with itself proves nothing" >&2
+            voids=$((voids + 1)); continue
+        fi
+        if [[ -n "${seen[${f[0]}]+set}" ]]; then
+            echo "VOID: $CONF:$ln: copy '${f[0]}' is listed twice (first at line ${seen[${f[0]}]}) — one copy has one canonical file" >&2
+            voids=$((voids + 1)); continue
+        fi
+        seen["${f[0]}"]="$ln"
+        copies+=("${f[0]}"); canons+=("${f[1]}")
+    done < "$CONF"
+
+    if (( ${#copies[@]} == 0 )); then
+        echo "VOID: $CONF declares zero pairs — refusing to report parity over nothing" >&2
+        return 2
+    fi
+
+    local i c k mc mk rc_c rc_k bc bk drift=0 ok_lines=()
+    for i in "${!copies[@]}"; do
+        c="${copies[$i]}"; k="${canons[$i]}"
+        check_side copy "$c" || { voids=$((voids + 1)); continue; }
+        check_side canonical "$k" || { voids=$((voids + 1)); continue; }
+        # Captured on the SAME statement as the invocation: $? read after an echo or
+        # a pipe reports THAT command's status.
+        mc=$(md5sum -- "$ROOT/$c"); rc_c=$?
+        mk=$(md5sum -- "$ROOT/$k"); rc_k=$?
+        mc="${mc%% *}"; mk="${mk%% *}"
+        if (( rc_c != 0 || rc_k != 0 )) || [[ ! "$mc" =~ ^[0-9a-f]{32}$ || ! "$mk" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "VOID: md5sum failed or printed no digest for pair $((i + 1)) (copy rc=$rc_c, canonical rc=$rc_k)" >&2
+            voids=$((voids + 1)); continue
+        fi
+        bc=$(wc -c < "$ROOT/$c"); bk=$(wc -c < "$ROOT/$k")
+        if [[ "$mc" == "$mk" ]]; then
+            ok_lines+=("  ok   $c == $k  md5=$mc  bytes=${bc// /}")
+        else
+            drift=$((drift + 1))
+            {
+                echo "FAIL: pair $((i + 1)) has DRIFTED"
+                echo "  copy     : $c  md5=$mc  bytes=${bc// /}"
+                echo "  CANONICAL: $k  md5=$mk  bytes=${bk// /}"
+                echo "  The right-hand path is canonical: copy it over the copy (cp $k $c),"
+                echo "  unless the copy holds the intended edit; then copy it back first."
+            } >&2
+        fi
+    done
+
+    echo "check-k8s-copy-parity  ($(date -u +%Y-%m-%dT%H:%M:%SZ))  list: $CONF"
+    (( ${#ok_lines[@]} > 0 )) && printf '%s\n' "${ok_lines[@]}"
+    if (( voids > 0 )); then
+        echo "VOID: $voids problem(s) above stop the parity check being evaluated (exit 2, never 0)" >&2
+        return 2
+    fi
+    if (( drift > 0 )); then
+        echo "FAIL: $drift of ${#copies[@]} pairs drifted. A copy that differs from its canonical file means one runtime serves an edit the other never received." >&2
+        return 1
+    fi
+    echo "PASS: ${#copies[@]} pairs, all byte-equal."
     return 0
 }
 
