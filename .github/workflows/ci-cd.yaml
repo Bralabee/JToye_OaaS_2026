@@ -716,6 +716,12 @@ jobs:
       - name: Prove INV-16 catches planted truststore holes (--selftest-inv16)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv16
 
+      # Plan 29-22 (D-33): INV-18 keeps the testers' public mail UI authenticated
+      # and on 8025 only, keeps every mailpit Service ClusterIP and keeps Mailpit
+      # from sending (no relay/forward, Send API locked). Six planted holes.
+      - name: Prove INV-18 catches planted mail-UI holes (--selftest-inv18)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv18
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,
@@ -796,6 +802,14 @@ jobs:
       # context, short tag, fixture-with-context) against fixtures: no cluster.
       - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
         run: bash scripts/check-deploy-digest-parity.sh --selftest
+
+      # Plan 29-22 (D-33): every live mail-UI probe arm (UI-1..UI-8) FAILS on a
+      # planted wrong response (an open UI, a wrong password accepted, http serving
+      # the UI, SMTP published, the default certificate, relay on, the Send API
+      # open, no 429) and passes on the right one; stubbed curl/openssl/dig/
+      # kubectl/az and TCP connect: no cluster, no Azure, no network.
+      - name: Prove the mail-UI probe's arms can fail (29-22 --selftest)
+        run: bash scripts/staging-mail-ui.sh --selftest
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |

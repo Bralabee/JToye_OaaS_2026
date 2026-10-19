@@ -103,6 +103,7 @@ render none of them.
 | `rabbitmq-allow` | egress | public (Kubernetes peer discovery; an assumption plan 29-14 measures) | TCP 443 |
 | `secret-sync-allow` | both | nothing: no ingress and no egress rule (plan 29-12; the Key Vault fetch is the CSI provider's, on the node) | |
 | `mailpit-allow` | ingress | pods `app=core-java`, `app=keycloak`, `app=alertmanager` | TCP 1025 |
+| `mailpit-allow` | ingress | namespace `<controller ns>` (a literal `traefik` in the manifest; the row says `<controller ns>`, so a disagreement fails INV-7), for the D-33 authenticated testers' UI | TCP 8025 |
 | `mailpit-allow` | egress | nothing: no egress rule (plan 29-22; Mailpit relays and forwards nothing, and skips reverse DNS) | |
 
 ## The pod-label contract

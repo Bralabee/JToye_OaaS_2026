@@ -22,8 +22,11 @@ its own SPC's objects" (T-29-50); the list comes from the same checked chain as 
 WHAT `check` ASSERTS (each rule is a defect class, not a style point)
 
   (a) every (Secret, key) a pod template consumes (env secretKeyRef, envFrom secretRef, a secret
-      volume or projected source, and the RabbitmqCluster's secretBackend.externalSecret, which the
-      operator reads and which is attributed to Deployment/secret-sync) is produced by exactly one
+      volume or projected source, the RabbitmqCluster's secretBackend.externalSecret, which the
+      operator reads, and, plan 29-22 / D-33, every Ingress carrying
+      nginx.ingress.kubernetes.io/auth-type basic or digest, whose auth-secret Traefik reads as
+      (auth-secret, key `auth`); both of those are attributed to Deployment/secret-sync, the
+      always-on pod that keeps such a Secret synced) is produced by exactly one
       SPC secretObjects entry, and that SPC is MOUNTED by the consuming pod template. The CSI driver
       creates a synced Secret only while a pod mounts its SPC and deletes it with the last such pod,
       so a consumer that does not mount its producer reads a Secret that is there only by accident
@@ -69,6 +72,11 @@ CLIENT_ID_ANNOTATION = "azure.workload.identity/client-id"
 GUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 VAULT_RE = re.compile(r"^[a-z0-9-]{3,24}$")
 OBJECT_RE = re.compile(r"^[0-9A-Za-z-]{1,127}$")
+# Ingress basic/digest auth (Traefik's Ingress-NGINX provider, v3.7.15 build.go resolveBasicAuth):
+# auth-secret is a same-namespace Secret name, read with auth-secret-type auth-file (the default)
+# as key `auth`.
+ING_ANN = "nginx.ingress.kubernetes.io/"
+INGRESS_AUTH_KEY = "auth"
 # The keys of the RabbitMQ operator's own default-user Secret (v2.23.1
 # internal/resource/default_user_secret.go, read in plan 29-10): what an externalSecret must hold.
 RABBITMQ_EXTERNAL_SECRET_KEYS = ("username", "password", "default_user.conf")
@@ -136,6 +144,7 @@ def index(docs, errors):
     spcs, sas, templates = {}, {}, {}
     external = []
     certs = {}
+    ingress_auth = []
     for d in docs:
         kind = d.get("kind")
         meta = d.get("metadata") or {}
@@ -163,6 +172,21 @@ def index(docs, errors):
             sn = (d.get("spec") or {}).get("secretName")
             if sn:
                 certs.setdefault(sn, []).append(name)
+        elif kind == "Ingress":
+            ann = meta.get("annotations") or {}
+            if str(ann.get(ING_ANN + "auth-type", "")).strip() in ("basic", "digest"):
+                sec = str(ann.get(ING_ANN + "auth-secret", "")).strip()
+                stype = str(ann.get(ING_ANN + "auth-secret-type", "auth-file")).strip()
+                if not sec:
+                    errors.append(f"Ingress/{name}: auth-type {ann.get(ING_ANN + 'auth-type')} with no auth-secret")
+                elif "/" in sec:
+                    errors.append(f"Ingress/{name}: auth-secret {sec!r} names another namespace; Traefik reads it "
+                                  f"in the Ingress's own namespace only (cross-namespace resources are off)")
+                elif stype != "auth-file":
+                    errors.append(f"Ingress/{name}: auth-secret-type {stype!r}, expected auth-file (key "
+                                  f"{INGRESS_AUTH_KEY!r} holding htpasswd lines)")
+                else:
+                    ingress_auth.append((f"Ingress/{name}", sec))
         elif kind == "RabbitmqCluster":
             ext = (((d.get("spec") or {}).get("secretBackend") or {}).get("externalSecret") or {}).get("name")
             if ext:
@@ -200,12 +224,12 @@ def index(docs, errors):
                     elif spc:
                         mounts.add(spc)
             templates[f"{kind}/{name}"] = {"sa": pspec.get("serviceAccountName"), "mounts": mounts, "refs": refs}
-    return spcs, sas, templates, external, certs
+    return spcs, sas, templates, external, certs, ingress_auth
 
 
 def check(docs, verbose=False):
     errors = []
-    spcs, sas, templates, external, certs = index(docs, errors)
+    spcs, sas, templates, external, certs, ingress_auth = index(docs, errors)
     if not spcs:
         void("the render holds no SecretProviderClass; a chain with no producer cannot be checked "
              "(a target that includes components/azure-keyvault must render its SPCs)")
@@ -218,8 +242,14 @@ def check(docs, verbose=False):
     for cr, secret in external:
         for key in RABBITMQ_EXTERNAL_SECRET_KEYS:
             consumers.append((EXTERNAL_SECRET_CONSUMER, secret, key, f"externalSecret of {cr}"))
+    for ing, secret in ingress_auth:
+        consumers.append((EXTERNAL_SECRET_CONSUMER, secret, INGRESS_AUTH_KEY, f"auth-secret of {ing}"))
     if not consumers:
         void("the render consumes no Secret at all; the chain check would pass vacuously")
+    if ingress_auth and EXTERNAL_SECRET_CONSUMER not in templates:
+        errors.append(f"{ingress_auth[0][0]} reads Secret {ingress_auth[0][1]} as its auth-secret, but there is "
+                      f"no {EXTERNAL_SECRET_CONSUMER} to keep it synced (Traefik has no pod here that mounts a "
+                      f"SecretProviderClass)")
     if external and EXTERNAL_SECRET_CONSUMER not in templates:
         errors.append(f"{external[0][0]} reads Secret {external[0][1]} through externalSecret, but "
                       f"there is no {EXTERNAL_SECRET_CONSUMER} to keep it synced (the operator has no pod "

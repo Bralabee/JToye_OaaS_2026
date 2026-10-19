@@ -23,6 +23,8 @@ kind: Component
 resources:
   - cluster-ca.yaml
   - mailpit.yaml
+  # The testers' authenticated mail UI at mail-staging.olajay.co.uk (D-33).
+  - mailpit-ui-ingress.yaml
 
 # The same label shape as k8s/base/kustomization.yaml (D-17).
 labels:

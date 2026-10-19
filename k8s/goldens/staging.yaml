@@ -3026,6 +3026,8 @@ spec:
           value: "500"
         - name: MP_DATABASE
           value: /data/mailpit.db
+        - name: MP_SEND_API_AUTH_FILE
+          value: /send-api-lock/passwords
         image: axllent/mailpit:v1.31.6
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -3070,6 +3072,37 @@ spec:
           readOnly: true
         - mountPath: /data
           name: data
+        - mountPath: /send-api-lock
+          name: send-api-lock
+          readOnly: true
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          set -eu
+          umask 077
+          printf 'locked:%s\n' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > /send-api-lock/passwords
+          echo "send-api-lock: wrote $(wc -c < /send-api-lock/passwords) bytes (a random credential nobody holds)"
+        image: axllent/mailpit:v1.31.6
+        imagePullPolicy: IfNotPresent
+        name: send-api-lock
+        resources:
+          limits:
+            memory: 32Mi
+          requests:
+            cpu: 10m
+            memory: 16Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /send-api-lock
+          name: send-api-lock
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
@@ -3091,6 +3124,10 @@ spec:
       - emptyDir:
           sizeLimit: 256Mi
         name: data
+      - emptyDir:
+          medium: Memory
+          sizeLimit: 1Mi
+        name: send-api-lock
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -3269,6 +3306,9 @@ spec:
         - mountPath: /mnt/secrets-store
           name: kv
           readOnly: true
+        - mountPath: /mnt/secrets-store-mailpit-ui
+          name: kv-mailpit-ui
+          readOnly: true
       securityContext:
         runAsGroup: 65535
         runAsNonRoot: true
@@ -3283,6 +3323,12 @@ spec:
           volumeAttributes:
             secretProviderClass: rabbitmq-kv
         name: kv
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: mailpit-ui-kv
+        name: kv-mailpit-ui
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -3847,6 +3893,55 @@ spec:
     secretName: jtoye-staging-auth-tls
 ---
 apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    nginx.ingress.kubernetes.io/auth-realm: J'Toye staging mail - test personas only,
+      no real customer data
+    nginx.ingress.kubernetes.io/auth-secret: mailpit-ui-credentials
+    nginx.ingress.kubernetes.io/auth-secret-type: auth-file
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "X-Robots-Tag: noindex, nofollow";
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  labels:
+    app: mailpit
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailpit-ui
+  namespace: jtoye-staging
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: mail-staging.olajay.co.uk
+    http:
+      paths:
+      - backend:
+          service:
+            name: mailpit
+            port:
+              number: 8025
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - mail-staging.olajay.co.uk
+    secretName: jtoye-staging-mail-tls
+---
+apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   annotations:
@@ -4265,6 +4360,13 @@ spec:
           app: alertmanager
     ports:
     - port: 1025
+      protocol: TCP
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: traefik
+    ports:
+    - port: 8025
       protocol: TCP
   podSelector:
     matchLabels:
@@ -4762,6 +4864,36 @@ spec:
     - key: bootstrap-admin-password
       objectName: keycloak-credentials--admin-password
     secretName: keycloak-server-credentials
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailpit-ui-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: 231ad919-8aad-4dd2-a6b5-0e2089edf4e4
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: mailpit-ui-credentials--auth
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: auth
+      objectName: mailpit-ui-credentials--auth
+    secretName: mailpit-ui-credentials
     type: Opaque
 ---
 apiVersion: secrets-store.csi.x-k8s.io/v1

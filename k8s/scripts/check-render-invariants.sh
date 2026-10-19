@@ -2622,8 +2622,98 @@ for dir in "${TARGETS[@]}"; do
     fi
 
     # ---------------- INV-18 (29-22, D-33) ----------------
-    # STUB (RED): passes everything until the assertion is written.
-    inv18_msg="OK (stub)"
+    # Every target that renders the mailpit component: the public mail UI is
+    # authenticated and on 8025 only, no Service publishes Mailpit, and Mailpit is
+    # configured to send nothing (no relay/forward, Send API locked).
+    inv18_bad=0
+    inv18_dep=$(awk -F'\t' '$1 == "Deployment" && $2 == "mailpit" && $3 == "kind" { f = 1 } END { print f + 0 }' "$TMP/inv11_paths.tsv")
+    inv18_svc=$(awk -F'\t' '$1 == "Service" && $3 == "spec::selector::app" && $4 == "mailpit" { print $2 }' "$TMP/inv11_paths.tsv" | sort -u)
+    # Ingress paths whose backend is Service mailpit: <ingress> TAB <path prefix>
+    inv18_routes=$(awk -F'\t' '$1 == "Ingress" && $3 ~ /^spec::rules::\[[0-9]+\]::http::paths::\[[0-9]+\]::backend::service::name$/ && $4 == "mailpit" {
+        p = $3; sub(/::backend::service::name$/, "", p); print $2 "\t" p }' "$TMP/inv11_paths.tsv")
+    if (( inv18_dep == 0 )) && [[ -z "$inv18_svc" && -z "$inv18_routes" ]]; then
+        inv18_msg="not applicable (no mailpit component in this render)"
+    else
+        (( inv18_dep == 1 )) || parse_fail "[$rel] INV-18: the render has a Service or Ingress route for mailpit but no Deployment mailpit (by path). Either the component lost its workload or the path walker is blind; the container rules would pass vacuously."
+        [[ -n "$inv18_routes" ]] || parse_fail "[$rel] INV-18 found 0 Ingress backends to Service mailpit in a render that runs Deployment mailpit. The D-33 mail UI route is part of the component, so either it vanished or the path walker is blind; the auth rules would pass vacuously."
+        # (a) each route: 8025 and basic auth from a same-namespace auth-file Secret
+        while IFS=$'\t' read -r ing pfx; do
+            [[ -n "$ing" ]] || continue
+            host_pfx="${pfx%%::http::*}"
+            ihost="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "$host_pfx::host")"
+            pnum="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "$pfx::backend::service::port::number")"
+            pname="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "$pfx::backend::service::port::name")"
+            if [[ "$pnum" == "(ABSENT)" && "$pname" != "(ABSENT)" ]]; then
+                pnum=$(awk -F'\t' -v n="$pname" '$1 == "Service" && $2 == "mailpit" && $3 ~ /^spec::ports::\[[0-9]+\]::name$/ && $4 == n { p = $3; sub(/::name$/, "::port", p); print p; exit }' "$TMP/inv11_paths.tsv")
+                [[ -n "$pnum" ]] && pnum="$(path_get "$TMP/inv11_paths.tsv" Service mailpit "$pnum")" || pnum="(no such port name '$pname')"
+            fi
+            if [[ "$pnum" != "8025" ]]; then
+                echo "  FAIL [$rel] INV-18: Ingress '$ing' routes host '$ihost' to Service mailpit on port $pnum, not 8025. 1025 is SMTP and is never published (T-29-109); only the UI/API port 8025 may sit behind the authenticated edge." >&2
+                inv18_bad=1
+            fi
+            atype="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "metadata::annotations::nginx.ingress.kubernetes.io/auth-type")"; atype="${atype//\"/}"
+            asec="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "metadata::annotations::nginx.ingress.kubernetes.io/auth-secret")"; asec="${asec//\"/}"
+            astype="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "metadata::annotations::nginx.ingress.kubernetes.io/auth-secret-type")"; astype="${astype//\"/}"
+            if [[ "$atype" != "basic" ]]; then
+                echo "  FAIL [$rel] INV-18: Ingress '$ing' routes host '$ihost' to Service mailpit without basic auth (auth-type '$atype'). Anyone could read every staging email, reset and invite links included (D-33, T-29-108)." >&2
+                inv18_bad=1
+            fi
+            if [[ "$asec" == "(ABSENT)" || -z "$asec" || "$asec" == */* ]]; then
+                echo "  FAIL [$rel] INV-18: Ingress '$ing' auth-secret '$asec' is not a same-namespace Secret name. Traefik resolves auth-secret in the Ingress's own namespace (cross-namespace resources are off); an unresolvable Secret skips the route." >&2
+                inv18_bad=1
+            fi
+            if [[ "$astype" != "(ABSENT)" && "$astype" != "auth-file" ]]; then
+                echo "  FAIL [$rel] INV-18: Ingress '$ing' auth-secret-type '$astype', expected auth-file (key 'auth' as htpasswd lines, the shape scripts/staging-secrets.sh writes)." >&2
+                inv18_bad=1
+            fi
+        done <<< "$inv18_routes"
+        # (b) every Service selecting app=mailpit is ClusterIP
+        while IFS= read -r sv; do
+            [[ -n "$sv" ]] || continue
+            st_type="$(path_get "$TMP/inv11_paths.tsv" Service "$sv" spec::type)"
+            [[ "$st_type" == "(ABSENT)" ]] && st_type=ClusterIP
+            if [[ "$st_type" != "ClusterIP" ]]; then
+                echo "  FAIL [$rel] INV-18: Service '$sv' selects app=mailpit and is type $st_type. A LoadBalancer or NodePort publishes SMTP 1025 and an unauthenticated 8025 (T-29-109)." >&2
+                inv18_bad=1
+            fi
+        done <<< "$inv18_svc"
+        # (c) the mailpit container: no relay/forward/accept-any/chaos, no envFrom, the lock set
+        inv18_c=$(awk -F'\t' '$1 == "Deployment" && $2 == "mailpit" && $3 ~ /^spec::template::spec::containers::\[[0-9]+\]::name$/ && $4 == "mailpit" { p = $3; sub(/::name$/, "", p); print p; exit }' "$TMP/inv11_paths.tsv")
+        [[ -n "$inv18_c" ]] || parse_fail "[$rel] INV-18 found no container named mailpit in Deployment mailpit by path."
+        inv18_env=$(awk -F'\t' -v c="$inv18_c::env::" '$1 == "Deployment" && $2 == "mailpit" && index($3, c) == 1 && $3 ~ /::name$/ { print $3 "\t" $4 }' "$TMP/inv11_paths.tsv")
+        while IFS=$'\t' read -r epath ename; do
+            [[ -n "$ename" ]] || continue
+            if [[ "$ename" =~ ^(MP_SMTP_RELAY_[A-Z_]+|MP_SMTP_FORWARD_[A-Z_]+|MP_SEND_API_AUTH_ACCEPT_ANY|MP_ENABLE_CHAOS)$ ]]; then
+                echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' sets $ename. Mailpit must send nothing: no relay, release or forward, no accept-any Send API, no chaos (D-33, T-29-110)." >&2
+                inv18_bad=1
+            fi
+        done <<< "$inv18_env"
+        if awk -F'\t' -v c="$inv18_c::envFrom" '$1 == "Deployment" && $2 == "mailpit" && index($3, c) == 1 { f = 1 } END { exit !f }' "$TMP/inv11_paths.tsv"; then
+            echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' uses envFrom, which imports env names the render cannot enumerate (a relay setting could arrive unseen)." >&2
+            inv18_bad=1
+        fi
+        inv18_flags=""; inv18_frc=0
+        inv18_flags=$(grep -nE -e '--(smtp-relay|smtp-forward|send-api-auth-accept-any|enable-chaos)' "$render") || inv18_frc=$?
+        (( inv18_frc <= 1 )) || parse_fail "[$rel] INV-18: grep failed (rc=$inv18_frc) reading the render."
+        if [[ -n "$inv18_flags" ]]; then
+            echo "  FAIL [$rel] INV-18: the render names a Mailpit send flag: ${inv18_flags%%$'\n'*}" >&2
+            inv18_bad=1
+        fi
+        inv18_lock=$(awk -F'\t' '$2 == "MP_SEND_API_AUTH_FILE" { print $1 }' <<< "$inv18_env")
+        if [[ -z "$inv18_lock" ]]; then
+            echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' does not set MP_SEND_API_AUTH_FILE. Without it Mailpit falls back to its (unset) UI auth and the Send API is OPEN: anyone reaching 8025 could inject mail testers trust (T-29-110)." >&2
+            inv18_bad=1
+        elif [[ "$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "${inv18_lock%::name}::value")" == "(ABSENT)" ]]; then
+            echo "  FAIL [$rel] INV-18: Deployment mailpit container 'mailpit' MP_SEND_API_AUTH_FILE is not a literal path." >&2
+            inv18_bad=1
+        fi
+        if (( inv18_bad != 0 )); then
+            FAILED=1
+            inv18_msg="FAIL"
+        else
+            inv18_msg="OK ($(grep -c . <<< "$inv18_routes") route(s) to mailpit on 8025 behind basic auth from a same-namespace auth-file Secret; $(grep -c . <<< "$inv18_svc") ClusterIP Service(s); no relay/forward/accept-any/chaos; Send API locked)"
+        fi
+    fi
 
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \

@@ -275,6 +275,13 @@ replacements:
           name: rabbitmq-kv
         fieldPaths:
           - spec.parameters.clientID
+      # The testers' mail UI credential (plan 29-22, D-33): mounted by the same
+      # secret-sync pod, so it is fetched as the same identity.
+      - select:
+          kind: SecretProviderClass
+          name: mailpit-ui-kv
+        fieldPaths:
+          - spec.parameters.clientID
       - select:
           kind: ServiceAccount
           name: secret-sync

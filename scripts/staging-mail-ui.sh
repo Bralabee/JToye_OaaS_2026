@@ -106,19 +106,16 @@ code() { cat "$W/$1.code" 2>/dev/null || echo 000; }
 has_shell() { command grep -qF -- "$UI_SHELL" "$W/$1.body" 2>/dev/null; }
 
 judge_ui1() {
-  echo "STUB: not implemented"; return 0
   local c w; c=$(code noauth); w=$(hdr noauth www-authenticate)
   echo "no credentials: HTTP $c, WWW-Authenticate '${w:-<none>}'"
   [ "$c" = 401 ] && [[ "${w,,}" == basic* ]] && ! has_shell noauth
 }
 judge_ui2() {
-  echo "STUB: not implemented"; return 0
   local c; c=$(code wrongpw)
   echo "a random wrong password: HTTP $c"
   [ "$c" = 401 ] && ! has_shell wrongpw
 }
 judge_ui3() {
-  echo "STUB: not implemented"; return 0
   local c s total ids found=yes
   c=$(code root); s=$(code search)
   total=$(jq -r '.total // empty' "$W/search.body" 2>/dev/null)
@@ -130,14 +127,12 @@ judge_ui3() {
   [ "$c" = 200 ] && has_shell root && [ "$s" = 200 ] && [[ "$total" =~ ^[0-9]+$ ]] && [ "$total" -ge 1 ] && [ "$found" = yes ]
 }
 judge_ui4() {
-  echo "STUB: not implemented"; return 0
   local c l; c=$(code plainhttp); l=$(hdr plainhttp location)
   echo "http://$HOST/: HTTP $c Location '${l:-<none>}' shell=$(has_shell plainhttp && echo yes || echo no)"
   case "$c" in 301|302|307|308) ;; *) return 1 ;; esac
   [[ "$l" == "https://$HOST/"* ]] && ! has_shell plainhttp
 }
 judge_ui5() {
-  echo "STUB: not implemented"; return 0
   local ip1025 host1025 host443 ports lbs
   ip1025=$(cat "$W/tcp.ip1025"); host1025=$(cat "$W/tcp.host1025"); host443=$(cat "$W/tcp.host443")
   ports=$(cat "$W/traefik.ports"); lbs=$(cat "$W/ns.exposed")
@@ -146,7 +141,6 @@ judge_ui5() {
   [ "$ip1025" = failed ] && [ "$host1025" = failed ] && [ "$ports" = "80 443" ] && [ "$lbs" = 0 ]
 }
 judge_ui6() {
-  echo "STUB: not implemented"; return 0
   local mine ctl
   mine=$(tr '\n' ' ' < "$W/cert.host"); ctl=$(tr '\n' ' ' < "$W/cert.control")
   echo "SNI $HOST: ${mine:-<nothing>}| control SNI $CONTROL_SNI: ${ctl:-<nothing>}"
@@ -154,7 +148,6 @@ judge_ui6() {
   [[ "$mine" == *"O=Let's Encrypt"* ]] && [[ "$mine" == *"$HOST"* ]] && [[ "$mine" != *"TRAEFIK DEFAULT CERT"* ]]
 }
 judge_ui7() {
-  echo "STUB: not implemented"; return 0
   local relay send forb lock n
   relay=$(jq -r '.MessageRelay.Enabled' "$W/webui.body" 2>/dev/null); send=$(code send)
   # Every relay/forward variable (MP_SMTP_RELAY_*, MP_SMTP_FORWARD_*, a superset of
@@ -165,7 +158,6 @@ judge_ui7() {
   [ "$(code webui)" = 200 ] && [ "$relay" = false ] && [ "$send" = 401 ] && [ "$forb" = 0 ] && [ "$lock" = 1 ]
 }
 judge_ui8() {
-  echo "STUB: not implemented"; return 0
   local a u
   a=$(command grep -c '^429$' "$W/burst.auth"); u=$(command grep -c '^429$' "$W/burst.noauth")
   echo "authenticated burst 300x/20: 429=$a of $(command grep -c . "$W/burst.auth"); UNAUTH-429=$u"

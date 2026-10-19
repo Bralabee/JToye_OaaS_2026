@@ -186,6 +186,18 @@ cmd_generate() {
           read_value rabbitmq-credentials--username u
           read_value rabbitmq-credentials--password p
           printf 'default_user = %s\ndefault_pass = %s\n' "$u" "$p" > "$f"; u=""; p="" ;;
+        composite/htpasswd-apr1:*)
+          # One htpasswd line, `<user>:<apr1 hash>`, for Traefik's basic auth (D-33). The
+          # input is read back from the vault and handed to openssl on STDIN (never argv);
+          # apr1 is the scheme openssl passwd offers that Traefik accepts (no htpasswd or
+          # bcrypt tool on the operator host). Against a 32-character random alphanumeric
+          # it is not the limiting factor, and the hash lives only in Key Vault and in the
+          # Secret Traefik reads.
+          u="${kind#htpasswd-apr1:}"
+          read_value "${u#*:}" p
+          v=$(printf '%s' "$p" | openssl passwd -apr1 -stdin) || refuse generate "openssl passwd -apr1 failed for $n"
+          [[ "$v" == '$apr1$'* ]] || refuse generate "openssl passwd -apr1 did not print an apr1 hash for $n"
+          printf '%s:%s' "${u%%:*}" "$v" > "$f"; u=""; p=""; v="" ;;
         *) refuse generate "no generator for $n ($c)" ;;
       esac
       write_file "$n" "$f"

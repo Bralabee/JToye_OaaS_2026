@@ -20,6 +20,18 @@
 # MP_SMTP_DISABLE_RDNS skips it; MP_DISABLE_VERSION_CHECK stops the UI asking
 # GitHub for the latest release.
 #
+# THE SEND API IS LOCKED (D-33, T-29-110). POST /api/v1/send injects a message into
+# the mailbox testers read. With neither MP_SEND_API_AUTH_FILE nor MP_SEND_API_AUTH
+# set, Mailpit falls back to its UI auth, which is unset here, so the Send API would be
+# OPEN to anyone who reaches 8025 (measured: 200 before the lock). The init container
+# send-api-lock writes `locked:<64 random hex>` into a Memory emptyDir at pod start, and
+# MP_SEND_API_AUTH_FILE points at it: the credential is random per pod and held by
+# NOBODY, so every Send API call answers 401 (through the edge, where Traefik also
+# strips Authorization, and through a port-forward alike), while the UI and the read
+# API stay open on 8025 behind Traefik's basic auth (Ingress mailpit-ui). It runs the
+# SAME pinned image, so the images transformer and the horizon row cover it, and it
+# prints only the file's byte count, never its content.
+#
 # STORE. An emptyDir: a pod restart empties the mailbox, by design (captured
 # staging mail is disposable). MP_MAX_MESSAGES bounds it; Mailpit deletes the
 # oldest first.
@@ -68,6 +80,34 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+      - name: send-api-lock
+        image: axllent/mailpit:v1.31.6   # the same pin as the main container
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          umask 077
+          printf 'locked:%s\n' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > /send-api-lock/passwords
+          echo "send-api-lock: wrote $(wc -c < /send-api-lock/passwords) bytes (a random credential nobody holds)"
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            memory: "32Mi"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: send-api-lock
+          mountPath: /send-api-lock
       containers:
       - name: mailpit
         image: axllent/mailpit:v1.31.6   # horizon row axllent-mailpit
@@ -87,6 +127,8 @@ spec:
           value: "500"
         - name: MP_DATABASE
           value: /data/mailpit.db
+        - name: MP_SEND_API_AUTH_FILE
+          value: /send-api-lock/passwords
         ports:
         - containerPort: 1025
           name: smtp
@@ -128,6 +170,9 @@ spec:
           readOnly: true
         - name: data
           mountPath: /data
+        - name: send-api-lock
+          mountPath: /send-api-lock
+          readOnly: true
       volumes:
       - name: tls
         secret:
@@ -141,6 +186,10 @@ spec:
       - name: data
         emptyDir:
           sizeLimit: 256Mi
+      - name: send-api-lock
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Mi
 ---
 apiVersion: v1
 kind: Service
@@ -164,9 +213,12 @@ spec:
 ---
 # mailpit-allow. INV-7 row mailpit-allow@k8s/staging; k8s/base/networkpolicies/README.md
 # carries the same rows.
-#   Ingress: core-java, keycloak and alertmanager pods, TCP 1025 (SMTP). The web UI
-#            and API (8025) are reached by the operator through a port-forward, which
-#            NetworkPolicy does not see.
+#   Ingress: core-java, keycloak and alertmanager pods, TCP 1025 (SMTP); and the
+#            ingress controller namespace (a LITERAL `traefik`, as in keycloak-allow;
+#            INV-7's row says __INGRESS_NS__, so a disagreement fails the render) on TCP
+#            8025 ONLY, for the authenticated testers' UI (Ingress mailpit-ui, D-33).
+#            1025 never gains a peer: SMTP is never published. Operator reads of 8025
+#            through a port-forward are not seen by NetworkPolicy.
 #   Egress:  NONE. Mailpit sends nothing anywhere (no relay, no forward) and needs no
 #            DNS (MP_SMTP_DISABLE_RDNS).
 apiVersion: networking.k8s.io/v1
@@ -198,3 +250,10 @@ spec:
       ports:
         - protocol: TCP
           port: 1025
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8025
