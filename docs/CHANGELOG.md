@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### `/for-operators` Redesigned: One Dark Band, Five Sections, Four Product Images — 2026-10-19
+### `/for-operators` Redesigned: One Dark Band, Five Sections, Four Product Images (#967) — 2026-10-19
 
 The page said the right things (PR #965) in the wrong shape: fifteen identical cards, seven uppercase-tracked eyebrows, six H2s at three sizes and no product anywhere on it. It is now a kitchen docket: one oxblood band that holds the product and the number, warm paper below, hairlines instead of boxes. Measured on the production build, `<main>` before / after: 622 / 441 words; document height 7745 / 5991 px at 390 wide, 4185 / 3679 px at 1440 (3679 at 1280 and 4216 at 768 too); no horizontal overflow at 390 (scrollWidth 390).
 
