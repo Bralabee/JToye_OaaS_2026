@@ -178,3 +178,123 @@ BA-4 guard removed + resolve after TenantContext.clear() -> red: case 1 (imageUr
 BA-5 per-product findPrimaryActiveObjectKey loop -> red: case 13 (delta 12 vs 3), case 6, case 7, case 14   restore MATCH
 BA-6 additionalImageUrls dropped     -> red: case 1, case 4                                             restore MATCH
 Closing clean run: tests=14 failures=0 errors=0 (same N as GREEN).
+
+== Task 2 BEFORE arm (read-only staging, context jtoye-stg-aks) 2026-10-19T11:54:47Z ==
+-- step 1 2026-10-19T11:54:47Z: RUNNING tags and rollout state
+core-java=ghcr.io/bralabee/jtoye-core-java:a784e7e2421c7aba164f3e7db858b1861b7df6be gen=3 observed=3 ready=1/1 updated=1
+frontend=ghcr.io/bralabee/jtoye-frontend:a784e7e2421c7aba164f3e7db858b1861b7df6be gen=5 observed=5 ready=1/1 updated=1
+edge-go=ghcr.io/bralabee/jtoye-edge-go:a784e7e2421c7aba164f3e7db858b1861b7df6be gen=1 observed=1 ready=1/1 updated=1
+kubectl rc=0
+RUNNING=a784e7e2421c7aba164f3e7db858b1861b7df6be
+git merge-base --is-ancestor GREEN_SHA RUNNING: rc=1  (expect 1: the runtime lacks the fix; 128 = unknown commit = VOID)
+-- step 2 2026-10-19T11:54:48Z: in-jar read (Task 2 second verify)
+resolver=0 control=1
+jar verify rc=0  (expect 0: resolver=0 control=1)
+-- step 3 2026-10-19T11:54:50Z: anonymous menu
+curl rc=0 http=200
+[{"title":"Pelau","imageUrl":null,"imageUrls":[]}]
+jq rc=0
+quarantine-shaped strings=0 media strings=0
+-- step 4 2026-10-19T11:54:50Z: anonymous GET of the derivative (positive control: the object exists)
+http=200 content_type=image/webp bytes=1438
+curl rc=0
+magic:  R I F F 226 005 \0 \0 W E B P
+-- step 5 2026-10-19T11:54:50Z: sorted menu titles (Task 4 continuity compares against this)
+Pelau
+title count=1
+-- step 6 2026-10-19T11:55:30Z: the committed spec (81073fdf) against the pre-fix runtime a784e7e2 (Task 2 third verify; verify rc=0 = red for the RIGHT reason)
+command: cd frontend && STAGING_E2E=1 PLAYWRIGHT_BASE_URL=https://app-staging.olajay.co.uk STAGING_SHOP_SLUG=staging-test-kitchen STAGING_MEDIA_PRODUCT_TITLE=Pelau STAGING_MEDIA_ASSET_ID=1475a89c-19a5-4fea-a233-23e28070bbe3 npx playwright test e2e/staging-storefront-image.spec.ts --reporter=list --output <tmp>/results
+--- raw output (temp artifact paths elided by Playwright's relative form) ---
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/staging-storefront-image.spec.ts --reporter=list --output /tmp/tmp.kEsDBOHPHK/results
+
+Running 2 tests using 1 worker
+
+TITLE_VISIBLE Pelau
+CWV project=mobile lcp_ms=2500 cls=0.0000 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen
+PAGE_TEXT_ON_FAILURE Cookies on J'Toye We use cookies and browser storage only where strictly necessary to run this site — there is nothing to accept or reject. Got it Cookie policy Skip to main content J J'Toye 0 items in basket Sign in Back J'Toye Staging Test Kitchen Open now 1 Staging Test Street, Birmingham B1 1AA vendor.staging@olajay.co.uk Free delivery Staging test kitchen, seeded by scripts/staging-seed.sh (D-26). Not a real business. Opening hours Mains Pelau A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconut. GF dairy-free No allergens de
+  ✘  1 [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (4.4s)
+TITLE_VISIBLE Pelau
+CWV project=desktop lcp_ms=2436 cls=0.0006 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen
+PAGE_TEXT_ON_FAILURE Cookies on J'Toye We use cookies and browser storage only where strictly necessary to run this site — there is nothing to accept or reject. Got it Cookie policy Skip to main content J J'Toye Shops For operators Track order 0 items in basket Sign in Back J'Toye Staging Test Kitchen Open now 1 Staging Test Street, Birmingham B1 1AA vendor.staging@olajay.co.uk Free delivery Staging test kitchen, seeded by scripts/staging-seed.sh (D-26). Not a real business. Opening hours Mains Pelau A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconu
+  ✘  2 [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (4.4s)
+
+
+  1) [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+
+    Error: NO_MEDIA_IMG: no <img> named "Pelau" — the storefront fell back to its placeholder, so the menu carried no image
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+      149 |       await page.getByRole("img", { name: title, exact: true }).count(),
+      150 |       `NO_MEDIA_IMG: no <img> named "${title}" — the storefront fell back to its placeholder, so the menu carried no image`,
+    > 151 |     ).toBeGreaterThan(0)
+          |       ^
+      152 |
+      153 |     const src = (await img.getAttribute("src")) ?? ""
+      154 |     expect(
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-ae894c6292ea59a30/frontend/e2e/staging-storefront-image.spec.ts:151:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+
+    Error: NO_MEDIA_IMG: no <img> named "Pelau" — the storefront fell back to its placeholder, so the menu carried no image
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+      149 |       await page.getByRole("img", { name: title, exact: true }).count(),
+      150 |       `NO_MEDIA_IMG: no <img> named "${title}" — the storefront fell back to its placeholder, so the menu carried no image`,
+    > 151 |     ).toBeGreaterThan(0)
+          |       ^
+      152 |
+      153 |     const src = (await img.getAttribute("src")) ?? ""
+      154 |     expect(
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-ae894c6292ea59a30/frontend/e2e/staging-storefront-image.spec.ts:151:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../tmp/tmp.kEsDBOHPHK/results/staging-storefront-image-s-90305-to-for-an-anonymous-visitor-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+    [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+playwright rc=1 title_visible=2 no_media_img=4 cwv_lines=2
+--- end raw output ---
+BEFORE CWV (Task 4 compares its mobile line against the mobile one here):
+CWV project=mobile lcp_ms=2500 cls=0.0000 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+CWV project=desktop lcp_ms=2436 cls=0.0006 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+Task 2 collection switch (first verify): list rc off=0 on=0; switch off: listed=432 spec=0 | switch on: spec=2 mobile=1 desktop=1
+Task 2 contracts (fourth verify): check-e2e-baseurl-contract PASS, check-playwright-mobile-contract PASS, check-doc-metrics PASS (37 claims), docs-freshness OK (6353), rc=0
+spec acceptance: grep -c STAGING_VENDOR = 0 (control: staging-login.spec.ts = 4); grep -c PLAYWRIGHT_BASE_URL = 3
+lane note: no rollout was in progress during these reads (all three Deployments observed=generation, ready=1/1, on a784e7e2); lane A's 29-15 did not perturb them.
