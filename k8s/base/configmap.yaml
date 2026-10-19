@@ -368,6 +368,14 @@ data:
   # SOURCE: the existing frontend.url key above (overlays patch per env).
   notification.email.tracking-base-url: "https://app.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
+  # #592: the RFC 8058 one-click target's origin. List-Unsubscribe-Post is only
+  # stamped when this is set (application.yml defaults it EMPTY, fail-safe), so
+  # without it every environment's List-Unsubscribe degraded to a plain RFC 2369
+  # link. It is the API origin, never the app's: a mail provider POSTs to
+  # /api/v1/public/unsubscribe, which core-java serves and Next.js answers with
+  # 405 (#516). SOURCE: byte-equal to api.url above; UnsubscribeLinkRoutingTest
+  # asserts the equality in every overlay.
+  notification.unsubscribe.one-click-base-url: "https://api.olajay.co.uk"
   # 31.1-20 (#839): the page the emailed DSAR verification link opens, on the
   # WEB origin. It used to be the API, which answers a person who clicks it
   # with raw JSON. The page spends the token (carried in the #fragment) only

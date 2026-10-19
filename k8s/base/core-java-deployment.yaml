@@ -505,6 +505,15 @@ spec:
             configMapKeyRef:
               name: app-config
               key: notification.unsubscribe.base-url
+        # #592 / RFC 8058: the API origin the one-click POST target is built on.
+        # Empty in application.yml (fail-safe), so without this env every
+        # deployed List-Unsubscribe was a plain RFC 2369 link with no
+        # List-Unsubscribe-Post. Not optional: a missing key fails the pod.
+        - name: NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: notification.unsubscribe.one-click-base-url
         # Phase 31 (LGL-01): the link a data subject clicks to verify a DSAR.
         # Since 31.1-20 (#839) it opens the web app's /data-request/confirm page
         # (the API answered a click with raw JSON). Its application.yml default

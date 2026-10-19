@@ -98,6 +98,7 @@ data:
   media.outbox.resurrect.interval.ms: "300000"
   notification.email.tracking-base-url: https://app.olajay.co.uk
   notification.unsubscribe.base-url: https://app.olajay.co.uk
+  notification.unsubscribe.one-click-base-url: https://api.olajay.co.uk
   order-limits.max-basket-total-pennies: "100000"
   order-limits.max-basket-units: "200"
   order-limits.max-line-quantity: "50"
@@ -593,6 +594,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: notification.unsubscribe.base-url
+              name: app-config
+        - name: NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: notification.unsubscribe.one-click-base-url
               name: app-config
         - name: DSAR_VERIFY_BASE_URL
           valueFrom:

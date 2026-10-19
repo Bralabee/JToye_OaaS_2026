@@ -244,6 +244,8 @@ data:
   # origin still has to be right or the redirect leaves the platform entirely.)
   notification.email.tracking-base-url: "http://app.jtoye.local"
   notification.unsubscribe.base-url: "http://app.jtoye.local"
+  # #592 / RFC 8058: the one-click POST target's origin = this overlay's api.url.
+  notification.unsubscribe.one-click-base-url: "http://api.jtoye.local"
   gdpr.dsar.verify-base-url: "http://app.jtoye.local/data-request/confirm"
   gdpr.dsar.export-download-base-url: "http://app.jtoye.local/data-request/download"
   staff.invite.accept-base-url: "http://app.jtoye.local/invite"
