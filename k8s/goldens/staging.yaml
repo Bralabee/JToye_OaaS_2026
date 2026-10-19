@@ -60,6 +60,21 @@ metadata:
   namespace: jtoye-staging
 ---
 apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis
+  namespace: jtoye-staging
+---
+apiVersion: v1
 data:
   access.strict-scoping: "true"
   api.internal.url: http://core-java:9090
@@ -1768,6 +1783,31 @@ spec:
     environment: staging
   type: ClusterIP
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app: redis
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: redis
+    port: 6379
+    protocol: TCP
+    targetPort: redis
+  selector:
+    app: redis
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -2753,6 +2793,113 @@ spec:
           name: keycloak-theme-m5dt5btc4f
         name: keycloak-theme
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app: redis
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: cache
+    environment: staging
+  name: redis
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+      labels:
+        app: redis
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: cache
+        environment: staging
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - --save
+        - ""
+        - --appendonly
+        - "no"
+        - --maxmemory
+        - 96mb
+        - --maxmemory-policy
+        - allkeys-lru
+        - --requirepass
+        - $(REDIS_PASSWORD)
+        command:
+        - redis-server
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: redis-server-credentials
+        image: redis:8.10-alpine
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          tcpSocket:
+            port: redis
+          timeoutSeconds: 3
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          periodSeconds: 5
+          tcpSocket:
+            port: redis
+          timeoutSeconds: 3
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      securityContext:
+        fsGroup: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: redis
+      volumes:
+      - emptyDir:
+          sizeLimit: 64Mi
+        name: data
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -3694,3 +3841,153 @@ spec:
   policyTypes:
   - Ingress
   - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/name: rabbitmq-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: rabbitmq-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-java
+    ports:
+    - port: 5672
+      protocol: TCP
+    - port: 61613
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 15692
+      protocol: TCP
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: rabbitmq-system
+    ports:
+    - port: 15672
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: rabbitmq
+    ports:
+    - port: 4369
+      protocol: TCP
+    - port: 25672
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: redis-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-java
+    - podSelector:
+        matchLabels:
+          app: redis-exporter
+    ports:
+    - port: 6379
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    environment: staging
+  name: rabbitmq
+  namespace: jtoye-staging
+spec:
+  image: rabbitmq:4.3.6-management-alpine
+  persistence:
+    storage: 10Gi
+  rabbitmq:
+    additionalConfig: |
+      stomp.listeners.tcp.1 = 61613
+    additionalPlugins:
+    - rabbitmq_stomp
+  replicas: 1
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  secretBackend:
+    externalSecret:
+      name: rabbitmq-default-user

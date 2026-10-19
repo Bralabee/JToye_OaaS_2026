@@ -85,6 +85,14 @@ render none of them.
 | `keycloak-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
 | `keycloak-allow` | egress | public (managed Postgres, the `keycloak` database) | TCP `<db.port>` |
 | `keycloak-allow` | egress | pod `app=mailpit` | TCP 1025 |
+| `redis-allow` | ingress | pods `app=core-java`, `app=redis-exporter` | TCP 6379 |
+| `redis-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `rabbitmq-allow` | ingress | pod `app=core-java` | TCP 5672, TCP 61613 |
+| `rabbitmq-allow` | ingress | pod `app=prometheus` | TCP 15692 |
+| `rabbitmq-allow` | ingress | namespace `rabbitmq-system` (the cluster operator) | TCP 15672 |
+| `rabbitmq-allow` | ingress | pod `app.kubernetes.io/name=rabbitmq` (its own cluster) | TCP 4369, TCP 25672 |
+| `rabbitmq-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `rabbitmq-allow` | egress | public (Kubernetes peer discovery; an assumption plan 29-14 measures) | TCP 443 |
 
 ## The pod-label contract
 
@@ -177,8 +185,9 @@ In-cluster calls to Keycloak go to the pod directly (`app=keycloak` on 8080,
 kubectl kustomize k8s/staging/ | grep -A 2 "kind: NetworkPolicy"
 # Expect: default-deny, frontend-allow, core-java-allow, edge-go-allow,
 #         pg-backup-allow, observability-placeholder, acme-http01-solver-allow
-#         (7 policies in production), plus staging's component policies
-#         (keycloak-allow; see "Staging-only component policies")
+#         (7 policies in production), plus staging's three component policies
+#         keycloak-allow, redis-allow, rabbitmq-allow (10 in staging; see
+#         "Staging-only component policies")
 ```
 
 The authoritative static check is the gate, not a grep:

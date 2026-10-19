@@ -18,6 +18,8 @@ resources:
 # own namespace, labels, patches and replacements, so everything below reaches them.
 components:
   - ../components/keycloak
+  - ../components/redis
+  - ../components/rabbitmq
 
 # Staging-specific labels.
 # D-17 (Phase 26): the explicit `fields:` list mirrors k8s/base/kustomization.yaml —

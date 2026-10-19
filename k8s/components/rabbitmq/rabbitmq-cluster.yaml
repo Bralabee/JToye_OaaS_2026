@@ -1,0 +1,156 @@
+# The staging broker (D-09): RabbitmqCluster `rabbitmq` + NetworkPolicy rabbitmq-allow.
+#
+# THE BROKER VERSION IS DECLARED HERE. spec.image pins the same tag compose runs
+# (docker-compose.full-stack.yml). The rabbitmq-k8s row of infra/dependency-horizons.yaml
+# carries this pin at this file's line, so a one-sided bump is H-5 drift; that row's
+# manual_review is retired by this file (docs/runbooks/rabbitmq-broker-upgrade.md §7
+# step 4). A fresh install, so the runbook's "no in-place 3.12 -> 4.x" chain does not
+# apply to this cluster's first boot.
+#
+# Fields read from the operator's v2.23.1 CRD and docs on 2026-10-19
+# (https://www.rabbitmq.com/kubernetes/operator/using-operator, and
+# config/crd/bases/rabbitmq.com_rabbitmqclusters.yaml at tag v2.23.1).
+#
+# What the operator creates from this CR: StatefulSet rabbitmq-server (pods
+# rabbitmq-server-N, labelled app.kubernetes.io/name: rabbitmq), Service `rabbitmq`
+# (amqp 5672, management 15672, prometheus 15692, and stomp 61613 because
+# rabbitmq_stomp is enabled; internal/resource/service.go), headless Service
+# rabbitmq-nodes, one PVC per pod, and the server ConfigMaps. core-java reaches it as
+# rabbitmq.jtoye-staging.svc.cluster.local (app-config rabbitmq.host and
+# stomp.broker.relay-host, plan 29-08).
+#
+# THE DEFAULT USER (T-29-38) is never operator-generated and never committed:
+# secretBackend.externalSecret names Secret rabbitmq-default-user, which plan 29-12's
+# secret-sync Deployment keeps synced from Key Vault with the keys the operator's own
+# default-user Secret has (internal/resource/default_user_secret.go): `username`,
+# `password` and `default_user.conf` (the `default_user = …` / `default_pass = …` text
+# the server reads at boot). Its username/password are the SAME Key Vault objects as
+# core-java's rabbitmq-credentials (29-12), so the app and the broker agree. With
+# externalSecret set, the StatefulSet waits until that Secret exists rather than the
+# operator inventing one.
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: rabbitmq
+spec:
+  replicas: 1
+  image: rabbitmq:4.3.6-management-alpine
+  # Explicit, because the CRD's default (requests 1 CPU / 2Gi, limits 2 CPU / 2Gi)
+  # alone would take most of a B2s node (29-RESEARCH Pitfall 2). The operator derives
+  # the memory high watermark from the memory limit. No CPU limit: CFS throttling of
+  # the Erlang schedulers shows up as latency spikes, and the request alone is what
+  # the scheduler sizes the node by.
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      memory: "1Gi"
+  # The CRD default made explicit: one 10Gi PVC per pod on the cluster's default
+  # StorageClass (no storageClassName). The message store survives a pod restart.
+  persistence:
+    storage: 10Gi
+  rabbitmq:
+    # Added to the operator's always-on set (rabbitmq_management, rabbitmq_prometheus,
+    # rabbitmq_peer_discovery_k8s), which is what compose enables too
+    # (infra/rabbitmq/enabled_plugins). core-java's STOMP broker relay needs it.
+    additionalPlugins:
+      - rabbitmq_stomp
+    # The STOMP listener stated, not left to the plugin default, so the port the
+    # Service, the NetworkPolicy and core-java's relay all name is written here too.
+    additionalConfig: |
+      stomp.listeners.tcp.1 = 61613
+  secretBackend:
+    externalSecret:
+      name: rabbitmq-default-user
+---
+# rabbitmq-allow. INV-7 row rabbitmq-allow@k8s/staging; k8s/base/networkpolicies/README.md
+# carries the same rows.
+#
+# Ingress:
+#   - core-java pods: TCP 5672 (AMQP) and 61613 (the STOMP relay)
+#   - prometheus pods: TCP 15692 (rabbitmq_prometheus; plan 29-23 scrapes it)
+#   - namespace rabbitmq-system: TCP 15672 (the cluster operator's management-API
+#     calls during reconciliation; its pods live only there, per the bootstrap)
+#   - pods of this cluster (same label): TCP 4369 (epmd) and 25672 (inter-node).
+#     One replica today; they are declared so a scale-out does not first need a
+#     policy review of the broker's own clustering ports.
+# Egress:
+#   - kube-dns
+#   - public 443 (ipBlock 0.0.0.0/0 except RFC1918), for Kubernetes peer discovery.
+#     AN ASSUMPTION TO MEASURE IN PLAN 29-14, not a known need: rabbitmq_peer_discovery_k8s
+#     historically called the API server, which on AKS is a public endpoint on 443;
+#     if the live broker shows it never does, this rule goes.
+# Scaling past one replica would also need EGRESS to the same-label pods on 4369 and
+# 25672, which this policy does not grant.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-allow
+  labels:
+    app.kubernetes.io/name: rabbitmq-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 5672    # AMQP
+        - protocol: TCP
+          port: 61613   # STOMP
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 15692
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: rabbitmq-system
+      ports:
+        - protocol: TCP
+          port: 15672
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 4369    # epmd
+        - protocol: TCP
+          port: 25672   # inter-node
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

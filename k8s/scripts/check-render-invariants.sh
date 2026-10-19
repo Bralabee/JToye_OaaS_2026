@@ -829,6 +829,17 @@ declare -A NETPOL_RULES_EXPECTED=(
       in:ns=__INGRESS_NS__:8080 in:pod=app=frontend:8080 in:pod=app=core-java:8080 in:pod=app=edge-go:8080
       in:pod=app=prometheus:9000
       $NETPOL_DNS_EG eg:ip=0.0.0.0/0:__DB_PORT__ eg:pod=app=mailpit:1025"
+  [redis-allow@k8s/staging]="sel:app=redis types:Egress,Ingress
+      in:pod=app=core-java:6379 in:pod=app=redis-exporter:6379
+      $NETPOL_DNS_EG"
+  # The broker pods carry the operator-set label app.kubernetes.io/name=rabbitmq. The
+  # public 443 egress is for Kubernetes peer discovery, an assumption plan 29-14
+  # measures (see k8s/components/rabbitmq/rabbitmq-cluster.yaml).
+  [rabbitmq-allow@k8s/staging]="sel:app.kubernetes.io/name=rabbitmq types:Egress,Ingress
+      in:pod=app=core-java:5672 in:pod=app=core-java:61613 in:pod=app=prometheus:15692
+      in:ns=rabbitmq-system:15672
+      in:pod=app.kubernetes.io/name=rabbitmq:4369 in:pod=app.kubernetes.io/name=rabbitmq:25672
+      $NETPOL_DNS_EG eg:ip=0.0.0.0/0:443"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as

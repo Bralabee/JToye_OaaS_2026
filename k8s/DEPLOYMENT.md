@@ -751,9 +751,11 @@ today that sink is a Mailhog dev container with nobody behind it. Delivery is no
 **An expired deferral, exemption or `manual_review` is a FAIL by design.** That is the whole
 mechanism: a gap is acknowledged, owned and *dated*, and the build goes red the day the date
 passes. Re-date it deliberately with a reason, or resolve it — never delete the row. The
-`rabbitmq-k8s` row is the live example: the staging/production broker is provisioned outside this
-repository, so its row is `pin: unknown` / `owner: UNASSIGNED` with a dated `manual_review`, it is
-printed on **every** run, and it goes red the day that review lapses. See
+`rabbitmq-k8s` row was the example until plan 29-10: while the broker was provisioned outside this
+repository its row was `pin: unknown` / `owner: UNASSIGNED` with a dated `manual_review`, printed on
+**every** run. It was resolved, not deleted: the staging broker is now the `RabbitmqCluster` in
+`k8s/components/rabbitmq/`, and the row carries its `spec.image` pin at that site with the review
+retired. The rows still under a dated `manual_review` are the `UNKNOWN` lines each run prints. See
 [`docs/runbooks/rabbitmq-broker-upgrade.md`](../docs/runbooks/rabbitmq-broker-upgrade.md) §7.
 
 ## Monitoring and Observability

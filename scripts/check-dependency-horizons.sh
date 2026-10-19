@@ -121,12 +121,18 @@ COMPOSE_FILES=(
 # Every k8s directory whose manifests carry `image:` pins. k8s/platform (Phase 29, plan
 # 29-03) holds the in-cluster platform objects the bootstrap script applies — Traefik, the
 # ACME probe — which are deliberately NOT kustomize gate targets (depth 3), so without this
-# entry their pins would be invisible to H-1. Each directory is discovered and VOID-checked
-# on its own: a directory that yields ZERO images is a broken pattern, not "no images", and
-# one populated directory must not be able to hide an empty one.
+# entry their pins would be invisible to H-1. k8s/components (plan 29-10) holds the
+# kustomize Components only k8s/staging includes — Keycloak, Redis, the RabbitmqCluster
+# whose spec.image is the in-cluster broker pin — at the same depth for the same reason.
+# Measured 2026-10-19: with k8s/components absent from this list, an unrowed broker tag
+# planted in the RabbitmqCluster exits 0 (invisible); with it present, H-1 names it, rc 1.
+# Each directory is discovered and VOID-checked on its own: a directory that yields ZERO
+# images is a broken pattern, not "no images", and one populated directory must not be able
+# to hide an empty one.
 K8S_GLOB_DIRS=(
   "k8s/base"
   "k8s/platform"
+  "k8s/components"
 )
 DOCKERFILES=(
   "core-java/Dockerfile"

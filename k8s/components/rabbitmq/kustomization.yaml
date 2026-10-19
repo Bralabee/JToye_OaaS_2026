@@ -1,0 +1,25 @@
+# In-cluster RabbitMQ for jtoye-staging (Phase 29 plan 29-10, D-09 / ADR-0002).
+#
+# ADR-0002 (Accepted 2026-08-10) runs the broker in-cluster through the RabbitMQ
+# cluster operator, with the broker version declared IN THIS REPO. The operator
+# itself (v2.23.1, its CRDs and RBAC) is not here: scripts/staging-bootstrap.sh
+# --stage rabbitmq-operator applies the release manifest by pinned URL + sha256
+# (plan 29-03), so an upstream bump is never an unreviewable golden diff. Only OUR
+# custom resource lives in a kustomization.
+#
+# A COMPONENT, not k8s/base: minikube (k8s/local) has no operator CRDs, so a base
+# RabbitmqCluster would make `kubectl apply -k k8s/local` fail with "no matches for
+# kind"; k8s/local keeps using the host compose broker (LOC-1). Production opts in
+# in Phase 32. Only k8s/staging lists it under `components:`.
+#
+# No `labels:` transformer here, unlike ../keycloak and ../redis: the operator owns
+# the app.kubernetes.io/* labels of everything it creates from the CR. Read in the
+# v2.23.1 source (internal/metadata/label.go, 2026-10-19): it sets name=<CR name>,
+# component=rabbitmq and part-of=rabbitmq, and GetLabels DROPS every CR label with an
+# app.kubernetes.io prefix, so our part-of/managed-by pair would never reach a pod.
+# The pods' app.kubernetes.io/name: rabbitmq is what NetworkPolicies select.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - rabbitmq-cluster.yaml

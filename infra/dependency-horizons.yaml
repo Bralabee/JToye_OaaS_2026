@@ -125,6 +125,7 @@ dependencies:
       - "docker-compose.full-stack.yml:145"
       - "infra/docker-compose.yml:71"
       - "infra/docker-compose.hostnet.yml:26"
+      - "k8s/components/keycloak/keycloak.yaml:70"
     kind: image
     owner: maintainer
     eol_slug: keycloak
@@ -142,7 +143,7 @@ dependencies:
 
   - id: redis
     pin: "redis:8.10-alpine"
-    sites: ["docker-compose.full-stack.yml:200"]
+    sites: ["docker-compose.full-stack.yml:200", "k8s/components/redis/redis.yaml:74"]
     kind: image
     owner: maintainer
     eol_slug: redis
@@ -418,8 +419,8 @@ dependencies:
     pin: "go-version: '1.27'"
     sites:
       - ".github/workflows/ci-cd.yaml:53"
-      - ".github/workflows/ci-cd.yaml:998"
-      - ".github/workflows/ci-cd.yaml:1412"
+      - ".github/workflows/ci-cd.yaml:1005"
+      - ".github/workflows/ci-cd.yaml:1435"
     kind: toolchain
     owner: maintainer
     eol_slug: go
@@ -641,32 +642,34 @@ dependencies:
       expires: "2027-01-19"
       url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"
 
-  # ------------------------------------------------------------------ out of repo
-  #  The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
-  #  `pin: unknown` + `manual_review` is the honest state, not a placeholder for forgotten
-  #  work — and the gate PRINTS it on every run so it cannot become invisible.
+  # ------------------------------------------------------------------ in-cluster broker (Phase 29)
+  #  Seeded by 27-02 as the one `out_of_repo` row (`pin: unknown`, UNASSIGNED, a dated
+  #  manual_review), because the staging/production broker was deployed from nowhere in this
+  #  repo. Plan 29-10 ships the RabbitmqCluster that declares it, so the row now carries that
+  #  pin at that site and is evaluated like every other image row.
   - id: rabbitmq-k8s
-    pin: unknown
-    sites: []
-    kind: out_of_repo
-    owner: UNASSIGNED
-    eol_slug: null
+    pin: "rabbitmq:4.3.6-management-alpine"
+    sites: ["k8s/components/rabbitmq/rabbitmq-cluster.yaml:37"]
+    kind: image
+    owner: maintainer
+    eol_slug: rabbitmq
+    eol_cycle: "4.3"
+    eol_date: "false"
+    eol_source: vendor
+    vendor_eol: "2027-01-31"
+    vendor_source: "https://www.rabbitmq.com/release-information"
     note: >-
-      The staging/production broker is not deployed from this repo. MEASURED 2026-07-26 and
-      re-verified 2026-10-16 (39-01): `rg -uu -n 'image:.*rabbitmq' k8s/` returns NOTHING —
-      the only rabbitmq strings under k8s/ are the configmap host/port (`k8s/base/configmap.yaml`
-      and `k8s/local/configmap-patch.yaml`, which routes local minikube pods to the host Compose
-      broker via `host.minikube.internal`) and the `rabbitmq-credentials` Secret refs. Its
-      staging/production version is therefore unresolvable from this repo by construction, which
-      is why this row is UNASSIGNED: there is no platform-operator identity here to assign it to,
-      and saying so is more useful than inventing a name. Re-checked 2026-10-16 against
-      https://www.rabbitmq.com/release-information: 4.3.6 (released 16 Sept 2026) is the newest
-      upstream release (no 4.4 series published yet), and the vendor extended 4.3 End of
-      Community Support to 31 Jan 2027 (2027-01-31). ADR-0002 was ACCEPTED on 2026-08-10 (recorded on
-      main 2026-10-18), choosing the in-cluster RabbitMQ cluster operator. The route is decided; this
-      row closes when Phase 29 ships that manifest with a declared broker pin, not before. See ADR-0002
-      and docs/runbooks/rabbitmq-broker-upgrade.md.
-    manual_review:
-      last_checked: "2026-10-16"
-      expires: "2027-01-16"
-      url: "https://www.rabbitmq.com/release-information"
+      2026-10-18 (plan 29-10; ADR-0002, D-09): the in-cluster staging broker, run by the RabbitMQ
+      cluster operator v2.23.1 (row rabbitmq-cluster-operator) from the RabbitmqCluster `rabbitmq`
+      in k8s/components/rabbitmq/rabbitmq-cluster.yaml, which only k8s/staging includes. The broker
+      version is that CR's spec.image, the same tag compose runs (row rabbitmq), so the two rows
+      share one pin and, through the vendor date, one horizon: both enter the 90-day window on
+      ~2026-11-02 and must be moved together. Before this plan the row was `pin: unknown`,
+      `kind: out_of_repo`, `owner: UNASSIGNED` with a manual_review expiring 2027-01-16; that review
+      is RETIRED per docs/runbooks/rabbitmq-broker-upgrade.md §7 step 4 (a row with a declared pin
+      and a site needs no human re-check of an unknown), and the owner is the maintainer, who can
+      now act on it in-repo. Production's broker is still decided in Phase 32 and is NOT covered by
+      this row. Vendor date as on the compose row: 4.3 End of Community Support 2027-01-31
+      (https://www.rabbitmq.com/release-information, re-verified 2026-10-16); the catalogue returns
+      `eol: false` for cycle 4.3, hence eol_source vendor. H-1 discovers this pin only because
+      scripts/check-dependency-horizons.sh scans k8s/components (also plan 29-10).
