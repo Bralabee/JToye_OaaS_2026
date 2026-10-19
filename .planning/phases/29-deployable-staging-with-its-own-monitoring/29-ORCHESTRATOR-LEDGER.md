@@ -117,3 +117,8 @@ Next, in order:
 5. Phase verification (code review, regression gate, gsd-verifier), then PR (no AI attribution in PR body; read it back).
 Owner-run commands MUST start with `source ~/miniconda3/etc/profile.d/conda.sh && conda activate jtoye-ops` (pyshim).
 Check `.env` and memory BEFORE asking the owner for any value (feedback memory written 2026-10-19).
+
+## Housekeeping 2026-10-19 (end of session)
+- Repo var FRONTEND_PUBLIC_API_URL = https://api-staging.olajay.co.uk (set this session for staging builds). Any PRODUCTION frontend build from main would bake the staging API origin: reconcile before any production deploy (29-28 must keep production deploy off; Phase 32 owns prod).
+- Machine: claude-memory-backup.timer FAILED 2026-10-19 02:30 (deletion breaker: 26 OaaS memory files moved to memory-archive/ on 2026-10-18 12:06; limit 25). Intended curation; needs one run with MEMORY_BACKUP_MAX_DELETE>=26 (owner/machine session). sync-claude --check: settings.json content drift (machine session only; project sessions do not capture).
+- Local branch docs/29-plan-on-main: no PR, every commit already on the pushed phase branch; left for owner (no-PR branches are never auto-deleted).
