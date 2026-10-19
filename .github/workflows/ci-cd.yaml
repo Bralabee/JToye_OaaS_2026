@@ -1772,6 +1772,15 @@ jobs:
     # is set to 'true' (the old branch-name gate could never fire — that branch
     # does not exist on the remote).
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    # Plan 29-21 (D-04, D-32): Azure is reached ONLY through an OIDC federated credential.
+    # id-token: write lets azure/login request the GitHub token that Entra exchanges for
+    # jtoye-ci, whose federated credential gh-deploy-staging admits exactly the subject
+    # repo:Bralabee/JToye_OaaS_2026:environment:staging, i.e. this job's `environment:`
+    # below. Renaming that environment breaks authentication silently, so it is not renamed.
+    # No long-lived kubeconfig secret exists or is read.
+    permissions:
+      id-token: write
+      contents: read
     environment:
       name: staging
       url: https://app-staging.olajay.co.uk
@@ -1783,10 +1792,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Plan 29-21: within one minor of the cluster. jtoye-stg-aks reported
+      # kubernetesVersion 1.36.4 (az_read, 2026-10-19; evidence/29-21-ci.txt), and kubectl
+      # is supported only within one minor of the API server, so this pins that patch.
+      # Re-read and re-pin when the cluster is upgraded (K8S_MINOR in
+      # scripts/azure-staging-provision.sh).
       - name: Set up kubectl
         uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
         with:
-          version: 'v1.28.0'
+          version: 'v1.36.4'
 
       - name: Install kustomize (pinned, checksum-verified)
         # Same checksum-verified-pinned-binary shape as the oasdiff install in the
@@ -1883,10 +1897,67 @@ jobs:
             echo "ADVISORY (flag off, deploy proceeds on today's /auth/signin leg): the staging realm did not cleanly accept $URI (rc=$rc; 2 = unreachable/VOID). Register <frontend.url>/api/vendor-auth/logout-complete on client $CLIENT and re-run before flipping vendor.logout-complete.enabled."
           fi
 
-      - name: Configure kubeconfig
+      # ---- Plan 29-21: authentication (D-04, D-32) --------------------------------------
+      # Every credential below is short-lived and minted for this run: the GitHub OIDC
+      # token, the Entra token azure/login exchanges it for, and the AKS token kubelogin
+      # obtains through the Azure CLI. The cluster is Entra-only with local accounts
+      # disabled, so the kubeconfig az writes holds no credential; kubelogin supplies one.
+      # The identifiers are environment variables of the `staging` environment (not
+      # secrets: a client id and a tenant id are not credentials, T-29-32).
+      - name: Refuse a subscription that is not J'Toye's
+        # An empty --subscription silently resolves to the CLI's default (measured
+        # 2026-09-28), so the variable is checked byte-for-byte before any az call.
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+          if [ "$AZURE_SUBSCRIPTION_ID" != "c483d353-5f61-4587-a790-addb9ab5fb94" ]; then
+            echo "FATAL: environment variable AZURE_SUBSCRIPTION_ID is '${AZURE_SUBSCRIPTION_ID:-<unset>}', not the J'Toye subscription c483d353-5f61-4587-a790-addb9ab5fb94." >&2
+            exit 1
+          fi
+
+      - name: Azure login (OIDC, jtoye-ci, no stored secret)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install kubelogin (pinned, checksum-verified)
+        # Same checksum-verified-pinned-binary shape as kustomize above. Version and
+        # linux_amd64 zip sha256 taken from the Azure/kubelogin v0.2.21 release's own
+        # .sha256 asset and re-computed locally before pinning (evidence/29-21-ci.txt).
+        run: |
+          KUBELOGIN_VERSION="v0.2.21"
+          KUBELOGIN_SHA256="934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66"
+          curl -sSfL -o kubelogin.zip "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip"
+          echo "${KUBELOGIN_SHA256}  kubelogin.zip" | sha256sum -c -
+          unzip -o -j kubelogin.zip bin/linux_amd64/kubelogin -d kubelogin-bin
+          sudo install -m 0755 kubelogin-bin/kubelogin /usr/local/bin/kubelogin
+          kubelogin --version
+
+      - name: Configure kubeconfig (az aks get-credentials + kubelogin, Entra only)
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          az aks get-credentials --subscription "$AZURE_SUBSCRIPTION_ID" -g jtoye-rg -n jtoye-stg-aks --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+          kubectl config current-context
+          # Fetch the AKS token now, while the federated assertion is fresh, and prove this
+          # identity may write in the staging namespace before anything is applied.
+          can="$(kubectl auth can-i create deployments -n jtoye-staging)"
+          echo "can-i create deployments -n jtoye-staging: $can"
+          [ "$can" = yes ]
+
+      # D-23 / T-29-49..51: refuse a half-configured vault before applying. --names-only
+      # reads object names, enabled flags and per-secret role assignments, never a value
+      # (jtoye-ci holds Key Vault Reader at vault scope, not Secrets User). The script
+      # initialises the subscription guard itself; JTOYE_AZURE_SUBSCRIPTION_ID is what
+      # az_guard_init compares with the pinned id, so a wrong or missing variable refuses.
+      - name: Pre-flight — every staging Key Vault object present, enabled and granted (29-13 / 29-21)
+        env:
+          JTOYE_AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: bash scripts/staging-secrets-preflight.sh --names-only
 
       - name: Pin full-sha images + deploy staging overlay
         env:
@@ -1961,8 +2032,8 @@ jobs:
         # wrong image; exit 2 is VOID (the shared staging context guard refused the
         # context, kubelogin or docker is missing, or no pod was read) and fails the job
         # too: "could not check" is never "clean". The guard needs kubelogin and the
-        # kubeconfig's server to equal the staging API server; plan 29-21 rewires this
-        # job's authentication, and until then this step fails closed.
+        # kubeconfig's server to equal the staging API server; since plan 29-21 both come
+        # from the Configure kubeconfig step above (az aks get-credentials + kubelogin).
         run: |
           bash scripts/check-deploy-digest-parity.sh --context "$(kubectl config current-context)" --tag "$DEPLOY_TAG"
 
@@ -1977,10 +2048,14 @@ jobs:
           kubectl exec -n jtoye-staging deployment/core-java -- curl -f http://localhost:9091/actuator/health || exit 1
 
       - name: Run smoke tests
-        # Staging exposes Swagger (application-staging.yml) — assert it is reachable.
+        # Plan 29-21 (Blocker G, #549): k8s staging runs the PROD Spring profile
+        # deliberately, for parity with production, so the API docs are off there and
+        # #549 keeps them off a public host. EXPECT_SWAGGER=false asserts /swagger-ui.html
+        # and /v3/api-docs are NOT served. Expecting them (the old line) would fail every
+        # healthy deploy and the rollback below would undo it.
         run: |
           chmod +x ./scripts/smoke-test.sh
-          EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
+          EXPECT_SWAGGER=false ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 
       - name: Rollback on failure
         if: failure()
