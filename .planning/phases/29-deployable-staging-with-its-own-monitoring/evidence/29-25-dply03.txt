@@ -1,0 +1,80 @@
+# 29-25 DPLY-03 evidence — staging alerting live (kube-context jtoye-stg-aks, subscription c483d353, vault jtoye-stg-kv)
+# Values are never printed. Every check is shown in its fail direction before its pass.
+
+== Task 1: Key Vault generated objects + grants, preflight
+
+-- Order note: the four owner values alertmanager-smtp-credentials--{from,username,password,to} were
+   written by the orchestrator BEFORE this plan ran (checkpoint resolution 2026-10-19 ~17:25Z: equal to
+   the repo .env ALERTMANAGER_SMTP_* values; Zoho STARTTLS login with them succeeded, wrong-password
+   control 535). So the plan's Task 1 verify ("missing set == exactly the four Zoho objects") can no
+   longer be produced; the live fail direction recorded instead is the preflight BEFORE --generate.
+
+-- 1a. preflight before --generate (fail direction, live)
+2026-10-19T17:27:18Z
+MISSING grafana-admin-credentials--admin-password
+MISSING grafana-admin-credentials--admin-user
+MISSING-ACCESS grafana-admin-credentials--admin-password 99264ed4-8b66-48fc-b510-26af24baa3d2
+MISSING-ACCESS grafana-admin-credentials--admin-user 99264ed4-8b66-48fc-b510-26af24baa3d2
+MISSING-ACCESS alertmanager-smtp-credentials--from 2422de69-5161-4350-ab2b-7158625a0989
+MISSING-ACCESS alertmanager-smtp-credentials--password 2422de69-5161-4350-ab2b-7158625a0989
+MISSING-ACCESS alertmanager-smtp-credentials--to 2422de69-5161-4350-ab2b-7158625a0989
+MISSING-ACCESS alertmanager-smtp-credentials--username 2422de69-5161-4350-ab2b-7158625a0989
+NOT-TEST-MODE alertmanager-smtp-credentials--from
+NOT-TEST-MODE alertmanager-smtp-credentials--password
+NOT-TEST-MODE alertmanager-smtp-credentials--to
+NOT-TEST-MODE alertmanager-smtp-credentials--username
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 41 objects, 45 grants, 12 gap(s)
+rc=1
+
+   Finding: the four NOT-TEST-MODE lines are a preflight DEFECT, not a vault gap. 29-24 classed the
+   owner values "external @email"/"external @nonempty" (validator kinds) in the writer, but the
+   preflight read the kind as a literal value prefix, so it could pass on NO vault. Its own
+   --selftest was 8/16 on HEAD 4945dc00 (unwired in CI, so unseen).
+   Fix (Rule 3, TDD): f34f084d RED 8/17 (RED_EVIDENCE_OK, evidence/29-25-t1-red-preflight-validators.json),
+   2382de1e GREEN: one rule ss_external_valid shared by writer and preflight; an invalid @-kind value
+   is INVALID-VALUE <object>. preflight --selftest 17/17, writer --selftest 13/13.
+   Break arm on the committed GREEN (accept-all @email planted in the lib):
+== break arm: accept-all @email planted in scripts/lib/staging-secrets-common.sh
+FAIL invalid-external-value gap lines were: INVALID-VALUE alertmanager-smtp-credentials--password
+SELFTEST: 16/17 (derived objects=41, grants=45)
+rc=1
+   restored: md5 ab3d5c81fade762061804ced687f47d0 == committed; git status clean before and after
+
+-- 1b. --generate (owner-approved write, [az-ok] 29-25)
+2026-10-19T17:30:58Z
+$ bash scripts/staging-secrets.sh --generate
+external (owner supplies via --set-external): alertmanager-smtp-credentials--from
+external (owner supplies via --set-external): alertmanager-smtp-credentials--password
+external (owner supplies via --set-external): alertmanager-smtp-credentials--to
+external (owner supplies via --set-external): alertmanager-smtp-credentials--username
+written: grafana-admin-credentials--admin-password (version c49edf043bd343d7a615bedf6f8fcd82; value not printed)
+written: grafana-admin-credentials--admin-user (version 8bd958a5d0494863916b4d2ef76ff0fc; value not printed)
+external (owner supplies via --set-external): stripe-credentials--api-key
+external (owner supplies via --set-external): stripe-credentials--webhook-secret
+generate: 2 written, 33 exist (write-once, untouched), 6 external left to the owner
+rc=0
+   (33 'exists (write-once)' lines elided: untouched)
+
+-- 1c. --assign-access (owner-approved write, [az-ok] 29-25)
+2026-10-19T17:31:30Z
+$ bash scripts/staging-secrets.sh --assign-access
+assigned: Key Vault Secrets User on grafana-admin-credentials--admin-password to 99264ed4-8b66-48fc-b510-26af24baa3d2
+assigned: Key Vault Secrets User on grafana-admin-credentials--admin-user to 99264ed4-8b66-48fc-b510-26af24baa3d2
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--from to 2422de69-5161-4350-ab2b-7158625a0989
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--password to 2422de69-5161-4350-ab2b-7158625a0989
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--to to 2422de69-5161-4350-ab2b-7158625a0989
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--username to 2422de69-5161-4350-ab2b-7158625a0989
+assign-access: 45 grants, 6 created, 39 existing, 0 deferred
+rc=0
+
+-- 1d. preflight after (pass direction, live)
+2026-10-19T17:32:23Z
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 41 objects, 45 grants, 0 gap(s)
+rc=0
+
+== Task 2: owner values — SATISFIED by the orchestrator's checkpoint resolution (2026-10-19 ~17:25Z);
+   the preflight above is Task 2's own verification (rc 0, 0 gaps, the four names gone).
