@@ -1,0 +1,77 @@
+# 29-23 evidence: Prometheus and exporters in k8s (DPLY-03 part A)
+# Plan .planning/phases/29-deployable-staging-with-its-own-monitoring/29-23-PLAN.md
+# Every check is recorded in both directions. Identifiers that trip gitleaks are truncated to 8 chars.
+
+## Task 1
+
+== T1 arms 2026-10-19T15:40:18Z at 43a8fdaf
+-- clean (open)
+parity rc=0
+alerts md5 copy=7368261df6b44519ddd8d12267862856 canonical=7368261df6b44519ddd8d12267862856
+jobs=core-java,edge-go,keycloak,postgres,prometheus,rabbitmq,rabbitmq-queues,redis
+-- arm A: one-byte edit of the alerts.yml copy (first 'critical' -> 'criticaL')
+copy md5 now=1b0894bc137046222890e90d52196ebf bytes=28812
+parity rc=1
+FAIL: pair 4 has DRIFTED
+  copy     : k8s/components/monitoring/prometheus/alerts.yml  md5=1b0894bc137046222890e90d52196ebf  bytes=28812
+  CANONICAL: infra/monitoring/prometheus/alerts.yml  md5=7368261df6b44519ddd8d12267862856  bytes=28812
+FAIL: 1 of 5 pairs drifted. A copy that differs from its canonical file means one runtime serves an edit the other never received.
+restored md5=7368261df6b44519ddd8d12267862856
+-- arm B: job keycloak renamed kc in the k8s config
+jobs now=core-java,edge-go,kc,postgres,prometheus,rabbitmq,rabbitmq-queues,redis
+parity rc=1
+FAIL: jobs pair has DRIFTED (k8s /home/sanmi/IdeaProjects/JToye_OaaS_2026/k8s/components/monitoring/prometheus/prometheus.yml vs compose /home/sanmi/IdeaProjects/JToye_OaaS_2026/infra/monitoring/prometheus/prometheus.yml.tmpl)
+  job sets differ: only in the k8s config ['kc']; only in the compose config ['keycloak']
+FAIL: 1 of 5 pairs drifted. A copy that differs from its canonical file means one runtime serves an edit the other never received.
+restored jobs=core-java,edge-go,keycloak,postgres,prometheus,rabbitmq,rabbitmq-queues,redis md5=bc8d41e0673c37915f7a481bfa87ffe8 HEAD-blob=ee323f3db31e now-blob=ee323f3db31e
+-- clean (close)
+parity rc=0
+PASS: 4 pairs, all byte-equal; 1 jobs pair(s), job sets and labels equal.
+git diff paths: 0
+-- rendered prometheus.yml read back (kubectl kustomize k8s/staging, ConfigMap prometheus-config-98kbm688hm .data)
+rendered-prometheus.yml: const-instance=0 dns_sd=2 names=core-java-metrics.jtoye-staging.svc.cluster.local edge-go-metrics.jtoye-staging.svc.cluster.local
+control (compose template, same greps): prometheus.yml.tmpl: const-instance=1 dns_sd=0
+-- promtool check config (prom/prometheus:v3.13.4 digest sha256:87861b8c…) on the rendered config + the alerts copy
+rc=0  SUCCESS: 1 rule files found; valid prometheus config file syntax; alerts.yml SUCCESS: 19 rules found
+control: dns_sd type 'A' changed to 'Q' -> rc=1 FAILED: invalid DNS-SD records type Q
+
+## Task 2
+
+BASELINE measured 2026-10-19T15:41:07Z at 43a8fdaf2fe0ba02e50ad7d1ca1709324e3162d8
+BASELINE render: kubectl kustomize k8s/staging > /tmp/claude-29-23/render-before.yaml rc=0; keyvault-chain.py objects rc=0; SPC-name read rc=0
+BASELINE-KV-OBJECT client-ip-credentials--hmac-key
+BASELINE-KV-OBJECT dsar-credentials--encryption-key
+BASELINE-KV-OBJECT keycloak-credentials--admin-password
+BASELINE-KV-OBJECT keycloak-credentials--admin-username
+BASELINE-KV-OBJECT keycloak-credentials--frontend-client-secret
+BASELINE-KV-OBJECT keycloak-server-credentials--db-password
+BASELINE-KV-OBJECT mailpit-ui-credentials--auth
+BASELINE-KV-OBJECT nextauth-secret--secret
+BASELINE-KV-OBJECT notification-credentials--unsubscribe-signing-secret
+BASELINE-KV-OBJECT postgres-credentials--backup-password
+BASELINE-KV-OBJECT postgres-credentials--backup-username
+BASELINE-KV-OBJECT postgres-credentials--database
+BASELINE-KV-OBJECT postgres-credentials--host
+BASELINE-KV-OBJECT postgres-credentials--migration-password
+BASELINE-KV-OBJECT postgres-credentials--migration-username
+BASELINE-KV-OBJECT postgres-credentials--password
+BASELINE-KV-OBJECT postgres-credentials--port
+BASELINE-KV-OBJECT postgres-credentials--username
+BASELINE-KV-OBJECT rabbitmq-credentials--password
+BASELINE-KV-OBJECT rabbitmq-credentials--stomp-login
+BASELINE-KV-OBJECT rabbitmq-credentials--stomp-passcode
+BASELINE-KV-OBJECT rabbitmq-credentials--username
+BASELINE-KV-OBJECT rabbitmq-default-user--default-user-conf
+BASELINE-KV-OBJECT redis-credentials--password
+BASELINE-KV-OBJECT smtp-credentials--password
+BASELINE-KV-OBJECT smtp-credentials--username
+BASELINE-KV-OBJECT stripe-credentials--api-key
+BASELINE-KV-OBJECT stripe-credentials--webhook-secret
+BASELINE-SPC core-java-kv
+BASELINE-SPC frontend-kv
+BASELINE-SPC keycloak-kv
+BASELINE-SPC mailpit-ui-kv
+BASELINE-SPC pg-backup-kv
+BASELINE-SPC rabbitmq-kv
+BASELINE-SPC redis-kv
+BASELINE-COUNTS objects=28 spcs=7
