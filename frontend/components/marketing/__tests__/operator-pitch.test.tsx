@@ -105,7 +105,7 @@ describe("OperatorPitch", () => {
   it("quantifies the aggregator leak in section 2's intro, not as a display number", () => {
     render(<OperatorPitch />)
     expect(screen.getByText(/28% aggregator commission on £10k a month of orders hands over £2,800 a month/i)).toBeInTheDocument()
-    expect(screen.getByText(/direct storefront cost £39 \+ 0\.5%/i)).toBeInTheDocument()
+    expect(screen.getByText(/direct storefront cost £39 \+ 0\.5%, plus Stripe.s card fees, which you would pay either way\./i)).toBeInTheDocument()
     // £2,800 appears exactly once, as body copy.
     expect(screen.getAllByText(/£2,800/)).toHaveLength(1)
   })

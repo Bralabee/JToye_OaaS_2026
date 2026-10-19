@@ -9,10 +9,13 @@ import { SafeImage } from "@/components/ui/safe-image"
  * Every figure the page prints about price lives HERE, so a later owner ruling
  * is a one-line change and the hero docket and the pricing table can never
  * disagree: the docket reads the `primary` row. Source of truth is the billing
- * code, not the guides: StripeBillingService javadoc (SAAS_HYBRID_STANDARD,
- * SAAS_FLAT_PREDICTABLE, BATCH_PAYG_STARTER) and the V88 migration header.
- * Assisted setup is the ADR-0007 axis-4 onboarding fee. Do not add a tier the
- * code does not bill.
+ * code, not the guides:
+ * The three RECURRING tiers (Standard, Flat, Batch pay-as-you-go) mirror
+ * BillingPlanMode as StripeBillingService bills them (javadoc + V88 migration
+ * header). WALK_SETUP_STEPDOWN is internal and deliberately not printed. The
+ * assisted setup line is a ONE-OFF fee from ADR-0007 axis 4, invoiced outside
+ * StripeBillingService; it is not a billing tier. Do not add a recurring tier
+ * the code does not bill.
  */
 const PRICING = {
   plans: [
@@ -154,7 +157,7 @@ export function OperatorPitch() {
       <section id="both-rhythms" aria-labelledby="rhythms-heading">
         <div data-width-tier="marketing" className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 pb-12 pt-[72px] sm:px-8 lg:pb-16 lg:pt-[88px]`}>
           <h2 id="rhythms-heading" className={H2_CLASS}>Both rhythms, one kitchen</h2>
-          <p className="mt-3 max-w-[40rem] text-slate-600">One menu, one ledger, one kitchen display. An established operator paying 28% aggregator commission on £10k a month of orders hands over £2,800 a month; the same orders through a direct storefront cost £39 + 0.5%.</p>
+          <p className="mt-3 max-w-[40rem] text-slate-600">One menu, one ledger, one kitchen display. An established operator paying 28% aggregator commission on £10k a month of orders hands over £2,800 a month; the same orders through a direct storefront cost £39 + 0.5%, plus Stripe&apos;s card fees, which you would pay either way.</p>
           <div className="mt-10 grid gap-10 md:grid-cols-2 md:gap-0">
             <div className="md:border-r md:border-cream-100 md:pr-10">
               <SafeImage src={IMAGES.counter.src} alt={IMAGES.counter.alt} width={IMAGES.counter.width} height={IMAGES.counter.height} className="h-auto w-full rounded-xl border border-cream-100" />
