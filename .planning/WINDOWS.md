@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 21
 waived_count: 0
 fixed_count: 30
-total_count: 49
-last_updated: 2026-10-19T00:30:16.913Z
+total_count: 51
+last_updated: 2026-10-19T10:40:14.440Z
 ---
 
 # Broken Windows Ledger
@@ -64,6 +64,8 @@ last_updated: 2026-10-19T00:30:16.913Z
 | 47 | 29 | unrun-verify | scripts/azure-staging-datastores.sh |  | 29-07: dry-run only; the live proofs are owed to 29-09 Task 2 / 29-14: the server holds the Key Vault pg-admin--password value (CLI @FILE expansion, cited from azure-cli 2.91.0 source), exactly one firewall rule, azure.extensions UUID-OSSP, and sslmode=verify-full sslrootcert=system with the mounted host CA bundle on the first --stage pre login | open |  | 2026-10-18T23:32:14.332Z |  |
 | 48 | 29 | deviation | k8s/staging/kustomization.yaml |  | 29-08: the plan said delete the staging replicas: block; kept at count 1 (= the HPA floor) instead, because deleting it renders base spec.replicas 3/5/3 and every kubectl apply would request 11 app pods on 3 x B2s until HPA scale-down stabilisation. Owner may prefer removing spec.replicas from base Deployments (affects production) - a separate decision | open |  | 2026-10-19T00:01:27.604Z |  |
 | 49 | 29 | deviation | k8s/components/keycloak/keycloak.yaml |  | 29-10: added KC_CACHE=local (single replica; jdbc-ping would seek peers on 7800, which keycloak-allow does not admit) and JAVA_OPTS_KC_HEAP MaxRAMPercentage=60 (the image default 70% of the 1Gi limit plus ~300 MB non-heap sits at the limit). Heap headroom is ASSUMED; plan 29-14 measures working set against the limit | open |  | 2026-10-19T00:30:16.913Z |  |
+| 50 | 29 | unmet-truth | core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java | 1776 | 29-14: storefront never shows a pipeline-uploaded image (toPublicProductDto reads flat image_url; asset-first resolution is vendor-only); the 'storefront renders it with naturalWidth > 0' truth is unmet at a784e7e2 | open |  | 2026-10-19T10:40:14.320Z |  |
+| 51 | 29 | deviation | k8s/base/core-java-deployment.yaml |  | 29-14: core-java/keycloak 1Gi surge pods fit no B2s node (661/399/803Mi free by requests); first deploy unstuck by scaling the crash-looping revision-1 ReplicaSets to 0; every later roll of either will stick until capacity is decided | open |  | 2026-10-19T10:40:14.440Z |  |
 
 ````json
 [
@@ -701,6 +703,32 @@ last_updated: 2026-10-19T00:30:16.913Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-19T00:30:16.913Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 50,
+    "kind": "unmet-truth",
+    "phase": "29",
+    "file": "core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java",
+    "line": 1776,
+    "description": "29-14: storefront never shows a pipeline-uploaded image (toPublicProductDto reads flat image_url; asset-first resolution is vendor-only); the 'storefront renders it with naturalWidth > 0' truth is unmet at a784e7e2",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-19T10:40:14.320Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 51,
+    "kind": "deviation",
+    "phase": "29",
+    "file": "k8s/base/core-java-deployment.yaml",
+    "line": null,
+    "description": "29-14: core-java/keycloak 1Gi surge pods fit no B2s node (661/399/803Mi free by requests); first deploy unstuck by scaling the crash-looping revision-1 ReplicaSets to 0; every later roll of either will stick until capacity is decided",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-19T10:40:14.440Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
