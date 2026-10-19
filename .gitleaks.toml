@@ -226,3 +226,18 @@ regexes = [
   '''^\s*\+?jtoye-staging-[a-z-]+-id principal=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} want=[0-9]+ got=[0-9]+ vault-wide=[0-9]+ scopes-equal=(yes|no)\s*$''',
   '''^\s*\+?role definition 'Key Vault Secrets User' = 4633458b-17de-408a-b874-0445c86b69e6\s*$''',
 ]
+
+# ---- Phase 29-14 Kubernetes object UIDs (2026-10-19) ----
+# evidence/29-14-tracer.txt Task 4 (A7) tracks the synced Secret rabbitmq-default-user
+# by its Kubernetes metadata.uid across a pod deletion. A uid is a server-assigned
+# object identifier, not a credential; generic-api-key flags "secret uid=<uuid>" and
+# "secret=<uuid>" (4 hits). Anchored on the whole line in exactly the tracer's two
+# shapes, so a uid under any other key, or a real key on these lines, still fires.
+[[allowlists]]
+description = "Phase 29-14 A7 evidence: Kubernetes Secret metadata.uid tracking lines (object identifiers, not credentials)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''^\s*\+?## [0-9TZ:-]+ (before|after): secret uid=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} created=[0-9TZ:-]+ owners=[A-Za-z]+/[a-z0-9-]+\s*$''',
+  '''^\s*\+?[0-9:.]+ secret=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} pods=\[[A-Za-z0-9:. -]*\]\s*$''',
+]
