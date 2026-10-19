@@ -142,6 +142,15 @@ elif arm == "shared-identity":
 elif arm == "object-not-mounted":
     so = find("SecretProviderClass", "redis-kv")["spec"]["secretObjects"][0]
     so["data"][0]["objectName"] = "redis-credentials--planted"
+elif arm == "cert-secret-spc-producer":
+    # an SPC ALSO declares the Secret cert-manager's Certificate mailpit-tls writes
+    spc = find("SecretProviderClass", "core-java-kv")
+    spc["spec"].setdefault("secretObjects", []).append({"secretName": "mailpit-tls", "type": "Opaque",
+        "data": [{"key": "tls.key", "objectName": "mailpit-tls--tls-key"}]})
+elif arm == "cert-secret-foreign-key":
+    # a consumer reads a key cert-manager never writes into its Secret
+    container(find("Deployment", "core-java"), "core-java").setdefault("env", []).append(
+        {"name": "PLANTED_CA", "valueFrom": {"secretKeyRef": {"name": "jtoye-staging-ca", "key": "password"}}})
 elif arm == "zero-spc":
     docs = [d for d in docs if d.get("kind") != "SecretProviderClass"]
 else:
@@ -163,7 +172,7 @@ selftest() {
     "$KUBECTL" kustomize "$K8S_DIR/staging" > "$tmp/real.yaml" 2> "$tmp/err" || { cat "$tmp/err" >&2; void "the staging render failed"; }
     [[ -s "$tmp/real.yaml" ]] || void "the staging render is empty"
 
-    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted zero-spc pyyaml-missing kubectl-missing)
+    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted cert-secret-spc-producer cert-secret-foreign-key zero-spc pyyaml-missing kubectl-missing)
     declare -A WANT=(
         [undeclared-key]="Deployment/core-java reads dsar-credentials/not-a-key"
         [two-producers]="Secret postgres-credentials has two producers"
@@ -171,6 +180,8 @@ selftest() {
         [sync-lifetime]="Deployment/frontend reads rabbitmq-default-user/username (env PLANTED_RMQ), produced by rabbitmq-kv, which Deployment/frontend does not mount"
         [shared-identity]="ServiceAccounts frontend, keycloak share"
         [object-not-mounted]="which is not in its parameters.objects"
+        [cert-secret-spc-producer]="Secret mailpit-tls has two producers: SecretProviderClass core-java-kv and cert-manager Certificate mailpit-tls"
+        [cert-secret-foreign-key]="Deployment/core-java reads jtoye-staging-ca/password (env PLANTED_CA): Secret jtoye-staging-ca is written by cert-manager Certificate jtoye-staging-ca, which holds only ca.crt, tls.crt, tls.key"
         [zero-spc]="the render holds no SecretProviderClass"
         [pyyaml-missing]="PyYAML is not importable"
         [kubectl-missing]="kubectl not found"
