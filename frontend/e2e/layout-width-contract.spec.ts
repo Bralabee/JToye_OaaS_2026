@@ -399,7 +399,7 @@ const MARKETING_ROUTES: {
     mainMax: 4,
     note: "the 4th band is the server-data-conditional kitchen row (#544)",
   },
-  { path: "/for-operators", mainMin: 3, mainMax: 3 },
+  { path: "/for-operators", mainMin: 5, mainMax: 5 },
   { path: "/business-model-guide", mainMin: 4, mainMax: 4 },
   // ORCH-06's route. It carries exactly ONE content band, which is what makes it
   // the sharpest scope control in this file: revert `components/legal/policy-
