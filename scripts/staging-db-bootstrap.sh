@@ -100,6 +100,12 @@
 #                               readback rolbypassrls jtoye_backup t, jtoye_runtime f,
 #                               jtoye_app f; jtoye_runtime and jtoye_backup can read
 #                               the migrated table
+#   via-context-relay           --via-context st-ok (stub kubectl): readback reaches the
+#                               stand-in through hostaddr=127.0.0.1 and the port the
+#                               stub port-forward announces; exactly one relay pod
+#                               run, one port-forward and one delete of the SAME pod;
+#                               the port-forward process is gone afterwards; and
+#                               --via-context sipbihs2aks is REFUSED rc 1 with 0 runs
 #   no-password-in-argv         no password appears in docker inspect's Path/Args/Cmd
 #                               of any psql container this script started
 #
@@ -362,7 +368,9 @@ selftest() {
   POSTGRES_PASSWORD="$ST_SUPER_PASSWORD"; export POSTGRES_PASSWORD
 
   docker network create "$net" >/dev/null || void "docker network create failed"
-  cid="$(docker run -d --name "$cname" --network "$net" -e POSTGRES_PASSWORD "$PG_IMAGE")" || void "could not start the ${PG_IMAGE} stand-in"
+  # Published on a random loopback port as well: arm via-context-relay reaches
+  # it there, the way a real run reaches the relay's kubectl port-forward.
+  cid="$(docker run -d --name "$cname" --network "$net" -p 127.0.0.1::5432 -e POSTGRES_PASSWORD "$PG_IMAGE")" || void "could not start the ${PG_IMAGE} stand-in"
   # The image's init phase runs a socket-only server; TCP on 127.0.0.1 answers
   # only once the real server is up.
   for i in $(seq 1 90); do
@@ -520,6 +528,63 @@ SQL
       st_result "FAIL post-readback the granted roles cannot read the migrated table: $(first_err "$tmp/read.out")"; fails=$((fails + 1))
     else
       st_result "PASS post-readback rc=0 ${got% } runtime_and_backup_read=ok"
+    fi
+  fi
+
+  # --- via-context-relay ------------------------------------------------------
+  # The managed server's firewall admits only the cluster's outbound IP (T-29-34),
+  # so a real run reaches it through a one-off relay pod and a kubectl
+  # port-forward (--via-context). Stub kubectl/kubelogin log their argv; the
+  # stub's port-forward announces the stand-in's published loopback port, so
+  # psql really connects through hostaddr=127.0.0.1 on the host network.
+  local real_kubectl stub fwd_port vrc=0 vout runs pfs dels pod_run pod_del ref_rc=0 ref_runs pf_alive=no
+  stub="$tmp/stub"; mkdir -p "$stub/bin" "$stub/log"
+  fwd_port="$(docker port "$cid" 5432/tcp 2>/dev/null | awk -F: 'NR==1{print $NF}')" || fwd_port=""
+  if ! real_kubectl="$(type -P kubectl)"; then
+    st_result "FAIL via-context-relay VOID: the arm needs a real kubectl path to stand a stub in for"; fails=$((fails + 1))
+  elif [ -z "$fwd_port" ]; then
+    st_result "FAIL via-context-relay VOID: the stand-in has no published loopback port"; fails=$((fails + 1))
+  else
+    local fqdn
+    fqdn="$(command grep -E '^[[:space:]]*aks_api_server_fqdn[[:space:]]*:' "$REPO_ROOT/k8s/staging/azure-identity.yaml" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/["'\'']//g; s/[[:space:]]+$//')"
+    cat > "$stub/bin/kubectl" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$stub/log/kubectl.log"
+case " \$* " in
+  *" config view "*)
+    case " \$* " in *" --context st-ok "*) echo "https://${fqdn}:443" ;; esac
+    exit 0 ;;
+  *" port-forward "*)
+    echo \$\$ > "$stub/log/pf.pid"
+    echo "Forwarding from 127.0.0.1:${fwd_port} -> 5432"
+    exec sleep 600 ;;
+esac
+exit 0
+STUB
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$stub/bin/kubelogin"
+    chmod +x "$stub/bin/kubectl" "$stub/bin/kubelogin"
+    vout="$(PATH="$stub/bin:$PATH" bash "$SELF" --test-container "$cname" --via-context st-ok --stage readback 2>"$tmp/via.err")" || vrc=$?
+    runs="$(command grep -c ' run jtoye-dbboot-relay-' "$stub/log/kubectl.log" 2>/dev/null || true)"
+    pfs="$(command grep -c ' port-forward pod/jtoye-dbboot-relay-' "$stub/log/kubectl.log" 2>/dev/null || true)"
+    dels="$(command grep -c ' delete pod jtoye-dbboot-relay-' "$stub/log/kubectl.log" 2>/dev/null || true)"
+    pod_run="$(command grep -oE ' run jtoye-dbboot-relay-[a-z0-9-]+' "$stub/log/kubectl.log" 2>/dev/null | head -1 | sed 's/^ run //')"
+    pod_del="$(command grep -oE ' delete pod jtoye-dbboot-relay-[a-z0-9-]+' "$stub/log/kubectl.log" 2>/dev/null | head -1 | sed 's/^ delete pod //')"
+    if [ -s "$stub/log/pf.pid" ] && kill -0 "$(cat "$stub/log/pf.pid")" 2>/dev/null; then pf_alive=yes; fi
+    : > "$stub/log/kubectl.log"
+    PATH="$stub/bin:$PATH" bash "$SELF" --test-container "$cname" --via-context sipbihs2aks --stage readback >/dev/null 2>"$tmp/via-ref.err" || ref_rc=$?
+    ref_runs="$(command grep -c ' run ' "$stub/log/kubectl.log" 2>/dev/null || true)"
+    if [ "$vrc" -ne 0 ]; then
+      st_result "FAIL via-context-relay rc=${vrc}: $(first_err "$tmp/via.err")"; fails=$((fails + 1))
+    elif ! command grep -q '^jtoye_backup|' <<<"$vout"; then
+      st_result "FAIL via-context-relay readback through the relay port returned no jtoye_backup row"; fails=$((fails + 1))
+    elif [ "$runs" -ne 1 ] || [ "$pfs" -ne 1 ] || [ "$dels" -ne 1 ] || [ "$pod_run" != "$pod_del" ]; then
+      st_result "FAIL via-context-relay relay lifecycle run=${runs} port-forward=${pfs} delete=${dels} (want 1/1/1, same pod: '${pod_run}' vs '${pod_del}')"; fails=$((fails + 1))
+    elif [ "$pf_alive" != no ]; then
+      st_result "FAIL via-context-relay the port-forward process outlived the run"; fails=$((fails + 1))
+    elif [ "$ref_rc" -ne 1 ] || [ "$ref_runs" -ne 0 ] || ! command grep -q 'employer-context' "$tmp/via-ref.err"; then
+      st_result "FAIL via-context-relay --via-context sipbihs2aks rc=${ref_rc} relay runs=${ref_runs} (want rc 1, 0 runs, REFUSED [employer-context])"; fails=$((fails + 1))
+    else
+      st_result "PASS via-context-relay rc=0 readback_through_port=${fwd_port} relay run/port-forward/delete=1/1/1 same_pod=yes pf_alive=no employer_context rc=1 runs=0"
     fi
   fi
 
