@@ -12,7 +12,7 @@ public routes only). **Keep both in sync when adding pages.**
 | Route | Purpose |
 |---|---|
 | `/` | Public landing page (persona routing: order food → `/shop` / run your business → `/for-operators`); wrapped in the shared public shell. Signed-in vendors reach `/dashboard` via the header, not an auto-forward |
-| `/for-operators` | Prospective-vendor pitch: takeaway & catering journeys, pilot terms, fit check |
+| `/for-operators` | Prospective-vendor pitch: both rhythms (daily takeaway and weekend batch/catering) from one kitchen, V88 pricing tiers, built-in vs operator-owned boundaries, fit check |
 | `/business-model-guide` | Authoritative business-model decision guide (companion: `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`) |
 | `/shop` | Storefront discovery / shop directory |
 | `/track` | Order tracking by order number. **`noindex` + EXCLUDED from `sitemap.xml`** (FE-6) — a transactional lookup surface, not discovery content; its `robots.txt` disallow and the sitemap omission now agree. |

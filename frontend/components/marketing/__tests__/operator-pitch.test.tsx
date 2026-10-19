@@ -72,25 +72,101 @@ describe("OperatorPitch", () => {
     expect(screen.getByText(/one London cluster/i)).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: /one change.*three channels.*two versions/i })).toBeInTheDocument()
     expect(screen.getByText(/fewer places to check/i)).toBeInTheDocument()
-    expect(screen.getAllByRole("link", { name: /download vendor pack|download the pack/i })[0]).toHaveAttribute("href", "/jtoye-operator-pilot-pack.pdf")
-    expect(screen.getAllByRole("link", { name: /download vendor pack|download the pack/i })[0]).toHaveAttribute("download")
-    expect(screen.getByText(/return this pack to the person who shared it/i)).toBeInTheDocument()
-    expect(screen.getByText(/edition 10 July 2026/i)).toBeInTheDocument()
+    // Both rhythms are named in the hero, from one kitchen.
+    expect(screen.getByText(/daily counter takeaway and the weekend batch and catering run from one kitchen/i)).toBeInTheDocument()
+    expect(screen.getByText(/updated 19 October 2026/i)).toBeInTheDocument()
+  })
+
+  it("no longer carries the July pack, its download links, or its stale framing", () => {
+    const { container } = render(<OperatorPitch />)
+    fireEvent.click(screen.getByRole("button", { name: /check your pilot fit/i }))
+
+    // Non-vacuity control: the instrument finds a link that IS there.
+    expect(container.querySelectorAll('a[href="/dashboard/onboarding"]').length).toBeGreaterThan(0)
+    expect(container.querySelector("a[href*='pilot-pack']")).toBeNull()
+    expect(container.querySelector("a[download]")).toBeNull()
+    expect(screen.queryByText(/download vendor pack|download the pack/i)).toBeNull()
+    expect(screen.queryByText(/return this pack/i)).toBeNull()
+    expect(screen.queryByText(/edition 10 July 2026|UK pilot hypothesis/i)).toBeNull()
+    expect(screen.queryByText(/validation tracks?/i)).toBeNull()
+    expect(screen.queryByText(/should not be sold as the same job/i)).toBeNull()
+    expect(screen.queryByText(/not production connected-account settlement/i)).toBeNull()
+    expect(screen.queryByText(/£119|£199|pricing test|high volume/i)).toBeNull()
+  })
+
+  it("quantifies the aggregator leak with the guide's about-£2,800 figure", () => {
+    render(<OperatorPitch />)
+    expect(screen.getByText(/25–35% aggregator commission on £10k a month of orders pays about £2,800 a month/i)).toBeInTheDocument()
+    expect(screen.getByText(/direct storefront cost £39 \+ 0\.5%/i)).toBeInTheDocument()
   })
 
   it("offers a 'Start your application' CTA linking to onboarding", () => {
     render(<OperatorPitch />)
 
-    const cta = screen.getByRole("link", { name: /start your application/i })
-    expect(cta).toHaveAttribute("href", "/dashboard/onboarding")
+    // The hero CTA and the closing fit-check route are both "Start your application".
+    const ctas = screen.getAllByRole("link", { name: /start your application/i })
+    expect(ctas.length).toBeGreaterThanOrEqual(2)
+    for (const cta of ctas) expect(cta).toHaveAttribute("href", "/dashboard/onboarding")
+    expect(screen.getByText(/a person reviews every application, and nothing is charged until a plan is agreed/i)).toBeInTheDocument()
+  })
+
+  it("gives the hero two distinct CTAs: amber primary, outlined secondary", () => {
+    render(<OperatorPitch />)
+    const primary = screen.getAllByRole("link", { name: /start your application/i })[0]
+    const secondary = screen.getByRole("button", { name: /check your pilot fit/i })
+    expect(primary.classList.contains("bg-amber-500")).toBe(true)
+    expect(secondary.classList.contains("bg-amber-500")).toBe(false)
+    expect(secondary.classList.contains("border-2")).toBe(true)
+    expect(secondary.classList.contains("border-gold/50")).toBe(true)
+  })
+
+  it("keeps three service-rail items covering storefront, kitchen display and the allergen engine", () => {
+    const { container } = render(<OperatorPitch />)
+    const items = container.querySelectorAll("[data-rail-item]")
+    expect(items).toHaveLength(3)
+    expect(items[0]).toHaveTextContent(/storefront and QR ordering/i)
+    expect(items[1]).toHaveTextContent(/kitchen display with cook sheet/i)
+    expect(items[2]).toHaveTextContent(/allergen and label engine/i)
+  })
+
+  it("keeps four pilot steps and step 03 names the kitchen display and cook sheet", () => {
+    const { container } = render(<OperatorPitch />)
+    const steps = container.querySelectorAll("[data-pilot-step]")
+    expect(steps).toHaveLength(4)
+    expect(steps[2]).toHaveTextContent(/kitchen display and the cook sheet/i)
+    expect(screen.queryByText(/while you remain responsible for fulfilment/i)).toBeNull()
+  })
+
+  it("prints exactly the billed price tiers, each as a countable tile", () => {
+    const { container } = render(<OperatorPitch />)
+    const terms = container.querySelector("[data-op-terms]") as HTMLElement
+    expect(terms).not.toBeNull()
+    // Band is lg:grid-cols-4: four tiles, no more, no fewer.
+    const grid = terms.querySelector(".lg\\:grid-cols-4") as HTMLElement
+    expect(grid.children).toHaveLength(4)
+    expect(terms).toHaveTextContent("£39 per location per month + 0.5% of direct sales")
+    expect(terms).toHaveTextContent("£79–£149 per location per month, 0% platform fee")
+    expect(terms).toHaveTextContent("£0 per month + 6% of direct sales")
+    expect(terms).toHaveTextContent("From £99, scoped to the work agreed")
+    // renderCountable keeps the real number as text and hooks the first integer.
+    expect(Array.from(terms.querySelectorAll("[data-count-to]")).map((el) => el.getAttribute("data-count-to"))).toEqual(["39", "79", "0", "99"])
+    expect(terms).toHaveTextContent(/charged by Stripe on your own Stripe account/i)
+    expect(terms).toHaveTextContent(/live card settlement switches on with the first production operator/i)
   })
 
   it("keeps the takeaway and catering cohorts distinct", () => {
     render(<OperatorPitch />)
 
     expect(screen.getByRole("heading", { name: /takeaway: protect the regular order/i })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: /catering: make the handover legible/i })).toBeInTheDocument()
-    expect(screen.getAllByText(/catering and WhatsApp are validation tracks/i)).not.toHaveLength(0)
+    expect(screen.getByRole("heading", { name: /catering: plan the weekend batch/i })).toBeInTheDocument()
+    // The old "validation tracks" callout is replaced by one honest line.
+    expect(screen.getByText(/scheduled orders, deposits and cook sheets are built and tested; card settlement runs in Stripe test mode until the first production operator goes live/i)).toBeInTheDocument()
+    expect(screen.getByText(/scheduled pre-order slots with cut-offs and capacity/i)).toBeInTheDocument()
+    expect(screen.getByText(/deposit and balance payment links/i)).toBeInTheDocument()
+    expect(screen.getByText(/consolidated cook sheet/i)).toBeInTheDocument()
+    expect(screen.getByText(/^PPDS labels$/)).toBeInTheDocument()
+    expect(screen.getByText(/structured opening hours and a one-tap kitchen pause/i)).toBeInTheDocument()
+    expect(screen.getByText(/cash-order abuse caps/i)).toBeInTheDocument()
   })
 
   it("states the product and responsibility caveats plainly", () => {
@@ -98,8 +174,15 @@ describe("OperatorPitch", () => {
 
     expect(screen.getByText(/direct storefront does not generate demand/i)).toBeInTheDocument()
     expect(screen.getByText(/not an offline KDS/i)).toBeInTheDocument()
-    expect(screen.getByText(/allergen information is vendor-entered assistance/i)).toBeInTheDocument()
-    expect(screen.getAllByText(/not production connected-account settlement/i)).toHaveLength(2)
+    expect(screen.getByText(/you remain the food business operator/i)).toBeInTheDocument()
+    expect(screen.getByText(/whatsapp is a generated pre-order link/i)).toBeInTheDocument()
+    expect(screen.getByText(/live card settlement waits for the production cutover/i)).toBeInTheDocument()
+    // One list, no duplicates: each caveat appears once.
+    expect(screen.getAllByText(/does not generate demand/i)).toHaveLength(1)
+    expect(screen.getAllByText(/not an offline KDS/i)).toHaveLength(1)
+    expect(screen.getByRole("heading", { name: /what is built in/i })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: /what stays with you/i })).toBeInTheDocument()
+    expect(screen.getByText(/the allergen engine: 14-allergen acknowledgement at checkout/i)).toBeInTheDocument()
   })
 
   /**

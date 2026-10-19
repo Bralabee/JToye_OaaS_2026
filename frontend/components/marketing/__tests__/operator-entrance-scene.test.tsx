@@ -48,6 +48,6 @@ describe("OperatorEntranceScene enhancement — no-FOUC floor", () => {
     expect(steps).toHaveLength(4)
     steps.forEach((step) => expect(step.tagName).toBe("LI"))
     // terms count-up hooks keep the real number as their visible text
-    expect(screen.getByText(/per location, per month/i).textContent).toContain("£39")
+    expect(screen.getByText(/per location per month \+ 0\.5% of direct sales/i).textContent).toContain("£39")
   })
 })
