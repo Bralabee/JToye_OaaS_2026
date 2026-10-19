@@ -29,6 +29,11 @@ WHAT `check` ASSERTS (each rule is a defect class, not a style point)
       so a consumer that does not mount its producer reads a Secret that is there only by accident
       of some other pod's lifetime. An `optional: true` ref is held to the same rule (T-29-45): an
       optional ref with no producer starts the pod silently unconfigured.
+      ONE other producer is recognised (plan 29-22): a cert-manager Certificate in the same render
+      writes the Secret its spec.secretName names. Such a Secret holds no Key Vault material (a
+      cluster-internal certificate and key cert-manager issues and renews), so its consumers need
+      no SPC mount; they may read only the keys cert-manager writes (ca.crt, tls.crt, tls.key) or
+      the whole Secret, and no SPC may declare the same Secret name (rule (b): two producers).
   (b) a Secret name is produced by ONE SPC. Two producers overwrite each other's keys (T-29-44).
   (c) every secretObjects objectName is one of that SPC's parameters.objects (the file the driver
       mounts and syncs from).
@@ -69,6 +74,9 @@ OBJECT_RE = re.compile(r"^[0-9A-Za-z-]{1,127}$")
 RABBITMQ_EXTERNAL_SECRET_KEYS = ("username", "password", "default_user.conf")
 EXTERNAL_SECRET_CONSUMER = "Deployment/secret-sync"
 POD_KINDS = ("Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob")
+# The keys cert-manager writes into a Certificate's Secret (cert-manager.io/docs/usage/certificate,
+# "the Secret ... tls.crt, tls.key and ca.crt").
+CERT_MANAGER_KEYS = ("ca.crt", "tls.crt", "tls.key")
 
 
 def void(msg):
@@ -127,6 +135,7 @@ def parse_objects(spc_name, raw, errors):
 def index(docs, errors):
     spcs, sas, templates = {}, {}, {}
     external = []
+    certs = {}
     for d in docs:
         kind = d.get("kind")
         meta = d.get("metadata") or {}
@@ -150,6 +159,10 @@ def index(docs, errors):
             }
         elif kind == "ServiceAccount":
             sas[name] = str((meta.get("annotations") or {}).get(CLIENT_ID_ANNOTATION, ""))
+        elif kind == "Certificate" and str(d.get("apiVersion", "")).startswith("cert-manager.io/"):
+            sn = (d.get("spec") or {}).get("secretName")
+            if sn:
+                certs.setdefault(sn, []).append(name)
         elif kind == "RabbitmqCluster":
             ext = (((d.get("spec") or {}).get("secretBackend") or {}).get("externalSecret") or {}).get("name")
             if ext:
@@ -187,12 +200,12 @@ def index(docs, errors):
                     elif spc:
                         mounts.add(spc)
             templates[f"{kind}/{name}"] = {"sa": pspec.get("serviceAccountName"), "mounts": mounts, "refs": refs}
-    return spcs, sas, templates, external
+    return spcs, sas, templates, external, certs
 
 
 def check(docs, verbose=False):
     errors = []
-    spcs, sas, templates, external = index(docs, errors)
+    spcs, sas, templates, external, certs = index(docs, errors)
     if not spcs:
         void("the render holds no SecretProviderClass; a chain with no producer cannot be checked "
              "(a target that includes components/azure-keyvault must render its SPCs)")
@@ -217,6 +230,12 @@ def check(docs, verbose=False):
     for spc, s in sorted(spcs.items()):
         for sn in s["secretNames"]:
             producers.setdefault(sn, []).append(spc)
+    for sn, cs in sorted(certs.items()):
+        for spc in producers.get(sn, []):
+            errors.append(f"Secret {sn} has two producers: SecretProviderClass {spc} and cert-manager Certificate "
+                          f"{', '.join(cs)}; the CSI driver and cert-manager would overwrite each other's keys")
+        if len(cs) > 1:
+            errors.append(f"Secret {sn} has two producers: cert-manager Certificates {', '.join(cs)}")
     for sn, ps in sorted(producers.items()):
         if len(ps) > 1:
             errors.append(f"Secret {sn} has two producers: SecretProviderClasses {', '.join(ps)} both "
@@ -225,6 +244,11 @@ def check(docs, verbose=False):
     # (a) every consumed (Secret, key) has its producer, mounted by the consumer.
     for wl, secret, key, how in consumers:
         ps = producers.get(secret, [])
+        if not ps and secret in certs:
+            if key != "*" and key not in CERT_MANAGER_KEYS:
+                errors.append(f"{wl} reads {secret}/{key} ({how}): Secret {secret} is written by cert-manager "
+                              f"Certificate {', '.join(certs[secret])}, which holds only {', '.join(CERT_MANAGER_KEYS)}")
+            continue
         if not ps:
             errors.append(f"{wl} reads {secret}/{key} ({how}), which no SecretProviderClass produces")
             continue
