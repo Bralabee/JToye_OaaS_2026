@@ -519,3 +519,307 @@ RESULT (executor, 2026-10-19T07:11Z): Task 2 SATISFIED after the owner's "dns ad
 longer resolves anywhere. Public resolvers 1.1.1.1 and 8.8.8.8 already agree (no lag observed). Gate shown both ways:
 expected IP 51.105.43.14 -> rc 0 (4/4 at each server); expected IP 51.105.43.15 -> rc 1 (0/4). Controls: NS, MX (Zoho),
 SOA serial moved from 1792318860 (06:43 measurement) to 1792393745.
+
+----- [2026-10-19T07:12:07Z] TASK 3 in-flight: Challenge for app-staging while the order is open (Challenges are removed once the Order is valid, so captured now)
+$ kubectl --context jtoye-stg-aks -n jtoye-staging get challenge -o jsonpath={range .items[*]}{.metadata.name} domain={.spec.dnsName} type={.spec.type} state={.status.state} presented={.status.presented} processing={.status.processing} reason={.status.reason}{"\n"}{end}
+acme-probe-tls-1-2987034195-1955570327 domain=app-staging.olajay.co.uk type=HTTP-01 state=pending presented=true processing=true reason=Waiting for HTTP-01 challenge propagation: wrong status code '404', expected '200'
+[rc=0]
+
+----- [2026-10-19T07:11:44Z] TASK 3 stage acme-probe (letsencrypt-staging, HTTP-01; script deadline 900 s)
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage acme-probe
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage acme-probe (k8s/platform/acme-probe) ===
+service/acme-probe created
+deployment.apps/acme-probe created
+ingress.networking.k8s.io/acme-probe created
+networkpolicy.networking.k8s.io/acme-probe-allow created
+OK: certificate acme-probe-tls is Ready
+OK: edge answered through Traefik: NOW: 2026-10-19 07:12:19.385051611 +0000 UTC m=+26.255460495
+NEXT: record the evidence, then run --stage acme-probe-delete
+OK: stages complete: acme-probe
+[rc=0]
+
+----- [2026-10-19T07:12:30Z] TASK 3 plan verify #1 (before delete): certificate acme-probe-tls Ready
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get certificate acme-probe-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'; echo " rc=$?"
+True rc=0
+[rc=0]
+
+----- [2026-10-19T07:12:30Z] TASK 3 Certificate, CertificateRequest, Order (the Challenge was already removed on Order valid; its in-flight state is recorded above)
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get certificate,certificaterequest,order -o wide; echo; kubectl --context jtoye-stg-aks -n jtoye-staging get order -o jsonpath='{range .items[*]}{.metadata.name} state={.status.state} url={.status.url} authorizations={.status.authorizations[*].identifier} challenge_types={.status.authorizations[*].challenges[*].type}{"\n"}{end}'
+NAME                                         READY   SECRET           ISSUER                STATUS                                          AGE
+certificate.cert-manager.io/acme-probe-tls   True    acme-probe-tls   letsencrypt-staging   Certificate is up to date and has not expired   45s
+
+NAME                                                  APPROVED   DENIED   READY   ISSUER                REQUESTER                                         STATUS                                         AGE
+certificaterequest.cert-manager.io/acme-probe-tls-1   True                True    letsencrypt-staging   system:serviceaccount:cert-manager:cert-manager   Certificate fetched from issuer successfully   44s
+
+NAME                                                     STATE   ISSUER                REASON   AGE
+order.acme.cert-manager.io/acme-probe-tls-1-2987034195   valid   letsencrypt-staging            44s
+
+acme-probe-tls-1-2987034195 state=valid url=https://acme-staging-v02.api.letsencrypt.org/acme/order/355233653/51809588503 authorizations=app-staging.olajay.co.uk challenge_types=http-01 dns-01 dns-persist-01 tls-alpn-01
+[rc=0]
+
+----- [2026-10-19T07:12:31Z] TASK 3 events for the Certificate, CertificateRequest, Order, Challenge and solver objects (jtoye-staging)
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get events --sort-by=.lastTimestamp -o custom-columns=LAST:.lastTimestamp,KIND:.involvedObject.kind,NAME:.involvedObject.name,REASON:.reason,MSG:.message | command grep -E 'LAST|Certificate|Order|Challenge|acme'
+LAST                   KIND                 NAME                                     REASON               MSG
+2026-10-19T07:11:46Z   ReplicaSet           acme-probe-c9877ff68                     SuccessfulCreate     Created pod: acme-probe-c9877ff68-r6ph4
+2026-10-19T07:11:46Z   Deployment           acme-probe                               ScalingReplicaSet    Scaled up replica set acme-probe-c9877ff68 from 0 to 1
+2026-10-19T07:11:46Z   Pod                  acme-probe-c9877ff68-r6ph4               Scheduled            Successfully assigned jtoye-staging/acme-probe-c9877ff68-r6ph4 to aks-nodepool1-24453234-vmss000002
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   Ingress              acme-probe                               CreateCertificate    Successfully created Certificate "acme-probe-tls"
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         OrderCreated         Created Order resource jtoye-staging/acme-probe-tls-1-2987034195
+2026-10-19T07:11:47Z   Certificate          acme-probe-tls                           Generated            Stored new private key in temporary Secret resource "acme-probe-tls-gzxk7"
+2026-10-19T07:11:47Z   Certificate          acme-probe-tls                           Issuing              Issuing certificate as Secret does not exist
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         cert-manager.io      Certificate request has been approved by cert-manager.io
+2026-10-19T07:11:47Z   Certificate          acme-probe-tls                           Requested            Created new CertificateRequest resource "acme-probe-tls-1"
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:48Z   Challenge            acme-probe-tls-1-2987034195-1955570327   Started              Challenge scheduled for processing
+2026-10-19T07:11:48Z   Order                acme-probe-tls-1-2987034195              Created              Created Challenge resource "acme-probe-tls-1-2987034195-1955570327" for domain "app-staging.olajay.co.uk"
+2026-10-19T07:11:48Z   Pod                  cm-acme-http-solver-n5t9q                Scheduled            Successfully assigned jtoye-staging/cm-acme-http-solver-n5t9q to aks-nodepool1-24453234-vmss000002
+2026-10-19T07:11:48Z   Pod                  acme-probe-c9877ff68-r6ph4               Pulling              Pulling image "registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4"
+2026-10-19T07:11:48Z   Challenge            acme-probe-tls-1-2987034195-1955570327   Presented            Presented challenge using HTTP-01 challenge mechanism
+2026-10-19T07:11:50Z   Pod                  cm-acme-http-solver-n5t9q                Pulling              Pulling image "quay.io/jetstack/cert-manager-acmesolver:v1.21.2"
+2026-10-19T07:11:51Z   Pod                  acme-probe-c9877ff68-r6ph4               Pulled               Successfully pulled image "registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4" in 3.597s (3.597s including waiting). Image size: 63766119 bytes.
+2026-10-19T07:11:51Z   Pod                  acme-probe-c9877ff68-r6ph4               Created              Container created
+2026-10-19T07:11:52Z   Pod                  cm-acme-http-solver-n5t9q                Started              Container started
+2026-10-19T07:11:52Z   Pod                  cm-acme-http-solver-n5t9q                Created              Container created
+2026-10-19T07:11:52Z   Pod                  acme-probe-c9877ff68-r6ph4               Started              Container started
+2026-10-19T07:11:52Z   Pod                  cm-acme-http-solver-n5t9q                Pulled               Successfully pulled image "quay.io/jetstack/cert-manager-acmesolver:v1.21.2" in 1.62s (1.62s including waiting). Image size: 6617794 bytes.
+2026-10-19T07:11:54Z   Pod                  acme-probe-c9877ff68-r6ph4               Unhealthy            Readiness probe failed: Get "http://10.244.1.168:8080/": dial tcp 10.244.1.168:8080: connect: connection refused
+2026-10-19T07:12:09Z   Challenge            acme-probe-tls-1-2987034195-1955570327   DomainVerified       Domain "app-staging.olajay.co.uk" verified with "HTTP-01" validation
+2026-10-19T07:12:09Z   Pod                  cm-acme-http-solver-n5t9q                Killing              Stopping container acmesolver
+2026-10-19T07:12:13Z   CertificateRequest   acme-probe-tls-1                         CertificateIssued    Certificate fetched from issuer successfully
+2026-10-19T07:12:13Z   Certificate          acme-probe-tls                           Issuing              The certificate has been successfully issued
+2026-10-19T07:12:13Z   Order                acme-probe-tls-1-2987034195              Complete             Order completed successfully
+[rc=0]
+
+----- [2026-10-19T07:12:32Z] TASK 3 issued certificate read from Secret acme-probe-tls (issuer must carry (STAGING))
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get secret acme-probe-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt; openssl x509 -in /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt -noout -subject -issuer -ext subjectAltName -dates -serial; echo chain_certs=$(command grep -c 'BEGIN CERTIFICATE' /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt); openssl crl2pkcs7 -nocrl -certfile /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt | openssl pkcs7 -print_certs -noout | command grep -E 'subject|issuer'
+subject=CN=app-staging.olajay.co.uk
+issuer=C=US, O=Let's Encrypt, CN=(STAGING) Ersatz Emmer YR2
+X509v3 Subject Alternative Name: 
+    DNS:app-staging.olajay.co.uk
+notBefore=Oct 19 06:13:39 2026 GMT
+notAfter=Dec 22 06:13:38 2026 GMT
+serial=2CC796975C61122ADFB01AE12B6FC1C1053A
+chain_certs=3
+subject=CN=app-staging.olajay.co.uk
+issuer=C=US, O=Let's Encrypt, CN=(STAGING) Ersatz Emmer YR2
+subject=C=US, O=Let's Encrypt, CN=(STAGING) Ersatz Emmer YR2
+issuer=C=US, O=ISRG, CN=(STAGING) Yonder Yam Root YR
+subject=C=US, O=ISRG, CN=(STAGING) Yonder Yam Root YR
+issuer=C=US, O=(STAGING) Internet Security Research Group, CN=(STAGING) Pretend Pear X1
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 curl through the public edge, TLS VERIFIED against the downloaded LE staging root (Pretend Pear X1, sha256 E7:05:70:A9:...:21:98); expected netexec's 'NOW: ' body
+$ bash -c curl -sv --max-time 20 --resolve app-staging.olajay.co.uk:443:51.105.43.14 --cacert /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/le-stg-roots/letsencrypt-stg-root-x1.pem https://app-staging.olajay.co.uk/acme-probe 2>&1 | command grep -vE '^\* +(TLSv1.3 \(IN\), TLS handshake, (Newsession|Encrypted)|ALPN)|^\{ \[|^} \[' ; echo; exit ${PIPESTATUS[0]}
+* Added app-staging.olajay.co.uk:443:51.105.43.14 to DNS cache
+* Hostname app-staging.olajay.co.uk was found in DNS cache
+*   Trying 51.105.43.14:443...
+* Connected to app-staging.olajay.co.uk (51.105.43.14) port 443
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+*  CAfile: /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/le-stg-roots/letsencrypt-stg-root-x1.pem
+*  CApath: /etc/ssl/certs
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+* SSL connection using TLSv1.3 / TLS_AES_128_GCM_SHA256 / X25519 / RSASSA-PSS
+* Server certificate:
+*  subject: CN=app-staging.olajay.co.uk
+*  start date: Oct 19 06:13:39 2026 GMT
+*  expire date: Dec 22 06:13:38 2026 GMT
+*  subjectAltName: host "app-staging.olajay.co.uk" matched cert's "app-staging.olajay.co.uk"
+*  issuer: C=US; O=Let's Encrypt; CN=(STAGING) Ersatz Emmer YR2
+*  SSL certificate verify ok.
+*   Certificate level 0: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+*   Certificate level 1: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+*   Certificate level 2: Public key type RSA (4096/152 Bits/secBits), signed using sha256WithRSAEncryption
+*   Certificate level 3: Public key type RSA (4096/152 Bits/secBits), signed using sha256WithRSAEncryption
+* using HTTP/2
+* [HTTP/2] [1] OPENED stream for https://app-staging.olajay.co.uk/acme-probe
+* [HTTP/2] [1] [:method: GET]
+* [HTTP/2] [1] [:scheme: https]
+* [HTTP/2] [1] [:authority: app-staging.olajay.co.uk]
+* [HTTP/2] [1] [:path: /acme-probe]
+* [HTTP/2] [1] [user-agent: curl/8.5.0]
+* [HTTP/2] [1] [accept: */*]
+> GET /acme-probe HTTP/2
+> Host: app-staging.olajay.co.uk
+> User-Agent: curl/8.5.0
+> Accept: */*
+> 
+< HTTP/2 200 
+< content-type: text/plain; charset=utf-8
+< date: Mon, 19 Oct 2026 07:12:44 GMT
+< content-length: 59
+< 
+* Connection #0 to host app-staging.olajay.co.uk left intact
+NOW: 2026-10-19 07:12:44.66197593 +0000 UTC m=+51.532384814
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 control A: same curl against the SYSTEM trust store (no --cacert) must FAIL verification — proves verification is live and the certificate is the untrusted staging one
+$ bash -c curl -s -o /dev/null -w 'http=%{http_code} ssl_verify_result=%{ssl_verify_result}\n' --max-time 20 --resolve app-staging.olajay.co.uk:443:51.105.43.14 https://app-staging.olajay.co.uk/acme-probe; rc=$?; echo curl_rc=$rc; [ $rc -ne 0 ]
+http=000 ssl_verify_result=20
+curl_rc=60
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 control B: --cacert set to the OTHER staging root (Bogus Broccoli X2, not in this chain) must FAIL
+$ bash -c curl -s -o /dev/null --max-time 20 --resolve app-staging.olajay.co.uk:443:51.105.43.14 --cacert /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/le-stg-roots/letsencrypt-stg-root-x2.pem https://app-staging.olajay.co.uk/acme-probe; rc=$?; echo curl_rc=$rc; [ $rc -ne 0 ]
+curl_rc=60
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 control C: plain HTTP on :80 to the same host and path (Traefik answers on web)
+$ bash -c curl -s -o /dev/null -w 'http=%{http_code} redirect=%{redirect_url}\n' --max-time 20 --resolve app-staging.olajay.co.uk:80:51.105.43.14 http://app-staging.olajay.co.uk/acme-probe
+http=308 redirect=https://app-staging.olajay.co.uk/acme-probe
+[rc=0]
+
+----- [2026-10-19T07:12:53Z] TASK 3 fail direction precondition: probe-nodns-staging.olajay.co.uk has NO record at either authoritative server
+$ bash -c for ns in dns1.registrar-servers.com dns2.registrar-servers.com; do o=$(dig @$ns A probe-nodns-staging.olajay.co.uk +time=5 +tries=2); echo "@$ns $(command grep -oE "status: [A-Z]+" <<<"$o") $(command grep -oE "flags: [a-z ]+;" <<<"$o" | head -1) answer=[$(dig @$ns +short A probe-nodns-staging.olajay.co.uk)]"; done
+@dns1.registrar-servers.com status: NXDOMAIN flags: qr aa rd; answer=[]
+@dns2.registrar-servers.com status: NXDOMAIN flags: qr aa rd; answer=[]
+[rc=0]
+
+----- [2026-10-19T07:12:53Z] TASK 3 fail direction: apply the scratch-only no-DNS probe Ingress (same issuer letsencrypt-staging, Secret acme-probe-nodns-tls)
+$ bash -c cat /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/probe-nodns.yaml | command grep -v '^#'; kubectl --context jtoye-stg-aks apply -f /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/probe-nodns.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: acme-probe-nodns
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: acme-probe-nodns
+    app.kubernetes.io/part-of: jtoye-platform
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - probe-nodns-staging.olajay.co.uk
+      secretName: acme-probe-nodns-tls
+  rules:
+    - host: probe-nodns-staging.olajay.co.uk
+      http:
+        paths:
+          - path: /acme-probe
+            pathType: Prefix
+            backend:
+              service:
+                name: acme-probe
+                port:
+                  number: 8080
+ingress.networking.k8s.io/acme-probe-nodns created
+[rc=0]
+
+----- [2026-10-19T07:13:06Z] TASK 3 fail direction: no-DNS probe observed every 60 s for 600 s (expected: Certificate never Ready, Challenge never valid)
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/nodns-watch.sh
+2026-10-19T07:13:07Z t+0s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:14:09Z t+61s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:15:11Z t+123s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:16:14Z t+185s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:17:16Z t+248s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:18:18Z t+310s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:19:20Z t+372s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:20:22Z t+434s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:21:24Z t+496s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:22:26Z t+558s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:23:28Z t+620s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+samples_read_ok=11 ready_seen=0
+[rc=0]
+
+----- [2026-10-19T07:23:42Z] TASK 3 fail direction cleanup: delete the scratch no-DNS Ingress, its Certificate and Secret
+$ bash -c kubectl --context jtoye-stg-aks delete -f /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/probe-nodns.yaml --ignore-not-found; kubectl --context jtoye-stg-aks -n jtoye-staging delete certificate acme-probe-nodns-tls --ignore-not-found; kubectl --context jtoye-stg-aks -n jtoye-staging delete secret acme-probe-nodns-tls --ignore-not-found
+ingress.networking.k8s.io "acme-probe-nodns" deleted from jtoye-staging namespace
+[rc=0]
+
+----- [2026-10-19T07:23:45Z] TASK 3 fail direction cleanup read-back: no object for the no-DNS probe remains (Ingress, Certificate, CertificateRequest, Order, Challenge, solver pods, Secrets with the name prefix)
+$ bash -c set -o pipefail; r=$(kubectl --context jtoye-stg-aks -n jtoye-staging get ingress,certificate,certificaterequest,order,challenge,pod,secret -o name 2>&1); rc=$?; echo "kubectl rc=$rc"; echo "$r"; n=$(command grep -c 'nodns' <<<"$r"); echo nodns_objects=$n; c=$(command grep -c 'acme-probe' <<<"$r"); echo acme_probe_objects_control=$c; [ $rc -eq 0 ] && [ $n -eq 0 ] && [ $c -gt 0 ]
+kubectl rc=0
+ingress.networking.k8s.io/acme-probe
+certificate.cert-manager.io/acme-probe-tls
+certificaterequest.cert-manager.io/acme-probe-tls-1
+order.acme.cert-manager.io/acme-probe-tls-1-2987034195
+pod/acme-probe-c9877ff68-r6ph4
+secret/acme-probe-tls
+nodns_objects=0
+acme_probe_objects_control=6
+[rc=0]
+
+----- [2026-10-19T07:23:53Z] TASK 3 plan verify #2 POSITIVE CONTROL (before the delete stage): the explicit-name read sees all six probe objects (expect six names on stdout, kubectl rc 0; the gate itself must therefore report FAIL here)
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/verify2.sh
+kubectl rc=0 stdout=[deployment.apps/acme-probe
+service/acme-probe
+networkpolicy.networking.k8s.io/acme-probe-allow
+ingress.networking.k8s.io/acme-probe
+certificate.cert-manager.io/acme-probe-tls
+secret/acme-probe-tls]
+notfound=0 other=0
+[rc=1]
+
+----- [2026-10-19T07:24:02Z] TASK 3 stage acme-probe-delete
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage acme-probe-delete
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage acme-probe-delete ===
+service "acme-probe" deleted from jtoye-staging namespace
+deployment.apps "acme-probe" deleted from jtoye-staging namespace
+ingress.networking.k8s.io "acme-probe" deleted from jtoye-staging namespace
+networkpolicy.networking.k8s.io "acme-probe-allow" deleted from jtoye-staging namespace
+secret "acme-probe-tls" deleted from jtoye-staging namespace
+OK: stages complete: acme-probe-delete
+[rc=0]
+
+----- [2026-10-19T07:24:05Z] TASK 3 plan verify #2 (after the delete stage): kubectl rc 1, empty stdout, notfound=6, other=0
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/verify2.sh
+Error from server (NotFound): deployments.apps "acme-probe" not found
+Error from server (NotFound): services "acme-probe" not found
+Error from server (NotFound): networkpolicies.networking.k8s.io "acme-probe-allow" not found
+Error from server (NotFound): ingresses.networking.k8s.io "acme-probe" not found
+Error from server (NotFound): certificates.cert-manager.io "acme-probe-tls" not found
+Error from server (NotFound): secrets "acme-probe-tls" not found
+kubectl rc=1 stdout=[]
+notfound=6 other=0
+[rc=0]
+
+----- [2026-10-19T07:24:14Z] TASK 3 closing read-back: jtoye-staging holds no probe residue (certificaterequests, orders, challenges, pods, secrets) and the Task 1 platform is untouched (issuers Ready, Traefik on 51.105.43.14 Local)
+$ bash -c K='kubectl --context jtoye-stg-aks'; r=$($K -n jtoye-staging get all,ingress,networkpolicy,certificate,certificaterequest,order,challenge,secret -o name 2>&1); rc=$?; echo "jtoye-staging objects (rc=$rc): [$r]"; echo probe_residue=$(command grep -c 'acme' <<<"$r"); $K get clusterissuer letsencrypt-staging letsencrypt-prod -o jsonpath='{range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status} {end}'; echo; $K -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip} {.spec.externalTrafficPolicy}'; echo; $K get deploy -A -o custom-columns=NS:.metadata.namespace,N:.metadata.name,AVAIL:.status.availableReplicas | command grep -E 'NS|cert-manager|rabbitmq-system|traefik'
+jtoye-staging objects (rc=0): []
+probe_residue=0
+letsencrypt-staging=True letsencrypt-prod=True 
+51.105.43.14 Local
+NS                N                                     AVAIL
+cert-manager      cert-manager                          1
+cert-manager      cert-manager-cainjector               1
+cert-manager      cert-manager-webhook                  1
+rabbitmq-system   rabbitmq-cluster-operator             1
+traefik           traefik                               2
+[rc=0]
+
+RESULT (executor, 2026-10-19T07:24Z): Task 3 SATISFIED, both directions.
+  * Positive: the acme-probe stage (letsencrypt-staging, HTTP-01) took Certificate acme-probe-tls to Ready=True in
+    about 26 s (Ingress 07:11:47, DomainVerified 07:12:09, CertificateIssued 07:12:13). Its block sits below the
+    07:12:07 in-flight Challenge record because ev.sh appends when the command ENDS; the timestamps give the order.
+    Issued leaf: CN=app-staging.olajay.co.uk, issuer "(STAGING) Ersatz Emmer YR2", chain to "(STAGING) Yonder Yam Root YR"
+    cross-signed by "(STAGING) Pretend Pear X1". curl through 51.105.43.14 with TLS VERIFIED against the downloaded staging
+    root returned HTTP/2 200 and netexec's "NOW: ..." body. Controls: the system trust store refuses it (curl rc 60,
+    verify result 20); the other staging root (X2) refuses it (rc 60); HTTP :80 answers 308 to https.
+    The cluster-side self-check briefly saw a 404 at 07:12:07 (the solver route not yet in Traefik) and passed by 07:12:09.
+  * Negative: probe-nodns-staging.olajay.co.uk (aa-NXDOMAIN at dns1 and dns2) with the same issuer stayed
+    Ready=False/DoesNotExist for 620 s over 11 samples; its Challenge stayed pending, presented=true, reason "failed to
+    perform self check ... lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host" (cert-manager's
+    self-check never passed, so nothing was submitted to Let's Encrypt for validation). Deleted; read-back nodns_objects=0
+    beside a control count of 6 probe objects from the same read.
+  * Delete: verify #2 positive control before the stage printed all six names (kubectl rc 0, gate rc 1); after
+    --stage acme-probe-delete: kubectl rc 1, stdout empty, notfound=6, other=0, gate rc 0. Namespace jtoye-staging now
+    holds no objects of those kinds; Task 1's platform is unchanged (both issuers Ready, Traefik 51.105.43.14 Local,
+    cert-manager x3, operator, Traefik x2 Available).
+  * Observation, not a defect: jtoye-staging has no NetworkPolicy yet (k8s/base, with 00-default-deny and
+    60-acme-http01-solver, is applied by the application deploy in a later plan), so this probe proved HTTP-01 WITHOUT the
+    default-deny in place. The solver allow-rule is exercised for the first time when the overlay deploys.
+  * No production-issuer certificate was requested.
