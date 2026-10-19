@@ -81,3 +81,73 @@ Citation drift caused by the compose edit (+10 lines above postgres-/redis-expor
   after: rc 0, 46 verified, 0 violations
   check-dependency-horizons.sh H-5 advisory pin-not-at-site: 7 with the HEAD sites, 5 after (the 5 pre-date this plan); rc 0 both (NOTE class)
   check-terminal-states.sh rc 0; check-alert-mute.sh MODE=static rc 0 (Task 1 adds nothing under k8s/)
+
+## Task 2 — staging Alertmanager and Grafana
+
+BASELINE measured 2026-10-19T16:22:43Z at 441199847d7100f60b9ea6a7ade6acc1baa419f4
+  keyvault-chain.py objects rc=0 count=30; SPC read rc=0 count=9
+BASELINE-KV-OBJECT client-ip-credentials--hmac-key
+BASELINE-KV-OBJECT dsar-credentials--encryption-key
+BASELINE-KV-OBJECT keycloak-credentials--admin-password
+BASELINE-KV-OBJECT keycloak-credentials--admin-username
+BASELINE-KV-OBJECT keycloak-credentials--frontend-client-secret
+BASELINE-KV-OBJECT keycloak-server-credentials--db-password
+BASELINE-KV-OBJECT mailpit-ui-credentials--auth
+BASELINE-KV-OBJECT nextauth-secret--secret
+BASELINE-KV-OBJECT notification-credentials--unsubscribe-signing-secret
+BASELINE-KV-OBJECT postgres-credentials--backup-password
+BASELINE-KV-OBJECT postgres-credentials--backup-username
+BASELINE-KV-OBJECT postgres-credentials--database
+BASELINE-KV-OBJECT postgres-credentials--host
+BASELINE-KV-OBJECT postgres-credentials--migration-password
+BASELINE-KV-OBJECT postgres-credentials--migration-username
+BASELINE-KV-OBJECT postgres-credentials--password
+BASELINE-KV-OBJECT postgres-credentials--port
+BASELINE-KV-OBJECT postgres-credentials--username
+BASELINE-KV-OBJECT postgres-exporter-credentials--password
+BASELINE-KV-OBJECT postgres-exporter-credentials--username
+BASELINE-KV-OBJECT rabbitmq-credentials--password
+BASELINE-KV-OBJECT rabbitmq-credentials--stomp-login
+BASELINE-KV-OBJECT rabbitmq-credentials--stomp-passcode
+BASELINE-KV-OBJECT rabbitmq-credentials--username
+BASELINE-KV-OBJECT rabbitmq-default-user--default-user-conf
+BASELINE-KV-OBJECT redis-credentials--password
+BASELINE-KV-OBJECT smtp-credentials--password
+BASELINE-KV-OBJECT smtp-credentials--username
+BASELINE-KV-OBJECT stripe-credentials--api-key
+BASELINE-KV-OBJECT stripe-credentials--webhook-secret
+BASELINE-SPC core-java-kv
+BASELINE-SPC frontend-kv
+BASELINE-SPC keycloak-kv
+BASELINE-SPC mailpit-ui-kv
+BASELINE-SPC pg-backup-kv
+BASELINE-SPC postgres-exporter-kv
+BASELINE-SPC rabbitmq-kv
+BASELINE-SPC redis-exporter-kv
+BASELINE-SPC redis-kv
+
+Verify 2 (Ingress host set) on the UNEDITED tree:
+  api-staging.olajay.co.uk
+  app-staging.olajay.co.uk
+  auth-staging.olajay.co.uk
+  mail-staging.olajay.co.uk
+  3a4
+  > grafana-staging.olajay.co.uk
+  diff=1
+  rc=1
+
+Verify 3 (objects/SPCs vs baseline + 6 / + 2) on the UNEDITED tree:
+  0a1,4
+  > alertmanager-smtp-credentials--from
+  > alertmanager-smtp-credentials--password
+  > alertmanager-smtp-credentials--to
+  > alertmanager-smtp-credentials--username
+  2a7,8
+  > grafana-admin-credentials--admin-password
+  > grafana-admin-credentials--admin-user
+  0a1
+  > alertmanager-kv
+  2a4
+  > grafana-kv
+  objects=30 spcs=9 diff-objects=1 diff-spcs=1
+  rc=1
