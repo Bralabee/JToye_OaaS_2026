@@ -26,26 +26,13 @@ the original threat model, and
 | `50-observability.yaml` | Inert placeholder for the Prometheus/Alertmanager/Grafana pod-level policies plan 29-23 ships. The scrape rules already live in 20-/30-. |
 | `60-acme-http01-solver.yaml` | cert-manager HTTP-01 solver pods (`acme.cert-manager.io/http01-solver=true`): ingress from the controller namespace on 8089, no egress. |
 
-### Unproven until the first application deploy: HTTP-01 behind default-deny
+### HTTP-01 behind default-deny: proven 2026-10-19
 
-Plan 29-11 (2026-10-19) issued a Let's Encrypt staging certificate end to end on `jtoye-stg-aks`, but it did so
-while the `jtoye-staging` namespace had **no NetworkPolicy applied at all**. The `acme-http01-solver-allow` rule in
-`60-acme-http01-solver.yaml` has therefore never carried a real challenge; it is first exercised when the overlay
-deploys `00-default-deny.yaml` with the application.
-
-If certificates then sit not-Ready with a challenge timeout, **check this rule before suspecting DNS**:
-
-```bash
-kubectl --context jtoye-stg-aks -n jtoye-staging get challenges,orders
-kubectl --context jtoye-stg-aks -n jtoye-staging describe challenge <name>     # "connection refused/timeout" on the self-check, not NXDOMAIN
-kubectl --context jtoye-stg-aks -n jtoye-staging get networkpolicy acme-http01-solver-allow -o yaml
-#   podSelector must match acme.cert-manager.io/http01-solver=true; ingress from the controller namespace
-#   (rendered from app-config ingress.controller-namespace: traefik in staging/production) on TCP 8089.
-kubectl --context jtoye-stg-aks -n jtoye-staging get pods -l acme.cert-manager.io/http01-solver=true --show-labels
-dig @dns1.registrar-servers.com +short A <host>.olajay.co.uk                # only after the above: DNS was proven by 29-11
-```
-
-Once one certificate has been issued with default-deny in place, record it here and delete this section.
+Plan 29-14's first application deploy applied `00-default-deny.yaml` and `acme-http01-solver-allow` in the same apply,
+before any ACME order, and all three `letsencrypt-prod` certificates (api-, app-, auth-staging) became Ready
+(evidence: `.planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-14-tracer.txt`, Task 2). If a
+certificate later sits not-Ready with a challenge timeout, this rule is still the first suspect, before DNS: see
+`k8s/DEPLOYMENT.md` → Troubleshooting → "Certificate stuck not-Ready".
 
 ## Flow matrix
 

@@ -829,12 +829,18 @@ kubectl describe certificate jtoye-api-tls jtoye-app-tls -n jtoye-production   #
 ```
 
 ### Certificate stuck not-Ready (HTTP-01 challenge timeout)
-Plan 29-11 proved HTTP-01 on staging with NO NetworkPolicy in the namespace; the solver allow-rule
-(`acme-http01-solver-allow`) is first exercised when default-deny deploys. A challenge timeout after that is most
-likely the rule, not DNS: see "Unproven until the first application deploy" in `k8s/base/networkpolicies/README.md`.
+HTTP-01 behind default-deny was proven on staging by plan 29-14 (2026-10-19; see "HTTP-01 behind default-deny" in
+`k8s/base/networkpolicies/README.md`). The namespace is default-deny, so a challenge timeout is most likely the solver
+allow-rule (`acme-http01-solver-allow`), not DNS: a self-check that says connection refused/timeout (not NXDOMAIN)
+points at the rule. Check in this order:
 ```bash
 kubectl --context jtoye-stg-aks -n jtoye-staging get challenges,orders
+kubectl --context jtoye-stg-aks -n jtoye-staging describe challenge <name>
 kubectl --context jtoye-stg-aks -n jtoye-staging get networkpolicy acme-http01-solver-allow -o yaml
+#   podSelector must match acme.cert-manager.io/http01-solver=true; ingress from the controller namespace
+#   (app-config ingress.controller-namespace: traefik in staging/production) on TCP 8089.
+kubectl --context jtoye-stg-aks -n jtoye-staging get pods -l acme.cert-manager.io/http01-solver=true --show-labels
+dig @dns1.registrar-servers.com +short A <host>.olajay.co.uk    # only after the above
 ```
 
 ### Database Connection Issues
