@@ -785,6 +785,12 @@ jobs:
       - name: Prove the deploy script's guards and DEPLOYED_SHA record (29-14 --selftest)
         run: bash scripts/deploy.sh --selftest
 
+      # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
+      # mismatch, plant-stale, empty actual, zero services, no context, employer
+      # context, short tag, fixture-with-context) against fixtures: no cluster.
+      - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
+        run: bash scripts/check-deploy-digest-parity.sh --selftest
+
       - name: Assert the staging/production render matches its reviewed golden
         run: |
           chmod +x ./k8s/scripts/render-golden.sh
@@ -1769,6 +1775,10 @@ jobs:
     environment:
       name: staging
       url: https://app-staging.olajay.co.uk
+    env:
+      # Plan 29-14: ONE variable names the deployed tag. The pin step deploys it and
+      # the digest-parity step checks it, so the check cannot drift from the deploy.
+      DEPLOY_TAG: ${{ github.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1924,11 +1934,11 @@ jobs:
             exit 2
           fi
           IMAGE_PUBLISH_BASE="${REGISTRY}/${IMAGE_OWNER,,}/jtoye"
-          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${{ github.sha }}"
+          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${DEPLOY_TAG}"
           (cd k8s/staging && kustomize edit set image \
-            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${{ github.sha }}" \
-            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${{ github.sha }}" \
-            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${{ github.sha }}")
+            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${DEPLOY_TAG}" \
+            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${DEPLOY_TAG}" \
+            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${DEPLOY_TAG}")
           # Premortem guard: assert the RENDERED overlay actually pins :<sha> on
           # all three jtoye images BEFORE apply. A silent images[].name key
           # mismatch would fall back to the static 2.1.0 default and deploy the
@@ -1942,8 +1952,8 @@ jobs:
           # why it survives testing: it waits for the render to grow.
           RENDERED="$(kustomize build k8s/staging)"
           for svc in core-java edge-go frontend; do
-            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" <<< "$RENDERED"; then
-              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" >&2
+            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" <<< "$RENDERED"; then
+              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" >&2
               echo "Rendered jtoye image refs were:" >&2
               grep -E "image: .*/jtoye-" <<< "$RENDERED" >&2 || true
               exit 1
@@ -1956,6 +1966,18 @@ jobs:
           kubectl rollout status deployment/core-java -n jtoye-staging --timeout=5m
           kubectl rollout status deployment/edge-go -n jtoye-staging --timeout=3m
           kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
+
+      - name: Digest parity — the running pods are the images pushed for DEPLOY_TAG (29-14)
+        # The Kubernetes half of runtime parity: every running core-java, edge-go and
+        # frontend container's imageID must be in the digest set GHCR holds for the tag
+        # this job deployed (DEPLOY_TAG, the same variable the pin step used). Exit 1 is a
+        # wrong image; exit 2 is VOID (the shared staging context guard refused the
+        # context, kubelogin or docker is missing, or no pod was read) and fails the job
+        # too: "could not check" is never "clean". The guard needs kubelogin and the
+        # kubeconfig's server to equal the staging API server; plan 29-21 rewires this
+        # job's authentication, and until then this step fails closed.
+        run: |
+          bash scripts/check-deploy-digest-parity.sh --context "$(kubectl config current-context)" --tag "$DEPLOY_TAG"
 
       - name: Health check after core-java deployment
         # issue #98 [P2-7] item 4: actuator now lives on the INTERNAL management

@@ -45,10 +45,11 @@
 #   different image — which is the property being bought — because a stale or wrong build
 #   produces a digest in NEITHER set.
 #
-#   NARROWING THIS TO A SINGLE MEASURED DIGEST IS OWED TO PLAN 29-15, on the first live
-#   deploy, once it is known which digest AKS reports. Until that measurement exists, do not
-#   narrow it speculatively: a gate that reds every correct deploy gets deleted, and then
-#   there is no gate.
+#   NARROWING THIS TO A SINGLE MEASURED DIGEST IS OWED TO A LATER PLAN. Plan 29-14 ran it on
+#   the first live deploy and recorded which digest AKS/containerd reports in
+#   evidence/29-14-tracer.txt; until a plan narrows it against that record, do not narrow it
+#   speculatively: a gate that reds every correct deploy gets deleted, and then there is no
+#   gate.
 #
 # WHY THE EXPECTED DIGESTS COME FROM THE REGISTRY AND NOT FROM JOB OUTPUTS
 #
@@ -77,15 +78,29 @@
 # EXIT CODES — uniform with this phase's other gates
 #   0 = the running images match this commit · 1 = a WRONG image is running · 2 = VOID
 #
-# USAGE
-#   scripts/check-deploy-digest-parity.sh --context <ctx> --namespace jtoye-staging \
-#       --sha <git-sha> [--services "core-java edge-go frontend"]
+# USAGE (plan 29-14)
+#   scripts/check-deploy-digest-parity.sh --context <ctx> --tag <40-hex sha> \
+#       [--namespace jtoye-staging] [--services "core-java edge-go frontend"] [--plant-stale]
+#   scripts/check-deploy-digest-parity.sh --selftest
 #
-#   Offline falsification harness (documented knob, never used in CI):
-#     DIGEST_PARITY_FIXTURE=<dir>   read <dir>/<svc>.actual and <dir>/<svc>.expected
-#                                   instead of calling kubectl and the registry. This is
-#                                   what makes the four arms (match / mismatch / empty
-#                                   actual / zero services) runnable with no cluster.
+#   --context   REQUIRED, no default and no environment fallback. Checked by
+#               scripts/lib/staging-kube-guard.sh before any cluster read: sipbihs2aks is
+#               refused by name and the context's server must equal
+#               https://<aks_api_server_fqdn>:443 from k8s/staging/azure-identity.yaml (a
+#               namespace other than jtoye-staging has no identity file yet and is refused:
+#               fail closed). The guard's refusal (1) or VOID (2) is re-reported as VOID:
+#               this gate compared nothing.
+#   --tag       REQUIRED: the full 40-lowercase-hex commit sha the images were pushed under.
+#               It must be the RECORDED deployed sha (deploy.sh's DEPLOYED_SHA line, or the
+#               variable the CI job deployed with), never a fresh `git rev-parse HEAD`: an
+#               evidence or docs commit moves HEAD to a commit whose images never existed.
+#   --plant-stale  the fail arm: everything is read for real, then the expected set is
+#               REPLACED by one deliberately wrong digest, so every running container must
+#               come out NOT IN THE EXPECTED SET and the gate must exit 1. An exit 0 here
+#               means the gate cannot see a wrong image.
+#   --fixture DIR  comparison logic only: read DIR/<svc>.actual and DIR/<svc>.expected
+#               instead of the cluster and the registry. Refused together with --context, so
+#               a cluster run can never be fed files. --selftest drives it.
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -99,28 +114,67 @@ void() { printf 'VOID: %s\n' "$*" >&2; exit 2; }
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 log()  { printf '  %s\n' "$*"; }
 
-KUBE_CONTEXT="${DIGEST_PARITY_CONTEXT:-}"
-NAMESPACE="${DIGEST_PARITY_NAMESPACE:-jtoye-staging}"
-GIT_SHA="${DIGEST_PARITY_SHA:-}"
-SERVICES="${DIGEST_PARITY_SERVICES-core-java edge-go frontend}"
-REGISTRY_PREFIX="${DIGEST_PARITY_REGISTRY_PREFIX:-ghcr.io/bralabee/jtoye-}"
-FIXTURE="${DIGEST_PARITY_FIXTURE:-}"
-# Contexts this gate refuses even when named. It only READS, but it reads with cluster
-# credentials, and the only context on the maintainer's own host is employer infrastructure.
-FORBIDDEN_CONTEXTS="${DIGEST_PARITY_FORBIDDEN_CONTEXTS:-sipbihs2aks}"
+# No environment variable feeds any of these: what a cluster run compares is decided by its
+# arguments alone (the branch version read DIGEST_PARITY_* overrides, including a fixture dir).
+KUBE_CONTEXT=""
+NAMESPACE="jtoye-staging"
+GIT_SHA=""
+SERVICES="core-java edge-go frontend"
+REGISTRY_PREFIX="ghcr.io/bralabee/jtoye-"
+FIXTURE=""
+PLANT_STALE=0
+SELFTEST=0
+# One deliberately wrong digest for --plant-stale: sha256 of the string "plant-stale".
+STALE_DIGEST="sha256:$(printf 'plant-stale' | sha256sum | awk '{print $1}')"
+# Contexts refused by name before the guard even runs (the guard refuses it too).
+FORBIDDEN_CONTEXTS="sipbihs2aks"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --context)   KUBE_CONTEXT="${2:-}"; shift 2 ;;
-    --namespace) NAMESPACE="${2:-}"; shift 2 ;;
-    --sha)       GIT_SHA="${2:-}"; shift 2 ;;
-    --services)  SERVICES="${2:-}"; shift 2 ;;
+    --context)     KUBE_CONTEXT="${2:-}"; shift 2 ;;
+    --namespace)   NAMESPACE="${2:-}"; shift 2 ;;
+    --tag)         GIT_SHA="${2:-}"; shift 2 ;;
+    --services)    SERVICES="${2:-}"; shift 2 ;;
+    --fixture)     FIXTURE="${2:-}"; shift 2 ;;
+    --plant-stale) PLANT_STALE=1; shift ;;
+    --selftest)    SELFTEST=1; shift ;;
     -h|--help)
-      echo "usage: $0 --context <ctx> --namespace <ns> --sha <git-sha> [--services \"a b c\"]"
+      echo "usage: $0 --context <ctx> --tag <40-hex sha> [--namespace ns] [--services \"a b c\"] [--plant-stale] | --selftest"
       exit 0 ;;
     *) void "unknown argument '$1' — refusing to guess what was meant while holding cluster credentials" ;;
   esac
 done
+
+# ---- --selftest: the comparison and refusal arms, no cluster, no registry -------------
+if [ "$SELFTEST" -eq 1 ]; then
+  st="$(mktemp -d)" || void "mktemp -d failed"
+  trap 'rm -rf "$st"' EXIT
+  d1="sha256:$(printf a | sha256sum | awk '{print $1}')"; d2="sha256:$(printf b | sha256sum | awk '{print $1}')"
+  mkdir -p "$st/match" "$st/mismatch" "$st/empty"
+  for s in core-java edge-go frontend; do
+    printf '%s\n' "$d1" > "$st/match/$s.actual"; printf '%s\n%s\n' "$d2" "$d1" > "$st/match/$s.expected"
+    printf '%s\n' "$d1" > "$st/mismatch/$s.actual"; printf '%s\n' "$d1" > "$st/mismatch/$s.expected"
+    : > "$st/empty/$s.actual"; printf '%s\n' "$d1" > "$st/empty/$s.expected"
+  done
+  printf '%s\n' "$d2" > "$st/mismatch/frontend.actual"
+  fails=0
+  arm() { # arm NAME WANT_RC ARGS...
+    local name="$1" want="$2" rc=0; shift 2
+    bash "$0" "$@" >"$st/$name.out" 2>&1 || rc=$?
+    if [ "$rc" -eq "$want" ]; then echo "PASS $name rc=$rc"; else echo "FAIL $name rc=$rc (want $want): $(tail -2 "$st/$name.out" | tr '\n' ' ')"; fails=$((fails + 1)); fi
+  }
+  arm match           0 --fixture "$st/match"
+  arm mismatch        1 --fixture "$st/mismatch"
+  arm plant-stale     1 --fixture "$st/match" --plant-stale
+  arm empty-actual    2 --fixture "$st/empty"
+  arm zero-services   2 --fixture "$st/match" --services ""
+  arm no-context      2 --tag 0123456789abcdef0123456789abcdef01234567
+  arm employer        2 --context sipbihs2aks --tag 0123456789abcdef0123456789abcdef01234567
+  arm short-tag       2 --context jtoye-stg-aks --tag 0123abc
+  arm fixture-context 2 --fixture "$st/match" --context jtoye-stg-aks
+  [ "$fails" -eq 0 ] || exit 1
+  exit 0
+fi
 
 echo "check-deploy-digest-parity  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 
@@ -132,6 +186,10 @@ for _s in $SERVICES; do SERVICE_COUNT=$((SERVICE_COUNT + 1)); done
 [ "$SERVICE_COUNT" -gt 0 ] || void "ZERO services to check. A loop over an empty service list makes no
        comparison at all and would exit 0 having measured nothing. An empty discovery
        result is VOID, never clean."
+
+if [ -n "$FIXTURE" ] && [ -n "$KUBE_CONTEXT" ]; then
+  void "--fixture and --context together: a cluster run is never fed files"
+fi
 
 if [ -n "$FIXTURE" ]; then
   echo "  ***********************************************************************"
@@ -160,12 +218,24 @@ else
        intent is not a safety mechanism."
   done
 
-  [ -n "$GIT_SHA" ] || void "no --sha given. Without the commit under deploy there is no expected
-       image to resolve, and a comparison against an unknown expectation is VOID, never clean."
+  [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || void "--tag must be the full 40-lowercase-hex commit sha the images were
+       pushed under (got '${GIT_SHA}'). Without it there is no expected image to resolve, and a
+       comparison against an unknown expectation is VOID, never clean."
+
+  # The shared staging context guard (plan 29-03): employer context by name, then the
+  # context's server against the identity file, read locally. Any refusal is VOID here.
+  [ "$NAMESPACE" = jtoye-staging ] || void "namespace '$NAMESPACE' has no identity file to check the context's server
+       against (only k8s/staging/azure-identity.yaml exists): fail closed."
+  # shellcheck source=scripts/lib/staging-kube-guard.sh
+  . "$REPO_ROOT/scripts/lib/staging-kube-guard.sh" || void "could not source scripts/lib/staging-kube-guard.sh"
+  grc=0
+  staging_kube_guard "$KUBE_CONTEXT" "$REPO_ROOT/k8s/staging/azure-identity.yaml" || grc=$?
+  [ "$grc" -eq 0 ] || void "the staging context guard refused '$KUBE_CONTEXT' (rc $grc, line above); nothing was compared"
 fi
 
 log "namespace : ${NAMESPACE}"
 log "commit    : ${GIT_SHA:-<fixture mode>}"
+[ "$PLANT_STALE" -eq 0 ] || log "PLANT-STALE: the expected set is replaced by ${STALE_DIGEST} (fail arm)"
 log "services  : ${SERVICE_COUNT} (${SERVICES})"
 echo
 
@@ -207,6 +277,9 @@ CHECKED=0
 for svc in $SERVICES; do
   actual="$(read_actual "$svc")"
   expected="$(read_expected "$svc")"
+  if [ "$PLANT_STALE" -eq 1 ] && [ -n "$expected" ]; then
+    expected="$STALE_DIGEST"
+  fi
 
   [ -n "$actual" ] || void "could not read a single image digest for '$svc' in namespace '$NAMESPACE'.
        An empty ACTUAL set means the gate is blind, and a blind gate that exits 0 is exactly
@@ -249,5 +322,5 @@ fi
 
 echo "PASS: every running container image digest across $CHECKED service(s) is in the set of digests"
 echo "      published for ${GIT_SHA:-<fixture>}. NOTE: this is the SET form (index digest plus each"
-echo "      platform manifest digest). Narrowing it to a single measured digest is owed to 29-15."
+echo "      platform manifest digest). Narrowing it to a single measured digest is owed to a later plan."
 exit 0
