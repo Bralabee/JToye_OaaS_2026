@@ -143,9 +143,9 @@ KV_NAME="jtoye-stg-kv"
 NAMESPACE="jtoye-staging"
 K8S_MINOR="1.36"
 NODE_VM_SIZE="Standard_B2s"
-NODE_COUNT=3
-QUOTA_FREE_VCPU_MIN=8          # 3 x B2s (2 vCPU) + 1 surge node during upgrades
-QUOTA_SURGE_VCPU_MIN=2         # re-run with the cluster already created: its 6 vCPU are
+NODE_COUNT=4                    # D-34 (owner, 2026-10-19): 4th node for rollout surge + monitoring
+QUOTA_FREE_VCPU_MIN=10         # 4 x B2s (2 vCPU) + 1 surge node during upgrades
+QUOTA_SURGE_VCPU_MIN=2         # re-run with the cluster already created: its 8 vCPU are
                                # already counted as used, so only the surge node must fit
 PROVIDERS="Microsoft.KeyVault Microsoft.Storage"
 PROVIDER_DEADLINE_SECONDS=600

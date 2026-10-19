@@ -311,6 +311,28 @@ real app-email delivery and SES (D-13).
     - **D-13/D-20** are untouched: app mail is still captured and never delivered. The UI only
       lets testers read what was captured.
 
+- **D-34: two more owner rulings of 2026-10-19, both after 29-14.**
+  - **(a) Fourth node; the D-03 ceiling is raised by its cost.**
+    - **Why:** 29-14 measured that core-java and Keycloak could not roll at all. Each takes a
+      1Gi surge pod with request equal to limit, and the three B2s nodes had 661, 399 and
+      803 Mi allocatable free.
+    - **Why the requests cannot shrink:** measured use is core-java 732Mi and Keycloak 621Mi,
+      both JVMs.
+    - **Change:** nodepool1 was scaled from 3 to 4 Standard_B2s on 2026-10-19, owner-approved.
+      `scripts/azure-staging-provision.sh` now has NODE_COUNT=4, so a re-provision matches.
+      The new node had 734Mi of 2.7Gi requested after it joined.
+    - **Cost:** £0.0356/h list price, about £26/month. The OS disk is ephemeral, so the
+      29-19 research projection is £77.96/month for 3 × B2s. The projected estate rises from
+      about £131–145 to about £157–171/month. The owner accepted going over D-03's ~£150
+      ceiling for this; 29-19 measures the real figure.
+    - **Reversible:** scale back to 3 once monitoring's footprint is known, if it fits.
+  - **(b) The storefront image defect is fixed inside Phase 29, before persona testing.**
+    - **The defect:** 29-14 found that `PublicStorefrontService.toPublicProductDto` reads only
+      `products.image_url`, while vendor uploads go through the media_asset pipeline (V53). An
+      uploaded photo therefore never reaches the public storefront. Production is affected the
+      same way.
+    - **Fix:** a dedicated plan, test-first, deployed before 29-26 so personas see photos.
+
 </decisions>
 
 <canonical_refs>
