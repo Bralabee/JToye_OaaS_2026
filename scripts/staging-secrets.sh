@@ -361,6 +361,25 @@ cmd_selftest() {
   v=""
   if [ -z "$why" ]; then ss_result "PASS value-shapes hex64 alnum32 b64url32 vendor-policy composites=inputs"; else ss_result "FAIL value-shapes $why"; fails=$((fails + 1)); fi
 
+  # --- htpasswd-apr1 composite (plan 29-22, D-33): the password first, then its apr1 line,
+  # reproducible from the stored password by openssl with the stored salt, nothing printed --
+  why=""
+  local pwl authl au ap salt
+  pwl=$(command grep -n 'secret set .*-n mailpit-ui-credentials--password ' "$ST/state/argv.log" | head -n 1 | cut -d: -f1)
+  authl=$(command grep -n 'secret set .*-n mailpit-ui-credentials--auth ' "$ST/state/argv.log" | head -n 1 | cut -d: -f1)
+  { [ -n "$pwl" ] && [ -n "$authl" ] && [ "$pwl" -lt "$authl" ]; } || why="the --password write (line ${pwl:-none}) does not precede the --auth write (line ${authl:-none})"
+  if [ -z "$why" ]; then
+    au=$(cat "$s/mailpit-ui-credentials--auth"); ap=$(cat "$s/mailpit-ui-credentials--password")
+    if ! [[ "$au" =~ ^staging-tester:\$apr1\$ ]]; then why="the --auth line does not match ^staging-tester:\$apr1\$"
+    else
+      salt=$(cut -d'$' -f3 <<< "$au")
+      [ "staging-tester:$(printf '%s' "$ap" | openssl passwd -apr1 -salt "$salt" -stdin)" = "$au" ] || why="openssl passwd -apr1 -salt <stored salt> over the stored password does not reproduce the --auth line"
+    fi
+    [ -z "$why" ] && command grep -qF -e "$ap" -e "${au#staging-tester:}" "$ST/gen1.out" && why="the password or its hash was printed"
+    au=""; ap=""
+  fi
+  if [ -z "$why" ]; then ss_result "PASS htpasswd-composite order=password-then-auth apr1=reproducible printed=0"; else ss_result "FAIL htpasswd-composite $why"; fails=$((fails + 1)); fi
+
   # --- a second generate writes nothing --------------------------------------------------
   n=$(st_sets); rc=$(st_run gen2 --generate); why=""
   [ "$rc" = 0 ] || why="rc=$rc"

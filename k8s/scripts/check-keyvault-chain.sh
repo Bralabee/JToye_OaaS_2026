@@ -151,6 +151,15 @@ elif arm == "cert-secret-foreign-key":
     # a consumer reads a key cert-manager never writes into its Secret
     container(find("Deployment", "core-java"), "core-java").setdefault("env", []).append(
         {"name": "PLANTED_CA", "valueFrom": {"secretKeyRef": {"name": "jtoye-staging-ca", "key": "password"}}})
+elif arm == "ingress-auth-unproduced":
+    # the mail UI's auth-secret renamed to a Secret no SPC produces
+    find("Ingress", "mailpit-ui")["metadata"]["annotations"]["nginx.ingress.kubernetes.io/auth-secret"] = "mailpit-ui-planted"
+elif arm == "ingress-auth-unsynced":
+    # secret-sync stops mounting mailpit-ui-kv: the Secret would exist only by accident
+    spec = find("Deployment", "secret-sync")["spec"]["template"]["spec"]
+    spec["volumes"] = [v for v in spec["volumes"] if v.get("name") != "kv-mailpit-ui"]
+    for c in spec["containers"]:
+        c["volumeMounts"] = [m for m in c.get("volumeMounts", []) if m.get("name") != "kv-mailpit-ui"]
 elif arm == "zero-spc":
     docs = [d for d in docs if d.get("kind") != "SecretProviderClass"]
 else:
@@ -172,7 +181,7 @@ selftest() {
     "$KUBECTL" kustomize "$K8S_DIR/staging" > "$tmp/real.yaml" 2> "$tmp/err" || { cat "$tmp/err" >&2; void "the staging render failed"; }
     [[ -s "$tmp/real.yaml" ]] || void "the staging render is empty"
 
-    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted cert-secret-spc-producer cert-secret-foreign-key zero-spc pyyaml-missing kubectl-missing)
+    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted cert-secret-spc-producer cert-secret-foreign-key ingress-auth-unproduced ingress-auth-unsynced zero-spc pyyaml-missing kubectl-missing)
     declare -A WANT=(
         [undeclared-key]="Deployment/core-java reads dsar-credentials/not-a-key"
         [two-producers]="Secret postgres-credentials has two producers"
@@ -182,6 +191,8 @@ selftest() {
         [object-not-mounted]="which is not in its parameters.objects"
         [cert-secret-spc-producer]="Secret mailpit-tls has two producers: SecretProviderClass core-java-kv and cert-manager Certificate mailpit-tls"
         [cert-secret-foreign-key]="Deployment/core-java reads jtoye-staging-ca/password (env PLANTED_CA): Secret jtoye-staging-ca is written by cert-manager Certificate jtoye-staging-ca, which holds only ca.crt, tls.crt, tls.key"
+        [ingress-auth-unproduced]="Deployment/secret-sync reads mailpit-ui-planted/auth (auth-secret of Ingress/mailpit-ui), which no SecretProviderClass produces"
+        [ingress-auth-unsynced]="Deployment/secret-sync reads mailpit-ui-credentials/auth (auth-secret of Ingress/mailpit-ui), produced by mailpit-ui-kv, which Deployment/secret-sync does not mount"
         [zero-spc]="the render holds no SecretProviderClass"
         [pyyaml-missing]="PyYAML is not importable"
         [kubectl-missing]="kubectl not found"

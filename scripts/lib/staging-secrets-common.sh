@@ -14,6 +14,9 @@
 #                    python3 k8s/scripts/keyvault-chain.py objects render.yaml   (plan 29-12)
 #                    bash scripts/staging-realm-import.sh --list-kv-objects       (plan 29-04)
 #                    bash scripts/staging-seed.sh --list-kv-objects               (plan 29-06)
+#                    bash scripts/staging-mail-ui.sh --list-kv-objects            (plan 29-22: the
+#                      mail-UI PLAINTEXT, which no SecretProviderClass names, so no workload
+#                      identity is granted it; only its apr1 hash is mounted, D-33)
 #     access       `<clientID> TAB <objectName>`, from keyvault-chain.py access: the objects
 #                  each SecretProviderClass's identity may read, and nothing else
 #   Any source failing, or an empty result, is VOID (return 2): "found nothing" is not
@@ -26,7 +29,9 @@
 # REFUSES, so a new secretKeyRef cannot slip through unclassified)
 #   estate     a fact about the estate, not a secret (host, port, database, role names)
 #   random     generated here once from openssl's CSPRNG
-#   composite  built from other objects, read back from the vault (composites after inputs)
+#   composite  built from other objects, read back from the vault (composites after inputs);
+#              htpasswd-apr1:<user>:<input> is the line `<user>:<openssl passwd -apr1 -stdin>`
+#              over the input's value (the password on stdin, never argv; plan 29-22, D-33)
 #   external   supplied by the owner on stdin; the kind is the REQUIRED prefix (D-28:
 #              a Stripe key that is not a TEST key never enters staging)
 #
@@ -78,7 +83,7 @@ ss_derive() {
   printf '%s\n' "$out" > "$dir/access"
 
   local lister
-  for lister in staging-realm-import.sh staging-seed.sh; do
+  for lister in staging-realm-import.sh staging-seed.sh staging-mail-ui.sh; do
     rc=0; out=$(bash "$SS_REPO_ROOT/scripts/$lister" --list-kv-objects 2> "$dir/lister.err") || rc=$?
     if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
       cat "$dir/lister.err" >&2
@@ -124,6 +129,10 @@ ss_classify() {
     staging-seed--test-vendor-password)                 echo "random vendor-password" ;;
     keycloak-credentials--frontend-client-secret)       echo "random alnum32" ;;
     keycloak-realm--*-secret)                           echo "random alnum32" ;;
+    # The testers' mail UI (plan 29-22, D-33): a generated password, and the apr1
+    # htpasswd line Traefik's basic auth reads, derived from it (the only one mounted).
+    mailpit-ui-credentials--password)                   echo "random alnum32" ;;
+    mailpit-ui-credentials--auth)                       echo "composite htpasswd-apr1:staging-tester:mailpit-ui-credentials--password" ;;
     *password*|*passcode*)                              echo "random alnum32" ;;
     *) return 1 ;;
   esac

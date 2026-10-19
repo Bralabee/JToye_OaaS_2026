@@ -370,6 +370,28 @@
 #          Production and local carry no truststore component today and print
 #          "not applicable". Shown catching each hole by --selftest-inv16.
 #
+#   INV-18 PHASE 29 plan 29-22, D-33 / T-29-108..T-29-110, RENDER level, every
+#          target that renders the mailpit component (a Deployment or Service named
+#          mailpit). The testers' mail UI is public, so its render must keep it
+#          authenticated, keep SMTP private and keep Mailpit from sending:
+#            a. every Ingress path whose backend is Service mailpit names port 8025
+#               (by number, or by a port name whose Service port is 8025), and its
+#               Ingress carries auth-type basic, a non-empty auth-secret with no `/`
+#               (a same-namespace Secret: Traefik's cross-namespace resources are
+#               off) and auth-secret-type absent or auth-file;
+#            b. every Service selecting app=mailpit is ClusterIP (no LoadBalancer or
+#               NodePort ever publishes 1025 or an unauthenticated 8025);
+#            c. the mailpit container sets no MP_SMTP_RELAY_* / MP_SMTP_FORWARD_* /
+#               MP_SEND_API_AUTH_ACCEPT_ANY / MP_ENABLE_CHAOS env and no envFrom, the
+#               render text names none of --smtp-relay, --smtp-forward,
+#               --send-api-auth-accept-any, --enable-chaos, and the container DOES
+#               set MP_SEND_API_AUTH_FILE as a literal (the Send API lock).
+#          A target with a mailpit Deployment but zero Ingress backends to it, or a
+#          mailpit Service but no mailpit Deployment, is a PARSE ERROR (a blind
+#          reader never passes). Production and local print "not applicable". Shown
+#          catching each hole by --selftest-inv18; the live proof is
+#          scripts/staging-mail-ui.sh --probe (UI-1..UI-8).
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -461,12 +483,13 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv18]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
 #   --selftest-inv15 the same for INV-15 (inv15_selftest)
 #   --selftest-inv16 the same for INV-16 (inv16_selftest)
+#   --selftest-inv18 the same for INV-18 (inv18_selftest)
 
 set -euo pipefail
 
@@ -855,6 +878,102 @@ if [[ "${1:-}" == "--selftest-inv16" ]]; then
     inv16_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv18 (Phase 29, plan 29-22, D-33): INV-18 shown CATCHING planted
+# holes in the testers' mail UI render. Same harness shape as -inv16. Arms (each
+# in the copy's k8s/components/mailpit):
+#   no-auth          Ingress mailpit-ui loses auth-type (an open mail UI)
+#   port-1025        its backend port becomes 1025 (SMTP on the public edge)
+#   cross-ns-secret  auth-secret becomes traefik/x (a cross-namespace Secret)
+#   loadbalancer     Service mailpit becomes type LoadBalancer
+#   relay-all        the mailpit container sets MP_SMTP_RELAY_ALL=true
+#   lock-removed     the mailpit container loses MP_SEND_API_AUTH_FILE (Send API open)
+# INV18_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv18_plant() {
+    local arm="$1" root="$2" f before
+    case "$arm" in
+        no-auth|port-1025|cross-ns-secret) f="$root/components/mailpit/mailpit-ui-ingress.yaml" ;;
+        loadbalancer|relay-all|lock-removed) f="$root/components/mailpit/mailpit.yaml" ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        no-auth)
+            awk '!/^    nginx\.ingress\.kubernetes\.io\/auth-type:/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        port-1025)
+            awk '{ if ($0 ~ /^              number: 8025$/) sub(/8025/, "1025"); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        cross-ns-secret)
+            awk '{ if ($0 ~ /^    nginx\.ingress\.kubernetes\.io\/auth-secret: /) $0 = "    nginx.ingress.kubernetes.io/auth-secret: \"traefik/x\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        loadbalancer)
+            awk '{ if ($0 ~ /^  type: ClusterIP$/ && !done) { $0 = "  type: LoadBalancer"; done = 1 } print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        relay-all)
+            awk '{ print } /^        - name: MP_SMTP_REQUIRE_STARTTLS$/ { held = 1; next } held { held = 0; print "        - name: MP_SMTP_RELAY_ALL"; print "          value: \"true\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        lock-removed)
+            awk '/^        - name: MP_SEND_API_AUTH_FILE$/ { skip = 1; next } skip { skip = 0; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv18_selftest() {
+    local fmt="${INV18_SELFTEST_FORMAT:-plain}" st arm want out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv18 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(no-auth port-1025 cross-ns-secret loadbalancer relay-all lock-removed)
+    declare -A WANT=(
+        [no-auth]="INV-18: Ingress 'mailpit-ui' routes host 'mail-staging.olajay.co.uk' to Service mailpit without basic auth"
+        [port-1025]="INV-18: Ingress 'mailpit-ui' routes host 'mail-staging.olajay.co.uk' to Service mailpit on port 1025"
+        [cross-ns-secret]="INV-18: Ingress 'mailpit-ui' auth-secret 'traefik/x'"
+        [loadbalancer]="INV-18: Service 'mailpit' selects app=mailpit and is type LoadBalancer"
+        [relay-all]="INV-18: Deployment mailpit container 'mailpit' sets MP_SMTP_RELAY_ALL"
+        [lock-removed]="INV-18: Deployment mailpit container 'mailpit' does not set MP_SEND_API_AUTH_FILE"
+    )
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv18_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"
+            if (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=1"
+            else
+                caught=no
+                line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-18|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv18" ]]; then
+    inv18_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
@@ -978,9 +1097,12 @@ declare -A NETPOL_RULES_EXPECTED=(
   # Nothing in, nothing out: the Key Vault fetch is the CSI provider's, on the node.
   [secret-sync-allow@k8s/staging]="sel:app=secret-sync types:Egress,Ingress"
   # The staging mail trap (plan 29-22, ../components/mailpit). SMTP 1025 from the
-  # three senders only; no egress at all (Mailpit relays and forwards nothing).
+  # three senders only; the controller namespace on 8025 only, for the D-33
+  # authenticated testers' UI (Ingress mailpit-ui; INV-18 refuses a route to 1025);
+  # no egress at all (Mailpit relays and forwards nothing).
   [mailpit-allow@k8s/staging]="sel:app=mailpit types:Egress,Ingress
-      in:pod=app=core-java:1025 in:pod=app=keycloak:1025 in:pod=app=alertmanager:1025"
+      in:pod=app=core-java:1025 in:pod=app=keycloak:1025 in:pod=app=alertmanager:1025
+      in:ns=__INGRESS_NS__:8025"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as
@@ -2499,14 +2621,18 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-18 (29-22, D-33) ----------------
+    # STUB (RED): passes everything until the assertion is written.
+    inv18_msg="OK (stub)"
+
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv18_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-18 $inv18_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-18 $inv18_msg"
     fi
 done
 
@@ -2964,4 +3090,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; $LOCAL_SECTION."
