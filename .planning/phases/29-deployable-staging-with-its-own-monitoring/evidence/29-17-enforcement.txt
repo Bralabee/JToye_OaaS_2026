@@ -1,0 +1,87 @@
+# 29-17 NetworkPolicy enforcement evidence (DPLY-05, #297)
+# kube-context jtoye-stg-aks only (Cilium, AKS, subscription c483d353). Times are UTC.
+
+== TASK 1: classifier RED/GREEN, guards, registration (2026-10-19T11:30:44Z) ==
+
+-- agnhost 2.66.1 (pinned digest) measured locally with docker, before writing the classifier --
+10.255.255.1:80 rc=1 out=[TIMEOUT]   127.0.0.1:1 rc=1 out=[REFUSED]   1.1.1.1:443 rc=0 out=[]   nosuchhost.invalid:80 rc=1 out=[DNS: lookup ... no such host]
+
+-- RED (commit a83a29be): bash scripts/check-networkpolicy-enforcement.sh --selftest --
+TAP version 13
+1..21
+ok 1 - classify-timeout-is-denied
+ok 2 - classify-timeout-with-kubectl-trailer
+ok 3 - classify-empty-rc0-is-connected
+not ok 4 - classify-REFUSED-is-reset
+  ---
+  message: 'expected RESET, got DENIED'
+  ...
+not ok 5 - classify-connection-refused-is-reset
+  ---
+  message: 'expected RESET, got DENIED'
+  ...
+not ok 6 - classify-refused-with-trailer-is-reset
+  ---
+  message: 'expected RESET, got DENIED'
+  ...
+ok 7 - classify-timeout-rc0-is-unknown
+ok 8 - classify-empty-rc1-is-unknown
+ok 9 - classify-dns-error-is-unknown
+ok 10 - classify-exec-error-is-unknown
+ok 11 - classify-trailer-code-mismatch-unknown
+ok 12 - pair-control-connected-denied-pass
+ok 13 - pair-control-denied-is-void
+ok 14 - pair-control-unknown-is-void
+ok 15 - pair-denied-arm-connected-is-fail
+ok 16 - pair-denied-arm-reset-is-fail-never-pass
+ok 17 - policy-free-not-connected-is-void
+ok 18 - policy-free-connected-ok
+ok 19 - foreign-artefact-refused
+ok 20 - own-artefacts-not-refused
+ok 21 - artefact-count-mismatch-void
+# FAIL: 3 of 21
+rc=1   gsd_run check tdd-red-evidence evidence/29-17-t1-red-classifier.json -> RED_EVIDENCE_OK (target classify-REFUSED-is-reset)
+
+-- GREEN: --selftest --
+TAP version 13
+1..22
+ok 1 - classify-timeout-is-denied
+ok 2 - classify-timeout-with-kubectl-trailer
+ok 3 - classify-empty-rc0-is-connected
+ok 4 - classify-REFUSED-is-reset
+ok 5 - classify-connection-refused-is-reset
+ok 6 - classify-refused-with-trailer-is-reset
+ok 7 - classify-timeout-rc0-is-unknown
+ok 8 - classify-empty-rc1-is-unknown
+ok 9 - classify-dns-error-is-unknown
+ok 10 - classify-exec-error-is-unknown
+ok 11 - classify-trailer-code-mismatch-unknown
+ok 12 - classify-timeout-plus-other-text-unknown
+ok 13 - pair-control-connected-denied-pass
+ok 14 - pair-control-denied-is-void
+ok 15 - pair-control-unknown-is-void
+ok 16 - pair-denied-arm-connected-is-fail
+ok 17 - pair-denied-arm-reset-is-fail-never-pass
+ok 18 - policy-free-not-connected-is-void
+ok 19 - policy-free-connected-ok
+ok 20 - foreign-artefact-refused
+ok 21 - own-artefacts-not-refused
+ok 22 - artefact-count-mismatch-void
+# PASS: 22 of 22
+rc=0
+
+-- no --context (acceptance criterion: rc exactly 2 and a USAGE line) --
+USAGE ERROR: --context is required (no default: an ambient context is how a command lands on the wrong cluster)
+usage: scripts/check-networkpolicy-enforcement.sh --context <kube-context> [--only P0|A|B|F1|M1|M2|E1|E2|K1|K2]
+       scripts/check-networkpolicy-enforcement.sh --selftest
+rc=2
+
+-- guard refusals --
+--context sipbihs2aks -> rc=1 :: REFUSED [employer-context]: context 'sipbihs2aks' is the employer's cluster. Naming it explicitly does not make it allowed.
+--context jtoye-staging -> rc=1 :: REFUSED [server-url] context jtoye-staging points at https://jtoye-stag-jtoye-rg-c483d3-2z8ofdgq.hcp.uksouth.azmk8s.io:443, expected https://jtoye-stg--jtoye-rg-c483d3-mkb3vdnc.hcp.uksouth.azmk8s.io:443
+
+-- registration: check-gate-enforcement.sh --
+line removed from gate-enforcement.conf -> rc=1, naming:
+        check-networkpolicy-enforcement.sh (invokes: kubectl)
+restored (git checkout; blob adf0775c5aca298594e8c24cd7a0d12acd9e62cb before and after) -> rc=0: PASS: every gate either runs in CI or has a declared reason it cannot.
+

@@ -160,7 +160,7 @@
 #
 # USAGE
 #   scripts/check-networkpolicy-enforcement.sh --context jtoye-stg-aks [--only ARM]
-#   scripts/check-networkpolicy-enforcement.sh --selftest      (TAP 13; no cluster)
+#   scripts/check-networkpolicy-enforcement.sh --selftest      (TAP 13, 22 cases; no cluster)
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -196,8 +196,12 @@ classify() {
   if [ -n "$trailer" ] && [ "$trailer" != "$rc" ]; then
     echo UNKNOWN; return 0
   fi
+  # "refused" is tested FIRST and is never a denial: a reset means the packet reached a
+  # host that answered, so no policy dropped it.
   case "$body" in
-    *TIMEOUT*|*[Rr]efused*|*REFUSED*)
+    *[Rr]efused*|*REFUSED*)
+      if [ "$rc" != "0" ]; then echo RESET; else echo UNKNOWN; fi ;;
+    TIMEOUT)
       if [ "$rc" != "0" ]; then echo DENIED; else echo UNKNOWN; fi ;;
     "")
       if [ "$rc" = "0" ]; then echo CONNECTED; else echo UNKNOWN; fi ;;
@@ -261,7 +265,7 @@ selftest() {
     fi
   }
   echo "TAP version 13"
-  echo "1..21"
+  echo "1..22"
   t "classify-timeout-is-denied"            DENIED    "$(classify 'TIMEOUT' 1)"
   t "classify-timeout-with-kubectl-trailer" DENIED    "$(classify $'TIMEOUT\ncommand terminated with exit code 1' 1)"
   t "classify-empty-rc0-is-connected"       CONNECTED "$(classify '' 0)"
@@ -273,6 +277,7 @@ selftest() {
   t "classify-dns-error-is-unknown"         UNKNOWN   "$(classify 'DNS: lookup core-java on 10.0.0.10:53: i/o timeout' 1)"
   t "classify-exec-error-is-unknown"        UNKNOWN   "$(classify 'error: unable to upgrade connection: container not found ("probe")' 1)"
   t "classify-trailer-code-mismatch-unknown" UNKNOWN  "$(classify $'TIMEOUT\ncommand terminated with exit code 2' 1)"
+  t "classify-timeout-plus-other-text-unknown" UNKNOWN "$(classify $'TIMEOUT\nwarning: something else' 1)"
   t "pair-control-connected-denied-pass"    PASS      "$(pair_verdict CONNECTED DENIED)"
   t "pair-control-denied-is-void"           VOID      "$(pair_verdict DENIED DENIED)"
   t "pair-control-unknown-is-void"          VOID      "$(pair_verdict UNKNOWN DENIED)"
