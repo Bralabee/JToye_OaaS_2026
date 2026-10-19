@@ -14,6 +14,14 @@
  * The authorize URL, the final URL, the h1 text and the product count are
  * written to stdout for the evidence file.
  *
+ * A SECOND test (plan 29-26, #299) proves the CUSTOMER door: from the staging
+ * shop page the storefront's "Sign in" hands the browser to the
+ * jtoye-customers realm's authorize endpoint on auth-staging with
+ * client_id=storefront-client and the encoded /shop/auth/callback on
+ * app-staging as redirect_uri (captured, not inferred), and the Keycloak login
+ * page answers 200 with the realm's jtoye theme stylesheet. It needs no
+ * credential and types nothing.
+ *
  * NEVER IN A DEFAULT RUN (D-27). playwright.config.ts ignores staging-*.spec.ts
  * unless STAGING_E2E is exactly "1", so local, CI and nightly runs never reach a
  * public host. Even when collected, the test SKIPS unless PLAYWRIGHT_BASE_URL is
@@ -42,6 +50,11 @@ const STAGING_AUTH = "https://auth-staging.olajay.co.uk"
 const STAGING_REALM = "jtoye-staging"
 const EXPECTED_CLIENT_ID = "core-api"
 const EXPECTED_REDIRECT_URI = `${STAGING_APP}/api/auth/callback/keycloak`
+// The customer storefront realm (#299) and its public PKCE client.
+const CUSTOMER_REALM = "jtoye-customers"
+const CUSTOMER_CLIENT_ID = "storefront-client"
+const CUSTOMER_REDIRECT_URI = `${STAGING_APP}/shop/auth/callback`
+const STAGING_SHOP_SLUG = "staging-test-kitchen"
 
 // No fallback literal: an unset or different base URL skips, below.
 const BASE = process.env.PLAYWRIGHT_BASE_URL
@@ -177,3 +190,72 @@ async function signInAndReadDashboard(
     .toBeGreaterThan(0)
   console.log(`PRODUCT_COUNT ${visible.length} (${visible.join(", ")})`)
 }
+
+test("staging customer sign-in goes to the jtoye-customers realm with the storefront client @desktop-only", async ({ page }) => {
+  test.skip(
+    BASE !== STAGING_APP,
+    `PLAYWRIGHT_BASE_URL must be exactly ${STAGING_APP} for the staging customer sign-in (set STAGING_E2E=1 too)`,
+  )
+  test.setTimeout(180_000)
+  try {
+    // 1. The staging shop page, then the storefront's own Sign in (the nav link).
+    await page.goto(`/shop/${STAGING_SHOP_SLUG}`, { waitUntil: "domcontentloaded", timeout: 30_000 })
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {})
+    const navSignIn = page.locator("nav").getByRole("link", { name: "Sign in" }).first()
+    await expect(navSignIn).toBeVisible({ timeout: 20_000 })
+    await navSignIn.click({ timeout: 15_000 })
+    await page.waitForURL((u) => u.origin === STAGING_APP && u.pathname === "/shop/signin", { timeout: 20_000 })
+    await expect(page.getByRole("heading", { name: "Sign in to order" })).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {})
+
+    // 2. The card's Sign in button -> the CUSTOMER realm's authorize endpoint.
+    // Listeners first: the login page and its stylesheets can arrive before any
+    // wait started after the click would be registered.
+    const kcCss: string[] = []
+    const loginDocs: Array<{ status: number; url: string }> = []
+    page.on("response", (r) => {
+      if (r.url().includes(`/login/jtoye/css/`) && r.status() === 200) kcCss.push(r.url())
+      if (r.url().startsWith(`${STAGING_AUTH}/realms/${CUSTOMER_REALM}/`) && r.request().resourceType() === "document") {
+        loginDocs.push({ status: r.status(), url: r.url().split("?")[0] })
+      }
+    })
+    const signIn = page.getByRole("button", { name: "Sign in", exact: true })
+    let authorize = page.waitForRequest(isAuthorizeRequest, { timeout: 20_000 })
+    await signIn.click({ timeout: 15_000 })
+    let authorizeRequest: Request
+    try {
+      authorizeRequest = await authorize
+    } catch (e) {
+      if (!new URL(page.url()).pathname.startsWith("/shop/signin")) throw e
+      // The first click raced hydration: still on the sign-in page, click once more.
+      authorize = page.waitForRequest(isAuthorizeRequest, { timeout: 20_000 })
+      await signIn.click({ force: true, timeout: 15_000 })
+      authorizeRequest = await authorize
+    }
+    const authorizeUrl = authorizeRequest.url()
+    console.log(`CUSTOMER_AUTHORIZE_URL ${authorizeUrl}`)
+    const parsed = new URL(authorizeUrl)
+    expect(parsed.origin).toBe(STAGING_AUTH)
+    expect(parsed.pathname).toBe(`/realms/${CUSTOMER_REALM}/protocol/openid-connect/auth`)
+    expect(parsed.searchParams.get("client_id")).toBe(CUSTOMER_CLIENT_ID)
+    expect(parsed.searchParams.get("redirect_uri")).toBe(CUSTOMER_REDIRECT_URI)
+    expect(authorizeUrl).toContain(`redirect_uri=${encodeURIComponent(CUSTOMER_REDIRECT_URI)}`)
+    expect(parsed.searchParams.get("code_challenge_method")).toBe("S256")
+
+    // 3. The realm's login page renders: 200, the form, and the jtoye theme CSS.
+    await expect
+      .poll(() => loginDocs.length, { timeout: 30_000, message: "the customer realm served no login document" })
+      .toBeGreaterThan(0)
+    const login = loginDocs[loginDocs.length - 1]
+    console.log(`CUSTOMER_LOGIN_PAGE ${login.status} ${login.url}`)
+    expect(login.status).toBe(200)
+    await expect(page.locator("#username")).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => kcCss.length, { timeout: 15_000, message: "no jtoye theme stylesheet answered 200" }).toBeGreaterThan(0)
+    console.log(`CUSTOMER_THEME_CSS ${kcCss.join(" ")}`)
+  } catch (e) {
+    const text = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "<no page text>")
+    console.log(`PAGE_URL_ON_FAILURE ${page.url()}`)
+    console.log(`PAGE_TEXT_ON_FAILURE ${text.replace(/\s+/g, " ").slice(0, 600)}`)
+    throw e
+  }
+})
