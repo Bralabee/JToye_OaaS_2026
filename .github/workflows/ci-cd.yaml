@@ -710,6 +710,12 @@ jobs:
       - name: Prove INV-15 catches planted Ingress holes (--selftest-inv15)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv15
 
+      # Plan 29-22: the same shape for INV-16 (core-java's truststore is the JDK
+      # cacerts PLUS the cluster CA, never the CA alone; JVM flags arrive as a
+      # literal JAVA_TOOL_OPTIONS, never JAVA_OPTS; staging must build it).
+      - name: Prove INV-16 catches planted truststore holes (--selftest-inv16)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv16
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,
