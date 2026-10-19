@@ -109,6 +109,10 @@ cd "$REPO_ROOT"
 #                                rc 1 (reading the mailbox total would be a permanent pass)
 #   unknown-sink-usage           SINK=bogus: rc 2 and a USAGE ERROR line, before any call
 #   l0-drift-void                the served md5 differs: rc 2, L-0 SOURCE DRIFT
+#   late-integration-failure     the probe reaches the sink, then failed_total{email} rises inside
+#                                Alertmanager's retry window: rc 1, a FAIL naming the late failure
+#                                (plan 29-25: a broken Zoho credential PASSED the 120 s L-3)
+#   am-status-unreadable-void    /api/v2/status unreadable: rc 2, a VOID naming group_interval
 liveness_selftest() {
   local fmt="${LIVENESS_SELFTEST_FORMAT:-plain}" st n=0 bad=0 tap=() line
   st="$(mktemp -d)" || { echo "VOID: --selftest could not create a temp dir" >&2; return 2; }
@@ -143,7 +147,14 @@ case "$host" in
     esac ;;
   am.stub) case "$path" in
       /-/healthy) echo ok ;;
-      /metrics) printf '%s\n' 'alertmanager_notifications_total{integration="email"} 1' 'alertmanager_notifications_failed_total{integration="email"} 0' ;;
+      /metrics)
+        # One counter per run: a failure that Alertmanager reports only when an integration's
+        # retry window closes (plan 29-25) is a failed_total of 1 from the STUB_FAIL_FROM_CALL-th read.
+        c=$(( $(cat "$STUB_LOG.amcalls" 2>/dev/null || echo 0) + 1 )); echo "$c" > "$STUB_LOG.amcalls"
+        f=0; [ -n "${STUB_FAIL_FROM_CALL:-}" ] && [ "$c" -ge "$STUB_FAIL_FROM_CALL" ] && f=1
+        printf '%s\n' 'alertmanager_notifications_total{integration="email"} 1' "alertmanager_notifications_failed_total{integration=\"email\"} $f" ;;
+      /api/v2/status) [ "${STUB_AM_STATUS:-up}" = down ] && exit 22
+        printf '{"config":{"original":"route:\\n  receiver: r\\n  group_wait: 0s\\n  group_interval: %s\\nreceivers:\\n- name: r\\n"}}\n' "${STUB_GI:-0s}" ;;
       /api/v2/alerts) echo '{}' ;;
       *) exit 22 ;;
     esac ;;
@@ -222,6 +233,16 @@ STUB
   arm mailpit-counts-matches-only 1 \
     'command grep -q "^FAIL: L-3" <<<"$out" && command grep -q "^curl GET http://mailpit.stub/api/v1/search" "$log" && ! command grep -q "mailhog.stub" "$log"' \
     SINK=mailpit STUB_FOUND=0
+  # plan 29-25: one receiver, two integrations. The sink copy arrives at once, while the
+  # human integration (Zoho) fails only when its retry window (route.group_interval) closes:
+  # measured live, 535 at 17:45:45Z, failed_total 0 -> 1 at 17:50:45Z, and the 120 s L-3 window
+  # had long ended with a PASS. L-3 must hold until that window has passed.
+  arm late-integration-failure 1 \
+    'command grep -q "^FAIL: L-3 .*after the probe reached" <<<"$out" && command grep -q "^curl GET http://am.stub/api/v2/status" "$log" && ! command grep -q "^PASS" <<<"$out"' \
+    SINK=mailpit STUB_FAIL_FROM_CALL=5
+  arm am-status-unreadable-void 2 \
+    'command grep -q "^VOID: .*group_interval" <<<"$out" && ! command grep -q "^PASS" <<<"$out"' \
+    SINK=mailpit STUB_AM_STATUS=down
   arm unknown-sink-usage 2 \
     'command grep -q "^USAGE ERROR" <<<"$out" && ! [ -s "$log" ]' \
     SINK=bogus
