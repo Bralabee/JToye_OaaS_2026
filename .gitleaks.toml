@@ -204,3 +204,25 @@ regexTarget = "secret"
 regexes = [
   '''^37-42-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
 ]
+
+# ---- Phase 29 staging-estate identifiers (plans 29-09, 29-13, 2026-10-19) ----
+# k8s/staging/azure-identity.yaml holds the IDENTIFIERS of the staging estate, read
+# back from Azure (threat T-29-32, accepted: a client id, an object id or the AKS
+# API host is not a credential; a Workload Identity token still needs the federated
+# subject). 29-13's access evidence names each identity's principal id and the
+# built-in "Key Vault Secrets User" role-definition id, which is Microsoft's
+# published constant (identical in every tenant). generic-api-key flags them on
+# 8.30.1 (6 hits over the 29 range). Matched on the LINE, anchored at both ends,
+# so only these exact key shapes clear: a UUID under any other key, a non-UUID
+# value under client_id_*, an FQDN outside *.hcp.<region>.azmk8s.io, and a real
+# key on any of these lines still fire.
+[[allowlists]]
+description = "Phase 29 staging-estate identifiers: azure-identity.yaml client_id_*/aks_api_server_fqdn, 29-13 principal-id access lines and the built-in Key Vault Secrets User role id (identifiers, not credentials; T-29-32)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''^\s*client_id_[a-z_]+: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\s*$''',
+  '''^\s*aks_api_server_fqdn: "[a-z0-9-]+\.hcp\.[a-z0-9]+\.azmk8s\.io"\s*$''',
+  '''^\s*\+?jtoye-staging-[a-z-]+-id principal=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} want=[0-9]+ got=[0-9]+ vault-wide=[0-9]+ scopes-equal=(yes|no)\s*$''',
+  '''^\s*\+?role definition 'Key Vault Secrets User' = 4633458b-17de-408a-b874-0445c86b69e6\s*$''',
+]
