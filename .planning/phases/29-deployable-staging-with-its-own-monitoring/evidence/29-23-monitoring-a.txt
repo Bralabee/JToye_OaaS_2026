@@ -107,3 +107,212 @@ NOTE: the criterion as written ('count of lines containing "unclassified" is exa
 tree: the summary line 'list: N objects, 0 unclassified' itself contains the word, so the count is 1 when clean and
 1 when one object is unclassified (the row says UNCLASSIFIED, upper case). Replaced, recorded beside it: rows whose
 class column is UNCLASSIFIED = 0 (1 before) AND the summary reads '0 unclassified' (1 before) AND rc 0 (1 before).
+
+### Task 2 break arms (clean -> arms -> clean) at 41eb069d 2026-10-19T15:45:30Z
+clean(open): chain rc=0
+-- arm C1: postgres-exporter's SPC+SA wired to client_id_redis_exporter (two workloads, one identity)
+chain rc=1
+FAIL [k8s/staging]
+FAIL: ServiceAccounts postgres-exporter, redis-exporter share azure.workload.identity/client-id '8584f8ee-e2e0-4ac3-879e-56a4cadb4fed': each secret-reading workload must have its own identity, so it can be granted only i
+FAIL: 1 break(s) in the Key Vault chain
+-- arm C2: postgres-exporter's csi mount patch removed (consumer no longer mounts its producer)
+chain rc=1
+FAIL [k8s/staging]
+FAIL: Deployment/postgres-exporter reads postgres-exporter-credentials/username (env DATA_SOURCE_USER), produced by postgres-exporter-kv, which Deployment/postgres-exporter does not mount; the CSI driver syncs a Secret o
+FAIL: Deployment/postgres-exporter reads postgres-exporter-credentials/password (env DATA_SOURCE_PASS), produced by postgres-exporter-kv, which Deployment/postgres-exporter does not mount; the CSI driver syncs a Secret o
+invariants rc=0
+-- arm C3: redis-exporter-allow egress widened to app=redis 6380 as well
+invariants rc=1
+  FAIL [k8s/staging] INV-7: NetworkPolicy 'redis-exporter-allow' renders undeclared rule(s): eg:pod=app=redis:6380
+-- restore by content
+k8s/staging/kustomization.yaml head-blob=1d2a22b8d0d0 now=1d2a22b8d0d0
+k8s/components/azure-keyvault/workload-patches.yaml head-blob=d2b3c0f9df4e now=d2b3c0f9df4e
+k8s/components/monitoring/exporters.yaml head-blob=864fc06c9a6b now=864fc06c9a6b
+clean(close): chain rc=0
+clean(close): invariants rc=0
+git diff files: 0
+-- arm C4: redis-exporter keeps its csi mount but loses the azure.workload.identity/use label
+invariants rc=1
+  FAIL [k8s/staging] INV-10: Deployment/redis-exporter pod template label azure.workload.identity/use is (ABSENT), expected the STRING "true" at spec::template::metadata::labels. Without it the webhook injects no identity: core-ja
+FAIL [k8s/staging]: INV-1 OK (2 DB_PORT EnvVar(s), all valueFrom, 0 literal) | INV-2 OK (152 EnvVars, DB_PORT present, 0 with both value+valueFrom) | INV-3 OK (10 kube-dns selector block(s), each exactly 1 key) | INV-4 OK (0 local
+k8s/components/azure-keyvault/workload-patches.yaml head-blob=d2b3c0f9df4e now=d2b3c0f9df4e
+clean(close): invariants rc=0
+NOTE C2: INV-10 stays rc 0 there because that arm removes the label WITH the mount (no opt-in, no SPC); the chain gate is what catches a consumer that does not mount its producer. C4 is INV-10's own arm.
+
+## Task 3
+
+### Selftest (TDD)
+RED  fee1a3dc: --selftest 4/8 (TAP: not ok 2 k8s-prom-exec-kubectl, 4 mailpit-unreachable-void, 5 mailpit-sink-found, 6 mailpit-counts-matches-only, 7 unknown-sink-usage); rc=1
+     classifier: RED_EVIDENCE_OK target_test_failed x2 (29-23-t3-red-prom-exec.json, 29-23-t3-red-sink.json); control on passing arm compose-default-docker-exec: INVALID_RED no_target_test_failure
+GREEN 04ef0994: --selftest 8/8 rc=0. Break arm after GREEN: the Mailpit adapter reading .total instead of .messages_count -> 7/8, mailpit-counts-matches-only FAIL (want rc 1, got rc 0)
+
+### Mailpit API, read off the running instance (v1.31.6, /api/v1/swagger.json, 2026-10-19)
+paths used: GET /api/v1/messages (start, limit), GET /api/v1/search (query, start, limit, tz)
+MessagesSummary: messages_count = 'Total number of messages matching current query'; total = 'Total number of messages in mailbox'
+live control (port-forward svc/mailpit 18025:8025), the adapter's exact query form:
+  query="customer-299-probe"        rc=0 messages_count=3 total=10
+  query="probe-1760000000-424242"   rc=0 messages_count=0 total=10   <- reading total would have 'found' it
+
+### Live: Key Vault (subscription c483d353, vault jtoye-stg-kv; az writes carried [az-ok] 29-23)
+preflight BEFORE (rc=1):
+MISSING postgres-exporter-credentials--password
+MISSING postgres-exporter-credentials--username
+MISSING-ACCESS postgres-exporter-credentials--password 9180744f-9a6c-4bb1-8a39-c6574aa8b741
+MISSING-ACCESS postgres-exporter-credentials--username 9180744f-9a6c-4bb1-8a39-c6574aa8b741
+MISSING-ACCESS redis-credentials--password 2d09e95f-7180-4164-819e-69e6cfa1758e
+preflight: 35 objects, 39 grants, 5 gap(s)
+--generate rc=0:
+written: postgres-exporter-credentials--password (version 74ebe7a2…; value not printed)
+written: postgres-exporter-credentials--username (version 6da31a10…; value not printed)
+external (owner supplies via --set-external): stripe-credentials--api-key
+external (owner supplies via --set-external): stripe-credentials--webhook-secret
+generate: 2 written, 31 exist (write-once, untouched), 2 external left to the owner
+--assign-access rc=0:
+assigned: Key Vault Secrets User on postgres-exporter-credentials--password to 9180744f-9a6c-4bb1-8a39-c6574aa8b741
+assigned: Key Vault Secrets User on postgres-exporter-credentials--username to 9180744f-9a6c-4bb1-8a39-c6574aa8b741
+assigned: Key Vault Secrets User on redis-credentials--password to 2d09e95f-7180-4164-819e-69e6cfa1758e
+assign-access: 39 grants, 3 created, 36 existing, 0 deferred
+preflight AFTER (rc=0):
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 35 objects, 39 grants, 0 gap(s)
+
+### Live: DB role jtoye_monitor (staging-db-bootstrap.sh --via-context jtoye-stg-aks, verify-full)
+readback BEFORE (rc=0): roles
+rolname|rolsuper|rolbypassrls|rolcanlogin
+jtoye_app|f|f|t
+jtoye_backup|f|t|t
+jtoye_runtime|f|f|t
+keycloak|f|f|t
+--stage monitor (rc=0):
+=== staging-db-bootstrap --stage monitor (host jtoye-stg-pg.postgres.database.azure.com, admin jtoyepgadmin, sslmode=verify-full, via context jtoye-stg-aks) ===
+DO
+psql:<stdin>:14: NOTICE:  role "jtoye_monitor" has already been granted membership in role "pg_monitor" by role "azure_pg_admin"
+GRANT ROLE
+ALTER ROLE
+GRANT
+GRANT
+DO
+readback AFTER (rc=0): roles
+rolname|rolsuper|rolbypassrls|rolcanlogin
+jtoye_app|f|f|t
+jtoye_backup|f|t|t
+jtoye_monitor|f|f|t
+jtoye_runtime|f|f|t
+keycloak|f|f|t
+relay pods left in namespace default after the runs: 0 (one was Terminating at the first read, 0 twenty seconds later)
+
+### Live: deploy
+pre-apply: deploy.sh --render-only at 6e95ee6c then kubectl diff: rc=1, 19 objects, removed-lines=0 (additions only):
+  apps.v1.Deployment.jtoye-staging.postgres-exporter
+  apps.v1.Deployment.jtoye-staging.prometheus
+  apps.v1.Deployment.jtoye-staging.redis-exporter
+  networking.k8s.io.v1.NetworkPolicy.jtoye-staging.postgres-exporter-allow
+  networking.k8s.io.v1.NetworkPolicy.jtoye-staging.prometheus-allow
+  networking.k8s.io.v1.NetworkPolicy.jtoye-staging.redis-exporter-allow
+  secrets-store.csi.x-k8s.io.v1.SecretProviderClass.jtoye-staging.postgres-exporter-kv
+  secrets-store.csi.x-k8s.io.v1.SecretProviderClass.jtoye-staging.redis-exporter-kv
+  v1.ConfigMap.jtoye-staging.prometheus-alerts-k24fddf4kk
+  v1.ConfigMap.jtoye-staging.prometheus-config-98kbm688hm
+  v1.PersistentVolumeClaim.jtoye-staging.prometheus-data
+  v1.ServiceAccount.jtoye-staging.postgres-exporter
+  v1.ServiceAccount.jtoye-staging.prometheus
+  v1.ServiceAccount.jtoye-staging.redis-exporter
+  v1.Service.jtoye-staging.core-java-metrics
+  v1.Service.jtoye-staging.edge-go-metrics
+  v1.Service.jtoye-staging.postgres-exporter
+  v1.Service.jtoye-staging.prometheus
+  v1.Service.jtoye-staging.redis-exporter
+deploy.sh staging --context jtoye-stg-aks --image-tag 6e95ee6c44e357e3ff88964ed9674bf066fd7b61: rc=0 (15:57:08Z..15:57:30Z), last line:
+DEPLOYED_SHA=6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+apply also printed 'configured' for core-java, keycloak-theme and the three PDBs (the diff above had no hunk for any): core-java stayed at ReplicaSet revision 8, the same pod core-java-869648bdf-zrkcb (61m), generation 8 = observed 8
+rollouts: prometheus, postgres-exporter, redis-exporter rc=0; PVC prometheus-data Bound 10Gi class default
+synced Secrets: postgres-exporter-credentials keys {password, username}; redis-exporter-credentials keys {password} (values not read)
+
+### Capacity (4 x B2s, D-34), requests vs allocatable, scratch capacity.sh cross-checked against kubectl describe node
+BEFORE 15:33Z:
+  vmss000000 free 605Mi/564m; vmss000001 free 1423Mi/1001m; vmss000002 free 99Mi/464m; vmss000003 free 1725Mi/1320m
+AFTER 15:58Z:
+  aks-nodepool1-24453234-vmss000000	allocMi=2787	reqMi=2182	freeMi=605	allocCPUm=1900	reqCPUm=1336	freeCPUm=564
+  aks-nodepool1-24453234-vmss000001	allocMi=2787	reqMi=1364	freeMi=1423	allocCPUm=1900	reqCPUm=899	freeCPUm=1001
+  aks-nodepool1-24453234-vmss000002	allocMi=2787	reqMi=2688	freeMi=99	allocCPUm=1900	reqCPUm=1436	freeCPUm=464
+  aks-nodepool1-24453234-vmss000003	allocMi=2787	reqMi=1638	freeMi=1149	allocCPUm=1900	reqCPUm=820	freeCPUm=1080
+  Prometheus 200m/512Mi + two exporters 20m/32Mi each all landed on vmss000003 (+576Mi, +240m); Pending pods: 0.
+  A 1Gi surge (core-java or Keycloak roll) still fits on vmss000001 (1423Mi) or vmss000003 (1149Mi).
+
+### Live: scrape targets (port-forward svc/prometheus 19090:9090, PID captured)
+core-java	10.244.2.36:9091	up   <- per-pod instance through the headless core-java-metrics (DEF-29-8)
+edge-go	10.244.2.248:8080	up   <- per-pod through edge-go-metrics
+keycloak	keycloak:9000	up
+postgres	postgres-exporter:9187	up
+prometheus	prometheus:9090	up   (self-scrape through its own Service; prometheus-allow has no self rule and Cilium admitted it)
+rabbitmq	rabbitmq:15692	up
+rabbitmq-queues	rabbitmq:15692	up
+redis	redis-exporter:9121	up
+pg_up=1 (job postgres), redis_up=1 (job redis), count(pg_stat_database_numbackends)=7
+
+### check-alert-metrics.sh against staging (second automated verify)
+-- run 1 (15:58:35Z): rc=1 ts-lines=1 NO PASS LINE, verify exit 1
+check-alert-metrics  (2026-10-19T15:58:35Z)
+FAIL: M-1 rule 'NoOrdersCreated' selector matches ZERO series — this rule can never fire: http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}
+       CAUSE: http_server_requests_seconds_count is created on the FIRST matching request and is destroyed when core-java restarts — so this is expected on a freshly rebuilt stack, and it means the alert is currently blind.
+       FIX:   bash scripts/seed-order-metric.sh   (places one real guest order and waits for the scrape)
+  live rules : 19
+  selectors  : 25 extracted, 28 queried (incl. 3 dormant)
+  self-heal  : 0 rule(s) empty-but-self-healing (#384), 1 declared
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+FAILED: 1 live alert-metric violation(s).
+-- fail arm: redis-exporter scaled to 0
+-- fail arm: scale redis-exporter to 0 at 2026-10-19T15:59:09Z
+deployment.apps/redis-exporter scaled
+pod/redis-exporter-8b784858-f9tz4 condition met
+pods=0
+redis target: down	Get "http://redis-exporter:9121/metrics": context deadline exceeded
+check-alert-metrics rc=1
+check-alert-metrics  (2026-10-19T15:59:51Z)
+FAIL: M-1 rule 'NoOrdersCreated' selector matches ZERO series — this rule can never fire: http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}
+FAIL: M-1 rule 'RedisDown' selector matches ZERO series — this rule can never fire: redis_up
+FAILED: 2 live alert-metric violation(s).
+-- restore: scaled back to 1
+-- restore: scale redis-exporter to 1 at 2026-10-19T16:00:02Z
+deployment.apps/redis-exporter scaled
+Waiting for deployment "redis-exporter" rollout to finish: 0 of 1 updated replicas are available...
+deployment "redis-exporter" successfully rolled out
+ready-pods=1 spec-replicas=1
+redis target: up  redis_up=1
+check-alert-metrics rc=1
+check-alert-metrics  (2026-10-19T16:00:53Z)
+FAIL: M-1 rule 'NoOrdersCreated' selector matches ZERO series — this rule can never fire: http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}
+FAILED: 1 live alert-metric violation(s).
+RESULT: the exporter arm discriminates (RedisDown's redis_up appears and disappears with the exporter), but the gate is NOT rc 0:
+NoOrdersCreated's request counter has no series because no order has been POSTed since core-java last started (pod
+core-java-869648bdf-zrkcb, ~14:57Z, 29-26's deploy). The remedy the gate names, a real order, is a staging write outside
+this lane's live authority: checkpoint.
+
+### check-alert-liveness.sh against staging (third automated verify)
+19093 probe before the run: http 000 (nothing listening; no staging Alertmanager until 29-24)
+-- run (16:01:56Z): rc=2 void-line=1 fail-lines=2, verify exit 1
+L-0 OK: served md5=7368261df6b44519ddd8d12267862856 == infra/monitoring/prometheus/alerts.yml md5=7368261df6b44519ddd8d12267862856 (via kubectl)
+FAIL: L-2 rule 'NoOrdersCreated' selector 'http_server_requests_seconds_count{method="POST",status="201",uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders"}' matches 0 series; without labels it matches 44
+FAIL: L-2b rule 'NoOrdersCreated' claims service=core-java (job=core-java) but its selector matches only job=<none>
+VOID: Alertmanager unreachable at http://localhost:19093
+L-0: served md5 7368261df6b44519ddd8d12267862856 == infra/monitoring/prometheus/alerts.yml md5 7368261df6b44519ddd8d12267862856 (kubectl exec md5sum)
+L-1 and L-1b: no FAIL line (8 targets up; pg_up and redis_up 1 and each read by a rule).
+L-2/L-2b: the ONLY failing selector is NoOrdersCreated's (same cause as above). L-3: VOID, Alertmanager absent, recorded as VOID.
+-- L-0 fail direction, live: ALERTS pointed at a one-byte-edited copy -> rc=2
+VOID: L-0 SOURCE DRIFT — the running Prometheus is NOT serving the file this gate reads.
+       <scratch>/alerts-drift.yml  md5=1b0894bc137046222890e90d52196ebf  inode=31862542
+       served via 'kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --' at /etc/prometheus/alerts.yml  md5=7368261df6b44519ddd8d12267862856  inode=7
+       Every result below would mix this tree's file with a different tree's runtime.
+
+### Pitfall 6: the unqualified jvm_* rules now that Keycloak's JVM is scraped
+count by (job, service) (jvm_memory_used_bytes{area="heap"}) => core-java/core-api 3, keycloak/keycloak 3
+count by (job) (jvm_gc_pause_seconds_count) => core-java 2, keycloak 3
+L-2b printed nothing for HighMemoryUsage or FrequentGarbageCollection: they carry no service label (D-11 deleted it),
+so the gate maps them to 'platform' (*) and does not job-scope them. They evaluate per JVM and each alert names its own
+series' service (core-api or keycloak), which is the D-11 intent; no wrong-subject binding. Recorded, not changed.
+
+### Port-forwards stopped by PID: prometheus 823238 gone, mailpit 823239 gone; 19090 answers 000 afterwards
+
+### Leak scan of this file (staging-secrets.sh --leak-scan, values read in memory only)
+rc=0: 24 objects checked, 0 found (11 estate identifiers not secret, skipped). Its fail direction (a planted value is named, rc 1) is 29-13's recorded control, not re-run here.

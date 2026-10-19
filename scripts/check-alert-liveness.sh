@@ -208,7 +208,7 @@ STUB
   arm compose-default-docker-exec 0 \
     'command grep -qxF "docker exec jtoye-prometheus md5sum /etc/prometheus/alerts.yml" "$log" && ! command grep -q "^kubectl " "$log"'
   arm k8s-prom-exec-kubectl 0 \
-    'command grep -qxF "kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus -- md5sum /etc/prometheus/alerts.yml" "$log" && ! command grep -q "^docker " "$log" && ! command grep -qE "(^| )cp( |$)" "$log"' \
+    'command grep -qxF "kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus -- md5sum /etc/prometheus/alerts.yml" "$log" && ! command grep -q "^docker " "$log" && ! command grep -qE "(^| )cp( |$)" "$log" && command grep -q "^L-0 OK: served md5=$sum == .* (via kubectl)$" <<<"$out"' \
     PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
   arm mailhog-sink-calls 0 \
     'command grep -q "^curl GET http://mailhog.stub/api/v2/messages" "$log" && command grep -q "^curl GET http://mailhog.stub/api/v2/search" "$log" && ! command grep -q "mailpit.stub" "$log"' \
@@ -437,6 +437,9 @@ if [ "$HOST_SUM" != "$CTR_SUM" ]; then
          kubectl --context <ctx> -n <ns> rollout restart deploy/prometheus"
 fi
 L0_NOTE="served md5=$CTR_SUM == $ALERTS md5=$HOST_SUM (via ${PROM_EXEC_ARGV[0]})"
+# Printed NOW, not only in the summary: a run that VOIDs later (an absent Alertmanager at L-3)
+# must still show what L-0 compared, or the parity it established is unrecorded.
+echo "L-0 OK: $L0_NOTE"
 
 # ================================================================== L-1
 TARGETS=$(curl -sf --max-time 15 "$PROM_URL/api/v1/targets?state=any") \
