@@ -1,0 +1,61 @@
+# In-cluster Keycloak for jtoye-staging (Phase 29 plan 29-10, D-02, closes the
+# render half of #296).
+#
+# A kustomize COMPONENT, not part of k8s/base, deliberately:
+#   - k8s/local reaches Keycloak on the host compose stack (LOC-1 endpoint shims),
+#     so a base Keycloak would be a second identity provider nobody uses there;
+#   - production opts in on purpose in Phase 32 instead of inheriting a
+#     half-configured identity provider now (its app-config has no
+#     keycloak.hostname / keycloak.db.url keys, so including this component there
+#     would render a Deployment whose env points at keys that do not exist).
+# Only k8s/staging lists it under `components:`. At k8s/components/<name>/ it sits
+# at depth 3, so the `find -maxdepth 2` target discovery of the render gates does
+# not treat it as a target of its own; every gate still judges it inside the
+# staging render.
+#
+# THE REALM IS NOT HERE. The jtoye-staging and jtoye-customers realms are rendered
+# from the one template each by infra/keycloak/staging-realm.jq and imported
+# through the admin API over a port-forward by scripts/staging-realm-import.sh
+# (plan 29-04). This component only runs the server.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - keycloak.yaml
+
+# The same label shape as k8s/base/kustomization.yaml (D-17: the explicit fields
+# list keeps the transformer off NetworkPolicy podSelectors), so a component
+# workload carries part-of/managed-by exactly like a base one.
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+    includeSelectors: false
+    includeTemplates: true
+    fields:
+      - path: spec/selector/matchLabels
+        create: true
+        group: apps
+        kind: Deployment
+      - path: spec/selector
+        create: true
+        version: v1
+        kind: Service
+
+# The jtoye login theme, mounted into /opt/keycloak/themes/jtoye/login by the
+# Deployment's volume items. kustomize can read files only INSIDE its own root, so
+# these three are COMMITTED COPIES of infra/keycloak/themes/jtoye/login/* — the
+# canonical side, which compose mounts. scripts/check-k8s-copy-parity.sh (pairs in
+# k8s/copy-parity.conf) fails CI on any byte of drift; edit the canonical file and
+# copy it here, never the other way round.
+#
+# The name hash is KEPT (no disableNameSuffixHash): a theme edit changes the
+# ConfigMap's name, the Deployment's reference with it, and so rolls the pod. A
+# fixed name would leave a running Keycloak serving its cached old theme.
+# work-sans-latin.woff2 is not UTF-8, so kustomize emits it under binaryData.
+configMapGenerator:
+  - name: keycloak-theme
+    files:
+      - theme/theme.properties
+      - theme/jtoye.css
+      - theme/work-sans-latin.woff2

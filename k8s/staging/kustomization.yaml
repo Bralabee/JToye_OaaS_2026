@@ -10,6 +10,15 @@ resources:
   - ../base
   - namespace.yaml
 
+# In-cluster platform services the login path needs (plan 29-10). Components, not
+# base: k8s/local reaches these on the host compose stack, and production opts in
+# on purpose in Phase 32. Each lives at k8s/components/<name>/ (depth 3, so the
+# render gates' depth-2 target discovery never treats one as a target of its own).
+# kustomize applies a component's resources and transformers BEFORE this overlay's
+# own namespace, labels, patches and replacements, so everything below reaches them.
+components:
+  - ../components/keycloak
+
 # Staging-specific labels.
 # D-17 (Phase 26): the explicit `fields:` list mirrors k8s/base/kustomization.yaml —
 # see the rationale there. The base entry alone is NOT sufficient: this overlay's
@@ -118,5 +127,13 @@ replacements:
       - select:
           kind: NetworkPolicy
           name: pg-backup-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
+      # Keycloak's own database is on the same managed server (D-02), so its
+      # Postgres rule follows db.port too. Staging-only: the policy comes from
+      # ../components/keycloak, which base never sees.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
         fieldPaths:
           - spec.egress.1.ports.0.port

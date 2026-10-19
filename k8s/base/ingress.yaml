@@ -96,6 +96,13 @@ spec:
   # before them. Recorded as a dated deferred item in
   # .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md
   # so the displaced intent is not lost.
+  #
+  # STAGING NOW DOES (Phase 29 plan 29-10, D-02): k8s/components/keycloak carries
+  # its OWN Ingress `keycloak-public` for auth-staging.olajay.co.uk in the same
+  # file as the keycloak Service and Deployment, with its own tls entry and Secret
+  # and only the /realms/jtoye-staging, /realms/jtoye-customers and /resources/
+  # prefixes. This base Ingress still does not claim an auth host, and production
+  # (whose IdP is decided in Phase 32) renders no Keycloak at all.
   rules:
   - host: api.olajay.co.uk
     http:

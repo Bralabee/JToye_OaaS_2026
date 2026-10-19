@@ -820,6 +820,15 @@ declare -A NETPOL_RULES_EXPECTED=(
       in:ns=__INGRESS_NS__:8089"
   # Plan 29-23 replaces the placeholder with the monitoring policies.
   [observability-placeholder@*]="sel:app=nonexistent-placeholder types:Egress,Ingress"
+  # Staging-only platform components (plan 29-10, k8s/components/<name>/, listed
+  # under `components:` in k8s/staging only). The manifest names the controller
+  # namespace as a literal `traefik`; the row says __INGRESS_NS__, so a staging
+  # app-config ingress.controller-namespace that stops agreeing with that literal
+  # FAILS here. egress.1 follows db.port through the staging replacement.
+  [keycloak-allow@k8s/staging]="sel:app=keycloak types:Egress,Ingress
+      in:ns=__INGRESS_NS__:8080 in:pod=app=frontend:8080 in:pod=app=core-java:8080 in:pod=app=edge-go:8080
+      in:pod=app=prometheus:9000
+      $NETPOL_DNS_EG eg:ip=0.0.0.0/0:__DB_PORT__ eg:pod=app=mailpit:1025"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as

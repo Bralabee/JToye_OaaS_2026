@@ -70,6 +70,22 @@ with that label in the SAME namespace. "public" means `ipBlock 0.0.0.0/0 except
 | `acme-http01-solver-allow` | ingress | namespace `<controller ns>` | TCP 8089 |
 | `observability-placeholder` | both | (selects no pod) | |
 
+### Staging-only component policies (plan 29-10)
+
+These policies are not in this directory: they ship with the in-cluster platform
+components under `k8s/components/<name>/`, which only `k8s/staging` lists under
+`components:`. Their INV-7 rows are scoped `@k8s/staging`, so production and local
+render none of them.
+
+| Policy | Direction | Peer | Port |
+|--------|-----------|------|------|
+| `keycloak-allow` | ingress | namespace `<controller ns>` (a literal `traefik` in the manifest; the row says `<controller ns>`, so a disagreement fails INV-7) | TCP 8080 |
+| `keycloak-allow` | ingress | pods `app=frontend`, `app=core-java`, `app=edge-go` | TCP 8080 |
+| `keycloak-allow` | ingress | pod `app=prometheus` | TCP 9000 |
+| `keycloak-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `keycloak-allow` | egress | public (managed Postgres, the `keycloak` database) | TCP `<db.port>` |
+| `keycloak-allow` | egress | pod `app=mailpit` | TCP 1025 |
+
 ## The pod-label contract
 
 The selectors above bind to these pod labels. The component plans (29-10,
@@ -161,7 +177,8 @@ In-cluster calls to Keycloak go to the pod directly (`app=keycloak` on 8080,
 kubectl kustomize k8s/staging/ | grep -A 2 "kind: NetworkPolicy"
 # Expect: default-deny, frontend-allow, core-java-allow, edge-go-allow,
 #         pg-backup-allow, observability-placeholder, acme-http01-solver-allow
-#         (7 policies)
+#         (7 policies in production), plus staging's component policies
+#         (keycloak-allow; see "Staging-only component policies")
 ```
 
 The authoritative static check is the gate, not a grep:
@@ -184,7 +201,7 @@ kubectl --dry-run=server apply -k k8s/staging/
 ```bash
 kubectl apply -k k8s/staging/
 kubectl get networkpolicy -n jtoye-staging
-# Expect 7 policies listed.
+# Expect 7 policies plus the staging component policies listed.
 ```
 
 ### 4. Functional verification

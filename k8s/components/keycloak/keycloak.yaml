@@ -1,0 +1,423 @@
+# In-cluster Keycloak (D-02): ServiceAccount, Deployment, Service, the public
+# Ingress for auth-staging.olajay.co.uk, and its NetworkPolicy.
+#
+# THE ORDER RULE (#296, k8s/base/ingress.yaml "IF AN IN-CLUSTER KEYCLOAK IS EVER
+# DEPLOYED"): the auth host rule and its TLS come back TOGETHER WITH the Service
+# and Deployment, never before them. They live in this one file for that reason,
+# and INV-6 (k8s/scripts/check-render-invariants.sh) fails any render whose
+# Ingress routes to a Service that is not in it.
+#
+# Secrets (never committed; Key Vault supplies them through plan 29-12's
+# SecretProviderClasses): keycloak-server-credentials with keys db-password,
+# bootstrap-admin-username, bootstrap-admin-password.
+# app-config keys (k8s/staging/configmap-patch.yaml): keycloak.hostname,
+# keycloak.db.url.
+#
+# Option names were read from the Keycloak 26 server guides on 2026-10-19:
+# https://www.keycloak.org/server/hostname, /server/reverseproxy,
+# /server/management-interface, /observability/health, /server/containers,
+# /server/caching, /high-availability/single-cluster/concepts-memory-and-cpu-sizing.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/component: identity
+# Keycloak never calls the Kubernetes API. Plan 29-12 adds the Workload Identity
+# client-id annotation (Key Vault CSI mount); the CSI driver gets its own token per
+# mount, independent of this setting (29-RESEARCH Pitfall 9).
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+    component: identity
+spec:
+  # ONE replica, and the cache below is local to match. Scaling past one needs the
+  # distributed cache (KC_CACHE ispn, jdbc-ping) AND a same-label NetworkPolicy rule
+  # for the JGroups port 7800, which keycloak-allow deliberately does not admit.
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        component: identity
+    spec:
+      serviceAccountName: keycloak
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image's USER is 1000; stated numerically so runAsNonRoot can be
+        # verified by the kubelet.
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:26.8.1   # = docker-compose.full-stack.yml pin; horizon row keycloak
+        imagePullPolicy: IfNotPresent
+        # `start` (production mode), not compose's `start-dev`. Without --optimized
+        # the server runs its build step at boot from the KC_* build options below
+        # (db, health, metrics, cache), which is why the root filesystem stays
+        # writable (it writes lib/quarkus and data/).
+        args: ["start"]
+        env:
+        - name: KC_DB
+          value: "postgres"
+        # Its OWN database `keycloak` on the managed server (D-02), over
+        # sslmode=verify-full with the JVM truststore (the same posture as core-java,
+        # plan 29-08). The URL's port must agree with app-config db.port: the
+        # NetworkPolicy egress below follows db.port through the staging
+        # replacement, the URL is a separate string.
+        - name: KC_DB_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.db.url
+        - name: KC_DB_USERNAME
+          value: "keycloak"
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-server-credentials
+              key: db-password
+        # Issue #94 [P2-3]: the Agroal pool defaults to 100 and could exhaust the
+        # shared server by itself. 20 is the Keycloak line item of the connection
+        # budget. NOTE: k8s/scripts/check-connection-math.sh reads that line item
+        # from docker-compose.full-stack.yml, not from here, so the two values must
+        # be changed together.
+        - name: KC_DB_POOL_MAX_SIZE
+          value: "20"
+        # First-boot admin of the master realm (Keycloak 26 names; the KEYCLOAK_ADMIN
+        # pair compose still uses is the deprecated spelling). Used by
+        # scripts/staging-realm-import.sh through a port-forward only: the master
+        # realm and /admin/ are not published by the Ingress below.
+        - name: KC_BOOTSTRAP_ADMIN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-server-credentials
+              key: bootstrap-admin-username
+        - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-server-credentials
+              key: bootstrap-admin-password
+        # Hostname v2 split horizon (the compose shape, 29-RESEARCH Pattern 5):
+        # KC_HOSTNAME is the FULL public URL, so every front-channel URL and every
+        # token's `iss` is https://auth-staging.olajay.co.uk/realms/<realm>
+        # (= app-config keycloak.public.issuer.uri). BACKCHANNEL_DYNAMIC lets the
+        # in-cluster callers (core-java JWKS and admin API, the frontend's token
+        # call) use http://keycloak.jtoye-staging.svc.cluster.local:8080 and get
+        # backchannel URLs on that host. Backchannel-dynamic requires the hostname
+        # to be a full URL, which it is.
+        - name: KC_HOSTNAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.hostname
+        - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+          value: "true"
+        # TLS terminates at Traefik; Keycloak serves plain HTTP inside the cluster
+        # and reads X-Forwarded-* to learn the original scheme and client address.
+        # Without proxy-headers, origin-checked requests through the proxy are 403.
+        # RESIDUAL (recorded, not fixed here): KC_PROXY_TRUSTED_ADDRESSES is unset,
+        # so Keycloak believes those headers from any peer; keycloak-allow admits
+        # only Traefik and three in-namespace workloads on 8080, and the pod CIDR
+        # to narrow it to is measured in plan 29-14 (Pitfall 10).
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_PROXY_HEADERS
+          value: "xforwarded"
+        # Health and metrics on the management interface, port 9000 (Keycloak 26
+        # default when enabled). The readiness probe below and 29-04's import
+        # script (:19000/health/ready) both need KC_HEALTH_ENABLED. Compose keeps
+        # KC_LEGACY_OBSERVABILITY_INTERFACE (deprecated) to serve /metrics on 8080;
+        # it is NOT set here, so /health and /metrics are never on the published
+        # 8080 port (29-RESEARCH Pitfall 7).
+        - name: KC_HEALTH_ENABLED
+          value: "true"
+        - name: KC_METRICS_ENABLED
+          value: "true"
+        # Single replica: local caches. The default distributed cache (jdbc-ping)
+        # would register this pod in the database and try to reach peers on 7800,
+        # which the NetworkPolicy does not admit, during every rolling update.
+        - name: KC_CACHE
+          value: "local"
+        # Heap as a share of the container limit. The image default is
+        # MaxRAMPercentage=70, and Keycloak's own sizing guide puts non-heap memory
+        # near 300 MB: 70% of the 1Gi limit plus that is ~1017Mi, i.e. at the limit.
+        # 60% leaves ~110Mi headroom. ASSUMED, to be measured on the cluster in plan
+        # 29-14 (container_memory_working_set_bytes against the limit).
+        - name: JAVA_OPTS_KC_HEAP
+          value: "-XX:MaxHeapFreeRatio=30 -XX:MaxRAMPercentage=60 -XX:InitialRAMPercentage=40"
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 9000
+          name: management
+          protocol: TCP
+        # Burstable B-series nodes can run out of CPU credits during a JVM start and
+        # Keycloak's first-boot build + schema migration (29-RESEARCH Pitfall 2), so
+        # the startup budget is generous: 60 x 10s = 10 minutes before the kubelet
+        # gives up. Liveness and readiness only start once this has passed.
+        startupProbe:
+          httpGet:
+            path: /health/started
+            port: management
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 60
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: management
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: management
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            memory: "1Gi"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: keycloak-theme
+          mountPath: /opt/keycloak/themes/jtoye/login
+          readOnly: true
+      volumes:
+      # The flat ConfigMap keys are laid out as the theme directory Keycloak
+      # expects (the same tree as infra/keycloak/themes/jtoye/login, which compose
+      # mounts): theme.properties at the root, css and fonts under resources/.
+      - name: keycloak-theme
+        configMap:
+          name: keycloak-theme
+          items:
+          - key: theme.properties
+            path: theme.properties
+          - key: jtoye.css
+            path: resources/css/jtoye.css
+          - key: work-sans-latin.woff2
+            path: resources/fonts/work-sans-latin.woff2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  type: ClusterIP
+  selector:
+    app: keycloak
+  ports:
+  - port: 8080
+    targetPort: http
+    protocol: TCP
+    name: http
+  # The management port is a Service port so Prometheus can scrape
+  # keycloak:9000/metrics (plan 29-23). Nothing routes it to the Ingress.
+  - port: 9000
+    targetPort: management
+    protocol: TCP
+    name: management
+---
+# THE PUBLIC SURFACE OF THE IDENTITY PROVIDER (T-29-35). Exactly three path
+# prefixes reach Keycloak from the internet:
+#   /realms/jtoye-staging     the vendor realm (plan 29-04)
+#   /realms/jtoye-customers   the customer realm (wired in plan 29-25)
+#   /resources/               theme and login-page assets
+# NOT a blanket /realms/: that would publish the master realm's login and token
+# endpoints, the realm whose admins hold the whole server. /admin/ is not published
+# either (Keycloak's reverse-proxy guide lists both as internal-only); the realm
+# import and the seed reach the admin API through a port-forward (plans 29-04,
+# 29-06). A NEW REALM IS A NEW PATH HERE, added on purpose and reviewed.
+#
+# The realm paths carry NO trailing slash, so the bare issuer URL
+# /realms/jtoye-staging itself routes (Prefix matches path elements:
+# /realms/jtoye-staging and /realms/jtoye-staging/...), while every OIDC endpoint
+# sits below it. The render gate's exact three-path check is 29-10 Task 1's verify.
+#
+# Annotations: base jtoye-ingress's TLS redirect and per-IP limits, and the staging
+# configuration-snippet (base's six security headers + X-Robots-Tag noindex,
+# INV-15(c)). No CORS annotations: Keycloak answers CORS itself from each client's
+# webOrigins. No proxy buffer annotations: Traefik streams responses (see
+# k8s/platform/traefik/README.md), so NGINX's "upstream sent too big header"
+# failure mode for large Keycloak redirects does not exist here.
+# X-Frame-Options DENY does not break Keycloak's own same-origin iframes: its
+# pages send CSP frame-ancestors 'self', which browsers apply in preference to
+# X-Frame-Options (live check: plan 29-15).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-public
+  labels:
+    app: keycloak
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "X-Robots-Tag: noindex, nofollow";
+spec:
+  ingressClassName: nginx
+  # Its own certificate and Secret (one host per tls entry, one cert-manager owner
+  # per Secret: INV-15(a)/(b)), so an auth-host challenge can never fail the api or
+  # app order.
+  tls:
+  - hosts:
+    - auth-staging.olajay.co.uk
+    secretName: jtoye-staging-auth-tls
+  rules:
+  - host: auth-staging.olajay.co.uk
+    http:
+      paths:
+      - path: /realms/jtoye-staging
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+      - path: /realms/jtoye-customers
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+      - path: /resources/
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+---
+# keycloak-allow. Same conventions as k8s/base/networkpolicies/ (default-deny is
+# already in the render; this admits exactly the Keycloak flows). INV-7's row
+# keycloak-allow@k8s/staging declares every tuple; k8s/base/networkpolicies/README.md
+# carries the same rows in its flow matrix.
+#
+# Ingress:
+#   - the ingress controller namespace, TCP 8080 (the public auth host). A LITERAL
+#     `traefik`: this component is staging-only and staging's controller namespace
+#     is traefik (plan 29-03). INV-7's row uses __INGRESS_NS__, so the render FAILS
+#     if staging's app-config ingress.controller-namespace and this literal disagree.
+#   - frontend, core-java, edge-go pods, TCP 8080 (internal issuer, JWKS, token,
+#     admin API)
+#   - prometheus pods, TCP 9000 (/metrics; plan 29-23)
+# Egress (indices are load-bearing):
+#   0. kube-dns
+#   1. the managed Postgres public endpoint, ipBlock 0.0.0.0/0 except RFC1918, on
+#      db.port: spec.egress.1.ports.0.port is a target of the staging db.port
+#      replacement (#271), exactly like core-java-allow and pg-backup-allow
+#   2. mailpit pods, TCP 1025 (realm SMTP with STARTTLS, plan 29-22)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-allow
+  labels:
+    app.kubernetes.io/name: keycloak-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - podSelector:
+            matchLabels:
+              app: core-java
+        - podSelector:
+            matchLabels:
+              app: edge-go
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432   # Postgres — replaced from app-config db.port
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mailpit
+      ports:
+        - protocol: TCP
+          port: 1025
