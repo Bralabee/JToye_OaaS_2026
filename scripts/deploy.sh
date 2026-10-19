@@ -1,15 +1,63 @@
-#!/bin/bash
-# Deployment script for J'Toye OaaS — STAGING and PRODUCTION only.
-# Usage: ./scripts/deploy.sh [staging|production] [service]
-# Examples:
-#   ./scripts/deploy.sh production all
-#   ./scripts/deploy.sh staging core-java
+#!/usr/bin/env bash
+# deploy.sh — deploy J'Toye OaaS to STAGING or PRODUCTION, at one exact image tag,
+# through one named kube context.
 #
 # For a LOCAL Kubernetes rehearsal use scripts/k8s-local-up.sh instead: local
 # needs the compose-XOR guard, the out-of-band secret bootstrap and locally built
 # images, none of which belong in a staging/production deploy path.
+#
+# USAGE
+#   scripts/deploy.sh staging|production --context NAME --image-tag SHA [all]
+#   scripts/deploy.sh staging|production --render-only --image-tag SHA
+#   scripts/deploy.sh --selftest
+#
+#   --context NAME    REQUIRED for a deploy, no default (plan 29-14). An ambient
+#                     kubectl context is how a command lands on the wrong cluster:
+#                     on this host the kubeconfig's current-context is a dead
+#                     cluster and the employer's cluster sits beside the staging
+#                     one. Checked by scripts/lib/staging-kube-guard.sh before any
+#                     cluster call: sipbihs2aks is refused by name, and the
+#                     context's server must equal https://<aks_api_server_fqdn>:443
+#                     from k8s/<env>/azure-identity.yaml (production has no such
+#                     file yet, so a production deploy is refused until Phase 32
+#                     writes one: fail closed, never "unchecked").
+#   --image-tag SHA   REQUIRED: the full 40-lowercase-hex commit sha, the tag CI
+#                     pushes for ghcr.io/bralabee/jtoye-{core-java,frontend,edge-go}.
+#                     It is applied through a temporary WRAPPER kustomization in a
+#                     mktemp -d dir whose one resource is k8s/<env> given RELATIVE
+#                     to the wrapper (kustomize refuses an absolute base) and whose
+#                     images block retags those three; pg-backup keeps its own tag
+#                     and the committed kustomization.yaml is never edited.
+#   --render-only     print the wrapper render and apply nothing: offline, no
+#                     --context, no preflight.
+#   [all]             the only service selector left. One apply -k retags all
+#                     three images, so waiting on one rollout would certify a
+#                     deploy that was not checked; a single-service selector is a
+#                     usage error.
+#   --selftest        the behaviour arms, against stubs (see selftest below).
+#
+# ORDER, each refusal before anything after it: flags -> environment -> image tag
+# -> (render-only: render, exit) -> context guard -> staging preflight
+# (scripts/staging-secrets-preflight.sh, plan 29-13: any non-zero, a VOID 2
+# included, refuses) -> apply -k <wrapper> -> rollout status per Deployment, with
+# rollout undo on failure -> the final stdout line `DEPLOYED_SHA=<sha>`, printed
+# only after every rollout is green. That line is the record of what was applied;
+# plan 29-14's tracer and every digest-parity check read it back instead of
+# re-deriving a sha from HEAD.
+#
+# A real staging deploy runs with the jtoye-ops conda env active (the preflight
+# reaches keyvault-chain.py through python3) and with
+# JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 exported by
+# the CALLER: the preflight initialises the plan 29-01 guard itself, this script
+# never sets the id, and a missing id surfaces as the preflight's REFUSED.
+#
+# EXIT CODES
+#   0  rendered (--render-only), or applied and every rollout green
+#   1  refused (environment, context guard, preflight) or a rollout failed (undone)
+#   2  usage error, or VOID (missing tooling, a render that failed)
 
-# --selftest (plan 29-14 Task 1, RED): the arms below run against THIS body.
+set -uo pipefail
+
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -257,27 +305,51 @@ KCFG
   [ "$fails" -eq 0 ]
 }
 
-if [ "${1:-}" = "--selftest" ]; then
-    selftest; exit $?
-fi
-
-set -e
-
-ENVIRONMENT="${1:-staging}"
-SERVICE="${2:-all}"
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# Colors
+# ===========================================================================
+# The deploy.
+# ===========================================================================
 GREEN='\033[0;32m'
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}=== J'Toye OaaS Deployment ===${NC}"
-echo "Environment: $ENVIRONMENT"
-echo "Service: $SERVICE"
-echo ""
+APP_IMAGES=(ghcr.io/bralabee/jtoye-core-java ghcr.io/bralabee/jtoye-frontend ghcr.io/bralabee/jtoye-edge-go)
+# In order: core-java (backend), edge-go (gateway), frontend (UI).
+ROLLOUTS=(core-java edge-go frontend)
+
+usage() { command sed -n '/^# USAGE/,/^# ORDER/p' "$SCRIPT_PATH" | command sed '$d' | command sed 's/^# \{0,1\}//'; }
+usage_error() { echo "USAGE ERROR: $*" >&2; usage >&2; exit 2; }
+void() { echo "VOID: $*" >&2; exit 2; }
+
+ENVIRONMENT=""
+SERVICE=""
+KUBE_CONTEXT=""
+CONTEXT_GIVEN=0
+IMAGE_TAG=""
+TAG_GIVEN=0
+RENDER_ONLY=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --selftest)
+            [ "$#" -eq 1 ] || usage_error "--selftest takes no other argument"
+            selftest; exit $? ;;
+        --context)
+            shift; [ "$#" -gt 0 ] || usage_error "--context needs a name"
+            KUBE_CONTEXT="$1"; CONTEXT_GIVEN=1 ;;
+        --image-tag)
+            shift; [ "$#" -gt 0 ] || usage_error "--image-tag needs a 40-hex commit sha"
+            IMAGE_TAG="$1"; TAG_GIVEN=1 ;;
+        --render-only) RENDER_ONLY=1 ;;
+        -h|--help) usage; exit 0 ;;
+        -*) usage_error "unknown flag '$1'" ;;
+        *)
+            if [ -z "$ENVIRONMENT" ]; then ENVIRONMENT="$1"
+            elif [ -z "$SERVICE" ]; then SERVICE="$1"
+            else usage_error "unexpected argument '$1'"; fi ;;
+    esac
+    shift
+done
 
 # Validate environment.
 #
@@ -292,45 +364,103 @@ echo ""
 case "$ENVIRONMENT" in
     staging|production)
         ;;
+    "")
+        usage_error "an environment is required: staging or production"
+        ;;
     dev)
-        echo -e "${RED}Error: 'dev' is not a target of this script.${NC}"
-        echo "It never was: no k8s/dev overlay exists anywhere in the repo, so the"
-        echo "old code applied k8s/base files with no overlay at all."
-        echo "For a local Kubernetes rehearsal use the guarded entry point instead:"
-        echo "    scripts/k8s-local-up.sh"
+        echo -e "${RED}Error: 'dev' is not a target of this script.${NC}" >&2
+        echo "It never was: no k8s/dev overlay exists anywhere in the repo, so the" >&2
+        echo "old code applied k8s/base files with no overlay at all." >&2
+        echo "For a local Kubernetes rehearsal use the guarded entry point instead:" >&2
+        echo "    scripts/k8s-local-up.sh" >&2
         exit 1
         ;;
     local)
-        echo -e "${RED}Error: 'local' is not a target of this script.${NC}"
-        echo "The k8s/local overlay does exist, but bringing it up needs the compose-XOR"
-        echo "guard, the out-of-band secret bootstrap and locally built images. Use its"
-        echo "own entry point, which does all three in order:"
-        echo "    scripts/k8s-local-up.sh"
+        echo -e "${RED}Error: 'local' is not a target of this script.${NC}" >&2
+        echo "The k8s/local overlay does exist, but bringing it up needs the compose-XOR" >&2
+        echo "guard, the out-of-band secret bootstrap and locally built images. Use its" >&2
+        echo "own entry point, which does all three in order:" >&2
+        echo "    scripts/k8s-local-up.sh" >&2
         exit 1
         ;;
     *)
-        echo -e "${RED}Error: Invalid environment '${ENVIRONMENT}'. Use: staging or production${NC}"
+        echo -e "${RED}Error: Invalid environment '${ENVIRONMENT}'. Use: staging or production${NC}" >&2
         exit 1
         ;;
 esac
 
-# Validate kubectl access
-if ! kubectl cluster-info &> /dev/null; then
-    echo -e "${RED}Error: Cannot connect to Kubernetes cluster${NC}"
-    echo "Please configure kubectl with: export KUBECONFIG=/path/to/kubeconfig"
-    exit 1
-fi
+case "${SERVICE:-all}" in
+    all) ;;
+    *) usage_error "service '${SERVICE}' cannot be deployed alone: one apply -k retags core-java, frontend and edge-go together, so every rollout is waited on (omit it, or pass 'all')" ;;
+esac
+
+[ "$TAG_GIVEN" -eq 1 ] || usage_error "--image-tag is required: the full 40-hex commit sha CI built (no default: the committed 2.1.0 is not a deploy target)"
+[[ "$IMAGE_TAG" =~ ^[0-9a-f]{40}$ ]] \
+    || usage_error "--image-tag '${IMAGE_TAG}' is not a full 40-lowercase-hex commit sha (no short sha, branch name or latest: CI tags every image with the full commit sha)"
 
 NAMESPACE="jtoye-${ENVIRONMENT}"
+OVERLAY="$PROJECT_ROOT/k8s/${ENVIRONMENT}"
+IDENTITY_FILE="$OVERLAY/azure-identity.yaml"
 
-# Check if namespace exists
-if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
-    echo -e "${YELLOW}Warning: Namespace $NAMESPACE does not exist. Creating...${NC}"
-    kubectl create namespace "$NAMESPACE"
-    kubectl label namespace "$NAMESPACE" environment="$ENVIRONMENT"
+command -v kubectl >/dev/null 2>&1 || void "kubectl not on PATH"
+command -v realpath >/dev/null 2>&1 || void "realpath not on PATH"
+[ -f "$OVERLAY/kustomization.yaml" ] || void "no overlay at $OVERLAY"
+
+# The wrapper: one relative resource (the overlay) and the three retags. Its dir
+# is removed on every exit path.
+WRAPPER=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/jtoye-deploy-wrap.XXXXXXXX") || void "mktemp -d failed"
+# shellcheck disable=SC2064
+trap "rm -rf '$WRAPPER'" EXIT
+REL_OVERLAY=$(realpath --relative-to="$WRAPPER" "$OVERLAY") || void "realpath --relative-to failed for $OVERLAY"
+{
+    echo "# Generated by scripts/deploy.sh for one deploy; never committed."
+    echo "apiVersion: kustomize.config.k8s.io/v1beta1"
+    echo "kind: Kustomization"
+    echo "resources:"
+    echo "  - ${REL_OVERLAY}"
+    echo "images:"
+    for img in "${APP_IMAGES[@]}"; do
+        echo "  - name: ${img}"
+        echo "    newTag: \"${IMAGE_TAG}\""
+    done
+} > "$WRAPPER/kustomization.yaml"
+
+if [ "$RENDER_ONLY" -eq 1 ]; then
+    RENDER=$(kubectl kustomize "$WRAPPER" 2>"$WRAPPER/render.err"); rc=$?
+    if [ "$rc" -ne 0 ] || [ -z "$RENDER" ]; then
+        cat "$WRAPPER/render.err" >&2
+        void "kubectl kustomize of the wrapper failed (rc=$rc) or rendered nothing"
+    fi
+    printf '%s\n' "$RENDER"
+    exit 0
 fi
 
-# Apply this environment's overlay through kustomize.
+[ "$CONTEXT_GIVEN" -eq 1 ] && [ -n "$KUBE_CONTEXT" ] \
+    || usage_error "--context is required (no default: an ambient context is how a command lands on the wrong cluster)"
+
+# shellcheck source=scripts/lib/staging-kube-guard.sh
+. "$PROJECT_ROOT/scripts/lib/staging-kube-guard.sh" || void "could not source scripts/lib/staging-kube-guard.sh"
+rc=0; staging_kube_guard "$KUBE_CONTEXT" "$IDENTITY_FILE" || rc=$?
+[ "$rc" -eq 0 ] || exit "$rc"
+
+echo -e "${BLUE}=== J'Toye OaaS Deployment ===${NC}"
+echo "Environment: $ENVIRONMENT"
+echo "Context:     $KUBE_CONTEXT (guard passed)"
+echo "Image tag:   $IMAGE_TAG"
+echo ""
+
+if [ "$ENVIRONMENT" = staging ]; then
+    echo -e "${BLUE}Staging secrets preflight (scripts/staging-secrets-preflight.sh)...${NC}"
+    rc=0; bash "$PROJECT_ROOT/scripts/staging-secrets-preflight.sh" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "REFUSED [preflight]: scripts/staging-secrets-preflight.sh exited $rc; a half-configured staging is not deployed (rc 2 is VOID, and VOID refuses too)" >&2
+        exit 1
+    fi
+fi
+
+kc() { kubectl --context "$KUBE_CONTEXT" "$@"; }
+
+# Apply this environment's overlay, through the wrapper, through kustomize.
 #
 # Phase 26 fix: this used to be three raw `kubectl apply -f k8s/base/<svc>-deployment.yaml`
 # calls plus two more for the base configmap and ingress. Applying base files
@@ -338,49 +468,40 @@ fi
 # skipped the overlay's namespace transformer, its ConfigMap patch and its
 # image-tag pin — i.e. it could push base defaults and an unpinned image into a
 # real environment while reporting success. One `apply -k` per environment is the
-# only form that deploys what the overlay says.
-echo -e "\n${BLUE}Applying k8s/${ENVIRONMENT} overlay...${NC}"
-kubectl apply -k "$PROJECT_ROOT/k8s/${ENVIRONMENT}"
+# only form that deploys what the overlay says. The overlay carries its own
+# Namespace, so the old create-namespace step is gone with the ambient context.
+echo -e "\n${BLUE}Applying k8s/${ENVIRONMENT} at ${IMAGE_TAG}...${NC}"
+rc=0; kc apply -k "$WRAPPER" || rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo -e "${RED}Error: kubectl apply -k failed (rc=$rc)${NC}" >&2
+    exit 1
+fi
 
-# Function to wait for one service's rollout, rolling it back on failure.
+# Wait for one Deployment's rollout, rolling it back on failure.
 deploy_service() {
     local svc=$1
     echo -e "\n${BLUE}Waiting for ${svc} rollout...${NC}"
-
-    if ! kubectl rollout status deployment/"${svc}" -n "$NAMESPACE" --timeout=10m; then
-        echo -e "${RED}Error: Rollout failed for ${svc}${NC}"
-        echo "Rolling back..."
-        kubectl rollout undo deployment/"${svc}" -n "$NAMESPACE"
+    if ! kc -n "$NAMESPACE" rollout status deployment/"${svc}" --timeout=10m; then
+        echo -e "${RED}Error: Rollout failed for ${svc}${NC}" >&2
+        echo "Rolling back..." >&2
+        kc -n "$NAMESPACE" rollout undo deployment/"${svc}" || echo "rollout undo of ${svc} failed too" >&2
         return 1
     fi
-
     echo -e "${GREEN}✓ ${svc} deployed successfully${NC}"
 }
 
-# Wait for rollouts. SERVICE still selects which rollout(s) to wait on.
-if [ "$SERVICE" = "all" ]; then
-    # In order: core-java (backend), edge-go (gateway), frontend (UI)
-    deploy_service "core-java" || exit 1
-    deploy_service "edge-go" || exit 1
-    deploy_service "frontend" || exit 1
-else
-    deploy_service "$SERVICE" || exit 1
-fi
+for svc in "${ROLLOUTS[@]}"; do
+    deploy_service "$svc" || exit 1
+done
 
-# Display pod status
+# Informational read-outs; a failure here does not unmake a green rollout.
 echo -e "\n${BLUE}Current Pod Status:${NC}"
-kubectl get pods -n "$NAMESPACE" -l app="$SERVICE" --field-selector=status.phase=Running
-
-# Display service endpoints
+kc get pods -n "$NAMESPACE" --field-selector=status.phase=Running || true
 echo -e "\n${BLUE}Service Endpoints:${NC}"
-kubectl get svc -n "$NAMESPACE"
-
-# Display ingress
+kc get svc -n "$NAMESPACE" || true
 echo -e "\n${BLUE}Ingress Configuration:${NC}"
-kubectl get ingress -n "$NAMESPACE"
-
+kc get ingress -n "$NAMESPACE" || true
 echo -e "\n${GREEN}✓ Deployment completed successfully!${NC}"
-echo -e "\nTo view logs:"
-echo -e "  kubectl logs -f deployment/${SERVICE} -n ${NAMESPACE}"
-echo -e "\nTo check status:"
-echo -e "  kubectl get all -n ${NAMESPACE}"
+
+# THE RECORD. Always the last stdout line, and only after every rollout is green.
+echo "DEPLOYED_SHA=${IMAGE_TAG}"

@@ -33,7 +33,7 @@
  * it, so the switch collects it exactly once.
  */
 
-import { test, expect, type Request } from "@playwright/test"
+import { test, expect, type Page, type Request } from "@playwright/test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 
@@ -85,6 +85,33 @@ test("staging vendor signs in through the public edge and sees seeded products @
   }
   const dishNames = catalogueDishNames()
 
+  // While the typed password is on screen, a failure must not leave the Keycloak
+  // form there: Playwright writes a page snapshot (error-context.md) for a failed
+  // test even with trace and screenshot off. At any other point the page text is
+  // printed instead, so a refusal (invalid_client, a 502, an empty product list)
+  // is on record.
+  const state = { passwordOnScreen: false }
+  try {
+    await signInAndReadDashboard(page, username, password, dishNames, state)
+  } catch (e) {
+    if (state.passwordOnScreen) {
+      await page.goto("about:blank").catch(() => {})
+    } else {
+      const text = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "<no page text>")
+      console.log(`PAGE_URL_ON_FAILURE ${page.url()}`)
+      console.log(`PAGE_TEXT_ON_FAILURE ${text.replace(/\s+/g, " ").slice(0, 600)}`)
+    }
+    throw e
+  }
+})
+
+async function signInAndReadDashboard(
+  page: Page,
+  username: string,
+  password: string,
+  dishNames: string[],
+  state: { passwordOnScreen: boolean },
+): Promise<void> {
   // 1. Sign-in button -> the staging realm's authorize endpoint.
   await page.goto("/auth/signin", { waitUntil: "domcontentloaded" })
   const sso = page.getByRole("button", { name: /sign in with keycloak/i })
@@ -116,9 +143,11 @@ test("staging vendor signs in through the public edge and sees seeded products @
   // 2. The Keycloak form, then the dashboard.
   await page.waitForURL(/\/protocol\/openid-connect\/auth/, { timeout: 30_000 })
   await page.locator("#username").fill(username)
+  state.passwordOnScreen = true
   await page.locator("#password").fill(password)
   await page.locator("#kc-login").click()
   await page.waitForURL((u) => u.origin === STAGING_APP && u.pathname.startsWith("/dashboard"), { timeout: 45_000 })
+  state.passwordOnScreen = false
   const finalUrl = page.url()
   console.log(`FINAL_URL ${finalUrl}`)
   expect(new URL(finalUrl).pathname.startsWith("/dashboard")).toBe(true)
@@ -143,4 +172,4 @@ test("staging vendor signs in through the public edge and sees seeded products @
     )
     .toBeGreaterThan(0)
   console.log(`PRODUCT_COUNT ${visible.length} (${visible.join(", ")})`)
-})
+}

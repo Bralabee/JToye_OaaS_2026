@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-6331%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-6332%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -291,9 +291,9 @@ that static default ever survives to an `apply`, so it is intentionally not vers
 - Backend (Java): 2918 `@Test` methods across 414 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 112 `Test*` functions across 14 files ✅
 - Frontend (Jest): 3042 `it/test` blocks across 258 files ✅
-- Frontend E2E (Playwright): 189 `test()` blocks across 45 specs ✅
+- Frontend E2E (Playwright): 190 `test()` blocks across 46 specs ✅
 - MCP server (vitest): 70 `it/test` blocks across 8 files ✅
-- **Total: 6331 logical test invocations** ✅
+- **Total: 6332 logical test invocations** ✅
 
 Database schema version: **V88** (Flyway).
 
@@ -354,8 +354,8 @@ cd edge-go && go test ./...
 # Build Docker images
 ./scripts/build-images.sh
 
-# Deploy to Kubernetes
-./scripts/deploy.sh staging
+# Deploy to Kubernetes (a named context and the full commit sha CI built are required)
+./scripts/deploy.sh staging --context jtoye-stg-aks --image-tag <40-hex-sha>
 
 # Run smoke tests against the environment you just deployed.
 # Both toggles default to the HARDENED PROD posture, so a bare invocation asserts that

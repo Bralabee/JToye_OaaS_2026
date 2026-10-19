@@ -775,6 +775,16 @@ jobs:
       - name: Prove the staging seed guards and operator cleanup (29-06 --selftest)
         run: bash scripts/staging-seed.sh --selftest
 
+      # Plan 29-14: deploy.sh refuses no --context, the employer's sipbihs2aks, a
+      # context whose server is not the staging API server, a non-40-hex
+      # --image-tag and a failed (or VOID) staging preflight, all before any apply;
+      # --render-only retags exactly core-java/frontend/edge-go through a wrapper
+      # and leaves the committed overlay byte-identical; a failed rollout is undone
+      # with no DEPLOYED_SHA record, and a green one ends on that record (stub
+      # kubectl/kubelogin and a stub preflight: no cluster, no Azure).
+      - name: Prove the deploy script's guards and DEPLOYED_SHA record (29-14 --selftest)
+        run: bash scripts/deploy.sh --selftest
+
       - name: Assert the staging/production render matches its reviewed golden
         run: |
           chmod +x ./k8s/scripts/render-golden.sh
