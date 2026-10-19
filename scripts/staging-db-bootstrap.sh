@@ -123,6 +123,10 @@
 #                               jtoye_app f; jtoye_runtime and jtoye_backup can read
 #                               the migrated table; the readback names jtoye_app as
 #                               the installer of the (simulated) flyway history
+#   scratch-db                  --stage scratch-create/scratch-drop --scratch-db
+#                               jtoye_st_arm creates then drops it (read back in
+#                               pg_database); scratch-drop of jtoye and of keycloak is
+#                               REFUSED rc 1 and jtoye still exists
 #   via-context-relay           --via-context st-ok (stub kubectl): readback reaches the
 #                               stand-in through hostaddr=127.0.0.1 and the port the
 #                               stub port-forward announces; exactly one relay pod
@@ -631,6 +635,29 @@ SQL
     else
       st_result "PASS post-readback rc=0 ${got% } runtime_and_backup_read=ok flyway_installed_by=jtoye_app(2,t)"
     fi
+  fi
+
+  # --- scratch-db -------------------------------------------------------------
+  # The 29-14 fail arms need a throwaway database the admin creates and drops
+  # (Blocker E's migrator arm). Only a name of the form jtoye_<word>_arm is ever
+  # created or dropped, so the helper can never name jtoye or keycloak.
+  local sc_rc=0 sd_rc=0 ref_db_rc=0 ref_kc_rc=0 exists_after_create exists_after_drop jtoye_after
+  scratch_exists() { su_psql -d postgres -tA -c "SELECT count(*) FROM pg_database WHERE datname = '$1'" 2>/dev/null | tr -d '[:space:]'; }
+  bash "$SELF" --test-container "$cname" --stage scratch-create --scratch-db jtoye_st_arm >"$tmp/sc.out" 2>&1 || sc_rc=$?
+  exists_after_create="$(scratch_exists jtoye_st_arm)"
+  bash "$SELF" --test-container "$cname" --stage scratch-drop --scratch-db jtoye_st_arm >"$tmp/sd.out" 2>&1 || sd_rc=$?
+  exists_after_drop="$(scratch_exists jtoye_st_arm)"
+  bash "$SELF" --test-container "$cname" --stage scratch-drop --scratch-db jtoye >"$tmp/sref1.out" 2>&1 || ref_db_rc=$?
+  bash "$SELF" --test-container "$cname" --stage scratch-drop --scratch-db keycloak >"$tmp/sref2.out" 2>&1 || ref_kc_rc=$?
+  jtoye_after="$(scratch_exists jtoye)"
+  if [ "$sc_rc" -ne 0 ] || [ "$exists_after_create" != 1 ]; then
+    st_result "FAIL scratch-db create rc=${sc_rc} exists=${exists_after_create:-?}: $(first_err "$tmp/sc.out") $(head -c 160 "$tmp/sc.out" | tr '\n' ' ')"; fails=$((fails + 1))
+  elif [ "$sd_rc" -ne 0 ] || [ "$exists_after_drop" != 0 ]; then
+    st_result "FAIL scratch-db drop rc=${sd_rc} exists=${exists_after_drop:-?}: $(first_err "$tmp/sd.out")"; fails=$((fails + 1))
+  elif [ "$ref_db_rc" -ne 1 ] || [ "$ref_kc_rc" -ne 1 ] || [ "$jtoye_after" != 1 ] || ! command grep -q 'REFUSED \[scratch-db\]' "$tmp/sref1.out"; then
+    st_result "FAIL scratch-db a non-scratch name was not refused: jtoye rc=${ref_db_rc} keycloak rc=${ref_kc_rc} jtoye_exists=${jtoye_after:-?}"; fails=$((fails + 1))
+  else
+    st_result "PASS scratch-db create rc=0 exists=1 drop rc=0 exists=0 refused jtoye/keycloak rc=1/1 jtoye_exists=1"
   fi
 
   # --- via-context-relay ------------------------------------------------------
