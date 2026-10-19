@@ -34,6 +34,7 @@
 # STAGING_SECRETS_RENDER_FILE.
 
 SS_KV_NAME="jtoye-stg-kv"
+SS_KV_RG="jtoye-rg"
 # Built-in role "Key Vault Secrets User" (read secret contents). Matched and assigned by
 # id: the name is a display string, the id is the role.
 SS_ROLE_ID="4633458b-17de-408a-b874-0445c86b69e6"

@@ -16,19 +16,35 @@
 #   3. each external object with a required prefix (Stripe: sk_test_, whsec_) holds a value
 #      with that prefix. The value is read into memory, tested and discarded; only
 #      "test-mode: yes (<object>)" is printed (D-28: a live key never runs in staging).
+#   4. (full mode) every principal id committed in k8s/staging/azure-identity.yaml
+#      (principal_id_<k>, paired with client_id_<k>) is that identity's LIVE principal id,
+#      so the map --names-only trusts is re-checked on every operator run (plan 29-21).
+#
+# --names-only (plan 29-21; what the CI deploy job runs as jtoye-ci, which holds Key Vault
+# Reader at vault scope and nothing that reads a value): checks 1 and 2 only, and only with
+# reads that role permits. NO value is read (check 3 is skipped, so no `keyvault secret
+# show`); the vault id is built from the pinned subscription instead of `keyvault show` (the
+# role has Microsoft.KeyVault/vaults/*/read, not vaults/read); principal ids come from the
+# committed identity file instead of `identity list` (no Microsoft.ManagedIdentity read);
+# grants are listed per secret with `role assignment list --scope <vault>/secrets/<object>`
+# (Microsoft.Authorization/*/read, inherited from the vault) instead of a subscription-wide
+# `--all`. An SPC identity with no committed principal id is a MISSING-ACCESS gap.
 #
 # OUTPUT: one line per gap, in a fixed machine-readable form, then a summary:
 #   MISSING <object>                      absent or disabled
 #   MISSING-ACCESS <object> <principal>   the identity lacks the role at that object's scope
 #   NOT-TEST-MODE <object>                the stored value lacks its required prefix
+#   STALE-IDENTITY <key> committed <p> live <q>   (full mode) the committed map is wrong
 #   test-mode: yes (<object>)
-#   preflight: <n> objects, <g> grants, <k> gap(s)
+#   preflight: <n> objects, <g> grants, <k> gap(s)[ (names-only: no value read)]
 #
 # USAGE (JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 exported, python3 +
 # PyYAML on PATH: `conda activate jtoye-ops` on this host)
 #   scripts/staging-secrets-preflight.sh
+#   scripts/staging-secrets-preflight.sh --names-only
 #   scripts/staging-secrets-preflight.sh --selftest
 #   STAGING_SECRETS_SELFTEST_FORMAT=tap scripts/staging-secrets-preflight.sh --selftest
+#   (STAGING_SECRETS_IDENTITY_FILE overrides the identity file; selftests only)
 #
 # EXIT: 0 every object present + enabled + granted (+ test mode); 1 any gap, or a guard
 #       refusal; 2 VOID (derivation failed, missing tooling, a vault read that failed).
@@ -43,8 +59,21 @@ SELF="$SCRIPT_DIR/staging-secrets-preflight.sh"
 
 void() { echo "VOID: $*" >&2; exit 2; }
 
+# identity_map FILE -> `<clientId> TAB <principalId>` for every client_id_<k> that has a
+# principal_id_<k> in the committed identity file (values unquoted; order of keys free).
+identity_map() {
+  awk '
+    /^[[:space:]]+(client|principal)_id_[A-Za-z0-9_]+:[[:space:]]/ {
+      k = $1; sub(/:$/, "", k); v = $2; gsub(/"/, "", v)
+      if (k ~ /^client_id_/)    { sub(/^client_id_/, "", k);    c[k] = v }
+      else                      { sub(/^principal_id_/, "", k); p[k] = v }
+    }
+    END { for (k in c) if (k in p) printf "%s\t%s\t%s\n", c[k], p[k], k }' "$1"
+}
+
 preflight() {
-  local work rc=0 n e kvid cid obj pid c prefix v gaps=0 grants=0
+  local names_only="${1:-0}" idf="${STAGING_SECRETS_IDENTITY_FILE:-$SS_REPO_ROOT/$SS_IDENTITY_FILE_REL}"
+  local work rc=0 n e kvid cid obj pid c prefix v k live gaps=0 grants=0
   umask 077
   work="$(mktemp -d "${TMPDIR:-/tmp}/jtoye-kvp.XXXXXXXX")" || void "mktemp -d failed"
   # shellcheck disable=SC2064
@@ -66,15 +95,47 @@ preflight() {
   done < "$work/objects"
 
   # 2. per-object access for each SPC identity
-  kvid=$(az_read keyvault show -n "$SS_KV_NAME" --query id -o tsv 2>"$work/err") || { cat "$work/err" >&2; void "could not read the id of $SS_KV_NAME"; }
-  [ -n "$kvid" ] || void "the id of $SS_KV_NAME read back empty"
-  az_read identity list --query "[].{c:clientId,p:principalId}" -o tsv > "$work/identities" 2>"$work/err" \
-    || { cat "$work/err" >&2; void "could not list managed identities"; }
+  if [ "$names_only" -eq 1 ]; then
+    # Built, not read: Key Vault Reader has no Microsoft.KeyVault/vaults/read. The subscription
+    # is the one az_guard_init just asserted byte-for-byte.
+    kvid="/subscriptions/${JTOYE_AZURE_SUBSCRIPTION_ID}/resourceGroups/${SS_KV_RG}/providers/Microsoft.KeyVault/vaults/${SS_KV_NAME}"
+    [ -r "$idf" ] || void "identity file ${idf} is not readable; --names-only resolves principal ids from it"
+    identity_map "$idf" | cut -f1,2 > "$work/identities"
+    [ -s "$work/identities" ] || void "${idf} maps no client_id_<k> to a principal_id_<k>; --names-only cannot resolve any grant"
+  else
+    kvid=$(az_read keyvault show -n "$SS_KV_NAME" --query id -o tsv 2>"$work/err") || { cat "$work/err" >&2; void "could not read the id of $SS_KV_NAME"; }
+    [ -n "$kvid" ] || void "the id of $SS_KV_NAME read back empty"
+    az_read identity list --query "[].{c:clientId,p:principalId}" -o tsv > "$work/identities" 2>"$work/err" \
+      || { cat "$work/err" >&2; void "could not list managed identities"; }
+    # 4. the committed principal map is the live one (what --names-only trusts in CI)
+    if [ -r "$idf" ]; then
+      while IFS=$'\t' read -r cid pid k; do
+        [ -n "$cid" ] || continue
+        live=$(awk -F'\t' -v c="$cid" 'tolower($1) == tolower(c) { print $2; exit }' "$work/identities")
+        if [ "$(printf '%s' "$live" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$pid" | tr '[:upper:]' '[:lower:]')" ]; then
+          echo "STALE-IDENTITY principal_id_${k} committed ${pid} live ${live:-<no identity with client id ${cid}>}"; gaps=$((gaps + 1))
+        fi
+      done < <(identity_map "$idf")
+    fi
+  fi
   while IFS=$'\t' read -r cid obj; do
     [ -n "$cid" ] || continue
     grants=$((grants + 1))
     pid=$(awk -F'\t' -v c="$cid" 'tolower($1) == tolower(c) { print $2; exit }' "$work/identities")
     if [ -z "$pid" ]; then echo "MISSING-ACCESS $obj unresolved-client-id:$cid"; gaps=$((gaps + 1)); continue; fi
+    if [ "$names_only" -eq 1 ]; then
+      # Who holds the role at EXACTLY this secret's scope (no --all: that is a
+      # subscription-wide read the CI identity does not have).
+      if [ ! -f "$work/holders.$obj" ]; then
+        az_read role assignment list --scope "$kvid/secrets/$obj" --fill-principal-name false --fill-role-definition-name false \
+          --query "[?ends_with(roleDefinitionId, '$SS_ROLE_ID')].principalId" -o tsv > "$work/holders.$obj" 2>"$work/err" \
+          || { cat "$work/err" >&2; void "could not list the role assignments at the scope of $obj"; }
+      fi
+      if ! awk -v p="$pid" 'tolower($0) == tolower(p) { f = 1 } END { exit !f }' "$work/holders.$obj"; then
+        echo "MISSING-ACCESS $obj $pid"; gaps=$((gaps + 1))
+      fi
+      continue
+    fi
     if [ ! -f "$work/scopes.$pid" ]; then
       az_read role assignment list --assignee-object-id "$pid" --all --fill-principal-name false --fill-role-definition-name false \
         --query "[?ends_with(roleDefinitionId, '$SS_ROLE_ID')].scope" -o tsv > "$work/scopes.$pid" 2>"$work/err" \
@@ -84,6 +145,12 @@ preflight() {
       echo "MISSING-ACCESS $obj $pid"; gaps=$((gaps + 1))
     fi
   done < "$work/access"
+
+  if [ "$names_only" -eq 1 ]; then
+    echo "preflight: $(wc -l < "$work/objects") objects, $grants grants, $gaps gap(s) (names-only: no value read)"
+    [ "$gaps" -eq 0 ] || exit 1
+    exit 0
+  fi
 
   # 3. external prefixes (Stripe TEST mode), value in memory only
   while IFS= read -r n; do
@@ -131,7 +198,9 @@ pf_idmap() {
 # no_value_reads TAG -> empty when the stub saw no value read and no read Key Vault Reader
 # cannot make (vault control plane, identity list, a subscription-wide --all listing)
 no_value_reads() {
-  command grep -nE ' keyvault secret show | keyvault show | identity list | --all( |$)' "$ST/state/argv.log" | head -n 3 | tr '\n' ' '
+  # argv.log lines are the bare argv ("keyvault secret show ..."), so each subcommand is
+  # anchored at the line start; the full-mode control arm proves the pattern matches.
+  command grep -nE '^(keyvault secret show|keyvault show|identity list) |(^| )--all( |$)' "$ST/state/argv.log" | head -n 3 | tr '\n' ' '
 }
 pf_full() { # a fully configured stub vault: every derived object, every grant, TEST-mode Stripe values
   local n
@@ -237,6 +306,17 @@ selftest() {
   if [ -z "$why" ]; then ss_result "PASS stale-identity rc=1 STALE-IDENTITY named"; else ss_result "FAIL stale-identity $why"; fails=$((fails + 1)); fi
 
   # --- 29-21 --names-only: what CI runs as jtoye-ci (Key Vault Reader at vault scope) ----
+  # Control first: the FULL mode makes every forbidden read, so the detector must see all
+  # four kinds there; a detector that sees nothing would make the next arm vacuous.
+  pf_full; : > "$ST/state/argv.log"
+  rc=$(pf_run control); why=""
+  [ "$rc" = 0 ] || why="rc=$rc"
+  for got in '^keyvault secret show ' '^keyvault show ' '^identity list ' ' --all '; do
+    [ -z "$why" ] && ! command grep -qE -- "$got" "$ST/state/argv.log" && why="the full mode made no '$got' call"
+  done
+  [ -z "$why" ] && [ -z "$(no_value_reads)" ] && why="the forbidden-read detector saw nothing in the full mode's argv log"
+  if [ -z "$why" ]; then ss_result "PASS forbidden-read-detector-control full mode reads values (detector fires)"; else ss_result "FAIL forbidden-read-detector-control $why"; fails=$((fails + 1)); fi
+
   # A full vault passes with NO value read and no read that role cannot make.
   pf_full; : > "$ST/state/argv.log"
   rc=$(pf_run names-only --names-only); why=""
@@ -244,8 +324,8 @@ selftest() {
   [ -z "$why" ] && [ -n "$(gaplines names-only)" ] && why="gap lines on a full vault: $(gaplines names-only | head -n 2 | tr '\n' ' ')"
   [ -z "$why" ] && [ -n "$(no_value_reads)" ] && why="the stub saw a forbidden read: $(no_value_reads)"
   [ -z "$why" ] && command grep -q '^test-mode: yes ' "$ST/names-only.out" && why="a test-mode line, so a value was read"
-  [ -z "$why" ] && [ "$(command grep -c ' role assignment list --scope ' "$ST/state/argv.log")" != "$(wc -l < "$ST/objects")" ] \
-    && why="want one scope listing per object ($(wc -l < "$ST/objects")), got $(command grep -c ' role assignment list --scope ' "$ST/state/argv.log")"
+  [ -z "$why" ] && [ "$(command grep -c '^role assignment list --scope ' "$ST/state/argv.log")" != "$(cut -f2 "$ST/access" | LC_ALL=C sort -u | wc -l)" ] \
+    && why="want one scope listing per object ($(cut -f2 "$ST/access" | LC_ALL=C sort -u | wc -l)), got $(command grep -c '^role assignment list --scope ' "$ST/state/argv.log")"
   if [ -z "$why" ]; then ss_result "PASS names-only-no-value-read rc=0 gaps=0 forbidden-reads=0"; else ss_result "FAIL names-only-no-value-read $why"; fails=$((fails + 1)); fi
 
   # ... and still reports a missing object and a missing grant, still without a value read
@@ -297,8 +377,9 @@ selftest() {
 }
 
 case "${1-}" in
-  "")         preflight ;;
-  --selftest) selftest ;;
-  -h|--help)  sed -n '/^# USAGE/,/^# EXIT/p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) echo "usage: $0 [--selftest]" >&2; exit 2 ;;
+  "")           preflight 0 ;;
+  --names-only) [ "$#" -eq 1 ] || { echo "usage: $0 [--names-only | --selftest]" >&2; exit 2; }; preflight 1 ;;
+  --selftest)   selftest ;;
+  -h|--help)    sed -n '/^# USAGE/,/^# EXIT/p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "usage: $0 [--names-only | --selftest]" >&2; exit 2 ;;
 esac
