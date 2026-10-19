@@ -816,7 +816,8 @@ while [ "$#" -gt 0 ]; do
     -w) wfmt="$2"; shift 2 ;;
     -D) hdr="$2"; shift 2 ;;
     -X) method="$2"; shift 2 ;;
-    --data-urlencode|--data-binary|-d) data=1; shift 2 ;;
+    --data-binary) data=1; case "$2" in @*) jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
+    --data-urlencode|-d) data=1; shift 2 ;;
     -K|-H) shift 2 ;;
     http://*|https://*) url="$1"; shift ;;
     *) shift ;;
@@ -848,6 +849,16 @@ case "$method $base" in
   "GET /api/v1/shops/"*) key=shop; code=200 ;;
   "GET /api/v1/trader-identity") key=identity; code=200 ;;
   "GET /api/v1/onboarding/me") key=onboarding; code=200 ;;
+  # The order stage (plan 29-18): the anonymous storefront, then Stripe TEST.
+  # A confirm leaves a marker, so the intent reads succeeded only after it.
+  "GET /api/v1/public/shops/staging-test-kitchen") key=pub-shop; code=200 ;;
+  "GET /api/v1/public/shops/staging-test-kitchen/products") key=pub-products; code=200 ;;
+  "POST /api/v1/public/shops/staging-test-kitchen/orders") key=guest-order; code=201 ;;
+  "GET /api/v1/public/orders/"*) key=tracking; code=200 ;;
+  "POST /v1/payment_intents/"*"/confirm") key=pi-confirm; code=200; : > "$STUB_LOG_DIR/confirmed" ;;
+  "GET /v1/payment_intents") key=pi-list; code=200 ;;
+  "GET /v1/payment_intents/"*) if [ -f "$STUB_LOG_DIR/confirmed" ]; then key=pi-after; else key=pi-before; fi; code=200 ;;
+  "GET /v1/events") key=events; code=200 ;;
 esac
 if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then key=problem; code=500; fi
 printf '%s %s -> %s\n' "$method" "$url" "$code" >> "$STUB_LOG_DIR/curl-flow.log"
@@ -907,6 +918,11 @@ IDF
     obj="${row#*=}"
     printf '%s\t0\t%s\n' "-n ${obj} --query" "STUB-SECRET-${obj}-7f3a91" >> "$ast/answers.tsv"
   done
+  # The Stripe key must look like a TEST key to pass the order stage's guard; a
+  # second answers file holds a LIVE-looking one for the refusal arm.
+  cp "$ast/answers.tsv" "$ast/answers-live.tsv"
+  printf '%s\t0\t%s\n' "-n stripe-credentials--api-key --query" "sk_test_STUBSECRETstripe7f3a91" >> "$ast/answers.tsv"
+  printf '%s\t0\t%s\n' "-n stripe-credentials--api-key --query" "sk_live_STUBSECRETstripe7f3a91" >> "$ast/answers-live.tsv"
 
   # _st_run [VAR=value ...] -- ARGS... — the script as a scrubbed child.
   _st_run() {
@@ -914,7 +930,7 @@ IDF
     while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done
     shift
     : > "$ast/logs/kubectl.log"; : > "$ast/logs/kubelogin.log"; : > "$ast/logs/curl.log"
-    : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"
+    : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -930,7 +946,7 @@ IDF
   }
   _st_pod_reads() { if [ -s "$ast/logs/kubectl.log" ]; then command grep -c ' get pods ' "$ast/logs/kubectl.log" || true; else echo 0; fi; }
   _st_config_reads() { if [ -s "$ast/logs/kubectl.log" ]; then command grep -c '^config view ' "$ast/logs/kubectl.log" || true; else echo 0; fi; }
-  _st_leaks() { command grep -cF 'STUB-SECRET-' <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")" || true; }
+  _st_leaks() { command grep -cE 'STUB-SECRET-|STUBSECRET|STUBCS' <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")" || true; }
 
   # _st_refusal WANT_RC WANT_TEXT MAX_CONFIG MAX_PODS — rc, the stderr tag, then
   # the logs: no az, no curl, no kubectl beyond the config read and the pod read.
@@ -1004,13 +1020,13 @@ IDF
   _st_run -- --list-kv-objects
   local want_kv
   want_kv=$(printf '%s\n' keycloak-credentials--admin-password keycloak-credentials--admin-username \
-    keycloak-credentials--frontend-client-secret staging-seed--test-vendor-password)
+    keycloak-credentials--frontend-client-secret staging-seed--test-vendor-password stripe-credentials--api-key)
   why=""
   if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0)"
   elif [ "$ST_OUT" != "$want_kv" ]; then why="listed '$(tr '\n' ' ' <<<"$ST_OUT")'"
   elif [ "$(_st_lines kubectl)" -ne 0 ] || [ "$(_st_lines az)" -ne 0 ] || [ "$(_st_lines curl)" -ne 0 ]; then why="a tool was called"
   fi
-  if [ -z "$why" ]; then _st_result "PASS list-kv-objects rc=0 objects=4"
+  if [ -z "$why" ]; then _st_result "PASS list-kv-objects rc=0 objects=5"
   else _st_result "FAIL list-kv-objects $why"; fails=$((fails + 1)); fi
 
   # --- operator-deleted-on-failure: the whole vendor stage against the stubs,
@@ -1082,6 +1098,155 @@ IDF
   fi
   if [ -z "$why" ]; then _st_result "PASS operator-deleted-on-success rc=0 last_call=DELETE-operator readback=LIVE"
   else _st_result "FAIL operator-deleted-on-success $why"; fails=$((fails + 1)); fi
+
+  # ===== The order stage (plan 29-18; D-28, D-31) ==============================
+  # Fixtures: a shop that offers both types, a sold-out first dish (mask 4) and an
+  # orderable second one (mask 9), so "first available" and "the basket's union"
+  # are both observable; one intent for this order and one for another.
+  local p0="aaaaaaaa-0000-4000-8000-000000000000" p1="aaaaaaaa-1111-4111-8111-111111111111" order_args
+  order_args=(--context jtoye-stg-aks --identity-file "$ast/identity.yaml" --stage order)
+  jq -n --arg slug "$SHOP_SLUG" '{slug: $slug, offersCollection: true, offersDelivery: true,
+      deliveryFeePennies: 250, freeDeliveryThresholdPennies: null, openNow: true}' > "$ast/resp/pub-shop.json"
+  jq -n --arg a "$p0" --arg b "$p1" '{Mains: [
+      {id: $a, title: "Sold Out Stew", pricePennies: 700, inStock: false, allergenMask: 4},
+      {id: $b, title: "Pelau", pricePennies: 950, inStock: true, allergenMask: 9}]}' > "$ast/resp/pub-products.json"
+  _st_pi() { jq -n --arg id "$1" --arg st "$2" --argjson lm "$3" --arg on "$4" \
+      '{id: $id, object: "payment_intent", status: $st, livemode: $lm, amount: 950, currency: "gbp", metadata: {order_number: $on}}'; }
+  _st_order_fixtures() {   # STATUS CLIENT_SECRET(or "") INTENTS_FOR_THIS_ORDER PI_LIVEMODE PAYMENT_STATUS
+    jq -n --arg st "$1" --arg cs "$2" '{orderNumber: "ORD-STUB-0001", status: $st, totalAmountPennies: 950,
+        clientSecret: (if $cs == "" then null else $cs end)}' > "$ast/resp/guest-order.json"
+    _st_pi pi_stub0001 requires_payment_method "$4" ORD-STUB-0001 > "$ast/resp/pi-before.json"
+    _st_pi pi_stub0001 succeeded "$4" ORD-STUB-0001 > "$ast/resp/pi-after.json"
+    _st_pi pi_stub0001 succeeded "$4" ORD-STUB-0001 > "$ast/resp/pi-confirm.json"
+    { local i=0; while [ "$i" -lt "$3" ]; do _st_pi "pi_stub000$((i + 1))" succeeded false ORD-STUB-0001; i=$((i + 1)); done
+      _st_pi pi_other succeeded false ORD-OTHER; } | jq -s '{object: "list", has_more: false, data: .}' > "$ast/resp/pi-list.json"
+    jq -n '{object: "list", has_more: false, data: [
+        {id: "evt_other", object: "event", type: "payment_intent.succeeded", livemode: false, pending_webhooks: 0, data: {object: {id: "pi_other"}}},
+        {id: "evt_stub0001", object: "event", type: "payment_intent.succeeded", livemode: false, pending_webhooks: 0, data: {object: {id: "pi_stub0001"}}}]}' \
+      > "$ast/resp/events.json"
+    jq -n --arg ps "$5" '{orderNumber: "ORD-STUB-0001", status: "PENDING", paymentStatus: $ps}' > "$ast/resp/tracking.json"
+  }
+  _st_confirms() { command grep -cE '^POST https://api\.stripe\.com/v1/payment_intents/[^ ]+/confirm -> ' "$ast/logs/curl-flow.log" || true; }
+  local seed_re='^SEED-ORDER order=ORD-STUB-0001 intent=pi_stub0001 status=PENDING payment_status=CAPTURED livemode=false at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'
+  local olast obody
+
+  # --- order-live-key: a LIVE Stripe key is refused before any API call ------
+  _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 1 false CAPTURED
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" AZ_STUB_ANSWERS="$ast/answers-live.tsv" -- "${order_args[@]}"
+  if why=$(_st_refusal 1 "REFUSED [stripe-mode]" 1 1); then _st_result "PASS order-live-key rc=$ST_RC curl_calls=0 stripe_calls=0"
+  else _st_result "FAIL order-live-key $why"; fails=$((fails + 1)); fi
+
+  # --- order-first-run: one order, confirmed once with pm_card_visa, paid ------
+  _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 1 false CAPTURED
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 -- "${order_args[@]}"
+  why=""
+  olast=$(tail -n 1 <<<"$ST_OUT")
+  obody=$(command grep -F '"customerEmail"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$olast" =~ $seed_re ]]; then why="the last line is not the SEED-ORDER verdict: '$olast'"
+  elif [ "$(_st_confirms)" -ne 1 ]; then why="confirm calls=$(_st_confirms) (want 1)"
+  elif ! command grep -qE 'payment_intents/pi_stub0001/confirm' "$ast/logs/curl.log" \
+       || ! command grep -qF 'payment_method=pm_card_visa' "$ast/logs/curl.log" \
+       || ! command grep -qF "return_url=https://app-staging.olajay.co.uk/order-complete" "$ast/logs/curl.log"; then
+    why="the confirm does not carry payment_method=pm_card_visa and the return_url"
+  elif ! command grep -qF 'Idempotency-Key: seed-order-staging-test-kitchen-v1' "$ast/logs/curl.log"; then why="the order POST carries no Idempotency-Key header"
+  elif [ "$(jq -c '{e: .customerEmail, f: .fulfilmentType, i: .items, a: .acknowledgedAllergenMask, t: .expectedTotalPennies}' <<<"${obody:-null}" 2>/dev/null)" \
+       != "$(jq -cn --arg p "$p1" '{e: "guest.staging@olajay.co.uk", f: "COLLECTION", i: [{productId: $p, quantity: 1, expectedUnitPricePennies: 950}], a: 9, t: 950}')" ]; then
+    why="the order body is not the first AVAILABLE dish at its shown price with the basket's mask: ${obody:-<none>}"
+  elif ! command grep -qE '^STRIPE-EVENT id=evt_stub0001 ' <<<"$ST_OUT"; then why="the payment_intent.succeeded event id was not reported"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a Stripe key or client secret was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS order-first-run rc=0 confirms=1 verdict=SEED-ORDER event=evt_stub0001 secrets_printed=0"
+  else _st_result "FAIL order-first-run $why"; fails=$((fails + 1)); fi
+
+  # --- order-replay: the key replays a paid order; nothing is confirmed again --
+  _st_order_fixtures PENDING "" 1 false CAPTURED
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 -- "${order_args[@]}"
+  why=""
+  olast=$(tail -n 1 <<<"$ST_OUT")
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$olast" =~ $seed_re ]]; then why="the last line is not the SEED-ORDER verdict: '$olast'"
+  elif [ "$(_st_confirms)" -ne 0 ]; then why="confirm calls=$(_st_confirms) on a replay (want 0)"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a secret was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS order-replay rc=0 confirms=0 verdict=SEED-ORDER"
+  else _st_result "FAIL order-replay $why"; fails=$((fails + 1)); fi
+
+  # --- order-cash-refused: no client secret and no intent = a cash order (D-31)
+  _st_order_fixtures PENDING "" 0 false NONE
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 -- "${order_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+  elif ! command grep -qF 'D-31' <<<"$ST_ERR"; then why="the failure does not name D-31: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_confirms)" -ne 0 ]; then why="confirm calls=$(_st_confirms) (want 0)"
+  elif command grep -q '^SEED-ORDER ' <<<"$ST_OUT"; then why="a SEED-ORDER verdict was printed for a cash order"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS order-cash-refused rc=1 confirms=0 verdict=none"
+  else _st_result "FAIL order-cash-refused $why"; fails=$((fails + 1)); fi
+
+  # --- order-two-intents: a second intent for the same order is a failure ------
+  _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 2 false CAPTURED
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 -- "${order_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+  elif command grep -q '^SEED-ORDER ' <<<"$ST_OUT"; then why="a SEED-ORDER verdict was printed with two intents for one order"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS order-two-intents rc=1 verdict=none"
+  else _st_result "FAIL order-two-intents $why"; fails=$((fails + 1)); fi
+
+  # --- order-livemode-true: an intent that reads livemode true is refused ------
+  _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 1 true CAPTURED
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 -- "${order_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+  elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_confirms)" -ne 0 ]; then why="confirm calls=$(_st_confirms) on a live intent (want 0)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS order-livemode-true rc=1 confirms=0"
+  else _st_result "FAIL order-livemode-true $why"; fails=$((fails + 1)); fi
+
+  # --- order-unpaid-deadline: the order never reads CAPTURED -> fail, last state
+  _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 1 false PENDING
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=1 STAGING_SEED_PAID_DEADLINE_SECONDS=2 -- "${order_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+  elif ! command grep -qE 'deadline|within 2s' <<<"$ST_ERR" || ! command grep -qF 'paymentStatus PENDING' <<<"$ST_ERR"; then
+    why="the failure does not name the deadline and the last state: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^SEED-ORDER ' <<<"$ST_OUT"; then why="a SEED-ORDER verdict was printed for an unpaid order"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS order-unpaid-deadline rc=1 last_state=PENDING"
+  else _st_result "FAIL order-unpaid-deadline $why"; fails=$((fails + 1)); fi
+
+  # --- dry-run-order: the plan names the order calls; nothing is called --------
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${order_args[@]}" --dry-run
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_lines az)" -ne 0 ] || [ "$(_st_lines curl)" -ne 0 ]; then why="az=$(_st_lines az) curl=$(_st_lines curl) (want 0, 0)"
+  else
+    for step in "/api/v1/public/shops/${SHOP_SLUG}/orders" /v1/payment_intents/ pm_card_visa /api/v1/public/orders/ /v1/events; do
+      command grep -qF -- "$step" <<<"$ST_OUT" || { why="the plan does not name $step"; break; }
+    done
+  fi
+  if [ -z "$why" ]; then _st_result "PASS dry-run-order rc=0 az_calls=0 curl_calls=0"
+  else _st_result "FAIL dry-run-order $why"; fails=$((fails + 1)); fi
+
+  # --- stage-all: vendor, the operator deleted, THEN the order -----------------
+  _st_order_fixtures DRAFT pi_stub0001_secret_STUBCS9c2e 1 false CAPTURED
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_POLL_SECONDS=0 STAGING_SEED_READY_DEADLINE_SECONDS=5 \
+    -- --context jtoye-stg-aks --identity-file "$ast/identity.yaml" --stage all
+  why=""
+  olast=$(tail -n 1 <<<"$ST_OUT")
+  ndel=$(command grep -nE '^DELETE http://127\.0\.0\.1:18080/admin/realms/jtoye-staging/users/op-0001 -> 204$' "$ast/logs/curl-flow.log" | cut -d: -f1 | tr '\n' ' ' || true)
+  n500=$(command grep -nE '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/orders -> 201$' "$ast/logs/curl-flow.log" | head -1 | cut -d: -f1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$olast" =~ $seed_re ]]; then why="the last line is not the SEED-ORDER verdict: '$olast'"
+  elif [ -z "$n500" ]; then why="no order POST"
+  elif [ "$(wc -w <<<"$ndel")" -ne 1 ]; then why="operator DELETEs at lines '$ndel' (want exactly one)"
+  elif [ "${ndel% }" -ge "$n500" ]; then why="the operator DELETE (line ${ndel% }) does not precede the order POST (line $n500)"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a secret was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS stage-all rc=0 operator_delete_line=${ndel% } order_post_line=$n500 verdict=SEED-ORDER"
+  else _st_result "FAIL stage-all $why"; fails=$((fails + 1)); fi
 
   _st_render
   [ "$fails" -eq 0 ]
