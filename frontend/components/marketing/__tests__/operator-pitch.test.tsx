@@ -94,10 +94,10 @@ describe("OperatorPitch", () => {
     expect(screen.queryByText(/£119|£199|pricing test|high volume/i)).toBeNull()
   })
 
-  it("quantifies the aggregator leak with the guide's about-£2,800 figure", () => {
+  it("quantifies the aggregator leak: 28% of £10k is £2,800, against £39 + 0.5% plus Stripe's card fees", () => {
     render(<OperatorPitch />)
     expect(screen.getByText(/28% aggregator commission on £10k a month of orders hands over £2,800 a month/i)).toBeInTheDocument()
-    expect(screen.getByText(/direct storefront cost £39 \+ 0\.5%/i)).toBeInTheDocument()
+    expect(screen.getByText(/direct storefront cost £39 \+ 0\.5%, plus Stripe.s card fees, which you would pay either way\./i)).toBeInTheDocument()
   })
 
   it("offers a 'Start your application' CTA linking to onboarding", () => {
@@ -137,7 +137,7 @@ describe("OperatorPitch", () => {
     expect(screen.queryByText(/while you remain responsible for fulfilment/i)).toBeNull()
   })
 
-  it("prints exactly the billed price tiers, each as a countable tile", () => {
+  it("prints the three billed recurring tiers plus the one-off setup line, each as a countable tile", () => {
     const { container } = render(<OperatorPitch />)
     const terms = container.querySelector("[data-op-terms]") as HTMLElement
     expect(terms).not.toBeNull()

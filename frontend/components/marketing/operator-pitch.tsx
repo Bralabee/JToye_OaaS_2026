@@ -17,9 +17,12 @@ const pilotSteps = [
 /**
  * Every figure the page prints about price lives HERE, so a later owner ruling
  * is a one-line change. Source of truth is the billing code, not the guides:
- * StripeBillingService javadoc (SAAS_HYBRID_STANDARD, SAAS_FLAT_PREDICTABLE,
- * BATCH_PAYG_STARTER) and the V88 migration header. Assisted setup is the
- * ADR-0007 axis-4 onboarding fee. Do not add a tier the code does not bill.
+ * The three RECURRING tiers (Core, Flat, Batch starter) mirror BillingPlanMode
+ * as StripeBillingService bills them (javadoc + V88 migration header).
+ * WALK_SETUP_STEPDOWN is internal and deliberately not printed. The assisted
+ * setup line is a ONE-OFF fee from ADR-0007 axis 4, invoiced outside
+ * StripeBillingService; it is not a billing tier. Do not add a recurring tier
+ * the code does not bill.
  */
 const PRICING = {
   terms: [
@@ -149,7 +152,7 @@ export function OperatorPitch() {
         <section aria-labelledby="pressure-heading" className="grid gap-6 border-b border-cream-100 pb-14 lg:grid-cols-[0.8fr_1.2fr]">
           <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-oxblood-600">The service leak</p><h2 id="pressure-heading" className="mt-4 text-4xl font-bold leading-none tracking-[-0.045em] text-oxblood sm:text-5xl">One change. Three channels. Two versions of the order.</h2></div>
           <div className="grid gap-3 sm:grid-cols-3"><Impact title="The counter checks messages" detail="Changes sit beside the order instead of becoming the order." /><Impact title="The kitchen works from memory" detail="Availability, portions and handover details become verbal." /><Impact title="The owner carries the risk" detail="The customer still expects one accurate promise." /></div>
-          <p className="lg:col-start-2 text-base font-bold leading-7 text-slate-700">J&apos;Toye&apos;s pilot tests one practical result: can a direct order move from customer agreement to kitchen handover with fewer places to check? An established operator paying 28% aggregator commission on £10k a month of orders hands over £2,800 a month; the same orders through a direct storefront cost £39 + 0.5%.</p>
+          <p className="lg:col-start-2 text-base font-bold leading-7 text-slate-700">J&apos;Toye&apos;s pilot tests one practical result: can a direct order move from customer agreement to kitchen handover with fewer places to check? An established operator paying 28% aggregator commission on £10k a month of orders hands over £2,800 a month; the same orders through a direct storefront cost £39 + 0.5%, plus Stripe&apos;s card fees, which you would pay either way.</p>
         </section>
 
         <section aria-labelledby="paths-heading" className="pt-14">
