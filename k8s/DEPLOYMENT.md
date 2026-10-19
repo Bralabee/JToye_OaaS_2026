@@ -828,6 +828,15 @@ kubectl get certificate -n jtoye-production
 kubectl describe certificate jtoye-api-tls jtoye-app-tls -n jtoye-production   # one per host (plan 29-08)
 ```
 
+### Certificate stuck not-Ready (HTTP-01 challenge timeout)
+Plan 29-11 proved HTTP-01 on staging with NO NetworkPolicy in the namespace; the solver allow-rule
+(`acme-http01-solver-allow`) is first exercised when default-deny deploys. A challenge timeout after that is most
+likely the rule, not DNS: see "Unproven until the first application deploy" in `k8s/base/networkpolicies/README.md`.
+```bash
+kubectl --context jtoye-stg-aks -n jtoye-staging get challenges,orders
+kubectl --context jtoye-stg-aks -n jtoye-staging get networkpolicy acme-http01-solver-allow -o yaml
+```
+
 ### Database Connection Issues
 ```bash
 # Verify database credentials secret
