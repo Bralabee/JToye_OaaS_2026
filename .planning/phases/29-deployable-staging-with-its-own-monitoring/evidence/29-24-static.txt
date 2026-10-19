@@ -1,0 +1,83 @@
+# Plan 29-24 static evidence (DPLY-03 part B, the build). Every check shown failing first.
+
+## Task 1 — canonical Alertmanager SMTP-auth + extra email_configs, render gate
+
+Fetched 2026-10-19 (curl, raw.githubusercontent.com, tag v0.34.1):
+  https://raw.githubusercontent.com/prometheus/alertmanager/v0.34.1/docs/configuration.md  (<email_config>: smarthost, auth_username, auth_password_file, require_tls, tls_config exist; global smtp_auth_* exist)
+  https://raw.githubusercontent.com/prometheus/alertmanager/v0.34.1/config/config.go lines 406-409: each email_config INHERITS global smtp_auth_username / smtp_auth_password_file unless it sets its own (cmp.Or; empty cannot opt out)
+  https://raw.githubusercontent.com/prometheus/alertmanager/v0.34.1/notify/email/email.go line 203: AUTH is attempted whenever the server advertises it; LoginAuth (line 389) sends the password with no TLS check
+  Measured in prom/alertmanager:v0.34.1: amtool check-config SUCCESS on a config naming /nonexistent/pw and /nonexistent/ca.crt (it reads neither file); busybox timeout rc 143; under --network none alertmanager exits 1 (gossip: no private IP)
+
+Golden: --write-golden from the UNMODIFIED template blob 9fa6db49 and entrypoint blob 1faeab43 (commit c054f5f5):
+  compose-render.golden.yml sha256 f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc
+  second --write-golden: rc 2 'already exists' (cannot be re-taken silently)
+  harness fidelity: unmodified files + the live jtoye-alertmanager container's own env -> sha256 97a00e0a...; live /etc/alertmanager/alertmanager.yml 97a00e0a... (equal)
+
+RED (unmodified entrypoint, 2026-10-19T16:21:05Z re-recorded from the c054f5f5 record): rc 1
+  TAP version 13
+  1..9
+  ok 1 - compose-render-identical
+  ok 2 - compose-credentials-without-tls
+  not ok 3 - staging-env
+    ---
+    message: 'email-default has 1 email_configs, want 2; email_configs[0].auth_username=None; email_configs[0].auth_password_file=None'
+    ...
+  not ok 4 - password-env-to-mode-600-file
+    ---
+    message: 'email_configs[0].auth_password_file is "", want a /tmp file'
+    ...
+  ok 5 - mute-matcher-refused
+  not ok 6 - password-and-file-refused
+    ---
+    message: 'a config was rendered despite the refusal'
+    ...
+  not ok 7 - username-without-password-refused
+    ---
+    message: 'a config was rendered despite the refusal'
+    ...
+  not ok 8 - unreadable-sink-ca-refused
+    ---
+    message: 'a config was rendered despite the refusal'
+    ...
+  not ok 9 - render-only-exits-before-exec
+    ---
+    message: 'entrypoint rc 1, want 0 (ALERTMANAGER_RENDER_ONLY=1 must exit before exec)'
+    ...
+  classifier: RED_EVIDENCE_OK target staging-env (29-24-t1-red-render.json)
+
+GREEN:
+  check-alertmanager-render --selftest  (2026-10-19T16:21:05Z)
+    PASS  selftest-unknown-token-fails-compose-arm — render did not complete (rc 1): FATAL: unrendered placeholder(s) remain in /etc/alertmanager/alertmanager.yml: __PLANTED_UNKNOWN_TOKEN__ 
+    PASS  selftest-drifted-golden-fails-compose-arm — sha256 render=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc golden=83165776e3ecc4772de92a101e7b4b2221ff3267effbf9c4710c175d2630e10a
+    PASS  selftest-auth-line-removed-fails-staging-arm — email_configs[0].auth_username=None; email_configs[0].auth_password_file=None
+    PASS  selftest-global-auth-fails-staging-arm — global carries ['smtp_auth_username']: every email_config would inherit it, the Mailpit sink included
+    PASS  selftest-widened-mute-validator-fails-mute-arm — entrypoint rc 0, want 1 (refused)
+    PASS  selftest-password-in-render-detected — password string present in leaky.yml
+  check-alertmanager-render: PASS (6/6) [selftest] image=prom/alertmanager:v0.34.1
+  selftest rc=0
+  check-alertmanager-render  (2026-10-19T16:21:10Z)  image=prom/alertmanager:v0.34.1
+    PASS  compose-render-identical — sha256 render=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc golden=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc
+    PASS  compose-credentials-without-tls — sha256 render=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc golden=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc (credentials set, REQUIRE_TLS=false)
+    PASS  staging-env — amtool SUCCESS; 2 email_configs; auth on [0] only; sink CA set; mute alertname-only; no password string
+    PASS  password-env-to-mode-600-file — password written to /tmp/alertmanager-smtp-password mode 600, referenced as auth_password_file, never inlined
+    PASS  mute-matcher-refused — FATAL on 'severity=info' (alertname-only preserved)
+    PASS  password-and-file-refused — FATAL on PASSWORD and PASSWORD_FILE together
+    PASS  username-without-password-refused — FATAL on a username with no password
+    PASS  unreadable-sink-ca-refused — FATAL on an unreadable sink CA file
+    PASS  render-only-exits-before-exec — rendered, checked and exited 0 before exec
+  check-alertmanager-render: PASS (9/9) [run] image=prom/alertmanager:v0.34.1
+  run rc=0
+
+Compose with THIS machine's real .env (USERNAME and PASSWORD set, smarthost Mailhog, REQUIRE_TLS unset):
+  old files sha256 51f026d461580111fab670ace071e51ef7f94a000b8a9511b726500f6ab3face
+  new files sha256 51f026d461580111fab670ace071e51ef7f94a000b8a9511b726500f6ab3face  ('auth NOT rendered' printed 1x; no /tmp password file)
+  (the live container renders 97a00e0a: its container env differs from the current .env (measured: its own env reproduces 97a00e0a, the current .env 51f026d4) and it runs prom/alertmanager:v0.27.0 while compose pins v0.34.1 — a stale LOCAL runtime, outside this plan)
+
+check-gate-enforcement: workflow references replaced by a planted name -> rc 1 'check-alertmanager-render.sh (invokes: docker)' referenced by no workflow; restored (sha256 11f5f34b equal) -> rc 0
+
+Citation drift caused by the compose edit (+10 lines above postgres-/redis-exporter):
+  check-doc-citations.sh before the fix: rc 1 — "C-3 docs/ops/terminal-states.yaml:230 cites infra/monitoring/docker-compose.monitoring.yml:179, but its declared subject 'postgres-exporter' ... is at :189"
+  fixed: TS-13 179->189, horizon sites 160->170 (redis_exporter) and 180->190 (postgres-exporter)
+  after: rc 0, 46 verified, 0 violations
+  check-dependency-horizons.sh H-5 advisory pin-not-at-site: 7 with the HEAD sites, 5 after (the 5 pre-date this plan); rc 0 both (NOTE class)
+  check-terminal-states.sh rc 0; check-alert-mute.sh MODE=static rc 0 (Task 1 adds nothing under k8s/)

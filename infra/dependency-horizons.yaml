@@ -299,7 +299,7 @@ dependencies:
 
   - id: redis-exporter
     pin: "oliver006/redis_exporter:v1.94.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:160"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:170"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -316,7 +316,7 @@ dependencies:
 
   - id: postgres-exporter
     pin: "prometheuscommunity/postgres-exporter:v0.20.1"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:180"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:190"]
     kind: image
     owner: maintainer
     eol_slug: null

@@ -121,6 +121,16 @@ services:
       - ALERTMANAGER_SMTP_FROM=${ALERTMANAGER_SMTP_FROM:-alerts@jtoye.local}
       - ALERTMANAGER_SMTP_TO=${ALERTMANAGER_SMTP_TO:-ops@jtoye.local}
       - ALERTMANAGER_SMTP_REQUIRE_TLS=${ALERTMANAGER_SMTP_REQUIRE_TLS:-false}
+      # SMTP auth (plan 29-24, additive): lets this stack page an authenticated inbox
+      # (Zoho smtp.zoho.eu:587) when .env carries a smarthost, REQUIRE_TLS=true and
+      # these two. entrypoint.sh renders them ONLY when ALERTMANAGER_SMTP_REQUIRE_TLS is
+      # true: with the Mailhog default (no TLS) they are ignored, with a printed reason,
+      # so a .env that already holds them (this machine's does) changes nothing — the
+      # render stays byte-identical (scripts/check-alertmanager-render.sh, arm
+      # compose-credentials-without-tls). The password is written to a mode-600 file
+      # and referenced as auth_password_file, never inlined into the rendered config.
+      - ALERTMANAGER_SMTP_USERNAME=${ALERTMANAGER_SMTP_USERNAME:-}
+      - ALERTMANAGER_SMTP_PASSWORD=${ALERTMANAGER_SMTP_PASSWORD:-}
       # Slack (phase 27, additive — email remains the default route). WITHOUT
       # THESE TWO LINES the template and entrypoint changes are completely
       # INERT: verified before the fix, the container received only the four

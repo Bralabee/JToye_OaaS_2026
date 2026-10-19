@@ -100,3 +100,18 @@ only issues caused by the current task are fixed in it).
   via-context relay and scratch-db arms 29-14 added) is not invoked by any workflow, and
   check-gate-enforcement.sh does not name it (it is not among the scripts that gate reads).
   **Next:** wire it beside the other staging selftests if a docker-capable job can host it.
+
+- `.env.example` cites `docker-compose.monitoring.yml:118` for the postgres-exporter sslmode default (found during 29-24, 2026-10-19)
+  status: open
+  **What:** line 118 was already a Mailhog comment BEFORE 29-24 (measured at 1640fb7b); the
+  sslmode default sits in the postgres-exporter DATA_SOURCE_NAME. `.env.example` is not in
+  check-doc-citations.sh's default set, so no gate sees it. 29-24 shifted the file by 10 lines
+  and fixed the three citations that gates DO check (two horizon sites, TS-13).
+  **Next:** cite by subject (service name) rather than line, or add `.env.example` to the set.
+
+- The local compose Alertmanager runs prom/alertmanager:v0.27.0 while compose pins v0.34.1 (found during 29-24, 2026-10-19)
+  status: open
+  **What:** `docker inspect jtoye-alertmanager` reports image v0.27.0, and its env differs from the
+  current `.env` (its own env renders sha256 97a00e0a; the current `.env` renders 51f026d4). A
+  stale LOCAL runtime: `scripts/check-runtime-freshness.sh` is the gate for it.
+  **Next:** recreate the monitoring stack locally (`docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate alertmanager`).

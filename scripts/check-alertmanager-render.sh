@@ -375,6 +375,10 @@ if [ "$MODE" = selftest ]; then
   EXPECT=expect-fail run_arm "selftest-drifted-golden-fails-compose-arm" arm_compose_identical "$d" "$WORK/drifted-golden.yml"
   d="$(plant auth)"; sed -i '/^__SMTP_AUTH_BLOCK__$/d' "$d/alertmanager.yml.tmpl"
   EXPECT=expect-fail run_arm "selftest-auth-line-removed-fails-staging-arm" arm_staging "$d"
+  # Global auth is inherited by EVERY email_config (the sink included), so it must red.
+  d="$(plant global)"; sed -i "s/^  smtp_require_tls: __SMTP_REQUIRE_TLS__$/&\n  smtp_auth_username: 'planted@example.invalid'/" "$d/alertmanager.yml.tmpl"
+  if cmp -s "$d/alertmanager.yml.tmpl" "$AM_DIR/alertmanager.yml.tmpl"; then report "selftest-global-auth-fails-staging-arm" 2 "the plant changed nothing (anchor moved?)"
+  else EXPECT=expect-fail run_arm "selftest-global-auth-fails-staging-arm" arm_staging "$d"; fi
   d="$(plant mute)"; sed -i "s/grep -qE '\^\[A-Za-z\]\[A-Za-z0-9_\]\*\\\$'/grep -qE '.'/" "$d/entrypoint.sh"
   if cmp -s "$d/entrypoint.sh" "$AM_DIR/entrypoint.sh"; then report "selftest-widened-mute-validator-fails-mute-arm" 2 "the plant changed nothing (anchor moved?)"
   else EXPECT=expect-fail run_arm "selftest-widened-mute-validator-fails-mute-arm" arm_mute_matcher_refused "$d"; fi
