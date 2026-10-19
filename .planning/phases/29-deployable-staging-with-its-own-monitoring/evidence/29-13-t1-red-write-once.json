@@ -1,0 +1,10 @@
+{
+  "command": "STAGING_SECRETS_SELFTEST_FORMAT=tap bash scripts/staging-secrets.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..11\nnot ok 1 - write-once-generate\n  ---\n  message: 'no \"exists (write-once): dsar-credentials--encryption-key\" line'\n  ...\nok 2 - write-once-set-external\nok 3 - argv-no-value\nok 4 - value-shapes\nnot ok 5 - second-generate-noop\n  ---\n  message: '29 write(s) on a full vault'\n  ...\nok 6 - unclassified\nnot ok 7 - external-prefix\n  ---\n  message: 'second sk_test_ rc=0, want 1 (exists)'\n  ...\nok 8 - assign-access\nok 9 - leak-scan\nok 10 - guard-unpinned\nok 11 - void-no-python\n# SELFTEST: 8/11 (derived objects=31, generated=29, grants=35)\n",
+  "targetTest": "write-once-generate",
+  "targetFile": "scripts/staging-secrets.sh",
+  "expected": "--generate on a stub vault already holding dsar-credentials--encryption-key prints 'exists (write-once): dsar-credentials--encryption-key', issues no secret set for it, and leaves its value unchanged",
+  "actual": "no 'exists (write-once)' line: the RED writer's exists() always reports absent, so the DSAR key was written again",
+  "semanticAssessment": "Target arm executed: --generate ran to rc 0 against the stateful stub vault holding a preset DSAR key and failed on the planned assertion (no write-once line; the RED exists() returns 1 unconditionally, so the key was overwritten). Same root cause reds second-generate-noop (29 writes on a full vault) and external-prefix (a second sk_test_ write accepted). In the same run the harness is sound: argv-no-value, value-shapes, unclassified, assign-access, leak-scan, guard-unpinned and void-no-python pass. Correct RED."
+}
