@@ -39,9 +39,37 @@ void() { echo "VOID: $*" >&2; exit 2; }
 usage() { sed -n '/^# USAGE/,/^# EXIT/p' "$SELF" | sed '$d' | sed 's/^# \{0,1\}//'; }
 
 check() {
-  local overlay="$1"
-  # RED stub (29-21 Task 1): no comparison yet. The selftest must catch this.
-  echo "OK: (stub) ${overlay}"
+  local overlay="$1" kubectl_bin="${BAKED_ORIGIN_KUBECTL:-kubectl}" render render_api_url rc=0
+  local baked="${BAKED_API_URL-}"
+  command -v "$kubectl_bin" >/dev/null 2>&1 || void "kubectl not on PATH; the ${overlay} render cannot be read"
+  [ -d "$overlay" ] || void "overlay '${overlay}' is not a directory"
+  render="$(mktemp "${TMPDIR:-/tmp}/jtoye-cr02.XXXXXXXX")" || void "mktemp failed"
+  # shellcheck disable=SC2064
+  trap "rm -f '$render'" EXIT
+  "$kubectl_bin" kustomize "$overlay" > "$render" 2>"$render.err" || rc=$?
+  if [ "$rc" -ne 0 ]; then cat "$render.err" >&2; rm -f "$render.err"; void "kubectl kustomize ${overlay} failed (rc=${rc})"; fi
+  rm -f "$render.err"
+  # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
+  render_api_url="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' "$render")"
+  if [ -z "$render_api_url" ]; then
+    void "could not read app-config api.url from the ${overlay} render; this guard is blind, so it fails closed."
+  fi
+  if [ -z "$baked" ]; then
+    echo "FATAL: BAKED_API_URL (repo variable FRONTEND_PUBLIC_API_URL) is empty or unset, so the frontend image baked an EMPTY API origin." >&2
+    echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
+    echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
+    exit 1
+  fi
+  if [ "$render_api_url" != "$baked" ]; then
+    echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
+    echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $baked" >&2
+    echo "         ${overlay} app-config api.url: $render_api_url" >&2
+    echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
+    echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
+    echo "       origin: refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
+    exit 1
+  fi
+  echo "OK: baked NEXT_PUBLIC_API_URL matches ${overlay} app-config api.url ($render_api_url)"
   exit 0
 }
 
