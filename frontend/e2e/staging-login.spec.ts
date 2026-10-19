@@ -84,6 +84,10 @@ test("staging vendor signs in through the public edge and sees seeded products @
     )
   }
   const dishNames = catalogueDishNames()
+  // Every wait below carries its own bound, and their sum stays under this one,
+  // so a hang always surfaces as a step's error INSIDE the try below (where the
+  // failure handling runs) and never as the test timeout, which would skip it.
+  test.setTimeout(420_000)
 
   // While the typed password is on screen, a failure must not leave the Keycloak
   // form there: Playwright writes a page snapshot (error-context.md) for a failed
@@ -95,7 +99,7 @@ test("staging vendor signs in through the public edge and sees seeded products @
     await signInAndReadDashboard(page, username, password, dishNames, state)
   } catch (e) {
     if (state.passwordOnScreen) {
-      await page.goto("about:blank").catch(() => {})
+      await page.goto("about:blank", { timeout: 15_000 }).catch(() => {})
     } else {
       const text = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "<no page text>")
       console.log(`PAGE_URL_ON_FAILURE ${page.url()}`)
@@ -113,14 +117,14 @@ async function signInAndReadDashboard(
   state: { passwordOnScreen: boolean },
 ): Promise<void> {
   // 1. Sign-in button -> the staging realm's authorize endpoint.
-  await page.goto("/auth/signin", { waitUntil: "domcontentloaded" })
+  await page.goto("/auth/signin", { waitUntil: "domcontentloaded", timeout: 30_000 })
   const sso = page.getByRole("button", { name: /sign in with keycloak/i })
   await sso.waitFor({ state: "visible", timeout: 20_000 })
   // A click before hydration can silently no-op; wait for the page to settle.
-  await page.waitForLoadState("networkidle").catch(() => {})
+  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {})
 
   let authorize = page.waitForRequest(isAuthorizeRequest, { timeout: 20_000 })
-  await sso.click()
+  await sso.click({ timeout: 15_000 })
   let authorizeRequest: Request
   try {
     authorizeRequest = await authorize
@@ -128,7 +132,7 @@ async function signInAndReadDashboard(
     if (!new URL(page.url()).pathname.startsWith("/auth/signin")) throw e
     // The first click raced hydration: still on the sign-in page, click once more.
     authorize = page.waitForRequest(isAuthorizeRequest, { timeout: 20_000 })
-    await sso.click({ force: true })
+    await sso.click({ force: true, timeout: 15_000 })
     authorizeRequest = await authorize
   }
   const authorizeUrl = authorizeRequest.url()
@@ -142,10 +146,10 @@ async function signInAndReadDashboard(
 
   // 2. The Keycloak form, then the dashboard.
   await page.waitForURL(/\/protocol\/openid-connect\/auth/, { timeout: 30_000 })
-  await page.locator("#username").fill(username)
+  await page.locator("#username").fill(username, { timeout: 15_000 })
   state.passwordOnScreen = true
-  await page.locator("#password").fill(password)
-  await page.locator("#kc-login").click()
+  await page.locator("#password").fill(password, { timeout: 15_000 })
+  await page.locator("#kc-login").click({ timeout: 15_000 })
   await page.waitForURL((u) => u.origin === STAGING_APP && u.pathname.startsWith("/dashboard"), { timeout: 45_000 })
   state.passwordOnScreen = false
   const finalUrl = page.url()
@@ -154,17 +158,17 @@ async function signInAndReadDashboard(
   // By role: React's hidden streaming buffer is outside the accessibility tree.
   const h1 = page.getByRole("heading", { level: 1 })
   await expect(h1).toBeVisible({ timeout: 30_000 })
-  console.log(`H1 ${(await h1.innerText()).trim()}`)
+  console.log(`H1 ${(await h1.innerText({ timeout: 15_000 })).trim()}`)
 
   // 3. The seeded rows, read from what the vendor sees.
-  await page.goto("/dashboard/products", { waitUntil: "domcontentloaded" })
+  await page.goto("/dashboard/products", { waitUntil: "domcontentloaded", timeout: 30_000 })
   await expect(page.getByRole("heading", { level: 1, name: "Products" })).toBeVisible({ timeout: 30_000 })
   let visible: string[] = []
   await expect
     .poll(
       async () => {
         // innerText omits hidden elements, so the streaming buffer cannot count.
-        const text = await page.locator("body").innerText()
+        const text = await page.locator("body").innerText({ timeout: 10_000 })
         visible = dishNames.filter((n) => text.includes(n))
         return visible.length
       },
