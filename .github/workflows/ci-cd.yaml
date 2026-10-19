@@ -710,6 +710,23 @@ jobs:
       - name: Prove INV-15 catches planted Ingress holes (--selftest-inv15)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv15
 
+      # Plan 29-12 (D-23): the Key Vault chain of every target that includes
+      # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
+      # has exactly one producing SecretProviderClass that the consuming pod mounts,
+      # each SPC's clientID is its pod's ServiceAccount client-id, and every
+      # identifier is GUID-shaped (an unreplaced placeholder fails). The selftest
+      # runs first: five planted breaks into a copy of the real staging render
+      # (an undeclared key, two producers, a clientID mismatch, a consumer that
+      # does not mount its producer, an objectName not mounted) must each exit 1,
+      # three VOID arms (no SPC, no PyYAML, no kubectl) must exit 2, and the real
+      # render must exit 0. python3 here is the runner's, with PyYAML (the same
+      # interpreter ops-contracts' horizons gate uses).
+      - name: Prove the Key Vault chain gate catches planted breaks (29-12 --selftest)
+        run: bash k8s/scripts/check-keyvault-chain.sh --selftest
+
+      - name: Assert the Key Vault chain holds on every azure-keyvault target (29-12)
+        run: bash k8s/scripts/check-keyvault-chain.sh
+
       # k8s/platform/* (Phase 29, plan 29-03: Traefik, the ClusterIssuers, the CI
       # deployer RBAC, the ACME probe) sits at depth 3, so the gates above never
       # discover it — deliberately, to keep it out of the goldens. The bootstrap
