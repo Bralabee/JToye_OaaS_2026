@@ -237,6 +237,16 @@
 #          Without the label the webhook injects nothing and core-java refuses to
 #          boot; on the controller's own metadata instead of the pod template it
 #          does nothing at all, which is why the PATH is asserted, not the token.
+#          WIDENED BY PLAN 29-12 (D-23): the allowed set is the two Blob workloads
+#          PLUS every pod template that has a csi volume whose driver is
+#          secrets-store.csi.k8s.io, DERIVED from the render (never listed by
+#          hand). Each such template must carry the label (the STRING "true") at
+#          its template path and run as a named ServiceAccount that exists with
+#          automountServiceAccountToken false and a GUID-shaped
+#          azure.workload.identity/client-id annotation (the identity the CSI
+#          provider fetches Key Vault as). A label on any other pod template still
+#          FAILS. Which Secret each mount produces, and that the SPC's clientID is
+#          the ServiceAccount's, is k8s/scripts/check-keyvault-chain.sh's job.
 #
 #          ASSERTION SHAPE FOR INV-8..INV-10 + LOC-7. Each document is walked into
 #          full key PATHS by indentation (RENDER_PATHS_AWK), list items indexed,
@@ -840,6 +850,9 @@ declare -A NETPOL_RULES_EXPECTED=(
       in:ns=rabbitmq-system:15672
       in:pod=app.kubernetes.io/name=rabbitmq:4369 in:pod=app.kubernetes.io/name=rabbitmq:25672
       $NETPOL_DNS_EG eg:ip=0.0.0.0/0:443"
+  # The always-on consumer of rabbitmq-kv (plan 29-12, ../components/azure-keyvault).
+  # Nothing in, nothing out: the Key Vault fetch is the CSI provider's, on the node.
+  [secret-sync-allow@k8s/staging]="sel:app=secret-sync types:Egress,Ingress"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as
@@ -893,6 +906,11 @@ declare -A WI_WORKLOAD_SA=(
   [Deployment/core-java]="core-java"
   [CronJob/pg-backup]="pg-backup"
 )
+# INV-10 (plan 29-12): a pod template that mounts a SecretProviderClass through this
+# driver is ALSO allowed to opt in, and must; the set is derived from the render.
+CSI_SECRETS_DRIVER="secrets-store.csi.k8s.io"
+WI_CLIENT_ID_KEY="azure.workload.identity/client-id"
+GUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 
 # INV-14 (Phase 29 plan 29-08, Blocker A): the realm every deployed realm is
 # derived from (infra/keycloak/staging-realm.jq transforms this ONE template and
@@ -1964,32 +1982,55 @@ for dir in "${TARGETS[@]}"; do
 
         # ---- INV-10: Workload Identity wiring ----
         inv10_bad=0
-        for wl in $(printf '%s\n' "${!WI_WORKLOAD_TEMPLATE[@]}" | sort); do
-            wk="${wl%%/*}"; wn="${wl#*/}"; tp="${WI_WORKLOAD_TEMPLATE[$wl]}"
+        # The allowed set: the two Blob workloads, plus every pod template whose
+        # volumes include a csi volume of $CSI_SECRETS_DRIVER (plan 29-12, derived).
+        declare -A wi_allowed=()
+        declare -A wi_csi=()
+        for wl in "${!WI_WORKLOAD_TEMPLATE[@]}"; do wi_allowed[$wl]="${WI_WORKLOAD_TEMPLATE[$wl]}"; done
+        while IFS=$'\t' read -r k n tp; do
+            [[ -n "$k" ]] || continue
+            wi_allowed[$k/$n]="$tp"; wi_csi[$k/$n]=1
+        done <<< "$(awk -F'\t' -v drv="$CSI_SECRETS_DRIVER" '
+            { v = $4; if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2) }
+            v == drv && match($3, /^(spec::template|spec::jobTemplate::spec::template)::spec::volumes::\[[0-9]+\]::csi::driver$/) {
+                tp = $3; sub(/::spec::volumes::.*$/, "", tp); print $1 "\t" $2 "\t" tp }' "$TMP/paths.tsv" | sort -u)"
+        for wl in $(printf '%s\n' "${!wi_allowed[@]}" | sort); do
+            wk="${wl%%/*}"; wn="${wl#*/}"; tp="${wi_allowed[$wl]}"
             lbl="$(path_get "$TMP/paths.tsv" "$wk" "$wn" "$tp::metadata::labels::$WI_LABEL_KEY")"
             san="$(path_get "$TMP/paths.tsv" "$wk" "$wn" "$tp::spec::serviceAccountName")"
             if [[ "$lbl" != '"true"' ]]; then
-                echo "  FAIL [$rel] INV-10: $wl pod template label $WI_LABEL_KEY is $lbl, expected the STRING \"true\" at $tp::metadata::labels. Without it the webhook injects no identity and core-java refuses to boot." >&2
+                echo "  FAIL [$rel] INV-10: $wl pod template label $WI_LABEL_KEY is $lbl, expected the STRING \"true\" at $tp::metadata::labels. Without it the webhook injects no identity: core-java refuses to boot, and a Key Vault mount has no token to fetch with." >&2
                 inv10_bad=1
             fi
-            if [[ "$san" != "${WI_WORKLOAD_SA[$wl]}" ]]; then
+            if [[ -n "${WI_WORKLOAD_SA[$wl]:-}" && "$san" != "${WI_WORKLOAD_SA[$wl]}" ]]; then
                 echo "  FAIL [$rel] INV-10: $wl runs as serviceAccountName '$san', expected '${WI_WORKLOAD_SA[$wl]}' (the federated credential's subject names exactly that ServiceAccount)." >&2
                 inv10_bad=1
             fi
-        done
-        for sa in $(printf '%s\n' "${WI_WORKLOAD_SA[@]}" | sort -u); do
-            am="$(path_get "$TMP/paths.tsv" ServiceAccount "$sa" automountServiceAccountToken)"
+            if [[ "$san" == "(ABSENT)" || -z "$san" || "$san" == "default" ]]; then
+                echo "  FAIL [$rel] INV-10: $wl opts into Workload Identity but runs as serviceAccountName '$san' — it needs its OWN ServiceAccount, the federated credential's subject." >&2
+                inv10_bad=1
+                continue
+            fi
+            am="$(path_get "$TMP/paths.tsv" ServiceAccount "$san" automountServiceAccountToken)"
             if [[ "$am" != "false" ]]; then
-                echo "  FAIL [$rel] INV-10: ServiceAccount '$sa' has automountServiceAccountToken=$am, expected false (it must exist, and neither workload needs a Kubernetes API token)." >&2
+                echo "  FAIL [$rel] INV-10: ServiceAccount '$san' (of $wl) has automountServiceAccountToken=$am, expected false (it must exist, and no workload here needs a Kubernetes API token)." >&2
                 inv10_bad=1
             fi
+            if [[ -n "${wi_csi[$wl]:-}" ]]; then
+                cid="$(path_get "$TMP/paths.tsv" ServiceAccount "$san" "metadata::annotations::$WI_CLIENT_ID_KEY")"
+                cid="${cid#\"}"; cid="${cid%\"}"
+                if ! [[ "$cid" =~ $GUID_RE ]]; then
+                    echo "  FAIL [$rel] INV-10: $wl mounts a SecretProviderClass ($CSI_SECRETS_DRIVER) but its ServiceAccount '$san' has $WI_CLIENT_ID_KEY='$cid', expected a GUID (the managed identity the Key Vault fetch runs as)." >&2
+                    inv10_bad=1
+                fi
+            fi
         done
-        # Least privilege: no pod template other than the two Blob workloads opts in.
+        # Least privilege: no pod template outside the allowed set opts in.
         while IFS=$'\t' read -r k n pth v; do
             [[ -n "$k" ]] || continue
-            tp="${WI_WORKLOAD_TEMPLATE[$k/$n]:-}"
+            tp="${wi_allowed[$k/$n]:-}"
             if [[ -z "$tp" || "$pth" != "$tp::metadata::labels::$WI_LABEL_KEY" ]]; then
-                echo "  FAIL [$rel] INV-10: $k/$n carries $WI_LABEL_KEY at $pth — only the pod templates of ${!WI_WORKLOAD_TEMPLATE[*]} may opt into Workload Identity." >&2
+                echo "  FAIL [$rel] INV-10: $k/$n carries $WI_LABEL_KEY at $pth — only the pod templates of ${!WI_WORKLOAD_TEMPLATE[*]} and of workloads mounting a $CSI_SECRETS_DRIVER volume may opt into Workload Identity." >&2
                 inv10_bad=1
             fi
         done <<< "$(awk -F'\t' -v key="$WI_LABEL_KEY" '{ n = split($3, seg, "::"); if (seg[n] == key) print }' "$TMP/paths.tsv")"
@@ -1997,8 +2038,9 @@ for dir in "${TARGETS[@]}"; do
             FAILED=1
             inv10_msg="FAIL"
         else
-            inv10_msg="OK (${#WI_WORKLOAD_TEMPLATE[@]} pod templates labelled + dedicated SA; 2 ServiceAccounts, automount false; no other opt-in)"
+            inv10_msg="OK (${#wi_allowed[@]} pod templates labelled + own SA, automount false; ${#wi_csi[@]} mount a SecretProviderClass with a client-id SA; no other opt-in)"
         fi
+        unset wi_allowed wi_csi
     else
         inv8_msg="SKIP (not in WI_TARGETS)"
         inv9_msg="SKIP (not in WI_TARGETS)"

@@ -121,7 +121,10 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
   `pg-backup` (`k8s/base/serviceaccounts.yaml`, `automountServiceAccountToken:
   false`), and the pod-template label `azure.workload.identity/use: "true"` on
   the core-java Deployment and the pg-backup CronJob in staging and production
-  only (`k8s/staging|production/workload-identity-patch.yaml`). The account
+  only (production: `k8s/production/workload-identity-patch.yaml`; staging, since
+  plan 29-12: `k8s/components/azure-keyvault/workload-patches.yaml`, which also
+  gives frontend, keycloak, redis and secret-sync the label and a Key Vault
+  mount). The account
   endpoints and containers are app-config `storage.blob.*` / `backup.blob.*`
   keys, separate media and backup accounts per environment (D-01, D-11).
 - **What Phase 29 adds per overlay.** The annotation

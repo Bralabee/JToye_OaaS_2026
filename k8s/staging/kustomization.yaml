@@ -9,6 +9,10 @@ namespace: jtoye-staging
 resources:
   - ../base
   - namespace.yaml
+  # The Azure identifiers of the staging estate (plan 29-09, every value read back
+  # from Azure). It carries config.kubernetes.io/local-config, so kustomize uses it
+  # only as the source of the replacements below and never emits it.
+  - azure-identity.yaml
 
 # In-cluster platform services the login path needs (plan 29-10). Components, not
 # base: k8s/local reaches these on the host compose stack, and production opts in
@@ -20,6 +24,10 @@ components:
   - ../components/keycloak
   - ../components/redis
   - ../components/rabbitmq
+  # Key Vault -> Secrets Store CSI -> synced Secrets (plan 29-12, D-23). LAST, because
+  # its workload patches reach the keycloak and redis Deployments the components
+  # above add, and kustomize applies components in this order.
+  - ../components/azure-keyvault
 
 # Staging-specific labels.
 # D-17 (Phase 26): the explicit `fields:` list mirrors k8s/base/kustomization.yaml —
@@ -69,9 +77,10 @@ images:
 # behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
 patches:
   - path: configmap-patch.yaml
-  # AKS Workload Identity pod-template label on core-java and pg-backup
-  # (Phase 36 D-02). Two documents in one file, matched by GVK + name.
-  - path: workload-identity-patch.yaml
+  # The AKS Workload Identity pod-template label on core-java and pg-backup (Phase
+  # 36 D-02) used to be a patch file here. Plan 29-12 moved it into
+  # ../components/azure-keyvault (workload-patches.yaml), with the same label at the
+  # same paths, beside the Key Vault mount of every other secret-reading workload.
   # Ingress hostnames. WITHOUT these two, staging rendered the PRODUCTION hosts
   # (api./app.) inside namespace jtoye-staging while configmap-patch.yaml told the
   # app it lived at api-staging./app-staging. — so the app was configured for hosts
@@ -139,3 +148,131 @@ replacements:
           name: keycloak-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+
+# Plan 29-12 (D-23): the committed Azure identifiers (azure-identity.yaml, plan 29-09)
+# into the SecretProviderClasses of ../components/azure-keyvault and into each
+# workload ServiceAccount's Workload Identity client-id annotation. One user-assigned
+# identity per workload: the SPC a pod mounts and the ServiceAccount it runs as name
+# the SAME client id, which k8s/scripts/check-keyvault-chain.sh asserts. Every value
+# is an identifier, never a secret (T-29-32). A component's placeholder that no entry
+# here replaces stays REPLACED-BY-OVERLAY and fails the chain gate's GUID check.
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.tenant_id
+    targets:
+      - select:
+          kind: SecretProviderClass
+        fieldPaths:
+          - spec.parameters.tenantId
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.keyvault_name
+    targets:
+      - select:
+          kind: SecretProviderClass
+        fieldPaths:
+          - spec.parameters.keyvaultName
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_core_java
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: core-java-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: core-java
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_frontend
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: frontend-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: frontend
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_pg_backup
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: pg-backup-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: pg-backup
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_keycloak
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: keycloak-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: keycloak
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_redis
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: redis-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: redis
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_secret_sync
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: rabbitmq-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: secret-sync
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true

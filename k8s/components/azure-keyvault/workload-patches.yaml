@@ -1,0 +1,145 @@
+# workload-patches.yaml: every secret-reading workload mounts its OWN
+# SecretProviderClass and opts into Workload Identity (Phase 29 plan 29-12, D-23).
+#
+# Per pod TEMPLATE (spec.template, or spec.jobTemplate.spec.template for the CronJob):
+#   - the label azure.workload.identity/use: "true". The webhook then projects the
+#     pod's federated token and injects AZURE_CLIENT_ID etc.; the CSI provider uses
+#     that ServiceAccount's token for the Key Vault fetch (MS Learn,
+#     csi-secrets-store-identity-access, read 2026-10-19). core-java and pg-backup
+#     carried it already for Blob (Phase 36, the deleted
+#     k8s/staging/workload-identity-patch.yaml): same label, same paths.
+#   - a csi volume `kv` naming the workload's own SPC, mounted read-only at
+#     /mnt/secrets-store. The MOUNT is load-bearing, not the volume alone: the kubelet
+#     skips a pod volume that no container references, and the driver syncs the
+#     Secret only on a real mount. The files there are never read by the app (it
+#     reads the synced Secret through its existing secretKeyRefs).
+#
+# Strategic merge: containers and volumes merge by name, so these add to the base
+# lists and replace nothing. The ServiceAccount each pod runs as (serviceAccountName)
+# is set in its own manifest; its client-id annotation comes from k8s/staging's
+# replacements. INV-10 (k8s/scripts/check-render-invariants.sh) derives the set of
+# pod templates allowed to carry the label from exactly these csi volumes, and
+# k8s/scripts/check-keyvault-chain.sh checks that each consumed Secret is produced by
+# an SPC the consuming pod mounts.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-java
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: core-java
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: core-java-kv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: frontend
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: frontend-kv
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+spec:
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            azure.workload.identity/use: "true"
+        spec:
+          containers:
+          - name: pg-backup
+            volumeMounts:
+            - name: kv
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          volumes:
+          - name: kv
+            csi:
+              driver: secrets-store.csi.k8s.io
+              readOnly: true
+              volumeAttributes:
+                secretProviderClass: pg-backup-kv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: keycloak
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: keycloak-kv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: redis
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: redis-kv

@@ -673,3 +673,29 @@ dependencies:
       (https://www.rabbitmq.com/release-information, re-verified 2026-10-16); the catalogue returns
       `eol: false` for cycle 4.3, hence eol_source vendor. H-1 discovers this pin only because
       scripts/check-dependency-horizons.sh scans k8s/components (also plan 29-10).
+
+  # ------------------------------------------------------------------ Key Vault secret sync (Phase 29)
+  - id: registry-k8s-pause
+    pin: "registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4"
+    sites: ["k8s/components/azure-keyvault/secret-sync.yaml:78"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      2026-10-19 (plan 29-12, D-23): the container of the always-on `secret-sync` Deployment in
+      k8s/components/azure-keyvault, which only k8s/staging includes. It only sleeps; it exists so
+      that a pod always mounts the rabbitmq-kv SecretProviderClass and the CSI-synced Secret
+      rabbitmq-default-user that the RabbitMQ operator reads stays alive (29-RESEARCH Pitfall 11).
+      Tag 3.10.2 is the newest release tag in https://registry.k8s.io/v2/pause/tags/list (read
+      2026-10-19; the 3.x line before it is 3.10.1, 3.10, 3.9). The digest is the manifest-list
+      (multi-arch index) digest: the registry's docker-content-digest header, re-checked as the
+      sha256 of the downloaded index body, which lists linux/amd64 among its platforms. It is
+      DIGEST-PINNED because a tag is mutable. endoflife.date has no product for it (`pause`
+      returns 404, measured 2026-10-19 on both /api/pause.json and /api/v1/products/pause), so the
+      horizon is UNKNOWN by construction and the row passes only while its dated manual_review is
+      unexpired. A pause container has no attack surface of its own (no shell, no network, no
+      port), so the review is a version check, not a security triage.
+    manual_review:
+      last_checked: "2026-10-19"
+      expires: "2027-01-19"
+      url: "https://github.com/kubernetes/kubernetes/tree/master/build/pause"

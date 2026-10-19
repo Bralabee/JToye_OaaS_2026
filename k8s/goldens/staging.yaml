@@ -15,6 +15,7 @@ automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   annotations:
+    azure.workload.identity/client-id: 3a14636b-91d7-42cf-9b23-8d40d799a9c1
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
@@ -32,6 +33,7 @@ automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   annotations:
+    azure.workload.identity/client-id: 348fa334-898c-4640-a29a-49a71623ea5b
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
@@ -49,6 +51,7 @@ automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   annotations:
+    azure.workload.identity/client-id: ccf8147d-74da-4acd-ac06-4b0a3291e6e6
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
     app.kubernetes.io/component: identity
@@ -64,6 +67,7 @@ automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   annotations:
+    azure.workload.identity/client-id: ca38c385-c0c1-467d-a638-88e62db7a65f
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
@@ -81,6 +85,7 @@ automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   annotations:
+    azure.workload.identity/client-id: ec5b9f1a-2147-4f6f-a7d5-a8bd49b641e8
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
     app.kubernetes.io/component: cache
@@ -89,6 +94,22 @@ metadata:
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
   name: redis
+  namespace: jtoye-staging
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    azure.workload.identity/client-id: 231ad919-8aad-4dd2-a6b5-0e2089edf4e4
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: secret-sync
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: secret-sync
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: secret-sync
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -2369,12 +2390,21 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 3
         volumeMounts:
+        - mountPath: /mnt/secrets-store
+          name: kv
+          readOnly: true
         - mountPath: /var/log/jtoye
           name: app-logs
       securityContext:
         fsGroup: 1000
       serviceAccountName: core-java
       volumes:
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: core-java-kv
+        name: kv
       - emptyDir:
           sizeLimit: 2Gi
         name: app-logs
@@ -2554,6 +2584,7 @@ spec:
         app: frontend
         app.kubernetes.io/managed-by: kustomize
         app.kubernetes.io/part-of: jtoye-platform
+        azure.workload.identity/use: "true"
         component: ui
         environment: staging
         version: v1
@@ -2657,7 +2688,18 @@ spec:
           readOnlyRootFilesystem: false
           runAsNonRoot: true
           runAsUser: 1001
+        volumeMounts:
+        - mountPath: /mnt/secrets-store
+          name: kv
+          readOnly: true
       serviceAccountName: frontend
+      volumes:
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: frontend-kv
+        name: kv
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -2693,6 +2735,7 @@ spec:
         app: keycloak
         app.kubernetes.io/managed-by: kustomize
         app.kubernetes.io/part-of: jtoye-platform
+        azure.workload.identity/use: "true"
         component: identity
         environment: staging
     spec:
@@ -2790,6 +2833,9 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
         volumeMounts:
+        - mountPath: /mnt/secrets-store
+          name: kv
+          readOnly: true
         - mountPath: /opt/keycloak/themes/jtoye/login
           name: keycloak-theme
           readOnly: true
@@ -2800,6 +2846,12 @@ spec:
           type: RuntimeDefault
       serviceAccountName: keycloak
       volumes:
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: keycloak-kv
+        name: kv
       - configMap:
           items:
           - key: theme.properties
@@ -2845,6 +2897,7 @@ spec:
         app: redis
         app.kubernetes.io/managed-by: kustomize
         app.kubernetes.io/part-of: jtoye-platform
+        azure.workload.identity/use: "true"
         component: cache
         environment: staging
     spec:
@@ -2903,6 +2956,9 @@ spec:
           readOnlyRootFilesystem: true
           runAsNonRoot: true
         volumeMounts:
+        - mountPath: /mnt/secrets-store
+          name: kv
+          readOnly: true
         - mountPath: /data
           name: data
       securityContext:
@@ -2914,9 +2970,90 @@ spec:
           type: RuntimeDefault
       serviceAccountName: redis
       volumes:
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: redis-kv
+        name: kv
       - emptyDir:
           sizeLimit: 64Mi
         name: data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app: secret-sync
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: secret-sync
+    environment: staging
+  name: secret-sync
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secret-sync
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+      labels:
+        app: secret-sync
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        azure.workload.identity/use: "true"
+        component: secret-sync
+        environment: staging
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - image: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
+        imagePullPolicy: IfNotPresent
+        name: pause
+        resources:
+          limits:
+            memory: 16Mi
+          requests:
+            cpu: 1m
+            memory: 8Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /mnt/secrets-store
+          name: kv
+          readOnly: true
+      securityContext:
+        runAsGroup: 65535
+        runAsNonRoot: true
+        runAsUser: 65535
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: secret-sync
+      volumes:
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: rabbitmq-kv
+        name: kv
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -3021,12 +3158,23 @@ spec:
               requests:
                 cpu: 250m
                 memory: 256Mi
+            volumeMounts:
+            - mountPath: /mnt/secrets-store
+              name: kv
+              readOnly: true
           restartPolicy: OnFailure
           securityContext:
             fsGroup: 1000
             runAsNonRoot: true
             runAsUser: 1000
           serviceAccountName: pg-backup
+          volumes:
+          - csi:
+              driver: secrets-store.csi.k8s.io
+              readOnly: true
+              volumeAttributes:
+                secretProviderClass: pg-backup-kv
+            name: kv
   schedule: 0 2 * * *
   successfulJobsHistoryLimit: 3
 ---
@@ -3867,6 +4015,7 @@ metadata:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
     app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: rabbitmq-allow
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -3981,12 +4130,35 @@ spec:
   - Ingress
   - Egress
 ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: secret-sync-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: secret-sync-allow
+  namespace: jtoye-staging
+spec:
+  podSelector:
+    matchLabels:
+      app: secret-sync
+  policyTypes:
+  - Ingress
+  - Egress
+---
 apiVersion: rabbitmq.com/v1beta1
 kind: RabbitmqCluster
 metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
     environment: staging
   name: rabbitmq
   namespace: jtoye-staging
@@ -4009,3 +4181,355 @@ spec:
   secretBackend:
     externalSecret:
       name: rabbitmq-default-user
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: core-java-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: 3a14636b-91d7-42cf-9b23-8d40d799a9c1
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: postgres-credentials--host
+          objectType: secret
+        - |
+          objectName: postgres-credentials--port
+          objectType: secret
+        - |
+          objectName: postgres-credentials--database
+          objectType: secret
+        - |
+          objectName: postgres-credentials--username
+          objectType: secret
+        - |
+          objectName: postgres-credentials--password
+          objectType: secret
+        - |
+          objectName: postgres-credentials--migration-username
+          objectType: secret
+        - |
+          objectName: postgres-credentials--migration-password
+          objectType: secret
+        - |
+          objectName: redis-credentials--password
+          objectType: secret
+        - |
+          objectName: rabbitmq-credentials--username
+          objectType: secret
+        - |
+          objectName: rabbitmq-credentials--password
+          objectType: secret
+        - |
+          objectName: rabbitmq-credentials--stomp-login
+          objectType: secret
+        - |
+          objectName: rabbitmq-credentials--stomp-passcode
+          objectType: secret
+        - |
+          objectName: keycloak-credentials--admin-username
+          objectType: secret
+        - |
+          objectName: keycloak-credentials--admin-password
+          objectType: secret
+        - |
+          objectName: smtp-credentials--username
+          objectType: secret
+        - |
+          objectName: smtp-credentials--password
+          objectType: secret
+        - |
+          objectName: notification-credentials--unsubscribe-signing-secret
+          objectType: secret
+        - |
+          objectName: dsar-credentials--encryption-key
+          objectType: secret
+        - |
+          objectName: client-ip-credentials--hmac-key
+          objectType: secret
+        - |
+          objectName: stripe-credentials--api-key
+          objectType: secret
+        - |
+          objectName: stripe-credentials--webhook-secret
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: host
+      objectName: postgres-credentials--host
+    - key: port
+      objectName: postgres-credentials--port
+    - key: database
+      objectName: postgres-credentials--database
+    - key: username
+      objectName: postgres-credentials--username
+    - key: password
+      objectName: postgres-credentials--password
+    - key: migration-username
+      objectName: postgres-credentials--migration-username
+    - key: migration-password
+      objectName: postgres-credentials--migration-password
+    secretName: postgres-credentials
+    type: Opaque
+  - data:
+    - key: password
+      objectName: redis-credentials--password
+    secretName: redis-credentials
+    type: Opaque
+  - data:
+    - key: username
+      objectName: rabbitmq-credentials--username
+    - key: password
+      objectName: rabbitmq-credentials--password
+    - key: stomp-login
+      objectName: rabbitmq-credentials--stomp-login
+    - key: stomp-passcode
+      objectName: rabbitmq-credentials--stomp-passcode
+    secretName: rabbitmq-credentials
+    type: Opaque
+  - data:
+    - key: admin-username
+      objectName: keycloak-credentials--admin-username
+    - key: admin-password
+      objectName: keycloak-credentials--admin-password
+    secretName: keycloak-credentials
+    type: Opaque
+  - data:
+    - key: username
+      objectName: smtp-credentials--username
+    - key: password
+      objectName: smtp-credentials--password
+    secretName: smtp-credentials
+    type: Opaque
+  - data:
+    - key: unsubscribe-signing-secret
+      objectName: notification-credentials--unsubscribe-signing-secret
+    secretName: notification-credentials
+    type: Opaque
+  - data:
+    - key: encryption-key
+      objectName: dsar-credentials--encryption-key
+    secretName: dsar-credentials
+    type: Opaque
+  - data:
+    - key: hmac-key
+      objectName: client-ip-credentials--hmac-key
+    secretName: client-ip-credentials
+    type: Opaque
+  - data:
+    - key: api-key
+      objectName: stripe-credentials--api-key
+    - key: webhook-secret
+      objectName: stripe-credentials--webhook-secret
+    secretName: stripe-credentials
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: frontend-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: 348fa334-898c-4640-a29a-49a71623ea5b
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: nextauth-secret--secret
+          objectType: secret
+        - |
+          objectName: keycloak-credentials--frontend-client-secret
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: secret
+      objectName: nextauth-secret--secret
+    secretName: nextauth-secret
+    type: Opaque
+  - data:
+    - key: client-secret
+      objectName: keycloak-credentials--frontend-client-secret
+    secretName: frontend-oidc-credentials
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: keycloak-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: ccf8147d-74da-4acd-ac06-4b0a3291e6e6
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: keycloak-server-credentials--db-password
+          objectType: secret
+        - |
+          objectName: keycloak-credentials--admin-username
+          objectType: secret
+        - |
+          objectName: keycloak-credentials--admin-password
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: db-password
+      objectName: keycloak-server-credentials--db-password
+    - key: bootstrap-admin-username
+      objectName: keycloak-credentials--admin-username
+    - key: bootstrap-admin-password
+      objectName: keycloak-credentials--admin-password
+    secretName: keycloak-server-credentials
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: pg-backup-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: ca38c385-c0c1-467d-a638-88e62db7a65f
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: postgres-credentials--host
+          objectType: secret
+        - |
+          objectName: postgres-credentials--port
+          objectType: secret
+        - |
+          objectName: postgres-credentials--database
+          objectType: secret
+        - |
+          objectName: postgres-credentials--backup-username
+          objectType: secret
+        - |
+          objectName: postgres-credentials--backup-password
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: host
+      objectName: postgres-credentials--host
+    - key: port
+      objectName: postgres-credentials--port
+    - key: database
+      objectName: postgres-credentials--database
+    - key: backup-username
+      objectName: postgres-credentials--backup-username
+    - key: backup-password
+      objectName: postgres-credentials--backup-password
+    secretName: pg-backup-credentials
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: rabbitmq-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: 231ad919-8aad-4dd2-a6b5-0e2089edf4e4
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: rabbitmq-credentials--username
+          objectType: secret
+        - |
+          objectName: rabbitmq-credentials--password
+          objectType: secret
+        - |
+          objectName: rabbitmq-default-user--default-user-conf
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: username
+      objectName: rabbitmq-credentials--username
+    - key: password
+      objectName: rabbitmq-credentials--password
+    - key: default_user.conf
+      objectName: rabbitmq-default-user--default-user-conf
+    secretName: rabbitmq-default-user
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: ec5b9f1a-2147-4f6f-a7d5-a8bd49b641e8
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: redis-credentials--password
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: password
+      objectName: redis-credentials--password
+    secretName: redis-server-credentials
+    type: Opaque

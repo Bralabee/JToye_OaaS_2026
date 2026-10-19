@@ -70,7 +70,7 @@ with that label in the SAME namespace. "public" means `ipBlock 0.0.0.0/0 except
 | `acme-http01-solver-allow` | ingress | namespace `<controller ns>` | TCP 8089 |
 | `observability-placeholder` | both | (selects no pod) | |
 
-### Staging-only component policies (plan 29-10)
+### Staging-only component policies (plans 29-10, 29-12)
 
 These policies are not in this directory: they ship with the in-cluster platform
 components under `k8s/components/<name>/`, which only `k8s/staging` lists under
@@ -93,6 +93,7 @@ render none of them.
 | `rabbitmq-allow` | ingress | pod `app.kubernetes.io/name=rabbitmq` (its own cluster) | TCP 4369, TCP 25672 |
 | `rabbitmq-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
 | `rabbitmq-allow` | egress | public (Kubernetes peer discovery; an assumption plan 29-14 measures) | TCP 443 |
+| `secret-sync-allow` | both | nothing: no ingress and no egress rule (plan 29-12; the Key Vault fetch is the CSI provider's, on the node) | |
 
 ## The pod-label contract
 
@@ -185,8 +186,8 @@ In-cluster calls to Keycloak go to the pod directly (`app=keycloak` on 8080,
 kubectl kustomize k8s/staging/ | grep -A 2 "kind: NetworkPolicy"
 # Expect: default-deny, frontend-allow, core-java-allow, edge-go-allow,
 #         pg-backup-allow, observability-placeholder, acme-http01-solver-allow
-#         (7 policies in production), plus staging's three component policies
-#         keycloak-allow, redis-allow, rabbitmq-allow (10 in staging; see
+#         (7 policies in production), plus staging's four component policies
+#         keycloak-allow, redis-allow, rabbitmq-allow, secret-sync-allow (11 in staging; see
 #         "Staging-only component policies")
 ```
 
