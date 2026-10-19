@@ -1825,34 +1825,21 @@ jobs:
       # fix is per-environment frontend images (or a genuinely runtime CSP origin);
       # both are larger changes than this review finding, and both deploy jobs are
       # gated OFF by repo variable today.
+      #
+      # Plan 29-21: the comparison lives in scripts/check-frontend-baked-origin.sh (one
+      # implementation, with a --selftest that shows the production origin against this
+      # overlay being refused). The selftest runs first, so a guard that cannot fail is
+      # never trusted here. The render below feeds the logout pre-flight that follows.
+      - name: Prove the CR-02 baked-origin guard can fail (29-21 --selftest)
+        run: bash scripts/check-frontend-baked-origin.sh --selftest
+
       - name: Assert the baked frontend API origin matches this environment (CR-02)
         env:
           BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
         run: |
           set -euo pipefail
           kustomize build k8s/staging > /tmp/staging-render.yaml
-          # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
-          RENDER_API_URL="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' /tmp/staging-render.yaml)"
-          if [ -z "$RENDER_API_URL" ]; then
-            echo "FATAL: could not read app-config api.url from the k8s/staging render — this guard is blind, so it fails closed." >&2
-            exit 2
-          fi
-          if [ -z "$BAKED_API_URL" ]; then
-            echo "FATAL: repo variable FRONTEND_PUBLIC_API_URL is unset, so the frontend image baked an EMPTY API origin." >&2
-            echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
-            echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
-            exit 2
-          fi
-          if [ "$RENDER_API_URL" != "$BAKED_API_URL" ]; then
-            echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
-            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
-            echo "         k8s/staging app-config api.url:                           $RENDER_API_URL" >&2
-            echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
-            echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
-            echo "       origin — refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
-            exit 1
-          fi
-          echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url ($RENDER_API_URL)"
+          bash scripts/check-frontend-baked-origin.sh --overlay k8s/staging
 
       # FE-1 / E-5 (QA council 20260902-134741): before deploying, ask the DEPLOYED realm
       # whether it accepts the post_logout_redirect_uri this overlay's vendor sign-out
