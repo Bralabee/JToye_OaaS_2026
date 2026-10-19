@@ -208,10 +208,17 @@ pf_full() { # a fully configured stub vault: every derived object, every grant, 
   while IFS= read -r n; do printf 'stub-value-%s' "$n" > "$ST/state/vault/$n"; done < "$ST/objects"
   printf '%s' 'sk_test_stub' > "$ST/state/vault/stripe-credentials--api-key"
   printf '%s' 'whsec_stub' > "$ST/state/vault/stripe-credentials--webhook-secret"
+  # Owner-supplied values validated by a kind, not a prefix (plan 29-24 @email/@nonempty):
+  # a full vault holds a well-formed one for each, as the writer would have accepted.
+  while IFS= read -r n; do
+    case "$(ss_classify "$n")" in
+      "external @email") printf '%s' "stub.${n##*--}@example.test" > "$ST/state/vault/$n" ;;
+    esac
+  done < "$ST/objects"
   ss_stub_identities "$ST/state" "$ST/access"
   ss_stub_grant_all "$ST/state" "$ST/access"
 }
-gaplines() { command grep -E '^(MISSING|MISSING-ACCESS|NOT-TEST-MODE|STALE-IDENTITY) ' "$ST/$1.out"; }
+gaplines() { command grep -E '^(MISSING|MISSING-ACCESS|NOT-TEST-MODE|INVALID-VALUE|STALE-IDENTITY) ' "$ST/$1.out"; }
 
 selftest() {
   local fmt="${STAGING_SECRETS_SELFTEST_FORMAT:-plain}" rc why fails=0 got want line pid
@@ -285,6 +292,19 @@ selftest() {
   [ -z "$why" ] && [ "$(gaplines live)" != "NOT-TEST-MODE stripe-credentials--api-key" ] && why="gap lines were: $(gaplines live | tr '\n' '|')"
   [ -z "$why" ] && command grep -q 'sk_live_stub' "$ST/live.out" && why="the live value was printed"
   if [ -z "$why" ]; then ss_result "PASS not-test-mode rc=1"; else ss_result "FAIL not-test-mode $why"; fails=$((fails + 1)); fi
+
+  # --- 29-25: an owner value that fails its @-validator is INVALID-VALUE, never printed ----
+  # (and a validator kind is never read as a literal prefix: the full arm above holds a
+  # valid address in every @email object and must show no gap for them)
+  pf_full; printf '%s' 'not-an-address' > "$ST/state/vault/alertmanager-smtp-credentials--to"
+  printf '%s' '' > "$ST/state/vault/alertmanager-smtp-credentials--password"
+  rc=$(pf_run invalid); why=""
+  got=$(gaplines invalid | LC_ALL=C sort)
+  want=$(printf '%s\n' 'INVALID-VALUE alertmanager-smtp-credentials--password' 'INVALID-VALUE alertmanager-smtp-credentials--to')
+  [ "$rc" = 1 ] || why="rc=$rc"
+  [ -z "$why" ] && [ "$got" != "$want" ] && why="gap lines were: $(printf '%s' "$got" | tr '\n' '|')"
+  [ -z "$why" ] && command grep -q 'not-an-address' "$ST/invalid.out" && why="the invalid value was printed"
+  if [ -z "$why" ]; then ss_result "PASS invalid-external-value rc=1 INVALID-VALUE to+password"; else ss_result "FAIL invalid-external-value $why"; fails=$((fails + 1)); fi
 
   # --- empty vault: every derived object MISSING -----------------------------------------
   pf_full; rm -f "$ST"/state/vault/*
