@@ -36,7 +36,8 @@ describe("OperatorPitch design tokens (Surface C re-skin)", () => {
     // brand thread (jtoyedigital.co.uk oxblood + Work Sans + amber appetite).
     expect(src).toMatch(/bg-oxblood/)
     expect(src).toMatch(/text-cream|bg-cream/)
-    expect(src).toMatch(/text-gold/)
+    // Gold appears on the hero only, as the secondary link's underline.
+    expect(src).toMatch(/decoration-gold/)
     expect(src).toMatch(/bg-amber-500/)
   })
 
@@ -59,130 +60,206 @@ describe("OperatorPitch design tokens (Surface C re-skin)", () => {
 })
 
 describe("OperatorPitch", () => {
-  beforeEach(() => {
-    Element.prototype.scrollIntoView = jest.fn()
-    Object.assign(navigator, { clipboard: { writeText: jest.fn().mockResolvedValue(undefined) } })
-  })
-
-  it("speaks directly to the established London-cluster operator audience", () => {
+  it("leads with the one-kitchen headline and names both rhythms in the lede", () => {
     render(<OperatorPitch />)
 
-    expect(screen.getByRole("heading", { name: /keep the order.*keep the customer.*keep the kitchen moving/i })).toBeInTheDocument()
-    expect(screen.getByText(/established Nigerian and West African takeaway and catering operators/i)).toBeInTheDocument()
-    expect(screen.getByText(/one London cluster/i)).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: /one change.*three channels.*two versions/i })).toBeInTheDocument()
-    expect(screen.getByText(/fewer places to check/i)).toBeInTheDocument()
-    // Both rhythms are named in the hero, from one kitchen.
-    expect(screen.getByText(/daily counter takeaway and the weekend batch and catering run from one kitchen/i)).toBeInTheDocument()
-    expect(screen.getByText(/updated 19 October 2026/i)).toBeInTheDocument()
+    const h1s = screen.getAllByRole("heading", { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent("One kitchen. Weekday counter, weekend catering.")
+    expect(screen.getByText(/established West African food businesses in London/i)).toBeInTheDocument()
+    // The superseded headline must not survive anywhere.
+    expect(screen.queryByText(/keep the order/i)).toBeNull()
   })
 
-  it("no longer carries the July pack, its download links, or its stale framing", () => {
+  it("has exactly the five sections, each named by its own heading", () => {
+    render(<OperatorPitch />)
+    const h2s = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)
+    expect(h2s).toEqual([
+      "Both rhythms, one kitchen",
+      "Compliance is part of the order",
+      "Pricing",
+      "How the assisted pilot runs",
+    ])
+  })
+
+  it("no longer carries the July pack, the fit check, or the stale framing", () => {
     const { container } = render(<OperatorPitch />)
-    fireEvent.click(screen.getByRole("button", { name: /check your pilot fit/i }))
 
     // Non-vacuity control: the instrument finds a link that IS there.
     expect(container.querySelectorAll('a[href="/dashboard/onboarding"]').length).toBeGreaterThan(0)
     expect(container.querySelector("a[href*='pilot-pack']")).toBeNull()
+    expect(container.querySelector("a[href$='.pdf']")).toBeNull()
     expect(container.querySelector("a[download]")).toBeNull()
-    expect(screen.queryByText(/download vendor pack|download the pack/i)).toBeNull()
-    expect(screen.queryByText(/return this pack/i)).toBeNull()
+    expect(screen.queryByText(/download|return this pack/i)).toBeNull()
     expect(screen.queryByText(/edition 10 July 2026|UK pilot hypothesis/i)).toBeNull()
     expect(screen.queryByText(/validation tracks?/i)).toBeNull()
     expect(screen.queryByText(/should not be sold as the same job/i)).toBeNull()
     expect(screen.queryByText(/not production connected-account settlement/i)).toBeNull()
-    expect(screen.queryByText(/£119|£199|pricing test|high volume/i)).toBeNull()
+    expect(screen.queryByText(/£119|£195|£199|pricing test|high volume/i)).toBeNull()
+    // The fit check (selects, copyable summary) is gone with its state.
+    expect(container.querySelectorAll("select, textarea")).toHaveLength(0)
+    expect(screen.queryByRole("button")).toBeNull()
+    expect(screen.queryByText(/fit summary|check your pilot fit/i)).toBeNull()
   })
 
-  it("quantifies the aggregator leak: 28% of £10k is £2,800, against £39 + 0.5% plus Stripe's card fees", () => {
+  it("quantifies the aggregator leak in section 2's intro, not as a display number", () => {
     render(<OperatorPitch />)
     expect(screen.getByText(/28% aggregator commission on £10k a month of orders hands over £2,800 a month/i)).toBeInTheDocument()
     expect(screen.getByText(/direct storefront cost £39 \+ 0\.5%, plus Stripe.s card fees, which you would pay either way\./i)).toBeInTheDocument()
+    // £2,800 appears exactly once, as body copy.
+    expect(screen.getAllByText(/£2,800/)).toHaveLength(1)
   })
 
-  it("offers a 'Start your application' CTA linking to onboarding", () => {
-    render(<OperatorPitch />)
+  it("repeats one primary CTA (hero and close) and offers one secondary link, to the pricing section", () => {
+    const { container } = render(<OperatorPitch />)
 
-    // The hero CTA and the closing fit-check route are both "Start your application".
     const ctas = screen.getAllByRole("link", { name: /start your application/i })
-    expect(ctas.length).toBeGreaterThanOrEqual(2)
-    for (const cta of ctas) expect(cta).toHaveAttribute("href", "/dashboard/onboarding")
+    expect(ctas).toHaveLength(2)
+    for (const cta of ctas) {
+      expect(cta).toHaveAttribute("href", "/dashboard/onboarding")
+      expect(cta.classList.contains("bg-amber-500")).toBe(true)
+    }
+    const secondary = screen.getByRole("link", { name: /see pricing/i })
+    expect(secondary).toHaveAttribute("href", "#pricing")
+    expect(secondary.classList.contains("bg-amber-500")).toBe(false)
+    // The anchor target exists.
+    expect(container.querySelector("#pricing")).not.toBeNull()
     expect(screen.getByText(/a person reviews every application, and nothing is charged until a plan is agreed/i)).toBeInTheDocument()
   })
 
-  it("gives the hero two distinct CTAs: amber primary, outlined secondary", () => {
-    render(<OperatorPitch />)
-    const primary = screen.getAllByRole("link", { name: /start your application/i })[0]
-    const secondary = screen.getByRole("button", { name: /check your pilot fit/i })
-    expect(primary.classList.contains("bg-amber-500")).toBe(true)
-    expect(secondary.classList.contains("bg-amber-500")).toBe(false)
-    expect(secondary.classList.contains("border-2")).toBe(true)
-    expect(secondary.classList.contains("border-gold/50")).toBe(true)
-  })
-
-  it("keeps three service-rail items covering storefront, kitchen display and the allergen engine", () => {
+  it("renders the hero image and the three section images with reserved boxes", () => {
     const { container } = render(<OperatorPitch />)
-    const items = container.querySelectorAll("[data-rail-item]")
-    expect(items).toHaveLength(3)
-    expect(items[0]).toHaveTextContent(/storefront and QR ordering/i)
-    expect(items[1]).toHaveTextContent(/kitchen display with cook sheet/i)
-    expect(items[2]).toHaveTextContent(/allergen and label engine/i)
+    const imgs = Array.from(container.querySelectorAll("img"))
+    expect(imgs).toHaveLength(4)
+    for (const img of imgs) {
+      expect(img.getAttribute("src")).toMatch(/^\/marketing\/operators\/.+\.webp$/)
+      expect(Number(img.getAttribute("width"))).toBeGreaterThan(0)
+      expect(Number(img.getAttribute("height"))).toBeGreaterThan(0)
+      expect((img.getAttribute("alt") ?? "").length).toBeGreaterThan(20)
+    }
+    // Only the hero is the LCP candidate.
+    expect(imgs.filter((img) => img.getAttribute("fetchpriority") === "high")).toHaveLength(1)
+    expect(imgs[0].closest("[data-op-media]")).not.toBeNull()
   })
 
-  it("keeps four pilot steps and step 03 names the kitchen display and cook sheet", () => {
+  it("pins the margin number to the Standard plan in the shared PRICING module, once", () => {
+    const { container } = render(<OperatorPitch />)
+    const figure = container.querySelector("[data-op-figure]") as HTMLElement
+    expect(figure).not.toBeNull()
+    expect(figure).toHaveTextContent("0.5%")
+    expect(figure).toHaveTextContent(/of your direct sales, plus £39 a month per location/i)
+    expect(figure).toHaveTextContent(/card fees go to stripe, not to us/i)
+    // The figure in the docket and the Standard row come from the same row.
+    const standard = screen.getByRole("row", { name: /standard/i })
+    expect(standard).toHaveTextContent("£39")
+    expect(standard).toHaveTextContent("0.5%")
+  })
+
+  it("prints exactly the billed plans in one real table, and nothing the code does not bill", () => {
+    const { container } = render(<OperatorPitch />)
+    const tables = container.querySelectorAll("table")
+    expect(tables).toHaveLength(1)
+    const table = tables[0]
+    expect(table.querySelector("caption")).toHaveTextContent(/platform pricing per location/i)
+    expect(Array.from(table.querySelectorAll("thead th")).map((th) => th.textContent)).toEqual(["Plan", "Monthly", "Platform fee"])
+    const rows = Array.from(table.querySelectorAll("tbody tr"))
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent(/Standard.*£39 per location.*0\.5% of direct sales/)
+    expect(rows[1]).toHaveTextContent(/Flat.*£79–£149 per location.*0% of sales/)
+    expect(rows[2]).toHaveTextContent(/Batch pay-as-you-go.*£0.*6% of direct sales/)
+    // Every body row has a row header, and every figure cell carries its mobile label.
+    for (const row of rows) {
+      expect(row.querySelectorAll('th[scope="row"]')).toHaveLength(1)
+      expect(Array.from(row.querySelectorAll("td")).map((td) => td.getAttribute("data-label"))).toEqual(["Monthly", "Platform fee"])
+    }
+    expect(screen.getByText(/assisted setup from £99, scoped to the work agreed/i)).toBeInTheDocument()
+    expect(screen.getByText(/charged on your own stripe account/i)).toBeInTheDocument()
+    // The four strings the billing code does not support stay absent.
+    const text = container.textContent ?? ""
+    for (const banned of ["£79-£119", "£79–£119", "£149-£199", "£149–£199", "£195", "£99 flat"]) {
+      expect(text).not.toContain(banned)
+    }
+  })
+
+  it("keeps the two rhythms distinct, each mapped to shipped features", () => {
+    render(<OperatorPitch />)
+
+    expect(screen.getByRole("heading", { name: /daily counter and local delivery/i })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: /weekend batch and catering/i })).toBeInTheDocument()
+    expect(screen.queryByText(/validation tracks?/i)).toBeNull()
+    expect(screen.getByText(/instant web and qr ordering/i)).toBeInTheDocument()
+    expect(screen.getByText(/one-tap kitchen pause/i)).toBeInTheDocument()
+    expect(screen.getByText(/caps on cash orders/i)).toBeInTheDocument()
+    expect(screen.getByText(/fulfilment slots with cut-offs and capacity/i)).toBeInTheDocument()
+    expect(screen.getByText(/prep deposits, then a balance payment link/i)).toBeInTheDocument()
+    expect(screen.getByText(/one consolidated cook sheet/i)).toBeInTheDocument()
+    expect(screen.getByText(/a whatsapp pre-order link to share/i)).toBeInTheDocument()
+  })
+
+  it("states compliance and the dated limits plainly, once each", () => {
+    render(<OperatorPitch />)
+
+    expect(screen.getByText("Allergen engine").tagName).toBe("DT")
+    expect(screen.getByText(/ppds labels for a 62 mm thermal printer/i)).toBeInTheDocument()
+    expect(screen.getByText(/you remain the food business operator/i)).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: /not yet live/i })).toBeInTheDocument()
+    expect(screen.getByText(/as of 19 October 2026/i)).toBeInTheDocument()
+    expect(screen.getByText(/card payments are in stripe test mode until the first production tenant/i)).toBeInTheDocument()
+    expect(screen.getByText(/online-only\. there is no offline mode/i)).toBeInTheDocument()
+    expect(screen.getByText(/whatsapp is a generated pre-order link, not an automated whatsapp channel/i)).toBeInTheDocument()
+    expect(screen.getByText(/a storefront does not bring customers by itself/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/does not bring customers/i)).toHaveLength(1)
+    expect(screen.getByRole("heading", { name: /is this for your kitchen/i })).toBeInTheDocument()
+  })
+
+  it("keeps four pilot steps and step 3 names the kitchen display", () => {
     const { container } = render(<OperatorPitch />)
     const steps = container.querySelectorAll("[data-pilot-step]")
     expect(steps).toHaveLength(4)
-    expect(steps[2]).toHaveTextContent(/kitchen display and the cook sheet/i)
-    expect(screen.queryByText(/while you remain responsible for fulfilment/i)).toBeNull()
+    expect(steps[2]).toHaveTextContent(/kitchen display/i)
   })
 
-  it("prints the three billed recurring tiers plus the one-off setup line, each as a countable tile", () => {
+  it("uses no uppercase-tracked eyebrows and no icon library", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/marketing/operator-pitch.tsx"), "utf8")
+    expect(src).not.toMatch(/\buppercase\b/)
+    expect(src).not.toMatch(/tracking-\[0\.1\d?em\]/)
+    expect(src).not.toMatch(/lucide-react/)
+  })
+
+  it("keeps the Standard row's amber stripe: no all-sides border colour at md+", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/marketing/operator-pitch.tsx"), "utf8")
+    // md:border-<colour> would set every side and repaint the stripe oxblood at desktop widths.
+    expect(src).not.toMatch(/(?<!max-)md:border-oxblood\/15/)
+    expect(src).toMatch(/md:border-b-oxblood\/15/)
     const { container } = render(<OperatorPitch />)
-    const terms = container.querySelector("[data-op-terms]") as HTMLElement
-    expect(terms).not.toBeNull()
-    // Band is lg:grid-cols-4: four tiles, no more, no fewer.
-    const grid = terms.querySelector(".lg\\:grid-cols-4") as HTMLElement
-    expect(grid.children).toHaveLength(4)
-    expect(terms).toHaveTextContent("£39 per location per month + 0.5% of direct sales")
-    expect(terms).toHaveTextContent("£79–£149 per location per month, 0% platform fee")
-    expect(terms).toHaveTextContent("£0 per month + 6% of direct sales")
-    expect(terms).toHaveTextContent("From £99, scoped to the work agreed")
-    // renderCountable keeps the real number as text and hooks the first integer.
-    expect(Array.from(terms.querySelectorAll("[data-count-to]")).map((el) => el.getAttribute("data-count-to"))).toEqual(["39", "79", "0", "99"])
-    expect(terms).toHaveTextContent(/charged by Stripe on your own Stripe account/i)
-    expect(terms).toHaveTextContent(/live card settlement switches on with the first production operator/i)
+    const header = container.querySelector("tbody tr th") as HTMLElement
+    expect(header.classList.contains("border-amber-500")).toBe(true)
+    expect(header.className).not.toMatch(/(?<!max-)md:border-oxblood\/15/)
   })
 
-  it("keeps the takeaway and catering cohorts distinct", () => {
-    render(<OperatorPitch />)
-
-    expect(screen.getByRole("heading", { name: /takeaway: protect the regular order/i })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: /catering: plan the weekend batch/i })).toBeInTheDocument()
-    // The old "validation tracks" callout is replaced by one honest line.
-    expect(screen.getByText(/scheduled orders, deposits and cook sheets are built and tested; card settlement runs in Stripe test mode until the first production operator goes live/i)).toBeInTheDocument()
-    expect(screen.getByText(/scheduled pre-order slots with cut-offs and capacity/i)).toBeInTheDocument()
-    expect(screen.getByText(/deposit and balance payment links/i)).toBeInTheDocument()
-    expect(screen.getByText(/consolidated cook sheet/i)).toBeInTheDocument()
-    expect(screen.getByText(/^PPDS labels$/)).toBeInTheDocument()
-    expect(screen.getByText(/structured opening hours and a one-tap kitchen pause/i)).toBeInTheDocument()
-    expect(screen.getByText(/cash-order abuse caps/i)).toBeInTheDocument()
+  it("keeps the box and the description when an image file is missing", () => {
+    const { container } = render(<OperatorPitch />)
+    const hero = container.querySelector("[data-op-media] img") as HTMLImageElement
+    const alt = hero.getAttribute("alt")!
+    fireEvent.error(hero)
+    const fallback = screen.getByRole("img", { name: alt })
+    expect(fallback.className).toMatch(/aspect-\[8\/5\]/)
+    expect(fallback.className).toMatch(/w-full/)
+    // The three section images do the same at 3:2.
+    for (const img of Array.from(container.querySelectorAll("img"))) fireEvent.error(img)
+    expect(container.querySelectorAll('[role="img"][class*="aspect-[3/2]"]')).toHaveLength(3)
   })
 
-  it("states the product and responsibility caveats plainly", () => {
-    render(<OperatorPitch />)
+  it("takes the docket's wording from the plan entry, not from comparing table copy", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/marketing/operator-pitch.tsx"), "utf8")
+    expect(src).not.toMatch(/fee\[1\]\s*===/)
+    const { container } = render(<OperatorPitch />)
+    expect(container.querySelector("[data-op-figure] strong")).toHaveTextContent("of your direct sales")
+  })
 
-    expect(screen.getByText(/direct storefront does not generate demand/i)).toBeInTheDocument()
-    expect(screen.getByText(/not an offline KDS/i)).toBeInTheDocument()
-    expect(screen.getByText(/you remain the food business operator/i)).toBeInTheDocument()
-    expect(screen.getByText(/whatsapp is a generated pre-order link/i)).toBeInTheDocument()
-    expect(screen.getByText(/live card settlement waits for the production cutover/i)).toBeInTheDocument()
-    // One list, no duplicates: each caveat appears once.
-    expect(screen.getAllByText(/does not generate demand/i)).toHaveLength(1)
-    expect(screen.getAllByText(/not an offline KDS/i)).toHaveLength(1)
-    expect(screen.getByRole("heading", { name: /what is built in/i })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: /what stays with you/i })).toBeInTheDocument()
-    expect(screen.getByText(/the allergen engine: 14-allergen acknowledgement at checkout/i)).toBeInTheDocument()
+  it("keeps every removed-feature token out of the source", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/marketing/operator-pitch.tsx"), "utf8")
+    expect(src).not.toMatch(/pilot-pack|pdf|validation track|fit-summary|copySummary/i)
   })
 
   /**
@@ -197,7 +274,7 @@ describe("OperatorPitch", () => {
    * The count is asserted per component rather than "at least one", because a
    * band left behind is invisible at today's value.
    */
-  const MARKETING_BANDS = 3
+  const MARKETING_BANDS = 5
 
   function marketingBands(): Element[] {
     const { container } = render(<OperatorPitch />)
@@ -234,24 +311,8 @@ describe("OperatorPitch", () => {
 
     // A headline measure is not a page band: it is orthogonal to the tier and
     // must survive the swap untouched.
-    const headline = screen.getByRole("heading", {
-      name: /keep the order.*keep the customer.*keep the kitchen moving/i,
-    })
+    const headline = screen.getByRole("heading", { level: 1 })
     expect(headline.classList.contains("max-w-4xl")).toBe(true)
     expect(headline.hasAttribute("data-width-tier")).toBe(false)
-  })
-
-  it("reveals the fit check and copies its locally generated summary", async () => {
-    render(<OperatorPitch />)
-
-    fireEvent.click(screen.getByRole("button", { name: /check your pilot fit/i }))
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
-    fireEvent.change(screen.getByLabelText("Your main service"), { target: { value: "Catering" } })
-    fireEvent.change(screen.getByLabelText("What you want to steady first"), { target: { value: "Make catering handover clearer" } })
-    fireEvent.click(screen.getByRole("button", { name: /copy fit summary/i }))
-
-    expect(await screen.findByRole("status")).toHaveTextContent("Fit summary copied")
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("Business: Catering"))
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("Priority: Make catering handover clearer"))
   })
 })
