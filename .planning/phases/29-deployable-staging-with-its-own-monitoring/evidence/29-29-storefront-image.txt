@@ -298,3 +298,32 @@ Task 2 collection switch (first verify): list rc off=0 on=0; switch off: listed=
 Task 2 contracts (fourth verify): check-e2e-baseurl-contract PASS, check-playwright-mobile-contract PASS, check-doc-metrics PASS (37 claims), docs-freshness OK (6353), rc=0
 spec acceptance: grep -c STAGING_VENDOR = 0 (control: staging-login.spec.ts = 4); grep -c PLAYWRIGHT_BASE_URL = 3
 lane note: no rollout was in progress during these reads (all three Deployments observed=generation, ready=1/1, on a784e7e2); lane A's 29-15 did not perturb them.
+
+== Task 3 (checkpoint, orchestrator handoff) — resumed by the lane-A executor on the main checkout 2026-10-19T13:47:05Z ==
+IMAGE_SHA=6e95ee6c44e357e3ff88964ed9674bf066fd7b61 2026-10-19T13:47:05Z
+orchestrator's measurement (relayed): CI run 39248332647 on IMAGE_SHA = success; the side branch it was built on has been deleted, the images remain in GHCR
+format check [[ IMAGE_SHA =~ ^[0-9a-f]{40}$ ]]: rc=0
+git fetch origin: rc=0
+merge-base --is-ancestor GREEN_SHA IMAGE_SHA: rc=0  (expect 0: the image carries the fix)
+kubectl rc=0
+core-java=ghcr.io/bralabee/jtoye-core-java:efab17d79483b01f4397c9f82f34a36d1a2b4c11 gen=6 observed=6 ready=1/1
+frontend=ghcr.io/bralabee/jtoye-frontend:efab17d79483b01f4397c9f82f34a36d1a2b4c11 gen=6 observed=6 ready=1/1
+edge-go=ghcr.io/bralabee/jtoye-edge-go:efab17d79483b01f4397c9f82f34a36d1a2b4c11 gen=2 observed=2 ready=1/1
+RUNNING=efab17d79483b01f4397c9f82f34a36d1a2b4c11
+  (changed since Task 2's a784e7e2: plan 29-22 deployed efab17d7 to all three Deployments; recorded as the current running tag for ancestry/continuity)
+merge-base --is-ancestor RUNNING IMAGE_SHA: rc=0  (expect 0: deploying it rolls back no deployed commit)
+merge-base --is-ancestor a784e7e2 (Task 2 RUNNING) IMAGE_SHA: rc=0
+imagetools inspect jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61 rc=0 digest=sha256:0a462ba930690751f2dcd10a4eafe7ee399943103ce2370117cebf8e7500f4f4
+imagetools inspect jtoye-frontend:6e95ee6c44e357e3ff88964ed9674bf066fd7b61 rc=0 digest=sha256:41d7667ed85f79c39afae92dc1fa0fdb10d9fcc1765dc3c41b58614db0546440
+imagetools inspect jtoye-edge-go:6e95ee6c44e357e3ff88964ed9674bf066fd7b61 rc=0 digest=sha256:141c999b53db0179524862e426ad34385665b0b26587993126e0178c08fd3e63
+fail direction: imagetools inspect a never-pushed tag rc=1  (expect non-zero)
+fail direction: merge-base on an unknown commit rc=128  (128 = VOID)
+fail direction: merge-base --is-ancestor IMAGE_SHA RUNNING rc=1  (expect 1: the running tag lacks the fix)
+app-source diff IMAGE_SHA..HEAD (core-java frontend edge-go mcp-server): 0 lines (expect 0; HEAD=25727576d4324c51d3c1a562f66c5e2c562a5eb4)
+Task 3 verification: PASS
+fail direction of the app-source diff: efab17d7..IMAGE_SHA over the same paths = 1021 lines (expect > 0: the fix itself)
+Task 4 precondition, measured: git diff --quiet IMAGE_SHA -- k8s scripts/deploy.sh scripts/lib -> rc=1 (the plan expects 0); the tree differs by 29-22's 18 committed k8s/script files (Mailpit, cluster-CA truststore, mail UI).
+  The same diff against 29-22's own head 2b021754 (the manifests 29-22 applied LIVE): rc=0 (0 = the checkout's manifests ARE the live ones).
+  Applying IMAGE_SHA's k8s tree would REVERT 29-22's live Mailpit/truststore and break STARTTLS mail; per the orchestrator's dispatch the deploy runs from HEAD's manifests
+  with --image-tag IMAGE_SHA (code diff IMAGE_SHA..HEAD = 0 lines), and the recorded kubectl diff below is the gate: every non-image hunk must be explained or the deploy stops.
+  git status --porcelain -- k8s scripts: [] (expect empty)
