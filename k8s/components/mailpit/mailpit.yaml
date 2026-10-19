@@ -1,0 +1,200 @@
+# In-cluster Mailpit (D-13 as amended by D-20): ServiceAccount, Deployment, Service,
+# NetworkPolicy. The staging mail trap: every application email is captured here and
+# never leaves the cluster.
+#
+# STARTTLS REQUIRED. MP_SMTP_TLS_CERT/KEY load the cert-manager certificate
+# mailpit-tls (cluster-ca.yaml); MP_SMTP_REQUIRE_STARTTLS refuses any message sent
+# before a STARTTLS upgrade. core-java requires it from its side as a literal (plan
+# 29-16), so a server that offers no STARTTLS makes every send fail with JavaMail's
+# "STARTTLS is required but host does not support STARTTLS" (D-22 arm 2).
+#
+# NO SMTP AUTH. No MP_SMTP_AUTH* is set, so Mailpit does not advertise AUTH in its
+# EHLO reply, and Jakarta Mail authenticates only when the server advertises it
+# (mail.smtp.auth is "false", and smtp-credentials is an optional Secret that
+# staging does not create). The answer to plan 29-14's open item is read live in
+# plan 29-22 Task 3 from the EHLO reply.
+#
+# SENDS NOTHING. No relay, release or forward variable is set (MP_SMTP_RELAY_*,
+# MP_SMTP_FORWARD_*), and the policy below has no egress rule at all. Without DNS
+# egress a reverse-DNS lookup of each SMTP client could only time out, so
+# MP_SMTP_DISABLE_RDNS skips it; MP_DISABLE_VERSION_CHECK stops the UI asking
+# GitHub for the latest release.
+#
+# STORE. An emptyDir: a pod restart empties the mailbox, by design (captured
+# staging mail is disposable). MP_MAX_MESSAGES bounds it; Mailpit deletes the
+# oldest first.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mailpit
+  labels:
+    app.kubernetes.io/name: mailpit
+    app.kubernetes.io/component: mail
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  labels:
+    app: mailpit
+    component: mail
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: mailpit
+  template:
+    metadata:
+      labels:
+        app: mailpit
+        component: mail
+    spec:
+      serviceAccountName: mailpit
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image runs as root by default (measured: uid=0); any non-root uid can
+        # run /mailpit (0755). fsGroup makes the TLS key (Secret volume, 0440) and
+        # the data emptyDir readable and writable by that uid.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: mailpit
+        image: axllent/mailpit:v1.31.6   # horizon row axllent-mailpit
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MP_SMTP_TLS_CERT
+          value: /tls/tls.crt
+        - name: MP_SMTP_TLS_KEY
+          value: /tls/tls.key
+        - name: MP_SMTP_REQUIRE_STARTTLS
+          value: "true"
+        - name: MP_SMTP_DISABLE_RDNS
+          value: "true"
+        - name: MP_DISABLE_VERSION_CHECK
+          value: "true"
+        - name: MP_MAX_MESSAGES
+          value: "500"
+        - name: MP_DATABASE
+          value: /data/mailpit.db
+        ports:
+        - containerPort: 1025
+          name: smtp
+          protocol: TCP
+        - containerPort: 8025
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "20m"
+            memory: "64Mi"
+          limits:
+            memory: "128Mi"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tls
+          mountPath: /tls
+          readOnly: true
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: tls
+        secret:
+          secretName: mailpit-tls
+          defaultMode: 0440
+          items:
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+      - name: data
+        emptyDir:
+          sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  labels:
+    app: mailpit
+spec:
+  type: ClusterIP
+  selector:
+    app: mailpit
+  ports:
+  - port: 1025
+    targetPort: smtp
+    protocol: TCP
+    name: smtp
+  - port: 8025
+    targetPort: http
+    protocol: TCP
+    name: http
+---
+# mailpit-allow. INV-7 row mailpit-allow@k8s/staging; k8s/base/networkpolicies/README.md
+# carries the same rows.
+#   Ingress: core-java, keycloak and alertmanager pods, TCP 1025 (SMTP). The web UI
+#            and API (8025) are reached by the operator through a port-forward, which
+#            NetworkPolicy does not see.
+#   Egress:  NONE. Mailpit sends nothing anywhere (no relay, no forward) and needs no
+#            DNS (MP_SMTP_DISABLE_RDNS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit-allow
+  labels:
+    app.kubernetes.io/name: mailpit-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: mailpit
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+        - podSelector:
+            matchLabels:
+              app: keycloak
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 1025

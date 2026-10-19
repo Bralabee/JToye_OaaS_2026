@@ -67,6 +67,21 @@ automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: mail
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: mailpit
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailpit
+  namespace: jtoye-staging
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
     azure.workload.identity/client-id: ca38c385-c0c1-467d-a638-88e62db7a65f
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
@@ -1827,6 +1842,35 @@ metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
+    app: mailpit
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailpit
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: smtp
+    port: 1025
+    protocol: TCP
+    targetPort: smtp
+  - name: http
+    port: 8025
+    protocol: TCP
+    targetPort: http
+  selector:
+    app: mailpit
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
     app: redis
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
@@ -2870,6 +2914,126 @@ metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
+    app: mailpit
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: mail
+    environment: staging
+  name: mailpit
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mailpit
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+      labels:
+        app: mailpit
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: mail
+        environment: staging
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - env:
+        - name: MP_SMTP_TLS_CERT
+          value: /tls/tls.crt
+        - name: MP_SMTP_TLS_KEY
+          value: /tls/tls.key
+        - name: MP_SMTP_REQUIRE_STARTTLS
+          value: "true"
+        - name: MP_SMTP_DISABLE_RDNS
+          value: "true"
+        - name: MP_DISABLE_VERSION_CHECK
+          value: "true"
+        - name: MP_MAX_MESSAGES
+          value: "500"
+        - name: MP_DATABASE
+          value: /data/mailpit.db
+        image: axllent/mailpit:v1.31.6
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /livez
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 3
+        name: mailpit
+        ports:
+        - containerPort: 1025
+          name: smtp
+          protocol: TCP
+        - containerPort: 8025
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 3
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 20m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /tls
+          name: tls
+          readOnly: true
+        - mountPath: /data
+          name: data
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: mailpit
+      volumes:
+      - name: tls
+        secret:
+          defaultMode: 288
+          items:
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+          secretName: mailpit-tls
+      - emptyDir:
+          sizeLimit: 256Mi
+        name: data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
     app: redis
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
@@ -3350,6 +3514,92 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: frontend
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: jtoye-staging-ca
+  namespace: jtoye-staging
+spec:
+  commonName: J'Toye staging internal CA
+  duration: 8760h
+  isCA: true
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: jtoye-staging-selfsigned
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Never
+    size: 256
+  secretName: jtoye-staging-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailpit-tls
+  namespace: jtoye-staging
+spec:
+  commonName: mailpit.jtoye-staging.svc.cluster.local
+  dnsNames:
+  - mailpit.jtoye-staging.svc.cluster.local
+  - mailpit.jtoye-staging.svc
+  - mailpit
+  duration: 2160h
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: jtoye-staging-ca-issuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  renewBefore: 360h
+  secretName: mailpit-tls
+  usages:
+  - server auth
+  - digital signature
+  - key encipherment
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: jtoye-staging-ca-issuer
+  namespace: jtoye-staging
+spec:
+  ca:
+    secretName: jtoye-staging-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: jtoye-staging-selfsigned
+  namespace: jtoye-staging
+spec:
+  selfSigned: {}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -3920,6 +4170,41 @@ spec:
   podSelector:
     matchLabels:
       app: keycloak
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: mailpit-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailpit-allow
+  namespace: jtoye-staging
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-java
+    - podSelector:
+        matchLabels:
+          app: keycloak
+    - podSelector:
+        matchLabels:
+          app: alertmanager
+    ports:
+    - port: 1025
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: mailpit
   policyTypes:
   - Ingress
   - Egress

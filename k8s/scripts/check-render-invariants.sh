@@ -853,6 +853,10 @@ declare -A NETPOL_RULES_EXPECTED=(
   # The always-on consumer of rabbitmq-kv (plan 29-12, ../components/azure-keyvault).
   # Nothing in, nothing out: the Key Vault fetch is the CSI provider's, on the node.
   [secret-sync-allow@k8s/staging]="sel:app=secret-sync types:Egress,Ingress"
+  # The staging mail trap (plan 29-22, ../components/mailpit). SMTP 1025 from the
+  # three senders only; no egress at all (Mailpit relays and forwards nothing).
+  [mailpit-allow@k8s/staging]="sel:app=mailpit types:Egress,Ingress
+      in:pod=app=core-java:1025 in:pod=app=keycloak:1025 in:pod=app=alertmanager:1025"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as

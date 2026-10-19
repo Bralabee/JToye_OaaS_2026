@@ -554,6 +554,26 @@ dependencies:
       Support table into k8s/platform/traefik/supported-annotations.txt (plan 29-08's render
       invariant reads it).
 
+  - id: axllent-mailpit
+    pin: "axllent/mailpit:v1.31.6"
+    sites: ["k8s/components/mailpit/mailpit.yaml:73"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      Staging mail trap (plan 29-22, D-20: STARTTLS required, certificate from the
+      cert-manager internal CA). endoflife.date `mailpit` returns 404 (measured
+      2026-10-19 with `curl -o /dev/null -w '%{http_code} %{redirect_url}'`: `404 `), so
+      the horizon is a dated manual review. v1.31.6 (published 2026-10-15) was the
+      latest release on 2026-10-19 (GitHub API releases/latest); the image index
+      digest that day was sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+      and `/mailpit version` printed `v1.31.6 compiled with go1.27.2`. Alpine-based,
+      so the send-api-lock init container's busybox head/od/tr are present (measured).
+    manual_review:
+      last_checked: "2026-10-19"
+      expires: "2027-01-19"
+      url: "https://github.com/axllent/mailpit/releases"
+
   - id: agnhost
     pin: "registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4"
     sites: ["k8s/platform/acme-probe/probe.yaml:61"]

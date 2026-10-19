@@ -1,0 +1,42 @@
+# In-cluster Mailpit for jtoye-staging (Phase 29 plan 29-22, D-13 as amended by D-20).
+#
+# Staging application mail is CAPTURED, never delivered: core-java's only SMTP
+# destination is mailpit.jtoye-staging.svc.cluster.local:1025 (app-config smtp.host,
+# plan 29-08), and Mailpit has no relay, release or forward configured. STARTTLS is
+# REQUIRED on both ends: core-java by the D-20 literal in application-prod.yml and
+# application-staging.yml (plan 29-16), Mailpit by MP_SMTP_REQUIRE_STARTTLS. The
+# server certificate comes from a cert-manager INTERNAL CA (cluster-ca.yaml), which
+# core-java trusts through a JVM-wide truststore built from the JDK's own cacerts
+# plus that CA (../cluster-ca-truststore, D-21 / D-30) and Keycloak trusts through
+# KC_TRUSTSTORE_PATHS.
+#
+# Mailhog stays in local compose only. A kustomize COMPONENT for the same reasons
+# as ../redis: k8s/local reaches the host compose mail sink (LOC-1), and production
+# chooses its own mail path in Phase 32. Only k8s/staging lists it.
+#
+# Mailpit reads no Key Vault secret (its only Secret is the cert-manager TLS pair),
+# so it needs no Workload Identity: D-23's list named it conditionally on reading a
+# secret.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - cluster-ca.yaml
+  - mailpit.yaml
+
+# The same label shape as k8s/base/kustomization.yaml (D-17).
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+    includeSelectors: false
+    includeTemplates: true
+    fields:
+      - path: spec/selector/matchLabels
+        create: true
+        group: apps
+        kind: Deployment
+      - path: spec/selector
+        create: true
+        version: v1
+        kind: Service
