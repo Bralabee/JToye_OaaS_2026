@@ -327,3 +327,443 @@ Task 4 precondition, measured: git diff --quiet IMAGE_SHA -- k8s scripts/deploy.
   Applying IMAGE_SHA's k8s tree would REVERT 29-22's live Mailpit/truststore and break STARTTLS mail; per the orchestrator's dispatch the deploy runs from HEAD's manifests
   with --image-tag IMAGE_SHA (code diff IMAGE_SHA..HEAD = 0 lines), and the recorded kubectl diff below is the gate: every non-image hunk must be explained or the deploy stops.
   git status --porcelain -- k8s scripts: [] (expect empty)
+
+== Task 4 (LIVE, lane A, owner-approved D-34(b)) 2026-10-19T13:47:38Z — shell: jtoye-ops env on PATH, JTOYE_AZURE_SUBSCRIPTION_ID exported, every kubectl call --context jtoye-stg-aks ==
+-- step 1 2026-10-19T13:47:38Z: capacity record (kubectl describe nodes, Allocated resources, raw)
+kubectl describe nodes rc=0
+Name:               aks-nodepool1-24453234-vmss000000
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                736m (38%)    5692m (299%)
+  memory             1094Mi (39%)  10504Mi (376%)
+  ephemeral-storage  0 (0%)        0 (0%)
+  hugepages-1Gi      0 (0%)        0 (0%)
+  hugepages-2Mi      0 (0%)        0 (0%)
+Events:
+Name:               aks-nodepool1-24453234-vmss000001
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                1499m (78%)   6590m (346%)
+  memory             2452Mi (87%)  12472608Ki (436%)
+  ephemeral-storage  0 (0%)        0 (0%)
+  hugepages-1Gi      0 (0%)        0 (0%)
+  hugepages-2Mi      0 (0%)        0 (0%)
+Events:
+Name:               aks-nodepool1-24453234-vmss000002
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                1436m (75%)   2712m (142%)
+  memory             2688Mi (96%)  12180Mi (436%)
+  ephemeral-storage  0 (0%)        0 (0%)
+  hugepages-1Gi      0 (0%)        0 (0%)
+  hugepages-2Mi      0 (0%)        0 (0%)
+Events:
+Name:               aks-nodepool1-24453234-vmss000003
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                580m (30%)    1440m (75%)
+  memory             1062Mi (38%)  8968Mi (321%)
+  ephemeral-storage  0 (0%)        0 (0%)
+  hugepages-1Gi      0 (0%)        0 (0%)
+  hugepages-2Mi      0 (0%)        0 (0%)
+Events:
+-- step 2 2026-10-19T13:47:40Z: render and diff before any apply
+render rc=0 bytes=191526 image lines:
+2384:        image: ghcr.io/bralabee/jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+2463:        image: ghcr.io/bralabee/jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+2608:        image: ghcr.io/bralabee/jtoye-edge-go:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+2751:        image: ghcr.io/bralabee/jtoye-frontend:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+3426:            image: ghcr.io/bralabee/jtoye-pg-backup:18-blob
+kubectl --context jtoye-stg-aks diff -f render.yaml: rc=1 (1 = differences found; 2+ would be VOID) lines=72 — raw:
+diff -u -N /tmp/LIVE-2903334438/apps.v1.Deployment.jtoye-staging.core-java /tmp/MERGED-4172292662/apps.v1.Deployment.jtoye-staging.core-java
+--- /tmp/LIVE-2903334438/apps.v1.Deployment.jtoye-staging.core-java	2026-10-19 14:47:49.719365962 +0100
++++ /tmp/MERGED-4172292662/apps.v1.Deployment.jtoye-staging.core-java	2026-10-19 14:47:49.722365949 +0100
+@@ -9,7 +9,7 @@
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{"deployment.timestamp":"REPLACE_WITH_DEPLOYMENT_TIMESTAMP","documentation":"https://github.com/jtoye/oaas-platform","maintainer":"jtoye-devops-team"},"labels":{"app":"core-java","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","component":"backend","environment":"staging"},"name":"core-java","namespace":"jtoye-staging"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"core-java","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","environment":"staging"}},"strategy":{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"},"template":{"metadata":{"annotations":{"deployment.timestamp":"REPLACE_WITH_DEPLOYMENT_TIMESTAMP","documentation":"https://github.com/jtoye/oaas-platform","maintainer":"jtoye-devops-team","prometheus.io/path":"/actuator/prometheus","prometheus.io/port":"9091","prometheus.io/scrape":"true"},"labels":{"app":"core-java","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","azure.workload.identity/use":"true","component":"backend","environment":"staging","version":"v1"}},"spec":{"affinity":{"podAntiAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"podAffinityTerm":{"labelSelector":{"matchExpressions":[{"key":"app","operator":"In","values":["core-java"]}]},"topologyKey":"kubernetes.io/hostname"},"weight":100}]}},"containers":[{"env":[{"name":"JAVA_TOOL_OPTIONS","value":"-Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStoreType=PKCS12"},{"name":"SPRING_PROFILES_ACTIVE","value":"prod"},{"name":"DB_HOST","valueFrom":{"secretKeyRef":{"key":"host","name":"postgres-credentials"}}},{"name":"DB_PORT","valueFrom":{"secretKeyRef":{"key":"port","name":"postgres-credentials"}}},{"name":"DB_NAME","valueFrom":{"secretKeyRef":{"key":"database","name":"postgres-credentials"}}},{"name":"DB_USER","valueFrom":{"secretKeyRef":{"key":"username","name":"postgres-credentials"}}},{"name":"DB_PASSWORD","valueFrom":{"secretKeyRef":{"key":"password","name":"postgres-credentials"}}},{"name":"DB_MIGRATION_USER","valueFrom":{"secretKeyRef":{"key":"migration-username","name":"postgres-credentials"}}},{"name":"DB_MIGRATION_PASSWORD","valueFrom":{"secretKeyRef":{"key":"migration-password","name":"postgres-credentials"}}},{"name":"DB_SSL_MODE","valueFrom":{"configMapKeyRef":{"key":"db.ssl-mode","name":"app-config"}}},{"name":"DB_SSL_FACTORY","valueFrom":{"configMapKeyRef":{"key":"db.ssl-factory","name":"app-config"}}},{"name":"DB_POOL_SIZE","value":"12"},{"name":"JTOYE_RABBIT_DEFAULT_PREFETCH","valueFrom":{"configMapKeyRef":{"key":"rabbit.default.prefetch","name":"app-config"}}},{"name":"JTOYE_RABBIT_DEFAULT_CONCURRENCY","valueFrom":{"configMapKeyRef":{"key":"rabbit.default.concurrency","name":"app-config"}}},{"name":"JTOYE_RABBIT_MEDIA_PREFETCH","valueFrom":{"configMapKeyRef":{"key":"rabbit.media.prefetch","name":"app-config"}}},{"name":"JTOYE_RABBIT_MEDIA_CONCURRENCY","valueFrom":{"configMapKeyRef":{"key":"rabbit.media.concurrency","name":"app-config"}}},{"name":"JTOYE_RABBIT_MEDIA_MAX_CONCURRENCY","valueFrom":{"configMapKeyRef":{"key":"rabbit.media.max.concurrency","name":"app-config"}}},{"name":"PAYMENT_OUTBOX_FLUSH_INTERVAL_MS","valueFrom":{"configMapKeyRef":{"key":"payment.outbox.flush.interval.ms","name":"app-config"}}},{"name":"PAYMENT_OUTBOX_RESURRECT_INTERVAL_MS","valueFrom":{"configMapKeyRef":{"key":"payment.outbox.resurrect.interval.ms","name":"app-config"}}},{"name":"PAYMENT_OUTBOX_BACKOFF_BASE_MS","valueFrom":{"configMapKeyRef":{"key":"payment.outbox.backoff.base.ms","name":"app-config"}}},{"name":"PAYMENT_OUTBOX_BACKOFF_CAP_MS","valueFrom":{"configMapKeyRef":{"key":"payment.outbox.backoff.cap.ms","name":"app-config"}}},{"name":"MEDIA_OUTBOX_FLUSH_INTERVAL_MS","valueFrom":{"configMapKeyRef":{"key":"media.outbox.flush.interval.ms","name":"app-config"}}},{"name":"MEDIA_OUTBOX_RESURRECT_INTERVAL_MS","valueFrom":{"configMapKeyRef":{"key":"media.outbox.resurrect.interval.ms","name":"app-config"}}},{"name":"MEDIA_OUTBOX_BACKOFF_BASE_MS","valueFrom":{"configMapKeyRef":{"key":"media.outbox.backoff.base.ms","name":"app-config"}}},{"name":"MEDIA_OUTBOX_BACKOFF_CAP_MS","valueFrom":{"configMapKeyRef":{"key":"media.outbox.backoff.cap.ms","name":"app-config"}}},{"name":"KC_ISSUER_URI","valueFrom":{"configMapKeyRef":{"key":"keycloak.issuer.uri","name":"app-config"}}},{"name":"KC_ADMIN_ENABLED","valueFrom":{"configMapKeyRef":{"key":"keycloak.admin.enabled","name":"app-config"}}},{"name":"KC_ADMIN_BASE_URL","valueFrom":{"configMapKeyRef":{"key":"keycloak.admin.base-url","name":"app-config"}}},{"name":"KC_DEPROVISION_REALMS","valueFrom":{"configMapKeyRef":{"key":"keycloak.admin.realms","name":"app-config"}}},{"name":"KC_CUSTOMER_REALM","valueFrom":{"configMapKeyRef":{"key":"keycloak.admin.customer-realm","name":"app-config"}}},{"name":"KC_VENDOR_REALM","valueFrom":{"configMapKeyRef":{"key":"keycloak.admin.vendor-realm","name":"app-config"}}},{"name":"KEYCLOAK_ADMIN","valueFrom":{"secretKeyRef":{"key":"admin-username","name":"keycloak-credentials"}}},{"name":"KEYCLOAK_ADMIN_PASSWORD","valueFrom":{"secretKeyRef":{"key":"admin-password","name":"keycloak-credentials"}}},{"name":"REDIS_HOST","valueFrom":{"configMapKeyRef":{"key":"redis.host","name":"app-config"}}},{"name":"RABBITMQ_HOST","valueFrom":{"configMapKeyRef":{"key":"rabbitmq.host","name":"app-config"}}},{"name":"RABBITMQ_USER","valueFrom":{"secretKeyRef":{"key":"username","name":"rabbitmq-credentials"}}},{"name":"RABBITMQ_PASSWORD","valueFrom":{"secretKeyRef":{"key":"password","name":"rabbitmq-credentials"}}},{"name":"REDIS_PASSWORD","valueFrom":{"secretKeyRef":{"key":"password","name":"redis-credentials"}}},{"name":"STOMP_BROKER_MODE","valueFrom":{"configMapKeyRef":{"key":"stomp.broker.mode","name":"app-config"}}},{"name":"STOMP_RELAY_HOST","valueFrom":{"configMapKeyRef":{"key":"stomp.broker.relay-host","name":"app-config"}}},{"name":"STOMP_RELAY_PORT","valueFrom":{"configMapKeyRef":{"key":"stomp.broker.relay-port","name":"app-config"}}},{"name":"STOMP_CLIENT_LOGIN","valueFrom":{"secretKeyRef":{"key":"stomp-login","name":"rabbitmq-credentials"}}},{"name":"STOMP_CLIENT_PASSCODE","valueFrom":{"secretKeyRef":{"key":"stomp-passcode","name":"rabbitmq-credentials"}}},{"name":"JWT_EXPECTED_ISSUER","valueFrom":{"configMapKeyRef":{"key":"keycloak.public.issuer.uri","name":"app-config"}}},{"name":"JWT_EXPECTED_AUDIENCE","valueFrom":{"configMapKeyRef":{"key":"jwt.expected-audience","name":"app-config"}}},{"name":"CORS_ALLOWED_ORIGINS","valueFrom":{"configMapKeyRef":{"key":"cors.allowed-origins","name":"app-config"}}},{"name":"LOG_PATH","valueFrom":{"configMapKeyRef":{"key":"log.path","name":"app-config"}}},{"name":"STORAGE_AUTH_MODE","valueFrom":{"configMapKeyRef":{"key":"storage.blob.auth-mode","name":"app-config"}}},{"name":"STORAGE_ENDPOINT","valueFrom":{"configMapKeyRef":{"key":"storage.blob.endpoint","name":"app-config"}}},{"name":"STORAGE_PUBLIC_CONTAINER","valueFrom":{"configMapKeyRef":{"key":"storage.blob.public-container","name":"app-config"}}},{"name":"STORAGE_QUARANTINE_CONTAINER","valueFrom":{"configMapKeyRef":{"key":"storage.blob.quarantine-container","name":"app-config"}}},{"name":"STORAGE_PUBLIC_URL","valueFrom":{"configMapKeyRef":{"key":"storage.blob.public-url","name":"app-config"}}},{"name":"STORAGE_CREATE_CONTAINERS","valueFrom":{"configMapKeyRef":{"key":"storage.blob.create-containers","name":"app-config"}}},{"name":"SMTP_HOST","valueFrom":{"configMapKeyRef":{"key":"smtp.host","name":"app-config"}}},{"name":"SMTP_PORT","valueFrom":{"configMapKeyRef":{"key":"smtp.port","name":"app-config"}}},{"name":"SMTP_AUTH","valueFrom":{"configMapKeyRef":{"key":"smtp.auth","name":"app-config"}}},{"name":"SMTP_STARTTLS","valueFrom":{"configMapKeyRef":{"key":"smtp.starttls","name":"app-config"}}},{"name":"SMTP_USERNAME","valueFrom":{"secretKeyRef":{"key":"username","name":"smtp-credentials","optional":true}}},{"name":"SMTP_PASSWORD","valueFrom":{"secretKeyRef":{"key":"password","name":"smtp-credentials","optional":true}}},{"name":"NOTIFICATION_EMAIL_TRACKING_BASE_URL","valueFrom":{"configMapKeyRef":{"key":"notification.email.tracking-base-url","name":"app-config"}}},{"name":"NOTIFICATION_UNSUBSCRIBE_BASE_URL","valueFrom":{"configMapKeyRef":{"key":"notification.unsubscribe.base-url","name":"app-config"}}},{"name":"DSAR_VERIFY_BASE_URL","valueFrom":{"configMapKeyRef":{"key":"gdpr.dsar.verify-base-url","name":"app-config"}}},{"name":"DSAR_EXPORT_DOWNLOAD_BASE_URL","valueFrom":{"configMapKeyRef":{"key":"gdpr.dsar.export-download-base-url","name":"app-config"}}},{"name":"STAFF_INVITE_ACCEPT_BASE_URL","valueFrom":{"configMapKeyRef":{"key":"staff.invite.accept-base-url","name":"app-config"}}},{"name":"STAFF_INVITE_TTL_HOURS","valueFrom":{"configMapKeyRef":{"key":"staff.invite.ttl-hours","name":"app-config"}}},{"name":"COMPANY_REGISTERED_OFFICE","valueFrom":{"configMapKeyRef":{"key":"platform.registered-office","name":"app-config"}}},{"name":"DSAR_ENCRYPTION_KEY","valueFrom":{"secretKeyRef":{"key":"encryption-key","name":"dsar-credentials"}}},{"name":"CLIENT_IP_HMAC_KEY","valueFrom":{"secretKeyRef":{"key":"hmac-key","name":"client-ip-credentials"}}},{"name":"NOTIFICATION_UNSUBSCRIBE_SECRET","valueFrom":{"secretKeyRef":{"key":"unsubscribe-signing-secret","name":"notification-credentials","optional":true}}},{"name":"STRIPE_CONNECT_RETURN_URL","valueFrom":{"configMapKeyRef":{"key":"stripe.connect.return-url","name":"app-config"}}},{"name":"STRIPE_CONNECT_REFRESH_URL","valueFrom":{"configMapKeyRef":{"key":"stripe.connect.refresh-url","name":"app-config"}}},{"name":"STRIPE_API_KEY","valueFrom":{"secretKeyRef":{"key":"api-key","name":"stripe-credentials","optional":true}}},{"name":"STRIPE_WEBHOOK_SECRET","valueFrom":{"secretKeyRef":{"key":"webhook-secret","name":"stripe-credentials","optional":true}}},{"name":"WEBHOOK_DELIVERY_MAX_ATTEMPTS","valueFrom":{"configMapKeyRef":{"key":"webhook.delivery.max-attempts","name":"app-config"}}},{"name":"WEBHOOK_DELIVERY_RETENTION_DAYS","valueFrom":{"configMapKeyRef":{"key":"webhook.delivery.retention-days","name":"app-config"}}},{"name":"WEBHOOK_TARGET_BLOCK_PRIVATE_RANGES","valueFrom":{"configMapKeyRef":{"key":"webhook.target.block-private-ranges","name":"app-config"}}},{"name":"ACCESS_STRICT_SCOPING","valueFrom":{"configMapKeyRef":{"key":"access.strict-scoping","name":"app-config"}}},{"name":"ACCESS_HUMAN_CLIENT_IDS","valueFrom":{"configMapKeyRef":{"key":"keycloak.client-id","name":"app-config"}}},{"name":"TRUSTED_PROXY_CIDRS","valueFrom":{"configMapKeyRef":{"key":"security.trusted-proxies","name":"app-config"}}},{"name":"ORDER_LIMIT_MAX_LINE_QUANTITY","valueFrom":{"configMapKeyRef":{"key":"order-limits.max-line-quantity","name":"app-config"}}},{"name":"ORDER_LIMIT_MAX_BASKET_UNITS","valueFrom":{"configMapKeyRef":{"key":"order-limits.max-basket-units","name":"app-config"}}},{"name":"ORDER_LIMIT_MAX_LINES","valueFrom":{"configMapKeyRef":{"key":"order-limits.max-lines","name":"app-config"}}},{"name":"ORDER_LIMIT_MAX_BASKET_TOTAL_PENNIES","valueFrom":{"configMapKeyRef":{"key":"order-limits.max-basket-total-pennies","name":"app-config"}}},{"name":"CASH_CAP_PER_EMAIL","valueFrom":{"configMapKeyRef":{"key":"storefront.cash-caps.per-email","name":"app-config"}}},{"name":"CASH_CAP_PER_PHONE","valueFrom":{"configMapKeyRef":{"key":"storefront.cash-caps.per-phone","name":"app-config"}}},{"name":"CASH_CAP_PER_IP","valueFrom":{"configMapKeyRef":{"key":"storefront.cash-caps.per-ip","name":"app-config"}}},{"name":"CLIENT_IP_DIGEST_RETENTION_HOURS","valueFrom":{"configMapKeyRef":{"key":"storefront.client-ip-digest.retention-hours","name":"app-config"}}}],"image":"ghcr.io/bralabee/jtoye-core-java:efab17d79483b01f4397c9f82f34a36d1a2b4c11","imagePullPolicy":"IfNotPresent","lifecycle":{"preStop":{"exec":{"command":["sh","-c","sleep 10"]}}},"livenessProbe":{"failureThreshold":3,"httpGet":{"path":"/actuator/health/liveness","port":9091},"periodSeconds":10,"timeoutSeconds":3},"name":"core-java","ports":[{"containerPort":9090,"name":"http","protocol":"TCP"},{"containerPort":9091,"name":"management","protocol":"TCP"}],"readinessProbe":{"failureThreshold":3,"httpGet":{"path":"/actuator/health/readiness","port":9091},"periodSeconds":5,"timeoutSeconds":3},"resources":{"limits":{"cpu":"1000m","memory":"1Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":false,"runAsNonRoot":true,"runAsUser":1000},"startupProbe":{"failureThreshold":30,"httpGet":{"path":"/actuator/health/liveness","port":9091},"initialDelaySeconds":20,"periodSeconds":10,"timeoutSeconds":3},"volumeMounts":[{"mountPath":"/mnt/secrets-store","name":"kv","readOnly":true},{"mountPath":"/truststore","name":"truststore","readOnly":true},{"mountPath":"/var/log/jtoye","name":"app-logs"}]}],"enableServiceLinks":false,"initContainers":[{"command":["sh","-c","set -eu\ncp \"$JAVA_HOME/lib/security/cacerts\" /truststore/cacerts\njdk=$(keytool -list -keystore /truststore/cacerts -storetype PKCS12 \u003c/dev/null 2\u003e/dev/null | grep -c trustedCertEntry || true)\nkeytool -importcert -noprompt -alias jtoye-staging-ca -file /cluster-ca/ca.crt -keystore /truststore/cacerts -storetype PKCS12 -storepass changeit\nentries=$(keytool -list -keystore /truststore/cacerts -storetype PKCS12 \u003c/dev/null 2\u003e/dev/null | grep -c trustedCertEntry || true)\necho \"truststore-builder: jdk-entries=$jdk entries=$entries (read with no store password, as the JVM reads it)\"\nif [ \"$jdk\" -lt 1 ] || [ \"$entries\" -ne $((jdk + 1)) ]; then\n  echo \"truststore-builder: FAIL: expected jdk-entries + 1 readable entries; refusing to start core-java on this store\" \u003e\u00262\n  exit 1\nfi\n"],"image":"ghcr.io/bralabee/jtoye-core-java:efab17d79483b01f4397c9f82f34a36d1a2b4c11","imagePullPolicy":"IfNotPresent","name":"truststore-builder","resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"100m","memory":"128Mi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsNonRoot":true,"runAsUser":1000},"volumeMounts":[{"mountPath":"/truststore","name":"truststore"},{"mountPath":"/cluster-ca","name":"cluster-ca","readOnly":true}]}],"securityContext":{"fsGroup":1000},"serviceAccountName":"core-java","volumes":[{"csi":{"driver":"secrets-store.csi.k8s.io","readOnly":true,"volumeAttributes":{"secretProviderClass":"core-java-kv"}},"name":"kv"},{"emptyDir":{"medium":"Memory","sizeLimit":"2Mi"},"name":"truststore"},{"name":"cluster-ca","secret":{"items":[{"key":"ca.crt","path":"ca.crt"}],"secretName":"jtoye-staging-ca"}},{"emptyDir":{"sizeLimit":"2Gi"},"name":"app-logs"}]}}}}
+     maintainer: jtoye-devops-team
+   creationTimestamp: "2026-10-19T09:43:54Z"
+-  generation: 6
++  generation: 7
+   labels:
+     app: core-java
+     app.kubernetes.io/managed-by: kustomize
+@@ -499,7 +499,7 @@
+             configMapKeyRef:
+               key: storefront.client-ip-digest.retention-hours
+               name: app-config
+-        image: ghcr.io/bralabee/jtoye-core-java:efab17d79483b01f4397c9f82f34a36d1a2b4c11
++        image: ghcr.io/bralabee/jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+         imagePullPolicy: IfNotPresent
+         lifecycle:
+           preStop:
+@@ -587,7 +587,7 @@
+             echo "truststore-builder: FAIL: expected jdk-entries + 1 readable entries; refusing to start core-java on this store" >&2
+             exit 1
+           fi
+-        image: ghcr.io/bralabee/jtoye-core-java:efab17d79483b01f4397c9f82f34a36d1a2b4c11
++        image: ghcr.io/bralabee/jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+         imagePullPolicy: IfNotPresent
+         name: truststore-builder
+         resources:
+diff -u -N /tmp/LIVE-2903334438/apps.v1.Deployment.jtoye-staging.edge-go /tmp/MERGED-4172292662/apps.v1.Deployment.jtoye-staging.edge-go
+--- /tmp/LIVE-2903334438/apps.v1.Deployment.jtoye-staging.edge-go	2026-10-19 14:47:49.832365482 +0100
++++ /tmp/MERGED-4172292662/apps.v1.Deployment.jtoye-staging.edge-go	2026-10-19 14:47:49.832365482 +0100
+@@ -9,7 +9,7 @@
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{"deployment.timestamp":"REPLACE_WITH_DEPLOYMENT_TIMESTAMP","documentation":"https://github.com/jtoye/oaas-platform","maintainer":"jtoye-devops-team"},"labels":{"app":"edge-go","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","component":"gateway","environment":"staging"},"name":"edge-go","namespace":"jtoye-staging"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"edge-go","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","environment":"staging"}},"strategy":{"rollingUpdate":{"maxSurge":2,"maxUnavailable":0},"type":"RollingUpdate"},"template":{"metadata":{"annotations":{"deployment.timestamp":"REPLACE_WITH_DEPLOYMENT_TIMESTAMP","documentation":"https://github.com/jtoye/oaas-platform","maintainer":"jtoye-devops-team","prometheus.io/path":"/metrics","prometheus.io/port":"8080","prometheus.io/scrape":"true"},"labels":{"app":"edge-go","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","component":"gateway","environment":"staging","version":"v1"}},"spec":{"affinity":{"podAntiAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"podAffinityTerm":{"labelSelector":{"matchExpressions":[{"key":"app","operator":"In","values":["edge-go"]}]},"topologyKey":"kubernetes.io/hostname"},"weight":100}]}},"containers":[{"env":[{"name":"CORE_API_URL","value":"http://core-java:9090"},{"name":"KC_ISSUER_URI","valueFrom":{"configMapKeyRef":{"key":"keycloak.issuer.uri","name":"app-config"}}},{"name":"JWT_EXPECTED_ISSUER","valueFrom":{"configMapKeyRef":{"key":"keycloak.public.issuer.uri","name":"app-config"}}},{"name":"PORT","value":"8080"},{"name":"RATE_LIMIT_RPS","valueFrom":{"configMapKeyRef":{"key":"edge.rate-limit.rps","name":"app-config"}}},{"name":"RATE_LIMIT_BURST","valueFrom":{"configMapKeyRef":{"key":"edge.rate-limit.burst","name":"app-config"}}},{"name":"RATE_LIMIT_TENANT_RPS","valueFrom":{"configMapKeyRef":{"key":"edge.rate-limit.tenant.rps","name":"app-config"}}},{"name":"RATE_LIMIT_TENANT_BURST","valueFrom":{"configMapKeyRef":{"key":"edge.rate-limit.tenant.burst","name":"app-config"}}},{"name":"RATE_LIMIT_TENANT_MAX","valueFrom":{"configMapKeyRef":{"key":"edge.rate-limit.tenant.max","name":"app-config"}}}],"image":"ghcr.io/bralabee/jtoye-edge-go:efab17d79483b01f4397c9f82f34a36d1a2b4c11","imagePullPolicy":"IfNotPresent","livenessProbe":{"failureThreshold":3,"httpGet":{"path":"/health","port":8080},"initialDelaySeconds":10,"periodSeconds":10,"timeoutSeconds":3},"name":"edge-go","ports":[{"containerPort":8080,"name":"http","protocol":"TCP"}],"readinessProbe":{"failureThreshold":3,"httpGet":{"path":"/ready","port":8080},"initialDelaySeconds":5,"periodSeconds":5,"timeoutSeconds":3},"resources":{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"100m","memory":"64Mi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true,"runAsNonRoot":true,"runAsUser":65534}}]}}}}
+     maintainer: jtoye-devops-team
+   creationTimestamp: "2026-10-19T09:43:54Z"
+-  generation: 2
++  generation: 3
+   labels:
+     app: edge-go
+     app.kubernetes.io/managed-by: kustomize
+@@ -105,7 +105,7 @@
+             configMapKeyRef:
+               key: edge.rate-limit.tenant.max
+               name: app-config
+-        image: ghcr.io/bralabee/jtoye-edge-go:efab17d79483b01f4397c9f82f34a36d1a2b4c11
++        image: ghcr.io/bralabee/jtoye-edge-go:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+         imagePullPolicy: IfNotPresent
+         livenessProbe:
+           failureThreshold: 3
+diff -u -N /tmp/LIVE-2903334438/apps.v1.Deployment.jtoye-staging.frontend /tmp/MERGED-4172292662/apps.v1.Deployment.jtoye-staging.frontend
+--- /tmp/LIVE-2903334438/apps.v1.Deployment.jtoye-staging.frontend	2026-10-19 14:47:49.937365036 +0100
++++ /tmp/MERGED-4172292662/apps.v1.Deployment.jtoye-staging.frontend	2026-10-19 14:47:49.938365032 +0100
+@@ -9,7 +9,7 @@
+       {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{"deployment.timestamp":"REPLACE_WITH_DEPLOYMENT_TIMESTAMP","documentation":"https://github.com/jtoye/oaas-platform","maintainer":"jtoye-devops-team"},"labels":{"app":"frontend","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","component":"ui","environment":"staging"},"name":"frontend","namespace":"jtoye-staging"},"spec":{"replicas":1,"selector":{"matchLabels":{"app":"frontend","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","environment":"staging"}},"strategy":{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"},"template":{"metadata":{"annotations":{"deployment.timestamp":"REPLACE_WITH_DEPLOYMENT_TIMESTAMP","documentation":"https://github.com/jtoye/oaas-platform","maintainer":"jtoye-devops-team"},"labels":{"app":"frontend","app.kubernetes.io/managed-by":"kustomize","app.kubernetes.io/part-of":"jtoye-platform","azure.workload.identity/use":"true","component":"ui","environment":"staging","version":"v1"}},"spec":{"affinity":{"podAntiAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"podAffinityTerm":{"labelSelector":{"matchExpressions":[{"key":"app","operator":"In","values":["frontend"]}]},"topologyKey":"kubernetes.io/hostname"},"weight":100}]}},"containers":[{"env":[{"name":"NODE_ENV","value":"production"},{"name":"CORE_API_INTERNAL_URL","valueFrom":{"configMapKeyRef":{"key":"api.internal.url","name":"app-config"}}},{"name":"NEXTAUTH_URL","valueFrom":{"configMapKeyRef":{"key":"frontend.url","name":"app-config"}}},{"name":"VENDOR_LOGOUT_COMPLETE_ENABLED","valueFrom":{"configMapKeyRef":{"key":"vendor.logout-complete.enabled","name":"app-config"}}},{"name":"NEXTAUTH_SECRET","valueFrom":{"secretKeyRef":{"key":"secret","name":"nextauth-secret"}}},{"name":"KEYCLOAK_CLIENT_ID","valueFrom":{"configMapKeyRef":{"key":"keycloak.client-id","name":"app-config"}}},{"name":"KEYCLOAK_CLIENT_SECRET","valueFrom":{"secretKeyRef":{"key":"client-secret","name":"frontend-oidc-credentials"}}},{"name":"KEYCLOAK_ISSUER","valueFrom":{"configMapKeyRef":{"key":"keycloak.public.issuer.uri","name":"app-config"}}},{"name":"KEYCLOAK_ISSUER_INTERNAL","valueFrom":{"configMapKeyRef":{"key":"keycloak.issuer.uri","name":"app-config"}}},{"name":"NEXT_PUBLIC_KEYCLOAK_URL","valueFrom":{"configMapKeyRef":{"key":"keycloak.public.issuer.uri","name":"app-config"}}}],"image":"ghcr.io/bralabee/jtoye-frontend:efab17d79483b01f4397c9f82f34a36d1a2b4c11","imagePullPolicy":"IfNotPresent","livenessProbe":{"failureThreshold":3,"httpGet":{"path":"/api/health","port":3000},"initialDelaySeconds":30,"periodSeconds":10,"timeoutSeconds":5},"name":"frontend","ports":[{"containerPort":3000,"name":"http","protocol":"TCP"}],"readinessProbe":{"failureThreshold":3,"httpGet":{"path":"/api/health","port":3000},"initialDelaySeconds":20,"periodSeconds":5,"timeoutSeconds":5},"resources":{"limits":{"cpu":"500m","memory":"512Mi"},"requests":{"cpu":"200m","memory":"256Mi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":false,"runAsNonRoot":true,"runAsUser":1001},"volumeMounts":[{"mountPath":"/mnt/secrets-store","name":"kv","readOnly":true}]}],"serviceAccountName":"frontend","volumes":[{"csi":{"driver":"secrets-store.csi.k8s.io","readOnly":true,"volumeAttributes":{"secretProviderClass":"frontend-kv"}},"name":"kv"}]}}}}
+     maintainer: jtoye-devops-team
+   creationTimestamp: "2026-10-19T09:43:54Z"
+-  generation: 6
++  generation: 7
+   labels:
+     app: frontend
+     app.kubernetes.io/managed-by: kustomize
+@@ -112,7 +112,7 @@
+             configMapKeyRef:
+               key: keycloak.public.issuer.uri
+               name: app-config
+-        image: ghcr.io/bralabee/jtoye-frontend:efab17d79483b01f4397c9f82f34a36d1a2b4c11
++        image: ghcr.io/bralabee/jtoye-frontend:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+         imagePullPolicy: IfNotPresent
+         livenessProbe:
+           failureThreshold: 3
+-- git log --oneline RUNNING..IMAGE_SHA -- k8s (RUNNING=efab17d7):
+rc=0 []
+-- git log --oneline RUNNING..HEAD -- k8s (the checkout the render came from; HEAD=ab7cf439):
+98e22683 docs(29-22): D-33 tester note, staging host list and mail-UI rotation
+a5bd4af5 feat(29-22): GREEN: D-33 testers' mail UI behind one generated basic-auth credential
+f5b887ff test(29-22): RED: D-33 mail UI selftests against stubs
+5967aa48 fix(29-22): GREEN: a cert-manager Certificate is a recognised Secret producer
+9745c00e test(29-22): RED: the Key Vault chain gate has no cert-manager producer
+d2d70044 feat(29-22): GREEN: INV-16 refuses a CA-only core-java truststore (D-30)
+952c9ded test(29-22): RED: INV-16 selftest arms against a pass-everything stub
+6a9e2797 feat(29-22): Mailpit staging mail trap with a cert-manager internal CA (D-20)
+hunk accounting: three Deployments differ, and every changed line is an image tag (efab17d7 -> IMAGE_SHA: core-java container + its truststore-builder initContainer, edge-go, frontend) or the server-computed metadata.generation bump. Non-image hunks: NONE. No other object differs: 29-22's live Mailpit, cluster-CA truststore and mail-UI state equals HEAD's manifests (the 29-22 commits listed above are already applied), and no other lane has unmerged live state on these objects.
+count of changed lines that are neither an image tag nor generation: 0  (expect 0)
+FAIL DIRECTION of this diff gate 2026-10-19T13:48:21Z: the same render built from IMAGE_SHA's OWN k8s tree (git archive 6e95ee6c44e357e3ff88964ed9674bf066fd7b61 k8s scripts, the plan's literal precondition) diffed against live: rc=1 lines=224, Deployments core-java/edge-go/frontend/keycloak/secret-sync differ, and 76 changed lines are NOT image/generation — e.g. the removal of core-java's JAVA_TOOL_OPTIONS trustStore and the truststore-builder initContainer (29-22 D-30). Applying that tree would have reverted 29-22's live mail TLS; the gate names it, so it can fail.
+-- step 3 2026-10-19T13:48:31Z: deploy — bash scripts/deploy.sh staging --context jtoye-stg-aks --image-tag 6e95ee6c44e357e3ff88964ed9674bf066fd7b61 (finished 2026-10-19T13:51:03Z, rc=0); raw output, ANSI colour codes stripped:
+=== J'Toye OaaS Deployment ===
+Environment: staging
+Context:     jtoye-stg-aks (guard passed)
+Image tag:   6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+
+Staging secrets preflight (scripts/staging-secrets-preflight.sh)...
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 33 objects, 36 grants, 0 gap(s)
+
+Applying k8s/staging at 6e95ee6c44e357e3ff88964ed9674bf066fd7b61...
+namespace/jtoye-staging unchanged
+serviceaccount/core-java unchanged
+serviceaccount/frontend unchanged
+serviceaccount/keycloak unchanged
+serviceaccount/mailpit unchanged
+serviceaccount/pg-backup unchanged
+serviceaccount/redis unchanged
+serviceaccount/secret-sync unchanged
+configmap/app-config unchanged
+configmap/keycloak-theme-m5dt5btc4f configured
+service/core-java unchanged
+service/edge-go unchanged
+service/frontend unchanged
+service/keycloak unchanged
+service/mailpit unchanged
+service/redis unchanged
+deployment.apps/core-java configured
+deployment.apps/edge-go configured
+deployment.apps/frontend configured
+deployment.apps/keycloak unchanged
+deployment.apps/mailpit unchanged
+deployment.apps/redis unchanged
+deployment.apps/secret-sync unchanged
+cronjob.batch/pg-backup unchanged
+poddisruptionbudget.policy/core-java-pdb configured
+poddisruptionbudget.policy/edge-go-pdb configured
+poddisruptionbudget.policy/frontend-pdb configured
+horizontalpodautoscaler.autoscaling/core-java-hpa unchanged
+horizontalpodautoscaler.autoscaling/edge-go-hpa unchanged
+horizontalpodautoscaler.autoscaling/frontend-hpa unchanged
+certificate.cert-manager.io/jtoye-staging-ca unchanged
+certificate.cert-manager.io/mailpit-tls unchanged
+issuer.cert-manager.io/jtoye-staging-ca-issuer unchanged
+issuer.cert-manager.io/jtoye-staging-selfsigned unchanged
+ingress.networking.k8s.io/jtoye-ingress unchanged
+ingress.networking.k8s.io/jtoye-sse-ingress unchanged
+ingress.networking.k8s.io/keycloak-public unchanged
+ingress.networking.k8s.io/mailpit-ui unchanged
+networkpolicy.networking.k8s.io/acme-http01-solver-allow unchanged
+networkpolicy.networking.k8s.io/core-java-allow unchanged
+networkpolicy.networking.k8s.io/default-deny unchanged
+networkpolicy.networking.k8s.io/edge-go-allow unchanged
+networkpolicy.networking.k8s.io/frontend-allow unchanged
+networkpolicy.networking.k8s.io/keycloak-allow unchanged
+networkpolicy.networking.k8s.io/mailpit-allow unchanged
+networkpolicy.networking.k8s.io/observability-placeholder unchanged
+networkpolicy.networking.k8s.io/pg-backup-allow unchanged
+networkpolicy.networking.k8s.io/rabbitmq-allow unchanged
+networkpolicy.networking.k8s.io/redis-allow unchanged
+networkpolicy.networking.k8s.io/secret-sync-allow unchanged
+rabbitmqcluster.rabbitmq.com/rabbitmq unchanged
+secretproviderclass.secrets-store.csi.x-k8s.io/core-java-kv unchanged
+secretproviderclass.secrets-store.csi.x-k8s.io/frontend-kv unchanged
+secretproviderclass.secrets-store.csi.x-k8s.io/keycloak-kv unchanged
+secretproviderclass.secrets-store.csi.x-k8s.io/mailpit-ui-kv unchanged
+secretproviderclass.secrets-store.csi.x-k8s.io/pg-backup-kv unchanged
+secretproviderclass.secrets-store.csi.x-k8s.io/rabbitmq-kv unchanged
+secretproviderclass.secrets-store.csi.x-k8s.io/redis-kv unchanged
+
+Waiting for core-java rollout...
+Waiting for deployment "core-java" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "core-java" rollout to finish: 1 old replicas are pending termination...
+deployment "core-java" successfully rolled out
+✓ core-java deployed successfully
+
+Waiting for edge-go rollout...
+deployment "edge-go" successfully rolled out
+✓ edge-go deployed successfully
+
+Waiting for frontend rollout...
+deployment "frontend" successfully rolled out
+✓ frontend deployed successfully
+
+Current Pod Status:
+NAME                          READY   STATUS        RESTARTS   AGE
+core-java-594d8c456b-qmrsp    1/1     Running       0          2m14s
+core-java-7d985cb6f8-zwhbb    1/1     Terminating   0          40m
+edge-go-6dc7df5b5b-vj8hl      1/1     Running       0          2m14s
+frontend-6c945447bd-pv7m8     1/1     Running       0          2m14s
+keycloak-65f94bfdf9-5qwvx     1/1     Running       0          40m
+mailpit-648cf6c66c-6swcb      1/1     Running       0          17m
+rabbitmq-server-0             1/1     Running       0          3h18m
+redis-7bb6746bf7-k2lkj        1/1     Running       0          4h7m
+secret-sync-69869d5f6-4h7v2   1/1     Running       0          17m
+
+Service Endpoints:
+NAME             TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)                                  AGE
+core-java        ClusterIP   10.0.132.46    <none>        9090/TCP                                 4h7m
+edge-go          ClusterIP   10.0.21.133    <none>        8080/TCP                                 4h7m
+frontend         ClusterIP   10.0.173.231   <none>        3000/TCP                                 4h7m
+keycloak         ClusterIP   10.0.154.228   <none>        8080/TCP,9000/TCP                        4h7m
+mailpit          ClusterIP   10.0.80.50     <none>        1025/TCP,8025/TCP                        40m
+rabbitmq         ClusterIP   10.0.211.225   <none>        61613/TCP,15692/TCP,5672/TCP,15672/TCP   4h7m
+rabbitmq-nodes   ClusterIP   None           <none>        4369/TCP,25672/TCP                       4h7m
+redis            ClusterIP   10.0.166.34    <none>        6379/TCP                                 4h7m
+
+Ingress Configuration:
+NAME                CLASS   HOSTS                                               ADDRESS   PORTS     AGE
+jtoye-ingress       nginx   api-staging.olajay.co.uk,app-staging.olajay.co.uk             80, 443   4h7m
+jtoye-sse-ingress   nginx   api-staging.olajay.co.uk                                      80, 443   4h7m
+keycloak-public     nginx   auth-staging.olajay.co.uk                                     80, 443   4h7m
+mailpit-ui          nginx   mail-staging.olajay.co.uk                                     80, 443   17m
+
+✓ Deployment completed successfully!
+DEPLOYED_SHA=6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+note: apply printed 'configured' for configmap/keycloak-theme-m5dt5btc4f and the three PDBs although the pre-apply kubectl diff showed no hunk for any of them (the same four printed 'configured' in 29-14's deploys, evidence/29-14-tracer.txt:307-312); the post-apply diff below is empty, so no live value changed beyond the three image tags.
+post-apply kubectl --context jtoye-stg-aks diff -f render.yaml 2026-10-19T13:51:42Z: rc=0 lines=0  (0 = live equals the render)
+-- step 4 2026-10-19T13:51:57Z: identity (Task 4 first verify, verbatim)
+core-java=ghcr.io/bralabee/jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+frontend=ghcr.io/bralabee/jtoye-frontend:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+edge-go=ghcr.io/bralabee/jtoye-edge-go:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+check-deploy-digest-parity  (2026-10-19T13:51:58Z)
+  namespace : jtoye-staging
+  commit    : 6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+  services  : 3 (core-java edge-go frontend)
+
+  core-java    sha256:0a462ba930690751f2dcd10a4eafe7ee399943103ce2370117cebf8e7500f4f4  MATCH
+  edge-go      sha256:141c999b53db0179524862e426ad34385665b0b26587993126e0178c08fd3e63  MATCH
+  frontend     sha256:41d7667ed85f79c39afae92dc1fa0fdb10d9fcc1765dc3c41b58614db0546440  MATCH
+
+PASS: every running container image digest across 3 service(s) is in the set of digests
+      published for 6e95ee6c44e357e3ff88964ed9674bf066fd7b61. NOTE: this is the SET form (index digest plus each
+      platform manifest digest). Narrowing it to a single measured digest is owed to a later plan.
+recorded DEPLOYED_SHA=6e95ee6c44e357e3ff88964ed9674bf066fd7b61: Deployments listed=3 off-tag=0 parity rc=0
+first verify rc=0  (expect 0)
+-- parity fail direction 2026-10-19T13:52:05Z: check-deploy-digest-parity.sh --plant-stale
+check-deploy-digest-parity  (2026-10-19T13:52:05Z)
+  namespace : jtoye-staging
+  commit    : 6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+  PLANT-STALE: the expected set is replaced by sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a (fail arm)
+  services  : 3 (core-java edge-go frontend)
+
+  core-java    sha256:0a462ba930690751f2dcd10a4eafe7ee399943103ce2370117cebf8e7500f4f4  NOT IN THE EXPECTED SET
+  core-java    expected set was:
+                 sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a
+  edge-go      sha256:141c999b53db0179524862e426ad34385665b0b26587993126e0178c08fd3e63  NOT IN THE EXPECTED SET
+  edge-go      expected set was:
+                 sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a
+  frontend     sha256:41d7667ed85f79c39afae92dc1fa0fdb10d9fcc1765dc3c41b58614db0546440  NOT IN THE EXPECTED SET
+  frontend     expected set was:
+                 sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a
+
+FAIL: 3 running container image digest(s) across 3 service(s) are NOT the images
+      built for 6e95ee6c44e357e3ff88964ed9674bf066fd7b61. The rollout reported success and the pods are Ready, so
+      every other gate in this job is green — this is the Phase 26 stale-runtime shape, caught.
+      Do NOT relax this gate: re-run the build for this commit and redeploy.
+parity --plant-stale rc=1  (expect 1)
+-- in-jar read 2026-10-19T13:52:12Z (Task 2's second verify, expectation flipped: resolver=1 control=1; Task 2 recorded resolver=0)
+resolver=1 control=1
+in-jar read rc=0  (expect 0: resolver=1 control=1)
+-- step 5 2026-10-19T13:52:25Z: API after (Task 4 second verify, verbatim)
+jq rc=0 pelau=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp|https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp quarantine_strings=0 media_strings=2
+second verify rc=1  (expect 0; its fail direction is Task 2 step 3's read of the same endpoint: imageUrl null, imageUrls [])
+Pelau as served now:
+[{"title":"Pelau","imageUrl":"https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp","imageUrls":["https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp"]}]
+-- step 7 2026-10-19T13:52:26Z: menu continuity (sorted titles now vs Task 2 step 5)
+Pelau
+title count=1
+equal to Task 2's list [Pelau]: rc=0  (expect 0: no dish lost, Pelau present)
+fail direction of the comparison (a planted extra title): rc=1  (expect 1)
+
+== DATA PRECONDITION CHANGED (diagnosed 2026-10-19T13:53:05Z) — the second verify's literal want URL names an asset that no longer exists ==
+The plan's flagged assumption ('the 1475a89c asset is Pelau's ACTIVE, unflagged primary') was broken by plan 29-22 AFTER Task 2 ran:
+  evidence/29-22-mail-tls.txt:141  2026-10-19T13:18:54Z POST /api/v1/products/093dae8a-…/image (640x480 PNG) -> asset 14add455-db95-4fa8-82dc-b952d60792a1 PENDING (29-22's D-30 Blob-write arm, as the staging vendor)
+  evidence/29-22-mail-tls.txt:142  2026-10-19T13:19:03Z vendor GET /api/v1/products/093dae8a-… media[]: 14add455 status ACTIVE flagged false url=…/media/14add455-….webp
+  so the vendor REPLACED Pelau's primary through the same safe pipeline; the old derivative was released (copy-on-write, ref-counted delete):
+  anonymous GET …/media/14add455-db95-4fa8-82dc-b952d60792a1.webp: http=200 type=image/webp bytes=6538 last-modified=Mon, 19 Oct 2026 13:18:58 GMT
+  anonymous GET …/media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp: http=404 type=application/xml bytes=215 last-modified=
+  (Task 2 step 4 read 1475a89c's derivative 200 image/webp 1438 bytes at 11:54:50Z; it is 404 now.)
+Verdict: the literal second verify (rc=1 above) can never pass again — its want URL is a deleted object. The menu is NOT wrong: it serves the vendor's CURRENT
+ACTIVE, unflagged primary, which is exactly the D-03a rule the fix applies (IT case 14, vendor-rule oracle). Substitute, named as such: the same verify with
+want = the 14add455 derivative (the photo the staging vendor uploaded through the pipeline in 29-22), and the 1475a89c form kept as a recorded fail arm.
+-- step 5 (substitute) 2026-10-19T13:53:05Z: second verify with want = the CURRENT vendor primary 14add455
+jq rc=0 pelau=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp|https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp quarantine_strings=0 media_strings=2
+second verify (substitute, 14add455) rc=0  (expect 0)
+  fail directions: the literal 1475a89c form above rc=1 on this same runtime; Task 2 step 3 on the pre-fix runtime read imageUrl null, imageUrls [] (media strings=0).
+-- step 6 2026-10-19T13:53:18Z: browser after — the third verify VERBATIM (asset id 1475a89c, now a deleted object: expected to fail, recorded as a fail arm)
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/staging-storefront-image.spec.ts --reporter=list --output /tmp/tmp.O4l6xzrLtq/results
+
+Running 2 tests using 1 worker
+
+TITLE_VISIBLE Pelau
+CWV project=mobile lcp_ms=4004 cls=0.0000 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen
+PAGE_TEXT_ON_FAILURE Cookies on J'Toye We use cookies and browser storage only where strictly necessary to run this site — there is nothing to accept or reject. Got it Cookie policy Skip to main content J J'Toye 0 items in basket Sign in Back J'Toye Staging Test Kitchen Open now 1 Staging Test Street, Birmingham B1 1AA vendor.staging@olajay.co.uk Free delivery Staging test kitchen, seeded by scripts/staging-seed.sh (D-26). Not a real business. Opening hours Mains Pelau A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconut. GF dairy-free No allergens de
+  ✘  1 [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (6.3s)
+TITLE_VISIBLE Pelau
+CWV project=desktop lcp_ms=1824 cls=0.0006 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen
+PAGE_TEXT_ON_FAILURE Cookies on J'Toye We use cookies and browser storage only where strictly necessary to run this site — there is nothing to accept or reject. Got it Cookie policy Skip to main content J J'Toye Shops For operators Track order 0 items in basket Sign in Back J'Toye Staging Test Kitchen Open now 1 Staging Test Street, Birmingham B1 1AA vendor.staging@olajay.co.uk Free delivery Staging test kitchen, seeded by scripts/staging-seed.sh (D-26). Not a real business. Opening hours Mains Pelau A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconu
+  ✘  2 [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (4.5s)
+
+
+  1) [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+
+    Error: MEDIA_SRC_MISMATCH: src "https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp" is not the https WebP derivative /media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      155 |       src.startsWith("https://") && src.includes(`/media/${assetId}.webp`) && !src.includes("/quarantine/"),
+      156 |       `MEDIA_SRC_MISMATCH: src ${JSON.stringify(src)} is not the https WebP derivative /media/${assetId}.webp`,
+    > 157 |     ).toBe(true)
+          |       ^
+      158 |
+      159 |     await img.scrollIntoViewIfNeeded({ timeout: 15_000 })
+      160 |     await expect
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/staging-storefront-image.spec.ts:157:7
+
+
+
+
+
+
+  2) [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+
+    Error: MEDIA_SRC_MISMATCH: src "https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp" is not the https WebP derivative /media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      155 |       src.startsWith("https://") && src.includes(`/media/${assetId}.webp`) && !src.includes("/quarantine/"),
+      156 |       `MEDIA_SRC_MISMATCH: src ${JSON.stringify(src)} is not the https WebP derivative /media/${assetId}.webp`,
+    > 157 |     ).toBe(true)
+          |       ^
+      158 |
+      159 |     await img.scrollIntoViewIfNeeded({ timeout: 15_000 })
+      160 |     await expect
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/staging-storefront-image.spec.ts:157:7
+
+
+
+
+
+
+  2 failed
+    [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+    [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor 
+playwright rc=1 natural_width_lines=0 jsonld_lines=0
+third verify (literal, 1475a89c) rc=1  (expect 1 now: the asset was replaced)
+-- step 6 (substitute) 2026-10-19T13:53:40Z: the third verify with STAGING_MEDIA_ASSET_ID and the JSONLD want = the CURRENT vendor primary 14add455 (only the asset id differs from the verbatim command)
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/staging-storefront-image.spec.ts --reporter=list --output /tmp/tmp.PikKltqQ0M/results
+
+Running 2 tests using 1 worker
+
+TITLE_VISIBLE Pelau
+CWV project=mobile lcp_ms=2612 cls=0.0000 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+naturalWidth=640 naturalHeight=480 src=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp
+JSONLD_IMAGE https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp
+  ✓  1 [mobile] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (5.0s)
+TITLE_VISIBLE Pelau
+CWV project=desktop lcp_ms=1760 cls=0.0006 budget_lcp_ms=8000 budget_cls=0.1 (throttled ~Fast 3G, 4x CPU)
+naturalWidth=640 naturalHeight=480 src=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp
+JSONLD_IMAGE https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp
+  ✓  2 [desktop] › e2e/staging-storefront-image.spec.ts:119:5 › staging storefront renders the vendor's pipeline photo for an anonymous visitor (4.3s)
+
+  2 passed (10.3s)
+playwright rc=0 natural_width_lines=2 jsonld_lines=2
+third verify (substitute, 14add455) rc=0  (expect 0)
+-- CWV comparison 2026-10-19T13:54:11Z (mobile vs Task 2's mobile line; budgets LCP_BUDGET_MS=8000, CLS_BUDGET=0.1)
+  before (Task 2, pre-fix a784e7e2, no image):   mobile lcp_ms=2500 cls=0.0000 | desktop lcp_ms=2436 cls=0.0006
+  after, substitute run (passing, image renders): mobile lcp_ms=2612 cls=0.0000 | desktop lcp_ms=1760 cls=0.0006
+  after, literal run (also renders the image, failed at the src check): mobile lcp_ms=4004 cls=0.0000 | desktop lcp_ms=1824 cls=0.0006
+  mobile substitute: lcp 2612 < 8000 -> True; cls 0.0000 <= max(0.1, before+0.02)=0.10 -> True
+  mobile literal: lcp 4004 < 8000 -> True; cls 0.0000 <= max(0.1, before+0.02)=0.10 -> True
+  fail direction of this comparison: a planted lcp 8001 -> False, a planted cls 0.1201 -> False
+  CWV within budget: rc=0  (expect 0; the image adds a network fetch to the LCP window: 2500 -> 2612 / 4004 ms, both under the 8000 budget — recorded, not a regression by the plan's rule)
+-- step 8 2026-10-19T13:54:11Z: mail after the rollout — 29-22's fourth verify (aggregate health incl. the mail indicator, which 29-22 showed DOWN/503 when STARTTLS breaks) verbatim
+pod=core-java-594d8c456b-qmrsp rc=0 HTTP 200
+{"groups":["liveness","readiness"],"status":"UP"}
+health verify rc=0  (expect 0; fail direction recorded by 29-22: evidence/29-22-mail-tls.txt:110 DOWN during its no-STARTTLS arm)
+core-java-594d8c456b-qmrsp ready=True restarts=0 image=ghcr.io/bralabee/jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+truststore-builder log (core-java-594d8c456b-qmrsp):
+Certificate was added to keystore
+truststore-builder: jdk-entries=118 entries=119 (read with no store password, as the JVM reads it)
+core-java log lines matching mail/STARTTLS/PKIX failure since start: 0  (expect 0)
+mailpit mailpit-648cf6c66c-6swcb ready=True restarts=0
+mailpit MP_SMTP_REQUIRE_STARTTLS entries on the live pod: 1  (expect 1; untouched by this deploy: deployment.apps/mailpit unchanged)
+  positive control for that log grep: the core-java log has 134 lines, 1 'Started CoreApplication' line(s); the same pattern counts 9 lines in 29-22's evidence, where those failures were planted
+step 8 verdict: IMAGE_SHA carries 29-16's required STARTTLS AND runs on 29-22's Mailpit TLS + truststore (both live before this deploy), so there is no 29-16-before-29-22 mail gap to record: aggregate health 200 UP with the mail indicator, truststore 118+1, Mailpit unchanged and STARTTLS-required.
