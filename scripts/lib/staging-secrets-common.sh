@@ -34,6 +34,7 @@
 # STAGING_SECRETS_RENDER_FILE.
 
 SS_KV_NAME="jtoye-stg-kv"
+SS_KV_RG="jtoye-rg"
 # Built-in role "Key Vault Secrets User" (read secret contents). Matched and assigned by
 # id: the name is a display string, the id is the role.
 SS_ROLE_ID="4633458b-17de-408a-b874-0445c86b69e6"
@@ -225,7 +226,14 @@ case "$line" in
   *" identity list "*)
     cat "$st/identities" 2>/dev/null; exit 0 ;;
   *" role assignment list "*)
-    [ -n "$oid" ] || { echo "stub: role assignment list without --assignee-object-id" >&2; exit 9; }
+    # By scope (the preflight's --names-only form, plan 29-21): the principals holding a role
+    # at EXACTLY that scope, as `az role assignment list --scope S` (no --all) returns them.
+    if [ -z "$oid" ] && [ -n "$scope" ]; then
+      awk -F'\t' -v s="$scope" 'tolower($3) == tolower(s) { print $2 "\t" $1 }' "$st/roles" 2>/dev/null \
+        | awk -F'\t' -v r="$query" '{ id = $1; sub(/.*\//, "", id); if (index(r, id)) print $2 }'
+      exit 0
+    fi
+    [ -n "$oid" ] || { echo "stub: role assignment list without --assignee-object-id or --scope" >&2; exit 9; }
     awk -F'\t' -v p="$oid" '$1 == p { print $2 "\t" $3 }' "$st/roles" 2>/dev/null \
       | awk -F'\t' -v r="$query" '{ id = $1; sub(/.*\//, "", id); if (index(r, id)) print $2 }'
     exit 0 ;;

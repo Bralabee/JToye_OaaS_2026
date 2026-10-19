@@ -1,0 +1,331 @@
+# 29-17 NetworkPolicy enforcement evidence (DPLY-05, #297)
+# kube-context jtoye-stg-aks only (Cilium, AKS, subscription c483d353). Times are UTC.
+
+== TASK 1: classifier RED/GREEN, guards, registration (2026-10-19T11:30:44Z) ==
+
+-- agnhost 2.66.1 (pinned digest) measured locally with docker, before writing the classifier --
+10.255.255.1:80 rc=1 out=[TIMEOUT]   127.0.0.1:1 rc=1 out=[REFUSED]   1.1.1.1:443 rc=0 out=[]   nosuchhost.invalid:80 rc=1 out=[DNS: lookup ... no such host]
+
+-- RED (commit a83a29be): bash scripts/check-networkpolicy-enforcement.sh --selftest --
+TAP version 13
+1..21
+ok 1 - classify-timeout-is-denied
+ok 2 - classify-timeout-with-kubectl-trailer
+ok 3 - classify-empty-rc0-is-connected
+not ok 4 - classify-REFUSED-is-reset
+  ---
+  message: 'expected RESET, got DENIED'
+  ...
+not ok 5 - classify-connection-refused-is-reset
+  ---
+  message: 'expected RESET, got DENIED'
+  ...
+not ok 6 - classify-refused-with-trailer-is-reset
+  ---
+  message: 'expected RESET, got DENIED'
+  ...
+ok 7 - classify-timeout-rc0-is-unknown
+ok 8 - classify-empty-rc1-is-unknown
+ok 9 - classify-dns-error-is-unknown
+ok 10 - classify-exec-error-is-unknown
+ok 11 - classify-trailer-code-mismatch-unknown
+ok 12 - pair-control-connected-denied-pass
+ok 13 - pair-control-denied-is-void
+ok 14 - pair-control-unknown-is-void
+ok 15 - pair-denied-arm-connected-is-fail
+ok 16 - pair-denied-arm-reset-is-fail-never-pass
+ok 17 - policy-free-not-connected-is-void
+ok 18 - policy-free-connected-ok
+ok 19 - foreign-artefact-refused
+ok 20 - own-artefacts-not-refused
+ok 21 - artefact-count-mismatch-void
+# FAIL: 3 of 21
+rc=1   gsd_run check tdd-red-evidence evidence/29-17-t1-red-classifier.json -> RED_EVIDENCE_OK (target classify-REFUSED-is-reset)
+
+-- GREEN: --selftest --
+TAP version 13
+1..22
+ok 1 - classify-timeout-is-denied
+ok 2 - classify-timeout-with-kubectl-trailer
+ok 3 - classify-empty-rc0-is-connected
+ok 4 - classify-REFUSED-is-reset
+ok 5 - classify-connection-refused-is-reset
+ok 6 - classify-refused-with-trailer-is-reset
+ok 7 - classify-timeout-rc0-is-unknown
+ok 8 - classify-empty-rc1-is-unknown
+ok 9 - classify-dns-error-is-unknown
+ok 10 - classify-exec-error-is-unknown
+ok 11 - classify-trailer-code-mismatch-unknown
+ok 12 - classify-timeout-plus-other-text-unknown
+ok 13 - pair-control-connected-denied-pass
+ok 14 - pair-control-denied-is-void
+ok 15 - pair-control-unknown-is-void
+ok 16 - pair-denied-arm-connected-is-fail
+ok 17 - pair-denied-arm-reset-is-fail-never-pass
+ok 18 - policy-free-not-connected-is-void
+ok 19 - policy-free-connected-ok
+ok 20 - foreign-artefact-refused
+ok 21 - own-artefacts-not-refused
+ok 22 - artefact-count-mismatch-void
+# PASS: 22 of 22
+rc=0
+
+-- no --context (acceptance criterion: rc exactly 2 and a USAGE line) --
+USAGE ERROR: --context is required (no default: an ambient context is how a command lands on the wrong cluster)
+usage: scripts/check-networkpolicy-enforcement.sh --context <kube-context> [--only P0|A|B|F1|M1|M2|E1|E2|K1|K2]
+       scripts/check-networkpolicy-enforcement.sh --selftest
+rc=2
+
+-- guard refusals --
+--context sipbihs2aks -> rc=1 :: REFUSED [employer-context]: context 'sipbihs2aks' is the employer's cluster. Naming it explicitly does not make it allowed.
+--context jtoye-staging -> rc=1 :: REFUSED [server-url] context jtoye-staging points at https://jtoye-stag-jtoye-rg-c483d3-2z8ofdgq.hcp.uksouth.azmk8s.io:443, expected https://jtoye-stg--jtoye-rg-c483d3-mkb3vdnc.hcp.uksouth.azmk8s.io:443
+
+-- registration: check-gate-enforcement.sh --
+line removed from gate-enforcement.conf -> rc=1, naming:
+        check-networkpolicy-enforcement.sh (invokes: kubectl)
+restored (git checkout; blob adf0775c5aca298594e8c24cd7a0d12acd9e62cb before and after) -> rc=0: PASS: every gate either runs in CI or has a declared reason it cannot.
+
+== TASK 2: live runs on jtoye-stg-aks (clean -> arms -> clean) ==
+dataplane: daemonset.apps/cilium (AKS Azure CNI powered by Cilium, plan 29-09)
+
+-- OPENING CLEAN RUN: bash scripts/check-networkpolicy-enforcement.sh --context jtoye-stg-aks --
+check-networkpolicy-enforcement  (2026-10-19T11:30:59Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t113059z-5a61
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0 A B F1 M1 M2 E1 E2 K1 K2
+ARTEFACTS seen=9 expected=9
+  targets   : core-java svc 10.0.132.46:9090, core-java pod 10.244.3.147:9091, keycloak svc 10.0.154.228:8080 (ready ep 10.244.2.180), policy-free target 10.244.0.177:8080
+  egress    : allowed 1.1.1.1:443, denied-arm 1.1.1.1:80
+  np-probe-20261019t113059z-5a61 NetworkPolicies: 0
+
+  P0 policy-free: namespace np-probe-20261019t113059z-5a61 (no NetworkPolicy), unlabelled client
+    np-probe-20261019t113059z-5a61/np-20261019t113059z-5a61-client -> 10.244.0.177:8080 : rc=0 output=[] => CONNECTED
+    np-probe-20261019t113059z-5a61/np-20261019t113059z-5a61-client -> 1.1.1.1:80 : rc=0 output=[] => CONNECTED
+ARM P0 CONNECTED 2026-10-19T11:31:36Z
+  A control: app=frontend -> Service core-java
+    jtoye-staging/np-20261019t113059z-5a61-frontend -> 10.0.132.46:9090 : rc=0 output=[] => CONNECTED
+ARM A CONNECTED 2026-10-19T11:31:40Z
+  B denied: unlabelled -> Service core-java
+    jtoye-staging/np-20261019t113059z-5a61-bare -> 10.0.132.46:9090 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM B DENIED 2026-10-19T11:31:46Z
+  F1 claim: namespace traefik -> Service core-java (Blocker F)
+    traefik/np-20261019t113059z-5a61-traefik -> 10.0.132.46:9090 : rc=0 output=[] => CONNECTED
+ARM F1 CONNECTED 2026-10-19T11:31:50Z
+  M1 control: app=prometheus -> core-java pod management port
+    jtoye-staging/np-20261019t113059z-5a61-prom -> 10.244.3.147:9091 : rc=0 output=[] => CONNECTED
+ARM M1 CONNECTED 2026-10-19T11:31:53Z
+  M2 denied: unlabelled -> core-java pod management port
+    jtoye-staging/np-20261019t113059z-5a61-bare -> 10.244.3.147:9091 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM M2 DENIED 2026-10-19T11:31:59Z
+  E1 control: app=core-java egress -> public 443
+    jtoye-staging/np-20261019t113059z-5a61-corejava -> 1.1.1.1:443 : rc=0 output=[] => CONNECTED
+ARM E1 CONNECTED 2026-10-19T11:32:03Z
+  E2 denied: app=core-java egress -> public 80 (outside its allow-list)
+    jtoye-staging/np-20261019t113059z-5a61-corejava -> 1.1.1.1:80 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM E2 DENIED 2026-10-19T11:32:08Z
+  K1 control: app=frontend -> Service keycloak
+    jtoye-staging/np-20261019t113059z-5a61-frontend -> 10.0.154.228:8080 : rc=0 output=[] => CONNECTED
+ARM K1 CONNECTED 2026-10-19T11:32:11Z
+  K2 denied: unlabelled -> Service keycloak
+    jtoye-staging/np-20261019t113059z-5a61-bare -> 10.0.154.228:8080 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM K2 DENIED 2026-10-19T11:32:17Z
+
+PASS: every control connected, the policy-free arm connected, and every denied arm TIMED OUT.
+      NetworkPolicy is ENFORCED on context 'jtoye-stg-aks' (Cilium).
+CLEANUP remaining=0
+rc=0 seq=[P0=CONNECTED A=CONNECTED B=DENIED F1=CONNECTED M1=CONNECTED M2=DENIED E1=CONNECTED E2=DENIED K1=CONNECTED K2=DENIED ]
+then verify 2 (plan, verbatim): probe-artefacts rc=0 stdout=[] stderr=[] control rc=0 [namespace/jtoye-staging] -> exit 0
+
+-- WHY E2 IS PORT 80, NOT THE PLAN'S 25: NP_EGRESS_DENY_PORT=25 ... --only E2 --
+# The plan named 1.1.1.1:25. The policy-free leg of P0 makes the same connection with NO policy present:
+check-networkpolicy-enforcement  (2026-10-19T11:32:46Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t113246z-fc2c
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0 E1 E2
+ARTEFACTS seen=5 expected=5
+  targets   : core-java svc 10.0.132.46:9090, core-java pod 10.244.3.147:9091, keycloak svc 10.0.154.228:8080 (ready ep 10.244.2.180), policy-free target 10.244.0.104:8080
+  egress    : allowed 1.1.1.1:443, denied-arm 1.1.1.1:25
+  np-probe-20261019t113246z-fc2c NetworkPolicies: 0
+
+  P0 policy-free: namespace np-probe-20261019t113246z-fc2c (no NetworkPolicy), unlabelled client
+    np-probe-20261019t113246z-fc2c/np-20261019t113246z-fc2c-client -> 10.244.0.104:8080 : rc=0 output=[] => CONNECTED
+    np-probe-20261019t113246z-fc2c/np-20261019t113246z-fc2c-client -> 1.1.1.1:25 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM P0 DENIED 2026-10-19T11:33:14Z
+VOID: policy-free arm P0 is DENIED: the probe cannot connect where NO policy exists, so no TIMEOUT below could be the policy's
+CLEANUP remaining=0
+rc=2
+# 1.1.1.1:25 TIMES OUT with no NetworkPolicy at all (Azure's platform block on outbound TCP 25, or no listener
+# there; either way not the policy's), so an E2 on 25 would have read DENIED on a cluster enforcing nothing.
+# Port 80 connects policy-free (P0 above and below) and is outside core-java's egress allow-list (443, 5432 public).
+
+-- BLOCKER-F ARM (live): remove core-java-allow spec.ingress[1], probe, restore, read back --
+== BLOCKER-F ARM: opened 2026-10-19T11:34:27Z ==
+saved core-java-allow (resourceVersion 174063, generation 1)
+spec.ingress[1] to remove: {"from":[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"traefik"}}}],"ports":[{"port":9090,"protocol":"TCP"}]}
+remove 2026-10-19T11:34:29Z: kubectl patch (test traefik, remove /spec/ingress/1) rc=0 :: networkpolicy.networking.k8s.io/core-java-allow patched
+read-back while removed: rc=0 ingress rules=2 namespaceSelector peers=0 cmp(saved spec)=1 cmp(committed render spec)=1 (non-zero = differs, the fail direction of the restore check)
+
+-- F1 with the traefik rule removed: --only F1 --
+check-networkpolicy-enforcement  (2026-10-19T11:34:30Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t113430z-2a5d
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0 F1
+ARTEFACTS seen=5 expected=5
+  targets   : core-java svc 10.0.132.46:9090, core-java pod 10.244.3.147:9091, keycloak svc 10.0.154.228:8080 (ready ep 10.244.2.180), policy-free target 10.244.0.89:8080
+  egress    : allowed 1.1.1.1:443, denied-arm 1.1.1.1:80
+  np-probe-20261019t113430z-2a5d NetworkPolicies: 0
+
+  P0 policy-free: namespace np-probe-20261019t113430z-2a5d (no NetworkPolicy), unlabelled client
+    np-probe-20261019t113430z-2a5d/np-20261019t113430z-2a5d-client -> 10.244.0.89:8080 : rc=0 output=[] => CONNECTED
+    np-probe-20261019t113430z-2a5d/np-20261019t113430z-2a5d-client -> 1.1.1.1:80 : rc=0 output=[] => CONNECTED
+ARM P0 CONNECTED 2026-10-19T11:35:01Z
+  F1 claim: namespace traefik -> Service core-java (Blocker F)
+    traefik/np-20261019t113430z-2a5d-traefik -> 10.0.132.46:9090 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM F1 DENIED 2026-10-19T11:35:07Z
+  FAIL: F1 is DENIED — the controller namespace cannot reach core-java:9090 (Blocker F)
+
+FAIL: at least one arm contradicts the committed NetworkPolicies on context 'jtoye-stg-aks' (see above).
+CLEANUP remaining=0
+rc=1
+
+-- the browser API path through Traefik while removed --
+2026-10-19T11:35:38Z curl https://api-staging.olajay.co.uk/api/v1/public/shops -> code=000 crc=28 stderr=[curl: (28) Operation timed out after 15001 milliseconds with 0 bytes received]
+
+restore 2026-10-19T11:35:39Z: kubectl patch (add /spec/ingress/1 = the saved rule) rc=0 :: networkpolicy.networking.k8s.io/core-java-allow patched
+restore read-back 2026-10-19T11:35:40Z: lrc=0 cmp(saved spec, live spec)=0 cmp(committed render spec, live spec)=0 generation=3 sha256(live spec)=afb9f92bf589d797 sha256(saved spec)=afb9f92bf589d797
+
+-- F1 after restore: --only F1 --
+check-networkpolicy-enforcement  (2026-10-19T11:35:40Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t113540z-5bcd
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0 F1
+ARTEFACTS seen=5 expected=5
+  targets   : core-java svc 10.0.132.46:9090, core-java pod 10.244.3.147:9091, keycloak svc 10.0.154.228:8080 (ready ep 10.244.2.180), policy-free target 10.244.0.162:8080
+  egress    : allowed 1.1.1.1:443, denied-arm 1.1.1.1:80
+  np-probe-20261019t113540z-5bcd NetworkPolicies: 0
+
+  P0 policy-free: namespace np-probe-20261019t113540z-5bcd (no NetworkPolicy), unlabelled client
+    np-probe-20261019t113540z-5bcd/np-20261019t113540z-5bcd-client -> 10.244.0.162:8080 : rc=0 output=[] => CONNECTED
+    np-probe-20261019t113540z-5bcd/np-20261019t113540z-5bcd-client -> 1.1.1.1:80 : rc=0 output=[] => CONNECTED
+ARM P0 CONNECTED 2026-10-19T11:36:06Z
+  F1 claim: namespace traefik -> Service core-java (Blocker F)
+    traefik/np-20261019t113540z-5bcd-traefik -> 10.0.132.46:9090 : rc=0 output=[] => CONNECTED
+ARM F1 CONNECTED 2026-10-19T11:36:09Z
+
+PASS: --only F1 on context 'jtoye-stg-aks' gave its expected verdict, after P0 and its control connected.
+CLEANUP remaining=0
+rc=0
+
+2026-10-19T11:36:23Z curl https://api-staging.olajay.co.uk/api/v1/public/shops -> code=200 crc=0 stderr=[]
+
+== BLOCKER-F ARM: closed 2026-10-19T11:36:23Z ==
+BLOCKER-F ARM: PASS (removed -> F1 rc 1 and the API path failed; restored -> spec equal to saved and to the committed render, F1 rc 0, API 200)
+# Public API outage window while removed: 11:34:29Z (patch) to 11:35:39Z (restore), ~70 s, staging only.
+# Restore method: the saved rule re-added by a JSON patch, not deploy.sh (see SUMMARY deviation 2); the live
+# spec was then compared by content with BOTH the saved pre-arm spec and the spec of core-java-allow rendered
+# from the branch by 'kubectl kustomize k8s/staging' (both cmp 0; both were 1 while the rule was removed).
+# Annotations and labels after restore vs saved: cmp 0 (last-applied-configuration untouched by the patches).
+# Plan verify 1's sequence predicate over the removed-state F1 output: seq=[P0=CONNECTED F1=DENIED ] -> equal-to-expected exit 1 (non-zero: the predicate fails on it)
+
+-- CLOSING CLEAN RUN: plan verify 1 and verify 2, verbatim --
+check-networkpolicy-enforcement  (2026-10-19T11:36:39Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t113639z-959d
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0 A B F1 M1 M2 E1 E2 K1 K2
+ARTEFACTS seen=9 expected=9
+  targets   : core-java svc 10.0.132.46:9090, core-java pod 10.244.3.147:9091, keycloak svc 10.0.154.228:8080 (ready ep 10.244.2.180), policy-free target 10.244.0.176:8080
+  egress    : allowed 1.1.1.1:443, denied-arm 1.1.1.1:80
+  np-probe-20261019t113639z-959d NetworkPolicies: 0
+
+  P0 policy-free: namespace np-probe-20261019t113639z-959d (no NetworkPolicy), unlabelled client
+    np-probe-20261019t113639z-959d/np-20261019t113639z-959d-client -> 10.244.0.176:8080 : rc=0 output=[] => CONNECTED
+    np-probe-20261019t113639z-959d/np-20261019t113639z-959d-client -> 1.1.1.1:80 : rc=0 output=[] => CONNECTED
+ARM P0 CONNECTED 2026-10-19T11:37:09Z
+  A control: app=frontend -> Service core-java
+    jtoye-staging/np-20261019t113639z-959d-frontend -> 10.0.132.46:9090 : rc=0 output=[] => CONNECTED
+ARM A CONNECTED 2026-10-19T11:37:12Z
+  B denied: unlabelled -> Service core-java
+    jtoye-staging/np-20261019t113639z-959d-bare -> 10.0.132.46:9090 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM B DENIED 2026-10-19T11:37:17Z
+  F1 claim: namespace traefik -> Service core-java (Blocker F)
+    traefik/np-20261019t113639z-959d-traefik -> 10.0.132.46:9090 : rc=0 output=[] => CONNECTED
+ARM F1 CONNECTED 2026-10-19T11:37:20Z
+  M1 control: app=prometheus -> core-java pod management port
+    jtoye-staging/np-20261019t113639z-959d-prom -> 10.244.3.147:9091 : rc=0 output=[] => CONNECTED
+ARM M1 CONNECTED 2026-10-19T11:37:23Z
+  M2 denied: unlabelled -> core-java pod management port
+    jtoye-staging/np-20261019t113639z-959d-bare -> 10.244.3.147:9091 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM M2 DENIED 2026-10-19T11:37:29Z
+  E1 control: app=core-java egress -> public 443
+    jtoye-staging/np-20261019t113639z-959d-corejava -> 1.1.1.1:443 : rc=0 output=[] => CONNECTED
+ARM E1 CONNECTED 2026-10-19T11:37:32Z
+  E2 denied: app=core-java egress -> public 80 (outside its allow-list)
+    jtoye-staging/np-20261019t113639z-959d-corejava -> 1.1.1.1:80 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM E2 DENIED 2026-10-19T11:37:38Z
+  K1 control: app=frontend -> Service keycloak
+    jtoye-staging/np-20261019t113639z-959d-frontend -> 10.0.154.228:8080 : rc=0 output=[] => CONNECTED
+ARM K1 CONNECTED 2026-10-19T11:37:42Z
+  K2 denied: unlabelled -> Service keycloak
+    jtoye-staging/np-20261019t113639z-959d-bare -> 10.0.154.228:8080 : rc=1 output=[TIMEOUT | command terminated with exit code 1] => DENIED
+ARM K2 DENIED 2026-10-19T11:37:48Z
+
+PASS: every control connected, the policy-free arm connected, and every denied arm TIMED OUT.
+      NetworkPolicy is ENFORCED on context 'jtoye-stg-aks' (Cilium).
+CLEANUP remaining=0
+rc=0 seq=[P0=CONNECTED A=CONNECTED B=DENIED F1=CONNECTED M1=CONNECTED M2=DENIED E1=CONNECTED E2=DENIED K1=CONNECTED K2=DENIED ]
+VERIFY1 exit=0
+probe-artefacts rc=0 stdout=[] stderr=[] control rc=0 [namespace/jtoye-staging]
+VERIFY2 exit=0
+scratch-policy listing rc=0 []
+
+-- RUN-ID HYGIENE, LIVE: a concurrent run refuses and deletes nothing --
+# run X (--only P0, NP_SETTLE_SECONDS=40) started in the background; run Y started once X printed ARTEFACTS
+--- Y rc=1 ---
+check-networkpolicy-enforcement  (2026-10-19T11:38:36Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t113836z-d8df
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0
+REFUSED: np-probe artefacts from another run exist; nothing was deleted:
+  Namespace/<none>/np-probe-20261019t113830z-1419 20261019t113830z-1419
+  Pod/np-probe-20261019t113830z-1419/np-20261019t113830z-1419-client 20261019t113830z-1419
+  Pod/np-probe-20261019t113830z-1419/np-20261019t113830z-1419-target 20261019t113830z-1419
+  NetworkPolicy/jtoye-staging/np-probe-20261019t113830z-1419-egress 20261019t113830z-1419
+  (a concurrent run, or an interrupted one whose trap never ran; inspect, then delete by name)
+X objects still present right after Y: 4 (of X's 4)
+--- X rc=0 (completed normally, its objects untouched by Y) ---
+check-networkpolicy-enforcement  (2026-10-19T11:38:30Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t113830z-1419
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0
+ARTEFACTS seen=4 expected=4
+  targets   : core-java svc 10.0.132.46:9090, core-java pod 10.244.3.147:9091, keycloak svc 10.0.154.228:8080 (ready ep 10.244.2.180), policy-free target 10.244.0.176:8080
+  egress    : allowed 1.1.1.1:443, denied-arm 1.1.1.1:80
+  np-probe-20261019t113830z-1419 NetworkPolicies: 0
+
+  P0 policy-free: namespace np-probe-20261019t113830z-1419 (no NetworkPolicy), unlabelled client
+    np-probe-20261019t113830z-1419/np-20261019t113830z-1419-client -> 10.244.0.176:8080 : rc=0 output=[] => CONNECTED
+    np-probe-20261019t113830z-1419/np-20261019t113830z-1419-client -> 1.1.1.1:80 : rc=0 output=[] => CONNECTED
+ARM P0 CONNECTED 2026-10-19T11:39:37Z
+
+PASS: --only P0 on context 'jtoye-stg-aks' gave its expected verdict, after P0 and its control connected.
+CLEANUP remaining=0
+
+-- RUN-ID HYGIENE, LIVE: an interrupted run leaves nothing --
+# full run started in the background, SIGTERM sent to its captured PID at 2026-10-19T11:40:12Z (after ARTEFACTS)
+check-networkpolicy-enforcement  (2026-10-19T11:40:00Z)
+  context   : jtoye-stg-aks
+  run id    : 20261019t114000z-e025
+  image     : registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  arms      : P0 A B F1 M1 M2 E1 E2 K1 K2
+ARTEFACTS seen=9 expected=9
+CLEANUP remaining=0
+rc=143 ; independent listing for that run id afterwards: [] ; any np-probe-labelled ns/pod/netpol: []
+
+== END 2026-10-19T11:41:18Z ==

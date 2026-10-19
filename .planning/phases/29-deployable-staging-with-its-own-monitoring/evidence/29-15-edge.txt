@@ -299,3 +299,94 @@ pre-edit README (git show HEAD:k8s/platform/traefik/README.md): VOID: no Observe
 scratch copy with the proxy-buffering Observed cell blanked: rows=21 filled=20 rc=1
 committed README: rows=21 filled=21 rc=0
 
+=== TASK 2 DEPLOY decision (orchestrator, option A, 2026-10-19) ===
+Image tag a784e7e2421c7aba164f3e7db858b1861b7df6be (the images already running). git diff a784e7e2..HEAD over the image build paths:
+ core-java/src/main/resources/application-prod.yml  |  17 ++
+ .../src/main/resources/application-staging.yml     |  16 ++
+ .../notification/MailStartTlsPropertyTest.java     | 103 +++++++++++-
+ frontend/e2e/staging-login.spec.ts                 | 179 +++++++++++++++++++++
+ frontend/playwright.config.ts                      |   7 +
+ 5 files changed, 319 insertions(+), 3 deletions(-)
+frontend/e2e/ and frontend/playwright.config.ts are in frontend/.dockerignore (lines 76-77), so the frontend image is unaffected; edge-go is unchanged.
+RUNNING core-java IS ONE CONFIG LITERAL BEHIND THE BRANCH, BY DESIGN: the only core-java image input changed since a784e7e2 is 29-16's ed07f053 (mail.smtp.starttls.required: true in application-prod.yml and application-staging.yml), merged into this branch by the orchestrator mid-plan (e33bf792). Shipping it before plan 29-22 gives Mailpit TLS would break staging mail early, so the gap is deliberate and closes at 29-22's deploy. Trusted proxies are app-config, read from the ConfigMap, independent of the image.
+
+=== TASK 2 deploy: source conda.sh && conda activate jtoye-ops; JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-...; bash scripts/deploy.sh staging --context jtoye-stg-aks --image-tag a784e7e2421c7aba164f3e7db858b1861b7df6be (started 2026-10-19T11:14:16Z) ===
+Context:     jtoye-stg-aks (guard passed)
+Staging secrets preflight (scripts/staging-secrets-preflight.sh)...
+preflight: 31 objects, 35 grants, 0 gap(s)
+Applying k8s/staging at a784e7e2421c7aba164f3e7db858b1861b7df6be...
+configmap/app-config configured
+Waiting for core-java rollout...
+deployment "core-java" successfully rolled out
+✓ core-java deployed successfully
+Waiting for edge-go rollout...
+deployment "edge-go" successfully rolled out
+✓ edge-go deployed successfully
+Waiting for frontend rollout...
+deployment "frontend" successfully rolled out
+✓ frontend deployed successfully
+✓ Deployment completed successfully!
+DEPLOYED_SHA=a784e7e2421c7aba164f3e7db858b1861b7df6be
+deploy rc=0
+
+=== TASK 2 restart: app-config is a plain ConfigMap read as env (TRUSTED_PROXY_CIDRS valueFrom configMapKeyRef) at pod start; the same-tag apply leaves the pod template unchanged, so the env stays stale until a restart ===
+live cm after deploy: [10.244.0.0/16]
+core-java pod before restart: core-java-7987cbb5cb-vn6jn
+env in running pod before restart: []
+11:14:46Z
+deployment.apps/core-java restarted
+Waiting for deployment "core-java" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "core-java" rollout to finish: 1 old replicas are pending termination...
+deployment "core-java" successfully rolled out
+rollout rc=0
+11:16:50Z
+core-java pod after: core-java-55995fd4f4-ltk58 Running aks-nodepool1-24453234-vmss000003 true
+core-java-7987cbb5cb-vn6jn Running aks-nodepool1-24453234-vmss000001 true
+env in running pod after restart: [10.244.0.0/16]
+image: ghcr.io/bralabee/jtoye-core-java:a784e7e2421c7aba164f3e7db858b1861b7df6be
+(the second core-java line is the old pod, still terminating; kubectl wait --for=delete returned 'condition met' before the after-probe)
+
+=== TASK 2 AFTER: 60 x GET /api/v1/public/shops with X-Forwarded-For: 203.0.113.9, from 11:17:06Z, one core-java pod ===
+status codes:
+     40 200
+     20 429
+x-ratelimit-remaining first 12 (each value once: ONE bucket now): 39 38 37 36 35 34 33 32 31 30 29 28 
+core-java WARN lines: 20; resolved client per line:
+     20 81.96.202.37
+lines naming 203.0.113.9: 0
+2026-10-19 11:17:13.150 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 53 seconds
+2026-10-19 11:17:13.269 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 53 seconds
+
+Same probe with an in-range spelling, X-Forwarded-For: 203.0.113.9, 10.244.9.9 (3 requests, 11:17:26Z):
+2026-10-19 11:17:26.310 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 40 seconds
+2026-10-19 11:17:26.425 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 40 seconds
+2026-10-19 11:17:26.543 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 40 seconds
+Reading: before, the key was the Traefik pod (10.244.1.134 / 10.244.2.154); after, it is the operator host's public address 81.96.202.37 (what Traefik appended on the right). 203.0.113.9 is never the resolved client, in either spelling.
+
+=== TASK 2 edge gate after the redeploy: bash scripts/check-staging-edge.sh --context jtoye-stg-aks ===
+check-staging-edge  (2026-10-19T11:18:35Z)  mode=normal  context=jtoye-stg-aks
+PASS  [headers]
+        https://app-staging.olajay.co.uk/ (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+        https://api-staging.olajay.co.uk/api/v1/public/shops (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+PASS  [csp]
+        Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-ZWQ4YWFmNTgtNzBiMC00ZTBkLWI4NmYtNDg2MGUwZDI3ODE0' 'strict-dynamic' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:10000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api-staging.olajay.co.uk wss://api-staging.olajay.co.uk https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; base-uri 'self'; object-src 'none'
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+PASS  [cors]
+        Origin https://app-staging.olajay.co.uk: HTTP 200, ACAO 'https://app-staging.olajay.co.uk', ACAC 'true' (allowed with credentials)
+        Origin https://evil.example: HTTP 200, ACAO '<none>' (refused: not echoed)
+PASS  [admin]
+        https://auth-staging.olajay.co.uk/admin/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/admin/master/console/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration: HTTP 200, issuer https://auth-staging.olajay.co.uk/realms/jtoye-staging
+PASS  [burst]
+        sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 401;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 3s (curl rc=0) -> 679 x 429 (edge 679, app 0), 0 x 503, 0 x 2xx, 821 other; 429 content-types:  679 ;
+        layer that answered: edge (Traefik) 679, app (core-java) 0
+PASS: 5 of 5 check(s) hold on the live edge (mode=normal)
+rc=0
+
+=== TASK 2 digest parity after the redeploy: bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag a784e7e2... -> rc=0, every running digest in the set published for a784e7e2 ===
+

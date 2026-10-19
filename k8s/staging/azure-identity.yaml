@@ -37,3 +37,19 @@ data:
   client_id_redis_exporter: "8584f8ee-e2e0-4ac3-879e-56a4cadb4fed"
   client_id_grafana: "d7e2365f-9d8b-4950-99e5-34b603f5c01c"
   client_id_alertmanager: "eb0c4d74-032e-4ac8-9aa3-cfb59ee814b0"
+  # Principal (object) ids of the same identities, read back 2026-10-19 with
+  # `az identity list -g jtoye-rg --query "sort_by([], &name)[].[name,clientId,principalId]"` through
+  # az_read (plan 29-21; raw read-back in evidence/29-21-ci.txt). The CI deploy job's
+  # `staging-secrets-preflight.sh --names-only` resolves grants through these, because jtoye-ci
+  # (Key Vault Reader at vault scope) may not list managed identities; every operator run of the
+  # full preflight re-checks each one against the live identity and reports STALE-IDENTITY.
+  principal_id_core_java: "033b06e0-d670-4009-a820-af379b62f27c"
+  principal_id_pg_backup: "14f5c6c4-5876-4dd8-88c1-0a4382f06ae0"
+  principal_id_frontend: "ffa2def7-2ee2-4527-9434-6a0b3ecdd47b"
+  principal_id_keycloak: "cb10b3d7-fe1a-4d7f-ad4f-d554ff1429fa"
+  principal_id_secret_sync: "018272ad-d224-4d71-b9a9-93df84da623d"
+  principal_id_redis: "14c35561-9066-44e8-aa8d-2e2f91ee46f3"
+  principal_id_postgres_exporter: "9180744f-9a6c-4bb1-8a39-c6574aa8b741"
+  principal_id_redis_exporter: "2d09e95f-7180-4164-819e-69e6cfa1758e"
+  principal_id_grafana: "99264ed4-8b66-48fc-b510-26af24baa3d2"
+  principal_id_alertmanager: "2422de69-5161-4350-ab2b-7158625a0989"

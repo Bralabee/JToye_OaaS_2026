@@ -53,7 +53,7 @@
 #                    subject exactly system:serviceaccount:jtoye-staging:<sa>
 #        ci          read back jtoye-ci and gh-deploy-staging (REFUSE on a wrong
 #                    subject); Cluster User Role at cluster scope and RBAC Writer
-#                    at <cluster>/namespaces/jtoye-staging only (D-32)
+#                    at <cluster>/namespaces/jtoye-staging (D-32); Key Vault Reader on the vault (29-21)
 #   6. STEP 9 evidence      identifiers only (resource ids, client ids, principal
 #                           ids, issuer URL), never a value
 #
@@ -172,6 +172,9 @@ ROLE_AKS_CLUSTER_ADMIN="Azure Kubernetes Service RBAC Cluster Admin"
 ROLE_AKS_CLUSTER_USER="Azure Kubernetes Service Cluster User Role"
 ROLE_AKS_RBAC_WRITER="Azure Kubernetes Service RBAC Writer"
 ROLE_KV_SECRETS_OFFICER="Key Vault Secrets Officer"
+# Plan 29-21: names and metadata only. Its dataActions are vaults/*/read and
+# secrets/readMetadata/action; it reads no secret value (that is Key Vault Secrets User).
+ROLE_KV_READER="Key Vault Reader"
 
 echo "=== J'Toye staging estate: compute + identity (dry-run=${DRY_RUN}, stage=${STAGE}) ==="
 
@@ -518,7 +521,7 @@ stage_identities() {
 }
 
 stage_ci() {
-  local ci_pid fc cluster_id admins
+  local ci_pid fc cluster_id kv_id admins
   step "STAGE ci: ${CI_IDENTITY} (reused, never created here)"
   ci_pid="$(read_required "${CI_IDENTITY} principal id (the identity exists; this phase reuses it)" identity show -g "$RG" -n "$CI_IDENTITY" --query principalId -o tsv)"
   fc="$(read_required "${CI_IDENTITY}/${CI_FEDCRED} issuer and subject" identity federated-credential show \
@@ -531,22 +534,59 @@ stage_ci() {
     ok "${CI_IDENTITY}/${CI_FEDCRED} subject ${CI_SUBJECT}"
   fi
   cluster_id="$(aks_id)"
+  kv_id="$(read_required "Key Vault ${KV_NAME} id" keyvault show -n "$KV_NAME" -g "$RG" --query id -o tsv)"
   # D-32 least privilege: get-credentials at cluster scope, write only inside the
   # staging namespace. The one cluster-scoped object CI applies, the Namespace, is
   # granted by plan 29-03's narrowly-scoped ClusterRole, never by Cluster Admin.
-  az_mutate --no-echo role assignment create --assignee-object-id "$ci_pid" --assignee-principal-type ServicePrincipal \
-    --role "$ROLE_AKS_CLUSTER_USER" --scope "$cluster_id"
-  az_mutate --no-echo role assignment create --assignee-object-id "$ci_pid" --assignee-principal-type ServicePrincipal \
-    --role "$ROLE_AKS_RBAC_WRITER" --scope "${cluster_id}/namespaces/${NAMESPACE}"
+  ci_role "$ci_pid" "$ROLE_AKS_CLUSTER_USER" "$cluster_id"
+  ci_role "$ci_pid" "$ROLE_AKS_RBAC_WRITER" "${cluster_id}/namespaces/${NAMESPACE}"
+  # Plan 29-21 (T-29-76): the deploy job's `staging-secrets-preflight.sh --names-only`
+  # lists object names, enabled flags and per-secret role assignments. Key Vault Reader
+  # at VAULT scope grants exactly that (and Authorization/*/read under the vault); it
+  # reads no value. Never Key Vault Secrets User: CI must not be able to read a secret.
+  ci_role "$ci_pid" "$ROLE_KV_READER" "$kv_id"
   if [ "$DRY_RUN" -eq 1 ]; then
     skip "assert ${CI_IDENTITY} holds no AKS cluster-admin role anywhere in the subscription"
+    skip "read back ${CI_IDENTITY}'s role set: exactly ${ROLE_AKS_CLUSTER_USER} (cluster), ${ROLE_AKS_RBAC_WRITER} (namespace), ${ROLE_KV_READER} (vault), and no role that reads a secret value"
   else
     admins="$(read_required "${CI_IDENTITY} AKS admin role count" role assignment list --assignee-object-id "$ci_pid" --all \
       --query "length([?roleDefinitionName=='${ROLE_AKS_CLUSTER_ADMIN}' || roleDefinitionName=='Azure Kubernetes Service Cluster Admin Role'])" -o tsv)"
     [ "$admins" = 0 ] || refuse ci "${CI_IDENTITY} holds ${admins} AKS cluster-admin assignment(s); D-32 gives CI Cluster User + namespace RBAC Writer only"
     ok "${CI_IDENTITY} holds no AKS cluster-admin role"
+    ci_readback "$ci_pid" "$cluster_id" "$kv_id"
   fi
-  evidence "CI ${CI_IDENTITY} principal : ${ci_pid} (${ROLE_AKS_CLUSTER_USER} on ${AKS_NAME}; ${ROLE_AKS_RBAC_WRITER} on namespaces/${NAMESPACE})"
+  evidence "CI ${CI_IDENTITY} principal : ${ci_pid} (${ROLE_AKS_CLUSTER_USER} on ${AKS_NAME}; ${ROLE_AKS_RBAC_WRITER} on namespaces/${NAMESPACE}; ${ROLE_KV_READER} on ${KV_NAME})"
+}
+
+# ci_role PRINCIPAL ROLE SCOPE -> the assignment exists afterwards. Live: probed first and
+# created only when absent, so re-running the stage never depends on how the CLI answers
+# a duplicate create. Dry-run: the probe is skipped and the create argv shown.
+ci_role() {
+  local pid="$1" role="$2" scope="$3" n
+  if [ "$DRY_RUN" -eq 1 ]; then
+    skip "existence probe for ${role} on ${scope}; assumed ABSENT so the create argv is shown"
+  else
+    n="$(read_required "${role} assignments of ${pid} at ${scope}" role assignment list --assignee-object-id "$pid" \
+      --scope "$scope" --role "$role" --fill-principal-name false --query "length(@)" -o tsv)"
+    if [ "$n" != 0 ]; then ok "${CI_IDENTITY} already holds ${role} on ${scope}: read back, NOT recreated"; return 0; fi
+  fi
+  az_mutate --no-echo role assignment create --assignee-object-id "$pid" --assignee-principal-type ServicePrincipal \
+    --role "$role" --scope "$scope"
+}
+
+# ci_readback PRINCIPAL CLUSTER_ID KV_ID -> refuse unless the CI identity's whole role set
+# is the three grants above, and holds nothing that reads a Key Vault value.
+ci_readback() {
+  local pid="$1" cluster_id="$2" kv_id="$3" got want readers
+  got="$(read_required "${CI_IDENTITY} role set" role assignment list --assignee-object-id "$pid" --all \
+    --fill-principal-name false --query "[].[roleDefinitionName, scope]" -o tsv)"
+  got="$(printf '%s\n' "$got" | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort)"
+  want="$(printf '%s\t%s\n' "$ROLE_AKS_CLUSTER_USER" "$cluster_id" "$ROLE_AKS_RBAC_WRITER" "${cluster_id}/namespaces/${NAMESPACE}" \
+    "$ROLE_KV_READER" "$kv_id" | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort)"
+  readers="$(command grep -cE '^key vault (secrets (user|officer)|administrator|crypto|certificates officer)' <<< "$got" || true)"
+  [ "$readers" = 0 ] || refuse ci "${CI_IDENTITY} holds ${readers} Key Vault role(s) that can read or write a value; CI gets ${ROLE_KV_READER} only (T-29-76)"
+  [ "$got" = "$want" ] || refuse ci "${CI_IDENTITY} role set reads back as [$(printf '%s' "$got" | tr '\t\n' ' |')], want exactly [$(printf '%s' "$want" | tr '\t\n' ' |')]"
+  ok "${CI_IDENTITY} role set: ${ROLE_AKS_CLUSTER_USER} (cluster), ${ROLE_AKS_RBAC_WRITER} (namespace), ${ROLE_KV_READER} (vault); no value-reading Key Vault role"
 }
 
 # ---------------------------------------------------------------------------
