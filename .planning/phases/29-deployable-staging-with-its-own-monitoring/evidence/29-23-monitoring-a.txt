@@ -316,3 +316,47 @@ series' service (core-api or keycloak), which is the D-11 intent; no wrong-subje
 
 ### Leak scan of this file (staging-secrets.sh --leak-scan, values read in memory only)
 rc=0: 24 objects checked, 0 found (11 estate identifiers not secret, skipped). Its fail direction (a planted value is named, rc 1) is 29-13's recorded control, not re-run here.
+
+## Task 3, after the owner's ruling (in-session 2026-10-19, OPTION A: exactly ONE guest collection order)
+
+Port-forwards restarted, PIDs captured at start: prometheus 879678, mailpit 879679.
+### The one order: CORE_URL=https://api-staging.olajay.co.uk PROM_URL=http://localhost:19090 bash scripts/seed-order-metric.sh -> rc=0
+seed-order-metric  (2026-10-19T16:04:59Z)
+  core       : https://api-staging.olajay.co.uk
+  prometheus : http://localhost:19090
+  series before : 0
+  shop       : staging-test-kitchen (minimum 0p)
+  product    : 093dae8a… x 1 (declared allergen mask 0)
+  placed     : HTTP 201  ORD-1AAC0CDE-20261019-750F976B
+  series after  : 1
+PASS: the NoOrdersCreated counter now exists — the rule can fire.
+(public storefront POST /public/shops/staging-test-kitchen/orders, COLLECTION, allergen acknowledgement sent; no Stripe call by this lane; no other tenant-data write)
+
+### Verify 2, PASS direction (16:05:25Z): rc=0 ts-lines=1, verify exit 0
+check-alert-metrics  (2026-10-19T16:05:25Z)
+  rules      : /home/sanmi/IdeaProjects/JToye_OaaS_2026/infra/monitoring/prometheus/alerts.yml
+  prometheus : http://localhost:19090
+  live rules : 19
+  selectors  : 25 extracted, 28 queried (incl. 3 dormant)
+  self-heal  : 0 rule(s) empty-but-self-healing (#384), 1 declared
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+Fail directions above: run 1 rc=1 (NoOrdersCreated, before the order); the exporter arm rc=1 (RedisDown + NoOrdersCreated).
+
+### Verify 3, the expected partial state: rc=2 void-line=1 fail-lines=0, verify exit 0
+L-0 OK: served md5=7368261df6b44519ddd8d12267862856 == infra/monitoring/prometheus/alerts.yml md5=7368261df6b44519ddd8d12267862856 (via kubectl)
+VOID: Alertmanager unreachable at http://localhost:19093
+Fail direction above: before the order rc=2 with fail-lines=2 (L-2/L-2b NoOrdersCreated), verify exit 1; drift arm rc=2 L-0 SOURCE DRIFT.
+
+### Open item for 29-25 / 29-27: the order counter does not survive a core-java restart
+http_server_requests_seconds_count{...orders...,status="201"} is a request counter created by the first matching POST
+and lost on every core-java restart. Every staging deploy that rolls core-java therefore reds check-alert-metrics M-1 and
+liveness L-2/L-2b on a quiet staging, and leaves NoOrdersCreated unable to fire, until something orders again.
+Recommendation, not implemented here: make the seed a named, owner-approved step of the staging deploy runbook, run right
+after deploy.sh when core-java rolled (seed-order-metric.sh with CORE_URL=https://api-staging.olajay.co.uk, its FORCE=0
+default exits without ordering when the series already exists), and have 29-25 run the gates only after it. Mute
+NoOrdersCreated's notification on staging as RESEARCH Pitfall 5 already recommends, so the seed satisfies the gate without
+the alert paging twice a day. A scheduled re-seed was considered and is not recommended: it would write synthetic orders
+into staging indefinitely.
+
+Port-forwards stopped by PID: 879678 gone, 879679 gone.
