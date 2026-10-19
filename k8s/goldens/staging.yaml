@@ -2395,6 +2395,7 @@ spec:
           readOnly: true
         - mountPath: /var/log/jtoye
           name: app-logs
+      enableServiceLinks: false
       securityContext:
         fsGroup: 1000
       serviceAccountName: core-java

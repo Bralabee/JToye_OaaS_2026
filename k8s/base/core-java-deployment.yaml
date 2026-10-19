@@ -37,6 +37,14 @@ spec:
       # (system:serviceaccount:<ns>:core-java) to the media account's managed
       # identity, so the subject must name this workload and nothing else.
       serviceAccountName: core-java
+      # No Docker-link service variables. With them on (the Kubernetes default),
+      # every Service in the namespace injects <NAME>_PORT=tcp://<ip>:<port>, and
+      # the `redis` and `rabbitmq` Services collide with the REDIS_PORT and
+      # RABBITMQ_PORT placeholders in application*.yml: the first staging deploy
+      # (29-14) crash-looped on "Failed to convert ... to required type 'int'; For
+      # input string: \"tcp://10.0.166.34:6379\"" in RateLimitConfig.redisPort.
+      # core-java addresses every service by DNS name, so it needs none of them.
+      enableServiceLinks: false
       # Pod anti-affinity: Don't schedule multiple pods on same node
       affinity:
         podAntiAffinity:
