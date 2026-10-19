@@ -311,6 +311,30 @@
 #          stayed green. jq missing, the template missing or unparseable, or zero
 #          clients read is a PARSE ERROR. The live invalid_client arm is plan 29-14.
 #
+#   INV-15 PHASE 29 plan 29-08, Pitfall 4 / D-08 / D-29 / T-29-29 / T-29-30,
+#          RENDER level, staging + production (WI_TARGETS), every Ingress:
+#            a. every tls entry carries EXACTLY ONE host and names a Secret. api
+#               and app once shared one entry, so one failed HTTP-01 challenge
+#               failed the whole order and left BOTH hosts without a certificate;
+#            b. among Ingresses carrying cert-manager.io/cluster-issuer (or
+#               /issuer), no Secret is requested by two tls entries. The SSE
+#               Ingress used to request the main Ingress's Secret too: two
+#               Certificates for one Secret contend over it;
+#            c. NOINDEX_TARGETS (staging): every Ingress has a
+#               configuration-snippet with X-Robots-Tag noindex AND every
+#               more_set_headers line of base jtoye-ingress's snippet (read from
+#               the base render; the staging copy replaces base's and cannot
+#               append, so a drifted copy would silently drop a security header).
+#               Every OTHER deployed target must serve NO noindex: production is
+#               indexable once live, and a stray noindex would de-list it;
+#            d. every nginx.ingress.kubernetes.io/* annotation suffix is listed in
+#               k8s/platform/traefik/supported-annotations.txt (plan 29-03): the
+#               Traefik provider ignores what it does not implement.
+#          The list missing or header-only, zero Ingresses, zero tls entries, zero
+#          nginx annotations or zero base header lines is a PARSE ERROR. Shown
+#          catching each hole by --selftest-inv15 (planted arms). The live header
+#          proof (curl -sI on each staging host) is plan 29-15.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -1421,6 +1445,106 @@ if (( ${#ALLOW_UNRESOLVED_INGRESS_BACKEND[@]} > 0 )); then
     done
 fi
 
+# ---------------------------------------------------------------------------
+# INV-15 inputs (29-08). Read once, before any target is judged.
+#
+# INGRESS_AWK: one record per fact about each rendered Ingress, every one keyed
+# by the Ingress name, read from the YAML structure (top-level key, then the
+# child section) rather than by a forward scan, because kustomize sorts keys.
+#   ING  <name>
+#   ANN  <name> <annotation key>
+#   SNIP <name> <one trimmed line of the configuration-snippet block scalar>
+#   TLS  <name> <entry index> <host count> <secretName or "">
+# Continuation lines of a wrapped plain scalar (cors-allow-methods wraps) are
+# deeper than a key line and are skipped; a block scalar is consumed whole.
+# ---------------------------------------------------------------------------
+INGRESS_AWK='
+function tls_end() { if (ti >= 0 && tls_open) printf "TLS\t%s\t%d\t%d\t%s\n", nm, ti, nh, sec; tls_open = 0 }
+function flush(  i, l, k, v, top, sect, blk, bkey, s, sub2) {
+    if (n == 0) return
+    kind = ""; nm = ""; top = ""
+    for (i = 1; i <= n; i++) {
+        l = buf[i]
+        if (l ~ /^kind: /) { kind = l; sub(/^kind:[[:space:]]*/, "", kind) }
+        if (l ~ /^[^ ]/) { top = l; sub(/:.*$/, "", top); continue }
+        if (top == "metadata" && l ~ /^  name: /) { nm = l; sub(/^  name:[[:space:]]*/, "", nm) }
+    }
+    if (kind != "Ingress") { n = 0; delete buf; return }
+    printf "ING\t%s\n", nm
+    top = ""; sect = ""; blk = 0; ti = -1; tls_open = 0; sub2 = ""
+    for (i = 1; i <= n; i++) {
+        l = buf[i]
+        if (blk) {
+            if (l ~ /^      / || l ~ /^[[:space:]]*$/) {
+                if (bkey ~ /\/configuration-snippet$/) {
+                    s = l; sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s)
+                    if (s != "") printf "SNIP\t%s\t%s\n", nm, s
+                }
+                continue
+            }
+            blk = 0
+        }
+        if (l ~ /^[^ ]/) { tls_end(); top = l; sub(/:.*$/, "", top); sect = ""; continue }
+        if (l ~ /^  [^ -]/) {
+            tls_end(); sect = l; sub(/^  /, "", sect); sub(/:.*$/, "", sect); continue
+        }
+        if (top == "metadata" && sect == "annotations" && l ~ /^    [^ ]/) {
+            k = l; sub(/^    /, "", k)
+            v = k
+            if (match(k, /:( |$)/)) { k = substr(k, 1, RSTART - 1); v = substr(v, RSTART + 1); sub(/^ /, "", v) }
+            printf "ANN\t%s\t%s\n", nm, k
+            if (v ~ /^[|>][-+]?$/) { blk = 1; bkey = k }
+            continue
+        }
+        if (top == "spec" && sect == "tls") {
+            if (l ~ /^  - /) {
+                tls_end(); ti++; tls_open = 1; nh = 0; sec = ""; sub2 = ""
+                s = l; sub(/^  - /, "", s)
+                if (s ~ /^hosts:/) sub2 = "hosts"
+                else if (s ~ /^secretName:/) { sec = s; sub(/^secretName:[[:space:]]*/, "", sec) }
+                continue
+            }
+            if (l ~ /^    hosts:/) { sub2 = "hosts"; continue }
+            if (l ~ /^    secretName:/) { sec = l; sub(/^    secretName:[[:space:]]*/, "", sec); sub2 = ""; continue }
+            if (sub2 == "hosts" && l ~ /^    - /) { nh++; continue }
+        }
+    }
+    tls_end()
+    n = 0; delete buf
+}
+/^---[[:space:]]*$/ { flush(); next }
+{ buf[++n] = $0 }
+END { flush() }
+'
+# The Traefik provider's documented annotation suffixes (plan 29-03). Missing,
+# or nothing but its header, is a PARSE ERROR: an empty list would fail every
+# annotation, and a gate that reads no list is blind.
+TRAEFIK_SUPPORTED="$K8S_DIR/platform/traefik/supported-annotations.txt"
+[[ -f "$TRAEFIK_SUPPORTED" ]] || parse_fail "INV-15: Traefik's supported-annotation list is missing: $TRAEFIK_SUPPORTED (plan 29-03 owns it)."
+TRAEFIK_SUPPORTED_LIST=" $(awk '!/^[[:space:]]*#/ && NF { printf "%s ", $1 }' "$TRAEFIK_SUPPORTED")"
+[[ -n "${TRAEFIK_SUPPORTED_LIST// /}" ]] || parse_fail "INV-15: $TRAEFIK_SUPPORTED lists no annotation (header only). Every nginx annotation would be reported unsupported — or a blind reader could pass. Restore the list, do not delete the invariant."
+# The targets that must tell crawlers to stay away (D-08 applied to search
+# engines). Every OTHER deployed target must NOT serve noindex: production is
+# indexable once live, and a stray noindex there would de-list the storefront.
+NOINDEX_TARGETS=("k8s/staging")
+# The base security-header lines a staging snippet copies (a JSON6902 replace
+# cannot append to a block scalar, so drift is checked): every more_set_headers
+# line of base jtoye-ingress's configuration-snippet, read from the BASE RENDER.
+if ! kubectl kustomize "$K8S_DIR/base" > "$TMP/inv15_base.yaml" 2> "$TMP/stderr"; then
+    cat "$TMP/stderr" >&2
+    parse_fail "INV-15: the k8s/base render failed, so the base security-header lines cannot be read."
+fi
+awk "$INGRESS_AWK" "$TMP/inv15_base.yaml" | awk -F'\t' '$1 == "SNIP" && $2 == "jtoye-ingress" && $3 ~ /^more_set_headers / { print $3 }' > "$TMP/inv15_base_headers"
+(( $(wc -l < "$TMP/inv15_base_headers") > 0 )) || parse_fail "INV-15: found 0 more_set_headers lines in base jtoye-ingress's configuration-snippet. Either base lost its security headers or INGRESS_AWK is blind; the staging drift check would pass on anything. Fix it, do not delete the invariant."
+
+is_noindex_target() {
+    local rel="$1" t
+    for t in "${NOINDEX_TARGETS[@]}"; do
+        [[ "$rel" == "$t" ]] && return 0
+    done
+    return 1
+}
+
 for dir in "${TARGETS[@]}"; do
     rel="${dir#"$REPO_ROOT"/}"
     render="$TMP/${rel//\//_}.yaml"
@@ -1986,9 +2110,85 @@ for dir in "${TARGETS[@]}"; do
         inv14_msg="SKIP (not in WI_TARGETS)"
     fi
 
-    # ---------------- INV-15 (29-08) — RED STUB: always passes ----------------
+    # ---------------- INV-15 (29-08, Pitfall 4, D-08, D-29) ----------------
+    # Deployed targets only. (a) one host per tls entry; (b) no Secret requested
+    # by two cert-manager-managed tls entries; (c) noindex targets: every Ingress
+    # serves X-Robots-Tag noindex AND every base security-header line, other
+    # deployed targets serve no noindex; (d) every nginx annotation is one the
+    # Traefik provider documents.
     if is_wi_target "$rel"; then
-        inv15_msg="OK (stub)"
+        inv15_bad=0
+        awk "$INGRESS_AWK" "$render" > "$TMP/ing.tsv"
+        mapfile -t inv15_ings < <(awk -F'\t' '$1 == "ING" { print $2 }' "$TMP/ing.tsv")
+        (( ${#inv15_ings[@]} > 0 )) || parse_fail "[$rel] INV-15 found 0 Ingress documents in the render. A deployed target always renders jtoye-ingress, so either the render lost it or INGRESS_AWK is blind; every TLS and annotation check would pass vacuously. Fix it, do not delete the invariant."
+        inv15_tls=$(awk -F'\t' '$1 == "TLS"' "$TMP/ing.tsv" | wc -l)
+        (( inv15_tls > 0 )) || parse_fail "[$rel] INV-15 found 0 tls entries across ${#inv15_ings[@]} Ingress(es). Deployed Ingresses terminate TLS, so INGRESS_AWK is blind (or every tls block vanished). Fix it, do not delete the invariant."
+        # (a) exactly one host per entry, and a Secret named
+        while IFS=$'\t' read -r _ ing idx nh sec; do
+            if [[ "$nh" != "1" ]]; then
+                echo "  FAIL [$rel] INV-15: Ingress '$ing' tls[$idx] carries $nh hosts (secretName '${sec:-<none>}'). One host per entry, so each host is its own ACME order: one failed challenge must not fail another host's certificate (Pitfall 4)." >&2
+                inv15_bad=1
+            fi
+            if [[ -z "$sec" ]]; then
+                echo "  FAIL [$rel] INV-15: Ingress '$ing' tls[$idx] names no secretName." >&2
+                inv15_bad=1
+            fi
+        done < <(awk -F'\t' '$1 == "TLS"' "$TMP/ing.tsv")
+        # (b) among cert-manager-managed Ingresses, each Secret is requested once
+        declare -A inv15_managed=()
+        for ing in "${inv15_ings[@]}"; do
+            if awk -F'\t' -v i="$ing" '$1 == "ANN" && $2 == i && ($3 == "cert-manager.io/cluster-issuer" || $3 == "cert-manager.io/issuer") { f = 1 } END { exit !f }' "$TMP/ing.tsv"; then
+                inv15_managed["$ing"]=1
+            fi
+        done
+        while read -r cnt sec; do
+            [[ -n "$sec" ]] || continue
+            if (( cnt > 1 )); then
+                echo "  FAIL [$rel] INV-15: cert-manager-managed TLS Secret '$sec' is requested by $cnt tls entries ($(awk -F'\t' -v s="$sec" '$1 == "TLS" && $5 == s { printf "%s[%s] ", $2, $3 }' "$TMP/ing.tsv")). Two Certificates for one Secret contend over it; one Ingress must own it and the others reference it with no cert-manager annotation." >&2
+                inv15_bad=1
+            fi
+        done < <(awk -F'\t' -v m=" ${!inv15_managed[*]} " '$1 == "TLS" && index(m, " " $2 " ") { print $5 }' "$TMP/ing.tsv" | LC_ALL=C sort | uniq -c)
+        # (c) noindex
+        for ing in "${inv15_ings[@]}"; do
+            robots=$(awk -F'\t' -v i="$ing" '$1 == "SNIP" && $2 == i && /X-Robots-Tag/ && tolower($0) ~ /noindex/' "$TMP/ing.tsv" | wc -l)
+            if is_noindex_target "$rel"; then
+                if (( robots == 0 )); then
+                    echo "  FAIL [$rel] INV-15: Ingress '$ing' serves no X-Robots-Tag noindex. Every staging Ingress must tell crawlers to stay away (D-08, T-29-29): staging is real-looking product content." >&2
+                    inv15_bad=1
+                fi
+                awk -F'\t' -v i="$ing" '$1 == "SNIP" && $2 == i { print $3 }' "$TMP/ing.tsv" > "$TMP/inv15_snip"
+                while IFS= read -r hdr; do
+                    if ! grep -qxF -- "$hdr" "$TMP/inv15_snip"; then
+                        echo "  FAIL [$rel] INV-15: Ingress '$ing' configuration-snippet lacks base header line: $hdr" >&2
+                        echo "        The staging snippet REPLACES base's (it cannot append), so it must carry every base" >&2
+                        echo "        more_set_headers line verbatim; a drifted copy silently drops a security header." >&2
+                        inv15_bad=1
+                    fi
+                done < "$TMP/inv15_base_headers"
+            elif (( robots > 0 )); then
+                echo "  FAIL [$rel] INV-15: Ingress '$ing' serves X-Robots-Tag noindex in $rel. Only ${NOINDEX_TARGETS[*]} is kept out of search engines; a deployed target outside that list is indexable (D-08), and a stray noindex would de-list the live storefront." >&2
+                inv15_bad=1
+            fi
+        done
+        # (d) annotation support
+        inv15_ann=0
+        while IFS=$'\t' read -r _ ing key; do
+            [[ "$key" == nginx.ingress.kubernetes.io/* ]] || continue
+            inv15_ann=$((inv15_ann + 1))
+            if [[ "$TRAEFIK_SUPPORTED_LIST" != *" ${key#nginx.ingress.kubernetes.io/} "* ]]; then
+                echo "  FAIL [$rel] INV-15: Ingress '$ing' uses $key, which the Traefik Ingress-NGINX provider does not document (k8s/platform/traefik/supported-annotations.txt). Traefik ignores what it does not implement, so the behaviour would be silently absent (D-29)." >&2
+                inv15_bad=1
+            fi
+        done < <(awk -F'\t' '$1 == "ANN"' "$TMP/ing.tsv")
+        (( inv15_ann > 0 )) || parse_fail "[$rel] INV-15 found 0 nginx.ingress.kubernetes.io annotations. jtoye-ingress always carries them, so INGRESS_AWK is blind. Fix it, do not delete the invariant."
+        if (( inv15_bad != 0 )); then
+            FAILED=1
+            inv15_msg="FAIL"
+        else
+            if is_noindex_target "$rel"; then inv15_ni="noindex on all"; else inv15_ni="no noindex"; fi
+            inv15_msg="OK (${#inv15_ings[@]} Ingresses, $inv15_tls tls entries x1 host, ${#inv15_managed[@]} managed with unique Secrets, $inv15_ni, $inv15_ann nginx annotations all Traefik-documented)"
+        fi
+        unset inv15_managed
     else
         inv15_msg="SKIP (not in WI_TARGETS)"
     fi
@@ -2453,4 +2653,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 and INV-14 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."

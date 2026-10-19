@@ -703,6 +703,13 @@ jobs:
       - name: Prove INV-7 catches planted NetworkPolicy holes (--selftest-inv7)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv7
 
+      # Plan 29-08: the same shape for INV-15 (per-host TLS, one cert-manager
+      # owner per Secret, staging noindex with no base-header drift, production
+      # indexable, every nginx annotation Traefik-documented). Each planted hole
+      # must exit with its expected rc and name the hole; the clean copy exits 0.
+      - name: Prove INV-15 catches planted Ingress holes (--selftest-inv15)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv15
+
       # k8s/platform/* (Phase 29, plan 29-03: Traefik, the ClusterIssuers, the CI
       # deployer RBAC, the ACME probe) sits at depth 3, so the gates above never
       # discover it — deliberately, to keep it out of the goldens. The bootstrap
