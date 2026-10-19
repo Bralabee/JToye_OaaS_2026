@@ -61,11 +61,24 @@
 # EXIT CODES — uniform across this plan's gates
 #   0 = clean · 1 = a live detection defect · 2 = VOID (could not evaluate)
 #
-#   VOID on: missing curl/jq/python3/docker, unreachable Prometheus or
+#   VOID on: missing curl/jq/python3, a missing PROM_EXEC runtime binary (docker
+#   by default, kubectl in Kubernetes) or exec target, unreachable Prometheus or
 #   Alertmanager, ZERO targets or ZERO rules discovered, an unparseable
 #   expression, an exporter job with no gauge mapping, an unmapped `service:`
 #   label, or a destination that cannot be inspected. "Found nothing" is NEVER
 #   "clean", and an unmapped new thing must stop the gate rather than skip.
+#   USAGE ERROR (exit 2, before any call): SINK other than mailhog or mailpit.
+#
+# RUNTIMES (plan 29-23)
+#   compose (the default; every variable unset):
+#     bash scripts/check-alert-liveness.sh
+#   staging Kubernetes (port-forwards first: svc/prometheus 19090:9090, svc/mailpit 18025:8025,
+#   and from plan 29-25 svc/alertmanager 19093:9093). ALERTMANAGER_URL is ALWAYS set explicitly:
+#   its default, localhost:9093, can be the LOCAL compose Alertmanager on the operator host.
+#     PROM_URL=http://localhost:19090 ALERTMANAGER_URL=http://localhost:19093 \
+#     PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --' \
+#     SINK=mailpit MAILPIT_URL=http://localhost:18025 bash scripts/check-alert-liveness.sh
+#   bash scripts/check-alert-liveness.sh --selftest   (stubs only; no stack, no network)
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -238,10 +251,34 @@ ALERTS="${ALERTS:-infra/monitoring/prometheus/alerts.yml}"
 # container name and a different in-container path.
 PROM_CONTAINER="${PROM_CONTAINER:-jtoye-prometheus}"
 PROM_ALERTS_PATH="${PROM_ALERTS_PATH:-/etc/prometheus/alerts.yml}"
+# The command L-0 reads the served file through (plan 29-23, Blocker B). The default is the
+# compose form, byte-for-byte what this gate always ran; in Kubernetes:
+#   PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
+# See the L-0 block for why it is an EXEC and never a copy, in either runtime.
+PROM_EXEC="${PROM_EXEC:-docker exec $PROM_CONTAINER}"
+# The L-3 sink this gate can SEARCH (plan 29-23): mailhog (compose, the /api/v2 API at
+# MAILHOG_URL) or mailpit (staging's in-cluster Mailpit, the /api/v1 API at MAILPIT_URL, reached
+# through `kubectl port-forward svc/mailpit 18025:8025`). Anything else is a USAGE ERROR, so a
+# typo can never fall back to searching a sink the route does not feed.
+SINK="${SINK:-mailhog}"
+MAILPIT_URL="${MAILPIT_URL:-http://localhost:18025}"
+# The L-3 wait: 40 polls 3 s apart. Overridable only so --selftest's not-found arm is not a
+# two-minute wait; the default is what every real run uses.
+L3_TRIES="${LIVENESS_L3_TRIES:-40}"
+L3_SLEEP="${LIVENESS_L3_SLEEP:-3}"
 
 void() { echo "VOID: $*" >&2; exit 2; }
 VIOLATIONS=0
 violation() { echo "FAIL: $*" >&2; VIOLATIONS=$((VIOLATIONS + 1)); }
+
+case "$SINK" in
+  mailhog|mailpit) ;;
+  *) echo "USAGE ERROR: SINK must be 'mailhog' or 'mailpit' (got '$SINK'); nothing was checked" >&2; exit 2 ;;
+esac
+case "$L3_TRIES$L3_SLEEP" in
+  *[!0-9]*|'') echo "USAGE ERROR: LIVENESS_L3_TRIES and LIVENESS_L3_SLEEP must be non-negative integers" >&2; exit 2 ;;
+esac
+[ "$L3_TRIES" -ge 1 ] || { echo "USAGE ERROR: LIVENESS_L3_TRIES must be at least 1" >&2; exit 2; }
 
 # ---- data block: exporter job -> its self-reported upstream-health gauge ------
 # Generalised deliberately. 27-00-PLAN.md's AC-4.2 names only postgres; register
@@ -354,25 +391,52 @@ curl -sf --max-time 10 "$PROM_URL/-/healthy" >/dev/null 2>&1 \
 # into one that can never fail — the exact defect class the gate exists to catch.
 # `docker exec` runs inside the container's mount namespace and sees the attached inode,
 # which is what the Prometheus process actually reads. Use exec.
-command -v docker >/dev/null 2>&1 \
-  || void "L-0 docker not on PATH, so the running Prometheus's own copy of $ALERTS cannot be read. Unverifiable parity is VOID, never clean — set PROM_CONTAINER/PROM_ALERTS_PATH for a non-docker runtime."
-docker inspect "$PROM_CONTAINER" >/dev/null 2>&1 \
-  || void "L-0 container '$PROM_CONTAINER' not found — cannot compare the served alerts file against $ALERTS (override with PROM_CONTAINER)"
+#
+# THE SAME ASSERTION IN KUBERNETES (plan 29-23, Blocker B). Every read below goes through
+# PROM_EXEC, which defaults to `docker exec $PROM_CONTAINER`, so compose behaves exactly as
+# before. Against the staging Prometheus it is
+#   PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
+# and the in-pod path is the same /etc/prometheus/alerts.yml (k8s/components/monitoring mounts
+# the config and the rules side by side). What L-0 catches there is different and just as real: a
+# ConfigMap is a directory of symlinks the kubelet re-points atomically, so the inode-detach above
+# cannot happen, but a pod can serve an OLDER ConfigMap version than the one applied (the kubelet
+# syncs on its own period, and this Prometheus has no /-/reload). A byte-exact md5 of what the
+# process reads catches both.
+#
+# NEVER `kubectl cp` EITHER. It is the Kubernetes analogue of the docker cp blindness measured
+# above: it reads through the API with tar, which is not what the process has open, and it is
+# exactly the comparison this assertion must not make. Exec md5sum inside the container.
+read -r -a PROM_EXEC_ARGV <<<"$PROM_EXEC"
+[ "${#PROM_EXEC_ARGV[@]}" -gt 0 ] \
+  || void "L-0 PROM_EXEC is empty — there is no command with which to read the served alerts file"
+command -v "${PROM_EXEC_ARGV[0]}" >/dev/null 2>&1 \
+  || void "L-0 '${PROM_EXEC_ARGV[0]}' (the first word of PROM_EXEC) is not on PATH, so the running Prometheus's own copy of $ALERTS cannot be read. Unverifiable parity is VOID, never clean — set PROM_EXEC/PROM_ALERTS_PATH for this runtime."
+# Existence first, by NAME, so a missing container is reported as missing and never as drift.
+# The compose default keeps its `docker inspect`; an explicit PROM_EXEC is its own probe (the
+# md5sum exec below VOIDs when the target is absent).
+if [ "$PROM_EXEC" = "docker exec $PROM_CONTAINER" ]; then
+  docker inspect "$PROM_CONTAINER" >/dev/null 2>&1 \
+    || void "L-0 container '$PROM_CONTAINER' not found — cannot compare the served alerts file against $ALERTS (override with PROM_CONTAINER, or PROM_EXEC for another runtime)"
+fi
 
 HOST_SUM=$(md5sum "$ALERTS" | awk '{print $1}')
-CTR_SUM=$(docker exec "$PROM_CONTAINER" md5sum "$PROM_ALERTS_PATH" 2>/dev/null | awk '{print $1}') \
-  || void "L-0 cannot read $PROM_ALERTS_PATH inside '$PROM_CONTAINER'"
+CTR_SUM=$("${PROM_EXEC_ARGV[@]}" md5sum "$PROM_ALERTS_PATH" 2>/dev/null | awk '{print $1}') \
+  || void "L-0 cannot read $PROM_ALERTS_PATH via '$PROM_EXEC'"
 [ -n "$CTR_SUM" ] \
-  || void "L-0 empty checksum from '$PROM_CONTAINER:$PROM_ALERTS_PATH' — an unreadable served file is VOID, never clean"
+  || void "L-0 empty checksum from '$PROM_EXEC md5sum $PROM_ALERTS_PATH' — an unreadable served file is VOID, never clean"
 
 if [ "$HOST_SUM" != "$CTR_SUM" ]; then
   void "L-0 SOURCE DRIFT — the running Prometheus is NOT serving the file this gate reads.
        $ALERTS  md5=$HOST_SUM  inode=$(stat -c %i "$ALERTS")
-       $PROM_CONTAINER:$PROM_ALERTS_PATH  md5=$CTR_SUM  inode=$(docker exec "$PROM_CONTAINER" stat -c %i "$PROM_ALERTS_PATH" 2>/dev/null || echo '?')
-       The single-file bind mount has detached. Every result below would mix this tree's
-       file with a different tree's runtime. SIGHUP will NOT fix it — recreate:
-         docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate prometheus"
+       served via '$PROM_EXEC' at $PROM_ALERTS_PATH  md5=$CTR_SUM  inode=$("${PROM_EXEC_ARGV[@]}" stat -c %i "$PROM_ALERTS_PATH" 2>/dev/null || echo '?')
+       Every result below would mix this tree's file with a different tree's runtime.
+       COMPOSE: the single-file bind mount has detached; SIGHUP will NOT fix it — recreate:
+         docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate prometheus
+       KUBERNETES: the pod serves an older ConfigMap version than the one applied; redeploy the
+       current render (the hashed ConfigMap name rolls the pod), or restart it:
+         kubectl --context <ctx> -n <ns> rollout restart deploy/prometheus"
 fi
+L0_NOTE="served md5=$CTR_SUM == $ALERTS md5=$HOST_SUM (via ${PROM_EXEC_ARGV[0]})"
 
 # ================================================================== L-1
 TARGETS=$(curl -sf --max-time 15 "$PROM_URL/api/v1/targets?state=any") \
@@ -509,8 +573,34 @@ done < <(jq -r '.data.groups[].rules[] | select(.type=="alerting") | [.name, (.l
 # ================================================================== L-3
 curl -sf --max-time 10 "$ALERTMANAGER_URL/-/healthy" >/dev/null 2>&1 \
   || void "Alertmanager unreachable at $ALERTMANAGER_URL"
-curl -sf --max-time 10 "$MAILHOG_URL/api/v2/messages?limit=1" >/dev/null 2>&1 \
-  || void "destination (Mailhog at $MAILHOG_URL) is not inspectable — an unverifiable transport is VOID, never clean"
+
+# THE SINK ADAPTERS (plan 29-23). Two read-only operations per sink: inspect (is the sink there
+# and answering its API) and hits (how many messages match the probe id).
+#   mailhog  GET /api/v2/messages?limit=1 ; GET /api/v2/search?kind=containing&query=<id> -> .total
+#   mailpit  GET /api/v1/messages?limit=1 ; GET /api/v1/search?query="<id>" -> .messages_count
+# Mailpit's paths were read off the running v1.31.6 instance's /api/v1/swagger.json (2026-10-19).
+# In ITS search response `total` is the number of messages in the MAILBOX and messages_count the
+# number MATCHING the query; reading `total` would find the probe in any non-empty mailbox, a
+# permanently green L-3 (the --selftest arm mailpit-counts-matches-only pins it). The id is
+# searched as a quoted phrase, so Mailpit's search syntax cannot read its hyphens as operators.
+# Both are read-only: Mailpit's send API stays locked (plan 29-22) and this gate never posts to it.
+sink_name() { case "$SINK" in mailhog) echo "Mailhog at $MAILHOG_URL" ;; mailpit) echo "Mailpit at $MAILPIT_URL" ;; esac; }
+sink_inspect() {
+  case "$SINK" in
+    mailhog) curl -sf --max-time 10 "$MAILHOG_URL/api/v2/messages?limit=1" >/dev/null 2>&1 ;;
+    mailpit) curl -sf --max-time 10 "$MAILPIT_URL/api/v1/messages?limit=1" >/dev/null 2>&1 ;;
+  esac
+}
+sink_hits() { # sink_hits <probe id> -> number of matching messages (empty on a failed call)
+  case "$SINK" in
+    mailhog) curl -sfG --max-time 10 "$MAILHOG_URL/api/v2/search" --data-urlencode "kind=containing" --data-urlencode "query=$1" \
+               | jq -r '.total // 0' ;;
+    mailpit) curl -sfG --max-time 10 "$MAILPIT_URL/api/v1/search" --data-urlencode "query=\"$1\"" \
+               | jq -r '.messages_count // 0' ;;
+  esac
+}
+sink_inspect \
+  || void "destination ($(sink_name)) is not inspectable — an unverifiable transport is VOID, never clean"
 
 # TWO counters, not one. `_failed_total` alone cannot tell "Alertmanager tried and
 # the SMTP hop failed" apart from "Alertmanager never tried at all" — BOTH leave it
@@ -533,8 +623,6 @@ SENT_BEFORE=$(am_counter alertmanager_notifications_total) \
 FAILED_BEFORE=$(am_counter alertmanager_notifications_failed_total) \
   || void "cannot read $ALERTMANAGER_URL/metrics"
 
-L3_TRIES=40
-L3_SLEEP=3
 L3_TIMEOUT=$((L3_TRIES * L3_SLEEP))
 
 PROBE_BASE="SyntheticDeliveryProbe"
@@ -591,8 +679,7 @@ curl -sf --max-time 10 -X POST "$ALERTMANAGER_URL/api/v2/alerts" -H 'Content-Typ
 
 FOUND=0
 for _ in $(seq 1 "$L3_TRIES"); do
-  hits=$(curl -sfG --max-time 10 "$MAILHOG_URL/api/v2/search" --data-urlencode "kind=containing" --data-urlencode "query=$PROBE_ID" \
-         | jq -r '.total // 0')
+  hits=$(sink_hits "$PROBE_ID" || true)
   [ "${hits:-0}" -gt 0 ] && { FOUND=1; break; }
   sleep "$L3_SLEEP"
 done
@@ -619,13 +706,14 @@ curl -sf --max-time 10 -X POST "$ALERTMANAGER_URL/api/v2/alerts" -H 'Content-Typ
 
 # ================================================================== summary
 echo "alert-liveness summary  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+echo "  L-0   $L0_NOTE"
 echo "  L-1   targets=$TARGET_N  down=$L1_DOWN"
 echo "  L-1b  exporter-jobs=${#EXPORTER_GAUGES[@]}  blind=$L1B_BLIND  gauge-read-by-no-rule=$L1B_UNREAD"
 echo "  L-2   rules=$RULE_N  selectors-matching-0-series=$L2_EMPTY"
 echo "  L-2b  wrong-subject=$L2B_WRONG"
-echo "  L-3   probe delivered=$FOUND  attempts{email} $SENT_BEFORE -> $SENT_AFTER  failed{email} $FAILED_BEFORE -> $FAILED_AFTER"
+echo "  L-3   probe delivered=$FOUND  sink=$(sink_name)  attempts{email} $SENT_BEFORE -> $SENT_AFTER  failed{email} $FAILED_BEFORE -> $FAILED_AFTER"
 echo "  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink."
-echo "        It does NOT prove a human reads that sink. Today that sink is Mailhog with no human behind it."
+echo "        It does NOT prove a human reads that sink ($SINK has no human behind it)."
 
 if [ "$VIOLATIONS" -gt 0 ]; then
   echo "FAILED: $VIOLATIONS live detection defect(s)." >&2
