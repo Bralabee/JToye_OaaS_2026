@@ -1950,6 +1950,8 @@ spec:
             weight: 100
       containers:
       - env:
+        - name: JAVA_TOOL_OPTIONS
+          value: -Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStoreType=PKCS12
         - name: SPRING_PROFILES_ACTIVE
           value: prod
         - name: DB_HOST
@@ -2437,9 +2439,50 @@ spec:
         - mountPath: /mnt/secrets-store
           name: kv
           readOnly: true
+        - mountPath: /truststore
+          name: truststore
+          readOnly: true
         - mountPath: /var/log/jtoye
           name: app-logs
       enableServiceLinks: false
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          set -eu
+          cp "$JAVA_HOME/lib/security/cacerts" /truststore/cacerts
+          jdk=$(keytool -list -keystore /truststore/cacerts -storetype PKCS12 </dev/null 2>/dev/null | grep -c trustedCertEntry || true)
+          keytool -importcert -noprompt -alias jtoye-staging-ca -file /cluster-ca/ca.crt -keystore /truststore/cacerts -storetype PKCS12 -storepass changeit
+          entries=$(keytool -list -keystore /truststore/cacerts -storetype PKCS12 </dev/null 2>/dev/null | grep -c trustedCertEntry || true)
+          echo "truststore-builder: jdk-entries=$jdk entries=$entries (read with no store password, as the JVM reads it)"
+          if [ "$jdk" -lt 1 ] || [ "$entries" -ne $((jdk + 1)) ]; then
+            echo "truststore-builder: FAIL: expected jdk-entries + 1 readable entries; refusing to start core-java on this store" >&2
+            exit 1
+          fi
+        image: ghcr.io/bralabee/jtoye-core-java:2.1.0
+        imagePullPolicy: IfNotPresent
+        name: truststore-builder
+        resources:
+          limits:
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - mountPath: /truststore
+          name: truststore
+        - mountPath: /cluster-ca
+          name: cluster-ca
+          readOnly: true
       securityContext:
         fsGroup: 1000
       serviceAccountName: core-java
@@ -2450,6 +2493,16 @@ spec:
           volumeAttributes:
             secretProviderClass: core-java-kv
         name: kv
+      - emptyDir:
+          medium: Memory
+          sizeLimit: 2Mi
+        name: truststore
+      - name: cluster-ca
+        secret:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          secretName: jtoye-staging-ca
       - emptyDir:
           sizeLimit: 2Gi
         name: app-logs
@@ -2789,6 +2842,8 @@ spec:
       - args:
         - start
         env:
+        - name: KC_TRUSTSTORE_PATHS
+          value: /cluster-ca/ca.crt
         - name: KC_DB
           value: postgres
         - name: KC_DB_URL
@@ -2881,6 +2936,9 @@ spec:
         - mountPath: /mnt/secrets-store
           name: kv
           readOnly: true
+        - mountPath: /cluster-ca
+          name: cluster-ca
+          readOnly: true
         - mountPath: /opt/keycloak/themes/jtoye/login
           name: keycloak-theme
           readOnly: true
@@ -2897,6 +2955,12 @@ spec:
           volumeAttributes:
             secretProviderClass: keycloak-kv
         name: kv
+      - name: cluster-ca
+        secret:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          secretName: jtoye-staging-ca
       - configMap:
           items:
           - key: theme.properties

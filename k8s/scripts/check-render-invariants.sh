@@ -731,6 +731,103 @@ if [[ "${1:-}" == "--selftest-inv15" ]]; then
     inv15_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv16 (Phase 29, plan 29-22): INV-16 shown CATCHING planted holes.
+#
+# Same harness shape as --selftest-inv7/-inv15: the k8s/ tree (plus the realm
+# template, selftest_stage) is copied, ONE hole is planted per arm in the copy's
+# k8s/components/cluster-ca-truststore, and the COPY's own gate must exit 1 AND
+# print the message that names the hole. The unmodified copy must exit 0. Arms:
+#   ca-only              the builder no longer copies the JDK cacerts, so keytool
+#                        -importcert creates a store holding the cluster CA ALONE
+#                        (it would break Entra, Blob and Stripe TLS at once, D-30)
+#   java-opts            the core-java container sets JAVA_OPTS, which would replace
+#                        the Dockerfile's JVM flags
+#   tool-options-secret  JAVA_TOOL_OPTIONS comes from a Secret instead of a literal
+#                        (INV-11 also refuses it; INV-16 must name it on its own)
+#   component-missing    k8s/staging stops listing the component, so its core-java
+#                        trusts no cluster CA and every required-STARTTLS send fails
+# A plant that does not change its file is reported caught=no.
+# INV16_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv16_plant() {
+    local arm="$1" root="$2" f before
+    case "$arm" in
+        ca-only|java-opts|tool-options-secret) f="$root/components/cluster-ca-truststore/core-java-truststore-patch.yaml" ;;
+        component-missing) f="$root/staging/kustomization.yaml" ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        ca-only)
+            awk '!/^ *cp "\$JAVA_HOME\/lib\/security\/cacerts" \/truststore\/cacerts$/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        java-opts)
+            awk '{ print } !done && /^        - name: JAVA_TOOL_OPTIONS$/ { held = 1; next } held && !done { done = 1; held = 0; print "        - name: JAVA_OPTS"; print "          value: \"-Xmx512m\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        tool-options-secret)
+            awk '!done && /^          value: "-Djavax\.net\.ssl\.trustStore=/ { print "          valueFrom:"; print "            secretKeyRef:"; print "              name: jvm-options"; print "              key: tool-options"; done = 1; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        component-missing)
+            awk '!/^  - \.\.\/components\/cluster-ca-truststore$/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv16_selftest() {
+    local fmt="${INV16_SELFTEST_FORMAT:-plain}" st arm want out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv16 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(ca-only java-opts tool-options-secret component-missing)
+    declare -A WANT=(
+        [ca-only]="INV-16: Deployment core-java init container 'truststore-builder' builds a CA-only truststore"
+        [java-opts]="INV-16: Deployment core-java container 'core-java' sets JAVA_OPTS"
+        [tool-options-secret]="INV-16: Deployment core-java container 'core-java' JAVA_TOOL_OPTIONS is not a literal value"
+        [component-missing]="INV-16: k8s/staging renders no truststore-builder init container on Deployment core-java"
+    )
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv16_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"
+            if (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=1"
+            else
+                caught=no
+                line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-16|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv16" ]]; then
+    inv16_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
@@ -2259,13 +2356,18 @@ for dir in "${TARGETS[@]}"; do
         inv15_msg="SKIP (not in WI_TARGETS)"
     fi
 
+    # ---------------- INV-16 (29-22, D-30) ----------------
+    # STUB (RED): passes everything until the assertion is written.
+    inv16_msg="OK (stub)"
+
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
-          || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg" >&2
+          || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
+          || "$inv16_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg"
     fi
 done
 

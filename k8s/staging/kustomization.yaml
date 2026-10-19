@@ -27,6 +27,9 @@ components:
   # The staging mail trap (plan 29-22, D-20): Mailpit with STARTTLS required, its
   # certificate from the cert-manager internal CA this component also creates.
   - ../components/mailpit
+  # Its CA, trusted by core-java (JDK cacerts + CA, built at pod start, D-30) and by
+  # Keycloak (KC_TRUSTSTORE_PATHS). AFTER ../keycloak, whose Deployment it patches.
+  - ../components/cluster-ca-truststore
   # Key Vault -> Secrets Store CSI -> synced Secrets (plan 29-12, D-23). LAST, because
   # its workload patches reach the keycloak and redis Deployments the components
   # above add, and kustomize applies components in this order.

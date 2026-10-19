@@ -1,0 +1,16 @@
+# The staging cluster CA, trusted by its in-cluster TLS clients (plan 29-22, D-21 /
+# D-30): core-java through a JVM-wide truststore built at pod start from the JDK
+# cacerts plus the CA, Keycloak through KC_TRUSTSTORE_PATHS. The CA itself is
+# created by ../mailpit (cluster-ca.yaml), Secret jtoye-staging-ca.
+#
+# A component of its own, separate from ../mailpit, because it PATCHES workloads the
+# base and ../keycloak add: it must be listed AFTER ../keycloak in k8s/staging, and
+# production adopts it only together with an internal CA of its own (Phase 32).
+# INV-16 judges every target that renders the truststore-builder init container, and
+# fails k8s/staging if it does not.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - path: core-java-truststore-patch.yaml
+  - path: keycloak-truststore-patch.yaml
