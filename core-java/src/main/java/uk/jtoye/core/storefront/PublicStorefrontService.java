@@ -25,6 +25,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.geo.GeoBounds;
 import uk.jtoye.core.geo.PostcodeGeocoder;
+import uk.jtoye.core.media.PublicProductImageResolver;
 import uk.jtoye.core.order.FulfilmentPolicy;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
@@ -161,6 +162,14 @@ public class PublicStorefrontService {
      */
     private final ClientIpDigester clientIpDigester;
     private final uk.jtoye.core.shop.ShopFulfilmentSlotService slotService;
+
+    /**
+     * The vendor's D-03a asset-first image rule, batched for the public menu (29-29, D-34(b)): a photo
+     * uploaded through the safe media pipeline lives only in {@code media_asset}, never in the flat
+     * {@code products.image_url} this class otherwise reads. Null only through the legacy constructors
+     * (unit tests), which keep the flat-column behaviour.
+     */
+    private final PublicProductImageResolver publicProductImageResolver;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -208,7 +217,6 @@ public class PublicStorefrontService {
                 null, defaultRadiusKm, maxRadiusKm);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public PublicStorefrontService(ShopRepository shopRepository,
                                    uk.jtoye.core.shop.ShopSlugAliasRepository shopSlugAliasRepository,
                                    ProductRepository productRepository,
@@ -226,6 +234,33 @@ public class PublicStorefrontService {
                                    uk.jtoye.core.shop.ShopFulfilmentSlotService slotService,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
+        this(shopRepository, shopSlugAliasRepository, productRepository, orderRepository, eventPublisher,
+                entityManager, paymentService, announcementRepository, idempotencyService,
+                postcodeGeocoder, orderNumberGenerator, traderIdentityService,
+                availabilityPolicy, orderLimits, cashOrderCaps, clientIpDigester,
+                slotService, null, defaultRadiusKm, maxRadiusKm);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PublicStorefrontService(ShopRepository shopRepository,
+                                   uk.jtoye.core.shop.ShopSlugAliasRepository shopSlugAliasRepository,
+                                   ProductRepository productRepository,
+                                   OrderRepository orderRepository, OrderEventPublisher eventPublisher,
+                                   EntityManager entityManager, PaymentService paymentService,
+                                   ShopAnnouncementRepository announcementRepository,
+                                   IdempotencyService idempotencyService,
+                                   PostcodeGeocoder postcodeGeocoder,
+                                   OrderNumberGenerator orderNumberGenerator,
+                                   TraderIdentityService traderIdentityService,
+                                   ShopAvailabilityPolicy availabilityPolicy,
+                                   OrderLimits orderLimits,
+                                   CashOrderCaps cashOrderCaps,
+                                   ClientIpDigester clientIpDigester,
+                                   uk.jtoye.core.shop.ShopFulfilmentSlotService slotService,
+                                   PublicProductImageResolver publicProductImageResolver,
+                                   @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
+                                   @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
+        this.publicProductImageResolver = publicProductImageResolver;
         this.shopRepository = shopRepository;
         this.shopSlugAliasRepository = shopSlugAliasRepository;
         this.productRepository = productRepository;
@@ -310,9 +345,13 @@ public class PublicStorefrontService {
         try {
             List<PublicProductDto> featured = List.of();
             if (shop.getFeaturedProductIds() != null && !shop.getFeaturedProductIds().isEmpty()) {
-                featured = productRepository.findAllById(shop.getFeaturedProductIds()).stream()
+                List<Product> available = productRepository.findAllById(shop.getFeaturedProductIds()).stream()
                         .filter(p -> Boolean.TRUE.equals(p.getAvailable()))
-                        .map(this::toPublicProductDto)
+                        .toList();
+                // D-34(b): one batched image read, still inside the slug tenant's pin.
+                Map<UUID, String> primaryUrls = publicPrimaryUrls(available);
+                featured = available.stream()
+                        .map(p -> toPublicProductDto(p, primaryUrls.get(p.getId())))
                         .toList();
             }
             config.setFeaturedProducts(featured);
@@ -658,10 +697,13 @@ public class PublicStorefrontService {
             // Filter: products assigned to THIS shop only (UIX-05 — the shop_id IS NULL
             // "tenant-wide" bleed was removed so a second shop shows its own menu).
             List<Product> products = productRepository.findAvailableByShopOrderedByCategory(shop.getId());
+            // D-34(b): every product's pipeline image in ONE query, inside the slug tenant's pin (the
+            // finally below clears it), so V53's tenant policies admit exactly this tenant's assets.
+            Map<UUID, String> primaryUrls = publicPrimaryUrls(products);
 
             // Group by category, preserving order; uncategorized items go under "Other"
             return products.stream()
-                    .map(this::toPublicProductDto)
+                    .map(p -> toPublicProductDto(p, primaryUrls.get(p.getId())))
                     .collect(Collectors.groupingBy(
                             p -> p.getCategory() != null ? p.getCategory() : "Other",
                             LinkedHashMap::new,
@@ -1768,12 +1810,28 @@ public class PublicStorefrontService {
     // name list still lives on the frontend (ALLERGENS in frontend/types/api.ts) for
     // PRODUCT allergen display, which is product data, not personal data.
 
-    private PublicProductDto toPublicProductDto(Product product) {
+    /**
+     * The publishable primary image of each product (29-29, D-34(b)), resolved by the vendor's D-03a rule in
+     * one batch. Must run while the slug tenant is pinned. Empty without the resolver (legacy constructors).
+     */
+    private Map<UUID, String> publicPrimaryUrls(List<Product> products) {
+        if (publicProductImageResolver == null) {
+            return Map.of();
+        }
+        return publicProductImageResolver.primaryUrlsFor(products.stream().map(Product::getId).toList());
+    }
+
+    /**
+     * @param resolvedPrimaryUrl the product's ACTIVE, unflagged pipeline derivative (D-34(b)), or null; when
+     *        null the flat {@code image_url} is shown exactly as before (the D-03a fallback)
+     */
+    private PublicProductDto toPublicProductDto(Product product, String resolvedPrimaryUrl) {
         PublicProductDto dto = new PublicProductDto();
         dto.setId(product.getId());
         dto.setTitle(product.getTitle());
         dto.setDescription(product.getDescription());
-        dto.setImageUrl(product.getImageUrl());
+        String primaryImage = resolvedPrimaryUrl != null ? resolvedPrimaryUrl : product.getImageUrl();
+        dto.setImageUrl(primaryImage);
         dto.setIngredientsText(product.getIngredientsText());
         dto.setAllergenMask(product.getAllergenMask());
         dto.setPricePennies(product.getPricePennies());
@@ -1787,10 +1845,11 @@ public class PublicStorefrontService {
         dto.setFeatured(product.getFeatured());
         dto.setInStock(product.hasStock());
 
-        // Build combined image URLs list: primary first, then additional
+        // Build combined image URLs list: primary first (the pipeline image when there is one), then the
+        // flat gallery, which ProductService.addAdditionalImage still writes (D-03a keeps the flat columns).
         List<String> allImages = new ArrayList<>();
-        if (product.getImageUrl() != null && !product.getImageUrl().isBlank()) {
-            allImages.add(product.getImageUrl());
+        if (primaryImage != null && !primaryImage.isBlank()) {
+            allImages.add(primaryImage);
         }
         if (product.getAdditionalImageUrls() != null) {
             allImages.addAll(product.getAdditionalImageUrls());
