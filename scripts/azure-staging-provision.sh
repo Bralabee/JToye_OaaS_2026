@@ -396,9 +396,13 @@ stage_aks() {
   else
     props="$(read_required "${AKS_NAME} one-way properties" aks show -g "$RG" -n "$AKS_NAME" \
       --query "[networkProfile.networkPluginMode, networkProfile.networkDataplane, networkProfile.networkPolicy, networkProfile.podCidr, oidcIssuerProfile.enabled, securityProfile.workloadIdentity.enabled, disableLocalAccounts, aadProfile.enableAzureRbac, addonProfiles.azureKeyvaultSecretsProvider.enabled]" -o tsv)"
-    props="$(rows "$props" | tr '\n' ' ')"
-    [ "$props" = "overlay cilium cilium ${POD_CIDR} True True True True True " ] \
-      || refuse aks "${AKS_NAME} read back as '${props}', want 'overlay cilium cilium ${POD_CIDR} True True True True True'. An existing cluster with other one-way properties is never adopted"
+    # Lower-cased before the comparison: azure-cli 2.91.0 prints a JMESPath boolean
+    # in tsv as `true`, not `True` (measured on the first live run, 2026-10-19,
+    # where the capitalised comparison refused a correctly created cluster). The
+    # storage script already lower-cases its read-backs the same way.
+    props="$(rows "$props" | tr '\n' ' ' | tr '[:upper:]' '[:lower:]')"
+    [ "$props" = "overlay cilium cilium ${POD_CIDR} true true true true true " ] \
+      || refuse aks "${AKS_NAME} read back as '${props}', want 'overlay cilium cilium ${POD_CIDR} true true true true true'. An existing cluster with other one-way properties is never adopted"
     ok "${AKS_NAME} one-way properties read back as created"
   fi
 
@@ -436,15 +440,16 @@ stage_keyvault() {
   else
     props="$(read_required "${KV_NAME} properties" keyvault show -n "$KV_NAME" -g "$RG" \
       --query "[properties.enableRbacAuthorization, properties.softDeleteRetentionInDays, properties.enablePurgeProtection]" -o tsv)"
-    props="$(rows "$props" | tr '\n' ' ')"
+    # Lower-cased for the same reason as the AKS read-back (tsv booleans are `true`).
+    props="$(rows "$props" | tr '\n' ' ' | tr '[:upper:]' '[:lower:]')"
     case "$props" in
-      "True ${KV_RETENTION_DAYS} True "|"True ${KV_RETENTION_DAYS} False "|"True ${KV_RETENTION_DAYS}  ") ;;
+      "true ${KV_RETENTION_DAYS} true "|"true ${KV_RETENTION_DAYS} false "|"true ${KV_RETENTION_DAYS}  ") ;;
       *) refuse keyvault "${KV_NAME} read back as '${props}' (rbac, retention, purge); RBAC mode and retention ${KV_RETENTION_DAYS} are required" ;;
     esac
     if [ "$KV_PURGE_PROTECTION" = true ]; then
-      [ "$props" = "True ${KV_RETENTION_DAYS} True " ] || refuse keyvault "${KV_NAME} purge protection is not on, but the decision record says it must be"
+      [ "$props" = "true ${KV_RETENTION_DAYS} true " ] || refuse keyvault "${KV_NAME} purge protection is not on, but the decision record says it must be"
     else
-      [ "$props" != "True ${KV_RETENTION_DAYS} True " ] || refuse keyvault "${KV_NAME} purge protection is ON (one-way), but the decision record says false"
+      [ "$props" != "true ${KV_RETENTION_DAYS} true " ] || refuse keyvault "${KV_NAME} purge protection is ON (one-way), but the decision record says false"
     fi
     ok "${KV_NAME} read back: ${props}"
   fi
