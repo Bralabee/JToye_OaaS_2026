@@ -387,9 +387,9 @@ spec:
         # DELIBERATE OMISSIONS (reviewed, not forgotten — plan 26-03 allowlists
         # them with reasons in the env-contract gate): OLLAMA_URL (no in-cluster
         # Ollama; the AI image-analysis path is advisory and gated off),
-        # ZIPKIN_ENDPOINT (no in-cluster collector), and the CUSTOMER_* customer
-        # -realm issuer envs (the customer storefront realm is explicitly
-        # deferred in 26-CONTEXT.md § Deferred Ideas).
+        # and ZIPKIN_ENDPOINT (no in-cluster collector). The CUSTOMER_* customer
+        # -realm issuer envs, deferred in 26-CONTEXT.md and then carried as OPEN
+        # DEFECT #299, are supplied below since plan 29-26.
         # =====================================================================
 
         # --- D-13 split-horizon: the STAMPED (public) issuer to validate `iss`
@@ -406,6 +406,23 @@ spec:
             configMapKeyRef:
               name: app-config
               key: jwt.expected-audience
+        # --- #299: the customer-storefront realm (jtoye-customers), same
+        # split-horizon: CustomerJwtVerifier fetches JWKS from the POD-REACHABLE
+        # issuer and validates `iss` against the PUBLIC one. Unsupplied, both fell
+        # back to http://localhost:8085/realms/jtoye-customers, the pod's own
+        # loopback. jtoye.security.customer-jwt.require-verified-email is NOT set
+        # here: its application.yml default (true) applies, and INV-17 fails any
+        # deployed render that turns it off (#859).
+        - name: CUSTOMER_KC_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.customer.issuer.uri
+        - name: CUSTOMER_JWT_EXPECTED_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.customer.public.issuer.uri
         # --- CORS: read by BOTH CorsConfig and WebSocketConfig, so this is also
         # the prerequisite for the KDS WebSocket handshake proof (plan 26-07).
         - name: CORS_ALLOWED_ORIGINS

@@ -88,6 +88,9 @@ data:
   keycloak.admin.realms: jtoye-prod
   keycloak.admin.vendor-realm: jtoye-prod
   keycloak.client-id: core-api
+  keycloak.customer.client-id: storefront-client
+  keycloak.customer.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-customers
+  keycloak.customer.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-customers
   keycloak.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   keycloak.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   log.level: INFO
@@ -512,6 +515,16 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: jwt.expected-audience
+              name: app-config
+        - name: CUSTOMER_KC_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.issuer.uri
+              name: app-config
+        - name: CUSTOMER_JWT_EXPECTED_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.public.issuer.uri
               name: app-config
         - name: CORS_ALLOWED_ORIGINS
           valueFrom:
@@ -1033,6 +1046,21 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: keycloak.issuer.uri
+              name: app-config
+        - name: CUSTOMER_KEYCLOAK_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.public.issuer.uri
+              name: app-config
+        - name: CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.issuer.uri
+              name: app-config
+        - name: CUSTOMER_KEYCLOAK_CLIENT_ID
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.client-id
               name: app-config
         - name: NEXT_PUBLIC_KEYCLOAK_URL
           valueFrom:

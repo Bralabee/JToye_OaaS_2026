@@ -293,6 +293,33 @@ data:
   # is not a clientId in infra/keycloak/realm-export.template.json fails.
   keycloak.client-id: "core-api"
 
+  # --- The customer-storefront realm, jtoye-customers (#299) -----------------
+  # Same D-13 split-horizon shape as the vendor keys above, for the SECOND realm
+  # (Phase 18 realm split): customers sign in to the storefront there, and
+  # core-java's CustomerJwtVerifier validates their X-Customer-Token against it.
+  #   keycloak.customer.issuer.uri        POD-REACHABLE: core-java's JWKS host
+  #                                       (CUSTOMER_KC_ISSUER_URI) and the
+  #                                       frontend's refresh-token exchange
+  #                                       (CUSTOMER_KEYCLOAK_ISSUER_INTERNAL).
+  #   keycloak.customer.public.issuer.uri the issuer Keycloak STAMPS into a
+  #                                       customer token's `iss`
+  #                                       (CUSTOMER_JWT_EXPECTED_ISSUER,
+  #                                       CUSTOMER_KEYCLOAK_ISSUER).
+  #   keycloak.customer.client-id         the storefront's public client
+  #                                       (CUSTOMER_KEYCLOAK_CLIENT_ID); the
+  #                                       frontend used to assume the literal.
+  # Until #299 none of these reached any k8s environment: core-java fell back to
+  # http://localhost:8085/realms/jtoye-customers (a pod's own loopback), so every
+  # signed-in storefront customer's order history failed on a deployed stack.
+  # Base holds production's public values, byte-equal in both halves, exactly as
+  # keycloak.issuer.uri / keycloak.public.issuer.uri do; staging and local split
+  # them. The browser's authorize URL is NOT here: it is the build-time
+  # NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL baked into the frontend image (repo variable
+  # FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL in ci-cd.yaml).
+  keycloak.customer.issuer.uri: "https://auth.olajay.co.uk/realms/jtoye-customers"
+  keycloak.customer.public.issuer.uri: "https://auth.olajay.co.uk/realms/jtoye-customers"
+  keycloak.customer.client-id: "storefront-client"
+
   # --- CORS + token audience -------------------------------------------------
   # cors.allowed-origins pins the single platform origin. NOT a wildcard.
   # It is ALSO read by WebSocketConfig (setAllowedOrigins) — the same property

@@ -81,6 +81,10 @@ data:
   # (`iss` mismatch). Set both to localhost and the pod cannot fetch JWKS at all.
   keycloak.issuer.uri: "http://host.minikube.internal:8085/realms/jtoye-dev"
   keycloak.public.issuer.uri: "http://localhost:8085/realms/jtoye-dev"
+  # #299: the customer-storefront realm on the same compose Keycloak, split the
+  # same way (pod -> host gateway; tokens stamped with localhost:8085).
+  keycloak.customer.issuer.uri: "http://host.minikube.internal:8085/realms/jtoye-customers"
+  keycloak.customer.public.issuer.uri: "http://localhost:8085/realms/jtoye-customers"
 
   # --- The realm's ACTUAL OIDC client (plan 26-08) ---------------------------
   # Since plan 29-08 (Blocker A) base holds `core-api` as well, so this line

@@ -111,6 +111,13 @@ data:
   # keycloak.issuer.uri above (the in-cluster Service), exactly as compose does.
   keycloak.public.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-staging"
 
+  # #299: the customer-storefront realm (jtoye-customers, imported by plans
+  # 29-04/29-14), split exactly like the vendor realm above: pods reach the
+  # in-cluster Service, tokens carry the public host. The client id is inherited
+  # from base (storefront-client, the realm's public storefront client).
+  keycloak.customer.issuer.uri: "http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-customers"
+  keycloak.customer.public.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-customers"
+
   # keycloak.client-id is inherited from base, which now names `core-api`
   # (Blocker A, plan 29-08): the vendor client the staging realm actually has
   # (infra/keycloak/staging-realm.jq keeps the template's clients). The earlier

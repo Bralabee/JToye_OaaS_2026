@@ -370,6 +370,26 @@
 #          Production and local carry no truststore component today and print
 #          "not applicable". Shown catching each hole by --selftest-inv16.
 #
+#   INV-17 PHASE 29 plan 29-26, #859 (UXT-090) / T-29-95, RENDER level, staging +
+#          production (WI_TARGETS). The customer realm's anti-impersonation gate,
+#          jtoye.security.customer-jwt.require-verified-email, must be ON in every
+#          deployed core-java: with it off, a self-registered customer account
+#          carrying a victim's UNVERIFIED address can list the victim's orders.
+#            a. core-java/src/main/resources/application.yml's default reads true
+#               (the line missing or named twice is a PARSE ERROR);
+#            b. no core-java-image container sets an env that binds the property
+#               (any name whose lower-cased alphanumerics end in
+#               requireverifiedemail, i.e. CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL or a
+#               relaxed-binding spelling) to anything but true: a literal is read
+#               as is, an app-config configMapKeyRef by its RENDERED value, any
+#               other source fails as unreadable; envFrom on such a container
+#               fails for the same reason;
+#            c. where no env sets it, no active profile (SPRING_PROFILES_ACTIVE,
+#               literal or app-config) has an application-<p>.yml defaulting it
+#               to anything but true (application-dev.yml relaxes it, so a
+#               deployed render activating dev fails).
+#          Shown catching each hole by --selftest-inv17.
+#
 #   INV-18 PHASE 29 plan 29-22, D-33 / T-29-108..T-29-110, RENDER level, every
 #          target that renders the mailpit component (a Deployment or Service named
 #          mailpit). The testers' mail UI is public, so its render must keep it
@@ -1343,6 +1363,43 @@ insec {
 }
 END { flush_item() }
 '
+
+# INV-17 (Phase 29 plan 29-26, #859 / T-29-95): the customer realm's
+# anti-impersonation gate. jtoye.security.customer-jwt.require-verified-email
+# must be true wherever core-java is deployed. Its inputs: application.yml's
+# default (read here, once), the per-profile application-<p>.yml overrides, and
+# the render's env. Spring's relaxed env binding means any env name whose
+# lower-cased alphanumerics end in INV17_ENV_SUFFIX binds the property.
+APP_RESOURCES="$REPO_ROOT/core-java/src/main/resources"
+APP_YML="$APP_RESOURCES/application.yml"
+INV17_PROP_RE='^[[:space:]]*require[-_.]?verified[-_.]?email[[:space:]]*:'
+INV17_ENV_SUFFIX='requireverifiedemail'
+# inv17_yml_value <file> — the value <file> gives the property: the default of a
+# ${ENV:default} placeholder, or the literal. "(ABSENT)" when no line names it,
+# "(AMBIGUOUS)" when more than one does, "(NODEFAULT)" for a placeholder without
+# a default.
+inv17_yml_value() {
+    local f="$1" hits n v
+    hits=$(grep -iE -- "$INV17_PROP_RE" "$f") || true
+    n=$(grep -c . <<< "$hits") || true
+    if (( n == 0 )); then echo "(ABSENT)"; return 0; fi
+    if (( n > 1 )); then echo "(AMBIGUOUS)"; return 0; fi
+    v="${hits#*:}"
+    v="$(sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' <<< "$v")"
+    if [[ "$v" =~ ^\"(.*)\"$ || "$v" =~ ^\'(.*)\'$ ]]; then v="${BASH_REMATCH[1]}"; fi
+    if [[ "$v" =~ ^\$\{[A-Za-z0-9_.-]+:(.*)\}$ ]]; then
+        v="${BASH_REMATCH[1]}"
+    elif [[ "$v" == \$\{* ]]; then
+        v="(NODEFAULT)"
+    fi
+    echo "$v"
+}
+[[ -f "$APP_YML" ]] || parse_fail "INV-17: $APP_YML not found, so the require-verified-email default cannot be read. A reader that finds nothing never passes."
+INV17_BASE_DEFAULT="$(inv17_yml_value "$APP_YML")"
+case "$INV17_BASE_DEFAULT" in
+    "(ABSENT)") parse_fail "INV-17: core-java/src/main/resources/application.yml has no require-verified-email line (expected jtoye.security.customer-jwt.require-verified-email: \${CUSTOMER_JWT_REQUIRE_VERIFIED_EMAIL:true}). Either the property moved or the reader is blind; fix the reader, do not delete the invariant." ;;
+    "(AMBIGUOUS)") parse_fail "INV-17: core-java/src/main/resources/application.yml names require-verified-email more than once; the reader cannot tell which line is the customer-jwt one." ;;
+esac
 
 # INV-11 (Phase 36 D-08, code review WR-01): the storage-probe switch in every
 # spelling Spring's relaxed binding accepts, matched case-insensitively on the raw
@@ -2583,6 +2640,93 @@ for dir in "${TARGETS[@]}"; do
         inv14_msg="SKIP (not in WI_TARGETS)"
     fi
 
+    # ---------------- INV-17 (29-26, #859 / T-29-95) ----------------
+    # Deployed targets only: no core-java container may run with the customer
+    # realm's require-verified-email gate off — not by an env literal, not by an
+    # app-config value (the RENDERED value is read), not by a relaxed-binding
+    # spelling, and not by activating a profile (dev) whose yml defaults it off
+    # with no env overriding it. application.yml's own default must read true.
+    if is_wi_target "$rel"; then
+        inv17_bad=0; inv17_envs=0; inv17_ctr_n=0
+        if [[ "$INV17_BASE_DEFAULT" != "true" ]]; then
+            echo "  FAIL [$rel] INV-17: core-java/src/main/resources/application.yml defaults require-verified-email to '$INV17_BASE_DEFAULT'. With it off, a self-registered customer account carrying a victim's UNVERIFIED address can list the victim's orders (#859, T-29-95). The default must be true; only the dev profile relaxes it." >&2
+            inv17_bad=1
+        fi
+        while IFS=$'\t' read -r ck cn cpath; do
+            [[ -n "$cpath" ]] || continue
+            inv17_ctr_n=$((inv17_ctr_n + 1))
+            cname="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$cpath::name")"
+            ctr_set=0
+            while IFS=$'\t' read -r epath ename; do
+                norm="$(tr -cd '[:alnum:]' <<< "$ename" | tr '[:upper:]' '[:lower:]')"
+                [[ "$norm" == *"$INV17_ENV_SUFFIX" ]] || continue
+                ctr_set=1; inv17_envs=$((inv17_envs + 1))
+                ev="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::value")"
+                cmn="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::valueFrom::configMapKeyRef::name")"
+                cmk="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::valueFrom::configMapKeyRef::key")"
+                src=""
+                if [[ "$ev" != "(ABSENT)" ]]; then
+                    if [[ "$ev" =~ ^\"(.*)\"$ || "$ev" =~ ^\'(.*)\'$ ]]; then ev="${BASH_REMATCH[1]}"; fi
+                elif [[ "$cmn" == "app-config" && "$cmk" != "(ABSENT)" ]]; then
+                    ev="$(cfg_get "$TMP/cfg.tsv" "$cmk")"; src=" (app-config key $cmk)"
+                else
+                    echo "  FAIL [$rel] INV-17: $ck $cn container '$cname' sets $ename from a source the render cannot read ($epath: neither a literal value nor an app-config configMapKeyRef), so whether require-verified-email is on cannot be shown." >&2
+                    inv17_bad=1; continue
+                fi
+                if [[ "$ev" != "true" ]]; then
+                    echo "  FAIL [$rel] INV-17: $ck $cn container '$cname' sets $ename to '$ev'$src. That switches off the customer realm's email_verified gate (#859, T-29-95); only the dev profile may relax it." >&2
+                    inv17_bad=1
+                fi
+            done < <(awk -F'\t' -v k="$ck" -v n="$cn" -v c="$cpath::env::" '$1 == k && $2 == n && index($3, c) == 1 && $3 ~ /::env::\[[0-9]+\]::name$/ { e = $3; sub(/::name$/, "", e); print e "\t" $4 }' "$TMP/inv11_paths.tsv")
+            if awk -F'\t' -v k="$ck" -v n="$cn" -v c="$cpath::envFrom::" '$1 == k && $2 == n && index($3, c) == 1 { f = 1 } END { exit !f }' "$TMP/inv11_paths.tsv"; then
+                echo "  FAIL [$rel] INV-17: $ck $cn container '$cname' uses envFrom, which can bind require-verified-email under any relaxed spelling the render does not show. List the env explicitly." >&2
+                inv17_bad=1
+            fi
+            # Profiles: with no env override, the last active profile whose yml
+            # names the property decides; otherwise application.yml's default.
+            if (( ctr_set == 0 )); then
+                pe="$(awk -F'\t' -v k="$ck" -v n="$cn" -v c="$cpath::env::" '$1 == k && $2 == n && index($3, c) == 1 && $3 ~ /::env::\[[0-9]+\]::name$/ && $4 == "SPRING_PROFILES_ACTIVE" { e = $3; sub(/::name$/, "", e); print e; exit }' "$TMP/inv11_paths.tsv")"
+                profiles=""
+                if [[ -n "$pe" ]]; then
+                    profiles="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$pe::value")"
+                    if [[ "$profiles" == "(ABSENT)" ]]; then
+                        pcn="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$pe::valueFrom::configMapKeyRef::name")"
+                        pck="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$pe::valueFrom::configMapKeyRef::key")"
+                        if [[ "$pcn" == "app-config" && "$pck" != "(ABSENT)" ]]; then
+                            profiles="$(cfg_get "$TMP/cfg.tsv" "$pck")"
+                        else
+                            echo "  FAIL [$rel] INV-17: $ck $cn container '$cname' takes SPRING_PROFILES_ACTIVE from a source the render cannot read, so the profile that decides require-verified-email cannot be shown." >&2
+                            inv17_bad=1; profiles=""
+                        fi
+                    fi
+                    if [[ "$profiles" =~ ^\"(.*)\"$ || "$profiles" =~ ^\'(.*)\'$ ]]; then profiles="${BASH_REMATCH[1]}"; fi
+                fi
+                IFS=',' read -r -a plist <<< "$profiles"
+                for p in "${plist[@]}"; do
+                    p="${p//[[:space:]]/}"
+                    [[ -n "$p" && -f "$APP_RESOURCES/application-$p.yml" ]] || continue
+                    pv="$(inv17_yml_value "$APP_RESOURCES/application-$p.yml")"
+                    [[ "$pv" == "(ABSENT)" ]] && continue
+                    if [[ "$pv" != "true" ]]; then
+                        echo "  FAIL [$rel] INV-17: $ck $cn container '$cname' activates profile '$p', whose application-$p.yml defaults require-verified-email to '$pv', and no env sets it true. A deployed core-java must not run a profile that relaxes the customer email_verified gate (#859)." >&2
+                        inv17_bad=1
+                    fi
+                done
+            fi
+        done <<< "$inv11_ctrs"
+        if (( inv17_ctr_n == 0 )); then
+            parse_fail "[$rel] INV-17: found no core-java-image container in Deployment core-java — the render lost it or the container reader is blind."
+        fi
+        if (( inv17_bad != 0 )); then
+            FAILED=1
+            inv17_msg="FAIL"
+        else
+            inv17_msg="OK (application.yml default true; $inv17_envs env override(s), all true; no active profile relaxes it)"
+        fi
+    else
+        inv17_msg="SKIP (not in WI_TARGETS)"
+    fi
+
     # ---------------- INV-15 (29-08, Pitfall 4, D-08, D-29) ----------------
     # Deployed targets only. (a) one host per tls entry; (b) no Secret requested
     # by two cert-manager-managed tls entries; (c) noindex targets: every Ingress
@@ -2834,10 +2978,10 @@ for dir in "${TARGETS[@]}"; do
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv18_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-18 $inv18_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-18 $inv18_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg"
     fi
 done
 
@@ -3295,4 +3439,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15 and INV-17 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; $LOCAL_SECTION."
