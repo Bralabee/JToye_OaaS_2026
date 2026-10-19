@@ -565,7 +565,7 @@ count_set() {
   local label="$1" host="$2" db="$3" out rc=0 who
   who="$(psql_at "$host" "$db" "$BACKUP_ROLE" -t <<<"SELECT current_user, (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user), coalesce(nullif(current_setting('app.current_tenant_id', true), ''), 'unset');" 2>"$WORK/err")" || rc=$?
   [ "$rc" -eq 0 ] || { echo "count ${label}: identity query failed rc=${rc}: $(head -c 300 "$WORK/err")" >&2; return 2; }
-  say "INSTRUMENT ${label}: host=${host} $(tr '\t' ' ' <<<"$who" | sed 's/^/user=/; s/ / bypassrls=/; s/ / tenant_guc=/')"
+  say "INSTRUMENT ${label}: host=${host} user=$(cut -f1 <<<"$who") bypassrls=$(cut -f2 <<<"$who") tenant_guc=$(cut -f3 <<<"$who")"
   case "$who" in "${BACKUP_ROLE}"$'\t'"t"$'\t'*) ;; *) echo "count ${label}: the counting session is not ${BACKUP_ROLE} with BYPASSRLS ('${who}'); RLS could blind it" >&2; return 2 ;; esac
   out="$(psql_at "$host" "$db" "$BACKUP_ROLE" <<<"${COUNT_SQL};" 2>"$WORK/err")" || rc=$?
   [ "$rc" -eq 0 ] || { echo "count ${label}: count failed rc=${rc}: $(head -c 300 "$WORK/err")" >&2; return 2; }
