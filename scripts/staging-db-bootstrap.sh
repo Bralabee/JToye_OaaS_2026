@@ -106,6 +106,12 @@
 #     post     PGPASSWORD JTOYE_RUNTIME_PASSWORD JTOYE_BACKUP_PASSWORD
 #     monitor  PGPASSWORD JTOYE_MONITOR_PASSWORD
 #     readback PGPASSWORD
+#   --stage scratch-create|scratch-drop --scratch-db NAME
+#                       create or drop (WITH (FORCE)) one throwaway database as the
+#                       admin, for plan 29-14's fail arms. NAME must match
+#                       ^jtoye_[a-z0-9]+_arm$ or the run is REFUSED [scratch-db]
+#                       before any connection, so jtoye and keycloak can never be
+#                       dropped by it. Environment: PGPASSWORD.
 #   BOOTSTRAP_SELFTEST_FORMAT=tap renders the selftest as TAP 13.
 #
 # SELFTEST ARMS (PASS <arm> … or FAIL <arm> <reason>, one line each)
@@ -163,6 +169,9 @@ RELAY_IMAGE="busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a
 RELAY_NAMESPACE="default"
 RELAY_READY_SECONDS="${BOOTSTRAP_RELAY_READY_SECONDS:-180}"
 VIA_CONTEXT=""
+SCRATCH_DB=""
+# A scratch database name: never jtoye, never keycloak, always disposable.
+SCRATCH_DB_RE='^jtoye_[a-z0-9]+_arm$'
 RELAY_POD=""
 RELAY_PORT=""
 PF_PID=""
@@ -188,6 +197,9 @@ while [ "$#" -gt 0 ]; do
     --test-container)
       shift; [ "$#" -gt 0 ] || { echo "USAGE ERROR: --test-container needs a container name" >&2; exit 2; }
       TEST_CONTAINER="$1" ;;
+    --scratch-db)
+      shift; [ "$#" -gt 0 ] || { echo "USAGE ERROR: --scratch-db needs a database name" >&2; exit 2; }
+      SCRATCH_DB="$1" ;;
     --decisions)
       shift; [ "$#" -gt 0 ] || { echo "USAGE ERROR: --decisions needs a path" >&2; exit 2; }
       DECISIONS_FILE="$1" ;;
@@ -386,6 +398,7 @@ stage_env() {
     post)     echo "PGPASSWORD JTOYE_RUNTIME_PASSWORD JTOYE_BACKUP_PASSWORD" ;;
     monitor)  echo "PGPASSWORD JTOYE_MONITOR_PASSWORD" ;;
     readback) echo "PGPASSWORD" ;;
+    scratch-create|scratch-drop) echo "PGPASSWORD" ;;
   esac
 }
 
@@ -407,6 +420,14 @@ run_stage() {
     post)     post_sql | run_psql jtoye - ;;
     monitor)  monitor_sql | run_psql jtoye - ;;
     readback) readback_sql | run_psql jtoye - -A -F '|' ;;
+    # The name was matched against SCRATCH_DB_RE before this point, so it is a
+    # bare identifier and safe to place in the statement text.
+    scratch-create)
+      printf 'CREATE DATABASE %s;\nSELECT datname, pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname LIKE %s ORDER BY datname;\n' \
+        "$SCRATCH_DB" "'%\\_arm'" | run_psql postgres - -A -F '|' ;;
+    scratch-drop)
+      printf 'DROP DATABASE IF EXISTS %s WITH (FORCE);\nSELECT count(*) AS scratch_databases_left FROM pg_database WHERE datname LIKE %s;\n' \
+        "$SCRATCH_DB" "'%\\_arm'" | run_psql postgres - -A -F '|' ;;
   esac
 }
 
@@ -754,8 +775,11 @@ fi
 # ---------------------------------------------------------------------------
 case "$STAGE" in
   pre|post|monitor|readback) ;;
+  scratch-create|scratch-drop)
+    [[ "$SCRATCH_DB" =~ $SCRATCH_DB_RE ]] \
+      || refuse scratch-db "--stage ${STAGE} needs --scratch-db matching ${SCRATCH_DB_RE} (got '${SCRATCH_DB}'): jtoye and keycloak can never be named" ;;
   "") echo "USAGE ERROR: --stage is required (pre|post|monitor|readback), or --selftest" >&2; usage >&2; exit 2 ;;
-  *) echo "USAGE ERROR: --stage must be pre, post, monitor or readback (got '${STAGE}')" >&2; exit 2 ;;
+  *) echo "USAGE ERROR: --stage must be pre, post, monitor, readback, scratch-create or scratch-drop (got '${STAGE}')" >&2; exit 2 ;;
 esac
 command -v docker >/dev/null 2>&1 || void "docker not on PATH (psql runs inside ${PG_IMAGE})"
 [ -f "$REPO_ROOT/infra/db/managed-pre-bootstrap.sql" ] || void "infra/db/managed-pre-bootstrap.sql not found"
