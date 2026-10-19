@@ -278,8 +278,10 @@
 #            c. no core-java container uses envFrom, which imports env names the
 #               render cannot enumerate when the source is a Secret.
 #          "core-java container" = any container, in any workload kind, whose image
-#          is the core-java image, found by exact PATH (::containers::[i]::image),
-#          so a second workload running the image is covered too. Zero such
+#          is the core-java image, found by exact PATH (::containers::[i]::image
+#          or ::initContainers::[i]::image, plan 29-22: the truststore-builder init
+#          container runs the core-java image), so a second workload running the
+#          image is covered too. Zero such
 #          containers in a render is a PARSE ERROR (blind), never a pass.
 #          Test contexts keep their opt-out: they read core-java/src/test/resources,
 #          which no render contains.
@@ -344,6 +346,29 @@
 #          nginx annotations or zero base header lines is a PARSE ERROR. Shown
 #          catching each hole by --selftest-inv15 (planted arms). The live header
 #          proof (curl -sI on each staging host) is plan 29-15.
+#
+#   INV-16 PHASE 29 plan 29-22, D-21 / D-30 / T-29-81, RENDER level, every target
+#          in TRUSTSTORE_TARGETS (k8s/staging) and every other target whose
+#          core-java Deployment renders a truststore-builder init container or a
+#          JAVA_TOOL_OPTIONS env. core-java trusts the cluster CA through a
+#          JVM-WIDE truststore, so the store must be the JDK's own cacerts PLUS
+#          the CA, never the CA alone (that breaks Entra, Blob and Stripe TLS at
+#          once, D-30):
+#            a. every init container of Deployment core-java that runs the
+#               core-java image and runs keytool -importcert COPIES a path ending
+#               lib/security/cacerts into /truststore/cacerts on an earlier,
+#               uncommented line of its command (read from the raw render, since
+#               the command is a block scalar the path walker skips);
+#            b. the core-java container's JAVA_TOOL_OPTIONS is exactly one literal
+#               `value:` naming -Djavax.net.ssl.trustStore=/truststore/cacerts
+#               (never valueFrom; INV-11 refuses a Secret source as well), and it
+#               mounts /truststore;
+#            c. no container of Deployment core-java sets JAVA_OPTS: the image's
+#               ENTRYPOINT expands the Dockerfile's JAVA_OPTS (container sizing,
+#               G1, the scrimage WebP dir), which an env value would replace;
+#            d. a TRUSTSTORE_TARGETS render with no truststore-builder FAILS.
+#          Production and local carry no truststore component today and print
+#          "not applicable". Shown catching each hole by --selftest-inv16.
 #
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
@@ -436,10 +461,12 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
+#   --selftest-inv15 the same for INV-15 (inv15_selftest)
+#   --selftest-inv16 the same for INV-16 (inv16_selftest)
 
 set -euo pipefail
 
@@ -1033,6 +1060,52 @@ fi
 # confidential (the frontend presents frontend-oidc-credentials/client-secret, plan 29-12).
 REALM_LOGIN_CLIENTS=" $(awk -F'\t' -v b="$KC_BUILTIN_CLIENTS" 'index(b, " " $1 " ") == 0 && $2 == "true" && $3 == "true" && $4 == "false" && $5 == "false" { printf "%s ", $1 }' <<< "$REALM_CLIENTS_TSV")"
 [[ -n "${REALM_LOGIN_CLIENTS// /}" ]] || parse_fail "INV-14: the realm template has no client a vendor login could use (non-built-in, enabled, standard flow, confidential). Either the template lost core-api or the filter is blind."
+
+# INV-16 (Phase 29 plan 29-22, D-30): the targets that MUST build core-java's
+# truststore from the JDK cacerts plus the cluster CA. Every entry must be FOUND
+# among the discovered targets (checked after the loop), as for WI_TARGETS.
+TRUSTSTORE_TARGETS=("k8s/staging")
+declare -A TRUSTSTORE_TARGET_SEEN=()
+TRUSTSTORE_PATH="/truststore/cacerts"
+# INIT_ITEMS_AWK: one record per initContainers item of Deployment <want>, read
+# from the RAW render because the builder's command is a block scalar:
+#   INIT <TAB> <index> <TAB> <name> <TAB> <image> <TAB> <cp line> <TAB> <import line>
+# <cp line> is the 1-based line (within the item) of the first uncommented line
+# that starts `cp`, names lib/security/cacerts and the trust store path; <import
+# line> the first uncommented line running keytool ... -importcert. 0 = none.
+# kustomize emits a sequence at its parent key's indent, so items are `      - `
+# under `      initContainers:` (Deployment spec.template.spec) and an item's own
+# keys sit at 8 spaces; sorted keys put `name:` after `command:`, which is why the
+# whole item is collected before it is judged.
+INIT_ITEMS_AWK='
+function probe(l) {
+    if (l ~ /^        name: /)  { nm2 = l; sub(/^        name:[[:space:]]*/, "", nm2) }
+    if (l ~ /^        image: /) { img = l; sub(/^        image:[[:space:]]*/, "", img) }
+}
+function flush_item(   n, i, L, t, cpl, impl) {
+    if (!open) return
+    n = split(text, L, "\n"); cpl = 0; impl = 0
+    for (i = 1; i <= n; i++) {
+        t = L[i]; sub(/^[[:space:]]+/, "", t); sub(/^-[[:space:]]+/, "", t)
+        if (t ~ /^#/) continue
+        if (!cpl && t ~ /^cp[[:space:]]/ && index(t, "lib/security/cacerts") && index(t, tsp)) cpl = i
+        if (!impl && t ~ /(^|[[:space:]])keytool[[:space:]].*-importcert/) impl = i
+    }
+    printf "INIT\t%d\t%s\t%s\t%d\t%d\n", idx, nm2, img, cpl, impl
+    open = 0; text = ""; nm2 = ""; img = ""
+}
+/^---[[:space:]]*$/ { flush_item(); insec = 0; kind = ""; dn = ""; top = ""; next }
+/^kind: / { kind = $2 }
+/^[^ ]/ { top = $0; sub(/:.*$/, "", top) }
+top == "metadata" && /^  name: / { dn = $0; sub(/^  name:[[:space:]]*/, "", dn) }
+kind == "Deployment" && dn == want && /^      initContainers:[[:space:]]*$/ { insec = 1; idx = -1; next }
+insec {
+    if ($0 ~ /^      - /) { flush_item(); idx++; open = 1; text = substr($0, 9) "\n"; probe("        " substr($0, 9)); next }
+    if ($0 ~ /^        / || $0 ~ /^[[:space:]]*$/) { if (open) { text = text $0 "\n"; probe($0) }; next }
+    flush_item(); insec = 0
+}
+END { flush_item() }
+'
 
 # INV-11 (Phase 36 D-08, code review WR-01): the storage-probe switch in every
 # spelling Spring's relaxed binding accepts, matched case-insensitively on the raw
@@ -2166,7 +2239,7 @@ for dir in "${TARGETS[@]}"; do
     # (b) + (c) per core-java container, by exact path.
     awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv11_paths.tsv"
     inv11_ctrs=$(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" \
-        '$3 ~ /::containers::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
+        '$3 ~ /::(containers|initContainers)::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
         "$TMP/inv11_paths.tsv")
     [[ -n "$inv11_ctrs" ]] || parse_fail "[$rel] INV-11 found 0 containers running the core-java image by path — either the render lost core-java or the path walker is blind, and the per-container probe checks would pass vacuously. Fix it, do not delete the invariant."
     inv11_n=0
@@ -2356,9 +2429,75 @@ for dir in "${TARGETS[@]}"; do
         inv15_msg="SKIP (not in WI_TARGETS)"
     fi
 
-    # ---------------- INV-16 (29-22, D-30) ----------------
-    # STUB (RED): passes everything until the assertion is written.
-    inv16_msg="OK (stub)"
+    # ---------------- INV-16 (29-22, D-21 / D-30) ----------------
+    # core-java's JVM-wide truststore is the JDK cacerts PLUS the cluster CA, never
+    # the CA alone; JVM flags arrive as a literal JAVA_TOOL_OPTIONS, never JAVA_OPTS.
+    inv16_bad=0
+    inv16_required=0
+    for t in "${TRUSTSTORE_TARGETS[@]}"; do [[ "$rel" == "$t" ]] && inv16_required=1; done
+    (( inv16_required )) && TRUSTSTORE_TARGET_SEEN["$rel"]=1
+    awk -v want=core-java -v tsp="$TRUSTSTORE_PATH" "$INIT_ITEMS_AWK" "$render" > "$TMP/inv16_init.tsv"
+    inv16_builders=$(awk -F'\t' '$1 == "INIT" && $3 == "truststore-builder"' "$TMP/inv16_init.tsv" | wc -l)
+    # Env of every container (main and init) of Deployment core-java, by exact path:
+    # <container path> TAB <env item path> TAB <env name>
+    awk -F'\t' '$1 == "Deployment" && $2 == "core-java" && $3 ~ /^spec::template::spec::(containers|initContainers)::\[[0-9]+\]::env::\[[0-9]+\]::name$/ {
+        c = $3; sub(/::env::.*$/, "", c); e = $3; sub(/::name$/, "", e); print c "\t" e "\t" $4 }' "$TMP/inv11_paths.tsv" > "$TMP/inv16_env.tsv"
+    inv16_jto=$(awk -F'\t' '$3 == "JAVA_TOOL_OPTIONS"' "$TMP/inv16_env.tsv" | wc -l)
+    if (( inv16_required == 0 && inv16_builders == 0 && inv16_jto == 0 )); then
+        inv16_msg="not applicable (no truststore component in this render)"
+    else
+        if (( inv16_builders == 0 )); then
+            echo "  FAIL [$rel] INV-16: $rel renders no truststore-builder init container on Deployment core-java. Its core-java then trusts no cluster CA, so every required-STARTTLS send to Mailpit fails (D-20/D-21); list ../components/cluster-ca-truststore in the overlay." >&2
+            inv16_bad=1
+        fi
+        # (a) every core-java-image init container that imports must copy cacerts first
+        while IFS=$'\t' read -r _ idx iname iimg cpl impl; do
+            [[ "$iimg" =~ $CORE_JAVA_IMAGE_RE ]] || continue
+            (( impl > 0 )) || continue
+            if (( cpl == 0 || cpl > impl )); then
+                echo "  FAIL [$rel] INV-16: Deployment core-java init container '$iname' builds a CA-only truststore: no uncommented 'cp …lib/security/cacerts $TRUSTSTORE_PATH' line precedes its keytool -importcert (cp line $cpl, import line $impl). javax.net.ssl.trustStore REPLACES the JDK default for every TLS client in the JVM, so a store without the public CAs breaks Entra, Blob and Stripe at once (D-30, T-29-81)." >&2
+                inv16_bad=1
+            fi
+        done < <(awk -F'\t' '$1 == "INIT"' "$TMP/inv16_init.tsv")
+        # (c) no JAVA_OPTS on any core-java container
+        while IFS=$'\t' read -r cpath epath ename; do
+            [[ "$ename" == "JAVA_OPTS" ]] || continue
+            cname="$(path_get "$TMP/inv11_paths.tsv" Deployment core-java "$cpath::name")"
+            echo "  FAIL [$rel] INV-16: Deployment core-java container '$cname' sets JAVA_OPTS ($epath). The image ENTRYPOINT expands JAVA_OPTS from the Dockerfile (container sizing, G1, the scrimage WebP dir); an env value REPLACES those flags. Use JAVA_TOOL_OPTIONS, which the JVM reads in addition." >&2
+            inv16_bad=1
+        done < "$TMP/inv16_env.tsv"
+        # (b) the main container's JAVA_TOOL_OPTIONS: exactly one literal naming the store
+        inv16_main=$(awk -F'\t' -v w=core-java '$1 == "Deployment" && $2 == "core-java" && $3 ~ /^spec::template::spec::containers::\[[0-9]+\]::name$/ && $4 == w { p = $3; sub(/::name$/, "", p); print p; exit }' "$TMP/inv11_paths.tsv")
+        if [[ -z "$inv16_main" ]]; then
+            parse_fail "[$rel] INV-16 found no container named core-java in Deployment core-java by path — the render lost it or the path walker is blind."
+        fi
+        inv16_main_jto=$(awk -F'\t' -v c="$inv16_main" '$1 == c && $3 == "JAVA_TOOL_OPTIONS" { print $2 }' "$TMP/inv16_env.tsv")
+        inv16_main_n=$(grep -c . <<< "$inv16_main_jto" || true)
+        if (( inv16_main_n != 1 )); then
+            echo "  FAIL [$rel] INV-16: Deployment core-java container 'core-java' sets JAVA_TOOL_OPTIONS $inv16_main_n time(s), expected exactly 1 (the literal naming -Djavax.net.ssl.trustStore=$TRUSTSTORE_PATH)." >&2
+            inv16_bad=1
+        else
+            jv="$(path_get "$TMP/inv11_paths.tsv" Deployment core-java "$inv16_main_jto::value")"
+            jf="$(path_get "$TMP/inv11_paths.tsv" Deployment core-java "$inv16_main_jto::valueFrom")"
+            if [[ "$jv" == "(ABSENT)" || "$jf" != "(ABSENT)" ]]; then
+                echo "  FAIL [$rel] INV-16: Deployment core-java container 'core-java' JAVA_TOOL_OPTIONS is not a literal value ($inv16_main_jto carries valueFrom or no value). A flag from a Secret or ConfigMap is invisible to every render check (D-08, D-30)." >&2
+                inv16_bad=1
+            elif [[ "$jv" != *"-Djavax.net.ssl.trustStore=$TRUSTSTORE_PATH"* ]]; then
+                echo "  FAIL [$rel] INV-16: Deployment core-java container 'core-java' JAVA_TOOL_OPTIONS does not name -Djavax.net.ssl.trustStore=$TRUSTSTORE_PATH (value: $jv)." >&2
+                inv16_bad=1
+            fi
+        fi
+        if ! awk -F'\t' -v c="$inv16_main::volumeMounts::" -v tp="${TRUSTSTORE_PATH%/*}" '$1 == "Deployment" && $2 == "core-java" && index($3, c) == 1 && $3 ~ /::mountPath$/ && $4 == tp { f = 1 } END { exit !f }' "$TMP/inv11_paths.tsv"; then
+            echo "  FAIL [$rel] INV-16: Deployment core-java container 'core-java' does not mount ${TRUSTSTORE_PATH%/*}, so -Djavax.net.ssl.trustStore names a file it cannot read." >&2
+            inv16_bad=1
+        fi
+        if (( inv16_bad != 0 )); then
+            FAILED=1
+            inv16_msg="FAIL"
+        else
+            inv16_msg="OK (truststore-builder copies the JDK cacerts before keytool -importcert; JAVA_TOOL_OPTIONS x1 literal naming $TRUSTSTORE_PATH; 0 JAVA_OPTS)"
+        fi
+    fi
 
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
@@ -2375,6 +2514,10 @@ done
 # silently stop running. Every listed target must have been rendered and checked.
 for t in "${WI_TARGETS[@]}"; do
     [[ -n "${WI_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-8..INV-10: WI_TARGETS names '$t', but no kustomize target at that path was discovered, so its storage invariants never ran. Update WI_TARGETS in the SAME change that renames an overlay."
+done
+
+for t in "${TRUSTSTORE_TARGETS[@]}"; do
+    [[ -n "${TRUSTSTORE_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-16: TRUSTSTORE_TARGETS names '$t', but no kustomize target at that path was discovered, so INV-16 never ran there. Update TRUSTSTORE_TARGETS in the SAME change that renames an overlay."
 done
 
 # INV-7 hygiene: a declared row or ipBlock shape that no target used is a
@@ -2821,4 +2964,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); $LOCAL_SECTION."
