@@ -118,7 +118,8 @@
 #   post-readback               after a simulated first migration, --stage post rc 0;
 #                               readback rolbypassrls jtoye_backup t, jtoye_runtime f,
 #                               jtoye_app f; jtoye_runtime and jtoye_backup can read
-#                               the migrated table
+#                               the migrated table; the readback names jtoye_app as
+#                               the installer of the (simulated) flyway history
 #   via-context-relay           --via-context st-ok (stub kubectl): readback reaches the
 #                               stand-in through hostaddr=127.0.0.1 and the port the
 #                               stub port-forward announces; exactly one relay pod
@@ -596,6 +597,8 @@ SQL
     as_role jtoye_app JTOYE_APP_PASSWORD jtoye >"$tmp/mig.out" 2>&1 <<'SQL' || mig_rc=$?
 CREATE TABLE postcode_centroid (postcode TEXT PRIMARY KEY, latitude DOUBLE PRECISION NOT NULL, longitude DOUBLE PRECISION NOT NULL);
 INSERT INTO postcode_centroid VALUES ('B1 1AA', 52.48, -1.90);
+CREATE TABLE flyway_schema_history (installed_rank INT PRIMARY KEY, version VARCHAR(50), installed_by VARCHAR(100) NOT NULL DEFAULT current_user, installed_on TIMESTAMP NOT NULL DEFAULT now(), success BOOLEAN NOT NULL);
+INSERT INTO flyway_schema_history (installed_rank, version, success) VALUES (1, '1', true), (2, '2', true);
 SQL
     standin post >"$tmp/post1.out" 2>&1 || post_rc=$?
     rb="$(standin readback 2>"$tmp/rb.err")" || rb_rc=$?
@@ -614,10 +617,12 @@ SQL
       st_result "FAIL post-readback readback rc=${rb_rc}: $(first_err "$tmp/rb.err")"; fails=$((fails + 1))
     elif [ "$got" != "$want" ]; then
       st_result "FAIL post-readback rolbypassrls read back '${got}', want '${want}'"; fails=$((fails + 1))
+    elif ! command grep -qE '^flyway[|]jtoye_app[|]2[|]t[|]' "$tmp/rb.out"; then
+      st_result "FAIL post-readback readback shows no 'flyway|jtoye_app|2|t|' row: the first migration's installer is not read back"; fails=$((fails + 1))
     elif [ "$read_rc" -ne 0 ]; then
       st_result "FAIL post-readback the granted roles cannot read the migrated table: $(first_err "$tmp/read.out")"; fails=$((fails + 1))
     else
-      st_result "PASS post-readback rc=0 ${got% } runtime_and_backup_read=ok"
+      st_result "PASS post-readback rc=0 ${got% } runtime_and_backup_read=ok flyway_installed_by=jtoye_app(2,t)"
     fi
   fi
 
