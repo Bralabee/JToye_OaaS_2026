@@ -100,6 +100,16 @@ describe("CompetitiveTeardown", () => {
     expect(screen.getByRole("button", { name: "J'Toye leads" })).toHaveAttribute("aria-pressed", "true")
   })
 
+  it("states J'Toye's billing as built (V88, Stripe test mode), not absent (October 2026)", () => {
+    const { container } = render(<CompetitiveTeardown />)
+    const text = container.textContent ?? ""
+
+    expect(text).not.toMatch(/no SaaS subscription billing built/)
+    expect(text).not.toMatch(/own-key path is a stubbed future slice/)
+    expect(text).toContain("SaaS subscription billing built (V88)")
+    expect(text).toContain("J'Toye rows updated · 19 October 2026")
+  })
+
   it("the search input filters the matrix by text", () => {
     render(<CompetitiveTeardown />)
 
