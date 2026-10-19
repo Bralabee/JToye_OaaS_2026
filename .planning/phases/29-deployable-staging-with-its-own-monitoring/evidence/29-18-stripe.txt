@@ -149,3 +149,80 @@ two findings by commit:file:rule:line (the 38-18 precedent).
 After: gitleaks git 2515c6d8..HEAD rc=0 "no leaks found"; gitleaks dir scripts/staging-seed.sh rc=0
 Control: fingerprints removed -> rc=1 "leaks found: 2" (restored, blob hash equal); the same synthetic shape in another file -> rc=1
 "leaks found: 1" (the fingerprint suppresses nothing else).
+
+================ Task 2: the webhook's three arms (D-28) ================
+Endpoint: https://api-staging.olajay.co.uk/api/v1/public/payments/webhook (Traefik -> core-java:9090), Stripe endpoint
+we_1USBcpDpS9ICNeRt3kIwcIvC (TEST, api_version 2026-09-30.endive), core-java pod core-java-594d8c456b-qmrsp on 6e95ee6c.
+
+## POSITIVE ARM: the signed delivery of evt_3USHS1DpS9ICNeRt19ESTYVa (payment_intent.succeeded, Task 1's confirm)
+Stripe: GET /v1/events/evt_3USHS1DpS9ICNeRt19ESTYVa -> livemode false, pending_webhooks 0 (Stripe received a 2xx from the endpoint;
+PaymentController returns 200 {"status":"ok"} on any processed event and 400 on every refusal, so 0 pending = the 200).
+core-java log (kubectl logs --since=15m, filtered to the order/intent/event and webhook lines):
+14:22:09.864 INFO PaymentService "Created PaymentIntent pi_3USHS1DpS9ICNeRt1nB7iIZm for order ORD-1AAC0CDE-20261019-4D3B23A2 (amount: 950 pennies)"
+14:22:09.881 INFO PublicStorefrontService "Created guest order ORD-1AAC0CDE-20261019-4D3B23A2 with 1 items, total: 950 pennies (VAT: 158 STANDARD) ... (awaiting payment)"
+14:22:11.959 INFO PaymentService "Received Stripe event: payment_intent.succeeded (evt_3USHS1DpS9ICNeRt19ESTYVa)"   <- signature verified, dedup row inserted
+14:22:12.842 INFO OrderEventPublisher "Persisted order state change to outbox: DRAFT -> PENDING for order ORD-1AAC0CDE-20261019-4D3B23A2"
+14:22:12.856 INFO PaymentEventPublisher "Persisted payment event SUCCEEDED to outbox: order=ORD-1AAC0CDE-20261019-4D3B23A2 pi=pi_3USHS1DpS9ICNeRt1nB7iIZm"
+14:22:12.939 INFO PaymentService "Payment succeeded for order ORD-1AAC0CDE-20261019-4D3B23A2 — PI: pi_3USHS1DpS9ICNeRt1nB7iIZm, method: visa ending 4242"
+14:22:16.774 INFO PaymentEventAuditListener "AUDIT payment.succeeded tenant=1aac0cde-... order=ORD-1AAC0CDE-20261019-4D3B23A2 pi=pi_3USHS1DpS9ICNeRt1nB7iIZm amount=950 gbp"
+14:22:17.276 INFO EmailNotificationService "Email notification sent for order ORD-1AAC0CDE-20261019-4D3B23A2 (order-received)"   (to Mailpit, 29-22)
+14:22:24.907 INFO PublicStorefrontService "Idempotent replay for key 'seed-order-staging-test-kitchen-v1', returning existing order ORD-1AAC0CDE-20261019-4D3B23A2"
+
+## NEGATIVE ARMS (code and curl rc captured on the same statement; crc!=0 or 000 would be VOID, not a refusal)
+## payload: a payment_intent.succeeded event JSON naming the real intent and order, id evt_forged_{unsigned,signed}_20261019T142625Z
+2026-10-19T14:26:25Z NEGATIVE ARM 1 unsigned (no Stripe-Signature) id evt_forged_unsigned_20261019T142625Z
+code=400 curl_rc=0 body={"detail":"Required request header 'Stripe-Signature' for method parameter type String is not present","instance":"/api/v1/public/payments/webhook","status":400,"title":"Missing Required Header","type":"https://jtoye.uk/errors/missing-header"}
+2026-10-19T14:26:26Z NEGATIVE ARM 2 forged id evt_forged_signed_20261019T142625Z, Stripe-Signature t=1792419986,v1=<HMAC-SHA256 of "t.payload" under a random 32-byte wrong secret, discarded unprinted>
+code=400 curl_rc=0 body={"error":"Invalid Stripe signature"}
+core-java: 14:26:26.269 WARN PaymentService "Stripe webhook signature verification failed: No signatures found matching the expected signature for payload"
+           14:26:26.277 WARN PaymentController "Webhook rejected: Invalid Stripe signature"
+(the unsigned arm is refused by Spring's required-header binding before PaymentService runs, so it logs no PaymentService line)
+2026-10-19T14:26:26Z the plan's <automated> verify, verbatim (id evt_probe_unsigned): code=400 curl_rc=0 verify_rc=0
+Fail direction of that verify: crc!=0 or code 000 -> exit 2 (VOID); any code other than 400 (a 200 = an unsigned event accepted)
+-> exit 1. A 200 cannot be produced on demand without a valid signature, so the 400 branch's fail side is shown by the predicate:
+  predicate(code=400, curl_rc=0) -> exit 0
+  predicate(code=200, curl_rc=0) -> exit 1
+  predicate(code=500, curl_rc=0) -> exit 1
+  predicate(code=000, curl_rc=0) -> exit 2
+  predicate(code=000, curl_rc=6 DNS failure) -> exit 2
+
+## LEDGER: processed_stripe_events read as jtoye_backup (rolbypassrls=t, so RLS cannot blind it) through the
+## scripts/staging-db-bootstrap.sh relay pattern: staging_kube_guard jtoye-stg-aks -> one busybox relay pod (by digest) in
+## namespace default -> port-forward (PID captured) -> psql in postgres:18, hostaddr=127.0.0.1, host=jtoye-stg-pg..., sslmode=verify-full;
+## password from Key Vault postgres-credentials--backup-password via az_read into the container ENVIRONMENT only (-e PGPASSWORD).
+## ONE session; the SAME prepared statement text for every id: SELECT event_id, processed_at FROM processed_stripe_events WHERE event_id = $1
+relay: pod default/jtoye-29-18-relay-20261019142744-3864658 -> jtoye-stg-pg.postgres.database.azure.com:5432, port-forward pid 3864966 on 127.0.0.1:33745; psql as jtoye_backup, sslmode=verify-full
+session_at|who|bypassrls
+2026-10-19T14:27:48Z|jtoye_backup|t
+PREPARE
+-- positive control: the real payment_intent.succeeded event
+event_id|processed_at
+evt_3USHS1DpS9ICNeRt19ESTYVa|2026-10-19 14:22:11.942098+00
+-- negative arm 1: unsigned
+event_id|processed_at
+-- negative arm 2: forged signature
+event_id|processed_at
+-- the plan verify probe (unsigned)
+event_id|processed_at
+-- the same session: counts, then any event id that is not a real Stripe one
+processed_stripe_events_total|forged_or_probe_rows
+1|0
+-- the seed order (no second order for the key, D-31 card-paid)
+order_number|status|payment_status|payment_reference|payment_method|placed_via|allergen_ack_mask|total_amount_pennies|not_voided
+ORD-1AAC0CDE-20261019-4D3B23A2|PENDING|CAPTURED|pi_3USHS1DpS9ICNeRt1nB7iIZm|visa ending 4242|STOREFRONT|0|950|t
+orders_for_seed_key
+1
+orders_for_guest_email
+1
+entry_kind|amount_pennies|vat_rate
+SALE|950|STANDARD
+relay pods left in default after exit: 0
+(an earlier identical session at 14:27:24Z returned the same rows; its helper's EXIT trap died on `wait` under set -e (rc 143)
+before deleting its relay pod, which was then deleted by name and the trap fixed with set +e; the session above is the clean one)
+
+## Verdict: signed -> 200 + 1 row (processed_at 14:22:11.942Z); unsigned -> 400 + 0 rows; forged -> 400 + 0 rows; probe -> 400 + 0 rows.
+## The positive control is found by the same statement in the same session, so the zeros are not a blinded query. The table holds
+## exactly 1 row, none forged. One order for the seed key (no duplicate from the replay), PENDING / CAPTURED, placed_via STOREFRONT,
+## allergen_ack_mask 0 (= Pelau's declared set), one SALE ledger row of 950 STANDARD.
+## Scope: D-28 is closed for Phase 29 on this evidence. PAY-03's money path (connected account, destination/direct charges, capture,
+## payout, refund) is NOT claimed here and remains Phase 30's; this intent was a plain platform charge.
