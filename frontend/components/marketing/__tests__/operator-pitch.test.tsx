@@ -1,6 +1,6 @@
 import fs from "fs"
 import path from "path"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { OperatorPitch } from "@/components/marketing/operator-pitch"
 import ForOperatorsPage from "@/app/for-operators/page"
@@ -224,6 +224,37 @@ describe("OperatorPitch", () => {
     expect(src).not.toMatch(/\buppercase\b/)
     expect(src).not.toMatch(/tracking-\[0\.1\d?em\]/)
     expect(src).not.toMatch(/lucide-react/)
+  })
+
+  it("keeps the Standard row's amber stripe: no all-sides border colour at md+", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/marketing/operator-pitch.tsx"), "utf8")
+    // md:border-<colour> would set every side and repaint the stripe oxblood at desktop widths.
+    expect(src).not.toMatch(/(?<!max-)md:border-oxblood\/15/)
+    expect(src).toMatch(/md:border-b-oxblood\/15/)
+    const { container } = render(<OperatorPitch />)
+    const header = container.querySelector("tbody tr th") as HTMLElement
+    expect(header.classList.contains("border-amber-500")).toBe(true)
+    expect(header.className).not.toMatch(/(?<!max-)md:border-oxblood\/15/)
+  })
+
+  it("keeps the box and the description when an image file is missing", () => {
+    const { container } = render(<OperatorPitch />)
+    const hero = container.querySelector("[data-op-media] img") as HTMLImageElement
+    const alt = hero.getAttribute("alt")!
+    fireEvent.error(hero)
+    const fallback = screen.getByRole("img", { name: alt })
+    expect(fallback.className).toMatch(/aspect-\[8\/5\]/)
+    expect(fallback.className).toMatch(/w-full/)
+    // The three section images do the same at 3:2.
+    for (const img of Array.from(container.querySelectorAll("img"))) fireEvent.error(img)
+    expect(container.querySelectorAll('[role="img"][class*="aspect-[3/2]"]')).toHaveLength(3)
+  })
+
+  it("takes the docket's wording from the plan entry, not from comparing table copy", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/marketing/operator-pitch.tsx"), "utf8")
+    expect(src).not.toMatch(/fee\[1\]\s*===/)
+    const { container } = render(<OperatorPitch />)
+    expect(container.querySelector("[data-op-figure] strong")).toHaveTextContent("of your direct sales")
   })
 
   it("keeps every removed-feature token out of the source", () => {

@@ -14,9 +14,9 @@ import { formatRate, PRICING } from "@/lib/pricing"
  * docket reads it, so the docket and the table cannot disagree).
  */
 const PLANS = [
-  { name: "Standard", note: "Most operators start here.", monthly: [`£${PRICING.coreMonthly}`, "per location"], fee: [PRICING.usageLabel, "of direct sales"], primary: true },
-  { name: "Flat", note: "One bill, whatever you sell.", monthly: [`£${PRICING.flatLow}–£${PRICING.flatHigh}`, "per location"], fee: [formatRate(0), "of sales"], primary: false },
-  { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", monthly: ["£0", ""], fee: [PRICING.paygLabel, "of direct sales"], primary: false },
+  { name: "Standard", note: "Most operators start here.", docket: "of your direct sales", monthly: [`£${PRICING.coreMonthly}`, "per location"], fee: [PRICING.usageLabel, "of direct sales"], primary: true },
+  { name: "Flat", note: "One flat bill.", docket: "of your sales", monthly: [`£${PRICING.flatLow}–£${PRICING.flatHigh}`, "per location"], fee: [formatRate(0), "of sales"], primary: false },
+  { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", docket: "of your direct sales", monthly: ["£0", ""], fee: [PRICING.paygLabel, "of direct sales"], primary: false },
 ] as const
 
 const SETUP_LINE = `Assisted setup from £${PRICING.setupFrom}, scoped to the work agreed.`
@@ -29,7 +29,7 @@ const CARD_FEE_LINE = "Stripe card fees are charged on your own Stripe account, 
  */
 const AGGREGATOR_RATE = 0.28
 const MONTHLY_ORDERS = 10_000
-const aggregatorBill = String(Math.round(AGGREGATOR_RATE * MONTHLY_ORDERS)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+const aggregatorBill = Math.round(AGGREGATOR_RATE * MONTHLY_ORDERS).toLocaleString("en-GB")
 
 /** What is not live, and the date that statement was true. */
 const NOT_YET_LIVE_AS_OF = "19 October 2026"
@@ -44,13 +44,14 @@ const NOT_YET_LIVE = [
  * Product images. Each is rendered from a fictional shop by
  * frontend/scripts/marketing-captures/capture-operators.mjs, never from live
  * data. Width and height are the intrinsic pixels, so the box is reserved
- * before the file arrives.
+ * before the file arrives; `box` keeps the same aspect ratio if the file is
+ * missing (SafeImage's fallback would otherwise collapse to nothing).
  */
 const IMAGES = {
-  hero: { src: "/marketing/operators/kitchen-cook-sheet.webp", width: 1280, height: 800, alt: "The kitchen display for a sample shop: the consolidated cook sheet with batch totals, an allergy instruction and each dish's recorded allergens and label button, above the lane of new orders." },
-  counter: { src: "/marketing/operators/storefront-menu.webp", width: 960, height: 640, alt: "A sample storefront menu with jollof rice, egusi soup, suya and moin moin, each with its allergens listed." },
-  weekend: { src: "/marketing/operators/slot-picker.webp", width: 960, height: 640, alt: "The checkout Fulfilment Window, listing weekend slots with the order cut-off and the places left in each." },
-  label: { src: "/marketing/operators/ppds-label.webp", width: 960, height: 640, alt: "A 62 mm Natasha's Law label for a sample dish, with its ingredients and its allergen, celery, in bold." },
+  hero: { box: "aspect-[8/5] w-full rounded-xl", src: "/marketing/operators/kitchen-cook-sheet.webp", width: 1280, height: 800, alt: "The kitchen display for a sample shop: the consolidated cook sheet with batch totals, an allergy instruction and each dish's recorded allergens and label button, above the lane of new orders." },
+  counter: { box: "aspect-[3/2] w-full rounded-xl", src: "/marketing/operators/storefront-menu.webp", width: 960, height: 640, alt: "A sample storefront menu with jollof rice, egusi soup, suya and moin moin, each with its allergens listed." },
+  weekend: { box: "aspect-[3/2] w-full rounded-xl", src: "/marketing/operators/slot-picker.webp", width: 960, height: 640, alt: "The checkout Fulfilment Window, listing weekend slots with the order cut-off and the places left in each." },
+  label: { box: "aspect-[3/2] w-full rounded-xl", src: "/marketing/operators/ppds-label.webp", width: 960, height: 640, alt: "A 62 mm Natasha's Law label for a sample dish, with its ingredients and its allergen, celery, in bold." },
 } as const
 
 const DAILY = [
@@ -144,14 +145,14 @@ export function OperatorPitch() {
               src={IMAGES.hero.src}
               alt={IMAGES.hero.alt}
               width={IMAGES.hero.width}
-              height={IMAGES.hero.height}
+              height={IMAGES.hero.height} fallbackClassName={IMAGES.hero.box}
               loading="eager"
               fetchPriority="high"
               className="h-auto w-full rounded-xl shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)]"
             />
             <div data-op-figure className="relative -mt-7 mx-4 rounded-md bg-cream px-[22px] pb-[18px] pt-4 text-oxblood shadow-[0_14px_34px_-14px_rgba(0,0,0,0.6)] lg:absolute lg:-bottom-9 lg:-left-14 lg:mx-0 lg:mt-0">
               <p className="text-5xl font-bold leading-none tracking-[-0.04em] tabular-nums sm:text-6xl">{standard.fee[0]}</p>
-              <p className="mt-2 max-w-[19rem] text-sm leading-snug text-slate-700"><strong className="font-semibold text-oxblood">{standard.fee[1] === "of direct sales" ? "of your direct sales" : standard.fee[1]}</strong>, plus {standard.monthly[0]} a month per location. Card fees go to Stripe, not to us.</p>
+              <p className="mt-2 max-w-[19rem] text-sm leading-snug text-slate-700"><strong className="font-semibold text-oxblood">{standard.docket}</strong>, plus {standard.monthly[0]} a month per location. Card fees go to Stripe, not to us.</p>
             </div>
           </div>
         </div>
@@ -164,13 +165,13 @@ export function OperatorPitch() {
           <p className="mt-3 max-w-[40rem] text-slate-600">One menu, one ledger, one kitchen display. An established operator paying {Math.round(AGGREGATOR_RATE * 100)}% aggregator commission on £{MONTHLY_ORDERS / 1000}k a month of orders hands over £{aggregatorBill} a month; the same orders through a direct storefront cost £{PRICING.coreMonthly} + {PRICING.usageLabel}, plus Stripe&apos;s card fees, which you would pay either way.</p>
           <div className="mt-10 grid gap-10 md:grid-cols-2 md:gap-0">
             <div className="md:border-r md:border-cream-100 md:pr-10">
-              <SafeImage src={IMAGES.counter.src} alt={IMAGES.counter.alt} width={IMAGES.counter.width} height={IMAGES.counter.height} className="h-auto w-full rounded-xl border border-cream-100" />
+              <SafeImage src={IMAGES.counter.src} alt={IMAGES.counter.alt} width={IMAGES.counter.width} height={IMAGES.counter.height} fallbackClassName={IMAGES.counter.box} className="h-auto w-full rounded-xl border border-cream-100" />
               <h3 className="mb-1 mt-5 text-xl font-bold leading-snug text-oxblood">Daily counter and local delivery</h3>
               <p className="text-[15px] text-slate-600">Orders arrive all day.</p>
               <ul className="mt-4 grid gap-2 text-[15px] text-slate-700">{DAILY.map((item) => <li key={item} className={TICK_CLASS}>{item}</li>)}</ul>
             </div>
             <div className="md:pl-10">
-              <SafeImage src={IMAGES.weekend.src} alt={IMAGES.weekend.alt} width={IMAGES.weekend.width} height={IMAGES.weekend.height} className="h-auto w-full rounded-xl border border-cream-100" />
+              <SafeImage src={IMAGES.weekend.src} alt={IMAGES.weekend.alt} width={IMAGES.weekend.width} height={IMAGES.weekend.height} fallbackClassName={IMAGES.weekend.box} className="h-auto w-full rounded-xl border border-cream-100" />
               <h3 className="mb-1 mt-5 text-xl font-bold leading-snug text-oxblood">Weekend batch and catering</h3>
               <p className="text-[15px] text-slate-600">Orders are booked ahead and cooked in one push.</p>
               <ul className="mt-4 grid gap-2 text-[15px] text-slate-700">{WEEKEND.map((item) => <li key={item} className={TICK_CLASS}>{item}</li>)}</ul>
@@ -184,7 +185,7 @@ export function OperatorPitch() {
         <div data-width-tier="marketing" className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 pb-12 sm:px-8 lg:pb-16`}>
           <h2 id="compliance-heading" className={H2_CLASS}>Compliance is part of the order</h2>
           <div className="mt-8 grid gap-8 md:grid-cols-[5fr_6fr] md:items-start md:gap-16">
-            <SafeImage src={IMAGES.label.src} alt={IMAGES.label.alt} width={IMAGES.label.width} height={IMAGES.label.height} className="h-auto w-full rounded-xl border border-cream-100" />
+            <SafeImage src={IMAGES.label.src} alt={IMAGES.label.alt} width={IMAGES.label.width} height={IMAGES.label.height} fallbackClassName={IMAGES.label.box} className="h-auto w-full rounded-xl border border-cream-100" />
             <div>
               <dl className="grid gap-5">
                 {COMPLIANCE.map(([term, detail]) => (
@@ -215,8 +216,8 @@ export function OperatorPitch() {
             </thead>
             <tbody className="max-md:block">
               {PLANS.map((plan) => (
-                <tr key={plan.name} className="max-md:block max-md:border-b max-md:border-oxblood/15 max-md:py-4">
-                  <th scope="row" className={`text-left align-top text-base font-bold text-oxblood max-md:block max-md:py-0.5 md:border-b md:border-oxblood/15 md:py-4 md:pr-4 ${plan.primary ? "border-l-[3px] border-amber-500 pl-3.5 md:pl-3.5" : ""}`}>
+                <tr key={plan.name} className="max-md:block max-md:border-b max-md:border-b-oxblood/15 max-md:py-4">
+                  <th scope="row" className={`text-left align-top text-base font-bold text-oxblood max-md:block max-md:py-0.5 md:border-b md:border-b-oxblood/15 md:py-4 md:pr-4 ${plan.primary ? "border-l-[3px] border-amber-500 pl-3.5 md:pl-3.5" : ""}`}>
                     {plan.name}
                     <small className="mt-0.5 block text-sm font-normal text-slate-600">{plan.note}</small>
                   </th>
@@ -266,7 +267,7 @@ function PriceCell({ label, figure, unit }: { label: string; figure: string; uni
   return (
     <td
       data-label={label}
-      className="align-top text-xl font-bold tabular-nums text-oxblood max-md:block max-md:py-0.5 max-md:text-xl max-md:before:mr-1 max-md:before:text-[13px] max-md:before:font-normal max-md:before:text-slate-600 max-md:before:content-[attr(data-label)] md:whitespace-nowrap md:border-b md:border-oxblood/15 md:py-4 md:pr-4"
+      className="align-top text-xl font-bold tabular-nums text-oxblood max-md:block max-md:py-0.5 max-md:text-xl max-md:before:mr-1 max-md:before:text-[13px] max-md:before:font-normal max-md:before:text-slate-600 max-md:before:content-[attr(data-label)] md:whitespace-nowrap md:border-b md:border-b-oxblood/15 md:py-4 md:pr-4"
     >
       {figure}
       {unit && <>{" "}<small className="text-sm font-normal text-slate-600">{unit}</small></>}

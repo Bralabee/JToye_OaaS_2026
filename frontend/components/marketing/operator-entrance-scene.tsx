@@ -17,7 +17,9 @@ import {
  *
  *  - the headline splits and plays its word stagger;
  *  - the hero image frame (`[data-op-media]`, which carries the price docket
- *    `[data-op-figure]` with it) fades and rises into place.
+ *    `[data-op-figure]` with it) rises into place from 0.6 opacity. It is the
+ *    page's LCP candidate, so it is NEVER taken to opacity 0 or hidden: a
+ *    transparent image paints nothing, and the page would report a later LCP.
  *
  * Nothing else animates. In particular there is no price count-up (a figure
  * that climbs from 0 reads as a pricing error, and 0.5 rounded to 1 under the
@@ -86,13 +88,14 @@ export function useOperatorEntranceScene<T extends HTMLElement>(
           }
         }
 
-        // The hero image frame (and the docket pinned over it) rises 16px and
-        // fades in, a beat after the first words. Opacity and transform only.
+        // The hero image frame (and the docket pinned over it) rises 16px from
+        // 0.6 opacity, a beat after the first words. Opacity and transform only,
+        // and never to 0: this is the LCP candidate (see the docblock).
         const media = root.querySelector<HTMLElement>("[data-op-media]")
         if (media && animateEntrance) {
-          gsap.set(media, { autoAlpha: 0, y: 16 })
+          gsap.set(media, { opacity: 0.6, y: 16 })
           gsap.to(media, {
-            autoAlpha: 1,
+            opacity: 1,
             y: 0,
             duration: 0.6,
             delay: 0.25,

@@ -75,7 +75,10 @@ describe("useOperatorEntranceScene — late-arrival gate (R-03)", () => {
     expect(root).toHaveAttribute("data-entrance", "played")
     expect(words.length).toBeGreaterThanOrEqual(2)
     expect(words.every(hidden)).toBe(true)
-    expect(hidden(container.querySelector<HTMLElement>("[data-op-media]")!)).toBe(true)
+    // The hero image is the LCP candidate: it is nudged (translate, 0.6 opacity), never hidden.
+    const media = container.querySelector<HTMLElement>("[data-op-media]")!
+    expect(media.style.transform).toMatch(/translate/)
+    expect(hidden(media)).toBe(false)
   })
 
   it("late arrival: nothing already painted is hidden, words still split, verdict skipped", () => {
@@ -89,7 +92,9 @@ describe("useOperatorEntranceScene — late-arrival gate (R-03)", () => {
     expect(root).toHaveAttribute("data-motion-active", "desktop")
     expect(words.length).toBeGreaterThanOrEqual(2)
     expect(words.filter(hidden)).toHaveLength(0)
-    expect(hidden(container.querySelector<HTMLElement>("[data-op-media]")!)).toBe(false)
+    const lateMedia = container.querySelector<HTMLElement>("[data-op-media]")!
+    expect(hidden(lateMedia)).toBe(false)
+    expect(lateMedia.style.transform).not.toMatch(/translate/)
     // Then the verdict the gate reports.
     expect(root).toHaveAttribute("data-entrance", "skipped")
   })
