@@ -149,7 +149,7 @@ export function OperatorPitch() {
         <section aria-labelledby="pressure-heading" className="grid gap-6 border-b border-cream-100 pb-14 lg:grid-cols-[0.8fr_1.2fr]">
           <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-oxblood-600">The service leak</p><h2 id="pressure-heading" className="mt-4 text-4xl font-bold leading-none tracking-[-0.045em] text-oxblood sm:text-5xl">One change. Three channels. Two versions of the order.</h2></div>
           <div className="grid gap-3 sm:grid-cols-3"><Impact title="The counter checks messages" detail="Changes sit beside the order instead of becoming the order." /><Impact title="The kitchen works from memory" detail="Availability, portions and handover details become verbal." /><Impact title="The owner carries the risk" detail="The customer still expects one accurate promise." /></div>
-          <p className="lg:col-start-2 text-base font-bold leading-7 text-slate-700">J&apos;Toye&apos;s pilot tests one practical result: can a direct order move from customer agreement to kitchen handover with fewer places to check? An established operator paying 25–35% aggregator commission on £10k a month of orders pays about £2,800 a month; the same orders through a direct storefront cost £39 + 0.5%.</p>
+          <p className="lg:col-start-2 text-base font-bold leading-7 text-slate-700">J&apos;Toye&apos;s pilot tests one practical result: can a direct order move from customer agreement to kitchen handover with fewer places to check? An established operator paying 28% aggregator commission on £10k a month of orders hands over £2,800 a month; the same orders through a direct storefront cost £39 + 0.5%.</p>
         </section>
 
         <section aria-labelledby="paths-heading" className="pt-14">

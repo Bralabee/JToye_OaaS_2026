@@ -96,7 +96,7 @@ describe("OperatorPitch", () => {
 
   it("quantifies the aggregator leak with the guide's about-£2,800 figure", () => {
     render(<OperatorPitch />)
-    expect(screen.getByText(/25–35% aggregator commission on £10k a month of orders pays about £2,800 a month/i)).toBeInTheDocument()
+    expect(screen.getByText(/28% aggregator commission on £10k a month of orders hands over £2,800 a month/i)).toBeInTheDocument()
     expect(screen.getByText(/direct storefront cost £39 \+ 0\.5%/i)).toBeInTheDocument()
   })
 
