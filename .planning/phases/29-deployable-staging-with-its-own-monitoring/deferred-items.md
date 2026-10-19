@@ -48,3 +48,55 @@ only issues caused by the current task are fixed in it).
   is limited to those workloads.
   **Next:** set it to the Traefik pod CIDR once plan 29-14 measures it (the same input as
   Pitfall 10's `security.trusted-proxies`).
+
+- The public storefront never shows an image uploaded through the safe media pipeline (found during 29-14, 2026-10-19)
+  status: open
+  **What:** measured live on staging at a784e7e2: a vendor PNG became an ACTIVE 640x480 WebP
+  derivative on jtoyestgmedia (renders in Chromium, naturalWidth 640), the vendor product DTO
+  returns it as `imageUrl`, but `GET /api/v1/public/shops/staging-test-kitchen/products`
+  returns `"imageUrl":null,"imageUrls":[]` for the same product and the storefront renders no
+  <img>. `ProductService.resolveAssetFirst` (D-03a asset-first dual-read) is applied only to
+  vendor DTOs; `PublicStorefrontService.toPublicProductDto` reads the flat
+  `products.image_url` column, which the Phase 24 pipeline never writes. Pre-existing, not
+  caused by 29-14, and it affects production the same way. 29-14's "the storefront renders it
+  with naturalWidth > 0" truth is unmet until this is fixed and a new image is deployed.
+  **Next:** apply the same asset-first resolution in `toPublicProductDto` (with a test that
+  a pipeline-only image appears on the public menu), rebuild, redeploy, and re-run the
+  storefront half of 29-14's Blob check. Passes the admission test (an observed failure).
+
+- Staging cannot roll core-java or keycloak (found during 29-14, 2026-10-19)
+  status: open
+  **What:** both request 1Gi and roll with maxSurge 1 / maxUnavailable 0. Measured after the
+  first deploy, node requests leave 661Mi / 399Mi / 803Mi free on the three B2s nodes
+  (allocatable 2787Mi each), so the surge pod fits nowhere and stays Pending until the 10m
+  progress deadline; deploy.sh then undoes it. On the first deploy the stuck rollout was
+  cleared by scaling the crash-looping revision-1 ReplicaSets to 0 by name. The next image
+  change to either Deployment, and 29-22's planned rolls (which rely on maxUnavailable 0),
+  will hit the same wall, and 29-23/29-24 add Prometheus/Grafana requests on top.
+  **Next:** an owner decision, not an executor's: a fourth node or a larger SKU (cost), lower
+  requests, or maxUnavailable 1 for staging (contradicts 29-17/29-22's coupling notes).
+
+- deploy.sh cannot go green on a fresh cluster before the realm import (found during 29-14, 2026-10-19)
+  status: open
+  **What:** edge-go's /ready requires the jtoye-staging realm's JWKS, which only
+  `staging-realm-import.sh --apply` creates, and the import needs Keycloak, which deploy.sh
+  brings up. So the first deploy.sh on an empty namespace times out on edge-go and prints no
+  DEPLOYED_SHA; 29-14 ran it, imported, and re-ran it. Recorded so a rebuilt environment
+  (29-26) expects two passes.
+  **Next:** document the order in k8s/DEPLOYMENT.md, or let deploy.sh run the import between
+  apply and the edge-go wait.
+
+- Culinary-pack dishes are drafts, so a freshly seeded staging storefront is empty (found during 29-14, 2026-10-19)
+  status: open
+  **What:** `staging-seed.sh --stage vendor` seeds five dishes with available=false (the pack's
+  FSA-review default), so the public menu reads "No items yet". 29-14 published one dish
+  (Pelau) as the vendor through `PATCH /api/v1/products/{id}` for the Blob check; the other four
+  remain drafts. 29-18's order seed needs available products.
+  **Next:** 29-18 decides whether the seed publishes its dishes through the product API.
+
+- The staging-db-bootstrap selftest runs in no CI job (noticed during 29-14, 2026-10-19)
+  status: open
+  **What:** `scripts/staging-db-bootstrap.sh --selftest` (now 7 arms, including the
+  via-context relay and scratch-db arms 29-14 added) is not invoked by any workflow, and
+  check-gate-enforcement.sh does not name it (it is not among the scripts that gate reads).
+  **Next:** wire it beside the other staging selftests if a docker-capable job can host it.

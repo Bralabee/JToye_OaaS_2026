@@ -847,3 +847,239 @@ PRODUCT_COUNT 5 (Curry Channa & Aloo, Doubles, Guyanese Cook-up Rice, Guyanese P
 playwright rc=0
 verify2_exit=0
 fail-direction control of verify 1's count (a planted listing with one arm pod): arm pods=1 -> verify 1 would exit 1
+
+################ TASK 4 — runtime identity ################
+================ check-deploy-digest-parity.sh --selftest (offline arms) ================
+## 2026-10-19T10:39:10Z
+PASS match rc=0
+PASS mismatch rc=1
+PASS plant-stale rc=1
+PASS empty-actual rc=2
+PASS zero-services rc=2
+PASS no-context rc=2
+PASS employer rc=2
+PASS short-tag rc=2
+PASS fixture-context rc=2
+rc=0
+
+================ Digest parity, both directions, against the RECORDED DEPLOYED_SHA (verify 1 and 2 verbatim) ================
+## 2026-10-19T10:28:05Z Task 4 verify 1 (verbatim): parity against the recorded DEPLOYED_SHA
+parity against recorded DEPLOYED_SHA=a784e7e2421c7aba164f3e7db858b1861b7df6be
+check-deploy-digest-parity  (2026-10-19T10:28:05Z)
+  namespace : jtoye-staging
+  commit    : a784e7e2421c7aba164f3e7db858b1861b7df6be
+  services  : 3 (core-java edge-go frontend)
+
+  core-java    sha256:8924d9a16a82f9c32158b0e0c24db4b44a0d6b3bdbe3ca1de6c4da2d2b9a0c69  MATCH
+  edge-go      sha256:0c78f73e6ddd5727d1f63ac94f737b72c3c24bf4335040bb4dc1e67c0d4f1592  MATCH
+  frontend     sha256:6dbd6f838a917ae05963a6ce61373c41aac25c92ff48e47d6c72f124e539b93c  MATCH
+
+PASS: every running container image digest across 3 service(s) is in the set of digests
+      published for a784e7e2421c7aba164f3e7db858b1861b7df6be. NOTE: this is the SET form (index digest plus each
+      platform manifest digest). Narrowing it to a single measured digest is owed to a later plan.
+parity rc=0
+verify1_exit=0
+
+## 2026-10-19T10:28:12Z Task 4 verify 2 (verbatim): --plant-stale against the same record
+check-deploy-digest-parity  (2026-10-19T10:28:12Z)
+  namespace : jtoye-staging
+  commit    : a784e7e2421c7aba164f3e7db858b1861b7df6be
+  PLANT-STALE: the expected set is replaced by sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a (fail arm)
+  services  : 3 (core-java edge-go frontend)
+
+  core-java    sha256:8924d9a16a82f9c32158b0e0c24db4b44a0d6b3bdbe3ca1de6c4da2d2b9a0c69  NOT IN THE EXPECTED SET
+  core-java    expected set was:
+                 sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a
+  edge-go      sha256:0c78f73e6ddd5727d1f63ac94f737b72c3c24bf4335040bb4dc1e67c0d4f1592  NOT IN THE EXPECTED SET
+  edge-go      expected set was:
+                 sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a
+  frontend     sha256:6dbd6f838a917ae05963a6ce61373c41aac25c92ff48e47d6c72f124e539b93c  NOT IN THE EXPECTED SET
+  frontend     expected set was:
+                 sha256:17c3b3853a70a2dcdebc0d2df22394986db22d0a201fde9aa30ae3f741e9d92a
+
+FAIL: 3 running container image digest(s) across 3 service(s) are NOT the images
+      built for a784e7e2421c7aba164f3e7db858b1861b7df6be. The rollout reported success and the pods are Ready, so
+      every other gate in this job is green — this is the Phase 26 stale-runtime shape, caught.
+      Do NOT relax this gate: re-run the build for this commit and redeploy.
+plant-stale rc=1
+verify2_exit=0
+
+## 2026-10-19T10:28:27Z which digest AKS/containerd reports (the measurement the SET form waited for)
+core-java index=sha256:8924d9a16a82f9c32158b0e0c24db4b44a0d6b3bdbe3ca1de6c4da2d2b9a0c69 running=sha256:8924d9a16a82f9c32158b0e0c24db4b44a0d6b3bdbe3ca1de6c4da2d2b9a0c69 same=yes
+edge-go index=sha256:0c78f73e6ddd5727d1f63ac94f737b72c3c24bf4335040bb4dc1e67c0d4f1592 running=sha256:0c78f73e6ddd5727d1f63ac94f737b72c3c24bf4335040bb4dc1e67c0d4f1592 same=yes
+frontend index=sha256:6dbd6f838a917ae05963a6ce61373c41aac25c92ff48e47d6c72f124e539b93c running=sha256:6dbd6f838a917ae05963a6ce61373c41aac25c92ff48e47d6c72f124e539b93c same=yes
+# AKS/containerd on this cluster reports the INDEX (manifest-list) digest in containerStatuses[].imageID, equal to
+# 'Digest:' from imagetools inspect. The gate keeps the SET form; this is the measurement a later narrowing needs.
+
+================ CI wiring: one variable feeds the pin and the parity step (quoted from .github/workflows/ci-cd.yaml) ================
+792:        run: bash scripts/check-deploy-digest-parity.sh --selftest
+1781:      DEPLOY_TAG: ${{ github.sha }}
+1937:          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${DEPLOY_TAG}"
+1939:            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${DEPLOY_TAG}" \
+1940:            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${DEPLOY_TAG}" \
+1941:            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${DEPLOY_TAG}")
+1955:            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" <<< "$RENDERED"; then
+1956:              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" >&2
+1970:      - name: Digest parity — the running pods are the images pushed for DEPLOY_TAG (29-14)
+1973:        # this job deployed (DEPLOY_TAG, the same variable the pin step used). Exit 1 is a
+1980:          bash scripts/check-deploy-digest-parity.sh --context "$(kubectl config current-context)" --tag "$DEPLOY_TAG"
+check-deploy-digest-parity.sh references in the workflow: 2
+# deploy-staging does not call deploy.sh today (plan 29-21 rewires it); its tag is DEPLOY_TAG, which the pin step
+# deploys and the parity step checks. github.sha no longer appears in the staging pin step.
+
+## check-gate-enforcement.sh with the gate's workflow references removed (bracketed, restore verified by blob hash):
+clean before: worktree=22f90bd23f3cbeef94ed4e245f03120d62699274 HEAD=22f90bd23f3cbeef94ed4e245f03120d62699274
+break planted: references left=0
+check-gate-enforcement rc=1
+        check-deploy-digest-parity.sh (invokes: docker kubectl)
+clean after: worktree=22f90bd23f3cbeef94ed4e245f03120d62699274 HEAD=22f90bd23f3cbeef94ed4e245f03120d62699274 references=2
+check-gate-enforcement rc=0 after restore
+
+================ Task 4: A6 — Workload Identity token present, Kubernetes API token absent (core-java) ================
+## 2026-10-19T10:30:00Z
+ls /var/run/secrets/azure/tokens/azure-identity-token: rc=0 out=[/var/run/secrets/azure/tokens/azure-identity-token] stderr=[]
+ls /var/run/secrets/kubernetes.io/serviceaccount: rc=2 out=[] stderr=[ls: cannot access '/var/run/secrets/kubernetes.io/serviceaccount': No such file or directory
+command terminated with exit code 2]
+pod spec automountServiceAccountToken= serviceAccountName=core-java
+# The first exec succeeding is also the control that exec reaches the pod, so the second's failure is the
+# path being absent, not an exec or auth error.
+
+================ Task 4: CSI — every Secret the chain derives exists while its consumer runs ================
+## 2026-10-19T10:30:04Z
+derived: client-ip-credentials (SPC core-java-kv, keys 1)
+derived: dsar-credentials (SPC core-java-kv, keys 1)
+derived: frontend-oidc-credentials (SPC frontend-kv, keys 1)
+derived: keycloak-credentials (SPC core-java-kv, keys 2)
+derived: keycloak-server-credentials (SPC keycloak-kv, keys 3)
+derived: nextauth-secret (SPC frontend-kv, keys 1)
+derived: notification-credentials (SPC core-java-kv, keys 1)
+derived: pg-backup-credentials (SPC pg-backup-kv, keys 5)
+derived: postgres-credentials (SPC core-java-kv, keys 7)
+derived: rabbitmq-credentials (SPC core-java-kv, keys 4)
+derived: rabbitmq-default-user (SPC rabbitmq-kv, keys 3)
+derived: redis-credentials (SPC core-java-kv, keys 1)
+derived: redis-server-credentials (SPC redis-kv, keys 1)
+derived: smtp-credentials (SPC core-java-kv, keys 2)
+derived: stripe-credentials (SPC core-java-kv, keys 2)
+kubectl get secret rc=0 count=18
+present: client-ip-credentials keys=1
+present: dsar-credentials keys=1
+present: frontend-oidc-credentials keys=1
+present: keycloak-credentials keys=2
+present: keycloak-server-credentials keys=3
+present: nextauth-secret keys=1
+present: notification-credentials keys=1
+MISSING: pg-backup-credentials
+present: postgres-credentials keys=7
+present: rabbitmq-credentials keys=4
+present: rabbitmq-default-user keys=3
+present: redis-credentials keys=1
+present: redis-server-credentials keys=1
+present: smtp-credentials keys=2
+present: stripe-credentials keys=2
+derived secrets missing: 1 of 15
+fail-direction control (a planted derived name): 0 present
+SecretProviderClassPodStatus objects (mounts): 5
+core-java-7987cbb5cb-vn6jn     core-java-kv   true
+frontend-5bd7d689d7-fst76      frontend-kv    true
+keycloak-75c48dcd9b-tdfcp      keycloak-kv    true
+redis-7bb6746bf7-k2lkj         redis-kv       true
+secret-sync-6f6cfd8844-j4f4p   rabbitmq-kv    true
+core-java ServiceAccount automountServiceAccountToken=false (the pod field is unset, so the SA's false applies)
+pg-backup-credentials: its only consumer is CronJob pg-backup (schedule '0 2 * * *', lastScheduleTime='', jobs now: 0). No consumer has run, so the Secret is correctly absent; the CronJob's mount-then-env ordering stays [ASSUMED] for plan 29-20's first backup run.
+
+================ Task 4: A7 — rabbitmq-default-user lives only while secret-sync mounts it ================
+## 2026-10-19T10:30:42Z before: secret uid=f97727be-b365-45dc-b399-6d903c912f94 created=2026-10-19T09:44:04Z owners=ReplicaSet/secret-sync-6f6cfd8844 
+deleting secret-sync pod secret-sync-6f6cfd8844-j4f4p
+pod "secret-sync-6f6cfd8844-j4f4p" deleted from jtoye-staging namespace
+10:30:48.229 secret=f97727be-b365-45dc-b399-6d903c912f94 pods=[secret-sync-6f6cfd8844-7qgm7:Pending:false ]
+10:30:51.153 secret=f97727be-b365-45dc-b399-6d903c912f94 pods=[secret-sync-6f6cfd8844-7qgm7:Running:true ]
+## 2026-10-19T10:32:18Z after: secret uid=f97727be-b365-45dc-b399-6d903c912f94 created=2026-10-19T09:44:04Z owners=ReplicaSet/secret-sync-6f6cfd8844 
+absent observed: 0
+# Measured: the CSI driver set the synced Secret's ownerReference to the mounting pod's ReplicaSet, not the pod, so
+# deleting the secret-sync pod did not delete it (same uid and creationTimestamp before and after; absent never
+# observed at 0.5 s polling). The 'disappear, then reappear' sequence the plan expected does not occur on this driver:
+# the Secret lives as long as the ReplicaSet, and a replacement pod remounts before anything collects it.
+
+## 2026-10-19T10:32:31Z broker restart with the Secret in place
+pod "rabbitmq-server-0" deleted from jtoye-staging namespace
+## 2026-10-19T10:33:35Z rabbitmq-server-0 Ready=True restarts=0
+2026-10-19 10:33:20.870950+00:00 [info] <0.855.0> Server startup complete; 7 plugins started.[0m
+core-java after the broker restart: Ready=True
+
+================ Task 4: Blob functional path (vendor upload -> WebP derivative -> storefront) ================
+# Scratch harnesses (not committed): Playwright signs in as the vendor exactly as the staging spec does, takes the
+# session's access token into a variable (never printed), and calls the product API with it. The credential
+# reaches node only through its environment; every run's output was checked for it (0 hits).
+PNG bytes=114535 magic=89504e470d0a1a0a
+signed in: https://app-staging.olajay.co.uk/dashboard
+access token obtained (length 1638, not shown)
+products listed=5 target=undefined (093dae8a-cff7-442f-a1c8-d8596879fbbf) imageUrl(before)=null media(before)=0
+POST /api/v1/products/093dae8a-cff7-442f-a1c8-d8596879fbbf/image -> http=202 body={"assetId":"1475a89c-19a5-4fea-a233-23e28070bbe3","status":"PENDING"}
+asset 1475a89c-19a5-4fea-a233-23e28070bbe3 after 6s: {"assetId":"1475a89c-19a5-4fea-a233-23e28070bbe3","status":"ACTIVE","flagged":false,"failureReason":null,"url":"https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp","thumbnailUrl":"https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3_thumb.webp","width":640,"height":480,"redrivable":false,"delayed":false}
+product imageUrl(after)=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp
+GET https://app-staging.olajay.co.uk/shop/staging-test-kitchen -> http=200
+storefront images total=0 media=0 showing the uploaded derivative=0 naturalWidth>0 among them=0
+DERIVATIVE_URL https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp
+QUARANTINE_HINT {"assetId":"1475a89c-19a5-4fea-a233-23e28070bbe3"}
+blob rc=1
+# (target=undefined: the list DTO names the field 'title', not 'name'; the harness then took the first product, Pelau.)
+
+## 2026-10-19T10:39:10Z first storefront read: 'No items yet'. The culinary pack seeds every dish as a DRAFT (available=false,
+# CulinaryPackSeedRequest: 'Seeded dishes are created as drafts ... so the Food ... review'), and the public menu lists only
+# available products. The vendor publishes the one dish carrying the image, through the product API:
+PATCH /api/v1/products/093dae8a-cff7-442f-a1c8-d8596879fbbf {available:true} -> http=200 title=Pelau available=true imageUrl=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp
+GET https://app-staging.olajay.co.uk/shop/staging-test-kitchen (anonymous) -> http=200
+storefront images total=0; showing 1475a89c-19a5-4fea-a233-23e28070bbe3.webp: 0; with naturalWidth>0: 0
+page text has 'Pelau': true
+blob2 rc=1
+public menu read (anonymous): {"Mains":[{"allergenMask":0,"category":"Mains","description":"A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconut.","dietaryTags":"gluten-free, dairy-free","featured":false,"id":"093dae8a-cff7-442f-a1c8-d8596879fbbf","imageUrl":null,"imageUrls":[],"inStock":true,"ingredientsText":"Long-grain rice, Chicken, Red kidney beans (or gungo 
+# FINDING (not fixed here; deferred-items.md): the public menu returns imageUrl null for Pelau although the vendor DTO
+# returns the ACTIVE WebP derivative. ProductService.resolveAssetFirst (D-03a dual-read) is applied to vendor DTOs only;
+# PublicStorefrontService.toPublicProductDto reads the flat products.image_url column, which the Phase 24 pipeline never
+# writes. So no image uploaded through the safe pipeline can appear on any storefront, staging or production.
+# The storefront naturalWidth > 0 claim is therefore NOT met at a784e7e2. What IS proven, in Chromium with a plain <img>:
+## 2026-10-19T10:37:56Z the derivative and its thumbnail in Chromium (plain <img>, as the storefront renders), plus a fail-direction control (a blob that does not exist)
+img naturalWidth=640 naturalHeight=480 complete=true src=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3.webp
+img naturalWidth=400 naturalHeight=300 complete=true src=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3_thumb.webp
+img naturalWidth=0 naturalHeight=0 complete=true src=https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/1475a89c-19a5-4fea-a233-23e28070bbe3-does-not-exist.webp
+
+================ Task 4: #626 — anonymous reads of jtoyestgmedia ================
+## 2026-10-19T10:38:06Z
+GET derivative (positive control) -> http=200 Content-Type: image/webp bytes=1438 EnumerationResults=0 body=[RIFF..WEBPVP8 ..Pn..*....>m6.I.".! ....in..O.V..N.....# O.....i.b....O........l9KJ.d.^.NC.l./..AE..I.._...mB..........<.7....T..+I..c>H.C....a......dOs'p@..Kn......F.P2r .].R...d#...............(..4.D.........jd..]
+LIST jtoye-images ?restype=container&comp=list -> http=404 Content-Type: application/xml bytes=223 EnumerationResults=0 body=[...<?xml version="1.0" encoding="utf-8"?><Error><Code>ResourceNotFound</Code><Message>The specified resource does not exist. RequestId:6b92eed6-501e-006a-52b5-5fcbd4000000 Time:2026-10-19T10:38:06.7436703Z</Message></Err]
+GET jtoye-quarantine/<tenant>/<asset> (the quarantine path shape) -> http=404 Content-Type: application/xml bytes=223 EnumerationResults=0 body=[...<?xml version="1.0" encoding="utf-8"?><Error><Code>ResourceNotFound</Code><Message>The specified resource does not exist. RequestId:9a6b7b6f-301e-001e-3cb5-5fff24000000 Time:2026-10-19T10:38:06.8661333Z</Message></Err]
+LIST jtoye-quarantine -> http=404 Content-Type: application/xml bytes=223 EnumerationResults=0 body=[...<?xml version="1.0" encoding="utf-8"?><Error><Code>ResourceNotFound</Code><Message>The specified resource does not exist. RequestId:4e2a2fd2-e01e-001d-6fb5-5f1e40000000 Time:2026-10-19T10:38:06.9900361Z</Message></Err]
+# A curl that could not connect would print http=000 and is VOID; none did.
+## 2026-10-19T10:38:19Z management-plane read (az_read, pinned subscription): the containers exist, and their public access level
+jtoye-images	Blob
+jtoye-quarantine	None
+# jtoye-quarantine EXISTS with publicAccess None, so its anonymous LIST 404 above is a refusal of an existing private
+# container (Azure answers ResourceNotFound rather than revealing it). jtoye-images is publicAccess Blob: a blob GET
+# is anonymous (200 above) while a container LIST is refused (404, 0 <EnumerationResults). The quarantine blob GET
+# alone cannot tell 'refused' from 'absent' (whether the quarantined source still exists after the asset went ACTIVE
+# was not checked); the container-level refusal is the evidence, the blob GET only consistent with it.
+
+================ Task 4: node requests vs allocatable (Pitfall 2) ================
+## 2026-10-19T10:38:27Z
+node/aks-nodepool1-24453234-vmss000000 allocatable mem=2854292Ki cpu=1900m
+  cpu                1237m (65%)   5692m (299%)
+  memory             2126Mi (76%)  11544Mi (414%)
+node/aks-nodepool1-24453234-vmss000001 allocatable mem=2854304Ki cpu=1900m
+  cpu                1399m (73%)   6090m (320%)
+  memory             2388Mi (85%)  12210464Ki (427%)
+node/aks-nodepool1-24453234-vmss000002 allocatable mem=2854304Ki cpu=1900m
+  cpu                1236m (65%)   3712m (195%)
+  memory             1984Mi (71%)  11924Mi (427%)
+kubectl top nodes:
+NAME                                CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   
+aks-nodepool1-24453234-vmss000000   228m         12%      1825Mi          65%         
+aks-nodepool1-24453234-vmss000001   207m         10%      1844Mi          66%         
+aks-nodepool1-24453234-vmss000002   234m         12%      2129Mi          76%         
+## 2026-10-19T10:38:47Z 29-10's assumed Keycloak sizing, measured once
+NAME                        CPU(cores)   MEMORY(bytes)   
+keycloak-75c48dcd9b-tdfcp   7m           620Mi           
+limit: 1Gi
+2026-10-19 09:58:48,516 INFO  [io.quarkus] (main) Keycloak 26.8.1 on JVM (powered by Quarkus 3.40.1) started in 13.225s. Listening on: http://0.0.0.0:8080. Management interface listening on http://0.0.0.0:9000.
+# Pitfall 2 measured: requests leave 2787-2126=661Mi, 2787-2388=399Mi and 2787-1984=803Mi free per node, so a 1Gi
+# core-java or keycloak surge pod fits nowhere: every rolling update of either sticks Pending (deploy run 2, above).
