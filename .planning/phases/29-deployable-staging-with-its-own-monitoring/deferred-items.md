@@ -131,3 +131,36 @@ only issues caused by the current task are fixed in it).
   entry, or change the dashboard side, and be proven on both a fresh and an existing store.
   **Next:** a small plan (or 29-27's runbook work, which says "read Grafana") fixes the
   canonical files and re-copies them.
+
+- deploy.sh certifies a deploy without waiting on the monitoring Deployments (found during 29-25, 2026-10-19)
+  status: open
+  **What:** `scripts/deploy.sh` runs `rollout status` only for core-java, edge-go and frontend
+  (the three retagged images). On 2026-10-19T17:34Z it printed `DEPLOYED_SHA=6e95ee6c…` while
+  the new alertmanager and grafana pods were still ContainerCreating; they became Ready about
+  a minute later. A monitoring Deployment that never becomes Ready would not stop the deploy.
+  **Next:** 29-27 (runbook) or a small plan: wait on every Deployment in the render, or at
+  least the monitoring ones, and keep `rollout undo` scoped to what was retagged.
+
+- Neither staging-secrets selftest runs in CI (found during 29-25, 2026-10-19)
+  status: open
+  **What:** `scripts/staging-secrets-preflight.sh --selftest` was 8/16 on 4945dc00 (29-24's
+  @-validator kinds read as literal prefixes; fixed in 2382de1e) and nobody saw it, because no
+  workflow runs it; `scripts/staging-secrets.sh --selftest` is likewise unwired (noted at 29-22).
+  Both need kubectl + python3/PyYAML only, no Azure.
+  **Next:** wire both into the ops-contracts job; check-gate-enforcement.sh then guards them.
+
+- The frontend has no Prometheus scrape job in either runtime (found during 29-25, 2026-10-19)
+  status: open
+  **What:** #98 criterion 1 asks that Prometheus "scrapes all three services". Live staging
+  targets: core-java and edge-go up per pod; the frontend (Next.js) exposes no `/metrics` and
+  has no job in `infra/monitoring/prometheus/prometheus.yml.tmpl` or its k8s copy.
+  **Next:** 29-27 decides #98's disposition: either the "three services" are core-java,
+  edge-go and the gateway path already scraped, or a frontend metrics job is a new item.
+
+- An env-literal SMTP password crashes Alertmanager in Kubernetes (found during 29-25, 2026-10-19)
+  status: open (by design, recorded)
+  **What:** the entrypoint writes `ALERTMANAGER_SMTP_PASSWORD` to `/tmp`, which the staging pod
+  does not have (read-only root, no /tmp emptyDir): FATAL, CrashLoopBackOff. Staging uses only
+  `ALERTMANAGER_SMTP_PASSWORD_FILE` from the CSI mount, so this fails closed and is harmless,
+  but an operator who sets the env literal during an incident takes Alertmanager down.
+  **Next:** note it in 29-27's runbook (rotate through Key Vault, never through env).
