@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### `/for-operators` Tells the October 2026 Truth: Both Rhythms, V88 Pricing, One Caveat List — 2026-10-19
+### `/for-operators` Tells the October 2026 Truth: Both Rhythms, V88 Pricing, One Caveat List (#965) — 2026-10-19
 
 The public operator page was last written on 10 July 2026 and still described a takeaway-only pilot with catering and WhatsApp as "validation tracks", invented price tiers, and a PDF pack of the same vintage. Every claim was re-checked against `docs/PRD.md` §1-3 (verified at V86), `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md` §1 and the billing code (`StripeBillingService` javadoc lines 38-50, V88 migration header). Copy only: all `data-op-*`, `data-rail-item`, `data-pilot-track`/`data-pilot-step` and `data-count-to` hooks, the three `data-width-tier="marketing"` bands and the H1 are unchanged.
 
