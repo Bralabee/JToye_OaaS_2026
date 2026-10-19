@@ -14,6 +14,7 @@ import {
   Tooltip,
 } from "recharts"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+import { PRICING } from "@/lib/pricing"
 
 // ---------------------------------------------------------------------------
 // THE DATASET — single source of truth. Flipdish verified from public product
@@ -44,7 +45,7 @@ const FEATURES: Feature[] = [
   { id: "native-apps", group: "Ordering channels", name: "Native mobile apps (iOS/Android)", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Hard gap", note: "Flipdish ships branded native apps; J'Toye is web-only.", evidence: "Absent — searched, not built (no RN/Flutter/native; Next.js web only)" },
   { id: "kiosk", group: "Ordering channels", name: "Self-service kiosk", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Hard gap", note: "In-store kiosk ordering — not present in J'Toye.", evidence: "Absent — searched, not built" },
   { id: "qr-table", group: "Ordering channels", name: "QR / at-table ordering", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Hard gap", note: "J'Toye fulfilment is DELIVERY/COLLECTION only.", evidence: "Absent — FulfilmentType has DELIVERY/COLLECTION only; no table/dine-in" },
-  { id: "whatsapp", group: "Ordering channels", name: "WhatsApp ordering", flipdish: "none", jtoye: "partial", verdict: "jtoye", tag: "J'Toye leads", note: "J'Toye has an inbound WhatsApp order parser + notify channel.", evidence: "edge-go/internal/whatsapp/parser.go + notification WhatsAppSmsChannel.java" },
+  { id: "whatsapp", group: "Ordering channels", name: "WhatsApp ordering", flipdish: "none", jtoye: "partial", verdict: "jtoye", tag: "J'Toye leads", note: "J'Toye has a signature-verified inbound WhatsApp order-intake webhook and parser (inert until WHATSAPP_APP_SECRET is set) and a generated pre-order link that opens a pre-filled checkout; outbound WhatsApp send is a logged no-op, so it is not an automated channel.", evidence: "edge-go/internal/whatsapp/parser.go + edge-go/cmd/edge/handlers.go:240 (webhook) + core-java shop/ShopController.java:285 (whatsapp-preorder-link) + notification/dispatch/WhatsAppSmsChannel.java (logged no-op send)" },
   { id: "ai-phone", group: "Ordering channels", name: "AI phone-order agent", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Flipdish leads", note: "Flipdish AI Phone Agent answers/takes calls; J'Toye has none.", evidence: "Absent — searched, not built" },
 
   // B. Payments & monetization
@@ -110,7 +111,7 @@ const SCALE = {
     ["Stage", "pre-market"],
     ["Raised", "£0"],
     ["Team", "solo/small build"],
-    ["Monetization", "£39/location/mo + 0.5% of direct sales (or flat £79–£149, or £0 + 6% batch)"],
+    ["Monetization", `£${PRICING.coreMonthly}/location/mo + ${PRICING.usageLabel} of direct sales (or flat £${PRICING.flatLow}–£${PRICING.flatHigh}, or £0 + ${PRICING.paygLabel} batch)`],
     ["Billing", "SaaS subscription billing built (V88), proven in Stripe test mode; live cutover pending"],
   ],
 } as const
@@ -507,10 +508,10 @@ export function CompetitiveTeardown() {
               <ScaleColumn title="J'Toye" tone="orange" rows={SCALE.jtoye} />
             </div>
             <p className="mt-6 border-l-4 border-oxblood bg-white p-5 text-sm leading-6 text-slate-600">
-              Flipdish monetizes via SaaS subscription + setup + per-order commission + add-on modules. J&apos;Toye bills
-              £39 per location per month plus 0.5% of direct sales, a flat £79–£149 plan, or £0 plus 6% for batch
-              kitchens, with Stripe card fees passed through. That billing is built and proven in Stripe test mode;
-              live cutover waits for the first production tenant.
+              Flipdish monetizes via SaaS subscription + setup + per-order commission + add-on modules. J&apos;Toye bills{" "}
+              {`£${PRICING.coreMonthly} per location per month plus ${PRICING.usageLabel} of direct sales, a flat £${PRICING.flatLow}–£${PRICING.flatHigh} plan, or £0 plus ${PRICING.paygLabel} for batch kitchens,`}{" "}
+              with Stripe card fees passed through. That billing is built and proven in Stripe test mode; live cutover waits
+              for the first production tenant.
             </p>
           </section>
 

@@ -107,6 +107,9 @@ describe("CompetitiveTeardown", () => {
     expect(text).not.toMatch(/no SaaS subscription billing built/)
     expect(text).not.toMatch(/own-key path is a stubbed future slice/)
     expect(text).toContain("SaaS subscription billing built (V88)")
+    expect(text).toContain("£39/location/mo + 0.5% of direct sales")
+    // WhatsApp: an inbound webhook + parser AND a generated pre-order link exist; send is a no-op.
+    expect(text).toContain("generated pre-order link that opens a pre-filled checkout")
     expect(text).toContain("J'Toye rows updated · 19 October 2026")
   })
 

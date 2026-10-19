@@ -12,22 +12,7 @@ import {
   X,
 } from "lucide-react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
-
-// Every public price on this page, in ONE place so an owner ruling is a one-line
-// change. Source of truth is the billing code, not any doc: StripeProperties.Billing
-// (core-java/.../payment/StripeProperties.java) and the V88 migration header.
-// SAAS_HYBRID_STANDARD = coreMonthly + usageRate of direct sales; SAAS_FLAT_PREDICTABLE
-// = flatLow..flatHigh with no platform fee; BATCH_PAYG_STARTER = GBP 0 + paygLabel.
-// The internal WALK_SETUP_STEPDOWN tier is deliberately not public.
-const PRICING = {
-  coreMonthly: 39,
-  usageRate: 0.005,
-  usageLabel: "0.5%",
-  flatLow: 79,
-  flatHigh: 149,
-  paygLabel: "6%",
-  setupFrom: 99,
-} as const
+import { PRICING } from "@/lib/pricing"
 
 type Confidence = "High" | "Working assumption" | "To validate"
 
@@ -52,6 +37,8 @@ const evidence: EvidenceItem[] = [
   },
   {
     title: "Takeaway and catering are two rhythms of one kitchen",
+    // BUSINESS_MODEL_DECISION_GUIDE.md section 3, line 69: "Dual-Rhythm OS: Counter
+    // Takeaway (Cohort A) + Scheduled Batch/Catering (Cohort B) | **High**".
     confidence: "High",
     detail:
       "Takeaways need a reliable daily order and kitchen flow; caterers and weekend-batch kitchens need scheduled slots with cut-offs, prep deposits and a consolidated cook sheet. One kitchen, one menu and one ledger run both, with the two rhythms' results kept distinct so conversion, order value and retention can be read for each.",
@@ -74,7 +61,7 @@ const alternatives = [
   ["Assisted vertical SaaS", "Recommended", "Vendor retains the commercial relationship; J'Toye provides the operating system."],
   ["Marketplace", "Reject", "Would compete for the vendor’s customer relationship and pull the model towards commission dependency."],
   ["Owned delivery", "Reject", "Introduces fleet utilisation, insurance and service-quality exposure outside the operating-system thesis."],
-  ["J'Toye as merchant of record / pooled funds", "Reject", "Adds payment, safeguarding and settlement obligations that are not needed to create the initial value."],
+  ["J'Toye as merchant of record by default / pooled funds", "Reject", "Adds payment, safeguarding and settlement obligations that are not needed to create the initial value."],
   ["Full POS or super-app", "Reject", "Broadens the product before the recurring order, catering and kitchen workflows have earned expansion."],
 ] as const
 
@@ -205,7 +192,7 @@ export function BusinessModelGuide() {
           <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
             <h2 id="decision-heading" className="text-3xl font-bold leading-tight tracking-[-0.035em] sm:text-4xl">UK-first assisted vertical SaaS, deliberately narrow.</h2>
             <div className="space-y-6 text-lg leading-8 text-slate-600">
-              <p>Sell a practical operating system to established, owner-led Nigerian and West African takeaways and caterers in one London cluster, where they already have recurring orders and meaningful volume. Keep the two cohorts&apos; evidence separate. The model makes the vendor the <strong className="text-slate-900">seller, food business operator, merchant of record, payment recipient and fulfiller</strong>; the direct-charge payment flow that does this is built and proven in Stripe test mode, with live card settlement pending the first production tenant.</p>
+              <p>Sell a practical operating system to established, owner-led Nigerian and West African takeaways and caterers in one London cluster, where they already have recurring orders and meaningful volume. Keep the two cohorts&apos; evidence separate. The model makes the vendor the <strong className="text-slate-900">seller, food business operator, merchant of record, payment recipient and fulfiller</strong>; once an operator&apos;s Stripe account is enabled, card payments are direct charges on that account and J&apos;Toye holds no funds for it. That flow is built and proven in Stripe test mode; until an operator is enabled, card payments fall back to the platform account, which is why going live waits for Stripe Connect onboarding.</p>
               <div className="border-l-4 border-amber-500 bg-orange-50 p-5 text-base leading-7 text-orange-900"><strong>Commercial starting point:</strong> {`£${PRICING.coreMonthly} per location per month plus ${PRICING.usageLabel} of direct sales. A flat £${PRICING.flatLow}–£${PRICING.flatHigh} per location per month plan with no platform fee, and a £0 per month plus ${PRICING.paygLabel} plan for weekend and seasonal batch kitchens, are billed by the same code. Assisted setup is from £${PRICING.setupFrom}, scoped to the work agreed; card fees pass through to the vendor's own Stripe account.`}</div>
             </div>
           </div>
@@ -249,10 +236,10 @@ export function BusinessModelGuide() {
             <div><h2 id="boundaries-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">Be unusually clear about what the product does not do.</h2><p className="mt-5 leading-7 text-slate-600">The credibility gain comes from giving operators a useful system without claiming an ecosystem. The first offer is SaaS and bounded assistance—not a substitute for legal, food-safety, payment or employment advice.</p></div>
             <div className="grid gap-3 sm:grid-cols-2">
               <BoundaryList title="We can support" icon={<Check className="text-emerald-700" />} items={["Direct ordering and kitchen coordination", "Scheduled batch and catering workflows alongside the daily counter", "Vendor-controlled menus and customer data", "Configured onboarding within a clear cap"]} />
-              <BoundaryList title="We reject" icon={<X className="text-amber-700" />} items={["Marketplace and commission dependency", "Owned delivery and courier fleet", "J'Toye as merchant of record, or pooled funds", "Full POS, free SaaS, bespoke bundles, pan-Europe and super-app scope"]} />
+              <BoundaryList title="We reject" icon={<X className="text-amber-700" />} items={["Marketplace and commission dependency", "Owned delivery and courier fleet", "J'Toye as merchant of record by default, or pooled funds", "Full POS, free SaaS, bespoke bundles, pan-Europe and super-app scope"]} />
             </div>
           </div>
-          <aside className="mt-8 flex gap-4 border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900"><ShieldCheck className="mt-0.5 shrink-0" /><p><strong>Payment boundary—built and proven in Stripe test mode; live cutover pending:</strong> card payments route as Stripe Connect direct charges on the vendor&apos;s own connected account, so the vendor is the seller, merchant of record and payment recipient. The vendor sets prices, controls recipes and allergen accuracy, and fulfils directly or through its own courier; J&apos;Toye invoices software separately and holds no pooled funds in the default model. Card settlement stays in Stripe test mode until the first production tenant goes live.</p></aside>
+          <aside className="mt-8 flex gap-4 border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900"><ShieldCheck className="mt-0.5 shrink-0" /><p><strong>Payment boundary—built and proven in Stripe test mode; live cutover pending:</strong> once an operator&apos;s Stripe account is enabled, card payments are Stripe Connect direct charges on that account, so the vendor is the seller, merchant of record and payment recipient, and J&apos;Toye holds no funds for it. Until an operator is enabled, card payments fall back to the platform account, which is why going live waits for Connect onboarding and why the platform account must not receive or settle funds for multiple vendors. The vendor sets prices, controls recipes and allergen accuracy, and fulfils directly or through its own courier; J&apos;Toye invoices software separately. Platform-as-merchant-of-record exists only as an opt-in mode for curated marketplace tenants, not as the default. Card settlement stays in Stripe test mode until the first production tenant goes live.</p></aside>
           <div className="mt-5 border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900"><strong>Food-information and privacy boundary:</strong> distance sellers must provide allergen information before purchase and again on delivery; PPDS rules apply only to food prepacked for direct sale. Customer allergy requirements may reveal health information, so collection needs an appropriate Article 9 condition, clear notice, restricted access and short retention.</div>
           <div className="mt-5 border border-orange-200 bg-orange-50 p-5 text-sm leading-6 text-orange-900"><strong>Do not claim:</strong> production or enterprise readiness; guaranteed food-safety, Natasha&apos;s Law or GDPR compliance; HMRC accounting; live card settlement or payouts before the first production tenant (built and proven in Stripe test mode only); wallets or escrow; offline KDS or ticket printing; general AI WhatsApp commerce; proven disaster recovery; self-service tenancy; or pan-European support.</div>
         </section>

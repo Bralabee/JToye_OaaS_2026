@@ -145,15 +145,19 @@ public class PaymentService {
      * by a retried checkout (a failed attempt rolls its order back, so the retry
      * gets a fresh id and legitimately deserves a fresh intent).
      *
-     * <p><b>Charge routing (issue #102, ADR-0001 Decision 2):</b> when the
-     * order's tenant is a MARKETPLACE vendor with an ENABLED connected
-     * account, the intent is created as a <em>destination charge</em> —
-     * {@code transfer_data[destination]} routes the funds to the vendor's
-     * account and {@code application_fee_amount} (from
-     * {@code stripe.platform-fee-bps}) is retained by the platform.
-     * WHITE_LABEL tenants and tenants without an enabled connected account
-     * keep today's pooled-account behaviour unchanged (their direct-charge
-     * flow is a future slice; see StripeConnectService).
+     * <p><b>Charge routing (issue #102, ADR-0001 Decision 2, ADR-0007 axis 1,
+     * Phase 30 / V88):</b> {@link StripeConnectService#resolveSettlementRouting}
+     * picks the mode. With an ENABLED connected account, the default
+     * {@code DIRECT_CHARGE_VENDOR_MOR} charges on the vendor's own account
+     * (the {@code Stripe-Account} header; the vendor is merchant of record and
+     * {@code application_fee_amount} carries the plan's platform fee), and a
+     * MARKETPLACE tenant or an explicit shop override uses the
+     * {@code DESTINATION_CHARGE_PLATFORM_MOR} <em>destination charge</em>
+     * ({@code transfer_data[destination]}, platform is merchant of record).
+     * Both were proven in Stripe test mode (30-VERIFICATION.md). When the
+     * tenant has NO enabled connected account the routing is empty and the
+     * intent falls back to the platform account, which is why going live waits
+     * for Connect onboarding.
      *
      * @throws IllegalStateException if the order has not been persisted
      */

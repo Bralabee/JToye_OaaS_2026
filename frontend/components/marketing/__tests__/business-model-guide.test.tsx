@@ -80,6 +80,11 @@ describe("BusinessModelGuide", () => {
     expect(text).toContain("£0 per month plus 6%")
     expect(text).not.toMatch(/£119|£199|£195/)
 
+    // Payment boundary: direct charge once Connect is enabled, platform-account fallback before.
+    expect(text).toContain("card payments fall back to the platform account")
+    expect(text).toContain("merchant of record by default")
+    expect(text).not.toMatch(/Target boundary/)
+
     // Status: shipped catering work is no longer described as hypothetical.
     expect(text).not.toMatch(/Validate deposits|discovery track|Do not make a caterer pretend/)
   })
