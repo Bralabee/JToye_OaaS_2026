@@ -77,6 +77,8 @@ class UnsubscribeLinkRoutingTest {
     private static final String ONE_CLICK_ORIGIN_KEY = "notification.unsubscribe.one-click-base-url";
     /** Fallback source for the API origin: the same value the ConfigMap already publishes. */
     private static final String API_ORIGIN_KEY = "api.url";
+    /** The env application.yml reads one-click-base-url from (#592). */
+    private static final String ONE_CLICK_ENV = "NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL";
 
     private static final List<String> OVERLAYS = List.of("base", "staging", "production", "local");
 
@@ -124,6 +126,55 @@ class UnsubscribeLinkRoutingTest {
                                     + "Paths that Service does serve: %s",
                             overlay.name, url, r.service, r.path, servedPaths(r.service))
                     .isTrue();
+        }
+    }
+
+    /**
+     * Issue #592. The #516 case above passes through {@link #apiOrigin}'s FALLBACK
+     * to {@code api.url} — the origin the one-click target WOULD use if wired —
+     * so it stayed green while no deployed core-java was ever given
+     * {@code NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL}. With that env absent
+     * the application.yml default is EMPTY, and every List-Unsubscribe header
+     * degrades to a plain RFC 2369 link with no List-Unsubscribe-Post. This case
+     * asks the deployment itself: the env must be on the core-java container,
+     * sourced from app-config's one-click key (never optional, never a literal),
+     * and that key must be set EXPLICITLY in the overlay and equal its api.url.
+     */
+    @Test
+    @DisplayName("#592 — in EVERY overlay core-java is given NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL from app-config, equal to api.url")
+    void oneClickOriginIsWiredIntoCoreJavaInEveryOverlay() {
+        List<Overlay> overlays = loadOverlays();
+        assertThat(overlays).hasSize(OVERLAYS.size());
+
+        for (Overlay overlay : overlays) {
+            Map<String, Object> env = overlay.coreJavaEnv.get(ONE_CLICK_ENV);
+            assertThat(env)
+                    .as("%s: the core-java container has no env %s, so application.yml's EMPTY default wins and "
+                                    + "List-Unsubscribe degrades to RFC 2369 (#592). Env names present: %s",
+                            overlay.name, ONE_CLICK_ENV, overlay.coreJavaEnv.keySet())
+                    .isNotNull();
+            assertThat(env.get("value"))
+                    .as("%s: %s must come from app-config, not a literal", overlay.name, ONE_CLICK_ENV)
+                    .isNull();
+            Map<String, Object> ref = asMap(asMap(env.get("valueFrom")).get("configMapKeyRef"));
+            assertThat(ref.get("name")).as("%s: %s configMapKeyRef.name", overlay.name, ONE_CLICK_ENV)
+                    .isEqualTo("app-config");
+            assertThat(ref.get("key")).as("%s: %s configMapKeyRef.key", overlay.name, ONE_CLICK_ENV)
+                    .isEqualTo(ONE_CLICK_ORIGIN_KEY);
+            assertThat(ref.get("optional"))
+                    .as("%s: %s must not be optional — a missing key must fail the pod, not silently degrade",
+                            overlay.name, ONE_CLICK_ENV)
+                    .isNotEqualTo(Boolean.TRUE);
+
+            String explicit = overlay.configMap.get(ONE_CLICK_ORIGIN_KEY);
+            assertThat(explicit)
+                    .as("%s: app-config key %s must be set explicitly, not inherited as empty", overlay.name,
+                            ONE_CLICK_ORIGIN_KEY)
+                    .isNotBlank();
+            assertThat(trimTrailingSlash(explicit))
+                    .as("%s: %s must equal the overlay's %s (the API origin that serves the one-click POST)",
+                            overlay.name, ONE_CLICK_ORIGIN_KEY, API_ORIGIN_KEY)
+                    .isEqualTo(trimTrailingSlash(overlay.require(API_ORIGIN_KEY)));
         }
     }
 
@@ -245,7 +296,8 @@ class UnsubscribeLinkRoutingTest {
     // Overlay loading (ConfigMap data + the Ingress host -> Service map)
     // ------------------------------------------------------------------
 
-    private record Overlay(String name, Map<String, String> configMap, Map<String, String> hostToService) {
+    private record Overlay(String name, Map<String, String> configMap, Map<String, String> hostToService,
+                           Map<String, Map<String, Object>> coreJavaEnv) {
         String require(String key) {
             String v = configMap.get(key);
             if (v == null || v.isBlank()) {
@@ -259,20 +311,31 @@ class UnsubscribeLinkRoutingTest {
         Path k8s = repoRoot().resolve("k8s");
         Map<String, String> baseConfig = configMapData(k8s.resolve("base/configmap.yaml"));
         Map<String, String> baseHosts = ingressHosts(loadIngress(k8s.resolve("base/ingress.yaml")));
+        Map<String, Map<String, Object>> baseEnv = new LinkedHashMap<>();
+        for (Object doc : loadAll(k8s.resolve("base/core-java-deployment.yaml"))) {
+            if (doc instanceof Map<?, ?> map) {
+                mergeCoreJavaEnv(baseEnv, map);
+            }
+        }
+        if (baseEnv.isEmpty()) {
+            fail("read ZERO env entries off the base core-java Deployment — the env reader is broken");
+        }
 
         List<Overlay> overlays = new ArrayList<>();
         for (String name : OVERLAYS) {
             if (name.equals("base")) {
-                overlays.add(new Overlay(name, baseConfig, baseHosts));
+                overlays.add(new Overlay(name, baseConfig, baseHosts, baseEnv));
                 continue;
             }
             Path dir = k8s.resolve(name);
             Map<String, String> config = new TreeMap<>(baseConfig);
             Map<String, String> hosts = new LinkedHashMap<>(baseHosts);
+            Map<String, Map<String, Object>> env = new LinkedHashMap<>(baseEnv);
 
             for (PatchEntry patch : patchesOf(dir)) {
                 for (Object doc : loadAll(patch.file)) {
                     if (doc instanceof Map<?, ?> map) {
+                        mergeCoreJavaEnv(env, map);
                         if ("ConfigMap".equals(map.get("kind"))) {
                             config.putAll(asStringMap(map.get("data")));
                         } else if ("Ingress".equals(map.get("kind")) && PUBLIC_INGRESS.equals(nameOf(map))) {
@@ -289,9 +352,35 @@ class UnsubscribeLinkRoutingTest {
                     }
                 }
             }
-            overlays.add(new Overlay(name, config, hosts));
+            overlays.add(new Overlay(name, config, hosts, env));
         }
         return overlays;
+    }
+
+    /**
+     * Strategic-merge the {@code core-java} container's env of a Deployment
+     * document named {@code core-java} into {@code env}, keyed by env name (the
+     * patchMergeKey kustomize uses), so an overlay patch that re-sources or adds
+     * an entry is seen exactly as the render would see it.
+     */
+    private static void mergeCoreJavaEnv(Map<String, Map<String, Object>> env, Map<?, ?> doc) {
+        if (!"Deployment".equals(doc.get("kind")) || !"core-java".equals(nameOf(doc))) {
+            return;
+        }
+        Map<String, Object> podSpec = asMap(asMap(asMap(doc.get("spec")).get("template")).get("spec"));
+        if (!(podSpec.get("containers") instanceof List<?> containers)) {
+            return;
+        }
+        for (Object c : containers) {
+            Map<String, Object> container = asMap(c);
+            if (!"core-java".equals(container.get("name")) || !(container.get("env") instanceof List<?> entries)) {
+                continue;
+            }
+            for (Object e : entries) {
+                Map<String, Object> entry = asMap(e);
+                env.put(String.valueOf(entry.get("name")), entry);
+            }
+        }
     }
 
     /** A {@code patches:} entry from a kustomization: the file plus its declared target name (JSON6902 needs it). */
