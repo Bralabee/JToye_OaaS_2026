@@ -537,6 +537,35 @@ the pod carries `activeDeadlineSeconds`, and the server name is printed before t
 RESTORED is a Burstable `Standard_B2s` copy, about **£0.06/hour** while it exists, so one drill
 costs pennies. A server left behind costs that every hour until someone deletes it.
 
+**First execution, 2026-10-19 (run `20261019144933`; evidence
+`.planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-20-pitr.txt`):**
+- `T0` = 14:51:13Z, strictly between the before-marker (14:50:08Z) and the after-marker
+  (14:52:16Z). SOURCE counts at `T0`: products 6, orders 1, customers 0, shops 1, equal before and
+  after `T0`.
+- **Arm P:** the restore request returned Ready after **486 s**. The counts were equal on all four
+  tables, the before-marker was present and the after-marker absent.
+- **Arm A:**
+  - the plain `pg_dump` exited 1 ("query would be affected by row-level security policy for table
+    customers");
+  - the `--enable-row-security` dump was 15,841,187 bytes, **15,841× the floor**, and passed both
+    pipeline checks;
+  - `drill_a` restored products 0 and orders 0 against 6 and 1.
+- **Arm B:** the dump was 15,852,055 bytes and passed; `drill_b` counts were equal on all four
+  tables.
+- **Zero-byte:** refused (`0 < 1000`).
+- **Cleanup:** the drill pod was gone, and RESTORED was deleted on the first attempt and absent from
+  a list that still showed SOURCE. The whole run took 19m44s.
+
+**Measured on the restored server, and needed in a real recovery.**
+- The firewall came back **empty** (A12).
+- The `azure.extensions` allow-list also came back **empty**. A server parameter is not carried by
+  PITR. The restored `jtoye` database keeps its installed `uuid-ossp`, but `CREATE EXTENSION
+  "uuid-ossp"` in any new database on that server is refused ("not allow-listed").
+- After a real PITR, then, re-add the firewall rule **and** re-set `azure.extensions` before any
+  migration or restore that creates an extension.
+- The drill itself stays inside its approval: it creates a scratch-only
+  `public.uuid_generate_v4()` shim in `drill_a`/`drill_b` and never changes a server parameter.
+
 **Not done here.** The WORM lock on `jtoye-db-backups` stays a human step after the drill
 (provisioning runbook §4.4). Nothing is restored onto SOURCE, and nothing is written to the live
 `backups/` prefix.
@@ -557,8 +586,11 @@ costs pennies. A server left behind costs that every hour until someone deletes 
 - [ ] Backup account, container, soft delete, WORM (unlocked) and lifecycle created, with the
   provisioning runbook §8 read-backs recorded both ways.
 - [ ] The first staging CronJob run exits 0 and leaves exactly one new `.dump` under `backups/`.
-- [ ] A **staging restore drill** from the real account (a human with a time-bound Reader, the
-  procedure above), with staging-scale RPO and RTO recorded here.
+- [x] A **staging restore drill**, with staging-scale RPO and RTO recorded here. Done
+  2026-10-19 as the managed PITR drill above: RPO is the requested `T0` exactly, and the restore
+  became Ready in 486 s. Arm B's logical dump was taken from the restored server, not downloaded
+  from the account: the operator holds no data-plane role, so a download-and-restore from Blob
+  still needs a time-bound Reader.
 - [ ] After that drill, a human locks the WORM policy (provisioning runbook §4.4).
 
 ### History
