@@ -244,6 +244,47 @@ Get the LoadBalancer IP:
 kubectl get svc nginx-ingress-ingress-nginx-controller -n ingress-nginx
 ```
 
+#### Staging hosts (Phase 29)
+
+Staging uses the flat `-staging` host shape (D-06). Every record is an A record at
+Namecheap pointing at the one Traefik ingress IP, `ingress_ip_address` in
+`k8s/staging/azure-identity.yaml`. The owner adds records; agents never edit DNS. No
+production name resolves until Phase 32 (D-08).
+
+| Host | Serves |
+|------|--------|
+| `api-staging.olajay.co.uk` | core-java (public API) and the SSE stream |
+| `app-staging.olajay.co.uk` | the frontend (vendor dashboard and storefront) |
+| `auth-staging.olajay.co.uk` | Keycloak: the `jtoye-staging` and `jtoye-customers` realm paths only |
+| `grafana-staging.olajay.co.uk` | Grafana, the one monitoring host with a public name (D-19); routed by the monitoring plans |
+| `mail-staging.olajay.co.uk` | Mailpit's web UI and API for persona testers, behind basic auth (D-33) |
+
+**Tester note: `mail-staging.olajay.co.uk`.**
+
+- **What it is.** Staging never delivers application mail. Every email it sends
+  (verification, password reset, staff invitation, order and DSAR mail) is captured by an
+  in-cluster Mailpit and never leaves the cluster. This host shows those captures. A
+  persona's address can therefore be invented, and its mail read here.
+- **Who holds the credential.** One shared login, user `staging-tester`. The password is
+  generated into Key Vault by `scripts/staging-secrets.sh` and nobody chooses it. The owner
+  retrieves it into their own terminal and hands it to testers out of band:
+
+  ```bash
+  az keyvault secret show --subscription c483d353-5f61-4587-a790-addb9ab5fb94 --vault-name jtoye-stg-kv -n mailpit-ui-credentials--password --query value -o tsv
+  ```
+
+  Never paste it into git, an issue, a PR or a chat log.
+- **The rule that makes this acceptable.** No real customer data on staging: use invented names, addresses and phone numbers and Stripe TEST cards only — whoever holds this credential reads every staging email, including password-reset, staff-invite and DSAR-export links.
+  Reading another persona's reset link is the same as taking over that account, which is
+  harmless only because every staging account belongs to a test persona.
+- **What is not exposed.** Only the web UI and API (port 8025) are published, and only
+  over HTTPS with the credential. Plain http answers a redirect. SMTP (1025) is reachable
+  only inside the cluster. Mailpit relays, releases and forwards nothing, and its Send API
+  is locked.
+- **Rotation.** `docs/runbooks/credential-rotation.md`, section "Staging mail UI
+  (`mailpit-ui-credentials`)". The live checks are `scripts/staging-mail-ui.sh --probe
+  --context jtoye-stg-aks`.
+
 ## Deployment Steps
 
 ### Production Deployment

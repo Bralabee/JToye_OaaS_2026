@@ -31,7 +31,7 @@ against the live service.
 > `127.0.0.1` is `trust`-authenticated and accepts **any** password — old, new, or random. It
 > cannot discriminate. The `host all all all scram-sha-256` rule governs connections arriving from
 > the docker gateway, i.e. from the **host** to the **published** port `5433`. Assert the DB
-> credential from the host over `127.0.0.1:5433` (or from a peer container by service name), never
+> credential from the host over `127.0.0.1`, port `5433` (or from a peer container by service name), never
 > from inside the postgres container over its own loopback.
 
 ---
@@ -181,6 +181,48 @@ does not stop at compose. In k8s the same values arrive through the sealed-secre
 
 The Keycloak import (§3) has no compose-only equivalent in staging: the realm still lives in
 Postgres, so the same `kc.sh import --override true` + restart applies against the deployed realm.
+
+---
+
+## 6.1 Staging mail UI (`mailpit-ui-credentials`)
+
+The testers' mail UI at `https://mail-staging.olajay.co.uk` (plan 29-22, D-33) has one
+shared login, user `staging-tester`. Two Key Vault objects in `jtoye-stg-kv` hold it:
+
+- `mailpit-ui-credentials--password`, the plaintext the owner hands to testers. It is
+  mounted by no pod and granted to no workload identity.
+- `mailpit-ui-credentials--auth`, its apr1 htpasswd line. secret-sync syncs it into Secret
+  `mailpit-ui-credentials` (key `auth`), which Traefik's basic auth reads.
+
+Rotate when a tester leaves, or when the password may have been seen anywhere it should
+not be. **Never use `scripts/staging-secrets.sh` for this.** It is write-once by design
+and refuses an object that exists. Rotation writes a NEW VERSION of both objects:
+
+```bash
+export JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94
+. scripts/lib/azure-guard.sh && az_guard_init
+d=$(umask 077 && mktemp -d)
+# 0. keep the OLD password for the refusal check (mode 600, never printed)
+az_read keyvault secret show --vault-name jtoye-stg-kv -n mailpit-ui-credentials--password --query value -o tsv > "$d/old"
+# 1. a new random value, then its apr1 line; the password reaches openssl on stdin only
+openssl rand -base64 96 | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32 > "$d/pw"
+printf 'staging-tester:%s' "$(openssl passwd -apr1 -stdin < "$d/pw")" > "$d/auth"
+az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n mailpit-ui-credentials--password --file "$d/pw" --encoding utf-8
+az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n mailpit-ui-credentials--auth --file "$d/auth" --encoding utf-8
+# 2. the CSI driver fetches only on mount (rotation is off), so restart the syncing pod.
+#    maxUnavailable 0: the new pod mounts before the old one goes, so neither Secret it
+#    keeps (this one and rabbitmq-default-user) disappears during the rollout.
+kubectl --context jtoye-stg-aks -n jtoye-staging rollout restart deploy/secret-sync
+kubectl --context jtoye-stg-aks -n jtoye-staging rollout status deploy/secret-sync --timeout=10m
+# 3. the new password works (8/8), and the OLD one is refused with 401
+bash scripts/staging-mail-ui.sh --probe --context jtoye-stg-aks
+(umask 077; printf 'user = "staging-tester:%s"\n' "$(cat "$d/old")" > "$d/old.curlrc")
+curl -sS -o /dev/null -w '%{http_code}\n' -K "$d/old.curlrc" https://mail-staging.olajay.co.uk/   # expect 401
+rm -rf "$d"
+```
+
+Then hand the new password to the testers out of band. Traefik re-reads the Secret when
+it changes, so the old password stops working once secret-sync's new pod has synced it.
 
 ---
 
