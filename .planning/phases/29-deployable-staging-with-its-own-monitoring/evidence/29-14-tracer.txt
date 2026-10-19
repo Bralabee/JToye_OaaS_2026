@@ -620,3 +620,230 @@ keycloak-allow ingress peers:
 ================ Open item (c) from 29-04: realm import needs KC_HEALTH_ENABLED=true ================
 # k8s/components/keycloak/keycloak.yaml sets KC_HEALTH_ENABLED "true"; the import's readiness wait on 19000/health/ready
 # passed live above ('Keycloak ready through the port-forward'). Resolved.
+
+################ TASK 3 — falsify the tracer (clean -> arms -> clean) ################
+# Arms 2, 3 and 6 run a one-off Pod cloned from the LIVE core-java Deployment's pod template by this jq program
+# (scratch; not committed): same labels (app: core-java, so core-java-allow applies; no pod-template-hash, so no
+# ReplicaSet adopts it), ServiceAccount core-java, Workload Identity label, kv CSI volume, probes and image;
+# restartPolicy Never; memory REQUEST 600Mi (limit 1Gi kept) because no B2s node had 1Gi of requests free (Pitfall 2);
+# plus exactly the arm's env change. Each pod is deleted by name; the scratch database is dropped.
+kubectl --context jtoye-stg-aks -n jtoye-staging get deploy core-java -o json | jq --arg name "$name" --arg mode "$mode" '
+  .spec.template as $t
+  | ($t.spec.containers[0].env) as $env
+  | (if $mode == "migrator" then
+        [ $env[] | select(.name != "DB_MIGRATION_USER" and .name != "DB_MIGRATION_PASSWORD")
+                 | if .name == "DB_NAME" then {name:"DB_NAME", value:"jtoye_e_arm"} else . end ]
+     elif $mode == "owner" then
+        [ $env[] | if .name == "DB_USER" then {name:"DB_USER", valueFrom:{secretKeyRef:{name:"postgres-credentials", key:"migration-username"}}}
+                   elif .name == "DB_PASSWORD" then {name:"DB_PASSWORD", valueFrom:{secretKeyRef:{name:"postgres-credentials", key:"migration-password"}}}
+                   else . end ]
+     elif $mode == "ready" then
+        $env + [{name:"MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE", value:"readinessState,mail"}]
+     else error("unknown mode") end) as $newenv
+  | {apiVersion:"v1", kind:"Pod",
+     metadata:{name:$name, namespace:"jtoye-staging", labels:$t.metadata.labels, annotations:($t.metadata.annotations // {})},
+     spec:($t.spec + {restartPolicy:"Never"})}
+  | .spec.containers[0].env = $newenv
+  | .spec.containers[0].resources.requests.memory = "600Mi"'
+
+================ Task 3 clean (opening): the credentialed spec (Task 3 verify 2, identical to Task 2 verify 1) ================
+## 2026-10-19T10:08:40Z
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+Running 1 test using 1 worker
+
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?scope=openid+profile+email&response_type=code&client_id=core-api&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&code_challenge=cbJfKUD_rlWxyOMmHaKh4kHzQZWBhkWI8e8FiUOq7nI&code_challenge_method=S256
+FINAL_URL https://app-staging.olajay.co.uk/dashboard
+H1 Dashboard
+PRODUCT_COUNT 5 (Curry Channa & Aloo, Doubles, Guyanese Cook-up Rice, Guyanese Pepperpot, Pelau)
+  ✓  1 [desktop] › e2e/staging-login.spec.ts:72:5 › staging vendor signs in through the public edge and sees seeded products @desktop-only (4.4s)
+
+  1 passed (4.9s)
+playwright rc=0
+verify_exit=0
+
+================ Task 3 arm 1 (Blocker A): keycloak.client-id = does-not-exist ================
+## 2026-10-19T10:09:02Z before: app-config keycloak.client-id=[core-api] frontend KEYCLOAK_CLIENT_ID=[core-api]
+configmap/app-config patched
+patch rc=0
+deployment.apps/frontend restarted
+deployment "frontend" successfully rolled out
+after restart: frontend KEYCLOAK_CLIENT_ID=[does-not-exist]
+## 2026-10-19T10:09:37Z the spec under the wrong client id
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+Running 1 test using 1 worker
+
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?scope=openid+profile+email&response_type=code&client_id=does-not-exist&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&code_challenge=qIUMGBCL9q_l-LRBt7760oWVM6-B_jiVV6Aa9FHZt3g&code_challenge_method=S256
+PAGE_URL_ON_FAILURE https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?scope=openid+profile+email&response_type=code&client_id=does-not-exist&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&code_challenge=qIUMGBCL9q_l-LRBt7760oWVM6-B_jiVV6Aa9FHZt3g&code_challenge_method=S256
+PAGE_TEXT_ON_FAILURE J'Toye We are sorry... Client not found.
+  ✘  1 [desktop] › e2e/staging-login.spec.ts:72:5 › staging vendor signs in through the public edge and sees seeded products @desktop-only (3.9s)
+
+
+  1) [desktop] › e2e/staging-login.spec.ts:72:5 › staging vendor signs in through the public edge and sees seeded products @desktop-only 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "core-api"
+    Received: "does-not-exist"
+
+    > 143 |   expect(parsed.searchParams.get("client_id")).toBe(EXPECTED_CLIENT_ID)
+
+    Error Context: ../../../../../tmp/tmp.yxgLNBkgNK/results/staging-login-staging-vend-fe45e-eeded-products-desktop-only-desktop/error-context.md
+
+  1 failed
+    [desktop] › e2e/staging-login.spec.ts:72:5 › staging vendor signs in through the public edge and sees seeded products @desktop-only 
+playwright rc=1
+verify_exit=1
+## the same authorize URL the frontend now emits, fetched directly (status beside the page text):
+GET authorize client_id=does-not-exist -> http=400 text=[We are sorry..]
+POST token client_id=does-not-exist -> http=401 body={"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}
+## 2026-10-19T10:09:56Z restore: deploy.sh at the RECORDED tag (evidence DEPLOYED_SHA=a784e7e2421c7aba164f3e7db858b1861b7df6be, not HEAD 40af2a29)
+Staging secrets preflight (scripts/staging-secrets-preflight.sh)...
+preflight: 31 objects, 35 grants, 0 gap(s)
+configmap/app-config configured
+configmap/keycloak-theme-m5dt5btc4f configured
+deployment.apps/core-java configured
+poddisruptionbudget.policy/core-java-pdb configured
+poddisruptionbudget.policy/edge-go-pdb configured
+poddisruptionbudget.policy/frontend-pdb configured
+deployment "core-java" successfully rolled out
+deployment "edge-go" successfully rolled out
+deployment "frontend" successfully rolled out
+DEPLOYED_SHA=a784e7e2421c7aba164f3e7db858b1861b7df6be
+deploy rc=0
+app-config keycloak.client-id after the re-apply: [core-api]
+frontend env before its restart (still the arm's pod): [does-not-exist]
+deployment.apps/frontend restarted
+deployment "frontend" successfully rolled out
+RESTORE VERIFIED BY CONTENT: running frontend KEYCLOAK_CLIENT_ID=[core-api]
+## 2026-10-19T10:10:42Z the spec after the restore
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?scope=openid+profile+email&response_type=code&client_id=core-api&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&code_challenge=0ebcrs0lu_DR9JFkmqAomzmP2RpH9rPplj4X990CyI8&code_challenge_method=S256
+FINAL_URL https://app-staging.olajay.co.uk/dashboard
+H1 Dashboard
+PRODUCT_COUNT 5 (Curry Channa & Aloo, Doubles, Guyanese Cook-up Rice, Guyanese Pepperpot, Pelau)
+  1 passed (9.6s)
+playwright rc=0
+verify_exit=0
+
+================ Task 3 arm 2 (Blocker E): a fresh database with no DB_MIGRATION_* — Flyway must fail on permission as jtoye_runtime ================
+## 2026-10-19T10:11:39Z scratch database
+=== staging-db-bootstrap --stage scratch-create (host jtoye-stg-pg.postgres.database.azure.com, admin jtoyepgadmin, sslmode=verify-full, via context jtoye-stg-aks) ===
+relay: pod default/jtoye-dbboot-relay-20261019101140-1713709 -> jtoye-stg-pg.postgres.database.azure.com:5432, port-forward pid 1718602 on 127.0.0.1:42617
+CREATE DATABASE
+datname|owner
+jtoye_e_arm|jtoyepgadmin
+(1 row)
+scratch-create rc=0
+## 2026-10-19T10:11:46Z pod arm-flyway-20261019t101139z (clone of the live core-java template; DB_NAME=jtoye_e_arm; DB_MIGRATION_USER/PASSWORD removed)
+clone env check: DB_NAME=jtoye_e_arm DB_MIGRATION_* entries=0
+pod/arm-flyway-20261019t101139z created
+phase=Failed node=aks-nodepool1-24453234-vmss000000 ready=False
+logs rc=0 lines=198
+{"timestamp":"2026-10-19 10:12:29.002","level":"INFO","logger":"org.flywaydb.core.FlywayExecutor","message":"Database: jdbc:postgresql://jtoye-stg-pg.postgres.database.azure.com:5432/jtoye_e_arm?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory (PostgreSQL 18.6)","thread":"main","traceId":"","spanId":""}
+{"timestamp":"2026-10-19 10:12:38.917","level":"ERROR","logger":"o.s.b.t.s.DeferredServletContainerInitializers","message":"Error starting Tomcat context. Exception: org.springframework.beans.factory.BeanCreationException. Message: Error creating bean with name 'credentialLastUsedRecorder' defined in URL [jar:nested:/app/app.jar/!BOOT-INF/classes/!/uk/jtoye/core/integration/credential/CredentialLastUsedRecorder.class]: Failed to instantiate [uk.jtoye.core.integration.credential.CredentialLastUse
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'credentialLastUsedRecorder' defined in URL [jar:nested:/app/app.jar/!BOOT-INF/classes/!/uk/jtoye/core/integration/credential/CredentialLastUsedRecorder.class]: Failed to instantiate [uk.jtoye.core.integration.credential.CredentialLastUsedRecorder]: Constructor threw exception
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [uk.jtoye.core.integration.credential.CredentialLastUsedRecorder]: Constructor threw exception
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'integrationCredentialRepository' defined in uk.jtoye.core.integration.credential.IntegrationCredentialRepository defined in @EnableJpaRepositories declared on DataJpaRepositoriesRegistrar.EnableJpaRepositoriesConfiguration: Cannot resolve reference to bean 'jpaSharedEM_entityManagerFactory' while setting bean property 'entityManager'
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'jpaSharedEM_entityManagerFactory': Cannot resolve reference to bean 'entityManagerFactory' while setting constructor argument
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'flywayInitializer' defined in class path resource [org/springframework/boot/flyway/autoconfigure/FlywayAutoConfiguration$FlywayConfiguration.class]: Failed to execute script 
+SQL State  : 42501
+Error Code : 0
+Message    : ERROR: permission denied for schema public
+Caused by: org.flywaydb.core.internal.sqlscript.FlywaySqlScriptException: Failed to execute script 
+SQL State  : 42501
+Error Code : 0
+pod "arm-flyway-20261019t101139z" deleted from jtoye-staging namespace
+## 2026-10-19T10:12:45Z drop the scratch database
+=== staging-db-bootstrap --stage scratch-drop (host jtoye-stg-pg.postgres.database.azure.com, admin jtoyepgadmin, sslmode=verify-full, via context jtoye-stg-aks) ===
+relay: pod default/jtoye-dbboot-relay-20261019101246-1733020 -> jtoye-stg-pg.postgres.database.azure.com:5432, port-forward pid 1733401 on 127.0.0.1:38401
+DROP DATABASE
+scratch_databases_left
+0
+(1 row)
+scratch-drop rc=0
+# The clone's DB_USER is the unchanged postgres-credentials/username, which the live pod's validator logs as
+# 'Database username: jtoye_runtime' (Task 2 boot log): Flyway, with no migrator, ran as jtoye_runtime and was refused
+# CREATE on schema public (42501) on a fresh database.
+
+================ Task 3 arm 3: DB_USER/DB_PASSWORD = the owner (jtoye_app) against database jtoye — DatabaseConfigurationValidator must refuse ================
+## 2026-10-19T10:13:04Z pod arm-owner-20261019t101304z
+clone env check: [{"DB_NAME":"postgres-credentials/database"},{"DB_USER":"postgres-credentials/migration-username"},{"DB_PASSWORD":"postgres-credentials/migration-password"}]
+pod/arm-owner-20261019t101304z created
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+phase=Failed node=aks-nodepool1-24453234-vmss000000 ready=False endpoints of svc core-java: core-java-7987cbb5cb-vn6jn 
+logs rc=0 lines=150
+{"timestamp":"2026-10-19 10:14:57.951","level":"INFO","logger":"u.j.c.c.DatabaseConfigurationValidator","message":"Database username: jtoye_app","thread":"main","traceId":"","spanId":""}
+{"timestamp":"2026-10-19 10:14:57.970","level":"INFO","logger":"u.j.c.c.DatabaseConfigurationValidator","message":"Checking if database user OWNS the tables it reads...","thread":"main","traceId":"","spanId":""}
+{"timestamp":"2026-10-19 10:14:57.976","level":"ERROR","logger":"u.j.c.c.DatabaseConfigurationValidator","message":"CRITICAL SECURITY ERROR: CRITICAL SECURITY ERROR: Application database role 'jtoye_app' OWNS 51 table(s) in schema public. A table's owner is kept off other tenants' rows ONLY by FORCE ROW LEVEL SECURITY being remembered on EVERY current and future table; ownership makes multi-tenant isolation depend on that memory rather than on the role's privileges, so the first migration that forgets FORCE hands the owner every tenant's rows silently. Solution: set DB_USER to the non-owner ru
+{"timestamp":"2026-10-19 10:14:58.161","level":"ERROR","logger":"o.s.boot.SpringApplication","message":"Application run failed","thread":"main","traceId":"","spanId":""}
+uk.jtoye.core.config.DatabaseConfigurationValidator$SecurityConfigurationException: CRITICAL SECURITY ERROR: Application database role 'jtoye_app' OWNS 51 table(s) in schema public. A table's owner is kept off other tenants' rows ONLY by FORCE ROW LEVEL SECURITY being remembered on EVERY current and future table; ownership makes multi-tenant isolation depend on that memory rather than on the role's privileges, so the first migration that forgets FORCE hands the owner every tenant's rows silently. Solution: set DB_USER to the non-owner runtime role (jtoye_runtime) that holds DML grants and owns
+pod "arm-owner-20261019t101304z" deleted from jtoye-staging namespace
+
+================ Task 3 arm 4 (D-08): production names stay NXDOMAIN at the authoritative server ================
+## 2026-10-19T10:15:22Z
+api.olajay.co.uk rc=0 status=status: NXDOMAIN flags: qr aa answer=[]
+app.olajay.co.uk rc=0 status=status: NXDOMAIN flags: qr aa answer=[]
+api-staging.olajay.co.uk rc=0 status=status: NOERROR flags: qr aa answer=[51.105.43.14 ]
+app-staging.olajay.co.uk rc=0 status=status: NOERROR flags: qr aa answer=[51.105.43.14 ]
+# api/app: NXDOMAIN with aa; positive control: the staging names resolve (NOERROR, aa, the ingress IP).
+
+================ Task 3 arm 5 (#302): no FileNotFoundException in core-java's log ================
+## 2026-10-19T10:15:22Z
+kubectl logs deploy/core-java: rc=0 lines=170 (pod core-java-7987cbb5cb-vn6jn, the first boot that served traffic)
+FileNotFoundException lines: 0
+positive control, 'Started CoreApplication' lines: 1
+{"timestamp":"2026-10-19 09:59:24.690","level":"INFO","logger":"uk.jtoye.core.CoreApplication","message":"Started CoreApplication in 90.986 seconds (process running for 94.637)","thread":"main","trace
+fail-direction control (the same here-string count over the log plus one planted line): 1
+# The run-1 first boot (the one that applied the migrations) had its log rotated away by its restarts; nothing is claimed about it.
+
+================ Task 3 arm 6: a readiness group that includes mail, while no mailpit Service exists ================
+## 2026-10-19T10:15:39Z pod arm-ready-20261019t101539z (clone; ONE change: MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE=readinessState,mail)
+mailpit Service: Error from server (NotFound): services "mailpit" not found
+env diff vs the live template: > MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE 
+pod/arm-ready-20261019t101539z created
+## 2026-10-19T10:24:58Z observed
+phase=Running containerState=["running"] restartCount=0 Ready=False node=aks-nodepool1-24453234-vmss000000
+'Started CoreApplication' in its log: 1
+events:
+Normal    Scheduled   1     Successfully assigned jtoye-staging/arm-ready-20261019t101539z to aks-nodepool1-24453234-vmss000000
+Normal    Pulled      1     Container image "ghcr.io/bralabee/jtoye-core-java:a784e7e2421c7aba164f3e7db858b1861b7df6be" already present on machine and can be accessed by the pod
+Normal    Created     1     Container created
+Normal    Started     1     Container started
+Warning   Unhealthy   8     Startup probe failed: Get "http://10.244.2.15:9091/actuator/health/liveness": dial tcp 10.244.2.15:9091: connect: connection refused
+Warning   Unhealthy   47    Readiness probe failed: HTTP probe failed with statuscode: 503
+svc core-java endpoints (the clone must not be one): core-java-7987cbb5cb-vn6jn:true arm-ready-20261019t101539z:false 
+pod "arm-ready-20261019t101539z" deleted from jtoye-staging namespace
+# Liveness unaffected (Running, restartCount 0, 'Started CoreApplication'), Ready stayed False with 47 readiness 503s,
+# and the EndpointSlice lists the clone ready=false, so the Service never routed to it. A readiness group that
+# included mail WOULD unready core-java today; Task 2's Ready/200 shows the real group does not.
+
+================ Task 3 clean (closing) ================
+## 2026-10-19T10:25:35Z verify 1 (verbatim): no arm pods remain
+kubectl rc=0
+core-java pods=1 arm pods=0
+verify1_exit=0
+relay pods in default: 0
+## 2026-10-19T10:25:39Z databases: no scratch database remains (scratch-drop is idempotent and counts every *_arm database)
+=== staging-db-bootstrap --stage scratch-drop (host jtoye-stg-pg.postgres.database.azure.com, admin jtoyepgadmin, sslmode=verify-full, via context jtoye-stg-aks) ===
+psql:<stdin>:1: NOTICE:  database "jtoye_e_arm" does not exist, skipping
+DROP DATABASE
+scratch_databases_left
+0
+(1 row)
+## 2026-10-19T10:25:46Z verify 2 (verbatim): the credentialed spec
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+Running 1 test using 1 worker
+
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?scope=openid+profile+email&response_type=code&client_id=core-api&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&code_challenge=Byia2S7jZlaF8Hep0CU5W9-PfH2kiDoaPvpE71HFClU&code_challenge_method=S256
+FINAL_URL https://app-staging.olajay.co.uk/dashboard
+H1 Dashboard
+PRODUCT_COUNT 5 (Curry Channa & Aloo, Doubles, Guyanese Cook-up Rice, Guyanese Pepperpot, Pelau)
+  ✓  1 [desktop] › e2e/staging-login.spec.ts:72:5 › staging vendor signs in through the public edge and sees seeded products @desktop-only (5.3s)
+
+  1 passed (5.9s)
+playwright rc=0
+verify2_exit=0
+fail-direction control of verify 1's count (a planted listing with one arm pod): arm pods=1 -> verify 1 would exit 1
