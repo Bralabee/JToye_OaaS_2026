@@ -108,12 +108,30 @@ preflight() {
 # ---------------------------------------------------------------------------
 # --selftest: a stub vault, filled directly (independent of the writer)
 # ---------------------------------------------------------------------------
-pf_run() { # TAG -> rc; output in $ST/TAG.out
+pf_run() { # TAG [ARGS...] -> rc; output in $ST/TAG.out
   local tag="$1" rc=0
+  shift
   ( PATH="$ST/bin:$PATH" SS_STUB_STATE="$ST/state" STAGING_SECRETS_RENDER_FILE="${ST_RENDER:-$ST/real.yaml}" \
+      STAGING_SECRETS_IDENTITY_FILE="${ST_IDF:-$ST/idmap.yaml}" \
       JTOYE_AZURE_SUBSCRIPTION_ID="${ST_SUB-c483d353-5f61-4587-a790-addb9ab5fb94}" \
-      bash "$SELF" ) > "$ST/$tag.out" 2>&1 < /dev/null || rc=$?
+      bash "$SELF" "$@" ) > "$ST/$tag.out" 2>&1 < /dev/null || rc=$?
   echo "$rc"
+}
+# pf_idmap OUT -> an identity file in the committed shape (client_id_<k> / principal_id_<k>),
+# one pair per SPC clientID, holding the stub's principal ids.
+pf_idmap() {
+  local out="$1" cid i=0
+  printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'metadata:' '  name: azure-identity' 'data:' > "$out"
+  while IFS= read -r cid; do
+    [ -n "$cid" ] || continue
+    i=$((i + 1))
+    printf '  client_id_id%s: "%s"\n  principal_id_id%s: "%s"\n' "$i" "$cid" "$i" "$(ss_stub_principal "$cid")" >> "$out"
+  done < <(cut -f1 "$ST/access" | LC_ALL=C sort -u)
+}
+# no_value_reads TAG -> empty when the stub saw no value read and no read Key Vault Reader
+# cannot make (vault control plane, identity list, a subscription-wide --all listing)
+no_value_reads() {
+  command grep -nE ' keyvault secret show | keyvault show | identity list | --all( |$)' "$ST/state/argv.log" | head -n 3 | tr '\n' ' '
 }
 pf_full() { # a fully configured stub vault: every derived object, every grant, TEST-mode Stripe values
   local n
@@ -124,7 +142,7 @@ pf_full() { # a fully configured stub vault: every derived object, every grant, 
   ss_stub_identities "$ST/state" "$ST/access"
   ss_stub_grant_all "$ST/state" "$ST/access"
 }
-gaplines() { command grep -E '^(MISSING|MISSING-ACCESS|NOT-TEST-MODE) ' "$ST/$1.out"; }
+gaplines() { command grep -E '^(MISSING|MISSING-ACCESS|NOT-TEST-MODE|STALE-IDENTITY) ' "$ST/$1.out"; }
 
 selftest() {
   local fmt="${STAGING_SECRETS_SELFTEST_FORMAT:-plain}" rc why fails=0 got want line pid
@@ -138,6 +156,7 @@ selftest() {
   mkdir -p "$ST/d"
   ( STAGING_SECRETS_RENDER_FILE="$ST/real.yaml" ss_derive "$ST/d" ) || void "derivation failed on the real render"
   cp "$ST/d/objects" "$ST/objects"; cp "$ST/d/access" "$ST/access"
+  pf_idmap "$ST/idmap.yaml"
 
   # --- full: rc 0, no gap line, exactly two test-mode lines ------------------------------
   pf_full; rc=$(pf_run full); why=""
@@ -204,6 +223,63 @@ selftest() {
   [ "$rc" = 1 ] || why="rc=$rc"
   [ -z "$why" ] && [ "$(command grep -c '^MISSING ' "$ST/empty.out")" != "$(wc -l < "$ST/objects")" ] && why="want $(wc -l < "$ST/objects") MISSING lines, got $(command grep -c '^MISSING ' "$ST/empty.out")"
   if [ -z "$why" ]; then ss_result "PASS empty-vault rc=1 missing=$(wc -l < "$ST/objects")"; else ss_result "FAIL empty-vault $why"; fails=$((fails + 1)); fi
+
+  # --- 29-21: a committed principal id that is not the identity's live one: STALE-IDENTITY -
+  # (the full, operator-run mode keeps the map --names-only trusts honest)
+  pf_full
+  awk -v c="$(cut -f1 "$ST/access" | LC_ALL=C sort -u | head -n 1)" '
+    /^  client_id_id[0-9]+:/ { hit = (index($0, c) > 0) }
+    /^  principal_id_id[0-9]+:/ && hit { sub(/"[^"]*"/, "\"p0000000-stale-0000-0000-000000000000\""); hit = 0 }
+    { print }' "$ST/idmap.yaml" > "$ST/idmap-stale.yaml"
+  rc=$(ST_IDF="$ST/idmap-stale.yaml" pf_run stale); why=""
+  [ "$rc" = 1 ] || why="rc=$rc"
+  [ -z "$why" ] && [ "$(gaplines stale | command grep -c '^STALE-IDENTITY principal_id_id[0-9]* committed p0000000-stale-')" != 1 ] && why="gap lines were: $(gaplines stale | head -n 3 | tr '\n' '|')"
+  if [ -z "$why" ]; then ss_result "PASS stale-identity rc=1 STALE-IDENTITY named"; else ss_result "FAIL stale-identity $why"; fails=$((fails + 1)); fi
+
+  # --- 29-21 --names-only: what CI runs as jtoye-ci (Key Vault Reader at vault scope) ----
+  # A full vault passes with NO value read and no read that role cannot make.
+  pf_full; : > "$ST/state/argv.log"
+  rc=$(pf_run names-only --names-only); why=""
+  [ "$rc" = 0 ] || why="rc=$rc: $(tail -n 3 "$ST/names-only.out" | tr '\n' ' ')"
+  [ -z "$why" ] && [ -n "$(gaplines names-only)" ] && why="gap lines on a full vault: $(gaplines names-only | head -n 2 | tr '\n' ' ')"
+  [ -z "$why" ] && [ -n "$(no_value_reads)" ] && why="the stub saw a forbidden read: $(no_value_reads)"
+  [ -z "$why" ] && command grep -q '^test-mode: yes ' "$ST/names-only.out" && why="a test-mode line, so a value was read"
+  [ -z "$why" ] && [ "$(command grep -c ' role assignment list --scope ' "$ST/state/argv.log")" != "$(wc -l < "$ST/objects")" ] \
+    && why="want one scope listing per object ($(wc -l < "$ST/objects")), got $(command grep -c ' role assignment list --scope ' "$ST/state/argv.log")"
+  if [ -z "$why" ]; then ss_result "PASS names-only-no-value-read rc=0 gaps=0 forbidden-reads=0"; else ss_result "FAIL names-only-no-value-read $why"; fails=$((fails + 1)); fi
+
+  # ... and still reports a missing object and a missing grant, still without a value read
+  pf_full; rm -f "$ST/state/vault/redis-credentials--password"
+  line=$(command grep -m1 'secrets/nextauth-secret--secret$' "$ST/state/roles")
+  pid="${line%%$'\t'*}"
+  command grep -vxF -- "$line" "$ST/state/roles" > "$ST/roles.tmp"; mv "$ST/roles.tmp" "$ST/state/roles"
+  : > "$ST/state/argv.log"
+  rc=$(pf_run names-gaps --names-only); why=""
+  got=$(gaplines names-gaps | LC_ALL=C sort)
+  want=$(printf '%s\n' "MISSING redis-credentials--password" "MISSING-ACCESS nextauth-secret--secret $pid" | LC_ALL=C sort)
+  [ "$rc" = 1 ] || why="rc=$rc"
+  [ -z "$why" ] && [ "$got" != "$want" ] && why="gap lines were: $(printf '%s' "$got" | tr '\n' '|')"
+  [ -z "$why" ] && [ -n "$(no_value_reads)" ] && why="the stub saw a forbidden read: $(no_value_reads)"
+  if [ -z "$why" ]; then ss_result "PASS names-only-reports-gaps rc=1 MISSING+MISSING-ACCESS"; else ss_result "FAIL names-only-reports-gaps $why"; fails=$((fails + 1)); fi
+
+  # ... and an SPC identity with no committed principal id is a gap, never skipped
+  pf_full
+  awk 'BEGIN { done = 0 } /^  principal_id_id[0-9]+:/ && !done { done = 1; next } { print }' "$ST/idmap.yaml" > "$ST/idmap-short.yaml"
+  rc=$(ST_IDF="$ST/idmap-short.yaml" pf_run names-unmapped --names-only); why=""
+  [ "$rc" = 1 ] || why="rc=$rc"
+  [ -z "$why" ] && ! command grep -q '^MISSING-ACCESS .* unresolved-client-id:' "$ST/names-unmapped.out" && why="no unresolved-client-id gap"
+  if [ -z "$why" ]; then ss_result "PASS names-only-unmapped rc=1 unresolved-client-id"; else ss_result "FAIL names-only-unmapped $why"; fails=$((fails + 1)); fi
+
+  # The COMMITTED identity file maps every SPC clientID of the real render to a principal
+  # id, so --names-only can resolve every grant in CI (structural; the live values are
+  # held honest by the stale-identity arm above in every operator run).
+  why=""
+  while IFS= read -r line; do
+    key=$(awk -v c="$line" -F'"' '$2 == c && $1 ~ /^  client_id_[a-z_]+: $/ { k = $1; sub(/^  client_id_/, "", k); sub(/: $/, "", k); print k; exit }' "$SS_REPO_ROOT/$SS_IDENTITY_FILE_REL")
+    if [ -z "$key" ]; then why="${why}no client_id_* key for $line; "; continue; fi
+    awk -v k="  principal_id_${key}:" 'index($0, k) == 1 { f = 1 } END { exit !f }' "$SS_REPO_ROOT/$SS_IDENTITY_FILE_REL" || why="${why}no principal_id_${key}; "
+  done < <(cut -f1 "$ST/access" | LC_ALL=C sort -u)
+  if [ -z "$why" ]; then ss_result "PASS committed-principal-map every SPC clientID mapped"; else ss_result "FAIL committed-principal-map $why"; fails=$((fails + 1)); fi
 
   # --- guard unpinned, and VOID without python -------------------------------------------
   pf_full; : > "$ST/state/argv.log"
