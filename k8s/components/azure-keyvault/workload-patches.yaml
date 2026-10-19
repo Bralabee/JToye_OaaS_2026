@@ -192,3 +192,54 @@ spec:
           readOnly: true
           volumeAttributes:
             secretProviderClass: redis-exporter-kv
+---
+# Alertmanager and Grafana (plan 29-24, ../monitoring), each mounting its own SPC. Alertmanager's
+# mount is also where its SMTP password FILE lives (alertmanager-kv's password object is mounted,
+# never synced into a Secret).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: alertmanager
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: alertmanager-kv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: grafana
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: grafana-kv

@@ -115,3 +115,19 @@ only issues caused by the current task are fixed in it).
   current `.env` (its own env renders sha256 97a00e0a; the current `.env` renders 51f026d4). A
   stale LOCAL runtime: `scripts/check-runtime-freshness.sh` is the gate for it.
   **Next:** recreate the monitoring stack locally (`docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate alertmanager`).
+
+- The STOMP dashboard's panels name a datasource uid nobody provisions (found during 29-24, 2026-10-19)
+  status: open
+  **What:** `infra/monitoring/grafana/dashboards/stomp-dashboard.json` references
+  `{"type":"prometheus","uid":"prometheus"}` in every panel, while
+  `provisioning/datasources/prometheus.yml` sets no `uid`, so Grafana assigns a random one.
+  Measured on grafana/grafana:13.2.4: `/api/ds/query` with uid `prometheus` answers
+  `{"message":"Data source not found"}`, so every panel is empty in compose today and in
+  staging (29-24 serves byte copies). Pre-existing; not caused by 29-24.
+  **Trap for the fix:** adding `uid: prometheus` to the datasource is right on a FRESH store
+  (staging: emptyDir) but on an EXISTING store (compose's `grafana_data`) Grafana exits 1 at
+  start: `Datasource provisioning error: data source not found` (measured: random uid first,
+  then the uid file on the same volume). The fix must carry `deleteDatasources` for the old
+  entry, or change the dashboard side, and be proven on both a fresh and an existing store.
+  **Next:** a small plan (or 29-27's runbook work, which says "read Grafana") fixes the
+  canonical files and re-copies them.

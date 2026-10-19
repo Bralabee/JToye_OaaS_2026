@@ -1256,6 +1256,17 @@ declare -A NETPOL_RULES_EXPECTED=(
   [redis-exporter-allow@k8s/staging]="sel:app=redis-exporter types:Egress,Ingress
       in:pod=app=prometheus:9121
       $NETPOL_DNS_EG eg:pod=app=redis:6379"
+  # Alert routing and dashboards (plan 29-24, ../components/monitoring, D-17/D-19). Alertmanager
+  # is reached by Prometheus and core-java on 9093 (no Ingress); it sends to Zoho on the public
+  # range on 587 only (STARTTLS submission) and to Mailpit on 1025 (mailpit-allow admits it).
+  # Grafana is the ONE public monitoring host: the controller namespace on 3000, and it reads
+  # only Prometheus (prometheus-allow admits app=grafana on 9090).
+  [alertmanager-allow@k8s/staging]="sel:app=alertmanager types:Egress,Ingress
+      in:pod=app=prometheus:9093 in:pod=app=core-java:9093
+      $NETPOL_DNS_EG eg:ip=0.0.0.0/0:587 eg:pod=app=mailpit:1025"
+  [grafana-allow@k8s/staging]="sel:app=grafana types:Egress,Ingress
+      in:ns=__INGRESS_NS__:3000
+      $NETPOL_DNS_EG eg:pod=app=prometheus:9090"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as
@@ -1266,8 +1277,11 @@ declare -A NETPOL_RULES_EXPECTED=(
 # (36-PHASE29-HANDOFF.md §5) would be a NEW, scoped row here, reviewed as a
 # NetworkPolicy change. Bolting another port onto the public shape, narrowing its
 # except list, or any ingress ipBlock FAILS.
+# Plan 29-24 adds 587 to the same shape for ONE policy: Alertmanager's SMTP submission to Zoho
+# (smtp.zoho.eu, STARTTLS required by the config). Which policy may use which port is still the
+# row's business above; this table only bounds the ports the public shape may ever carry.
 declare -A NETPOL_IPBLOCK_EXPECTED=(
-  ["eg|0.0.0.0/0|10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]="443 __DB_PORT__"
+  ["eg|0.0.0.0/0|10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]="443 __DB_PORT__ 587"
 )
 # Hygiene: rows and shapes used by at least one target (checked after the loop).
 declare -A INV7_ROW_USED=()

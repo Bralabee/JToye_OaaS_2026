@@ -151,3 +151,90 @@ Verify 3 (objects/SPCs vs baseline + 6 / + 2) on the UNEDITED tree:
   > grafana-kv
   objects=30 spcs=9 diff-objects=1 diff-spcs=1
   rc=1
+
+### Task 2 results (2026-10-19T16:45:18Z)
+
+Verify 1 (copy parity && keyvault chain && render invariants && render-golden && staging-secrets --selftest): rc 0
+  PASS: 9 pairs, all byte-equal; 1 jobs pair(s), job sets and labels equal.
+  OK   [k8s/staging] OK: 11 SecretProviderClasses, 48 consumed (Secret, key) reference(s), 36 Key Vault objects; every consumer mounts its one producer, every clientID is its ServiceAccount's
+  PASS: the Key Vault chain holds in 1 target(s) (k8s/staging).
+  All overlay renders match their committed goldens.
+  SELFTEST: 13/13 (derived objects=41, generated=35, grants=45)
+  render invariants: INV-7 OK (17 policies, 120 rule tuples exact); INV-15 OK (5 Ingresses, 6 tls entries x1 host, noindex on all); INV-4 OK
+
+Verify 2 (Ingress host set) FINAL:
+  api-staging.olajay.co.uk
+  app-staging.olajay.co.uk
+  auth-staging.olajay.co.uk
+  grafana-staging.olajay.co.uk
+  mail-staging.olajay.co.uk
+  diff=0
+  rc=0  (unedited tree: rc 1, grafana-staging missing — recorded above)
+
+Verify 3 (objects/SPCs) FINAL:
+  objects=36 spcs=11 diff-objects=0 diff-spcs=0
+  rc=0  objects 30 -> 36 (baseline + 6), SPCs 9 -> 11 (baseline + 2); unedited tree rc 1 naming exactly those 8 (recorded above)
+
+Copy parity break arm: one byte appended to the entrypoint copy -> rc 1 'pair 6 has DRIFTED' (md5 511170d3 vs ae3996c7); restored, md5 equal
+
+INV-7 / INV-15 break arms (each restored by sha256; closing clean run rc 0):
+  row-missing            rc 1  INV-7: undeclared policy 'grafana-allow'
+  smtps-465              rc 1  INV-7: alertmanager-allow renders undeclared eg:ip=0.0.0.0/0:465, missing eg:ip=0.0.0.0/0:587
+  grafana->alertmanager  rc 1  INV-7: grafana-allow renders undeclared eg:pod=app=alertmanager:9093
+  noindex dropped        rc 1  INV-15: Ingress 'grafana-public' serves no X-Robots-Tag noindex
+  shares auth TLS Secret rc 1  INV-15: 'jtoye-staging-auth-tls' is requested by 2 tls entries
+  --selftest-inv7/15/16/17/18: rc 0 each
+
+INV-4 (first full run after the manifests): rc 1 — forbidden local-only literal 'localhost' in the render:
+  the byte-copied entrypoint's exec line '--web.external-url=http://localhost:9093' (now inside ConfigMap alertmanager-src)
+  fix: ALERTMANAGER_WEB_EXTERNAL_URL required by the entrypoint, no default in the file; compose passes the old value;
+  staging passes http://alertmanager.jtoye-staging.svc.cluster.local:9093; render gate arm external-url-required (10/10)
+  compose argv read from /proc/1/cmdline, old entrypoint vs new, compose env: identical
+    /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager --web.external-url=http://localhost:9093
+
+staging-secrets.sh --list (JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-...):
+  HEAD classification table: rc 1, 'list: 41 objects, 4 unclassified'; alertmanager --from/--to/--username and grafana --admin-user UNCLASSIFIED,
+    and alertmanager-smtp-credentials--password classed 'random' by *password* (--generate would have written a random Zoho password)
+  new table: rc 0
+    alertmanager-smtp-credentials--from	external
+    alertmanager-smtp-credentials--password	external
+    alertmanager-smtp-credentials--to	external
+    alertmanager-smtp-credentials--username	external
+    grafana-admin-credentials--admin-password	random
+    grafana-admin-credentials--admin-user	estate
+    list: 41 objects, 0 unclassified
+    UNCLASSIFIED rows: 0. (The plan's 'lines containing unclassified == 0' cannot pass: the summary line 'list: 41 objects, 0 unclassified' contains the word; replaced by the row count, as 29-23 did.)
+  selftest arm external-validators: PASS; planted @email accepting everything -> 'FAIL external-validators non-address rc=0', SELFTEST 12/13 rc 1; restored by sha256
+
+check-alert-mute.sh M-5 (MODE=static):
+  OLD text grep on this tree: rc 1, 3 files 'set' the mute (the byte-copied entrypoint, the staging golden, alertmanager.yaml)
+  NEW render-based: rc 0 — '4 overlay render(s) read; 1 mute setting(s)': k8s/staging Deployment/alertmanager=NoOrdersCreated
+  arms on a copied k8s/: mute in base -> rc 1, 3 FAIL lines (base, local, production named); staging 'NoOrdersCreated,ServiceDown' -> rc 1 'ServiceDown not on MUTE_ALLOWLIST';
+    staging valueFrom -> rc 1 'from a reference, not a reviewable literal'; no kubectl on PATH -> rc 2 VOID
+  first draft exited 1 SILENTLY (set -e on a failing m5_out=$(...) assignment); fixed to '|| m5_rc=$?' so a read failure is VOID
+
+Render read-back (T-29-87/T-29-88): alertmanager PASSWORD env = [ALERTMANAGER_SMTP_PASSWORD_FILE] -> /mnt/secrets-store/alertmanager-smtp-credentials--password;
+  grafana GF_SECURITY_ADMIN_PASSWORD = secretKeyRef grafana-admin-credentials/admin-password; alertmanager-kv syncs keys [from, username, to] only; rc 0
+  control: a planted ALERTMANAGER_SMTP_PASSWORD literal in a render copy -> rc 1 naming it
+
+Grafana measured locally (grafana/grafana:13.2.4, --read-only, --user 472, tmpfs /var/lib/grafana + /tmp, the three byte copies at the k8s paths):
+  /api/health 200 after 3 polls; anonymous /api/search 401; wrong password 401; POST /api/user/signup 401; dashboards [stomp-relay-dashboard];
+  datasource Prometheus url http://prometheus:9090; 0 error-level log lines. defaults.ini has preinstall_disabled, plugin_admin_enabled,
+  reporting_enabled, check_for_updates, check_for_plugin_updates (the GF_* keys set).
+  FINDING (pre-existing, deferred-items.md): panels name datasource uid 'prometheus'; /api/ds/query -> 'Data source not found'.
+  adding uid to the datasource on an EXISTING store: Grafana exits 1, 'Datasource provisioning error: data source not found'.
+
+Live READ-ONLY probes (jtoye-stg-aks, subscription c483d353; no write):
+  identities: jtoye-staging-alertmanager-id federated to system:serviceaccount:jtoye-staging:alertmanager, jtoye-staging-grafana-id to
+    system:serviceaccount:jtoye-staging:grafana, issuer = azure-identity.yaml aks_oidc_issuer_url
+  DNS: grafana-staging.olajay.co.uk A 51.105.43.14 at dns1 and dns2.registrar-servers.com and public resolution
+  acme-http01-solver-allow live (podSelector acme.cert-manager.io/http01-solver=true, ingress traefik:8089) — the policy mail-staging's cert issued under
+  Secret jtoye-staging-ca present, type kubernetes.io/tls, keys ca.crt tls.crt tls.key
+  staging-secrets-preflight.sh: rc 1, 41 objects, 45 grants, 12 gaps = the 6 new objects MISSING + their 6 MISSING-ACCESS (stripe lines are test-mode info)
+    -> a deploy from this tree is REFUSED by the preflight until 29-25 Task 1 (--generate, --assign-access) and Task 2 (the owner's four Zoho values)
+
+Capacity (4 x B2s, allocatable 2787Mi / 1900m each), measured 2026-10-19 at about 16:26Z (kubectl describe nodes, read-only) — no deploy in this plan:
+  node0 requests 2182Mi/1336m (free 605Mi/564m); node1 1364Mi/899m (free 1423Mi/1001m); node2 2688Mi/1436m (free 99Mi/464m); node3 1638Mi/820m (free 1149Mi/1080m)
+  new requests: alertmanager 20m/64Mi + grafana 50m/128Mi = 70m/192Mi -> fit on node1 or node3; node2 (99Mi) cannot take either
+  rolling headroom after: if both land on node3 it keeps 957Mi (< a 1Gi core-java/keycloak surge); node1 keeps 1423Mi (>= 1Gi) — one 1Gi surge still fits
+  the AFTER measurement belongs to 29-25's deploy

@@ -224,9 +224,18 @@ cmd_set_external() {
   case "$v" in
     *[[:space:]]*) v=""; refuse external "the value for $name contains whitespace" ;;
   esac
-  case "$v" in
-    "$prefix"*) ;;
-    *) v=""; refuse external "the value for $name does not start with '$prefix' (D-28: only Stripe TEST credentials enter staging)" ;;
+  case "$prefix" in
+    @email)
+      # One address: no list, no display name. [[ =~ ]] keeps the value off every argv.
+      [[ "$v" =~ ^[^@[:space:],\<\>\"\']+@[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$ ]] \
+        || { v=""; refuse external "the value for $name is not a single email address (local@domain.tld)"; } ;;
+    @nonempty) ;;
+    @*) v=""; refuse external "unknown external validator '$prefix' for $name" ;;
+    *)
+      case "$v" in
+        "$prefix"*) ;;
+        *) v=""; refuse external "the value for $name does not start with '$prefix' (D-28: only Stripe TEST credentials enter staging)" ;;
+      esac ;;
   esac
   f="$WORK/value"; : > "$f"; chmod 600 "$f"
   printf '%s' "$v" > "$f"; v=""
@@ -426,6 +435,31 @@ cmd_selftest() {
   [ -z "$why" ] && [ "$rc" != 0 ] && why="whsec_ rc=$rc"
   [ -z "$why" ] && command grep -qE 'sk_test_x|whsec_y' "$ST"/t1.out "$ST"/w2.out && why="a value was printed"
   if [ -z "$why" ]; then ss_result "PASS external-prefix sk_live_=refused sk_test_=written-once whsec_=required"; else ss_result "FAIL external-prefix $why"; fails=$((fails + 1)); fi
+
+  # --- external validators (plan 29-24): the Zoho alert-mail values -----------------------
+  # @email refuses a non-address and a list, accepts one address once; @nonempty refuses an
+  # empty value and accepts any whitespace-free value. No refused value is ever printed.
+  st_reset; why=""
+  printf '%s\n' 'not-an-address' > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run em1 --set-external alertmanager-smtp-credentials--to)
+  [ "$rc" = 1 ] || why="non-address rc=$rc"
+  printf '%s\n' 'a@x.example.invalid,b@x.example.invalid' > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run em2 --set-external alertmanager-smtp-credentials--to)
+  [ -z "$why" ] && [ "$rc" != 1 ] && why="address list rc=$rc"
+  [ -z "$why" ] && [ "$(st_sets)" != 0 ] && why="a refused address was written"
+  [ -z "$why" ] && command grep -qE 'not-an-address|b@x\.example\.invalid' "$ST"/em1.out "$ST"/em2.out && why="a refused value was printed"
+  printf '%s\n' 'alerts@x.example.invalid' > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run em3 --set-external alertmanager-smtp-credentials--from)
+  [ -z "$why" ] && [ "$rc" != 0 ] && why="a single address rc=$rc: $(tail -n 1 "$ST/em3.out")"
+  [ -z "$why" ] && [ "$(cat "$ST/state/vault/alertmanager-smtp-credentials--from" 2>/dev/null)" != alerts@x.example.invalid ] && why="the address was not stored"
+  : > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run ne1 --set-external alertmanager-smtp-credentials--password)
+  [ -z "$why" ] && [ "$rc" != 1 ] && why="empty password rc=$rc"
+  printf '%s\n' 'zohoApp12345' > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run ne2 --set-external alertmanager-smtp-credentials--password)
+  [ -z "$why" ] && [ "$rc" != 0 ] && why="non-empty password rc=$rc"
+  [ -z "$why" ] && command grep -q 'zohoApp12345' "$ST/ne2.out" && why="the password was printed"
+  [ -z "$why" ] && [ "$(st_sets)" != 2 ] && why="want exactly 2 writes, got $(st_sets)"
+  rc=$(st_run gen1 --generate)
+  [ -z "$why" ] && [ "$(cat "$ST/state/vault/grafana-admin-credentials--admin-user" 2>/dev/null)" != jtoye-grafana-admin ] && why="the Grafana admin user was not generated as the estate literal"
+  [ -z "$why" ] && [ "$(wc -c < "$ST/state/vault/grafana-admin-credentials--admin-password" 2>/dev/null || echo 0)" -lt 32 ] && why="the Grafana admin password was not generated"
+  [ -z "$why" ] && [ -e "$ST/state/vault/alertmanager-smtp-credentials--to" ] && why="--generate wrote an external object"
+  if [ -z "$why" ]; then ss_result "PASS external-validators @email=one-address @nonempty=refuses-empty grafana=estate+random externals-not-generated"; else ss_result "FAIL external-validators $why"; fails=$((fails + 1)); fi
 
   # --- assign-access: absent objects deferred, then exactly the missing grants ------------
   st_reset

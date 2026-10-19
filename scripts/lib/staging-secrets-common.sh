@@ -33,7 +33,10 @@
 #              htpasswd-apr1:<user>:<input> is the line `<user>:<openssl passwd -apr1 -stdin>`
 #              over the input's value (the password on stdin, never argv; plan 29-22, D-33)
 #   external   supplied by the owner on stdin; the kind is the REQUIRED prefix (D-28:
-#              a Stripe key that is not a TEST key never enters staging)
+#              a Stripe key that is not a TEST key never enters staging), or a validator
+#              when it starts with `@` (plan 29-24): @email = one address, local@domain.tld;
+#              @nonempty = any value without whitespace (a Zoho app password has no fixed
+#              prefix). Whitespace is refused for every external value.
 #
 # TOOL OVERRIDES (selftests only): STAGING_SECRETS_KUBECTL, STAGING_SECRETS_PYTHON,
 # STAGING_SECRETS_RENDER_FILE.
@@ -138,6 +141,17 @@ ss_classify() {
     mailpit-ui-credentials--auth)                       echo "composite htpasswd-apr1:staging-tester:mailpit-ui-credentials--password" ;;
     # Stated, not left to *password* below (plan 29-23; 29-12 noted it missing from the list).
     postgres-exporter-credentials--password)            echo "random alnum32" ;;
+    # Alertmanager's alert mail (plan 29-24, D-17 as corrected: Zoho smtp.zoho.eu:587 from
+    # alerts@olajay.co.uk). All four are the OWNER's: the sender, its Zoho SMTP login and app
+    # password, and the real inbox that must be woken. Stated ABOVE *password*, which would
+    # otherwise generate a random Zoho password nobody can log in with.
+    alertmanager-smtp-credentials--from)                echo "external @email" ;;
+    alertmanager-smtp-credentials--username)            echo "external @email" ;;
+    alertmanager-smtp-credentials--to)                  echo "external @email" ;;
+    alertmanager-smtp-credentials--password)            echo "external @nonempty" ;;
+    # Grafana's own admin login (plan 29-24, D-19, T-29-88).
+    grafana-admin-credentials--admin-user)              echo "estate lit:jtoye-grafana-admin" ;;
+    grafana-admin-credentials--admin-password)          echo "random alnum32" ;;
     *password*|*passcode*)                              echo "random alnum32" ;;
     *) return 1 ;;
   esac

@@ -335,3 +335,40 @@ replacements:
           - metadata.annotations.azure\.workload\.identity/client-id
         options:
           create: true
+  # Alertmanager and Grafana (plan 29-24, ../components/monitoring): each its own identity, SPC and
+  # ServiceAccount, federated by plan 29-09 to system:serviceaccount:jtoye-staging:<name> (read back
+  # 2026-10-19: jtoye-staging-alertmanager-id and jtoye-staging-grafana-id on the AKS issuer).
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_alertmanager
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: alertmanager-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: alertmanager
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_grafana
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: grafana-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: grafana
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true

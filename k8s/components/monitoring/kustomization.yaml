@@ -18,12 +18,23 @@
 #                                then copy it here; the copy carries no header of its own, or the
 #                                two could never be byte-equal. Nothing in this directory is a
 #                                second rule corpus.
+#   alertmanager.yaml            Alertmanager (plan 29-24): one receiver, the Zoho inbox and the
+#                                Mailpit sink, the staging NoOrdersCreated mute; its own Workload
+#                                Identity (alertmanager-kv); cluster-internal
+#   grafana.yaml                 Grafana (plan 29-24): admin from Key Vault (grafana-kv), the ONLY
+#                                public monitoring host (Ingress grafana-public, D-19)
+#   alertmanager/*, grafana/*    BYTE COPIES of infra/monitoring/alertmanager/{alertmanager.yml.tmpl,
+#                                entrypoint.sh} and infra/monitoring/grafana's datasource, dashboard
+#                                provider and STOMP dashboard (k8s/copy-parity.conf), same rule as
+#                                alerts.yml: edit the canonical file, then copy it here
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
 resources:
   - prometheus.yaml
   - exporters.yaml
+  - alertmanager.yaml
+  - grafana.yaml
 
 # Content-hashed names: an edit to either file renames its ConfigMap, which rewrites the
 # Deployment's projected volume and so rolls the pod (Prometheus runs without /-/reload).
@@ -34,6 +45,22 @@ configMapGenerator:
   - name: prometheus-alerts
     files:
       - alerts.yml=prometheus/alerts.yml
+  # Alertmanager reads its template and runs its entrypoint from here (no /-/reload either: an
+  # edit renames the ConfigMap and rolls the pod).
+  - name: alertmanager-src
+    files:
+      - alertmanager.yml.tmpl=alertmanager/alertmanager.yml.tmpl
+      - entrypoint.sh=alertmanager/entrypoint.sh
+  # Grafana provisioning under compose's own file names.
+  - name: grafana-datasources
+    files:
+      - prometheus.yml=grafana/datasource-prometheus.yml
+  - name: grafana-dashboard-provider
+    files:
+      - dashboard.yml=grafana/dashboards-provider.yml
+  - name: grafana-dashboards
+    files:
+      - stomp-dashboard.json=grafana/stomp-dashboard.json
 
 # The same label shape as k8s/base/kustomization.yaml (D-17).
 labels:

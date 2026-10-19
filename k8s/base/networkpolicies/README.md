@@ -120,6 +120,13 @@ render none of them.
 | `redis-exporter-allow` | ingress | pod `app=prometheus` | TCP 9121 |
 | `redis-exporter-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
 | `redis-exporter-allow` | egress | pod `app=redis` | TCP 6379 |
+| `alertmanager-allow` | ingress | pods `app=prometheus` (alert delivery) and `app=core-java` (plan 29-24); no Ingress, D-19 | TCP 9093 |
+| `alertmanager-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `alertmanager-allow` | egress | public (Zoho `smtp.zoho.eu`, STARTTLS submission; D-17 as corrected) | TCP 587 |
+| `alertmanager-allow` | egress | pod `app=mailpit` (the L-3 sink on the same route) | TCP 1025 |
+| `grafana-allow` | ingress | namespace `<controller ns>` (a literal `traefik` in the manifest), for `grafana-staging.olajay.co.uk` (D-19, the only public monitoring host) | TCP 3000 |
+| `grafana-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `grafana-allow` | egress | pod `app=prometheus` | TCP 9090 |
 
 ## The pod-label contract
 
@@ -135,7 +142,7 @@ one is a coordinated change across those plans, this directory and INV-7.
 | Mailpit | `app: mailpit` | `mailpit`: SMTP 1025, API 8025 |
 | Prometheus | `app: prometheus` | |
 | Alertmanager | `app: alertmanager` | 9093 |
-| Grafana | `app: grafana` | |
+| Grafana | `app: grafana` | `grafana:3000` |
 | Exporters | `app: postgres-exporter`, `app: redis-exporter` | |
 | Secret sync | `app: secret-sync` | |
 | cert-manager HTTP-01 solver | `acme.cert-manager.io/http01-solver: "true"` (set by cert-manager) | 8089 |
@@ -214,7 +221,8 @@ kubectl kustomize k8s/staging/ | grep -A 2 "kind: NetworkPolicy"
 #         pg-backup-allow, observability-placeholder, acme-http01-solver-allow
 #         (7 policies in production), plus staging's component policies
 #         keycloak-allow, redis-allow, rabbitmq-allow, secret-sync-allow, mailpit-allow,
-#         prometheus-allow, postgres-exporter-allow, redis-exporter-allow (15 in staging;
+#         prometheus-allow, postgres-exporter-allow, redis-exporter-allow,
+#         alertmanager-allow, grafana-allow (17 in staging;
 #         see "Staging-only component policies")
 ```
 
