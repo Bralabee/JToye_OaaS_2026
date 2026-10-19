@@ -1,0 +1,151 @@
+# 29-18 evidence: the D-31 seed order paid by a Stripe TEST PaymentIntent, and the D-28 webhook arms
+# Live estate: kube-context jtoye-stg-aks only; subscription c483d353 (read-only az_read); Stripe TEST mode only.
+# Staging images: 6e95ee6c44e357e3ff88964ed9674bf066fd7b61 (29-29). No redeploy in this plan.
+# Owner ruling 2026-10-19: Stripe writes limited to test PaymentIntents + their confirmation and test webhook
+# deliveries to the EXISTING endpoint we_1USBcpDpS9ICNeRt3kIwcIvC. No endpoint, key, product or price was changed.
+# No secret value appears in this file: the key and the client secret were held in memory / mode-600 files only.
+
+================ Task 1: precondition (2026-10-19T14:14Z) ================
+## JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-... bash scripts/staging-secrets-preflight.sh   (tail)
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 33 objects, 36 grants, 0 gap(s)
+rc=0
+## shop staging-test-kitchen, anonymous GET /api/v1/public/shops/staging-test-kitchen -> 200
+openNow=true, openingSchedule mon..sun 00:00-23:59, offersCollection=true, offersDelivery=true, fulfilmentTimingMode=IMMEDIATE_ONLY,
+minimumOrderPennies=0, deliveryFeePennies=0, acceptsCardPayments=true
+## GET /api/v1/public/shops/staging-test-kitchen/products -> 200: 1 product (Mains): Pelau 093dae8a-cff7-442f-a1c8-d8596879fbbf
+pricePennies=950 inStock=true allergenMask=0 (the four other seeded dishes are drafts, not on the public menu; one orderable dish
+is all the seed needs, so nothing was published)
+## running core-java: core-java-594d8c456b-qmrsp ready=True image ...jtoye-core-java:6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+STRIPE_API_KEY / STRIPE_WEBHOOK_SECRET are secretKeyRefs (names only read)
+
+## Key source (owner ruling: the repo .env STRIPE_SECRET_KEY, in memory only). The script reads Key Vault (the plan's design,
+## the object core-java itself mounts). Compared in memory, values never printed:
+kv_read_rc=0 kv_prefix_sk_test=yes env_prefix_sk_test=yes identical=yes control_identical_to_mutated=no
+
+## Stripe baseline BEFORE any write (key via mode-600 -K file in a mktemp dir, deleted after)
+2026-10-19T14:21:45Z GET /v1/payment_intents?limit=100 http=200 n=0 livemode_all_false=true
+2026-10-19T14:21:45Z GET /v1/events?limit=100 http=200 n=0 livemode_all_false=true
+2026-10-19T14:21:46Z GET /v1/webhook_endpoints http=200 n=1 livemode_all_false=true
+{"id":"we_1USBcpDpS9ICNeRt3kIwcIvC","url":"https://api-staging.olajay.co.uk/api/v1/public/payments/webhook","api_version":"2026-09-30.endive","status":"enabled","livemode":false,"n_events":10}
+
+================ Task 1: TDD (scripts/staging-seed.sh --selftest) ================
+## RED (commit 9e13b945; evidence/29-18-t1-red-order-stage.json; gsd_run check tdd-red-evidence -> RED_EVIDENCE_OK, target order-first-run)
+TAP 1..20: 10 ok (every pre-existing arm, so the extended stubs regress nothing), 10 not ok: list-kv-objects (4 names, want 5) and
+the nine order arms, each "rc=2 ... VOID: --stage order is added by plan 29-18".
+## GREEN (commit b8a471aa) — two RED-arm assertions were corrected, not weakened:
+##   order-live-key asserted az_calls=0, but a key's prefix is visible only after it is read: now exactly 1 Key Vault read (of
+##   stripe-credentials--api-key) and 0 curl calls; order-replay's fixture had the intent at requires_payment_method before any
+##   confirm, which a paid order never shows: its intent now reads succeeded.
+PASS prod-api rc=1 az_calls=0 curl_calls=0 pod_reads=0
+PASS local-api rc=1 az_calls=0 curl_calls=0 pod_reads=0
+PASS no-context rc=2 kubectl_calls=0
+PASS stale-server rc=1 kubectl_calls=1(config view)
+PASS dev-profile rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS rollout-mixed rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS no-ready-pod rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS dry-run-plan rc=0 steps=19 az_calls=0 curl_calls=0
+PASS list-kv-objects rc=0 objects=5
+PASS operator-deleted-on-failure rc=1 seed_500_line=20 operator_delete_line=21 kv_reads=4 pinned=5 argv_secrets=0
+PASS operator-deleted-on-success rc=0 last_call=DELETE-operator readback=LIVE
+PASS order-live-key rc=1 kv_reads=1 curl_calls=0
+PASS order-first-run rc=0 confirms=1 verdict=SEED-ORDER event=evt_stub0001 secrets_printed=0
+PASS order-replay rc=0 confirms=0 verdict=SEED-ORDER
+PASS order-cash-refused rc=1 confirms=0 verdict=none
+PASS order-two-intents rc=1 verdict=none
+PASS order-livemode-true rc=1 confirms=0
+PASS order-unpaid-deadline rc=1 last_state=PENDING
+PASS dry-run-order rc=0 az_calls=0 curl_calls=0
+PASS stage-all rc=0 operator_delete_line=28 order_post_line=31 verdict=SEED-ORDER
+selftest rc=0
+## Break arms, bracketed clean -> arm -> clean, each restore verified by blob hash e59080ba1a1a0a8a4dba041c5461cfa732724cb6 (= HEAD)
+BREAK no-livemode-check (assert_test_mode accepts anything) -> FAIL order-livemode-true rc=0 (want 1)
+BREAK no-key-prefix-guard (case admits sk_live_) -> PASS order-live-key (the second guard, the ^sk_test_[A-Za-z0-9]+$ regex, still
+      refuses: two independent guards, so the single break cannot red it)
+BREAK both-key-guards (case AND regex admit sk_live_) -> FAIL order-live-key rc=0 (want 1)
+BREAK prints-client-secret -> FAIL order-first-run "a Stripe key or client secret was printed or put in argv" (and stage-all)
+BREAK ignores-stock (first dish regardless of inStock) -> FAIL order-first-run "the order body is not the first AVAILABLE dish ..."
+BREAK reconfirms-succeeded -> FAIL order-replay "confirm calls=1 on a replay (want 0)"
+BREAK operator-left-standing (all without the explicit delete) -> FAIL stage-all "the last line is not the SEED-ORDER verdict:
+      'OPERATOR-DELETED: ...'" (the trap deleted it AFTER the order)
+BREAK no-intent-count (>= 1 instead of == 1) -> FAIL order-two-intents rc=0 (want 1)
+BREAK cash-accepted (no intent -> verdict NONE, rc 0) -> FAIL order-cash-refused rc=0 (want 1)
+clean after: worktree blob == HEAD blob; closing selftest rc=0 pass=20
+Dependent selftests (both call --list-kv-objects): staging-secrets.sh --selftest rc=0 (12 pass), staging-secrets-preflight.sh
+--selftest rc=0 (16 pass). shellcheck: not installed on this host and not run by any CI workflow (not run).
+
+================ Task 1: live ================
+## live dry-run: --context jtoye-stg-aks --stage order --dry-run -> guards OK, plan printed, rc=0 (no Azure/Stripe/API call)
+## 2026-10-19T14:22:05Z RUN 1 (the plan's <automated> verify, verbatim)
+## out=$(... bash scripts/staging-seed.sh --context jtoye-stg-aks --stage order 2>&1); rc=$?
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+OK: read the Stripe TEST key from jtoye-stg-kv/stripe-credentials--api-key (sk_test_; value not shown)
+OK: basket = 1 x "Pelau" (093dae8a-cff7-442f-a1c8-d8596879fbbf) at 950p, allergen mask 0, COLLECTION, expected total 950p
+OK: order ORD-1AAC0CDE-20261019-4D3B23A2 status DRAFT (Idempotency-Key seed-order-staging-test-kitchen-v1; client secret present, not shown)
+CONFIRMED: PaymentIntent pi_3USHS1DpS9ICNeRt1nB7iIZm with pm_card_visa (status succeeded)
+OK: PaymentIntent pi_3USHS1DpS9ICNeRt1nB7iIZm succeeded, livemode false, amount 950 gbp
+OK: exactly 1 TEST PaymentIntent names ORD-1AAC0CDE-20261019-4D3B23A2
+OK: tracking reads ORD-1AAC0CDE-20261019-4D3B23A2 HTTP 200 status PENDING paymentStatus CAPTURED after 2s
+STRIPE-EVENT id=evt_3USHS1DpS9ICNeRt19ESTYVa type=payment_intent.succeeded intent=pi_3USHS1DpS9ICNeRt1nB7iIZm pending_webhooks=0 created=1792419731
+SEED-ORDER order=ORD-1AAC0CDE-20261019-4D3B23A2 intent=pi_3USHS1DpS9ICNeRt1nB7iIZm status=PENDING payment_status=CAPTURED livemode=false at=2026-10-19T14:22:14Z
+rc=0 verify_rc=0
+## 2026-10-19T14:22:2xZ RUN 2 (replay: the same Idempotency-Key)
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+OK: read the Stripe TEST key from jtoye-stg-kv/stripe-credentials--api-key (sk_test_; value not shown)
+OK: basket = 1 x "Pelau" (093dae8a-cff7-442f-a1c8-d8596879fbbf) at 950p, allergen mask 0, COLLECTION, expected total 950p
+OK: order ORD-1AAC0CDE-20261019-4D3B23A2 status PENDING (Idempotency-Key seed-order-staging-test-kitchen-v1; client secret absent, not shown)
+OK: replay: ORD-1AAC0CDE-20261019-4D3B23A2 is PENDING, so its intent was found by metadata (pi_3USHS1DpS9ICNeRt1nB7iIZm); nothing is created
+SKIP: PaymentIntent pi_3USHS1DpS9ICNeRt1nB7iIZm already succeeded; not confirmed again
+OK: PaymentIntent pi_3USHS1DpS9ICNeRt1nB7iIZm succeeded, livemode false, amount 950 gbp
+OK: exactly 1 TEST PaymentIntent names ORD-1AAC0CDE-20261019-4D3B23A2
+OK: tracking reads ORD-1AAC0CDE-20261019-4D3B23A2 HTTP 200 status PENDING paymentStatus CAPTURED after 0s
+STRIPE-EVENT id=evt_3USHS1DpS9ICNeRt19ESTYVa type=payment_intent.succeeded intent=pi_3USHS1DpS9ICNeRt1nB7iIZm pending_webhooks=0 created=1792419731
+SEED-ORDER order=ORD-1AAC0CDE-20261019-4D3B23A2 intent=pi_3USHS1DpS9ICNeRt1nB7iIZm status=PENDING payment_status=CAPTURED livemode=false at=2026-10-19T14:22:26Z
+rc=0 replay_verify_rc=0 (same order number, same intent, 0 confirms, still exactly 1 intent for the order)
+## Fail direction of the verify predicate (rc==0 && last line SEED-ORDER ... payment_status=CAPTURED livemode=false at=)
+predicate rc=0 for the real run-1 line
+predicate rc=1 for the same line with payment_status=NONE (a cash order)
+predicate rc=1 for the same line with livemode=true
+predicate rc=1 for stage rc=1 with the real line
+predicate rc=1 for a last line that is not the verdict ("OPERATOR-DELETED: x")
+## Live refusal: env -u JTOYE_AZURE_SUBSCRIPTION_ID bash scripts/staging-seed.sh --context jtoye-stg-aks --stage order
+REFUSED [subscription]: JTOYE_AZURE_SUBSCRIPTION_ID is unset; refusing to let the CLI resolve its ambient default, which on this host is EMPLOYER infrastructure
+rc=1, predicate rc=1 (no Key Vault read, no API or Stripe call)
+
+## 2026-10-19T14:22:53Z independent Stripe read-back (key from .env via a mode-600 -K file; == the Key Vault key)
+GET /v1/payment_intents/pi_3USHS1DpS9ICNeRt1nB7iIZm http=200
+{"id":"pi_3USHS1DpS9ICNeRt1nB7iIZm","object":"payment_intent","livemode":false,"status":"succeeded","amount":950,"currency":"gbp","payment_method_types":["card","klarna","link","revolut_pay","amazon_pay"],"latest_charge":"ch_3USHS1DpS9ICNeRt1NBERUFl","metadata_keys":["order_id","order_number","tenant_id"],"metadata_order_number":"ORD-1AAC0CDE-20261019-4D3B23A2","has_client_secret_field":true}
+GET /v1/payment_intents?limit=100 http=200 total=1 livemode_all_false=true for_this_order=1
+GET /v1/events/evt_3USHS1DpS9ICNeRt19ESTYVa http=200
+{"id":"evt_3USHS1DpS9ICNeRt19ESTYVa","type":"payment_intent.succeeded","livemode":false,"api_version":"2026-07-29.dahlia","pending_webhooks":0,"created":1792419731,"data_object_id":"pi_3USHS1DpS9ICNeRt1nB7iIZm"}
+GET /v1/events?limit=100 http=200 total=4 livemode_all_false=true types=["charge.updated","payment_intent.succeeded","charge.succeeded","payment_intent.created"] pending_webhooks=[0,0,0,0]
+# Read-back verdict: the account holds exactly 1 PaymentIntent (this order's; livemode false; 950 gbp; plain platform charge: no
+# settlement_mode metadata, so StripeConnectService returned no routing, as the plan measured) and exactly 4 events, all from the one
+# confirm, all pending_webhooks=0 (delivered and acknowledged 2xx by every subscribed endpoint). GET /v1/events renders the event at
+# the ACCOUNT default version (2026-07-29.dahlia); the endpoint receives it at its pinned 2026-09-30.endive, and the order reached
+# CAPTURED, so PaymentService's getDataObjectDeserializer().getObject() returned the PaymentIntent: the 29-13 open item (endive vs
+# dahlia) is closed by this first real delivery.
+
+================ Task 1: leak scan (2026-10-19T14:24Z) ================
+## Regex: sk_/rk_ (test|live) keys, whsec_, and pi_*_secret_* client secrets (rg -uu -c; rc 1 = no match)
+regex-scan 29-18-stripe.txt: matches=0 rg_rc=1
+regex-scan run 1 output: matches=0 rg_rc=1
+regex-scan run 2 output: matches=0 rg_rc=1
+regex-scan control (a synthetic sk_test_ key + client secret appended to a scratch copy): matches=2 rg_rc=0
+## scripts/staging-secrets.sh --leak-scan (every derived Key Vault value, fixed-string, value on no argv) over evidence + both runs
+leak-scan: 23 objects checked, 0 found (10 estate identifiers not secret, skipped)   rc=0
+control: the real Stripe TEST key appended to a mode-600 scratch copy (deleted after):
+LEAK stripe-credentials--api-key
+leak-scan: 23 objects checked, 1 found (10 estate identifiers not secret, skipped)   rc=1; copy removed: yes
+## gitleaks 8.30.1 (CI pins 8.27.2), .gitleaks.toml, over this plan's commits 2515c6d8..HEAD
+Before: rc=1, 2 x stripe-access-token in scripts/staging-seed.sh (RED commit 9e13b945, lines 924/925): the SYNTHETIC selftest
+stub answers for the test-key and live-key arms. Unpushed, but the RED commit cannot be rewritten (no reset/rebase in this lane),
+and the pre-push check would refuse it.
+Fix: the live file now composes both stub values at run time (no key-shaped literal left: rg rc=1), and .gitleaksignore pins the
+two findings by commit:file:rule:line (the 38-18 precedent).
+After: gitleaks git 2515c6d8..HEAD rc=0 "no leaks found"; gitleaks dir scripts/staging-seed.sh rc=0
+Control: fingerprints removed -> rc=1 "leaks found: 2" (restored, blob hash equal); the same synthetic shape in another file -> rc=1
+"leaks found: 1" (the fingerprint suppresses nothing else).
