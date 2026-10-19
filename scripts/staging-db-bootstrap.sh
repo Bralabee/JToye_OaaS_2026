@@ -70,10 +70,29 @@
 #                         the caller's environment
 #   --selftest            starts and removes its own postgres:18 stand-in and
 #                         runs the named arms below, one line each
+#   --via-context CTX     reach the server THROUGH the cluster (both modes).
+#                         The server's firewall admits exactly one address, the
+#                         cluster's outbound IP (T-29-34), so psql from an
+#                         operator host times out (measured 2026-10-19). With
+#                         this flag the script, after staging_kube_guard CTX
+#                         (scripts/lib/staging-kube-guard.sh: sipbihs2aks and any
+#                         context not pointing at the staging API server are
+#                         refused before any cluster call), starts ONE relay pod
+#                         in namespace default (busybox nc, pinned by digest;
+#                         default has no NetworkPolicy, jtoye-staging is
+#                         default-deny), port-forwards a random loopback port to
+#                         it (PID captured at start), and runs psql on the host
+#                         network with hostaddr=127.0.0.1 and that port. The
+#                         relay carries only the TLS stream: verify-full still
+#                         checks the certificate against --host, and no password
+#                         or SQL ever enters the cluster or a pod spec. The
+#                         port-forward is killed by its PID and the pod deleted
+#                         by name on every exit path.
 #
 # USAGE
 #   JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 \
-#     scripts/staging-db-bootstrap.sh --stage pre|post|monitor|readback [--host H] [--decisions PATH]
+#     scripts/staging-db-bootstrap.sh --stage pre|post|monitor|readback [--host H] [--decisions PATH] \
+#       [--via-context jtoye-stg-aks]
 #   PG_ADMIN_LOGIN=… PGPASSWORD=… JTOYE_APP_PASSWORD=… … \
 #     scripts/staging-db-bootstrap.sh --test-container NAME --stage pre|post|monitor|readback
 #   scripts/staging-db-bootstrap.sh --selftest
@@ -130,6 +149,16 @@ PG_IMAGE="postgres:18"
 DEFAULT_HOST="jtoye-stg-pg.postgres.database.azure.com"
 KV_NAME="jtoye-stg-kv"
 HOST_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+# The relay (--via-context): busybox 1.37 by its multi-arch index digest, in a
+# namespace with no NetworkPolicy.
+RELAY_IMAGE="busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+RELAY_NAMESPACE="default"
+RELAY_READY_SECONDS="${BOOTSTRAP_RELAY_READY_SECONDS:-180}"
+VIA_CONTEXT=""
+RELAY_POD=""
+RELAY_PORT=""
+PF_PID=""
+SECRET_DIR=""
 ROLES_READBACK="'jtoye_app','jtoye_runtime','jtoye_backup','keycloak','jtoye_monitor'"
 
 # ---------------------------------------------------------------------------
@@ -154,6 +183,9 @@ while [ "$#" -gt 0 ]; do
     --decisions)
       shift; [ "$#" -gt 0 ] || { echo "USAGE ERROR: --decisions needs a path" >&2; exit 2; }
       DECISIONS_FILE="$1" ;;
+    --via-context)
+      shift; [ "$#" -gt 0 ] && [ -n "$1" ] || { echo "USAGE ERROR: --via-context needs a kube context name" >&2; exit 2; }
+      VIA_CONTEXT="$1" ;;
     --selftest) SELFTEST=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "USAGE ERROR: unknown argument '$1'" >&2; usage >&2; exit 2 ;;
@@ -250,12 +282,21 @@ run_psql() {
     if [ -n "${!name:-}" ]; then dargs+=(-e "$name"); fi
   done
   dargs+=(-v "$REPO_ROOT/infra:/sql:ro")
-  if [ -n "$TEST_CONTAINER" ]; then
+  # Through the relay, libpq connects to hostaddr:port (the port-forward on the
+  # host's loopback) while host= still names the server, so verify-full checks
+  # the certificate against the real name.
+  local addr="port=5432"
+  if [ -n "$RELAY_PORT" ]; then
+    dargs+=(--network host)
+    addr="hostaddr=127.0.0.1 port=${RELAY_PORT}"
+  elif [ -n "$TEST_CONTAINER" ]; then
     dargs+=(--network "$STANDIN_NETWORK")
-    conninfo="host=${HOST} port=5432 dbname=${db} user=${PG_ADMIN_LOGIN} sslmode=disable connect_timeout=15"
+  fi
+  if [ -n "$TEST_CONTAINER" ]; then
+    conninfo="host=${HOST} ${addr} dbname=${db} user=${PG_ADMIN_LOGIN} sslmode=disable connect_timeout=15"
   else
     dargs+=(-v "${HOST_CA_BUNDLE}:/etc/ssl/certs/ca-certificates.crt:ro")
-    conninfo="host=${HOST} port=5432 dbname=${db} user=${PG_ADMIN_LOGIN} sslmode=verify-full sslrootcert=system connect_timeout=15"
+    conninfo="host=${HOST} ${addr} dbname=${db} user=${PG_ADMIN_LOGIN} sslmode=verify-full sslrootcert=system connect_timeout=15"
   fi
   dargs+=("$PG_IMAGE" psql -X -v ON_ERROR_STOP=1 "$@" "$conninfo")
   if [ "$file" = - ]; then
@@ -265,6 +306,55 @@ run_psql() {
     dargs+=(-f "$file")
     docker "${dargs[@]}" </dev/null
   fi
+}
+
+# ---------------------------------------------------------------------------
+# the relay (--via-context)
+# ---------------------------------------------------------------------------
+# cleanup runs on EXIT in both modes: the incoming status is captured first and
+# re-asserted last, so a VOID (2) or a refusal (1) is never rewritten by it.
+cleanup() {
+  local rc=$?
+  if [ -n "${PF_PID:-}" ]; then
+    kill "$PF_PID" 2>/dev/null || true
+    wait "$PF_PID" 2>/dev/null || true
+  fi
+  if [ -n "${RELAY_POD:-}" ]; then
+    kubectl --context "$VIA_CONTEXT" -n "$RELAY_NAMESPACE" delete pod "$RELAY_POD" --ignore-not-found --wait=false >/dev/null 2>&1 \
+      || echo "WARN: could not delete relay pod ${RELAY_NAMESPACE}/${RELAY_POD}; delete it by that name" >&2
+  fi
+  [ -z "${SECRET_DIR:-}" ] || rm -rf "$SECRET_DIR"
+  exit "$rc"
+}
+
+relay_up() {
+  local target="$1" pf_log t0 grc=0
+  # shellcheck source=scripts/lib/staging-kube-guard.sh
+  . "$SCRIPT_DIR/lib/staging-kube-guard.sh" || void "could not source scripts/lib/staging-kube-guard.sh"
+  staging_kube_guard "$VIA_CONTEXT" "$REPO_ROOT/k8s/staging/azure-identity.yaml" || grc=$?
+  [ "$grc" -eq 0 ] || exit "$grc"
+  RELAY_POD="jtoye-dbboot-relay-$(date -u +%Y%m%d%H%M%S)-$$"
+  kubectl --context "$VIA_CONTEXT" -n "$RELAY_NAMESPACE" run "$RELAY_POD" --image "$RELAY_IMAGE" --restart=Never \
+    --labels app.kubernetes.io/name=jtoye-dbboot-relay --command -- nc -lk -p 5432 -e nc "$target" 5432 >/dev/null \
+    || die "could not start relay pod ${RELAY_NAMESPACE}/${RELAY_POD}"
+  kubectl --context "$VIA_CONTEXT" -n "$RELAY_NAMESPACE" wait --for=condition=Ready "pod/${RELAY_POD}" --timeout="${RELAY_READY_SECONDS}s" >/dev/null \
+    || die "relay pod ${RELAY_NAMESPACE}/${RELAY_POD} not Ready within ${RELAY_READY_SECONDS}s"
+  pf_log="$(mktemp "${TMPDIR:-/tmp}/jtoye-dbboot-pf.XXXXXXXX")" || void "mktemp failed"
+  kubectl --context "$VIA_CONTEXT" -n "$RELAY_NAMESPACE" port-forward "pod/${RELAY_POD}" :5432 > "$pf_log" 2>&1 &
+  PF_PID=$!
+  t0=$(date +%s)
+  while :; do
+    RELAY_PORT="$(sed -nE 's/^Forwarding from 127\.0\.0\.1:([0-9]+) .*/\1/p' "$pf_log" | head -1)"
+    [ -z "$RELAY_PORT" ] || break
+    if ! kill -0 "$PF_PID" 2>/dev/null; then
+      PF_PID=""
+      die "the port-forward exited before it announced a port: $(head -c 300 "$pf_log" | tr '\n' ' ')"
+    fi
+    [ $(( $(date +%s) - t0 )) -lt 30 ] || die "the port-forward announced no port within 30s"
+    sleep 1
+  done
+  rm -f "$pf_log"
+  echo "relay: pod ${RELAY_NAMESPACE}/${RELAY_POD} -> ${target}:5432, port-forward pid ${PF_PID} on 127.0.0.1:${RELAY_PORT}"
 }
 
 require_env() {
@@ -641,6 +731,8 @@ if [ -n "$TEST_CONTAINER" ]; then
   # shellcheck disable=SC2046
   require_env $(stage_env "$STAGE")
   echo "=== staging-db-bootstrap --stage ${STAGE} (stand-in ${TEST_CONTAINER}, network ${STANDIN_NETWORK}, admin ${PG_ADMIN_LOGIN}) ==="
+  trap cleanup EXIT
+  [ -z "$VIA_CONTEXT" ] || relay_up "$HOST"
   run_stage
   exit 0
 fi
@@ -663,8 +755,8 @@ PG_ADMIN_LOGIN="$(command grep -E '^PG_ADMIN_LOGIN=' "$DECISIONS_FILE" | sed -E 
   || refuse decisions "${DECISIONS_FILE} must define PG_ADMIN_LOGIN exactly once"
 [ -f "$HOST_CA_BUNDLE" ] || void "no CA bundle at ${HOST_CA_BUNDLE}; verify-full has nothing to verify the server certificate against"
 
+trap cleanup EXIT
 SECRET_DIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/jtoye-dbboot.XXXXXXXX")" || void "mktemp -d failed"
-trap 'rm -rf "$SECRET_DIR"' EXIT
 for name in $(stage_env "$STAGE"); do
   obj="$(kv_object_for "$name")"
   f="$SECRET_DIR/$name"
@@ -677,5 +769,6 @@ for name in $(stage_env "$STAGE"); do
   printf -v "$name" '%s' "$(<"$f")"
   export "${name?}"
 done
-echo "=== staging-db-bootstrap --stage ${STAGE} (host ${HOST}, admin ${PG_ADMIN_LOGIN}, sslmode=verify-full) ==="
+echo "=== staging-db-bootstrap --stage ${STAGE} (host ${HOST}, admin ${PG_ADMIN_LOGIN}, sslmode=verify-full${VIA_CONTEXT:+, via context ${VIA_CONTEXT}}) ==="
+[ -z "$VIA_CONTEXT" ] || relay_up "$HOST"
 run_stage
