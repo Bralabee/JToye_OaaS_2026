@@ -75,3 +75,35 @@ BASELINE-SPC pg-backup-kv
 BASELINE-SPC rabbitmq-kv
 BASELINE-SPC redis-kv
 BASELINE-COUNTS objects=28 spcs=7
+
+### Task 2 second verify, both directions
+-- on the UNEDITED tree (HEAD b6d22fb6, before any Task 2 edit): rc=1
+18a19,20
+> postgres-exporter-credentials--password
+> postgres-exporter-credentials--username
+5a6
+> postgres-exporter-kv
+6a8
+> redis-exporter-kv
+objects=28 spcs=7 diff-objects=1 diff-spcs=1
+-- after the Task 2 edits: rc=0
+objects=30 spcs=9 diff-objects=0 diff-spcs=0
+
+### Task 2 first verify: check-keyvault-chain, check-render-invariants, render-golden, staging-secrets --selftest -> rc=0, FAIL/PARSE ERROR lines 0
+chain: 9 SecretProviderClasses, 42 consumed (Secret, key) references, 30 Key Vault objects
+INV-7 OK (15 policies, 106 rule tuples exact, db.port=5432); INV-10 OK (8 pod templates labelled + own SA; 8 mount an SPC)
+fail directions: INV-7 'undeclared policy prometheus-allow' before its row (Task 1); render-golden rc=1 before --write (both tasks)
+
+### staging-secrets.sh --list (JTOYE_AZURE_SUBSCRIPTION_ID exported; rc on the same statement)
+-- BEFORE the classification row (exporter objects already rendered): rc=1
+postgres-exporter-credentials--password	random
+postgres-exporter-credentials--username	UNCLASSIFIED
+list: 35 objects, 1 unclassified
+-- AFTER: rc=0 lines-containing-unclassified=1 rows-classed-UNCLASSIFIED=0
+postgres-exporter-credentials--password	random
+postgres-exporter-credentials--username	estate
+list: 35 objects, 0 unclassified
+NOTE: the criterion as written ('count of lines containing "unclassified" is exactly 0') cannot be met on a correct
+tree: the summary line 'list: N objects, 0 unclassified' itself contains the word, so the count is 1 when clean and
+1 when one object is unclassified (the row says UNCLASSIFIED, upper case). Replaced, recorded beside it: rows whose
+class column is UNCLASSIFIED = 0 (1 before) AND the summary reads '0 unclassified' (1 before) AND rc 0 (1 before).

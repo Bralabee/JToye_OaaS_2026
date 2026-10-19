@@ -157,6 +157,13 @@ replacements:
           name: keycloak-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # The postgres-exporter reaches the same managed server (plan 29-23,
+      # ../components/monitoring), so its egress.1 follows db.port too.
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
 
 # Plan 29-12 (D-23): the committed Azure identifiers (azure-identity.yaml, plan 29-09)
 # into the SecretProviderClasses of ../components/azure-keyvault and into each
@@ -288,6 +295,42 @@ replacements:
       - select:
           kind: ServiceAccount
           name: secret-sync
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  # The two monitoring exporters (plan 29-23, ../components/monitoring): each its own identity,
+  # SPC and ServiceAccount, federated by plan 29-09 to system:serviceaccount:jtoye-staging:<name>.
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_postgres_exporter
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: postgres-exporter-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: postgres-exporter
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_redis_exporter
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: redis-exporter-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: redis-exporter
         fieldPaths:
           - metadata.annotations.azure\.workload\.identity/client-id
         options:

@@ -1,0 +1,339 @@
+# The two exporters of jtoye-staging's monitoring (Phase 29 plan 29-23, DPLY-03 part A, D-16).
+#
+# WHY EXPORTERS AT ALL. DatabaseDown reads `up{job="postgres"} == 0 or pg_up == 0` and RedisDown
+# `up{job="redis"} == 0 or redis_up == 0`: the exporter can answer HTTP 200 while the thing behind
+# it is dead, and pg_up / redis_up are its own report of whether it reached it (check-alert-
+# liveness.sh's L-1b asserts both are 1 and both are read by a rule).
+#
+# EACH IS ITS OWN WORKLOAD IDENTITY (D-23, T-29-85). Its own ServiceAccount, its own
+# SecretProviderClass in ../azure-keyvault (postgres-exporter-kv, redis-exporter-kv) and its own
+# user-assigned identity (client_id_postgres_exporter / client_id_redis_exporter in
+# k8s/staging/azure-identity.yaml, federated to system:serviceaccount:jtoye-staging:<name> by plan
+# 29-09). Each identity is granted only its SPC's objects (plan 29-13's --assign-access).
+#
+# postgres-exporter connects to the MANAGED server as jtoye_monitor, a LOGIN role IN ROLE
+# pg_monitor and nothing else (NOSUPERUSER, NOBYPASSRLS; scripts/staging-db-bootstrap.sh --stage
+# monitor). Not jtoye_runtime (DML on every tenant table) and not jtoye_app (the owner).
+#
+# sslmode=require, NOT verify-full, AND THAT IS ACCEPTED HERE (T-29-86). The exporter is a Go
+# client with no JVM truststore; verify-full would need a CA bundle mounted into a scratch-style
+# image for a metrics-only connection. require still refuses a plaintext connection (Azure
+# Flexible Server enforces require_secure_transport), but it does not check the server's name. Accepted because the connection carries only a metrics-only
+# role's password and reads only statistics views. core-java, Flyway and the bootstrap keep
+# verify-full. The URI is a literal, not a Secret: it carries no secret, so the transport policy
+# stays reviewable here, and the component is staging-only (the host is k8s/staging/
+# azure-identity.yaml's pg_host).
+#
+# Measured locally (2026-10-19, this image pin, --network none): with DATA_SOURCE_URI + _USER +
+# _PASS set the exporter starts with no "empty dsn" warning; with none of them set it logs
+# `Failed to create PostgresCollector err="empty dsn"`. So the split trio is read.
+#
+# PROBES ARE tcpSocket. An httpGet on /metrics would open a database (or Redis) connection on every
+# probe and turn an outage of the thing being measured into a CrashLoop of the exporter that
+# reports it; the scrape job is the real health signal.
+#
+# NO HPA, NO PDB: singletons, like Prometheus.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-exporter
+  labels:
+    app.kubernetes.io/name: postgres-exporter
+    app.kubernetes.io/component: monitoring
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: redis-exporter
+  labels:
+    app.kubernetes.io/name: redis-exporter
+    app.kubernetes.io/component: monitoring
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  labels:
+    app: postgres-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: postgres-exporter
+        component: monitoring
+    spec:
+      serviceAccountName: postgres-exporter
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres-exporter
+        # = infra/monitoring/docker-compose.monitoring.yml pin; horizon row postgres-exporter.
+        image: prometheuscommunity/postgres-exporter:v0.20.1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9187
+          name: metrics
+          protocol: TCP
+        env:
+        - name: DATA_SOURCE_URI
+          value: "jtoye-stg-pg.postgres.database.azure.com:5432/jtoye?sslmode=require"
+        - name: DATA_SOURCE_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-exporter-credentials
+              key: username
+        - name: DATA_SOURCE_PASS
+          valueFrom:
+            secretKeyRef:
+              name: postgres-exporter-credentials
+              key: password
+        readinessProbe:
+          tcpSocket:
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: metrics
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "20m"
+            memory: "32Mi"
+          limits:
+            memory: "128Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  labels:
+    app: redis-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+        component: monitoring
+    spec:
+      serviceAccountName: redis-exporter
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: redis-exporter
+        # = infra/monitoring/docker-compose.monitoring.yml pin; horizon row redis-exporter.
+        image: oliver006/redis_exporter:v1.94.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9121
+          name: metrics
+          protocol: TCP
+        env:
+        # The in-cluster Redis of ../redis (plaintext on the pod network, T-29-37; redis-allow
+        # admits this pod on 6379). The same address compose uses.
+        - name: REDIS_ADDR
+          value: "redis://redis:6379"
+        # The server's requirepass and core-java's redis-credentials/password are ONE Key Vault
+        # object (redis-credentials--password); this exporter reads it through its own Secret,
+        # produced by its own SPC (redis-exporter-kv), so it can never disagree with the server.
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-exporter-credentials
+              key: password
+        readinessProbe:
+          tcpSocket:
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: metrics
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "20m"
+            memory: "32Mi"
+          limits:
+            memory: "128Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter
+  labels:
+    app: postgres-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres-exporter
+  ports:
+  - port: 9187
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  labels:
+    app: redis-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-exporter
+  ports:
+  - port: 9121
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
+---
+# postgres-exporter-allow. INV-7 row postgres-exporter-allow@k8s/staging.
+#   Ingress: Prometheus pods, TCP 9187.
+#   Egress (indices are load-bearing):
+#     0. kube-dns
+#     1. the managed Postgres public endpoint, ipBlock 0.0.0.0/0 except RFC1918, on db.port:
+#        spec.egress.1.ports.0.port is a target of the staging db.port replacement (#271), like
+#        core-java-allow, pg-backup-allow and keycloak-allow. The 5432 literal below is what
+#        renders when app-config db.port is 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-exporter-allow
+  labels:
+    app.kubernetes.io/name: postgres-exporter-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-exporter
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9187
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# redis-exporter-allow. INV-7 row redis-exporter-allow@k8s/staging.
+#   Ingress: Prometheus pods, TCP 9121.
+#   Egress:  kube-dns, and the redis pods on 6379 (redis-allow admits app=redis-exporter there).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-exporter-allow
+  labels:
+    app.kubernetes.io/name: redis-exporter-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: redis-exporter
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9121
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379

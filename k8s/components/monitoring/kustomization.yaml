@@ -8,6 +8,9 @@
 #
 #   prometheus.yaml              Prometheus, its PVC and Service, the headless metrics Services
 #                                core-java-metrics and edge-go-metrics, and prometheus-allow
+#   exporters.yaml               postgres-exporter (managed Postgres, role jtoye_monitor) and
+#                                redis-exporter (the in-cluster Redis), each its own Workload
+#                                Identity; their Key Vault SPCs and mounts are ../azure-keyvault's
 #   prometheus/prometheus.yml    the k8s scrape config: the eight compose job names and labels,
 #                                held equal by the `jobs` pair in k8s/copy-parity.conf
 #   prometheus/alerts.yml        a BYTE COPY of infra/monitoring/prometheus/alerts.yml, held equal
@@ -20,6 +23,7 @@ kind: Component
 
 resources:
   - prometheus.yaml
+  - exporters.yaml
 
 # Content-hashed names: an edit to either file renames its ConfigMap, which rewrites the
 # Deployment's projected volume and so rolls the pod (Prometheus runs without /-/reload).

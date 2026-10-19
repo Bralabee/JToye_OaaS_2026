@@ -1247,6 +1247,15 @@ declare -A NETPOL_RULES_EXPECTED=(
       $NETPOL_DNS_EG eg:pod=app=core-java:9091 eg:pod=app=edge-go:8080 eg:pod=app=keycloak:9000
       eg:pod=app.kubernetes.io/name=rabbitmq:15692 eg:pod=app=postgres-exporter:9187
       eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093"
+  # The two exporters: scraped only by Prometheus. postgres-exporter's egress.1 is the
+  # managed server on db.port (the staging replacement, #271); redis-exporter reaches only
+  # the in-cluster Redis.
+  [postgres-exporter-allow@k8s/staging]="sel:app=postgres-exporter types:Egress,Ingress
+      in:pod=app=prometheus:9187
+      $NETPOL_DNS_EG eg:ip=0.0.0.0/0:__DB_PORT__"
+  [redis-exporter-allow@k8s/staging]="sel:app=redis-exporter types:Egress,Ingress
+      in:pod=app=prometheus:9121
+      $NETPOL_DNS_EG eg:pod=app=redis:6379"
 )
 
 # INV-7 arm 3: the ONLY ipBlock shapes a policy may render, as

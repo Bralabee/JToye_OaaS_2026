@@ -114,6 +114,9 @@ ss_classify() {
     postgres-credentials--backup-username)              echo "estate lit:jtoye_backup" ;;
     rabbitmq-credentials--username)                     echo "estate lit:jtoye" ;;
     keycloak-credentials--admin-username)               echo "estate lit:jtoye-kc-admin" ;;
+    # The monitoring role postgres-exporter connects as (plan 29-23): an estate fact, created
+    # by scripts/staging-db-bootstrap.sh --stage monitor with the password object below.
+    postgres-exporter-credentials--username)            echo "estate lit:jtoye_monitor" ;;
     # Mailpit accepts no auth in staging; the value exists so no ref starts unconfigured.
     smtp-credentials--username)                         echo "estate lit:staging-mailpit" ;;
     rabbitmq-credentials--stomp-login)                  echo "composite copy:rabbitmq-credentials--username" ;;
@@ -133,6 +136,8 @@ ss_classify() {
     # htpasswd line Traefik's basic auth reads, derived from it (the only one mounted).
     mailpit-ui-credentials--password)                   echo "random alnum32" ;;
     mailpit-ui-credentials--auth)                       echo "composite htpasswd-apr1:staging-tester:mailpit-ui-credentials--password" ;;
+    # Stated, not left to *password* below (plan 29-23; 29-12 noted it missing from the list).
+    postgres-exporter-credentials--password)            echo "random alnum32" ;;
     *password*|*passcode*)                              echo "random alnum32" ;;
     *) return 1 ;;
   esac

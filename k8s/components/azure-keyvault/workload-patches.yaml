@@ -143,3 +143,52 @@ spec:
           readOnly: true
           volumeAttributes:
             secretProviderClass: redis-kv
+---
+# The two monitoring exporters (plan 29-23, ../monitoring), each mounting its own SPC.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: postgres-exporter
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: postgres-exporter-kv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - name: redis-exporter
+        volumeMounts:
+        - name: kv
+          mountPath: /mnt/secrets-store
+          readOnly: true
+      volumes:
+      - name: kv
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: redis-exporter-kv

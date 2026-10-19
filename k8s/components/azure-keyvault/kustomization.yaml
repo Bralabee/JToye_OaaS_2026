@@ -8,7 +8,7 @@
 # pattern in Phase 32 with its own vault. At k8s/components/<name>/ it sits at depth
 # 3, so the render gates' depth-2 target discovery never treats it as a target.
 #
-#   secretproviderclasses.yaml  one SPC per secret-reading workload (6)
+#   secretproviderclasses.yaml  one SPC per secret-reading workload (6 at 29-12; 9 since 29-23)
 #   secret-sync.yaml            the always-on consumer of rabbitmq-kv (Pitfall 11)
 #   workload-patches.yaml       the WI label + the csi volume and mount, per workload
 #

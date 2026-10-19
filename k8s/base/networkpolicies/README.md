@@ -114,6 +114,12 @@ render none of them.
 | `prometheus-allow` | egress | pod `app=postgres-exporter` | TCP 9187 |
 | `prometheus-allow` | egress | pod `app=redis-exporter` | TCP 9121 |
 | `prometheus-allow` | egress | pod `app=alertmanager` (plan 29-24) | TCP 9093 |
+| `postgres-exporter-allow` | ingress | pod `app=prometheus` | TCP 9187 |
+| `postgres-exporter-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `postgres-exporter-allow` | egress | public (managed Postgres, role `jtoye_monitor`) | TCP `<db.port>` |
+| `redis-exporter-allow` | ingress | pod `app=prometheus` | TCP 9121 |
+| `redis-exporter-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
+| `redis-exporter-allow` | egress | pod `app=redis` | TCP 6379 |
 
 ## The pod-label contract
 
@@ -206,9 +212,10 @@ In-cluster calls to Keycloak go to the pod directly (`app=keycloak` on 8080,
 kubectl kustomize k8s/staging/ | grep -A 2 "kind: NetworkPolicy"
 # Expect: default-deny, frontend-allow, core-java-allow, edge-go-allow,
 #         pg-backup-allow, observability-placeholder, acme-http01-solver-allow
-#         (7 policies in production), plus staging's four component policies
-#         keycloak-allow, redis-allow, rabbitmq-allow, secret-sync-allow (11 in staging; see
-#         "Staging-only component policies")
+#         (7 policies in production), plus staging's component policies
+#         keycloak-allow, redis-allow, rabbitmq-allow, secret-sync-allow, mailpit-allow,
+#         prometheus-allow, postgres-exporter-allow, redis-exporter-allow (15 in staging;
+#         see "Staging-only component policies")
 ```
 
 The authoritative static check is the gate, not a grep:

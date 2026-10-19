@@ -100,6 +100,22 @@ automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   annotations:
+    azure.workload.identity/client-id: 7d826f77-3088-45fd-a98e-0613159ae327
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: postgres-exporter
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: postgres-exporter
+  namespace: jtoye-staging
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
     app.kubernetes.io/component: monitoring
@@ -124,6 +140,22 @@ metadata:
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
   name: redis
+  namespace: jtoye-staging
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    azure.workload.identity/client-id: 8584f8ee-e2e0-4ac3-879e-56a4cadb4fed
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: redis-exporter
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis-exporter
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -2667,6 +2699,31 @@ metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
+    app: postgres-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: postgres-exporter
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: metrics
+    port: 9187
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    app: postgres-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
     app: prometheus
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
@@ -2706,6 +2763,31 @@ spec:
     targetPort: redis
   selector:
     app: redis
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app: redis-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis-exporter
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: metrics
+    port: 9121
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    app: redis-exporter
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -4005,6 +4087,107 @@ metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
   labels:
+    app: postgres-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: postgres-exporter
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+      labels:
+        app: postgres-exporter
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        azure.workload.identity/use: "true"
+        component: monitoring
+        environment: staging
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - env:
+        - name: DATA_SOURCE_URI
+          value: jtoye-stg-pg.postgres.database.azure.com:5432/jtoye?sslmode=require
+        - name: DATA_SOURCE_USER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: postgres-exporter-credentials
+        - name: DATA_SOURCE_PASS
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: postgres-exporter-credentials
+        image: prometheuscommunity/postgres-exporter:v0.20.1
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          tcpSocket:
+            port: metrics
+          timeoutSeconds: 3
+        name: postgres-exporter
+        ports:
+        - containerPort: 9187
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          tcpSocket:
+            port: metrics
+          timeoutSeconds: 3
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 20m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /mnt/secrets-store
+          name: kv
+          readOnly: true
+      enableServiceLinks: false
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: postgres-exporter
+      volumes:
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: postgres-exporter-kv
+        name: kv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
     app: prometheus
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
@@ -4218,6 +4401,102 @@ spec:
       - emptyDir:
           sizeLimit: 64Mi
         name: data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app: redis-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: redis-exporter
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+      labels:
+        app: redis-exporter
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        azure.workload.identity/use: "true"
+        component: monitoring
+        environment: staging
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - env:
+        - name: REDIS_ADDR
+          value: redis://redis:6379
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: redis-exporter-credentials
+        image: oliver006/redis_exporter:v1.94.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          tcpSocket:
+            port: metrics
+          timeoutSeconds: 3
+        name: redis-exporter
+        ports:
+        - containerPort: 9121
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          tcpSocket:
+            port: metrics
+          timeoutSeconds: 3
+        resources:
+          limits:
+            memory: 128Mi
+          requests:
+            cpu: 20m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /mnt/secrets-store
+          name: kv
+          readOnly: true
+      enableServiceLinks: false
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: redis-exporter
+      volumes:
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: redis-exporter-kv
+        name: kv
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -5441,6 +5720,58 @@ metadata:
   labels:
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: postgres-exporter-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: postgres-exporter-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 5432
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9187
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: postgres-exporter
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: prometheus-allow
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -5642,6 +5973,55 @@ spec:
   podSelector:
     matchLabels:
       app: redis
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: redis-exporter-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis-exporter-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 6379
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: redis
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9121
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: redis-exporter
   policyTypes:
   - Ingress
   - Egress
@@ -6019,6 +6399,41 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
+  name: postgres-exporter-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: 7d826f77-3088-45fd-a98e-0613159ae327
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: postgres-exporter-credentials--username
+          objectType: secret
+        - |
+          objectName: postgres-exporter-credentials--password
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: username
+      objectName: postgres-exporter-credentials--username
+    - key: password
+      objectName: postgres-exporter-credentials--password
+    secretName: postgres-exporter-credentials
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
   name: rabbitmq-kv
   namespace: jtoye-staging
 spec:
@@ -6048,6 +6463,36 @@ spec:
     - key: default_user.conf
       objectName: rabbitmq-default-user--default-user-conf
     secretName: rabbitmq-default-user
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis-exporter-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: 8584f8ee-e2e0-4ac3-879e-56a4cadb4fed
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: redis-credentials--password
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: password
+      objectName: redis-credentials--password
+    secretName: redis-exporter-credentials
     type: Opaque
 ---
 apiVersion: secrets-store.csi.x-k8s.io/v1
