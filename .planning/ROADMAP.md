@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 18/29 | Context gathered 2026-10-18 | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 19/29 | Context gathered 2026-10-18 | — |
 | 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
@@ -592,7 +592,7 @@ and hosting-target decisions; DPLY-04's **ADR-0002 sign-off** blocker is RESOLVE
 | **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
 | **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
 
-**Plans:** 18/29 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
+**Plans:** 19/29 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
 
 Plans:
 - [ ] 29-29-PLAN.md
@@ -631,7 +631,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 - [x] 29-17-PLAN.md — DPLY-05: denied connection captured under Cilium with control and policy-free arms (#297)
-- [ ] 29-22-PLAN.md — Mailpit with required STARTTLS, cluster CA, JVM truststore, two-arm TLS proofs (D-20..D-22, D-30)
+- [x] 29-22-PLAN.md — Mailpit with required STARTTLS, cluster CA, JVM truststore, two-arm TLS proofs (D-20..D-22, D-30)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 - [ ] 29-18-PLAN.md — Stripe TEST webhook proof and the seed order paid by a PaymentIntent (D-28/D-31)
