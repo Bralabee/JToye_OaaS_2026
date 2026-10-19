@@ -9,3 +9,172 @@ failed: case 1, case 2, case 3, case 10, case 14 (asset URL expected; null found
 29-29 CASE13 prepared-statement delta shopA=2 (products=10, media-bearing=8) shopB=2 (products=1)
 29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
 measurement gate: pinned to A the downgraded role reads 8 media_asset rows (not 0), so the tenant pin admits the storefront read; no V89, no public-read policy
+
+== Task 1 GREEN at 40ceffbc (first verify, uncommitted tree identical to the commit) 2026-10-19T11:37:01Z (run started 2026-10-19T11:25:56Z) ==
+-- gradle tail (raw):
+BUILD SUCCESSFUL in 2m 8s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:26:04.565Z" hostname="sanmi-System-Product-Name" time="48.888">
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+case 12 answers: can an unpinned read see asset rows? no (0 and 0). Does the storefront need a public-read policy? no (pinned A reads all 8 of its assets).
+case 13 answers: one media query per menu (delta 3 = 2 before the fix + 1), equal for 10 products (8 media-bearing) and 1.
+GREEN_SHA=40ceffbcedf18d1637643a56046b0d8ae14be3dc 2026-10-19T11:37:07Z
+
+== Task 1 regression set (second verify) at 40ceffbc, finished 2026-10-19T11:36Z ==
+./gradlew :core-java:test --tests 'uk.jtoye.core.storefront.*' --tests 'uk.jtoye.core.media.*' --tests 'uk.jtoye.core.product.*' --rerun -> BUILD SUCCESSFUL (33 report files, 318 tests, 0 failures/errors)
+./gradlew :core-java:integrationTest --tests 'uk.jtoye.core.storefront.*' --tests 'uk.jtoye.core.media.*' --tests 'uk.jtoye.core.security.RlsContractTest' --tests 'uk.jtoye.core.integration.OpenApiSnapshotTest' --rerun -> BUILD SUCCESSFUL in 7m 18s (42 report files, 236 tests, 0 failures/errors)
+gradle rc=0 fresh-green reports=2/2
+<testsuite name="uk.jtoye.core.security.RlsContractTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:32:14.652Z">
+<testsuite name="uk.jtoye.core.integration.OpenApiSnapshotTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:28:53.970Z">
+docs/api/openapi-snapshot.json unchanged (no endpoint, field or annotation change). Runtime half check-openapi-snapshot-fresh.sh: N/A here (needs the compose runtime, which lane B does not rebuild; staging OpenAPI is auth-gated, #549).
+
+== BA-1: status predicate dropped from findPublicPrimaryObjectKeys (expect case 5 red) 2026-10-19T11:39:46Z (run started 2026-10-19T11:37:25Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 5: a PENDING and a FAILED primary show no image FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+14 tests completed, 2 failed
+> Task :core-java:integrationTest FAILED
+BUILD FAILED in 2m 10s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="2" errors="0" timestamp="2026-10-19T11:39:01.600Z" hostname="sanmi-System-Product-Name" time="26.429">
+RED: 29-29 — case 5 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/4a02f5f2-88d0-492b-9865-3007e5107340.webp"
+RED: 29-29 — case 14 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/4a02f5f2-88d0-492b-9865-3007e5107340.webp"
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-1 restore 2026-10-19T11:39:46Z: core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java hash-object=fd69e2283b015c64be965bd9d10ff3234e3b1308 HEAD:core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java=fd69e2283b015c64be965bd9d10ff3234e3b1308 MATCH
+
+== BA-2: flagged predicate dropped from findPublicPrimaryObjectKeys (expect cases 6 and 7 red) 2026-10-19T11:41:56Z (run started 2026-10-19T11:39:53Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 7: a flagged primary over a legacy image falls back to the legacy image_url (D-03a) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 6: a flagged ACTIVE primary is hidden publicly, while the vendor rule still sees its key FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 3 failed
+BUILD FAILED in 2m 2s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="3" errors="0" timestamp="2026-10-19T11:39:59.325Z" hostname="sanmi-System-Product-Name" time="47.123">
+RED: 29-29 — case 7 :: expected: "https://legacy.29-29.test/flagged-over-legacy.jpg"  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/996ee9db-9c03-4ad1-99d6-d7aa5258eac2.webp"
+RED: 29-29 — case 6 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/624086fb-1c78-43cd-8697-ab35d2d8883a.webp"
+RED: 29-29 — case 14 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/624086fb-1c78-43cd-8697-ab35d2d8883a.webp"
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-2 restore 2026-10-19T11:41:56Z: core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java hash-object=fd69e2283b015c64be965bd9d10ff3234e3b1308 HEAD:core-java/src/main/java/uk/jtoye/core/media/ProductMediaRepository.java=fd69e2283b015c64be965bd9d10ff3234e3b1308 MATCH
+
+== BA-3: per-row catch removed from PublicProductImageResolver (expect case 8 red: the menu no longer answers 200) 2026-10-19T11:44:07Z (run started 2026-10-19T11:42:04Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 9: a tenant-A join row naming tenant B's asset shows no image, and B appears nowhere in A's bodies FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 3: Both Dish shows the asset, never the legacy column, as imageUrl and imageUrls[0] FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 13: a menu read resolves every image in one query (prepared-statement deltas equal) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 1: the menu carries Asset Dish's ACTIVE derivative as imageUrl, then its flat gallery FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 4: Legacy Dish and Seed Dish (no media rows) are exactly what the flat columns say FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 7: a flagged primary over a legacy image falls back to the legacy image_url (D-03a) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 8: an ACTIVE row with a quarantine key is skipped; the menu answers 200 and names no quarantine object FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 6: a flagged ACTIVE primary is hidden publicly, while the vendor rule still sees its key FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 5: a PENDING and a FAILED primary show no image FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 10 failed
+BUILD FAILED in 2m 2s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="10" errors="0" timestamp="2026-10-19T11:42:10.885Z" hostname="sanmi-System-Product-Name" time="45.864">
+RED: 29-29 — case 9 :: expected: 200  but was: 400
+RED: 29-29 — case 3 :: expected: 200  but was: 400
+RED: 29-29 — case 13 :: expected: 200  but was: 400
+RED: 29-29 — case 1 :: expected: 200  but was: 400
+RED: 29-29 — case 4 :: expected: 200  but was: 400
+RED: 29-29 — case 7 :: expected: 200  but was: 400
+RED: 29-29 — case 8 :: expected: 200  but was: 400
+RED: 29-29 — case 6 :: expected: 200  but was: 400
+RED: 29-29 — case 5 :: expected: 200  but was: 400
+RED: 29-29 — case 14 :: expected: 200  but was: 400
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-3 restore 2026-10-19T11:44:07Z: core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java hash-object=64529fb424acd2c9e26fcde4a2df91ea86a15e82 HEAD:core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java=64529fb424acd2c9e26fcde4a2df91ea86a15e82 MATCH
+
+== BA-4: resolver tenant guard removed and getShopProducts resolves AFTER TenantContext.clear() (expect case 1 red, imageUrl null: V53's tenant policy, not a public-read policy, admits the rows) 2026-10-19T11:46:27Z (run started 2026-10-19T11:44:22Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 3: Both Dish shows the asset, never the legacy column, as imageUrl and imageUrls[0] FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 1: the menu carries Asset Dish's ACTIVE derivative as imageUrl, then its flat gallery FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 10: shop B's own menu resolves B's asset (case 9's control) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+14 tests completed, 4 failed
+> Task :core-java:integrationTest FAILED
+BUILD FAILED in 2m 4s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="4" errors="0" timestamp="2026-10-19T11:44:27.373Z" hostname="sanmi-System-Product-Name" time="49.169">
+RED: 29-29 — case 3 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/bbfc099e-393b-4d08-ab13-c07c7b42344c.webp"  but was: "https://legacy.29-29.test/both-dish.jpg"
+RED: 29-29 — case 1 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/82a1a694-595a-4486-a540-8373e31cb30f.webp"  but was: null
+RED: 29-29 — case 10 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292902/media/20bb407b-5bfb-4ca2-9696-721f31907894.webp"  but was: null
+RED: 29-29 — case 14 :: expected: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/82a1a694-595a-4486-a540-8373e31cb30f.webp"  but was: null
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-4 restore 2026-10-19T11:46:27Z: core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java hash-object=64529fb424acd2c9e26fcde4a2df91ea86a15e82 HEAD:core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java=64529fb424acd2c9e26fcde4a2df91ea86a15e82 MATCH
+BA-4 restore 2026-10-19T11:46:27Z: core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java hash-object=7eb08197d92191a9863a4b8741b6b774cef9ad63 HEAD:core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java=7eb08197d92191a9863a4b8741b6b774cef9ad63 MATCH
+
+== BA-5: the batch replaced by a per-product findPrimaryActiveObjectKey loop (expect case 13 red, deltas differ, and case 6 red) 2026-10-19T11:48:45Z (run started 2026-10-19T11:46:38Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 13: a menu read resolves every image in one query (prepared-statement deltas equal) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 7: a flagged primary over a legacy image falls back to the legacy image_url (D-03a) FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 6: a flagged ACTIVE primary is hidden publicly, while the vendor rule still sees its key FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 14: every shop-A product's imageUrl is the vendor rule's key unless flagged or quarantine-shaped, else image_url FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 4 failed
+BUILD FAILED in 2m 7s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="4" errors="0" timestamp="2026-10-19T11:46:43.724Z" hostname="sanmi-System-Product-Name" time="49.464">
+RED: 29-29 — case 13 :: expected: 3L  but was: 12L
+RED: 29-29 — case 7 :: expected: "https://legacy.29-29.test/flagged-over-legacy.jpg"  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/57111daa-388c-4684-ad8e-efa55b48a05b.webp"
+RED: 29-29 — case 6 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/b2fbc6ca-697d-47d2-a825-59db59fb8fcd.webp"
+RED: 29-29 — case 14 :: expected: null  but was: "https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/media/b2fbc6ca-697d-47d2-a825-59db59fb8fcd.webp"
+29-29 CASE13 prepared-statement delta shopA=12 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-5 restore 2026-10-19T11:48:45Z: core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java hash-object=64529fb424acd2c9e26fcde4a2df91ea86a15e82 HEAD:core-java/src/main/java/uk/jtoye/core/media/PublicProductImageResolver.java=64529fb424acd2c9e26fcde4a2df91ea86a15e82 MATCH
+
+== BA-6: additionalImageUrls dropped from imageUrls (expect cases 1 and 4 red) 2026-10-19T11:50:54Z (run started 2026-10-19T11:48:52Z) ==
+-- gradle tail (raw):
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 1: the menu carries Asset Dish's ACTIVE derivative as imageUrl, then its flat gallery FAILED
+PublicStorefrontMediaImageIntegrationTest > 29-29 — case 4: Legacy Dish and Seed Dish (no media rows) are exactly what the flat columns say FAILED
+> Task :core-java:integrationTest FAILED
+14 tests completed, 2 failed
+BUILD FAILED in 2m 1s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="2" errors="0" timestamp="2026-10-19T11:48:57.829Z" hostname="sanmi-System-Product-Name" time="47.292">
+RED: 29-29 — case 1 :: org.opentest4j.AssertionFailedError: [{"allergenMask":0,"category":null,"description":null,"dietaryTags":null,"featured":false,"id":"3e997310-3da2-42fc-a184-3948373a9ae4","imageUrl":"https://media.29-29.test/jtoye-images/00000000-0000-0000-0000-000000292901/me
+RED: 29-29 — case 4 :: org.opentest4j.AssertionFailedError: [Legacy Dish {"allergenMask":0,"category":null,"description":null,"dietaryTags":null,"featured":false,"id":"6f4940ff-a87b-4478-beab-8fcaf68952f7","imageUrl":"https://legacy.29-29.test/legacy-dish.jpg","imageUrls":["https://
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+BA-6 restore 2026-10-19T11:50:54Z: core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java hash-object=7eb08197d92191a9863a4b8741b6b774cef9ad63 HEAD:core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java=7eb08197d92191a9863a4b8741b6b774cef9ad63 MATCH
+
+== Task 1 CLOSING clean run at 40ceffbc after all six arms restored (first verify) 2026-10-19T11:53:03Z (run started 2026-10-19T11:51:05Z) ==
+-- gradle tail (raw):
+BUILD SUCCESSFUL in 1m 58s
+-- report:
+<testsuite name="uk.jtoye.core.storefront.PublicStorefrontMediaImageIntegrationTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-19T11:51:09.419Z" hostname="sanmi-System-Product-Name" time="46.037">
+29-29 CASE13 prepared-statement delta shopA=3 (products=10, media-bearing=8) shopB=3 (products=1)
+29-29 CASE12 unpinned media_asset=0 product_media=0 | pinned A media_asset=8 (seeded 8) product_media=9 (seeded 9) B-asset-visible=0 | pinned B media_asset=1 product_media=1 A-assets-visible=0
+
+== Task 1 acceptance checks 2026-10-19T11:53:17Z at HEAD 40ceffbc ==
+closing run: WARN event=public_media_key_refused lines in the report=12 (the Quarantine-Key Dish row skipped, the key never logged)
+untouched paths (vendor path, DTOs, contract, migrations, frontend app): rc=0  (expect 0)
+fail direction, PublicStorefrontService.java: rc=1  (expect 1)
+Flyway-head pipeline fail direction: 89  (expect 89)
+flyway head=V88
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+Fix by running: scripts/docs-freshness.sh --write   (then update README/PROJECT.md and commit)
+rc=1
+  ^ VOID for Task 1, not a Task 1 failure: Task 2's spec (frontend/e2e/staging-storefront-image.spec.ts) was already
+    drafted, UNTRACKED, in the working tree and docs-freshness counts its test() block. Re-run at 2026-10-19T11:53:27Z with
+    that untracked file parked outside the tree (so the tree equals the committed 40ceffbc):
+    flyway head=V88 | check-doc-metrics PASS: all 37 prose metric claim(s) | docs-freshness OK (total 6352) | rc=0
+    The spec was moved back at 2026-10-19T11:53:30Z; Task 2 regenerates the counts for it.
+WARN line check: 12 event=public_media_key_refused lines in the closing report, 0 of them contain "quarantine" (product id only).
+case 11 note: it guards the pre-existing SEC-01 slug gate (resolvePublicShopForSlug 404s before any media read); its fail direction is NOT constructed here (the gate is not this plan's code), so it is not counted as falsified.
+
+== Task 1 break-arm summary (each arm run alone on the committed GREEN tree, restored by `git checkout -- <file>`, restore proven by hash) ==
+BA-1 status predicate dropped        -> red: case 5 (FAILED asset's ordinary key shown), case 14      restore MATCH
+BA-2 flagged predicate dropped       -> red: case 6, case 7, case 14                                    restore MATCH
+BA-3 per-row catch removed           -> red: case 8 (menu 400, not 200) and every case reading A's menu: 1,3,4,5,6,7,9,13,14   restore MATCH
+BA-4 guard removed + resolve after TenantContext.clear() -> red: case 1 (imageUrl null), case 3, case 10, case 14   restore MATCH x2
+BA-5 per-product findPrimaryActiveObjectKey loop -> red: case 13 (delta 12 vs 3), case 6, case 7, case 14   restore MATCH
+BA-6 additionalImageUrls dropped     -> red: case 1, case 4                                             restore MATCH
+Closing clean run: tests=14 failures=0 errors=0 (same N as GREEN).
