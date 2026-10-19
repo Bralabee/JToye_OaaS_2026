@@ -459,9 +459,11 @@ ok "principal ids read (identifiers, not secrets): ${MEDIA_IDENTITY}=${MEDIA_PID
 rstep 6 "container-scope RBAC: ${ROLE_MEDIA} for ${MEDIA_IDENTITY}; ${ROLE_BACKUP} for ${BACKUP_IDENTITY}"
 # assign PID ROLE SCOPE — idempotent; a fresh custom role can take a while to
 # become assignable, so the live create retries on a deadline.
+# ROLE is a built-in role name or a role definition id; LABEL (optional) names
+# it in the output when ROLE is an id.
 assign() {
-  local pid="$1" role="$2" scope="$3" tries=0 rc
-  if count_is_zero "${role} for ${pid} at ${scope##*/storageAccounts/}" \
+  local pid="$1" role="$2" scope="$3" label="${4:-$2}" tries=0 rc
+  if count_is_zero "${label} for ${pid} at ${scope##*/storageAccounts/}" \
       role assignment list --assignee-object-id "$pid" --role "$role" --scope "$scope" --query "length(@)" -o tsv; then
     while :; do
       rc=0
@@ -469,12 +471,12 @@ assign() {
         --role "$role" --scope "$scope" || rc=$?
       [ "$rc" -eq 0 ] && break
       tries=$((tries + 1))
-      [ "$DRY_RUN" -eq 0 ] && [ "$tries" -lt 10 ] || die "role assignment '${role}' at ${scope} failed (az rc=${rc})"
+      [ "$DRY_RUN" -eq 0 ] && [ "$tries" -lt 10 ] || die "role assignment '${label}' at ${scope} failed (az rc=${rc})"
       echo "role assignment not accepted yet (attempt ${tries}/10, rc=${rc}); retrying in 15 s" >&2
       sleep 15
     done
   fi
-  ok "${role} -> ${pid} at ${scope##*/storageAccounts/}"
+  ok "${label} -> ${pid} at ${scope##*/storageAccounts/}"
 }
 for c in $MEDIA_CONTAINERS; do
   assign "$MEDIA_PID" "$ROLE_MEDIA" "$(container_scope "$MEDIA_ACCT" "$c")"
@@ -496,10 +498,34 @@ cat > "$ROLE_JSON" <<EOF
   "AssignableScopes": ["/subscriptions/${SUB}/resourceGroups/${RG}"]
 }
 EOF
-if count_is_zero "custom role ${ROLE_BACKUP}" role definition list --custom-role-only true --name "$ROLE_BACKUP" --query "length(@)" -o tsv; then
+# The custom role is found by a CLIENT-SIDE JMESPath filter and assigned by its
+# definition id, never by name. az turns a role name into the OData filter
+# roleName eq '<name>', which the apostrophe in "J'Toye" breaks: the first live
+# run (2026-10-19) failed here with UnsupportedFilter, and the OData escape
+# (J''Toye) is refused the same way. `role assignment create/list --role` accept a
+# definition id without any name lookup (azure-cli 2.91.0, role/custom.py
+# _resolve_role_id). In a JMESPath raw string a quote is written \'.
+ROLE_BACKUP_FILTER="[?roleName=='${ROLE_BACKUP//\'/\\\'}']"
+if count_is_zero "custom role ${ROLE_BACKUP}" role definition list --custom-role-only true --query "length(${ROLE_BACKUP_FILTER})" -o tsv; then
   az_mutate --no-echo role definition create --role-definition "@${ROLE_JSON}"
 fi
-assign "$BACKUP_PID" "$ROLE_BACKUP" "$(container_scope "$BACKUP_ACCT" "$BACKUP_CONTAINER")"
+# A new definition can take a moment to list; bounded wait, live only.
+role_tries=0
+while :; do
+  ROLE_BACKUP_ID="$(az_read role definition list --custom-role-only true --query "${ROLE_BACKUP_FILTER}.id | [0]" -o tsv)" \
+    || die "could not read the id of custom role ${ROLE_BACKUP}"
+  [ -n "$ROLE_BACKUP_ID" ] && break
+  role_tries=$((role_tries + 1))
+  [ "$DRY_RUN" -eq 0 ] && [ "$role_tries" -lt 12 ] || die "custom role ${ROLE_BACKUP} does not list after ${role_tries} reads"
+  echo "custom role ${ROLE_BACKUP} not listed yet (read ${role_tries}/12); retrying in 10 s" >&2
+  sleep 10
+done
+if [ "$DRY_RUN" -eq 0 ]; then
+  [[ $ROLE_BACKUP_ID == /subscriptions/*/providers/Microsoft.Authorization/roleDefinitions/* ]] \
+    || die "custom role ${ROLE_BACKUP} id reads back as '${ROLE_BACKUP_ID}', not a role definition id"
+fi
+ok "custom role ${ROLE_BACKUP}: ${ROLE_BACKUP_ID}"
+assign "$BACKUP_PID" "$ROLE_BACKUP_ID" "$(container_scope "$BACKUP_ACCT" "$BACKUP_CONTAINER")" "$ROLE_BACKUP"
 
 echo
 echo "DONE: Blob estate (dry-run=${DRY_RUN}). Record the runbook §8 read-backs next: $0 --readback"
