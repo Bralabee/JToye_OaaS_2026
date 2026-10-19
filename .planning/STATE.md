@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: executing
-stopped_at: "Completed 29-13-PLAN.md (jtoye-stg-kv populated write-once: 31 derived objects (keyvault-chain.py objects 27 + realm-import 6 + seed 4, deduplicated), 29 machine-made + 2 Stripe TEST; 35 per-secret Key Vault Secrets User grants, exact per identity; preflight RED live twice then GREEN (0 gaps, test-mode yes x2); Stripe TEST endpoint we_1USBGuDpS9ICNeRtRPsoKuOM livemode false); next 29-14"
-last_updated: "2026-10-19T07:55:00.000Z"
+stopped_at: "Completed 29-14-PLAN.md (the phase tracer: staging live at DEPLOYED_SHA a784e7e2, vendor login through Traefik green and falsified by six arms, digest parity both directions; storefront image defect and B2s rollout capacity recorded open)"
+last_updated: "2026-10-19T10:42:19.654Z"
 last_activity: 2026-10-19
-state_head: 8fbc1383
+state_head: be60c9305f921d28d55d416d4150d11758cdf899
 progress:
   total_phases: 20
   completed_phases: 17
   total_plans: 282
-  completed_plans: 267
+  completed_plans: 268
   percent: 85
 ---
 
@@ -974,6 +974,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P32 | 51 min | 2 tasks | 21 files |
 | Phase 37 P33 | 87 min | 2 tasks | 16 files |
 | Phase 37 P56 | 10min | 3 tasks | 16 files |
+| Phase 29 P14 | 85min | 4 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -1388,6 +1389,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: Owner ruling 2026-10-17 (37-31 H4): PublicStorefrontService.placeGuestOrder skips cashOrderCaps.checkIp and leaves orders.client_ip_digest null when contactVerified is true (3/email and 3/phone caps still enforced; no proxy-peer IP collisions through /api/customer-orders)
 - [Phase 37]: Owner ruling 2026-10-17 (T-37-107): core-api serviceAccountsEnabled is false (and service-account-core-api enabled is false) in infra/keycloak/realm-export.template.json so KEYCLOAK_CLIENT_SECRET cannot mint a machine token on the human OIDC client ID
 - [Phase 37]: Owner ruling 2026-10-17 (staging/production trusted-proxies & CLIENT_IP_HMAC_KEY): keep security.trusted-proxies "" in k8s/{staging,production}/configmap-patch.yaml (INV-12 WARN, fail-closed) until Phase 29 Wave 7 live cluster bring-up verifies externalTrafficPolicy: Local on ingress-nginx and measures the live ingress pod CIDR, alongside minting environment-isolated 64-hex client-ip-credentials/hmac-key and dsar-credentials/encryption-key Secrets
+- [Phase 29]: 29-14: staging-db-bootstrap reaches jtoye-stg-pg through a cluster relay (--via-context), keeping the one-rule firewall
+- [Phase 29]: 29-14: core-java enableServiceLinks false; Keycloak heap flags without MaxHeapFreeRatio=30
+- [Phase 29]: 29-14: deploy-staging pins and digest-checks one DEPLOY_TAG; parity keeps the SET form (AKS reports the index digest)
+- [Phase 29]: 29-14: OPEN owner decision - 1Gi surge pods fit no B2s node, so core-java/keycloak rollouts stick (deferred-items)
 
 ### Pending Todos
 
@@ -1466,7 +1471,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 ## Session Continuity
 
 Last session: 2026-10-19T07:55:00Z
-Stopped at: Completed 29-13-PLAN.md (Phase 29, 13 of 28 plans; jtoye-stg-kv populated write-once with 31 derived objects and 35 per-secret grants, preflight GREEN, Stripe TEST endpoint registered); next 29-14
+Stopped at: Completed 29-14-PLAN.md (Phase 29, 14 of 28 plans; the tracer is green at DEPLOYED_SHA a784e7e2; open: storefront ignores pipeline images, 1Gi surge pods fit no node); next 29-15
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
