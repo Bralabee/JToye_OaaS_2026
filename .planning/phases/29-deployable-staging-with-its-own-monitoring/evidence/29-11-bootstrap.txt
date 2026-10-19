@@ -452,3 +452,70 @@ RESULT (executor, 2026-10-19T06:44Z): Task 2 NOT satisfied. None of the four sta
 authoritative servers (NXDOMAIN with the aa flag at dns1 and dns2) or at 1.1.1.1, after a 600 s bounded poll. D-08 holds:
 api/app are NXDOMAIN (aa). Controls answer (NS, MX via Zoho, .uk delegation to registrar-servers). Task 3 NOT started;
 plan stopped at the Task 2 checkpoint (human-action). The platform from Task 1 stays applied; Traefik holds 51.105.43.14.
+
+----- [2026-10-19T07:10:47Z] TASK 2 VERIFICATION after the owner's 'dns added' (2026-10-19): staging + production names at dns1, dns2, 1.1.1.1, 8.8.8.8; NS/MX/SOA controls; gate = 4/4 staging -> 51.105.43.14 and api/app aa-NXDOMAIN at both authoritative servers
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-t2v.sh
+@dns1.registrar-servers.com A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@1.1.1.1 A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+positive control NS @dns1: dns1.registrar-servers.com. dns2.registrar-servers.com. 
+positive control MX @dns1: 10 mx.zoho.eu. 20 mx2.zoho.eu. 50 mx3.zoho.eu. 
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792393745 43200 3600 604800 3601  (serial 1792393745 read as Unix time = 2026-10-19T07:09:05Z; an inference about time-based serials, not a measurement)
+VERDICT INPUTS:
+  dns1.registrar-servers.com staging_to_ingress=4/4 production_api_app_aa_nxdomain=2/2
+  dns2.registrar-servers.com staging_to_ingress=4/4 production_api_app_aa_nxdomain=2/2
+[rc=0]
+
+----- [2026-10-19T07:10:57Z] TASK 2 gate FAIL direction: the same script with the expected IP changed by one octet (51.105.43.15) must exit non-zero (staging_to_ingress=0/4)
+$ bash -c bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-t2v-wrongip.sh | tail -3
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792393745 43200 3600 604800 3601  (serial 1792393745 read as Unix time = 2026-10-19T07:09:05Z; an inference about time-based serials, not a measurement)
+VERDICT INPUTS:
+  dns1.registrar-servers.com staging_to_ingress=0/4 production_api_app_aa_nxdomain=2/2
+[rc=0]
+
+----- [2026-10-19T07:11:10Z] TASK 2 gate FAIL direction (re-run): the record above shows rc=0 because '| tail -3' masked the script's status (no pipefail in bash -c) — the instrument, not the gate. Same arm, script status captured directly
+$ bash -c out=$(bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-t2v-wrongip.sh); rc=$?; tail -3 <<<"$out"; exit $rc
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792393745 43200 3600 604800 3601  (serial 1792393745 read as Unix time = 2026-10-19T07:09:05Z; an inference about time-based serials, not a measurement)
+VERDICT INPUTS:
+  dns1.registrar-servers.com staging_to_ingress=0/4 production_api_app_aa_nxdomain=2/2
+[rc=1]
+
+RESULT (executor, 2026-10-19T07:11Z): Task 2 SATISFIED after the owner's "dns added". At BOTH authoritative servers
+(dns1/dns2.registrar-servers.com, aa flag) app-staging, api-staging, auth-staging and grafana-staging resolve to
+51.105.43.14; api, app, auth and grafana stay NXDOMAIN with aa (D-08 holds); the mistyped host grafana-stating no
+longer resolves anywhere. Public resolvers 1.1.1.1 and 8.8.8.8 already agree (no lag observed). Gate shown both ways:
+expected IP 51.105.43.14 -> rc 0 (4/4 at each server); expected IP 51.105.43.15 -> rc 1 (0/4). Controls: NS, MX (Zoho),
+SOA serial moved from 1792318860 (06:43 measurement) to 1792393745.
