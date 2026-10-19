@@ -27,6 +27,17 @@ const nextConfig = {
       },
     ],
   },
+  // The July operator pack PDF was retired with the /for-operators truth refresh;
+  // links already handed to operators land on the page that replaced it.
+  async redirects() {
+    return [
+      {
+        source: '/jtoye-operator-pilot-pack.pdf',
+        destination: '/for-operators',
+        permanent: true,
+      },
+    ]
+  },
   async headers() {
     return [
       {
