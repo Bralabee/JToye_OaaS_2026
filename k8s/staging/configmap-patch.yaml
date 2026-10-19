@@ -143,13 +143,31 @@ data:
   # k8s/base/configmap.yaml for the mechanism and the failure it guards.
   vendor.logout-complete.enabled: "false"
 
-  # --- Trusted proxies (37-24, D-19 / RWO-006): OPERATOR INPUT, deliberately empty --
-  # The ingress-nginx controller's pod CIDR on the staging AKS cluster is not in
-  # this repo (kubenet / Azure CNI assign it per cluster). Empty = trust none: core
-  # keys every client on its socket address, which behind the ingress is the
-  # ingress pod, so EVERY client shares ONE public bucket until this is set.
-  # INV-12 WARNS on this line (never fails) and refuses /0, anything shorter than
-  # /8 and any public range once a value is given. Fill it per 37-24's user_setup:
-  #   kubectl --context jtoye-staging get pods -n ingress-nginx -o wide
-  # and declare that pod range, a private /16 or narrower, never 0.0.0.0/0.
-  security.trusted-proxies: ""
+  # --- Trusted proxies (37-24, D-19 / RWO-006; set by plan 29-15 after measuring) --
+  # The ingress controller is Traefik (D-29) in namespace `traefik`. Its pods are
+  # the socket peer core-java sees, so their address range is the ONLY range whose
+  # X-Forwarded-For core-java may believe (ClientIpResolver walks the header from
+  # the right and skips only hops inside this list). Measured 2026-10-19, plan 29-15
+  # (evidence/29-15-edge.txt, TASK 2):
+  #   - az aks show networkProfile.podCidr (subscription-pinned az_read):
+  #     10.244.0.0/16 — Azure CNI overlay, Cilium dataplane; equals POD_CIDR in
+  #     29-ESTATE-DECISIONS.md.
+  #   - Traefik pods at 10.244.2.154 and 10.244.1.134, on two different nodes.
+  #   - Traefik Service `traefik`: type LoadBalancer, externalTrafficPolicy Local,
+  #     so the LoadBalancer does not SNAT and the client's own address reaches
+  #     Traefik, which appends it as the right-most X-Forwarded-For hop.
+  #   - Before this value: a request carrying X-Forwarded-For 203.0.113.9 was keyed
+  #     on 10.244.1.134 / 10.244.2.154 — every client shared the bucket of the
+  #     Traefik pod it landed on.
+  # Why the whole /16 and not the two pod IPs or a /24: a Traefik pod gets a new
+  # address on every reschedule, on any node, and the overlay hands each node its
+  # own block of this range (node .spec.podCIDR is not populated under overlay), so
+  # no narrower value stays true. A /16 is private and no wider than /8, which
+  # INV-12 accepts. Accepted residual: every pod in the cluster is inside this
+  # range, so a pod that can reach core-java directly (the frontend's server-side
+  # calls, admitted by the NetworkPolicies) could also supply X-Forwarded-For.
+  # The internet cannot: Traefik is the only path in, it appends the real peer as
+  # the right-most hop, and the walk stops at the first hop outside this range, so
+  # anything a client writes to the left of it is never read.
+  # Empty ("") restores trust-none.
+  security.trusted-proxies: "10.244.0.0/16"

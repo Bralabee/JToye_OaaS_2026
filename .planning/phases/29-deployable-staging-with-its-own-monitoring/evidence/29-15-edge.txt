@@ -161,3 +161,77 @@ FAIL: 1 gate(s) are referenced by no workflow and carry no exemption:
 restored by content: git hash-object cee2252cffeba30a38f55367903b94d626350ae1 == HEAD blob
 clean2 rc=0: PASS: every gate either runs in CI or has a declared reason it cannot.
 
+=== TASK 2 measurements 2026-10-19T11:04:22Z ===
+$ kubectl --context jtoye-stg-aks -n traefik get pods -o wide
+NAME                       READY   STATUS    RESTARTS   AGE     IP             NODE                                NOMINATED NODE   READINESS GATES
+traefik-564ff689f8-k9tb9   1/1     Running   0          4h35m   10.244.2.154   aks-nodepool1-24453234-vmss000000   <none>           <none>
+traefik-564ff689f8-sg5dz   1/1     Running   0          4h35m   10.244.1.134   aks-nodepool1-24453234-vmss000002   <none>           <none>
+$ kubectl --context jtoye-stg-aks -n traefik get svc traefik -o jsonpath={.spec.externalTrafficPolicy}
+Local LoadBalancer 51.105.43.14
+$ (export JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-...; source scripts/lib/azure-guard.sh && az_guard_init >/dev/null && az_read aks show -g jtoye-rg -n jtoye-stg-aks --query networkProfile.podCidr -o tsv)
+podCidr=[10.244.0.0/16] prc=0
+$ az_read aks show ... --query "networkProfile.{plugin:networkPlugin,mode:networkPluginMode,policy:networkPolicy,dataplane:networkDataplane,podCidrs:podCidrs,serviceCidr:serviceCidr}"
+{
+  "dataplane": "cilium",
+  "mode": "overlay",
+  "plugin": "azure",
+  "podCidrs": [
+    "10.244.0.0/16"
+  ],
+  "policy": "cilium",
+  "serviceCidr": "10.0.0.0/16"
+}
+$ kubectl --context jtoye-stg-aks get nodes -o custom-columns=NAME:.metadata.name,PODCIDR:.spec.podCIDR
+NAME                                PODCIDR
+aks-nodepool1-24453234-vmss000000   <none>
+aks-nodepool1-24453234-vmss000001   <none>
+aks-nodepool1-24453234-vmss000002   <none>
+aks-nodepool1-24453234-vmss000003   <none>
+29:POD_CIDR=10.244.0.0/16
+37:| POD_CIDR | 10.244.0.0/16 | AKS Azure CNI overlay pod address space | Delete and recreate the cluster |
+
+=== TASK 2 Traefik access log, request with X-Forwarded-For 203.0.113.9 from this host (public 81.96.202.37), 2026-10-19T11:06:40Z ===
+81.96.202.37 - - [19/Oct/2026:11:06:40 +0000] "GET /api/v1/public/shops?etp-probe=1 HTTP/2.0" 200 1381 "-" "-" 4138 "jtoye-staging-jtoye-ingress-rule-0-path-0-tls@kubernetesingressnginx" "http://10.244.0.145:9090" 35ms
+Reading: Traefik's ClientHost is the operator host's public address, so externalTrafficPolicy Local delivers the real client to Traefik (no SNAT).
+
+=== TASK 2 BEFORE (trust none): 110 x GET /api/v1/public/shops with X-Forwarded-For: 203.0.113.9, from 2026-10-19T11:04:57Z ===
+status codes:
+     58 200
+     52 429
+x-ratelimit-remaining on the first 12 responses (each value twice: two buckets, one per Traefik pod):
+39 38 37 36 35 34 33 32 31 30 29 28 
+core-java 'Public rate limit exceeded' WARN lines since T0: 52; resolved client per line:
+     50 10.244.1.134
+      2 10.244.2.154
+lines naming 203.0.113.9: 0; lines naming 81.96.202.37: 0
+first two lines:
+2026-10-19 11:05:02.479 Public rate limit exceeded for client 10.244.1.134 on path /api/v1/public/shops - retry after 34 seconds
+2026-10-19 11:05:02.634 Public rate limit exceeded for client 10.244.1.134 on path /api/v1/public/shops - retry after 34 seconds
+Reading: trust-none keys every client on the Traefik pod it lands on (10.244.1.134 / 10.244.2.154). The forged header is ignored, and so is the real client.
+
+=== TASK 2 INV-12 verify BEFORE the configmap edit (fail direction) ===
+podCidr=[10.244.0.0/16] prc=0 invariants_rc=0
+OK   [k8s/staging]: ... INV-12 OK (empty = trust none; WARN: operator input outstanding)  ...
+  WARN [k8s/staging] INV-12: security.trusted-proxies is EMPTY (trust none). Behind the ingress every client is the ingress pod, so ALL clients share ONE public rate-limit bucket until the operator declares the ingress-nginx controller's pod CIDR (37-24 user_setup; cluster-specific, not in this repo). Not a failure.
+OK   [k8s/staging]: ... INV-12 OK (empty = trust none; WARN: operator input outstanding)  ...
+PASS: INV-1..INV-7, INV-11 and INV-12 hold across 4 kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on k8s/staging k8s/production; LOC-1..LOC-6, LOC-7 checked on k8s/local.
+VERIFY rc=1
+
+=== TASK 2 golden: render-golden.sh check before --write -> rc=1 (staging drift); --write; check -> rc=0. Diff: ===
+-  security.trusted-proxies: ""
++  security.trusted-proxies: 10.244.0.0/16
+
+=== TASK 2 INV-12 verify AFTER the edit (pass direction) ===
+podCidr=[10.244.0.0/16] prc=0 invariants_rc=0
+INV-12 OK (1 private range(s): 10.244.0.0/16) 
+staging-warn-lines=0
+VERIFY rc=0
+configured:   security.trusted-proxies: "10.244.0.0/16"
+measured podCidr string: 10.244.0.0/16 ; configured string: 10.244.0.0/16 (equal)
+
+=== TASK 2 INV-12 verify VOID branch (JTOYE_AZURE_SUBSCRIPTION_ID unset -> guard refuses) ===
+REFUSED [subscription]: JTOYE_AZURE_SUBSCRIPTION_ID is unset; refusing to let the CLI resolve its ambient default, which on this host is EMPLOYER infrastructure
+podCidr=[] prc=1
+VOID: the live podCidr could not be read
+VERIFY rc=2
+

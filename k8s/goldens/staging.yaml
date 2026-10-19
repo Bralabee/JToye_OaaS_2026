@@ -172,7 +172,7 @@ data:
   rabbitmq.port: "5672"
   redis.host: redis.jtoye-staging.svc.cluster.local
   redis.port: "6379"
-  security.trusted-proxies: ""
+  security.trusted-proxies: 10.244.0.0/16
   smtp.auth: "false"
   smtp.host: mailpit.jtoye-staging.svc.cluster.local
   smtp.port: "1025"
