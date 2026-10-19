@@ -40,7 +40,10 @@
 #         one series from the JOB that X maps to. This is the assertion the
 #         drafted gate lacked and the reason F-3c survived review.
 #   L-3   TRANSPORT. A synthetic alert posted to Alertmanager actually arrives
-#         at the configured destination.
+#         at the configured destination, AND no email integration on its route is
+#         counted failed through Alertmanager's retry horizon (route.group_interval
+#         + 30 s, read from the running Alertmanager; plan 29-25). A healthy run
+#         therefore takes about group_interval longer (~5.5 min at 5m).
 #
 #   WHAT L-3 PROVES AND DOES NOT PROVE: it proves the message left Alertmanager
 #   and arrived at the configured sink; it does NOT prove a human reads that
@@ -203,7 +206,7 @@ STUB
     out=$(env PATH="$st/bin:$PATH" STUB_LOG="$log" STUB_SUM="$sum" \
           ALERTS="$fixture" PROM_URL=http://prom.stub ALERTMANAGER_URL=http://am.stub \
           MAILHOG_URL=http://mailhog.stub MAILPIT_URL=http://mailpit.stub \
-          LIVENESS_L3_TRIES=2 LIVENESS_L3_SLEEP=0 "$@" "$BASH" "$SELF" 2>&1); rc=$?
+          LIVENESS_L3_TRIES=2 LIVENESS_L3_SLEEP=0 LIVENESS_L3_SETTLE_MARGIN=0 "$@" "$BASH" "$SELF" 2>&1); rc=$?
     [ "$rc" -eq "$want" ] || why="want rc $want, got rc $rc"
     if [ -z "$why" ] && ! eval "$check"; then why="check failed: $check"; fi
     if [ -z "$why" ]; then
@@ -649,6 +652,40 @@ FAILED_BEFORE=$(am_counter alertmanager_notifications_failed_total) \
 
 L3_TIMEOUT=$((L3_TRIES * L3_SLEEP))
 
+# THE RETRY HORIZON (plan 29-25). One receiver can hold several email integrations (staging:
+# Zoho for the human, Mailpit as the inspectable copy). The sink copy lands at once, but a
+# FAILING integration is retried and counted in failed_total only when its retry context ends,
+# which Alertmanager sets to the group's group_interval (dispatch.go). Measured on staging with a
+# wrong Zoho password: 535 at 17:45:45Z, Mailpit copy at 17:45:45Z, failed_total 0 -> 1 at
+# 17:50:45Z ("notify retry canceled after 16 attempts"). L-3 used to stop at the first sink hit,
+# so that broken human path PASSED. L-3 therefore holds, after the hit, until group_interval plus
+# a margin has passed, polling failed_total; the value is read from the RUNNING Alertmanager
+# (/api/v2/status, its normalised config always carries route.group_interval), never assumed.
+# The margin is overridable only so --selftest need not wait; there is no knob that skips it.
+duration_s() { # duration_s <prometheus duration, e.g. 5m, 1m30s, 500ms> -> whole seconds (ceil)
+  awk -v d="$1" 'BEGIN {
+    if (d !~ /^([0-9]+(ms|s|m|h|d|w|y))+$/) exit 1
+    t = 0; ms = 0
+    while (match(d, /^[0-9]+(ms|s|m|h|d|w|y)/)) {
+      tok = substr(d, 1, RLENGTH); d = substr(d, RLENGTH + 1)
+      n = tok + 0; u = tok; sub(/^[0-9]+/, "", u)
+      if (u == "ms") ms += n; else if (u == "s") t += n; else if (u == "m") t += 60 * n
+      else if (u == "h") t += 3600 * n; else if (u == "d") t += 86400 * n
+      else if (u == "w") t += 604800 * n; else t += 31536000 * n
+    }
+    printf "%d\n", t + int((ms + 999) / 1000)
+  }'
+}
+AM_STATUS=$(curl -sf --max-time 10 "$ALERTMANAGER_URL/api/v2/status" | jq -r '.config.original // empty') || AM_STATUS=""
+AM_GROUP_INTERVAL=$(awk '/^route:/ {r = 1; next} r && /^[^ ]/ {exit} r && /^  group_interval: / {print $2; exit}' <<<"$AM_STATUS")
+[ -n "$AM_GROUP_INTERVAL" ] \
+  || void "cannot read route.group_interval from $ALERTMANAGER_URL/api/v2/status — without it L-3 cannot know how long a failing integration takes to be counted"
+L3_SETTLE_GI=$(duration_s "$AM_GROUP_INTERVAL") \
+  || void "route.group_interval '$AM_GROUP_INTERVAL' from $ALERTMANAGER_URL/api/v2/status is not a duration"
+L3_SETTLE_MARGIN="${LIVENESS_L3_SETTLE_MARGIN:-30}"
+case "$L3_SETTLE_MARGIN" in *[!0-9]*|'') echo "USAGE ERROR: LIVENESS_L3_SETTLE_MARGIN must be a non-negative integer" >&2; exit 2 ;; esac
+L3_SETTLE=$((L3_SETTLE_GI + L3_SETTLE_MARGIN))
+
 PROBE_BASE="SyntheticDeliveryProbe"
 RUN_TOKEN="$(jq -rn 'now|floor|tostring')-$$"
 PROBE="${PROBE_BASE}-${RUN_TOKEN}"
@@ -713,6 +750,23 @@ SENT_AFTER=$(am_counter alertmanager_notifications_total) \
 FAILED_AFTER=$(am_counter alertmanager_notifications_failed_total) \
   || void "cannot read $ALERTMANAGER_URL/metrics"
 
+# Hold through the retry horizon (see THE RETRY HORIZON above): only after a hit and a flat
+# failed_total so far. At least one read, then until the deadline; a rise ends the wait.
+FAILED_SETTLED="$FAILED_AFTER"
+SETTLED_FOR=0
+if [ "$FOUND" -eq 1 ] && [ "$FAILED_AFTER" = "$FAILED_BEFORE" ]; then
+  settle_start=$(date +%s)
+  settle_deadline=$((settle_start + L3_SETTLE))
+  while :; do
+    FAILED_SETTLED=$(am_counter alertmanager_notifications_failed_total) \
+      || void "cannot read $ALERTMANAGER_URL/metrics while holding L-3 through the retry horizon"
+    [ "$FAILED_SETTLED" != "$FAILED_BEFORE" ] && break
+    [ "$(date +%s)" -ge "$settle_deadline" ] && break
+    sleep "$((L3_SLEEP > 0 ? L3_SLEEP : 1))"
+  done
+  SETTLED_FOR=$(( $(date +%s) - settle_start ))
+fi
+
 # Three outcomes, deliberately distinguished. Collapsing the first two into one
 # message is what cost two days on #342 item 6.
 if [ "$FOUND" -ne 1 ] && [ "$SENT_AFTER" = "$SENT_BEFORE" ]; then
@@ -721,6 +775,8 @@ elif [ "$FOUND" -ne 1 ]; then
   violation "L-3 Alertmanager ATTEMPTED delivery (notifications_total{email} $SENT_BEFORE -> $SENT_AFTER) but probe '$PROBE_ID' never arrived at the destination within ${L3_TIMEOUT}s (failed_total{email} $FAILED_BEFORE -> $FAILED_AFTER). The transport WAS exercised and the message did not land."
 elif [ "$FAILED_AFTER" != "$FAILED_BEFORE" ]; then
   violation "L-3 delivery reported but alertmanager_notifications_failed_total{email} increased $FAILED_BEFORE -> $FAILED_AFTER"
+elif [ "$FAILED_SETTLED" != "$FAILED_BEFORE" ]; then
+  violation "L-3 failed_total{email} rose $FAILED_BEFORE -> $FAILED_SETTLED ${SETTLED_FOR}s after the probe reached $(sink_name): another email integration on the same route (the human one, when the sink is a copy) failed and was counted when its retry window closed (group_interval $AM_GROUP_INTERVAL). The sink copy does not prove the human path. Inspect: the Alertmanager log for 'Notify attempt failed'."
 fi
 
 # expire the probe so it does not linger in the UI
@@ -735,7 +791,7 @@ echo "  L-1   targets=$TARGET_N  down=$L1_DOWN"
 echo "  L-1b  exporter-jobs=${#EXPORTER_GAUGES[@]}  blind=$L1B_BLIND  gauge-read-by-no-rule=$L1B_UNREAD"
 echo "  L-2   rules=$RULE_N  selectors-matching-0-series=$L2_EMPTY"
 echo "  L-2b  wrong-subject=$L2B_WRONG"
-echo "  L-3   probe delivered=$FOUND  sink=$(sink_name)  attempts{email} $SENT_BEFORE -> $SENT_AFTER  failed{email} $FAILED_BEFORE -> $FAILED_AFTER"
+echo "  L-3   probe delivered=$FOUND  sink=$(sink_name)  attempts{email} $SENT_BEFORE -> $SENT_AFTER  failed{email} $FAILED_BEFORE -> $FAILED_AFTER -> $FAILED_SETTLED after ${SETTLED_FOR}s (retry horizon ${L3_SETTLE}s = group_interval $AM_GROUP_INTERVAL + ${L3_SETTLE_MARGIN}s)"
 echo "  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink."
 echo "        It does NOT prove a human reads that sink ($SINK has no human behind it)."
 
