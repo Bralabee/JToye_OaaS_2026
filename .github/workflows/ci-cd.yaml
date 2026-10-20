@@ -735,7 +735,11 @@ jobs:
       # one trusted-addresses setting that resolves, in the render, to a non-empty
       # private CIDR list without whitespace (never /0, never public); the legacy
       # KC_PROXY and any source the render cannot read are refused.
-      # 34 planted holes and 3 unit probes; the clean copy must exit 0.
+      # 39 planted arms (the two long-value controls must PASS, including the value
+      # folded before a `#`) and 5 unit probes (the unquoting helpers, the image
+      # finder and the path walker); the clean copy must exit 0. The path walker is
+      # k8s/scripts/render_paths.py: python3 with PyYAML is the runner's (the Key
+      # Vault chain gate below needs the same); a missing one is a PARSE ERROR.
       - name: Prove INV-20 catches planted Keycloak proxy-trust holes (--selftest-inv20)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv20
 

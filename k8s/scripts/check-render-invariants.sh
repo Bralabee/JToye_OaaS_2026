@@ -179,7 +179,7 @@
 #               friends) would bypass every assertion above.
 #
 #          ASSERTION SHAPE IS LOAD-BEARING.
-#            a. Tuples are read through RENDER_PATHS_AWK (full key paths), never a
+#            a. Tuples are read through render_paths.py (full key paths), never a
 #               forward scan: `kubectl kustomize` sorts map keys, so inside a rule
 #               `ports:` is emitted BEFORE the `to:` that says where it applies.
 #            b. A rendered port must be BARE DIGITS. In NetworkPolicy semantics a
@@ -263,7 +263,7 @@
 #          the ServiceAccount's, is k8s/scripts/check-keyvault-chain.sh's job.
 #
 #          ASSERTION SHAPE FOR INV-8..INV-10 + LOC-7. Each document is walked into
-#          full key PATHS by indentation (RENDER_PATHS_AWK), list items indexed,
+#          full key PATHS by render_paths.py (PyYAML), list items indexed,
 #          and values read by exact path. kubectl kustomize sorts map keys, so in
 #          a container `env:` is emitted BEFORE its own `name:` — a forward scan
 #          from the container name sees none of its env. Paths are immune to that
@@ -1224,7 +1224,14 @@ fi
 #   jvm-trusted-override-wrapped  jvm-trusted-override behind a 133-character head
 #   shell-wrapped-long            shell-wrapped, the proxy flag past the fold
 #   long-harmless                 a long JAVA_OPTS_APPEND with no proxy word: must PASS
-#                                 (the one control arm: rc 0, not rc 1)
+#                                 (a control arm: rc 0, not rc 1)
+# Values kubectl folds at a space that is followed by `#` (round 3 of #988: the awk path
+# walker took the continuation line "#b..." for a comment and cut the value off, rc 0;
+# the walker is PyYAML now, k8s/scripts/render_paths.py):
+#   hash-after-fold          -Djava.security.egd="file:/dev/./urandom #b" -Dkc.proxy-
+#                            trusted-addresses=0.0.0.0/0, folded before the `#`: the
+#                            flag past the fold must be judged (a second source)
+#   hash-after-fold-harmless the same fold with no proxy word after it: must PASS (control)
 # envFrom:
 #   envfrom-cm         a rendered ConfigMap supplies KC_PROXY_TRUSTED_ADDRESSES=0.0.0.0/0
 #   envfrom-secret     envFrom a Secret
@@ -1244,6 +1251,12 @@ fi
 #                      --proxy-headers=... item are read as the flags they are
 #   unit-quoted-image  a quoted bare image, a single-quoted full image and a custom
 #                      image on a labelled pod are found as Keycloak; core-java's is not
+#   unit-walker-fold   the path walker, called directly on a ConfigMap whose single-quoted,
+#                      double-quoted and flow values are folded at a space before `#`,
+#                      returns each value WHOLE, and a tab inside a value stays one field
+#   unit-walker-void   the walker exits 2 with a PARSE ERROR, and prints nothing, for a
+#                      missing interpreter, a python3 whose PyYAML cannot be imported and
+#                      a document YAML rejects (never a silent fallback to a line reader)
 # INV20_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
 # ===========================================================================
 # Plant primitives. Text with newlines travels through the environment, never -v.
@@ -1282,6 +1295,11 @@ inv20_p_jvm() {         # <file> <value>: a JAVA_OPTS_APPEND literal
           value: \"$2\"
 "
 }
+inv20_p_jvm_sq() {      # <file> <value>: a JAVA_OPTS_APPEND literal, single-quoted (the value may hold ")
+    inv20_p_envadd "$1" "        - name: JAVA_OPTS_APPEND
+          value: '$2'
+"
+}
 inv20_p_args() {        # <file> <replacement for the args line>
     inv20_p_replace "$1" '^        args: \["start"\]$' "$2
 "
@@ -1290,11 +1308,14 @@ inv20_p_args() {        # <file> <replacement for the args line>
 # A JAVA_OPTS_APPEND head long enough that kubectl folds the rest of the value onto a
 # continuation line (the fold is at about 80 characters; this is 133).
 INV20_LONG_PREFIX='-Xms64m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -Dfoo.bar.baz.qux=aaaaaaaaaaaaaaaaaaaa'
+# The reviewer's repro: kubectl folds this exactly before the `#` (verified on the render),
+# so the continuation line begins with "#b" and the rest of the value is on it.
+INV20_HASH_PREFIX='-Xms64m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd="file:/dev/./urandom #b"'
 INV20_ARMS=(env-removed optional-ref key-renamed secret-ref foreign-cm-absent foreign-cm-bad envfrom-duplicate
     literal-any literal-single literal-public literal-empty whitespace-literal config-empty config-whitespace config-comma
     legacy-proxy flag-legacy jvm-headers-only jvm-trusted-any jvm-trusted-override jvm-secret
     flag-headers-only flag-trusted-any flag-repeated flag-bare shell-wrapped block-scalar
-    jvm-trusted-override-wrapped shell-wrapped-long long-harmless
+    jvm-trusted-override-wrapped shell-wrapped-long long-harmless hash-after-fold hash-after-fold-harmless
     envfrom-cm envfrom-secret image-quoted image-custom container-by-label idp-by-kcenv idp-by-args)
 
 inv20_plant() {
@@ -1357,6 +1378,8 @@ inv20_plant() {
             inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
             inv20_p_args "$f" "        command: [/bin/sh, -c, 'echo starting the keycloak server with a long preamble to push the option past the fold; exec /opt/keycloak/bin/kc.sh start --proxy-trusted-addresses=0.0.0.0/0']" ;;
         long-harmless)     inv20_p_jvm "$f" "$INV20_LONG_PREFIX -Dfoo.bar.baz.quux=bbbbbbbbbbbbbbbbbbbbbbbb" ;;
+        hash-after-fold)   inv20_p_jvm_sq "$f" "$INV20_HASH_PREFIX -Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        hash-after-fold-harmless) inv20_p_jvm_sq "$f" "$INV20_HASH_PREFIX -Dfoo.bar.baz.quux=bbbbbbbbbbbbbbbbbbbbbbbb" ;;
         block-scalar)
             inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
             inv20_p_args "$f" '        command:
@@ -1400,6 +1423,8 @@ inv20_unit_probe() {
     local src="$1" pass=1 paths found
     eval "$(sed -n '/^unq() {/,/^}/p; /^INV20_[A-Z_]*_RE=/p; /^inv20_fail()/p; /^inv20_mentions()/p; /^inv20_word() {/,/^}/p; /^inv20_token() {/,/^}/p' "$src")"
     eval "$(sed -n "/^KEYCLOAK_IMAGE_RE=/p; /^KEYCLOAK_CTRS_AWK='/,/^'\$/p" "$src")"
+    eval "$(sed -n '/^render_paths() {/,/^}/p' "$src")"
+    local RENDER_PATHS_PY="$(dirname "$src")/render_paths.py"
     local rel=unit who20=unit inv20_bad=0
     local -a I20_TV=() I20_TS=()
     local I20_HDR=0 I20_LEGACY=0 I20_UNJ=0
@@ -1428,6 +1453,49 @@ inv20_unit_probe() {
                 Deployment d4 'spec::template::spec::containers::[0]::image' 'registry.example.io/idp:1')"
             found="$(awk -F'\t' -v re="$KEYCLOAK_IMAGE_RE" "$KEYCLOAK_CTRS_AWK" <<< "$paths" | sort | cut -f2 | tr '\n' ' ')"
             [[ "$found" == "d1 d2 d4 " ]] || { pass=0; echo "found: '$found'" >&2; } ;;
+        walker-fold)
+            local tmp want v
+            tmp="$(mktemp -d)"
+            printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'metadata:' '  name: fold' 'data:' \
+                "  single: 'aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg \"file:/dev/./urandom" \
+                "    #b\" -Dkc.proxy-trusted-addresses=0.0.0.0/0'" \
+                '  double: "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg' \
+                '    #c tail"' \
+                "  flow: [alpha, 'beta" \
+                "    #gamma delta']" \
+                '  tabbed: "a\tb"' > "$tmp/fold.yaml"
+            render_paths "$tmp/fold.yaml" > "$tmp/out.tsv" 2> "$tmp/err" || { pass=0; echo "walker failed: $(cat "$tmp/err")" >&2; }
+            want="'aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg \"file:/dev/./urandom #b\" -Dkc.proxy-trusted-addresses=0.0.0.0/0'"
+            v="$(awk -F'\t' '$3 == "data::single" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == "$want" ]] || { pass=0; echo "single: '$v'" >&2; }
+            want='"aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg #c tail"'
+            v="$(awk -F'\t' '$3 == "data::double" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == "$want" ]] || { pass=0; echo "double: '$v'" >&2; }
+            v="$(awk -F'\t' '$3 == "data::flow" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == "[alpha, 'beta #gamma delta']" ]] || { pass=0; echo "flow: '$v'" >&2; }
+            v="$(awk -F'\t' '$3 == "data::tabbed" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == '"a\tb"' ]] || { pass=0; echo "tabbed: '$v'" >&2; }
+            [[ "$(awk -F'\t' 'NF != 4' "$tmp/out.tsv" | wc -l)" == 0 ]] || { pass=0; echo "a record is not 4 fields" >&2; }
+            rm -rf "$tmp" ;;
+        walker-void)
+            local tmp out rc
+            tmp="$(mktemp -d)"
+            printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'metadata:' '  name: ok' > "$tmp/ok.yaml"
+            printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'data:' '  a: [unclosed' > "$tmp/bad.yaml"
+            printf 'raise ImportError("planted: PyYAML absent")\n' > "$tmp/yaml.py"
+            # (1) no interpreter
+            out="$(RENDER_PATHS_PYTHON=/nonexistent/python3 render_paths "$tmp/ok.yaml" 2>&1)"; rc=$?
+            { (( rc == 2 )) && [[ "$out" == *"PARSE ERROR"* ]]; } || { pass=0; echo "no-interpreter: rc=$rc out='$out'" >&2; }
+            # (2) an interpreter that cannot import PyYAML (a planted yaml.py first on the path)
+            out="$(PYTHONPATH="$tmp" render_paths "$tmp/ok.yaml" 2>&1)"; rc=$?
+            { (( rc == 2 )) && [[ "$out" == *"PARSE ERROR"* && "$out" == *"PyYAML is not importable"* ]]; } || { pass=0; echo "no-pyyaml: rc=$rc out='$out'" >&2; }
+            # (3) a document YAML rejects: rc 2, and NOTHING on stdout to be judged
+            out="$(render_paths "$tmp/bad.yaml" 2>/dev/null)"; rc=$?
+            { (( rc == 2 )) && [[ -z "$out" ]]; } || { pass=0; echo "bad-yaml: rc=$rc stdout='$out'" >&2; }
+            # (4) the control: the good document walks and exits 0
+            out="$(render_paths "$tmp/ok.yaml" 2>&1)"; rc=$?
+            { (( rc == 0 )) && [[ "$out" == *$'ConfigMap\tok\tmetadata::name\tok'* ]]; } || { pass=0; echo "control: rc=$rc out='$out'" >&2; }
+            rm -rf "$tmp" ;;
     esac
     (( pass )) 
 }
@@ -1472,6 +1540,8 @@ inv20_selftest() {
         [jvm-trusted-override-wrapped]="$TWO"
         [shell-wrapped-long]="$P mentions a proxy option inside a larger string in its command"
         [long-harmless]=""
+        [hash-after-fold]="$TWO"
+        [hash-after-fold-harmless]=""
         [block-scalar]="$P has a block scalar ('|') in its command"
         [envfrom-cm]="$ANY"
         [envfrom-secret]="$P has an envFrom Secret 'kc-secret'"
@@ -1507,7 +1577,7 @@ inv20_selftest() {
             [[ "$caught" == yes ]] || echo "  ($line)" >&2
         fi
     done
-    for arm in unit-unq unit-quoted-flag unit-quoted-image; do
+    for arm in unit-unq unit-quoted-flag unit-quoted-image unit-walker-fold unit-walker-void; do
         n=$((n + 1))
         if line="$(bash -c "$(declare -f inv20_unit_probe); inv20_unit_probe \"\$1\" \"\$2\"" _ "${BASH_SOURCE[0]}" "${arm#unit-}" 2>&1)"; then caught=yes; line="ok"; else caught=no; line="probe failed: $line"; fi
         [[ "$caught" == yes ]] || bad=$((bad + 1))
@@ -2206,8 +2276,8 @@ function flush(  i, kind, nm, indata, l, k, v) {
 END { flush() }
 '
 
-# --- awk: walk every document into full key PATHS (INV-8/9/10, LOC-7).
-#     Output: <kind> <TAB> <metadata.name> <TAB> <path> <TAB> <raw value>
+# --- render_paths.py: walk every document into full key PATHS (INV-7/8/9/10/11/16/18/20, LOC-7).
+#     Output: <kind> <TAB> <metadata.name> <TAB> <path> <TAB> <value>
 #     Path segments are joined with "::"; a sequence item becomes "[i]", indexed
 #     from 0 per parent path, so containers::[0]::env::[3]::name is unambiguous.
 #
@@ -2217,95 +2287,45 @@ END { flush() }
 #     by its name and reads FORWARD sees none of its env — the ordering trap INV-3
 #     and INV-7 already document. A full path is independent of emission order.
 #
-#     kustomize emits a sequence at the SAME indent as its parent key
-#     ("containers:" and "- env:" share a column), which is why a list item pops
-#     only deeper frames and earlier sibling items, never its parent. Block
-#     scalars (| and >) are skipped whole so their text is never read as keys.
+#     WHY A PARSER (#976 round 3). The walker used to be a hand-written awk
+#     re-implementation of YAML, and it was wrong three times on one value: it read
+#     only the first line of a folded scalar, then its continuation regex was dead,
+#     then it dropped a continuation line starting with `#` as a comment BEFORE the
+#     continuation check. kubectl folds a long quoted value at any space, including
+#     the one before a `#`, and inside a quoted scalar `#b" -Dkc.proxy-trusted-
+#     addresses=0.0.0.0/0` is part of the value, so INV-20 never saw the flag and
+#     the walker returned rc 0. Each of the three was a hole in a re-implementation
+#     of the grammar, and a fourth would have been the same kind (rule D1: fix at the
+#     authority, never per spelling). The authority is now PyYAML, in the sibling
+#     k8s/scripts/render_paths.py, whose header is the record contract: values are
+#     the COMPLETE scalar, written back in the RAW spelling (quotes kept, so "true"
+#     is still told from true and unq still strips one pair), a TAB or line break in
+#     a value is escaped (\t \n) so it cannot break the TSV, and a block scalar is its
+#     indicator only (INV-20 refuses it as unreadable).
 #
-#     CONTINUATION LINES (#976 round 2). kubectl folds any plain, quoted or flow
-#     scalar longer than about 80 characters onto continuation lines indented DEEPER
-#     than the key (or the "- " of a list item) that owns it. A record is therefore
-#     held PENDING until the next line that is not such a continuation, and the
-#     continuation text is joined onto it with one space (YAML folding), so the value
-#     a consumer reads is the WHOLE value. Before, only the first line was emitted
-#     and a `-Dkc.proxy-*` word or a `sh -c` proxy flag past the fold was never seen
-#     by INV-20 (which reads JAVA_OPTS* values and command items from here). A form
-#     that cannot be joined safely (a double-quoted scalar folded with a backslash
-#     escape at a line edge) is a PARSE ERROR naming the path and exit 2, never a
-#     silently truncated value; callers must treat a non-zero awk status as VOID.
-RENDER_PATHS_AWK='
-function emit() {
-    if (!pend) return
-    if (pjoined && pv ~ /^"/ && pv ~ /\\$/) bad_fold(pp)
-    printf "%s\t%s\t%s\t%s\n", kind, nm, pp, pv
-    pend = 0
+#     NO FALLBACK. If python3 or PyYAML is missing, the input is not YAML, or a
+#     document is not a mapping, the walker exits 2 with a PARSE ERROR and the caller
+#     is VOID. Falling back to a line reader would put the truncating reader back
+#     behind a green run on the machine that lacks PyYAML. PyYAML is the runner's
+#     (the Key Vault chain gate in the same CI job needs it too); locally run under a
+#     conda env on PATH (the host shim refuses a bare python3), or point
+#     RENDER_PATHS_PYTHON at an interpreter. Callers must treat a non-zero status as
+#     VOID and never judge partial output.
+RENDER_PATHS_PY="$SCRIPT_DIR/render_paths.py"
+render_paths() {   # <render.yaml>: the path table on stdout; rc 2 + PARSE ERROR on failure
+    local -a py
+    read -r -a py <<< "${RENDER_PATHS_PYTHON:-python3}"
+    if ! command -v "${py[0]}" > /dev/null 2>&1; then
+        echo "PARSE ERROR: render_paths: python3 not found ('${py[0]}'); the render cannot be walked and there is no fallback walker." >&2
+        return 2
+    fi
+    [[ -r "$RENDER_PATHS_PY" ]] || { echo "PARSE ERROR: render_paths: $RENDER_PATHS_PY is not readable." >&2; return 2; }
+    "${py[@]}" "$RENDER_PATHS_PY" "$1"
 }
-function bad_fold(p) {
-    print "PARSE ERROR: path walker cannot safely join the folded double-quoted value at " kind "/" nm " " p " (a backslash at a line edge); refusing to read a truncated or mis-joined value." > "/dev/stderr"
-    bad = 1; exit 2
-}
-function hold(p, v, thr) { pend = 1; pp = p; pv = v; pthr = thr; pjoined = 0 }
-function flush(  i) {
-    if (n == 0) return
-    kind = ""; nm = ""
-    for (i = 1; i <= n; i++) {
-        if (buf[i] ~ /^kind: /)   { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
-        if (nm == "" && buf[i] ~ /^  name: /) { nm = buf[i]; sub(/^  name:[[:space:]]*/, "", nm) }
-    }
-    sp = 0; delete sind; delete sseg; delete slist; delete cnt; blockind = -1
-    for (i = 1; i <= n; i++) walk(buf[i])
-    emit()
-    n = 0; delete buf
-}
-function path(  j, p) {
-    p = ""
-    for (j = 1; j <= sp; j++) p = p (p == "" ? "" : "::") sseg[j]
-    return p
-}
-function keyline(rest, ind,   k, v) {
-    k = rest; sub(/:([[:space:]].*)?$/, "", k)
-    v = rest; if (v ~ /^[^:]*:[[:space:]]/) sub(/^[^:]*:[[:space:]]*/, "", v); else v = ""
-    sp++; sind[sp] = ind; sseg[sp] = k; slist[sp] = 0
-    if (v == "" || v ~ /^[|>][-+0-9]*$/) printf "%s\t%s\t%s\t%s\n", kind, nm, path(), v
-    else hold(path(), v, ind)
-    if (v ~ /^[|>][-+0-9]*$/) blockind = ind
-}
-function walk(l,   ind, rest, P, piece) {
-    if (l ~ /^[[:space:]]*$/ || l ~ /^[[:space:]]*#/) return
-    ind = match(l, /[^ ]/) - 1
-    if (blockind >= 0) { if (ind > blockind) return; blockind = -1 }
-    rest = substr(l, ind + 1)
-    if (pend) {
-        if (ind > pthr) {
-            piece = rest; sub(/[[:space:]]+$/, "", piece)
-            if (pv ~ /^"/ && (piece ~ /^\\/ || pv ~ /\\$/)) bad_fold(pp)
-            pv = pv " " piece; pjoined = 1
-            return
-        }
-        emit()
-    }
-    if (rest ~ /^- / || rest == "-") {
-        while (sp > 0 && (sind[sp] > ind || (sind[sp] == ind && slist[sp]))) sp--
-        P = path()
-        sp++; sind[sp] = ind; sseg[sp] = "[" (cnt[P]++) "]"; slist[sp] = 1
-        rest = substr(rest, 3)
-        if (rest ~ /^[A-Za-z0-9_.\/-]+:([[:space:]]|$)/) keyline(rest, ind + 2)
-        else if (rest != "") {
-            if (rest ~ /^[|>][-+0-9]*$/) printf "%s\t%s\t%s\t%s\n", kind, nm, path(), rest
-            else hold(path(), rest, ind)
-        }
-        return
-    }
-    while (sp > 0 && sind[sp] >= ind) sp--
-    if (rest ~ /^[A-Za-z0-9_.\/-]+:([[:space:]]|$)/) keyline(rest, ind)
-}
-/^---[[:space:]]*$/ { flush(); next }
-{ buf[++n] = $0 }
-END { if (!bad) flush() }
-'
+
 
 # --- awk: NetworkPolicy rule TUPLES from the path walk (INV-7).
-#     Input: the RENDER_PATHS_AWK output (<kind> TAB <name> TAB <path> TAB <value>).
+#     Input: the render_paths output (<kind> TAB <name> TAB <path> TAB <value>).
 #     Output records:
 #       DOC <TAB> <kind> <TAB> <name> <TAB> <apiVersion>   every *NetworkPolicy doc
 #       T   <TAB> <policy> <TAB> <tuple>                   see the INV-7 header
@@ -2956,7 +2976,7 @@ for dir in "${TARGETS[@]}"; do
         parse_fail "[$rel] INV-7: app-config 'ingress.controller-namespace' is '$ingress_ns', which is not a valid namespace name, so no namespaceSelector carrying it can match anything."
     fi
 
-    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv7_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
+    render_paths "$render" > "$TMP/inv7_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     awk "$NETPOL_TUPLES_AWK" "$TMP/inv7_paths.tsv" > "$TMP/netpol.tsv"
     mapfile -t inv7_pols < <(awk -F'\t' '$1 == "DOC" && $2 == "NetworkPolicy" { print $3 }' "$TMP/netpol.tsv" | LC_ALL=C sort -u)
     (( ${#inv7_pols[@]} > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships seven; zero means the parser is blind and every rule assertion below would pass vacuously. Fix the parser, do not delete the invariant."
@@ -3074,8 +3094,8 @@ for dir in "${TARGETS[@]}"; do
     # or exact PATH, never by a forward scan (kustomize sorts map keys).
     if is_wi_target "$rel"; then
         WI_TARGET_SEEN["$rel"]=1
-        awk "$RENDER_PATHS_AWK" "$render" > "$TMP/paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
-        (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] INV-8..INV-10: the path walker emitted 0 records for the render — it is blind, and every storage assertion below would pass vacuously. Fix RENDER_PATHS_AWK, do not delete the invariants."
+        render_paths "$render" > "$TMP/paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
+        (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] INV-8..INV-10: the path walker emitted 0 records for the render — it is blind, and every storage assertion below would pass vacuously. Fix render_paths.py, do not delete the invariants."
         if [[ "$(path_get "$TMP/paths.tsv" Deployment core-java 'spec::template::spec::containers::[0]::name')" == "(ABSENT)" ]]; then
             parse_fail "[$rel] INV-8..INV-10: no Deployment core-java container found by path — either the render lost core-java (a far bigger problem) or the path walker is blind. Fix it, do not delete the invariants."
         fi
@@ -3261,7 +3281,7 @@ for dir in "${TARGETS[@]}"; do
         inv11_bad=1
     fi
     # (b) + (c) per core-java container, by exact path.
-    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv11_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
+    render_paths "$render" > "$TMP/inv11_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     inv11_ctrs=$(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" \
         '$3 ~ /::(containers|initContainers)::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
         "$TMP/inv11_paths.tsv")
@@ -4221,8 +4241,8 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
     # ---------------- LOC-7 ----------------
     # Phase 36: the emulator path is WIRED, not just configured. The connection
     # strings exist only in k8s/local, so an unwired key is a silently ignored value.
-    awk "$RENDER_PATHS_AWK" "$LOCAL_RENDER" > "$TMP/loc_paths.tsv" || parse_fail "path walker could not read $LOCAL_RENDER safely (see the PARSE ERROR above): refusing to judge a truncated value."
-    (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix RENDER_PATHS_AWK, do not delete the invariant."
+    render_paths "$LOCAL_RENDER" > "$TMP/loc_paths.tsv" || parse_fail "path walker could not read $LOCAL_RENDER safely (see the PARSE ERROR above): refusing to judge a truncated value."
+    (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix render_paths.py, do not delete the invariant."
     loc7_bad=0
     loc_mode="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.auth-mode)"
     loc_create="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.create-containers)"
