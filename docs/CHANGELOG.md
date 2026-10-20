@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Measured with the same image.** A forged header from an untrusted source changes nothing; from a trusted source, and with the setting unset, it changes the recorded client address and (with a full-URL `KC_HOSTNAME`) the backchannel `token_endpoint`, not the `issuer`. An empty value makes 26.8.1 refuse to start (" is not a valid IP address ... nor valid CIDR notation"), and so does `10.244.0.0/16, 10.0.0.0/8` ("list value ' 10.0.0.0/8' should not have leading nor trailing whitespace"); `10.244.0.0/16,10.0.0.0/8` starts. INV-20 turns both into render-time failures.
 - **Not yet proven live.** Staging was frozen for a deploy; the post-deploy steps are in the PR body.
 
+### Staging Grafana Memory Limit 384Mi to 512Mi, Request 320Mi (#987) — 2026-10-20
+
+Issue #968: Grafana on staging restarted twice; the last restart was confirmed OOMKilled (exit 137) with a 384Mi limit. Idle use read 263Mi in the issue and 224Mi on the replacement pod.
+
+- **`k8s/components/monitoring/grafana.yaml`, `k8s/goldens/staging.yaml`.** Memory request 128Mi to 320Mi, limit 384Mi to 512Mi (staging only; production renders no monitoring component). Measured on the staging image digest under a 384Mi cgroup: anonymous memory 240Mi at start and 275-301Mi under a scan-shaped burst, so 78-81% of the old limit before kernel memory. The OOM itself was not reproduced, and the killed pod was lost to a node replacement, so the sizing is headroom against the measured peak (1.65x), not a proven trigger. The Grafana node goes from 61% to 66% requested.
+- **Not changed here.** The host already carries per-IP rate limits (limit-rps 50, which Traefik enforces); the owner approved an edge basic-auth gate for item 3, which ships in its own PR.
+
 ### Digest Parity Waits for the Old Replicas to Drain (#986) — 2026-10-20
 
 The first staging deploy after the Phase 29 merge (run 39440780472) failed at digest parity on a correct deploy and was rolled back. The gate read core-java 2.4 s after `rollout status` returned, and counted the previous revision's pod, which was still terminating, as running (issue #985).
