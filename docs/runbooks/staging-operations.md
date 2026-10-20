@@ -90,6 +90,11 @@ context (`kubectl --context jtoye-stg-aks -n jtoye-staging port-forward deploy/p
 Grafana keeps no state on disk (`/var/lib/grafana` is an `emptyDir`): dashboards and the
 datasource are provisioned from committed files, so a restart loses only UI edits and sessions.
 
+Two known faults, both filed: every panel of the STOMP dashboard is empty, because it names a
+datasource uid nobody provisions (#974, present in compose too); and Grafana was OOMKilled twice
+on staging (#968), so a Grafana that restarts or answers slowly may be that, not an outage of
+the page.
+
 ## 3. Restart a workload
 
 ```bash
@@ -109,7 +114,11 @@ refreshed. The worked example, including the refusal check for the superseded va
 **Mailpit reads its certificate only at start.** Its TLS certificate comes from the cert-manager
 internal CA. After a renewal, restart `deploy/mailpit` so it serves the new one; plan 29-22
 measured the expiry at 2027-01-17. A Mailpit serving an expired certificate fails the STARTTLS
-handshake core-java requires (section 6).
+handshake core-java requires (section 6); this is tracked as #972.
+
+**A deploy does not wait for the monitoring workloads.** `scripts/deploy.sh` prints
+`DEPLOYED_SHA` after `rollout status` of `core-java`, `edge-go` and `frontend` only, so after a
+deploy check `alertmanager`, `grafana` and `prometheus` yourself with `rollout status` (#969).
 
 Do not restart `core-java` for convenience. Its order counter (`NoOrdersCreated`) is in memory
 and resets on every restart, so a quiet staging re-arms that alert; `scripts/seed-order-metric.sh`
@@ -181,6 +190,13 @@ component or service would also swallow the liveness probe's transport alert and
 transport look broken. `scripts/check-alert-mute.sh` enforces this (every matcher keys on
 `alertname`, every muted name is on its written allow-list and still exists as a rule, and no
 render other than staging sets the variable). Do not mute anything else; fix or delete the rule.
+
+**Rotate Alertmanager's SMTP password through Key Vault, never through the environment.** The pod
+reads the CSI-mounted file named by `ALERTMANAGER_SMTP_PASSWORD_FILE`. An operator who sets the
+literal `ALERTMANAGER_SMTP_PASSWORD` during an incident takes Alertmanager down: its entrypoint
+writes that value to `/tmp`, which the read-only staging pod does not have, and it crash-loops. The
+procedure is the `alertmanager-smtp-credentials--password` row in
+`docs/runbooks/credential-rotation.md` section 6.2.
 
 ## 6. Why a mail fault turns the deploy red
 
