@@ -1,0 +1,7 @@
+Phase 29 disposition for #299 (DPLY-02): fixed in the phase.
+
+The customer-storefront realm is now wired as one split-horizon set (the public issuer, the in-cluster issuer and the client id for the frontend; the in-cluster JWKS endpoint and the expected public issuer for core-java) in every Kubernetes render: base, staging, production and local. The five allow-list rows that recorded this as an open defect were removed in the same change as the wiring. Staging imports the jtoye-customers realm beside the vendor realm in the same Keycloak.
+
+Proof on staging, the runtime half the redirect alone cannot show: a signed-in, email-verified storefront customer calls their order history. Before the deploy core-java answered 401 "Customer authentication required", because it had no customer issuer and fell back to its own loopback address. After the deploy, with the same image tag, the same customer and the same probe, it answers 200. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-26-config.txt, lines 116 to 128 and 226 to 232. The env contract gate was shown failing in both directions (stale allow-list rows beside the new wiring: exit 1; the five env entries removed from a scratch copy: exit 1, each named) and passing on the real tree (lines 30 to 36 and 66 to 84); the env is read back from the running pods (lines 199 to 209).
+
+Scope: production has no deployed realm yet; creating one is part of the Phase 32 cutover.

@@ -1152,6 +1152,29 @@ jobs:
       - name: Assert no raw az call bypasses the subscription pin (29-01)
         run: bash scripts/check-az-subscription-pin.sh
 
+      # Plan 29-27 (DPLY-02, T-29-98, T-29-99, T-29-104). "Closed or explicitly deferred with a
+      # reason recorded per issue" is only a property if the list of issues is DERIVED: the
+      # gate reads the ROADMAP's Phase 29 section, unions the four references the section does
+      # not carry, and holds the dispositions table to exact set equality with that list (no
+      # missing row, no extra row), an existing evidence path and line per row, a written
+      # reason per deferral, and a comment file per issue that cites its evidence and passes the
+      # public-text rule. That rule exists because GitHub's closing-keyword parser is lexical:
+      # "does not close #100" closed #100 through docs PR #955, so a closing keyword next to any
+      # issue reference, and any AI-attribution line, is a finding. The selftest runs first: its
+      # planted-file arms (a deleted row, an extra row, a dead evidence path, an empty deferral
+      # reason, each keyword shape plus its negative control, each attribution shape, an unparsed
+      # ROADMAP section and table, a stubbed gh for the live modes, and the manifest/approval
+      # hash arms) must each be caught, so a gate that can no longer fail goes red here rather
+      # than passing quietly below.
+      #
+      # Static by construction: reads committed files only, no gh, no network, no stack. The
+      # live modes (--pre-close, --post-close) and the approval check run in plan 29-28.
+      - name: Assert the DPLY-02 dispositions gate can fail (29-27 selftest)
+        run: bash scripts/check-dply02-dispositions.sh --selftest
+
+      - name: Assert every ROADMAP Phase 29 issue has an evidence-linked disposition (29-27)
+        run: bash scripts/check-dply02-dispositions.sh
+
       # Plan 29-10 (T-29-36). kustomize cannot read a file outside its own root, so a
       # file both runtimes serve (compose by bind mount, k8s by ConfigMap: the Keycloak
       # login theme now, the alert corpus and dashboards from plan 29-23) is a

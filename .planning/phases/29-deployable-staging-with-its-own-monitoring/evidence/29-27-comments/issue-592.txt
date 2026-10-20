@@ -1,0 +1,7 @@
+Phase 29 disposition for #592 (DPLY-02): fixed in the phase.
+
+Every Kubernetes render now gives core-java NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL from app-config, equal to that overlay's API origin. Before the change the variable had no reference under k8s/, so the empty default in application.yml won and List-Unsubscribe degraded to the RFC 2369 page link in every deployed environment. UnsubscribeLinkRoutingTest guards it and was shown failing first on the unchanged tree (the container had no such env), and again on a staging key placed on the app origin and on an optional reference.
+
+Live on staging after the deploy: a vendor-addressed notification mail carries List-Unsubscribe on the API origin (https://api-staging.olajay.co.uk/api/v1/public/unsubscribe) plus List-Unsubscribe-Post: List-Unsubscribe=One-Click. The same mail family before the deploy carried the app-origin page link and no Post header. The one-click endpoint answers a POST with a JSON verdict while the app origin answers the same path 404, so the target is the API origin and nothing else. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-26-config.txt, lines 95 to 106 and 234 to 258.
+
+Scope note, recorded here rather than filed: the customer's order-state email is sent by the legacy EmailNotificationService path, which sets no List-Unsubscribe header at all, before or after this change. That is a property of the application code, not of the deployment wiring this issue covers.

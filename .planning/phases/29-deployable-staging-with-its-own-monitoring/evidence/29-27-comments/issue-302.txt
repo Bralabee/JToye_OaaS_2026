@@ -1,0 +1,3 @@
+Phase 29 disposition for #302 (DPLY-02): already closed on 2026-08-03; recorded, not reopened. A regression check was run on the first real staging boot.
+
+The log of the core-java pod that served traffic on staging (170 lines) contains 0 FileNotFoundException lines. The count is paired with a positive control (the Started CoreApplication line is found once) and a fail-direction control (the same count over the log plus one planted line returns 1). Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-14-tracer.txt, lines 792 to 799. The very first boot's own log had rotated away under restarts, and nothing is claimed about it.
