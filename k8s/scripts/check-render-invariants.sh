@@ -1158,44 +1158,188 @@ fi
 
 # ===========================================================================
 # --selftest-inv20 (#976): INV-20 shown CATCHING planted holes in Keycloak's
-# proxy-trust configuration. Same harness shape as -inv18. Arms (the first seven in
-# the copy's k8s/components/keycloak/keycloak.yaml, the last in k8s/staging):
-#   env-removed      KC_PROXY_TRUSTED_ADDRESSES is deleted (trust every source)
-#   optional-ref     its configMapKeyRef becomes optional: true (a missing key
-#                    would silently drop the env)
-#   key-renamed      the configMapKeyRef names an app-config key that does not exist
-#   legacy-proxy     the container also sets KC_PROXY=edge (no trusted-addresses)
-#   literal-any      the value is the literal 0.0.0.0/0
-#   literal-public   the value is the literal public range 8.8.8.0/24
-#   literal-empty    the value is the literal empty string
-#   config-empty     app-config security.trusted-proxies is "" in k8s/staging
-#                    (INV-12 only WARNs on that; INV-20 must FAIL it for Keycloak)
+# proxy-trust configuration. Same harness shape as -inv18. Each arm plants ONE hole
+# in a copy (k8s/components/keycloak/keycloak.yaml unless noted) and must make the
+# script exit 1 with that arm's message; the unmodified copy must exit 0.
+#
+# The trusted-addresses setting itself:
+#   env-removed        KC_PROXY_TRUSTED_ADDRESSES is deleted (trust every source)
+#   optional-ref       its configMapKeyRef becomes optional: true
+#   key-renamed        the configMapKeyRef names a key the ConfigMap does not define
+#   secret-ref         it comes from a secretKeyRef (cannot be judged)
+#   foreign-cm-absent  it reads a ConfigMap (kc-foreign) that is not in the render
+#   foreign-cm-bad     it reads a ConfigMap (kc-extra) that IS rendered, holding 0.0.0.0/0
+#                      (a ConfigMap other than app-config is judged, not trusted)
+#   envfrom-duplicate  a second source of it: an envFrom ConfigMap beside the env item
+#                      (a second env ITEM of the same name cannot be planted: kustomize
+#                      collapses duplicate env names in the staging render, measured, so
+#                      the count is shown on distinct sources here, on -D in
+#                      jvm-trusted-override and on repeated flags in flag-repeated)
+#   literal-any        the value is the literal 0.0.0.0/0
+#   literal-single     the same, single-quoted: '0.0.0.0/0' (judged unquoted)
+#   literal-public     the literal public range 8.8.8.0/24
+#   literal-empty      the literal empty string
+#   whitespace-literal "10.244.0.0/16, 10.0.0.0/8" (26.8.1 refuses it: measured)
+#   config-empty       keycloak.proxy-trusted-addresses is "" in k8s/staging
+#   config-whitespace  the same key holds a spaced list (k8s/staging)
+#   config-comma       the same key ends in a comma (k8s/staging)
+# The legacy proxy option:
+#   legacy-proxy       KC_PROXY=edge
+#   flag-legacy        args --proxy=edge
+# JVM system properties (JAVA_OPTS_APPEND):
+#   jvm-headers-only   -Dkc.proxy-headers with no trusted addresses anywhere
+#   jvm-trusted-any    -Dkc.proxy-trusted-addresses=0.0.0.0/0 as the only source
+#   jvm-trusted-override  the same on top of the env (a second source)
+#   jvm-secret         JAVA_OPTS_APPEND from a secretKeyRef (cannot be read)
+# command / args:
+#   flag-headers-only  args --proxy-headers=xforwarded, no trusted addresses
+#   flag-trusted-any   args --proxy-trusted-addresses=0.0.0.0/0
+#   flag-repeated      that flag twice (0.0.0.0/0, then the good range)
+#   flag-bare          --proxy-trusted-addresses with the value as the next item
+#   shell-wrapped      command sh -c "exec kc.sh start --proxy-headers=xforwarded"
+#   block-scalar       the same script as a | block scalar
+# envFrom:
+#   envfrom-cm         a rendered ConfigMap supplies KC_PROXY_TRUSTED_ADDRESSES=0.0.0.0/0
+#   envfrom-secret     envFrom a Secret
+# Which containers are Keycloak's:
+#   image-quoted       image: "keycloak:26.8.1" (quoted, bare) and no trusted addresses
+#   image-custom       image: .../idp:26 (no keycloak in the name) and none
+#   container-by-label a sidecar with no keycloak image and no KC_* env, in the pod
+#                      labelled app: keycloak, turning headers on by -D
 # INV20_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
 # ===========================================================================
+# Plant primitives. Text with newlines travels through the environment, never -v.
+inv20_p_envdel() {      # <file> <env name>: delete that env item (and its sub-lines)
+    awk -v nm="$2" 'skip && /^          / { next } { skip = 0 } $0 == "        - name: " nm { skip = 1; next } { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_envadd() {      # <file> <text>: insert text as the first env items
+    T="$2" awk '{ print } /^        env:$/ && !d { printf "%s", ENVIRON["T"]; d = 1 }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_before() {      # <file> <anchor regex> <text>: insert text before the first matching line
+    A="$2" T="$3" awk '!d && $0 ~ ENVIRON["A"] { printf "%s", ENVIRON["T"]; d = 1 } { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_replace() {     # <file> <anchor regex> <text>: replace the first matching line
+    A="$2" T="$3" awk '!d && $0 ~ ENVIRON["A"] { printf "%s", ENVIRON["T"]; d = 1; next } { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_cm() {          # <file> <name> <key> <value>: append a ConfigMap document
+    printf -- '---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\ndata:\n  %s: "%s"\n' "$2" "$3" "$4" >> "$1"
+}
+inv20_p_lit() {         # <file> <value text as written after "value: ">: the trusted env as a literal
+    inv20_p_envdel "$1" KC_PROXY_TRUSTED_ADDRESSES && \
+    inv20_p_envadd "$1" "        - name: KC_PROXY_TRUSTED_ADDRESSES
+          value: $2
+"
+}
+inv20_p_ref() {         # <file> <configmap> <key>: the trusted env from a configMapKeyRef
+    inv20_p_envdel "$1" KC_PROXY_TRUSTED_ADDRESSES && \
+    inv20_p_envadd "$1" "        - name: KC_PROXY_TRUSTED_ADDRESSES
+          valueFrom:
+            configMapKeyRef:
+              name: $2
+              key: $3
+"
+}
+inv20_p_jvm() {         # <file> <value>: a JAVA_OPTS_APPEND literal
+    inv20_p_envadd "$1" "        - name: JAVA_OPTS_APPEND
+          value: \"$2\"
+"
+}
+inv20_p_args() {        # <file> <replacement for the args line>
+    inv20_p_replace "$1" '^        args: \["start"\]$' "$2
+"
+}
+
+INV20_ARMS=(env-removed optional-ref key-renamed secret-ref foreign-cm-absent foreign-cm-bad envfrom-duplicate
+    literal-any literal-single literal-public literal-empty whitespace-literal config-empty config-whitespace config-comma
+    legacy-proxy flag-legacy jvm-headers-only jvm-trusted-any jvm-trusted-override jvm-secret
+    flag-headers-only flag-trusted-any flag-repeated flag-bare shell-wrapped block-scalar
+    envfrom-cm envfrom-secret image-quoted image-custom container-by-label)
+
 inv20_plant() {
-    local arm="$1" root="$2" f before
+    local arm="$1" root="$2" f before kc="$2/components/keycloak/keycloak.yaml"
     case "$arm" in
-        config-empty) f="$root/staging/configmap-patch.yaml" ;;
-        env-removed|optional-ref|key-renamed|legacy-proxy|literal-any|literal-public|literal-empty) f="$root/components/keycloak/keycloak.yaml" ;;
-        *) return 1 ;;
+        config-empty|config-whitespace|config-comma) f="$root/staging/configmap-patch.yaml" ;;
+        *) f="$kc" ;;
     esac
     [[ -f "$f" ]] || return 1
     before="$(sha256sum "$f")"
     case "$arm" in
-        env-removed)
-            awk '/^        - name: KC_PROXY_TRUSTED_ADDRESSES$/ { skip = 5 } skip > 0 { skip--; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        env-removed)      inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES ;;
         optional-ref)
-            awk '{ print } /^              key: security\.trusted-proxies$/ { print "              optional: true" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
-        key-renamed)
-            awk '{ if ($0 ~ /^              key: security\.trusted-proxies$/) $0 = "              key: security.trusted-proxies-renamed"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+            awk '{ print } /^              key: keycloak\.proxy-trusted-addresses$/ { print "              optional: true" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        key-renamed)      inv20_p_ref "$f" app-config keycloak.proxy-trusted-addresses-renamed ;;
+        secret-ref)
+            inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_envadd "$f" "        - name: KC_PROXY_TRUSTED_ADDRESSES
+          valueFrom:
+            secretKeyRef:
+              name: kc-proxy-secret
+              key: trusted
+" ;;
+        foreign-cm-absent) inv20_p_ref "$f" kc-foreign proxy ;;
+        foreign-cm-bad)    inv20_p_ref "$f" kc-extra proxy && inv20_p_cm "$f" kc-extra proxy "0.0.0.0/0" ;;
+        envfrom-duplicate)
+            inv20_p_before "$f" '^        env:$' "        envFrom:
+        - configMapRef:
+            name: kc-extra
+" && inv20_p_cm "$f" kc-extra KC_PROXY_TRUSTED_ADDRESSES "10.244.0.0/16" ;;
+        literal-any)       inv20_p_lit "$f" '"0.0.0.0/0"' ;;
+        literal-single)    inv20_p_lit "$f" "'0.0.0.0/0'" ;;
+        literal-public)    inv20_p_lit "$f" '"8.8.8.0/24"' ;;
+        literal-empty)     inv20_p_lit "$f" '""' ;;
+        whitespace-literal) inv20_p_lit "$f" '"10.244.0.0/16, 10.0.0.0/8"' ;;
+        config-empty)      awk '{ if ($0 ~ /^  keycloak\.proxy-trusted-addresses: /) $0 = "  keycloak.proxy-trusted-addresses: \"\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        config-whitespace) awk '{ if ($0 ~ /^  keycloak\.proxy-trusted-addresses: /) $0 = "  keycloak.proxy-trusted-addresses: \"10.244.0.0/16, 10.0.0.0/8\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        config-comma)      awk '{ if ($0 ~ /^  keycloak\.proxy-trusted-addresses: /) $0 = "  keycloak.proxy-trusted-addresses: \"10.244.0.0/16,\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
         legacy-proxy)
             awk '{ print } /^          value: "xforwarded"$/ { print "        - name: KC_PROXY"; print "          value: \"edge\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
-        literal-any|literal-public|literal-empty)
-            local lit
-            case "$arm" in literal-any) lit="0.0.0.0/0" ;; literal-public) lit="8.8.8.0/24" ;; literal-empty) lit="" ;; esac
-            awk -v lit="$lit" '/^        - name: KC_PROXY_TRUSTED_ADDRESSES$/ { print; print "          value: \"" lit "\""; skip = 4; next } skip > 0 { skip--; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
-        config-empty)
-            awk '{ if ($0 ~ /^  security\.trusted-proxies: /) $0 = "  security.trusted-proxies: \"\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        flag-legacy)       inv20_p_args "$f" '        args: ["start", "--proxy=edge"]' ;;
+        jvm-headers-only)  inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_jvm "$f" "-Dkc.proxy-headers=xforwarded" ;;
+        jvm-trusted-any)   inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_jvm "$f" "-Xmx1g -Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        jvm-trusted-override) inv20_p_jvm "$f" "-Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        jvm-secret)
+            inv20_p_envadd "$f" "        - name: JAVA_OPTS_APPEND
+          valueFrom:
+            secretKeyRef:
+              name: kc-jvm
+              key: opts
+" ;;
+        flag-headers-only) inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-headers=xforwarded"]' ;;
+        flag-trusted-any)  inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-trusted-addresses=0.0.0.0/0"]' ;;
+        flag-repeated)     inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-trusted-addresses=0.0.0.0/0", "--proxy-trusted-addresses=10.244.0.0/16"]' ;;
+        flag-bare)         inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-trusted-addresses", "10.244.0.0/16"]' ;;
+        shell-wrapped)
+            inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_args "$f" '        command: ["/bin/sh", "-c", "exec /opt/keycloak/bin/kc.sh start --proxy-headers=xforwarded"]' ;;
+        block-scalar)
+            inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_args "$f" '        command:
+        - /bin/sh
+        - -c
+        - |
+          exec /opt/keycloak/bin/kc.sh start --proxy-headers=xforwarded' ;;
+        envfrom-cm)
+            inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_before "$f" '^        env:$' "        envFrom:
+        - configMapRef:
+            name: kc-extra
+" && inv20_p_cm "$f" kc-extra KC_PROXY_TRUSTED_ADDRESSES "0.0.0.0/0" ;;
+        envfrom-secret)
+            inv20_p_before "$f" '^        env:$' "        envFrom:
+        - secretRef:
+            name: kc-secret
+" ;;
+        image-quoted)      inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_replace "$f" '^        image: quay\.io/keycloak/keycloak' '        image: "keycloak:26.8.1"
+' ;;
+        image-custom)      inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_replace "$f" '^        image: quay\.io/keycloak/keycloak' '        image: registry.example.io/jtoye/idp:26
+' ;;
+        container-by-label)
+            inv20_p_before "$f" '^      volumes:$' '      - name: idp-sidecar
+        image: registry.example.io/jtoye/idp:1
+        env:
+        - name: JAVA_OPTS_APPEND
+          value: "-Dkc.proxy-headers=xforwarded"
+' ;;
+        *) return 1 ;;
     esac
     [[ "$(sha256sum "$f")" != "$before" ]]
 }
@@ -1206,18 +1350,45 @@ inv20_selftest() {
     # shellcheck disable=SC2064
     trap "rm -rf '$st'" EXIT
     cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv20 could not copy $K8S_DIR" >&2; exit 2; }
-    local -a ARMS=(env-removed optional-ref key-renamed legacy-proxy literal-any literal-public literal-empty config-empty)
+    local P="INV-20: Deployment keycloak container 'keycloak'"
+    local H="$P turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+    local TWO="$P sets the trusted proxy addresses 2 times"
+    local ANY="$P KC_PROXY_TRUSTED_ADDRESSES entry '0.0.0.0/0'"
     declare -A WANT=(
-        [env-removed]="INV-20: Deployment keycloak container 'keycloak' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
-        [optional-ref]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES reads app-config through an optional configMapKeyRef"
-        [key-renamed]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES reads app-config key 'security.trusted-proxies-renamed', which the render does not define"
-        [legacy-proxy]="INV-20: Deployment keycloak container 'keycloak' sets the legacy KC_PROXY"
-        [literal-any]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES entry '0.0.0.0/0'"
-        [literal-public]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES entry '8.8.8.0/24'"
-        [literal-empty]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES is empty"
-        [config-empty]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES is empty (app-config security.trusted-proxies)"
+        [env-removed]="$H"
+        [optional-ref]="$P KC_PROXY_TRUSTED_ADDRESSES reads ConfigMap 'app-config' through an optional configMapKeyRef"
+        [key-renamed]="$P KC_PROXY_TRUSTED_ADDRESSES reads ConfigMap 'app-config' key 'keycloak.proxy-trusted-addresses-renamed', which the render does not define"
+        [secret-ref]="$P KC_PROXY_TRUSTED_ADDRESSES is not a literal or a configMapKeyRef"
+        [foreign-cm-absent]="$P KC_PROXY_TRUSTED_ADDRESSES reads ConfigMap 'kc-foreign', which is not in the render"
+        [foreign-cm-bad]="$ANY"
+        [envfrom-duplicate]="$TWO"
+        [literal-any]="$ANY"
+        [literal-single]="$ANY"
+        [literal-public]="$P KC_PROXY_TRUSTED_ADDRESSES entry '8.8.8.0/24'"
+        [literal-empty]="$P KC_PROXY_TRUSTED_ADDRESSES is empty"
+        [whitespace-literal]="$P KC_PROXY_TRUSTED_ADDRESSES contains whitespace in '10.244.0.0/16, 10.0.0.0/8'"
+        [config-empty]="$P KC_PROXY_TRUSTED_ADDRESSES is empty (env KC_PROXY_TRUSTED_ADDRESSES from ConfigMap app-config key keycloak.proxy-trusted-addresses)"
+        [config-whitespace]="$P KC_PROXY_TRUSTED_ADDRESSES contains whitespace in '10.244.0.0/16, 10.0.0.0/8' (env KC_PROXY_TRUSTED_ADDRESSES from ConfigMap app-config key keycloak.proxy-trusted-addresses)"
+        [config-comma]="$P KC_PROXY_TRUSTED_ADDRESSES has an empty entry in '10.244.0.0/16,'"
+        [legacy-proxy]="$P sets the legacy KC_PROXY"
+        [flag-legacy]="$P sets the legacy KC_PROXY"
+        [jvm-headers-only]="$H"
+        [jvm-trusted-any]="$ANY"
+        [jvm-trusted-override]="$TWO"
+        [jvm-secret]="$P JAVA_OPTS_APPEND is not a literal or a configMapKeyRef"
+        [flag-headers-only]="$H"
+        [flag-trusted-any]="$ANY"
+        [flag-repeated]="$TWO"
+        [flag-bare]="$P passes --proxy-trusted-addresses without '=value'"
+        [shell-wrapped]="$P mentions a proxy option inside a larger string in its command"
+        [block-scalar]="$P has a block scalar ('|') in its command"
+        [envfrom-cm]="$ANY"
+        [envfrom-secret]="$P has an envFrom Secret 'kc-secret'"
+        [image-quoted]="$H"
+        [image-custom]="$H"
+        [container-by-label]="INV-20: Deployment keycloak container 'idp-sidecar' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
     )
-    for arm in "${ARMS[@]}"; do
+    for arm in "${INV20_ARMS[@]}"; do
         n=$((n + 1))
         selftest_stage "$st/pristine" "$st/arm"
         if ! inv20_plant "$arm" "$st/arm/k8s"; then
