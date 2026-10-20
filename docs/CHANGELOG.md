@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Staging Keycloak Believes X-Forwarded-* Only From the Pod Network (#988) — 2026-10-20
+
+`KC_PROXY_HEADERS=xforwarded` with no `KC_PROXY_TRUSTED_ADDRESSES` made the staging Keycloak believe `X-Forwarded-Host`, `-Proto` and `-For` from every peer that reached port 8080 (#976). Keycloak's own help for the deployed 26.8.1 image: "By default all addresses are trusted."
+
+- **`k8s/components/keycloak/keycloak.yaml`.** `KC_PROXY_TRUSTED_ADDRESSES` is read from app-config `security.trusted-proxies`, the key core-java's `TRUSTED_PROXY_CIDRS` already uses (`10.244.0.0/16` on staging, plan 29-15). `k8s/goldens/staging.yaml` regenerated; production and local render no Keycloak.
+- **Why the whole /16.** Traefik has no narrower stable range: its pods share each node's /24 with app pods and moved between the plan 29-15 measurement and now. Accepted residual: the frontend, core-java and edge-go pods that `keycloak-allow` admits on 8080 are inside the range, so a forged header from one of them is still believed.
+- **`k8s/scripts/check-render-invariants.sh`: INV-20 and `--selftest-inv20`.** A Keycloak container with proxy headers on must carry a trusted-addresses setting that resolves in the render to a non-empty private CIDR list (INV-12's judge: never /0, never shorter than /8, never public); the legacy `KC_PROXY` is refused; `k8s/staging` must render a Keycloak at all. Eight planted holes are each caught, the clean copy passes, and the pre-fix `keycloak.yaml` fails. Wired into `k8s-validate` in `.github/workflows/ci-cd.yaml`.
+- **Measured with the same image.** A forged header from an untrusted source changes nothing; from a trusted source, and with the setting unset, it changes the recorded client address and (with a full-URL `KC_HOSTNAME`) the backchannel `token_endpoint`, not the `issuer`. An empty value makes 26.8.1 refuse to start, which INV-20 turns into a render-time failure.
+- **Not yet proven live.** Staging was frozen for a deploy; the post-deploy steps are in the PR body.
+
 ### `/for-operators` Redesigned: One Dark Band, Five Sections, Four Product Images (#967) — 2026-10-19
 
 The page said the right things (PR #965) in the wrong shape: fifteen identical cards, seven uppercase-tracked eyebrows, six H2s at three sizes and no product anywhere on it. It is now a kitchen docket: one oxblood band that holds the product and the number, warm paper below, hairlines instead of boxes. Measured on the production build, `<main>` before / after: 622 / 441 words; document height 7745 / 5991 px at 390 wide, 4185 / 3679 px at 1440 (3679 at 1280 and 4216 at 768 too); no horizontal overflow at 390 (scrollWidth 390).
