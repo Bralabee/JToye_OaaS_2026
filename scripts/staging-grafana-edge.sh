@@ -32,14 +32,17 @@
 #
 # THE ARMS (one line each, `ARM G-<n> PASS|FAIL <detail>`, then `PROBE: <p>/4 PASS|FAIL`)
 #   G-1 GET /login with no credentials: 401 with a Basic WWW-Authenticate challenge, and the
-#       body is not Grafana's page.
-#   G-2 GET /login with a fresh random WRONG password: 401, and not Grafana's page.
+#       body carries NO Grafana marker (EITHER marker is a leak).
+#   G-2 GET /login with a fresh random WRONG password: 401, and no Grafana marker.
 #   G-3 GET /login with the credential: 200 and Grafana's login page. "Grafana's page" is BOTH
 #       markers measured off the running instance 2026-10-20 (Grafana v13.2.4): the document
 #       title `<title>Grafana</title>` and the boot-data global `window.grafanaBootData`.
 #   G-4 http://<host>/login (never with credentials): 301/302/307/308 to https://<host>/, and
-#       the body is not Grafana's page. Traefik's non-TLS router carries only the redirect, so
-#       the credential is never sent over http.
+#       the body carries no Grafana marker. Traefik's non-TLS router carries only the
+#       redirect, so the credential is never sent over http.
+#   Every request is pinned with curl --resolve to the ingress IP that dns1 was verified to
+#   serve, so the endpoint probed is the endpoint checked (a stale /etc/hosts entry or a
+#   split-horizon resolver cannot send the arms to another server).
 #
 # CREDENTIAL HANDLING
 #   The password is read with az_read after az_guard_init in THIS shell, into a curl config
@@ -86,18 +89,24 @@ done
 # ---------------------------------------------------------------------------
 hdr() { command grep -i "^$2:" "$W/$1.hdr" 2>/dev/null | head -n 1 | tr -d '\r' | cut -d: -f2- | command sed 's/^ *//'; }
 code() { cat "$W/$1.code" 2>/dev/null || echo 000; }
-# Grafana's page is BOTH markers: one alone could be a proxy error page quoting a title.
+# Two readings of "this body is Grafana's", kept apart on purpose:
+#   has_page  BOTH markers: the POSITIVE test (G-3). One alone could be a proxy error page
+#             quoting a title, so it must not count as "we reached Grafana".
+#   has_leak  EITHER marker: the NEGATIVE test (G-1, G-2, G-4). A refused response must carry
+#             nothing of Grafana: boot data alone (build info and settings) or a title alone
+#             is already a leak, and requiring both would let a partial page pass as refused.
 has_page() { command grep -qF -- "$MARKER_TITLE" "$W/$1.body" 2>/dev/null && command grep -qF -- "$MARKER_BOOT" "$W/$1.body" 2>/dev/null; }
+has_leak() { command grep -qF -- "$MARKER_TITLE" "$W/$1.body" 2>/dev/null || command grep -qF -- "$MARKER_BOOT" "$W/$1.body" 2>/dev/null; }
 
 judge_g1() {
   local c w; c=$(code noauth); w=$(hdr noauth www-authenticate)
-  echo "no credentials: HTTP $c, WWW-Authenticate '${w:-<none>}' grafana-page=$(has_page noauth && echo yes || echo no)"
-  [ "$c" = 401 ] && [[ "${w,,}" == basic* ]] && ! has_page noauth
+  echo "no credentials: HTTP $c, WWW-Authenticate '${w:-<none>}' grafana-content=$(has_leak noauth && echo yes || echo no)"
+  [ "$c" = 401 ] && [[ "${w,,}" == basic* ]] && ! has_leak noauth
 }
 judge_g2() {
   local c; c=$(code wrongpw)
-  echo "a random wrong password: HTTP $c grafana-page=$(has_page wrongpw && echo yes || echo no)"
-  [ "$c" = 401 ] && ! has_page wrongpw
+  echo "a random wrong password: HTTP $c grafana-content=$(has_leak wrongpw && echo yes || echo no)"
+  [ "$c" = 401 ] && ! has_leak wrongpw
 }
 judge_g3() {
   local c; c=$(code root)
@@ -106,9 +115,9 @@ judge_g3() {
 }
 judge_g4() {
   local c l; c=$(code plainhttp); l=$(hdr plainhttp location)
-  echo "http://$HOST$PAGE_PATH: HTTP $c Location '${l:-<none>}' grafana-page=$(has_page plainhttp && echo yes || echo no)"
+  echo "http://$HOST$PAGE_PATH: HTTP $c Location '${l:-<none>}' grafana-content=$(has_leak plainhttp && echo yes || echo no)"
   case "$c" in 301|302|307|308) ;; *) return 1 ;; esac
-  [[ "$l" == "https://$HOST/"* ]] && ! has_page plainhttp
+  [[ "$l" == "https://$HOST/"* ]] && ! has_leak plainhttp
 }
 
 # ---------------------------------------------------------------------------
@@ -117,7 +126,7 @@ judge_g4() {
 fetch() { # NAME URL AUTH(none|right|wrong)
   local name="$1" url="$2" auth="$3" k=()
   case "$auth" in right) k=(-K "$W/right.curlrc") ;; wrong) k=(-K "$W/wrong.curlrc") ;; esac
-  curl -sS --max-time 20 "${k[@]}" -o "$W/$name.body" -D "$W/$name.hdr" -w '%{http_code}' "$url" \
+  curl -sS --max-time 20 --resolve "$HOST:443:$IP" --resolve "$HOST:80:$IP" "${k[@]}" -o "$W/$name.body" -D "$W/$name.hdr" -w '%{http_code}' "$url" \
     > "$W/$name.code" 2> "$W/$name.err" || true
   [ -s "$W/$name.code" ] || echo 000 > "$W/$name.code"
 }
@@ -206,11 +215,11 @@ STUB
   # curl: -K selects the credential (right/wrong by content), the URL the response.
   cat > "$st/bin/curl" <<STUB
 #!$real_bash
-mode="\${STUB_MODE:-good}"; url="" cfg="" out="" hdr="" w=""
+mode="\${STUB_MODE:-good}"; url="" cfg="" out="" hdr="" w="" res=""
 while [ \$# -gt 0 ]; do
   case "\$1" in
     -K) cfg="\$2"; shift ;; -o) out="\$2"; shift ;; -D) hdr="\$2"; shift ;;
-    -w) w="\$2"; shift ;; --max-time) shift ;; http*) url="\$1" ;;
+    -w) w="\$2"; shift ;; --max-time) shift ;; --resolve) res="\$res \$2 "; shift ;; http*) url="\$1" ;;
   esac
   shift
 done
@@ -220,8 +229,17 @@ if [ -n "\$cfg" ]; then
 fi
 page='<html><head><title>Grafana</title></head><body><script>window.grafanaBootData = {};</script></body></html>'
 code=200 body="" h=""
+# the request must be pinned to the verified ingress IP for ITS port; an unpinned one reached "another server"
 case "\$url" in
+  https://*) case "\$res" in *" $HOST:443:$ip "*) ;; *) url=unpinned ;; esac ;;
+  http://*) case "\$res" in *" $HOST:80:$ip "*) ;; *) url=unpinned ;; esac ;;
+esac
+bootonly='<script>window.grafanaBootData = {};</script>'; titleonly='<html><head><title>Grafana</title></head></html>'
+case "\$url" in
+  unpinned) code=404; body="404 page not found (another server)" ;;
   http://*) if [ "\$mode" = g4-plain-page ]; then body="\$page"
+            elif [ "\$mode" = g4-leaks-boot ]; then code=308; h="Location: https://$HOST/"; body="\$bootonly"
+            elif [ "\$mode" = g4-leaks-title ]; then code=308; h="Location: https://$HOST/"; body="\$titleonly"
             elif [ "\$mode" = g4-redirect-http ]; then code=308; h="Location: http://$HOST/"
             else code=308; h="Location: https://$HOST/"; fi ;;
   *)
@@ -229,7 +247,11 @@ case "\$url" in
       code=401; body="401 Unauthorized"
       [ "\$mode" = g1-no-challenge ] || h='WWW-Authenticate: Basic realm="staging"'
       [ "\$mode" = g1-leaks-page ] && body="\$page"
+      [ "\$mode" = g1-leaks-boot ] && body="\$bootonly"
+      [ "\$mode" = g1-leaks-title ] && body="\$titleonly"
     elif [ "\$auth" = wrong ] && [ "\$mode" != g2-wrong-accepted ]; then code=401; h='WWW-Authenticate: Basic realm="staging"'; body="401 Unauthorized"
+      [ "\$mode" = g2-leaks-boot ] && body="\$bootonly"
+      [ "\$mode" = g2-leaks-title ] && body="\$titleonly"
     elif [ "\$auth" = right ] && [ "\$mode" = g3-denied ]; then code=401; h='WWW-Authenticate: Basic realm="staging"'; body="401 Unauthorized"
     elif [ "\$mode" = g3-title-only ] && [ "\$auth" = right ]; then body='<html><head><title>Grafana</title></head></html>'
     elif [ "\$mode" = g3-other-app ] && [ "\$auth" = right ]; then body='<html><head><title>Mailpit</title></head></html>'
@@ -241,9 +263,11 @@ case "\$w" in *'%{http_code}'*) printf '%s' "\$code" ;; esac
 exit 0
 STUB
   chmod +x "$st/bin/"*
-  local -a ARMS=(good g1-open g1-no-challenge g1-leaks-page g2-wrong-accepted g3-denied g3-title-only g3-other-app g4-plain-page g4-redirect-http dns-wrong list-kv-objects)
+  local -a ARMS=(good g1-open g1-no-challenge g1-leaks-page g1-leaks-boot g1-leaks-title g2-wrong-accepted g2-leaks-boot g2-leaks-title g3-denied g3-title-only g3-other-app g4-plain-page g4-leaks-boot g4-leaks-title g4-redirect-http dns-wrong list-kv-objects)
   declare -A WANT=(
     [good]="PROBE: 4/4 PASS" [g1-open]="ARM G-1 FAIL" [g1-no-challenge]="ARM G-1 FAIL" [g1-leaks-page]="ARM G-1 FAIL"
+    [g1-leaks-boot]="ARM G-1 FAIL" [g1-leaks-title]="ARM G-1 FAIL" [g2-leaks-boot]="ARM G-2 FAIL" [g2-leaks-title]="ARM G-2 FAIL"
+    [g4-leaks-boot]="ARM G-4 FAIL" [g4-leaks-title]="ARM G-4 FAIL"
     [g2-wrong-accepted]="ARM G-2 FAIL" [g3-denied]="ARM G-3 FAIL" [g3-title-only]="ARM G-3 FAIL" [g3-other-app]="ARM G-3 FAIL"
     [g4-plain-page]="ARM G-4 FAIL" [g4-redirect-http]="ARM G-4 FAIL"
     [dns-wrong]="VOID: $HOST resolves to '203.0.113.7'" [list-kv-objects]="$KV_PASSWORD_OBJECT"
