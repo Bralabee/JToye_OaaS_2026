@@ -191,3 +191,42 @@ Every open item above now has a tracker entry; this file stays the narrative, th
 
 Resolved, no issue: storefront image (29-29), core-java/keycloak could not roll (D-34, 4th node), check-doc-citations C-3 (gate exits 0, 2026-10-20).
 Recorded in 29-27 Task 2's runbook, no issue: an env-literal SMTP password crashes Alertmanager in k8s (rotate through Key Vault).
+
+## Phase 32 inputs this phase produced (plan 29-27, 2026-10-20)
+
+Everything below was decided or measured in Phase 29 and is deliberately NOT done for production here.
+Phase 32 inherits it; none of it is a defect in staging.
+
+- **Production opts into the components.** Keycloak, Redis, RabbitMQ, Mailpit (staging only: production
+  needs a real mail path), the monitoring stack, the Key Vault chain and the cluster-CA truststore live
+  under `k8s/components/` and are listed by `k8s/staging/kustomization.yaml` only. `k8s/production` and
+  `k8s/local` list none of them, on purpose (production decides in Phase 32).
+- **Production connection budget at the reserved 15.** At Azure's 15 reserved connections, production at
+  `max_connections` 200 gives a budget of 148 against a demand of 155. Phase 32 must size
+  `max_connections` at 209 or more, or lower the pool, and change the `k8s-production` row of
+  `k8s/scripts/connection-budget.conf` to its measured value (plan 29-05's counterfactual line prints
+  this on every run of `check-connection-math.sh`).
+- **Per-environment frontend images (#292).** The staging origin is baked into the frontend image at
+  build time. A production image needs its own build; until then `FRONTEND_PUBLIC_API_URL` must not feed a
+  production build (#980).
+- **SES for production mail (#294, D-13).** The SES half of #294 moves to Phase 32; the bucket half was
+  closed by the #626 read-back (plan 29-14).
+- **Database high availability (the #101 half, #983).** Staging is Burstable, which has no zone-redundant
+  HA. The production SKU decides it (assumption A11).
+- **mcp-server (#301).** It needs a pool in the connection budget, a scoped client and a public-exposure
+  decision before it has a manifest set.
+- **stomp-relay e2e rework (#304).** A design task: an auth helper, the order path, a wait strategy and an
+  assert-ran check. Unblocked by the in-cluster broker; off the DPLY-01 path.
+- **#98 criterion 3.** Log aggregation, single emission and edge-to-core traces were outside D-16's
+  monitoring scope. The frontend scrape job (criterion 1) is #971. #98 itself stays open for criterion 3.
+- **#112 remainder (#982).** SLOs and the five TODO first-response stubs in `docs/runbooks/alerts.md`.
+- **Traefik-namespace egress policy.** The `traefik` namespace's egress is deliberately left open (it must
+  reach the API server and every backend); the backends' own policies bound what it may reach (plan 29-03).
+  A tighter egress policy for that namespace is a production hardening decision.
+- **Production trusted proxies.** Staging's `security.trusted-proxies` is the whole overlay pod CIDR,
+  `10.244.0.0/16`, measured in plan 29-15 because Traefik pods move on reschedule and the node
+  `podCIDR` is not populated under Azure CNI overlay. Production must measure its own, and
+  `KC_PROXY_TRUSTED_ADDRESSES` for Keycloak is still unset (#976).
+- **Key Vault for production (D-23 repeats).** Production's secrets path is not Sealed Secrets by default
+  any more: D-23's Key Vault + CSI chain, its write-once writer and its preflight are the staging pattern,
+  and Phase 32 repeats the decision for its own vault, identities and grants.
