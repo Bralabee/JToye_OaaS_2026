@@ -380,3 +380,33 @@ NOTE (after the run): the INSTRUMENT lines in section C read "user=jtoye_backup 
 That is a print-formatting defect only (a sed that re-matched the space it had just inserted). The guard
 beside it reads the raw tab-separated fields and requires exactly jtoye_backup, t; it passed on every
 count. Fixed in the commit after this evidence: the line now prints user=jtoye_backup bypassrls=t tenant_guc=unset.
+
+==================================================================================================
+I. TASK 3 — THE FIRST REAL BACKUP (A7) AND THE OWNER'S WORM LOCK, 2026-10-20 (orchestrator, lane A)
+   Supersedes section G ("NOT RUN"): the CronJob ran unattended at 02:00 UTC and the owner approved the
+   time-limited read grant and the lock.
+==================================================================================================
+  --- I1. the scheduled run (kube-context jtoye-stg-aks, read 2026-10-20T03:17Z)
+  cronjob.batch/pg-backup   schedule 0 2 * * *   SUSPEND False   ACTIVE 0   LAST SCHEDULE 77m
+  job.batch/pg-backup-29874360   Complete   1/1   14s
+  log:
+    [2026-10-20T02:00:02Z] Starting backup of jtoye on jtoye-stg-pg.postgres.database.azure.com:5432 as jtoye_backup (BYPASSRLS expected)
+    [2026-10-20T02:00:11Z] Dump verified: 15860198 bytes, archive readable
+    [2026-10-20T02:00:11Z] Uploading to jtoye-db-backups/backups/jtoye-backup-20261020-020002.dump
+    [2026-10-20T02:00:12Z] Backup complete: jtoye-backup-20261020-020002.dump
+  --- I2. the listing (the operator holds no data-plane role by design; section G's refusal is the control)
+  2026-10-20T03:18:06Z GRANT  Storage Blob Data Reader to the owner (admin@jtoyedigital.co.uk), scope = container
+                              jtoye-db-backups ONLY, assignment 0618d7e3-6187-4f6b-8541-dc9e2385a823 (owner-approved, time-limited)
+  attempts 1 and 2: rc=1 "You do not have the required permissions" (RBAC propagation); attempt 3: rc=0
+  [{"bytes": 15860198, "created": "2026-10-20T02:00:12+00:00", "name": "backups/jtoye-backup-20261020-020002.dump"}]
+  => exactly one blob under backups/, size equal to the job's own "Dump verified" figure. The write-only role
+     "J'Toye Backup Blob Writer" was SUFFICIENT for the upload (A7). The dump was not downloaded or restored
+     here; the drill's arm B proved the dump -> restore -> counts path on the PITR copy.
+  2026-10-20T03:19:03Z REVOKE  assignment deleted (rc=0). Read-back of role assignments at that container scope:
+                       [{"p": "ca38c385-c0c1-467d-a638-88e62db7a65f", "r": "J'Toye Backup Blob Writer"}]  (the backup identity only)
+  --- I3. the lock (a human step: the owner ran the runbook §4.4 command in their own terminal and replied "locked")
+  readback 2026-10-20T03:20:56Z  bash scripts/azure-staging-storage.sh --readback  rc=0
+    "etag": "\"8df2e591d005345\""          (was "8df2d7d078badf5" in sections B and F: the policy object changed)
+    "immutabilityPeriodSinceCreationInDays": 30
+    "state": "Locked"                      (was "Unlocked" in sections B and F)
+  Retention counts from blob creation, so the 02:00:12Z dump is protected until 2026-11-19T02:00:12Z at the earliest.
