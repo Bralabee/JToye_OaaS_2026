@@ -846,10 +846,14 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 48 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 56 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-20 (phase 29, branch phase-29-deployable-staging): 48 -> 56. Phase 29 added
+# check-alertmanager-render, check-az-subscription-pin, check-deploy-digest-parity,
+# check-dply02-dispositions, check-frontend-baked-origin, check-k8s-copy-parity,
+# check-networkpolicy-enforcement and check-staging-edge (H-1 caught the stale 48).
 # 2026-10-11 (phase 37 plan 37-04, PR #913): 47 -> 48. scripts/check-strict-scoping-default.sh fails any
 # runtime that overrides jtoye.access.strict-scoping back to false (D-06).
 # 2026-10-05 (phase 38 plan 38-11): 46 -> 47. scripts/check-boot-config-keys.sh runs
