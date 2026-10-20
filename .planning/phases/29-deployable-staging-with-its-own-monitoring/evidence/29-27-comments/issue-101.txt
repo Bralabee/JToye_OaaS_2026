@@ -5,4 +5,4 @@ Phase 29 disposition for #101 (DPLY-04): the point-in-time recovery half is fixe
 - The first scheduled backup ran unattended at 02:00 UTC on 2026-10-20 (Job Complete, dump verified, 15,860,198 bytes, exactly one blob of that size in the container), and the owner locked the backup container's retention policy (state Locked, 30 days): the same file, lines 385 to 412.
 - docs/architecture/SYSTEM_DESIGN_V2.md no longer claims WAL-G PITR: it carries a dated current-state note and a superseded-by-ADR-0002 banner over the old target diagram (.planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-measurements.txt, lines 58 to 70).
 
-Deferred to Phase 32, with the reason: database high availability. Staging runs a Burstable compute tier, which does not offer zone-redundant high availability, so the production SKU decides it.
+Deferred to Phase 32 and tracked as #983, with the reason: database high availability. Staging runs a Burstable compute tier, which does not offer zone-redundant high availability, so the production SKU decides it.
