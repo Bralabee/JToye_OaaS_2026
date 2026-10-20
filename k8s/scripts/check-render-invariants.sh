@@ -1219,6 +1219,12 @@ fi
 #   flag-bare          --proxy-trusted-addresses with the value as the next item
 #   shell-wrapped      command sh -c "exec kc.sh start --proxy-headers=xforwarded"
 #   block-scalar       the same script as a | block scalar
+# Values kubectl FOLDS onto a continuation line (round 2 of #988: the path walker used
+# to emit only the first line, so a word past the fold was never judged):
+#   jvm-trusted-override-wrapped  jvm-trusted-override behind a 133-character head
+#   shell-wrapped-long            shell-wrapped, the proxy flag past the fold
+#   long-harmless                 a long JAVA_OPTS_APPEND with no proxy word: must PASS
+#                                 (the one control arm: rc 0, not rc 1)
 # envFrom:
 #   envfrom-cm         a rendered ConfigMap supplies KC_PROXY_TRUSTED_ADDRESSES=0.0.0.0/0
 #   envfrom-secret     envFrom a Secret
@@ -1281,10 +1287,14 @@ inv20_p_args() {        # <file> <replacement for the args line>
 "
 }
 
+# A JAVA_OPTS_APPEND head long enough that kubectl folds the rest of the value onto a
+# continuation line (the fold is at about 80 characters; this is 133).
+INV20_LONG_PREFIX='-Xms64m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -Dfoo.bar.baz.qux=aaaaaaaaaaaaaaaaaaaa'
 INV20_ARMS=(env-removed optional-ref key-renamed secret-ref foreign-cm-absent foreign-cm-bad envfrom-duplicate
     literal-any literal-single literal-public literal-empty whitespace-literal config-empty config-whitespace config-comma
     legacy-proxy flag-legacy jvm-headers-only jvm-trusted-any jvm-trusted-override jvm-secret
     flag-headers-only flag-trusted-any flag-repeated flag-bare shell-wrapped block-scalar
+    jvm-trusted-override-wrapped shell-wrapped-long long-harmless
     envfrom-cm envfrom-secret image-quoted image-custom container-by-label idp-by-kcenv idp-by-args)
 
 inv20_plant() {
@@ -1342,6 +1352,11 @@ inv20_plant() {
         shell-wrapped)
             inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
             inv20_p_args "$f" '        command: ["/bin/sh", "-c", "exec /opt/keycloak/bin/kc.sh start --proxy-headers=xforwarded"]' ;;
+        jvm-trusted-override-wrapped) inv20_p_jvm "$f" "$INV20_LONG_PREFIX -Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        shell-wrapped-long)
+            inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_args "$f" "        command: [/bin/sh, -c, 'echo starting the keycloak server with a long preamble to push the option past the fold; exec /opt/keycloak/bin/kc.sh start --proxy-trusted-addresses=0.0.0.0/0']" ;;
+        long-harmless)     inv20_p_jvm "$f" "$INV20_LONG_PREFIX -Dfoo.bar.baz.quux=bbbbbbbbbbbbbbbbbbbbbbbb" ;;
         block-scalar)
             inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
             inv20_p_args "$f" '        command:
@@ -1454,6 +1469,9 @@ inv20_selftest() {
         [flag-repeated]="$TWO"
         [flag-bare]="$P passes --proxy-trusted-addresses without '=value'"
         [shell-wrapped]="$P mentions a proxy option inside a larger string in its command"
+        [jvm-trusted-override-wrapped]="$TWO"
+        [shell-wrapped-long]="$P mentions a proxy option inside a larger string in its command"
+        [long-harmless]=""
         [block-scalar]="$P has a block scalar ('|') in its command"
         [envfrom-cm]="$ANY"
         [envfrom-secret]="$P has an envFrom Secret 'kc-secret'"
@@ -1471,7 +1489,9 @@ inv20_selftest() {
         else
             if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
             want="${WANT[$arm]}"
-            if (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+            if [[ -z "$want" ]] && (( rc == 0 )); then
+                caught=yes; line="rc=0 (a control: this arm must PASS)"
+            elif [[ -n "$want" ]] && (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
                 caught=yes; line="rc=1"
             else
                 caught=no
@@ -2201,7 +2221,30 @@ END { flush() }
 #     ("containers:" and "- env:" share a column), which is why a list item pops
 #     only deeper frames and earlier sibling items, never its parent. Block
 #     scalars (| and >) are skipped whole so their text is never read as keys.
+#
+#     CONTINUATION LINES (#976 round 2). kubectl folds any plain, quoted or flow
+#     scalar longer than about 80 characters onto continuation lines indented DEEPER
+#     than the key (or the "- " of a list item) that owns it. A record is therefore
+#     held PENDING until the next line that is not such a continuation, and the
+#     continuation text is joined onto it with one space (YAML folding), so the value
+#     a consumer reads is the WHOLE value. Before, only the first line was emitted
+#     and a `-Dkc.proxy-*` word or a `sh -c` proxy flag past the fold was never seen
+#     by INV-20 (which reads JAVA_OPTS* values and command items from here). A form
+#     that cannot be joined safely (a double-quoted scalar folded with a backslash
+#     escape at a line edge) is a PARSE ERROR naming the path and exit 2, never a
+#     silently truncated value; callers must treat a non-zero awk status as VOID.
 RENDER_PATHS_AWK='
+function emit() {
+    if (!pend) return
+    if (pjoined && pv ~ /^"/ && pv ~ /\\$/) bad_fold(pp)
+    printf "%s\t%s\t%s\t%s\n", kind, nm, pp, pv
+    pend = 0
+}
+function bad_fold(p) {
+    print "PARSE ERROR: path walker cannot safely join the folded double-quoted value at " kind "/" nm " " p " (a backslash at a line edge); refusing to read a truncated or mis-joined value." > "/dev/stderr"
+    bad = 1; exit 2
+}
+function hold(p, v, thr) { pend = 1; pp = p; pv = v; pthr = thr; pjoined = 0 }
 function flush(  i) {
     if (n == 0) return
     kind = ""; nm = ""
@@ -2211,6 +2254,7 @@ function flush(  i) {
     }
     sp = 0; delete sind; delete sseg; delete slist; delete cnt; blockind = -1
     for (i = 1; i <= n; i++) walk(buf[i])
+    emit()
     n = 0; delete buf
 }
 function path(  j, p) {
@@ -2222,21 +2266,34 @@ function keyline(rest, ind,   k, v) {
     k = rest; sub(/:([[:space:]].*)?$/, "", k)
     v = rest; if (v ~ /^[^:]*:[[:space:]]/) sub(/^[^:]*:[[:space:]]*/, "", v); else v = ""
     sp++; sind[sp] = ind; sseg[sp] = k; slist[sp] = 0
-    printf "%s\t%s\t%s\t%s\n", kind, nm, path(), v
+    if (v == "" || v ~ /^[|>][-+0-9]*$/) printf "%s\t%s\t%s\t%s\n", kind, nm, path(), v
+    else hold(path(), v, ind)
     if (v ~ /^[|>][-+0-9]*$/) blockind = ind
 }
-function walk(l,   ind, rest, P) {
+function walk(l,   ind, rest, P, piece) {
     if (l ~ /^[[:space:]]*$/ || l ~ /^[[:space:]]*#/) return
     ind = match(l, /[^ ]/) - 1
     if (blockind >= 0) { if (ind > blockind) return; blockind = -1 }
     rest = substr(l, ind + 1)
+    if (pend) {
+        if (ind > pthr) {
+            piece = rest; sub(/[[:space:]]+$/, "", piece)
+            if (pv ~ /^"/ && (piece ~ /^\\/ || pv ~ /\\$/)) bad_fold(pp)
+            pv = pv " " piece; pjoined = 1
+            return
+        }
+        emit()
+    }
     if (rest ~ /^- / || rest == "-") {
         while (sp > 0 && (sind[sp] > ind || (sind[sp] == ind && slist[sp]))) sp--
         P = path()
         sp++; sind[sp] = ind; sseg[sp] = "[" (cnt[P]++) "]"; slist[sp] = 1
         rest = substr(rest, 3)
         if (rest ~ /^[A-Za-z0-9_.\/-]+:([[:space:]]|$)/) keyline(rest, ind + 2)
-        else if (rest != "") printf "%s\t%s\t%s\t%s\n", kind, nm, path(), rest
+        else if (rest != "") {
+            if (rest ~ /^[|>][-+0-9]*$/) printf "%s\t%s\t%s\t%s\n", kind, nm, path(), rest
+            else hold(path(), rest, ind)
+        }
         return
     }
     while (sp > 0 && sind[sp] >= ind) sp--
@@ -2244,7 +2301,7 @@ function walk(l,   ind, rest, P) {
 }
 /^---[[:space:]]*$/ { flush(); next }
 { buf[++n] = $0 }
-END { flush() }
+END { if (!bad) flush() }
 '
 
 # --- awk: NetworkPolicy rule TUPLES from the path walk (INV-7).
@@ -2899,7 +2956,7 @@ for dir in "${TARGETS[@]}"; do
         parse_fail "[$rel] INV-7: app-config 'ingress.controller-namespace' is '$ingress_ns', which is not a valid namespace name, so no namespaceSelector carrying it can match anything."
     fi
 
-    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv7_paths.tsv"
+    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv7_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     awk "$NETPOL_TUPLES_AWK" "$TMP/inv7_paths.tsv" > "$TMP/netpol.tsv"
     mapfile -t inv7_pols < <(awk -F'\t' '$1 == "DOC" && $2 == "NetworkPolicy" { print $3 }' "$TMP/netpol.tsv" | LC_ALL=C sort -u)
     (( ${#inv7_pols[@]} > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships seven; zero means the parser is blind and every rule assertion below would pass vacuously. Fix the parser, do not delete the invariant."
@@ -3017,7 +3074,7 @@ for dir in "${TARGETS[@]}"; do
     # or exact PATH, never by a forward scan (kustomize sorts map keys).
     if is_wi_target "$rel"; then
         WI_TARGET_SEEN["$rel"]=1
-        awk "$RENDER_PATHS_AWK" "$render" > "$TMP/paths.tsv"
+        awk "$RENDER_PATHS_AWK" "$render" > "$TMP/paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
         (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] INV-8..INV-10: the path walker emitted 0 records for the render — it is blind, and every storage assertion below would pass vacuously. Fix RENDER_PATHS_AWK, do not delete the invariants."
         if [[ "$(path_get "$TMP/paths.tsv" Deployment core-java 'spec::template::spec::containers::[0]::name')" == "(ABSENT)" ]]; then
             parse_fail "[$rel] INV-8..INV-10: no Deployment core-java container found by path — either the render lost core-java (a far bigger problem) or the path walker is blind. Fix it, do not delete the invariants."
@@ -3204,7 +3261,7 @@ for dir in "${TARGETS[@]}"; do
         inv11_bad=1
     fi
     # (b) + (c) per core-java container, by exact path.
-    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv11_paths.tsv"
+    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv11_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     inv11_ctrs=$(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" \
         '$3 ~ /::(containers|initContainers)::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
         "$TMP/inv11_paths.tsv")
@@ -4164,7 +4221,7 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
     # ---------------- LOC-7 ----------------
     # Phase 36: the emulator path is WIRED, not just configured. The connection
     # strings exist only in k8s/local, so an unwired key is a silently ignored value.
-    awk "$RENDER_PATHS_AWK" "$LOCAL_RENDER" > "$TMP/loc_paths.tsv"
+    awk "$RENDER_PATHS_AWK" "$LOCAL_RENDER" > "$TMP/loc_paths.tsv" || parse_fail "path walker could not read $LOCAL_RENDER safely (see the PARSE ERROR above): refusing to judge a truncated value."
     (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix RENDER_PATHS_AWK, do not delete the invariant."
     loc7_bad=0
     loc_mode="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.auth-mode)"
