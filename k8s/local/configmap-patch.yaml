@@ -227,6 +227,9 @@ data:
   # --- Email: Mailhog -------------------------------------------------------
   # Mailhog accepts anything and offers no auth and no TLS, so auth/starttls are
   # both false here (base ships auth "false" + starttls "true" for SES).
+  # smtp.starttls "false" alone is NOT enough under the prod profile: application-prod.yml
+  # requires STARTTLS by literal (D-20), which this key cannot undo. The effective relaxation
+  # is mail-env-patch.yaml (SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED=false).
   # Sent mail is viewable at http://localhost:8025.
   smtp.host: "host.minikube.internal"
   smtp.port: "1025"

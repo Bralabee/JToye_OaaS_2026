@@ -227,6 +227,20 @@
 #          Workload Identity means the credential is a projected, short-lived
 #          token the webhook mounts — never something a manifest names.
 #
+#   INV-19 PHASE 29 D-20 (owner ruling 2026-10-18, review round 1 F1), RENDER level,
+#          staging + production only. STARTTLS is REQUIRED there, by LITERALS in
+#          core-java's application-prod.yml (every cluster runs the prod profile), so
+#          no render may carry a way to turn it down: no env, on Deployment core-java
+#          (the one JavaMail client; Mailpit's own MP_SMTP_REQUIRE_STARTTLS is the server
+#          half and only tightens it), whose
+#          NAME or literal VALUE contains `starttls` except core-java's own
+#          SMTP_STARTTLS (which application-prod.yml's literal already outranks), so no
+#          SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED=false, no
+#          SPRING_APPLICATION_JSON or JAVA_TOOL_OPTIONS naming it. The one place that
+#          may relax it is k8s/local (Mailhog offers no STARTTLS), and LOC-8 requires it
+#          to, because without it every local-k8s email fails with "STARTTLS is required
+#          but host does not support STARTTLS".
+#
 #   INV-10 PHASE 36 D-02 / T-36-33 / T-36-36, RENDER level, staging + production
 #          only. The pod TEMPLATES of Deployment core-java and CronJob pg-backup
 #          (spec.jobTemplate.spec.template) carry the label
@@ -461,6 +475,12 @@
 #          hosts are exactly api.jtoye.local and app.jtoye.local, no production
 #          hostname survives into the local render, and no Ingress routes to a
 #          Service named keycloak.
+#
+#   LOC-8  Local can still SEND mail (review round 1 F1). Deployment core-java sets
+#          SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED to the literal false, the
+#          only relaxation of the D-20 STARTTLS requirement anywhere (INV-19 forbids it
+#          in staging/production). Mailhog offers no STARTTLS and application-prod.yml
+#          requires it by literal, so without this every local email fails.
 #
 #   LOC-7  The local emulator storage path is WIRED (Phase 36). storage.blob.auth-mode
 #          is connection-string, storage.blob.create-containers is "true" (Azurite
@@ -2541,10 +2561,33 @@ for dir in "${TARGETS[@]}"; do
             inv10_msg="OK (${#wi_allowed[@]} pod templates labelled + own SA, automount false; ${#wi_csi[@]} mount a SecretProviderClass with a client-id SA; no other opt-in)"
         fi
         unset wi_allowed wi_csi
+
+        # ---- INV-19: nothing in staging/production can relax STARTTLS (D-20) ----
+        inv19_bad=0
+        inv19_ctl=0
+        while IFS=$'\t' read -r k n pth v; do
+            if [[ "$pth" =~ ::env::\[[0-9]+\]::name$ && "$v" == "SMTP_STARTTLS" ]]; then inv19_ctl=$((inv19_ctl + 1)); continue; fi
+            [[ "$pth" =~ ::env::\[[0-9]+\]::(name|value)$ ]] || continue
+            # core-java is the only JavaMail client. Other workloads' starttls envs are the SERVER
+            # side of the same requirement (Mailpit's MP_SMTP_REQUIRE_STARTTLS) and only tighten it.
+            [[ "$k/$n" == "Deployment/core-java" ]] || continue
+            if [[ "${v,,}" == *starttls* ]]; then
+                echo "  FAIL [$rel] INV-19: $k/$n has an env $pth = '$v' naming starttls. STARTTLS is REQUIRED in staging and production (D-20): application-prod.yml sets mail.smtp.starttls.required as a literal, and no env may relax it here (only k8s/local may, for Mailhog)." >&2
+                inv19_bad=1
+            fi
+        done < "$TMP/paths.tsv"
+        (( inv19_ctl >= 1 )) || parse_fail "[$rel] INV-19 found no SMTP_STARTTLS env name in the render — the control is missing, so the path walker is blind or core-java lost its mail env. Fix it, do not delete the invariant."
+        if (( inv19_bad != 0 )); then
+            FAILED=1
+            inv19_msg="FAIL"
+        else
+            inv19_msg="OK (no env or env value names starttls except the $inv19_ctl SMTP_STARTTLS control(s))"
+        fi
     else
         inv8_msg="SKIP (not in WI_TARGETS)"
         inv9_msg="SKIP (not in WI_TARGETS)"
         inv10_msg="SKIP (not in WI_TARGETS)"
+        inv19_msg="SKIP (not in WI_TARGETS)"
     fi
 
     # ---------------- INV-11 (Phase 36 D-08, code review WR-01) ----------------
@@ -3010,10 +3053,10 @@ for dir in "${TARGETS[@]}"; do
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg"
     fi
 done
 
@@ -3155,7 +3198,7 @@ echo
 # CONDITIONAL BY DESIGN: if the overlay is ever removed this section is skipped
 # and the script stays valid, rather than failing on a missing directory.
 # ===========================================================================
-LOCAL_SECTION="LOC-1..LOC-6, LOC-7 SKIPPED (k8s/local/kustomization.yaml not present)"
+LOCAL_SECTION="LOC-1..LOC-6, LOC-7, LOC-8 SKIPPED (k8s/local/kustomization.yaml not present)"
 
 if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
     echo "LOC-1..LOC-7 (INFRA-01 + Phase 36, k8s/local): the committed local overlay's shape"
@@ -3449,10 +3492,39 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
         loc7_msg="OK (connection-string, create-containers true, STORAGE_CONNECTION_STRING wired on core-java + pg-backup)"
     fi
 
+    # ---------------- LOC-8 ----------------
+    # Review round 1 F1. k8s runs the prod profile in every environment, and
+    # application-prod.yml sets mail.smtp.starttls.required as a LITERAL (D-20), which
+    # SMTP_STARTTLS=false cannot undo. Local mail goes to Mailhog, which offers no
+    # STARTTLS, so without this env every local-k8s email throws "STARTTLS is required
+    # but host does not support STARTTLS". The relaxation lives HERE and nowhere else
+    # (INV-19 forbids it in staging/production).
+    loc8_bad=0
+    loc8_env="SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED"
+    loc8_prefix="$(awk -F'\t' -v env="$loc8_env" '
+        $1 == "Deployment" && $2 == "core-java" && $4 == env && $3 ~ /^spec::template::spec::containers::\[[0-9]+\]::env::\[[0-9]+\]::name$/ { p = $3; sub(/::name$/, "", p); print p; exit }' "$TMP/loc_paths.tsv")"
+    if [[ -z "$loc8_prefix" ]]; then
+        echo "  FAIL [k8s/local] LOC-8: Deployment core-java sets no $loc8_env. Under the prod profile (application-prod.yml: mail.smtp.starttls.required=true, a literal) Mailhog, which offers no STARTTLS, makes every local email fail with 'STARTTLS is required but host does not support STARTTLS'. Add k8s/local/mail-env-patch.yaml to patches: in k8s/local/kustomization.yaml." >&2
+        loc8_bad=1
+    else
+        loc8_val="$(path_get "$TMP/loc_paths.tsv" Deployment core-java "$loc8_prefix::value")"
+        if [[ "$loc8_val" =~ ^\"(.*)\"$ || "$loc8_val" =~ ^\'(.*)\'$ ]]; then loc8_val="${BASH_REMATCH[1]}"; fi
+        if [[ "$loc8_val" != "false" ]]; then
+            echo "  FAIL [k8s/local] LOC-8: $loc8_env is '$loc8_val', expected the literal 'false' (Mailhog offers no STARTTLS)." >&2
+            loc8_bad=1
+        fi
+    fi
+    if (( loc8_bad != 0 )); then
+        FAILED=1
+        loc8_msg="FAIL"
+    else
+        loc8_msg="OK ($loc8_env=false on core-java: Mailhog takes plain SMTP under the prod profile)"
+    fi
+
     if [[ "$loc1_msg" == FAIL* || "$loc2_msg" == FAIL* || "$loc3_msg" == FAIL* \
           || "$loc4_msg" == FAIL* || "$loc5_msg" == FAIL* || "$loc6_msg" == FAIL* \
-          || "$loc7_msg" == FAIL* ]]; then
-        echo "FAIL [k8s/local]: LOC-1 $loc1_msg | LOC-2 $loc2_msg | LOC-3 $loc3_msg | LOC-4 $loc4_msg | LOC-5 $loc5_msg | LOC-6 $loc6_msg | LOC-7 $loc7_msg" >&2
+          || "$loc7_msg" == FAIL* || "$loc8_msg" == FAIL* ]]; then
+        echo "FAIL [k8s/local]: LOC-1 $loc1_msg | LOC-2 $loc2_msg | LOC-3 $loc3_msg | LOC-4 $loc4_msg | LOC-5 $loc5_msg | LOC-6 $loc6_msg | LOC-7 $loc7_msg | LOC-8 $loc8_msg" >&2
     else
         echo "  OK   [k8s/local] LOC-1 $loc1_msg"
         echo "  OK   [k8s/local] LOC-2 $loc2_msg"
@@ -3461,8 +3533,9 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
         echo "  OK   [k8s/local] LOC-5 $loc5_msg"
         echo "  OK   [k8s/local] LOC-6 $loc6_msg"
         echo "  OK   [k8s/local] LOC-7 $loc7_msg"
+        echo "  OK   [k8s/local] LOC-8 $loc8_msg"
     fi
-    LOCAL_SECTION="LOC-1..LOC-6, LOC-7 checked on k8s/local"
+    LOCAL_SECTION="LOC-1..LOC-6, LOC-7, LOC-8 checked on k8s/local"
     echo
 fi
 
@@ -3471,4 +3544,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15 and INV-17 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; $LOCAL_SECTION."

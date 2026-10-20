@@ -164,6 +164,7 @@ patches:
   # and pg-backup — local ONLY; staging/production have none (D-02, INV-9).
   # Two documents, matched by GVK + name. LOC-7 asserts it is wired.
   - path: storage-env-patch.yaml
+  - path: mail-env-patch.yaml
 
 # Local runs ONE of each service (D-09, DEF-3).
 #
