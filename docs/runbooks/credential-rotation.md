@@ -209,9 +209,16 @@ openssl rand -base64 96 | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32 > "$d/pw"
 printf 'staging-tester:%s' "$(openssl passwd -apr1 -stdin < "$d/pw")" > "$d/auth"
 az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n mailpit-ui-credentials--password --file "$d/pw" --encoding utf-8
 az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n mailpit-ui-credentials--auth --file "$d/auth" --encoding utf-8
-# 2. the CSI driver fetches only on mount (rotation is off), so restart the syncing pod.
-#    maxUnavailable 0: the new pod mounts before the old one goes, so neither Secret it
-#    keeps (this one and rabbitmq-default-user) disappears during the rollout.
+# 2. the CSI driver fetches only on mount (rotation is off) AND only CREATES a synced Secret
+#    that is missing; it never updates one that exists. A bare restart leaves the old apr1
+#    line in place: the surge pod mounts while the old pod still owns the Secret. So delete
+#    the synced Secret FIRST, and let the new pod's mount create it from the new versions.
+#    Until it exists Traefik cannot resolve auth-secret and skips the Ingress (the host
+#    answers 404, fail closed), so run the three commands back to back. Only this one Secret
+#    is deleted; the others secret-sync keeps are untouched.
+#    NOT YET MEASURED LIVE: step 3 is what proves it. If the old password is still accepted,
+#    the Secret was not re-created: delete it again and restart once more.
+kubectl --context jtoye-stg-aks -n jtoye-staging delete secret mailpit-ui-credentials
 kubectl --context jtoye-stg-aks -n jtoye-staging rollout restart deploy/secret-sync
 kubectl --context jtoye-stg-aks -n jtoye-staging rollout status deploy/secret-sync --timeout=10m
 # 3. the new password works (8/8), and the OLD one is refused with 401
@@ -222,7 +229,8 @@ rm -rf "$d"
 ```
 
 Then hand the new password to the testers out of band. Traefik re-reads the Secret when
-it changes, so the old password stops working once secret-sync's new pod has synced it.
+it changes, so the old password stops working once secret-sync's new pod has re-created it
+(and the mail UI answers 404 for the seconds between the delete and that re-creation).
 
 ---
 
@@ -255,8 +263,16 @@ openssl rand -base64 96 | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32 > "$d/pw"
 printf 'staging-operator:%s' "$(openssl passwd -apr1 -stdin < "$d/pw")" > "$d/auth"
 az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n grafana-edge-credentials--password --file "$d/pw" --encoding utf-8
 az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n grafana-edge-credentials--auth --file "$d/auth" --encoding utf-8
-# 2. the CSI driver fetches only on mount (rotation is off), so restart the syncing pod
-#    (maxUnavailable 0: the new pod mounts before the old one goes).
+# 2. the CSI driver fetches only on mount (rotation is off) AND only CREATES a synced Secret
+#    that is missing; it never updates one that exists. A bare restart leaves the old apr1
+#    line in place: the surge pod mounts while the old pod still owns the Secret. So delete
+#    the synced Secret FIRST, and let the new pod's mount create it from the new versions.
+#    Until it exists Traefik cannot resolve auth-secret and skips the Ingress (the host
+#    answers 404, fail closed), so run the three commands back to back. Only this one Secret
+#    is deleted; the others secret-sync keeps are untouched.
+#    NOT YET MEASURED LIVE: step 3 is what proves it. If the old password is still accepted,
+#    the Secret was not re-created: delete it again and restart once more.
+kubectl --context jtoye-stg-aks -n jtoye-staging delete secret grafana-edge-credentials
 kubectl --context jtoye-stg-aks -n jtoye-staging rollout restart deploy/secret-sync
 kubectl --context jtoye-stg-aks -n jtoye-staging rollout status deploy/secret-sync --timeout=10m
 # 3. the new password works (4/4), and the OLD one is refused with 401
@@ -267,7 +283,8 @@ rm -rf "$d"
 ```
 
 Traefik re-reads the Secret when it changes, so the old password stops working once
-secret-sync's new pod has synced it. The first-time creation of these two objects (before the
+secret-sync's new pod has re-created it (and the Grafana host answers 404 for the seconds
+between the delete and that re-creation). The first-time creation of these two objects (before the
 deploy that introduces the gate) is `scripts/staging-secrets.sh`, not this procedure.
 
 ---

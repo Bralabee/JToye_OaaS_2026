@@ -135,9 +135,11 @@ CSI driver, which fetches a value when a pod **mounts** it. Rotation is off (the
 and a container that reads a Secret through an environment variable sees it only when the
 container starts anyway. So a new Key Vault version reaches a workload only after a pod restart.
 For an object no workload mounts permanently, the always-on `secret-sync` Deployment is the
-mounting pod: restart that one (`deploy/secret-sync`) and the synced Secret it produces is
-refreshed. The worked example, including the refusal check for the superseded value, is
-`docs/runbooks/credential-rotation.md` section 6.1.
+mounting pod: restart that one (`deploy/secret-sync`). The driver only CREATES a synced Secret
+that is missing and never updates one that exists, so delete the synced Secret
+(`kubectl ... delete secret <name>`) just before the restart, or the old value stays (not yet
+measured live). The worked example, including the refusal check for the superseded value, is
+`docs/runbooks/credential-rotation.md` sections 6.1 and 6.1a.
 
 **Mailpit reads its certificate only at start.** Its TLS certificate comes from the cert-manager
 internal CA. After a renewal, restart `deploy/mailpit` so it serves the new one; plan 29-22

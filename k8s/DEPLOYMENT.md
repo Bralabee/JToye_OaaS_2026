@@ -325,12 +325,25 @@ production name resolves until Phase 32 (D-08).
   `grafana-edge-kv`: a new `secret-sync` pod that cannot fetch both objects never becomes Ready,
   and `rollout status deployment/secret-sync` is the check that says so (the deploy health step
   does not look at Grafana).
-- **Before the FIRST deploy that carries this gate**, an operator, from the branch, writes the two
-  objects and grants the `secret-sync` identity read on the new hash object (otherwise the
-  `secret-sync` pod cannot mount and the rollout stalls; the old pod keeps serving, so nothing
-  already live is lost): `scripts/staging-secrets.sh` generate/write, then `--assign-access`, then
+- **Write the Key Vault objects and the grant BEFORE the merge.** From the branch, an operator
+  writes the two objects and grants the `secret-sync` identity read on the new hash object:
+  `scripts/staging-secrets.sh` generate/write, then `--assign-access`, then
   `scripts/staging-secrets-preflight.sh --names-only`. The PR that introduced the gate lists the
-  exact commands.
+  exact commands. The order matters because the two halves do NOT fail alike if the deploy comes
+  first:
+  - The Ingress annotations apply at once and name Secret `grafana-edge-credentials`, which does
+    not exist until a `secret-sync` pod has mounted `grafana-edge-kv`. Traefik logs "Cannot
+    resolve auth secret, skipping ingress", so **`grafana-staging.olajay.co.uk` returns 404 for
+    everyone, operators included**, until the objects and the grant exist and `secret-sync` has
+    rolled (`rollout restart deployment/secret-sync`, then `rollout status`). This is the
+    fail-closed behaviour above, and it is a Grafana outage, not a preserved service.
+  - The new `secret-sync` pod cannot mount, so its rollout stalls and the old pod keeps serving
+    the RabbitMQ and mail-UI Secrets it already synced. Only that part is "nothing already live is
+    lost".
+  - **Nothing goes red.** The deploy job waits on core-java, edge-go and the frontend only, so a
+    deploy that lands before the objects exist still passes. Check
+    `rollout status deployment/secret-sync` and run `scripts/staging-grafana-edge.sh --probe`
+    after the deploy.
 - **Live checks.** `scripts/staging-grafana-edge.sh --probe --context jtoye-stg-aks` (G-1..G-4:
   no credential 401 with a Basic challenge, a wrong one 401, the credential 200 and Grafana's
   login page, http redirected to https without the page). Its predicates are proven able to fail
