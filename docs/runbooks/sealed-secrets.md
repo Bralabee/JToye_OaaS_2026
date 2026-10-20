@@ -1,5 +1,14 @@
 # Runbook: K8s Sealed Secrets (bitnami-labs/sealed-secrets)
 
+> **Superseded by D-23 (Key Vault + CSI) for deployed environments — 2026-10-20. Kept as
+> history.** Staging (Phase 29) does not use Sealed Secrets: its secrets live in Azure Key Vault
+> (`jtoye-stg-kv`) and reach pods through the Secrets Store CSI driver and `SecretProviderClass`
+> objects, with no `SealedSecret` or `Secret` manifest in any staging render. For staging, see
+> [`staging-operations.md`](./staging-operations.md) and the staging section of
+> [`credential-rotation.md`](./credential-rotation.md). What follows describes the
+> Sealed-Secrets path as written before that decision; the production secrets path is decided in
+> Phase 32.
+
 **Status:** Operational runbook for cluster admins.
 **Scope:** Producing `SealedSecret` manifests (safe to commit) for every
 secret the platform consumes, using

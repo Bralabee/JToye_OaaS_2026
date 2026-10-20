@@ -47,6 +47,15 @@ Two interactive topology views, generated from [`SYSTEM_DESIGN_V2.md §1`](../do
 ### 2. Install Required Controllers
 
 #### NGINX Ingress Controller
+
+> **Superseded for staging by D-29 (Traefik v3), 2026-10-20.** Staging does not run ingress-nginx
+> and is not installed with Helm: its ingress controller is Traefik v3 reading the same
+> `nginx.ingress.kubernetes.io/*` annotations through its Ingress-NGINX provider, applied by
+> `scripts/staging-bootstrap.sh --stage traefik` from [`k8s/platform/traefik`](./platform/traefik/README.md).
+> The IngressClass stays `nginx`. The instructions below are kept as the original (and
+> production, until Phase 32 decides) recipe. Day-to-day staging operation:
+> [`docs/runbooks/staging-operations.md`](../docs/runbooks/staging-operations.md).
+
 ```bash
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
@@ -205,6 +214,12 @@ kubectl create secret generic client-ip-credentials \
 ```
 
 #### Option B: Sealed Secrets (Recommended)
+
+> **Superseded for staging by D-23 (Key Vault + CSI), 2026-10-20.** Staging takes every secret
+> from Azure Key Vault `jtoye-stg-kv` through the Secrets Store CSI driver; no `SealedSecret` is
+> rendered. `docs/runbooks/sealed-secrets.md` is kept as history. For staging see
+> [`docs/runbooks/staging-operations.md`](../docs/runbooks/staging-operations.md) and
+> [`docs/runbooks/credential-rotation.md`](../docs/runbooks/credential-rotation.md).
 ```bash
 # Install Sealed Secrets controller
 helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
@@ -243,6 +258,10 @@ Get the LoadBalancer IP:
 ```bash
 kubectl get svc nginx-ingress-ingress-nginx-controller -n ingress-nginx
 ```
+
+> **Staging (2026-10-20):** the ingress address is the Traefik LoadBalancer's, recorded as
+> `ingress_ip_address` in `k8s/staging/azure-identity.yaml`; there is no `ingress-nginx` namespace
+> (D-29). See "Staging hosts" below.
 
 #### Staging hosts (Phase 29)
 
@@ -536,6 +555,15 @@ bash scripts/check-branch-behind-base.sh \
 |--------|--------------------|
 | `check-runtime-freshness.sh` | For **every** compose service with a `build:` stanza and a running container: (1) the image's **`.Metadata.LastTagTime`** is at or after the newest commit touching the paths that image is built from, and (2) the container's image **ID** equals the ID the tag now points at. (1) catches "source changed, nobody rebuilt"; (2) catches "image rebuilt, container only `start`ed, so the new image is not running". The service set, each build context and each Dockerfile are read from `docker compose config`; the build **inputs** are the host-side `COPY`/`ADD` operands of that Dockerfile plus the Dockerfile itself, so nothing is hardcoded here. **A built service that is missing or not `running` VOIDs the whole run (exit 2)** — see below. |
 | `check-branch-behind-base.sh` | `HEAD..<remote>/<default-branch>` is empty — this branch contains every commit already on its base. The base branch is **resolved** (`--base`, `$BASE_REF`, `$GITHUB_BASE_REF`, `refs/remotes/origin/HEAD`, then `git ls-remote --symref`), never hardcoded to `main`. Being *ahead* is normal and is not a finding; only being behind is. |
+
+**The Kubernetes half (plan 29-14, 2026-10-20).** `check-runtime-freshness.sh` is the compose half
+and has no cluster concept: pointed at Kubernetes it can only exit 2 (VOID).
+`scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag <40-hex deployed sha>` is the
+Kubernetes half. It reads the `imageID` of every running `core-java`, `edge-go` and `frontend`
+container and requires each to be in the digest set GHCR holds for the commit that was deployed
+(the recorded `DEPLOYED_SHA` / `DEPLOY_TAG`, never a fresh `git rev-parse HEAD`). The CI
+`deploy-staging` job runs it after the rollout; exit 2 (VOID) fails the job, because "could not
+check" is never "clean". Usage: [`docs/runbooks/staging-operations.md`](../docs/runbooks/staging-operations.md).
 
 **A third gate covers a hazard neither of the two above can see: a pinned dependency that is
 *current* in the tree and *out of support* in the world.** `scripts/check-dependency-horizons.sh`

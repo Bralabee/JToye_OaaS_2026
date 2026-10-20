@@ -43,6 +43,18 @@ For the staging/production recipe see `k8s/QUICK_START.md` and `k8s/DEPLOYMENT.m
 either for this one — the local path needs guards, an out-of-band secret bootstrap and locally built
 images that the production path does not.
 
+> **Staging differs from local in two ways this file does not cover (2026-10-20, Phase 29).**
+> (1) The deployed ingress controller is Traefik in the `traefik` namespace (D-29). Local's
+> NetworkPolicies still name `ingress-nginx` because `k8s/local/configmap-patch.yaml` overrides
+> `ingress.controller-namespace` to `ingress-nginx`, the minikube addon's namespace, and the
+> kustomize `replacements:` write that value into the controller `namespaceSelector` of
+> `frontend-allow`, `core-java-allow`, `edge-go-allow` and `acme-http01-solver-allow`.
+> (2) The staging-only components (Keycloak, Redis, RabbitMQ, Mailpit, Prometheus, Alertmanager,
+> Grafana, the Key Vault + CSI chain and the cluster-CA truststore, all under `k8s/components/`)
+> are listed by `k8s/staging/kustomization.yaml` only and are **not part of the local render**:
+> local reaches those services on the host compose stack. Staging operation:
+> `docs/runbooks/staging-operations.md`.
+
 ---
 
 ## 2. The compose XOR k8s rule

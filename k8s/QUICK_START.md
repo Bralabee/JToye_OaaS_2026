@@ -8,6 +8,15 @@
 > the nginx security-header snippet, NetworkPolicy enforcement), so a local pass is never mistaken
 > for a production guarantee.
 
+> **Superseded for staging, 2026-10-20.** Two instructions below do not describe staging, which
+> Phase 29 built differently. (1) Staging's ingress controller is Traefik v3 (D-29), not
+> ingress-nginx: it is applied by `scripts/staging-bootstrap.sh --stage traefik` from
+> [`k8s/platform/traefik`](./platform/traefik/README.md), and the IngressClass stays `nginx`.
+> (2) Staging's secrets come from Azure Key Vault through the Secrets Store CSI driver (D-23), not
+> from `kubectl create secret` or SealedSecrets. See
+> [`docs/runbooks/staging-operations.md`](../docs/runbooks/staging-operations.md). The steps below
+> stay as the production recipe until Phase 32 decides production.
+
 ## TL;DR - Deploy to Production in 5 Minutes
 
 ### Prerequisites Installed?
