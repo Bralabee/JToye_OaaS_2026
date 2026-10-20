@@ -1908,6 +1908,15 @@ jobs:
     # is set to 'true' (the old branch-name gate could never fire — that branch
     # does not exist on the remote).
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    # One staging deploy-or-probe at a time, across runs. The staging-edge-probe job below
+    # joins this SAME group, so a probe of run N cannot overlap run N+1's rollout or rollback
+    # and report (or sign off) a transient revision. cancel-in-progress is false: a rollout
+    # in flight is never killed half-applied. GitHub keeps one running and one PENDING job
+    # per group, so a third push cancels the older pending deploy-staging; that is safe, the
+    # newer push deploys a newer tree.
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
     # Plan 29-21 (D-04, D-32): Azure is reached ONLY through an OIDC federated credential.
     # id-token: write lets azure/login request the GitHub token that Entra exchanges for
     # jtoye-ci, whose federated credential gh-deploy-staging admits exactly the subject
@@ -2177,7 +2186,7 @@ jobs:
         # kubeconfig's server to equal the staging API server; since plan 29-21 both come
         # from the Configure kubeconfig step above (az aks get-credentials + kubelogin).
         run: |
-          bash scripts/check-deploy-digest-parity.sh --context "$(kubectl config current-context)" --tag "$DEPLOY_TAG"
+          bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag "$DEPLOY_TAG"
 
       - name: Health check after core-java deployment
         # issue #98 [P2-7] item 4: actuator now lives on the INTERNAL management
@@ -2223,83 +2232,45 @@ jobs:
   # A SEPARATE JOB, NOT A STEP OF deploy-staging, and that is the whole design. A failing step in
   # deploy-staging runs "Rollback on failure" (kubectl rollout undo on all three Deployments), so
   # an edge-probe step that flaked on a DNS blip or a Traefik restart would roll back a CORRECT
-  # deploy. Here a red is a red check on the run and nothing else: this job holds no write
-  # permission on anything, runs no kubectl verb that changes the cluster, and no later job
-  # `needs:` it. `needs: deploy-staging` with the implicit success() means it is skipped, not
-  # run, against a deploy that failed or was rolled back.
+  # deploy. Here a red is a red check on the run and nothing else. `needs: deploy-staging` with
+  # the implicit success() means it is skipped, not run, against a deploy that failed or was
+  # rolled back, and no later job `needs:` it.
+  #
+  # WHAT THIS JOB HOLDS: `contents: read` on the repository, and nothing else. No `id-token`
+  # (it cannot mint an OIDC token), no Azure login, no kubelogin, no kubeconfig, no cluster
+  # credential of any kind, and no `environment:` (so no environment secret or variable, no
+  # federated-credential subject, and no GitHub deployment record that a red probe could turn
+  # into a failed "staging" deployment). It runs repo code, so it must not hold the identity
+  # deploy-staging uses. The read-only run needs none of that: the script's context guard
+  # applies only to --fail-arms, and the four arms curl the public staging hosts.
   #
   # READ-ONLY ARMS ONLY, with --skip-burst. The 429 burst arm (1500 requests at concurrency 40,
   # passing only above ~150 rps) is timing-sensitive and says as much about the client as about
-  # the edge; it stays operator-run, as does --fail-arms (it creates a scratch Ingress). The
-  # script's own PASS line says the burst arm was not run, so this job's green cannot be read as
-  # the full five-arm result.
+  # the edge; it stays operator-run, as does --fail-arms (it creates a scratch Ingress and needs
+  # the cluster). The script's own PASS line says the burst arm was not run, so this job's green
+  # cannot be read as the full five-arm result.
   #
-  # Same `if:` as deploy-staging, same `environment: staging` (the Entra federated credential
-  # admits exactly the subject repo:Bralabee/JToye_OaaS_2026:environment:staging), and the same
-  # pinned login, kubelogin and kubeconfig steps. The normal run makes no cluster call: the
-  # script's context guard only reads the kubeconfig (the server URL, and kubelogin on PATH), so
-  # no `can-i` step is repeated here.
+  # Same `if:` as deploy-staging and the SAME `concurrency:` group, so a probe never overlaps a
+  # later run's rollout.
   staging-edge-probe:
     name: Staging Edge Probe
     needs: deploy-staging
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
     permissions:
-      id-token: write
       contents: read
-    environment:
-      name: staging
-      url: https://app-staging.olajay.co.uk
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
-        with:
-          version: 'v1.36.4'
-
-      - name: Refuse a subscription that is not J'Toye's
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          if [ "$AZURE_SUBSCRIPTION_ID" != "c483d353-5f61-4587-a790-addb9ab5fb94" ]; then
-            echo "FATAL: environment variable AZURE_SUBSCRIPTION_ID is '${AZURE_SUBSCRIPTION_ID:-<unset>}', not the J'Toye subscription c483d353-5f61-4587-a790-addb9ab5fb94." >&2
-            exit 1
-          fi
-
-      - name: Azure login (OIDC, jtoye-ci, no stored secret)
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Install kubelogin (pinned, checksum-verified)
-        run: |
-          KUBELOGIN_VERSION="v0.2.21"
-          KUBELOGIN_SHA256="934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66"
-          curl -sSfL -o kubelogin.zip "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip"
-          echo "${KUBELOGIN_SHA256}  kubelogin.zip" | sha256sum -c -
-          unzip -o -j kubelogin.zip bin/linux_amd64/kubelogin -d kubelogin-bin
-          sudo install -m 0755 kubelogin-bin/kubelogin /usr/local/bin/kubelogin
-          kubelogin --version
-
-      - name: Configure kubeconfig (az aks get-credentials + kubelogin, Entra only)
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          set -euo pipefail
-          az aks get-credentials --subscription "$AZURE_SUBSCRIPTION_ID" -g jtoye-rg -n jtoye-stg-aks --overwrite-existing
-          kubelogin convert-kubeconfig -l azurecli
-          kubectl config current-context
-
       # curl, jq and getent are on the runner image. Exit 1 = an arm failed on the live edge,
-      # exit 2 = VOID (a host did not resolve, a request did not complete): both fail this job
-      # and neither touches the cluster.
+      # exit 2 = VOID (a host did not resolve, a request did not complete): both fail this job.
       - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin)
-        run: bash scripts/check-staging-edge.sh --context "$(kubectl config current-context)" --skip-burst
+        run: bash scripts/check-staging-edge.sh --skip-burst
 
   # Job 5: Deploy to production
   #

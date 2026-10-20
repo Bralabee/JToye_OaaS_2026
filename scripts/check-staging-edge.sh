@@ -68,13 +68,16 @@
 #
 # USAGE
 #
-#   scripts/check-staging-edge.sh --context jtoye-stg-aks [--fail-arms | --skip-burst]
+#   scripts/check-staging-edge.sh [--skip-burst]                       read-only, no cluster access
+#   scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms  writes to the cluster
 #   EDGE_FORMAT=tap scripts/check-staging-edge.sh ...   (TAP 13 output, one test per arm)
 #
-#   --context is REQUIRED, with no default, and passes scripts/lib/staging-kube-guard.sh
+#   The read-only run (default, or --skip-burst) only curls the public hosts. It needs no
+#   kubeconfig, no kubelogin and no --context (one given is ignored), so a CI job can run it
+#   holding no cluster credential. --fail-arms is the only mode that writes to the cluster:
+#   it REQUIRES --context, with no default, which passes scripts/lib/staging-kube-guard.sh
 #   (the employer's sipbihs2aks is refused by name; the context must point at the staging
-#   API server recorded in k8s/staging/azure-identity.yaml). The normal run only reads the
-#   public hosts; --fail-arms is the only mode that writes to the cluster.
+#   API server recorded in k8s/staging/azure-identity.yaml).
 #
 #   --skip-burst  run the four read-only arms (headers, csp, cors, admin) and NOT the burst arm.
 #                 The burst arm fires 1500 requests at concurrency 40 and passes only above
@@ -96,9 +99,9 @@
 #   The `staging-edge-probe` job in .github/workflows/ci-cd.yaml runs the four read-only arms
 #   with --skip-burst after every successful staging deploy. It is a SEPARATE job (needs:
 #   deploy-staging), not a step of the deploy job, so a red here never triggers the deploy's
-#   rollback of a correct deploy. The script needs only curl, jq, getent and a kubeconfig
-#   whose context passes the guard (the guard reads the kubeconfig locally; the normal run
-#   never calls the cluster), all of which a hosted runner has once it has logged in.
+#   rollback of a correct deploy. The script needs only curl, jq and getent, all on a hosted
+#   runner image, and the job holds `contents: read` and nothing else: no Azure login, no
+#   kubeconfig, no OIDC token, no environment.
 #   NOT in CI, by design: the burst arm (timing-sensitive) and --fail-arms (creates and deletes
 #   a scratch Ingress in jtoye-staging). Both stay operator-run.
 
@@ -157,13 +160,20 @@ fi
 case "$FORMAT" in text|tap) ;; *) echo "USAGE ERROR: EDGE_FORMAT must be text or tap, got '$FORMAT'" >&2; exit 2 ;; esac
 
 # ---- the context guard (the same implementation every staging script uses) -------------
-# shellcheck source=lib/staging-kube-guard.sh
-if ! source "$ROOT/scripts/lib/staging-kube-guard.sh"; then
-  echo "VOID: could not source scripts/lib/staging-kube-guard.sh" >&2
-  exit 2
+# Applied ONLY to --fail-arms, the one mode that writes to the cluster. The read-only run
+# (default, --skip-burst) only curls the public hosts: it makes no cluster call, so it needs
+# no kubeconfig, no kubelogin and no --context, and a CI job running it holds no cluster
+# credential at all (review of #989: the probe job was minting a cluster-write token only to
+# satisfy this guard).
+if [ "$FAIL_ARMS" -eq 1 ]; then
+  # shellcheck source=lib/staging-kube-guard.sh
+  if ! source "$ROOT/scripts/lib/staging-kube-guard.sh"; then
+    echo "VOID: could not source scripts/lib/staging-kube-guard.sh" >&2
+    exit 2
+  fi
+  staging_kube_guard "$CONTEXT" "$IDENTITY_FILE"; guard_rc=$?
+  if [ "$guard_rc" -ne 0 ]; then exit "$guard_rc"; fi
 fi
-staging_kube_guard "$CONTEXT" "$IDENTITY_FILE"; guard_rc=$?
-if [ "$guard_rc" -ne 0 ]; then exit "$guard_rc"; fi
 
 for tool in curl jq getent; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -653,13 +663,14 @@ wait_route() {
 # ---- run ----------------------------------------------------------------------------------
 STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MODE="normal"; [ "$FAIL_ARMS" -eq 1 ] && MODE="fail-arms"
+CTX_LABEL="$CONTEXT"; [ "$FAIL_ARMS" -eq 0 ] && CTX_LABEL="none (read-only: public hosts only, no cluster call)"
 [ "$SKIP_BURST" -eq 1 ] && MODE="normal,skip-burst"
 if [ "$FORMAT" = "tap" ]; then
   echo "TAP version 13"
   if [ "$FAIL_ARMS" -eq 1 ]; then echo "1..6"; elif [ "$SKIP_BURST" -eq 1 ]; then echo "1..4"; else echo "1..5"; fi
-  echo "# check-staging-edge ${STAMP} mode=${MODE} context=${CONTEXT}"
+  echo "# check-staging-edge ${STAMP} mode=${MODE} context=${CTX_LABEL}"
 else
-  echo "check-staging-edge  (${STAMP})  mode=${MODE}  context=${CONTEXT}"
+  echo "check-staging-edge  (${STAMP})  mode=${MODE}  context=${CTX_LABEL}"
 fi
 
 # run_arm NAME FN ARGS... — normal mode: the arm's own verdict
