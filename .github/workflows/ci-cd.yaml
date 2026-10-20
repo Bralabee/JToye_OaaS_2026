@@ -810,6 +810,16 @@ jobs:
       - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
         run: bash scripts/check-deploy-digest-parity.sh --selftest
 
+      # PR #984 review round 1 (F2): the staging rollback step must be gated on the apply step's
+      # `applied` output, or any pre-apply failure (Key Vault pre-flight, kubeconfig, origin
+      # guard) undoes healthy live staging. The check reads the workflow; the selftest plants
+      # each hole (bare failure(), wrong output, output set after the apply, no step id, no
+      # rollback step) and requires the check to catch every one.
+      - name: Assert the staging rollback only runs once the apply was reached (r1 F2)
+        run: |
+          bash scripts/check-deploy-rollback-guard.sh
+          bash scripts/check-deploy-rollback-guard.sh --selftest
+
       # Plan 29-22 (D-33): every live mail-UI probe arm (UI-1..UI-8) FAILS on a
       # planted wrong response (an open UI, a wrong password accepted, http serving
       # the UI, SMTP published, the default certificate, relay on, the Send API
@@ -2029,6 +2039,9 @@ jobs:
         run: bash scripts/staging-secrets-preflight.sh --names-only
 
       - name: Pin full-sha images + deploy staging overlay
+        # `id` is what the rollback step is gated on (see its comment): this step sets the
+        # `applied` output immediately before `kubectl apply`.
+        id: deploy
         env:
           IMAGE_OWNER: ${{ github.repository_owner }}
         run: |
@@ -2086,6 +2099,9 @@ jobs:
               exit 1
             fi
           done
+          # From here on a failure means a deploy was STARTED, so the rollback step may undo it.
+          # Set before the apply, not after: an apply that fails half way has changed Deployments.
+          echo "applied=true" >> "$GITHUB_OUTPUT"
           kubectl apply -k k8s/staging
 
       - name: Wait for rollout
@@ -2127,7 +2143,12 @@ jobs:
           EXPECT_SWAGGER=false ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 
       - name: Rollback on failure
-        if: failure()
+        # failure() alone is true when ANY earlier step failed, including the ones that run
+        # BEFORE the apply (baked-origin guard, logout pre-flight, subscription check,
+        # kubelogin, can-i, Key Vault pre-flight). Nothing is deployed then, and an undo would
+        # roll healthy live staging back a revision. So it also needs the `applied` output of
+        # the apply step. scripts/check-deploy-rollback-guard.sh pins this shape (R-1..R-4).
+        if: failure() && steps.deploy.outputs.applied == 'true'
         run: |
           kubectl rollout undo deployment/core-java -n jtoye-staging
           kubectl rollout undo deployment/edge-go -n jtoye-staging
