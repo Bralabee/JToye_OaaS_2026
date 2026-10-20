@@ -675,6 +675,7 @@ data:
   keycloak.db.url: jdbc:postgresql://jtoye-stg-pg.postgres.database.azure.com:5432/keycloak?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory
   keycloak.hostname: https://auth-staging.olajay.co.uk
   keycloak.issuer.uri: http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-staging
+  keycloak.proxy-trusted-addresses: 10.244.0.0/16
   keycloak.public.issuer.uri: https://auth-staging.olajay.co.uk/realms/jtoye-staging
   log.level: DEBUG
   log.path: /var/log/jtoye
@@ -4702,10 +4703,10 @@ spec:
           timeoutSeconds: 3
         resources:
           limits:
-            memory: 384Mi
+            memory: 512Mi
           requests:
             cpu: 50m
-            memory: 128Mi
+            memory: 320Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -4843,6 +4844,11 @@ spec:
           value: "true"
         - name: KC_PROXY_HEADERS
           value: xforwarded
+        - name: KC_PROXY_TRUSTED_ADDRESSES
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.proxy-trusted-addresses
+              name: app-config
         - name: KC_HEALTH_ENABLED
           value: "true"
         - name: KC_METRICS_ENABLED

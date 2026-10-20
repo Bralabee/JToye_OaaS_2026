@@ -61,3 +61,59 @@ Staging changes made for these proofs, all reverted: rollout restart edge-go and
 Reproduced by the reviewer: `if [ "$STUCK" -gt 0 ]; then` -> `if false; then` left the selftest at rc 0, because old-pod-stuck also plants a wrong frontend image.
 Fix (e6a6c539): arm stuck-only, where one core-java pod stays terminating and every live digest matches, so the only thing that can fail it is the stuck-pod check. Its content check asserts that FAIL message.
 Selftest 33/33 rc 0. Break (stuck check -> `if false`): stuck-only rc 0 (want 1), selftest rc 1. Restored by sha256, clean again rc 0.
+Rounds 3 and 4 (Review-Resolution comments on #986): round 3 ran on 449deb57e09e, admissible 0; round 4 ran on bf85ae46b848 (a changelog entry only), admissible 0. Admissible per round: 1 -> 1 -> 0 -> 0.
+
+## Task 3, attempt 2: deploy-staging on the #986 merge commit 33585b23 (the fix PR for the parity race)
+Fix merged: PR #986 as 33585b230a95e37100c3f4e0b19dcacf4e37123e at 2026-10-20T18:06:34Z.
+Pre-flip at 2026-10-20T18:06:30Z-18:06:32Z: local head = PR head bf85ae46; check-branch-behind-base.sh rc 0; core-java aggregate health 200; main unchanged.
+DEPLOY_STAGING_ENABLED set to true, read back [true]. Squash message scanned with check-dply02-dispositions.sh --scan-text rc 0. Attribution lines in the stored merge message: 0.
+Issue #985 (the parity race) was closed by the #986 merge.
+CI run 39471893302 https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/39471893302
+  Job "Deploy to Staging": completed success at 2026-10-20T19:35Z.
+  Steps 1-17 success (step 15 Digest parity success, step 16 health success, step 17 smoke test success); step 18 "Rollback on failure" skipped.
+Operator-host parity: `bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag 33585b230a95e37100c3f4e0b19dcacf4e37123e` rc 0.
+  core-java sha256:53c33c05... MATCH
+  edge-go   sha256:4c46f907... MATCH
+  frontend  sha256:353af9e7... MATCH
+DPLY-01 spec: staging-login spec, STAGING_E2E=1, desktop project, against https://app-staging.olajay.co.uk, vendor password read via az_read: 2 passed (13.5s), rc 0, at 2026-10-20T19:36:38Z.
+This is the first green CI deploy of the phase (D-04): #99 closing evidence.
+
+### Dispositions applied (verbatim copy of /tmp/claude-29-28/apply.log, committed whole as evidence/29-28-dispositions-apply.txt; timestamps UTC; the "✓ Closed issue" lines are gh's own untimestamped output, each followed by the script's timestamped readback line)
+2026-10-20T19:36:44+00:00 --verify-approval rc=0 :: SUMMARY verify-approval approved=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 manifest=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 pinned=19 findings=0
+2026-10-20T19:36:53+00:00 --pre-close rc=0 :: SUMMARY pre-close rows=20 findings=0
+2026-10-20T19:36:56+00:00 #98 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#99 ([P2-8] CI/CD deploy half is theatre: dead staging gate, image drift, self-reverting smoke test)
+2026-10-20T19:37:00+00:00 #99 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#100 ([P2-9] Sealed Secrets half-landed: plaintext Secret template still a live kustomize resource)
+2026-10-20T19:37:03+00:00 #100 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#101 ([P2-10] No PITR (RPO 24h) while SYSTEM_DESIGN_V2 falsely claims WAL-G; no DB HA)
+2026-10-20T19:37:08+00:00 #101 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#112 ([P3-10] Ops readiness: runbook stubs, no paging path, no SLOs)
+2026-10-20T19:37:12+00:00 #112 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:14+00:00 #271 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:17+00:00 #292 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:19+00:00 #293 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:22+00:00 #294 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#296 (If an in-cluster Keycloak is ever deployed, restore the auth.jtoye.co.uk ingress rule and TLS SAN with its Service and Deployment)
+2026-10-20T19:37:25+00:00 #296 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#297 (Install Calico on the local minikube profile to actually enforce NetworkPolicies (prerequisite now cleared))
+2026-10-20T19:37:29+00:00 #297 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#299 (Customer-storefront realm is unconfigured in EVERY k8s environment — base, staging, production and local)
+2026-10-20T19:37:32+00:00 #299 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#300 (Work Order H: sealed-secrets / external-secrets for the local secrets path)
+2026-10-20T19:37:36+00:00 #300 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:38+00:00 #301 comment=equal readback; state OPEN -> OPEN (want OPEN)
+2026-10-20T19:37:41+00:00 #302 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:43+00:00 #304 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#592 (One-click unsubscribe (RFC 8058) is unwired in k8s — the List-Unsubscribe header degrades to RFC 2369 in every deployed environment)
+2026-10-20T19:37:47+00:00 #592 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#859 (Nothing asserts at deploy time that customer email verification is on; dev runs with it off)
+2026-10-20T19:37:51+00:00 #859 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:59+00:00 --post-close rc=0 :: SUMMARY post-close rows=20 findings=0
+Summary of the apply: 18 comments posted and read back equal; 10 issues closed by this run (99, 100, 101, 112, 296, 297, 299, 300, 592, 859) and 4 already closed (271, 292, 293, 302), so 14 issues CLOSED in all; 4 OPEN as approved (98, 294, 301, 304); the 2 pr-reference rows (953, 954) are MERGED and were not touched (14 + 4 + 2 = 20 rows). --verify-approval and --pre-close (19:36:44Z and 19:36:53Z) both precede the first comment (19:36:56Z).
+
+## After the close: the deploy variable and the #987 deploy (read 2026-10-20, closing PR round 1)
+`gh variable get DEPLOY_STAGING_ENABLED -R Bralabee/JToye_OaaS_2026` at 19:52Z: true. Left on deliberately (owner-delegated): every merge to main now redeploys staging, so follow-up merges are serial and each is watched.
+PR #987 (Grafana memory) merged as 1db60c70ada0d51a660f84086f2eb4c9d68f6809 at 2026-10-20T19:38:28Z; its deploy is run 39485184302. At 19:53:44Z the run was status in_progress, conclusion empty (Integration Tests (Testcontainers RLS) still running; no deploy job yet). Its conclusion is not recorded here.
+Live staging images at 2026-10-20T19:52:06Z (`kubectl --context jtoye-stg-aks -n jtoye-staging get deploy core-java edge-go frontend`, read-only): ghcr.io/bralabee/jtoye-{core-java,edge-go,frontend}:33585b230a95e37100c3f4e0b19dcacf4e37123e.
+Merging the closing docs PR (#991) redeploys staging as well.

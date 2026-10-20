@@ -729,11 +729,27 @@ jobs:
       - name: Prove INV-18 catches planted mail-UI holes (--selftest-inv18)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv18
 
+      # #976: INV-20 keeps Keycloak from believing X-Forwarded-* from every source
+      # address. A Keycloak container with proxy headers on, in ANY spelling (env,
+      # -D in JAVA_OPTS*, command/args, envFrom, any ConfigMap), must carry exactly
+      # one trusted-addresses setting that resolves, in the render, to a non-empty
+      # private CIDR list without whitespace (never /0, never public); the legacy
+      # KC_PROXY and any source the render cannot read are refused.
+      # 39 planted arms (the two long-value controls must PASS, including the value
+      # folded before a `#`) and 5 unit probes (the unquoting helpers, the image
+      # finder and the path walker); the clean copy must exit 0. The path walker is
+      # k8s/scripts/render_paths.py: python3 with PyYAML is the runner's (the Key
+      # Vault chain gate below needs the same); a missing one is a PARSE ERROR.
+      - name: Prove INV-20 catches planted Keycloak proxy-trust holes (--selftest-inv20)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv20
+
       # #968 item 3: INV-21 keeps staging Grafana behind the same Traefik basic-auth chain as
       # the mail UI: every Ingress route to Service grafana carries auth-type basic and an
-      # auth-secret that a SecretProviderClass syncs as key `auth`. Seven planted holes (an open
-      # route, a cross-namespace secret, the wrong secret type, an unsynced secret, the wrong
-      # synced key, a second open route, no route at all, which is a PARSE ERROR, rc 2).
+      # auth-secret that a SecretProviderClass syncs as key `auth`, and every Service reaching Grafana's
+      # pod is ClusterIP. Ten planted holes (an open route, a cross-namespace secret, the wrong
+      # secret type, an unsynced secret, the wrong synced key, a second open route, no route at
+      # all, which is a PARSE ERROR, rc 2, a LoadBalancer Service, a second Service behind an
+      # open Ingress, and an open spec.defaultBackend).
       - name: Prove INV-21 catches planted Grafana edge-auth holes (--selftest-inv21)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv21
 

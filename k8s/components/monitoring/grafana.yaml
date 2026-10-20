@@ -117,12 +117,21 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 4
+        # MEMORY (issue #968). Measured on grafana/grafana:13.2.4 with the staging env, a 384Mi
+        # cgroup and a scan-shaped burst (8 parallel clients, ~14k junk-path and login requests):
+        # anonymous memory 240Mi at start and 275-301Mi under the burst (72-78% of the old limit),
+        # about 81% with kernel memory, so no room for the next spike. Idle use read 263Mi in the
+        # issue and 224Mi on the replacement pod. The request (320Mi) sits above both idle figures,
+        # so Grafana is not the first eviction candidate at rest; the limit (512Mi) is 1.65x the worst
+        # measured anon+kernel, and 1.33x the 384Mi the real kill exceeded. Staging node budget: the
+        # Grafana node carried 1718Mi of 2788Mi requested, so +192Mi of request fits (68%); a memory
+        # LIMIT is not scheduled against, only the request is.
         resources:
           requests:
             cpu: "50m"
-            memory: "128Mi"
+            memory: "320Mi"
           limits:
-            memory: "384Mi"
+            memory: "512Mi"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
