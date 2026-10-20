@@ -427,27 +427,48 @@
 #          scripts/staging-mail-ui.sh --probe (UI-1..UI-8).
 #
 #   INV-20 #976 (plan 29-10 finding), RENDER level, every target that renders a
-#          container whose image is Keycloak (KEYCLOAK_TARGETS, k8s/staging, MUST
-#          render one; production and local print "not applicable" until they do).
-#          Keycloak's --proxy-headers makes it believe X-Forwarded-Host/-Proto/-For
+#          Keycloak container (KEYCLOAK_TARGETS, k8s/staging, MUST render one;
+#          production and local print "not applicable" until they do). A container
+#          is Keycloak's by image name, by Keycloak's own server envs or args, or by
+#          living in a pod labelled app: keycloak (see KEYCLOAK_CTRS_AWK).
+#          Keycloak's proxy headers make it believe X-Forwarded-Host/-Proto/-For
 #          from whoever connects, unless --proxy-trusted-addresses is set ("By
 #          default all addresses are trusted", `kc.sh start --help`): a client could
 #          then choose the issuer URL, the scheme and the address Keycloak records
-#          for it. So a Keycloak container that has proxy headers on (KC_PROXY_HEADERS
-#          or --proxy-headers) must
-#            a. carry exactly one KC_PROXY_TRUSTED_ADDRESSES env (or the
-#               --proxy-trusted-addresses flag); none = trusts every source;
-#            b. get it as a literal, or from a NON-optional configMapKeyRef on an
-#               app-config key present in the render (a Secret source, an envFrom
-#               and an optional ref are refused: the value could not be judged, or
-#               could silently vanish into trust-everyone);
-#            c. have a non-empty value (Keycloak 26.8.1 refuses to start on an empty
-#               one, measured; this fails it at render time instead of at rollout);
+#          for it. INV-20 judges the container's EFFECTIVE configuration, wherever
+#          it is spelled:
+#            env           KC_PROXY_HEADERS, KC_PROXY_TRUSTED_ADDRESSES, KC_PROXY, and
+#                          any JAVA_OPTS* / JAVA_TOOL_OPTIONS / JDK_JAVA_OPTIONS value
+#                          carrying -Dkc.proxy-headers / -Dkc.proxy-trusted-addresses /
+#                          -Dkc.proxy
+#            args, command --proxy-headers, --proxy-trusted-addresses=, --proxy and the
+#                          -Dkc.proxy* spelling, one per item; an item that only
+#                          MENTIONS one (a sh -c script) or is a block scalar cannot be
+#                          read and FAILS closed
+#            envFrom       every key of a ConfigMap in the render (prefix applied); a
+#                          Secret, or a ConfigMap that is not rendered, FAILS closed
+#            configMapKeyRef  followed into ANY ConfigMap in the render
+#          If headers are on in ANY of them the container must
+#            a. have exactly ONE source of trusted addresses across all of the above
+#               (none = trusts every source; two = which wins cannot be judged, and
+#               a repeated flag is two);
+#            b. get it as a literal, or from a NON-optional configMapKeyRef on a key
+#               present in the render (a Secret or fieldRef source, an unrendered
+#               ConfigMap and an optional ref are refused: the value could not be
+#               judged, or could silently vanish into trust-everyone);
+#            c. have a non-empty value with NO whitespace and no empty entry (26.8.1
+#               refuses an empty value and does NOT trim " 10.0.0.0/8", both measured
+#               with the image; this fails them at render time instead of at rollout);
 #            d. have every entry pass the SAME judge as INV-12 (tp_entry_verdict):
 #               not /0, no shorter than /8, inside RFC 1918 / fc00::/7.
 #          And a Keycloak container must not use the legacy KC_PROXY / --proxy
 #          (edge, reencrypt, passthrough): it trusts the headers and has no trusted
 #          addresses option at all.
+#          Keycloak's setting has its OWN app-config key, keycloak.proxy-trusted-addresses,
+#          not core-java's security.trusted-proxies (empty = trust none to core-java,
+#          a boot failure to Keycloak).
+#          NOT SEEN, recorded: a keycloak.conf or Quarkus (QUARKUS_HTTP_PROXY_*) setting
+#          shipped in the image or mounted from a volume; the render cannot read those.
 #          ACCEPTED RESIDUAL, recorded: the range is the pod network, so the in-cluster
 #          callers that keycloak-allow admits on 8080 are inside it. Traefik has no
 #          narrower stable range. Shown catching each hole by --selftest-inv20.

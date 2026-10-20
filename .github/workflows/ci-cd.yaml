@@ -730,10 +730,12 @@ jobs:
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv18
 
       # #976: INV-20 keeps Keycloak from believing X-Forwarded-* from every source
-      # address. A Keycloak container with proxy headers on must carry a
-      # KC_PROXY_TRUSTED_ADDRESSES that resolves, in the render, to a non-empty
-      # private CIDR list (never /0, never public); the legacy KC_PROXY is refused.
-      # Eight planted holes; the clean copy must exit 0.
+      # address. A Keycloak container with proxy headers on, in ANY spelling (env,
+      # -D in JAVA_OPTS*, command/args, envFrom, any ConfigMap), must carry exactly
+      # one trusted-addresses setting that resolves, in the render, to a non-empty
+      # private CIDR list without whitespace (never /0, never public); the legacy
+      # KC_PROXY and any source the render cannot read are refused.
+      # 34 planted holes and 3 unit probes; the clean copy must exit 0.
       - name: Prove INV-20 catches planted Keycloak proxy-trust holes (--selftest-inv20)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv20
 
