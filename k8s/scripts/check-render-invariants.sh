@@ -179,7 +179,7 @@
 #               friends) would bypass every assertion above.
 #
 #          ASSERTION SHAPE IS LOAD-BEARING.
-#            a. Tuples are read through RENDER_PATHS_AWK (full key paths), never a
+#            a. Tuples are read through render_paths.py (full key paths), never a
 #               forward scan: `kubectl kustomize` sorts map keys, so inside a rule
 #               `ports:` is emitted BEFORE the `to:` that says where it applies.
 #            b. A rendered port must be BARE DIGITS. In NetworkPolicy semantics a
@@ -263,7 +263,7 @@
 #          the ServiceAccount's, is k8s/scripts/check-keyvault-chain.sh's job.
 #
 #          ASSERTION SHAPE FOR INV-8..INV-10 + LOC-7. Each document is walked into
-#          full key PATHS by indentation (RENDER_PATHS_AWK), list items indexed,
+#          full key PATHS by render_paths.py (PyYAML), list items indexed,
 #          and values read by exact path. kubectl kustomize sorts map keys, so in
 #          a container `env:` is emitted BEFORE its own `name:` — a forward scan
 #          from the container name sees none of its env. Paths are immune to that
@@ -426,6 +426,53 @@
 #          catching each hole by --selftest-inv18; the live proof is
 #          scripts/staging-mail-ui.sh --probe (UI-1..UI-8).
 #
+#   INV-20 #976 (plan 29-10 finding), RENDER level, every target that renders a
+#          Keycloak container (KEYCLOAK_TARGETS, k8s/staging, MUST render one;
+#          production and local print "not applicable" until they do). A container
+#          is Keycloak's by image name, by Keycloak's own server envs or args, or by
+#          living in a pod labelled app: keycloak (see KEYCLOAK_CTRS_AWK).
+#          Keycloak's proxy headers make it believe X-Forwarded-Host/-Proto/-For
+#          from whoever connects, unless --proxy-trusted-addresses is set ("By
+#          default all addresses are trusted", `kc.sh start --help`): a client could
+#          then choose the issuer URL, the scheme and the address Keycloak records
+#          for it. INV-20 judges the container's EFFECTIVE configuration, wherever
+#          it is spelled:
+#            env           KC_PROXY_HEADERS, KC_PROXY_TRUSTED_ADDRESSES, KC_PROXY, and
+#                          any JAVA_OPTS* / JAVA_TOOL_OPTIONS / JDK_JAVA_OPTIONS value
+#                          carrying -Dkc.proxy-headers / -Dkc.proxy-trusted-addresses /
+#                          -Dkc.proxy
+#            args, command --proxy-headers, --proxy-trusted-addresses=, --proxy and the
+#                          -Dkc.proxy* spelling, one per item; an item that only
+#                          MENTIONS one (a sh -c script) or is a block scalar cannot be
+#                          read and FAILS closed
+#            envFrom       every key of a ConfigMap in the render (prefix applied); a
+#                          Secret, or a ConfigMap that is not rendered, FAILS closed
+#            configMapKeyRef  followed into ANY ConfigMap in the render
+#          If headers are on in ANY of them the container must
+#            a. have exactly ONE source of trusted addresses across all of the above
+#               (none = trusts every source; two = which wins cannot be judged, and
+#               a repeated flag is two);
+#            b. get it as a literal, or from a NON-optional configMapKeyRef on a key
+#               present in the render (a Secret or fieldRef source, an unrendered
+#               ConfigMap and an optional ref are refused: the value could not be
+#               judged, or could silently vanish into trust-everyone);
+#            c. have a non-empty value with NO whitespace and no empty entry (26.8.1
+#               refuses an empty value and does NOT trim " 10.0.0.0/8", both measured
+#               with the image; this fails them at render time instead of at rollout);
+#            d. have every entry pass the SAME judge as INV-12 (tp_entry_verdict):
+#               not /0, no shorter than /8, inside RFC 1918 / fc00::/7.
+#          And a Keycloak container must not use the legacy KC_PROXY / --proxy
+#          (edge, reencrypt, passthrough): it trusts the headers and has no trusted
+#          addresses option at all.
+#          Keycloak's setting has its OWN app-config key, keycloak.proxy-trusted-addresses,
+#          not core-java's security.trusted-proxies (empty = trust none to core-java,
+#          a boot failure to Keycloak).
+#          NOT SEEN, recorded: a keycloak.conf or Quarkus (QUARKUS_HTTP_PROXY_*) setting
+#          shipped in the image or mounted from a volume; the render cannot read those.
+#          ACCEPTED RESIDUAL, recorded: the range is the pod network, so the in-cluster
+#          callers that keycloak-allow admits on 8080 are inside it. Traefik has no
+#          narrower stable range. Shown catching each hole by --selftest-inv20.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -523,7 +570,7 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
@@ -531,6 +578,7 @@
 #   --selftest-inv16 the same for INV-16 (inv16_selftest)
 #   --selftest-inv17 the same for INV-17 (inv17_selftest)
 #   --selftest-inv18 the same for INV-18 (inv18_selftest)
+#   --selftest-inv20 the same for INV-20 (inv20_selftest)
 
 set -euo pipefail
 
@@ -1129,6 +1177,437 @@ if [[ "${1:-}" == "--selftest-inv18" ]]; then
     inv18_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv20 (#976): INV-20 shown CATCHING planted holes in Keycloak's
+# proxy-trust configuration. Same harness shape as -inv18. Each arm plants ONE hole
+# in a copy (k8s/components/keycloak/keycloak.yaml unless noted) and must make the
+# script exit 1 with that arm's message; the unmodified copy must exit 0.
+#
+# The trusted-addresses setting itself:
+#   env-removed        KC_PROXY_TRUSTED_ADDRESSES is deleted (trust every source)
+#   optional-ref       its configMapKeyRef becomes optional: true
+#   key-renamed        the configMapKeyRef names a key the ConfigMap does not define
+#   secret-ref         it comes from a secretKeyRef (cannot be judged)
+#   foreign-cm-absent  it reads a ConfigMap (kc-foreign) that is not in the render
+#   foreign-cm-bad     it reads a ConfigMap (kc-extra) that IS rendered, holding 0.0.0.0/0
+#                      (a ConfigMap other than app-config is judged, not trusted)
+#   envfrom-duplicate  a second source of it: an envFrom ConfigMap beside the env item
+#                      (a second env ITEM of the same name cannot be planted: kustomize
+#                      collapses duplicate env names in the staging render, measured, so
+#                      the count is shown on distinct sources here, on -D in
+#                      jvm-trusted-override and on repeated flags in flag-repeated)
+#   literal-any        the value is the literal 0.0.0.0/0
+#   literal-single     the same, single-quoted: '0.0.0.0/0' (judged unquoted)
+#   literal-public     the literal public range 8.8.8.0/24
+#   literal-empty      the literal empty string
+#   whitespace-literal "10.244.0.0/16, 10.0.0.0/8" (26.8.1 refuses it: measured)
+#   config-empty       keycloak.proxy-trusted-addresses is "" in k8s/staging
+#   config-whitespace  the same key holds a spaced list (k8s/staging)
+#   config-comma       the same key ends in a comma (k8s/staging)
+# The legacy proxy option:
+#   legacy-proxy       KC_PROXY=edge
+#   flag-legacy        args --proxy=edge
+# JVM system properties (JAVA_OPTS_APPEND):
+#   jvm-headers-only   -Dkc.proxy-headers with no trusted addresses anywhere
+#   jvm-trusted-any    -Dkc.proxy-trusted-addresses=0.0.0.0/0 as the only source
+#   jvm-trusted-override  the same on top of the env (a second source)
+#   jvm-secret         JAVA_OPTS_APPEND from a secretKeyRef (cannot be read)
+# command / args:
+#   flag-headers-only  args --proxy-headers=xforwarded, no trusted addresses
+#   flag-trusted-any   args --proxy-trusted-addresses=0.0.0.0/0
+#   flag-repeated      that flag twice (0.0.0.0/0, then the good range)
+#   flag-bare          --proxy-trusted-addresses with the value as the next item
+#   shell-wrapped      command sh -c "exec kc.sh start --proxy-headers=xforwarded"
+#   block-scalar       the same script as a | block scalar
+# Values kubectl FOLDS onto a continuation line (round 2 of #988: the path walker used
+# to emit only the first line, so a word past the fold was never judged):
+#   jvm-trusted-override-wrapped  jvm-trusted-override behind a 133-character head
+#   shell-wrapped-long            shell-wrapped, the proxy flag past the fold
+#   long-harmless                 a long JAVA_OPTS_APPEND with no proxy word: must PASS
+#                                 (a control arm: rc 0, not rc 1)
+# Values kubectl folds at a space that is followed by `#` (round 3 of #988: the awk path
+# walker took the continuation line "#b..." for a comment and cut the value off, rc 0;
+# the walker is PyYAML now, k8s/scripts/render_paths.py):
+#   hash-after-fold          -Djava.security.egd="file:/dev/./urandom #b" -Dkc.proxy-
+#                            trusted-addresses=0.0.0.0/0, folded before the `#`: the
+#                            flag past the fold must be judged (a second source)
+#   hash-after-fold-harmless the same fold with no proxy word after it: must PASS (control)
+# envFrom:
+#   envfrom-cm         a rendered ConfigMap supplies KC_PROXY_TRUSTED_ADDRESSES=0.0.0.0/0
+#   envfrom-secret     envFrom a Secret
+# Which containers are Keycloak's:
+#   image-quoted       image: "keycloak:26.8.1" (quoted, bare) and no trusted addresses
+#   image-custom       image: .../idp:26 (no keycloak in the name) and none
+#   container-by-label a sidecar with no keycloak image and no KC_* env, in the pod
+#                      labelled app: keycloak, turning headers on by -D
+#   idp-by-kcenv       a second Deployment (not labelled keycloak, image .../idp:1)
+#                      whose only Keycloak sign is KC_PROXY_HEADERS
+#   idp-by-args        the same, whose only sign is args --proxy-headers=xforwarded
+# Unit arms (the unquoting helper and the image finder, called directly, because
+# `kubectl kustomize` re-emits '0.0.0.0/0' and "keycloak:26.8.1" UNQUOTED, so a quoted
+# value cannot be planted through a render; the helpers are still the ones that decide):
+#   unit-unq           unq strips one pair of double or single quotes and nothing else
+#   unit-quoted-flag   a single-quoted --proxy-trusted-addresses=... and a double-quoted
+#                      --proxy-headers=... item are read as the flags they are
+#   unit-quoted-image  a quoted bare image, a single-quoted full image and a custom
+#                      image on a labelled pod are found as Keycloak; core-java's is not
+#   unit-walker-fold   the path walker, called directly on a ConfigMap whose single-quoted,
+#                      double-quoted and flow values are folded at a space before `#`,
+#                      returns each value WHOLE, and a tab inside a value stays one field
+#   unit-walker-void   the walker exits 2 with a PARSE ERROR, and prints nothing, for a
+#                      missing interpreter, a python3 whose PyYAML cannot be imported and
+#                      a document YAML rejects (never a silent fallback to a line reader)
+# INV20_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+# Plant primitives. Text with newlines travels through the environment, never -v.
+inv20_p_envdel() {      # <file> <env name>: delete that env item (and its sub-lines)
+    awk -v nm="$2" 'skip && /^          / { next } { skip = 0 } $0 == "        - name: " nm { skip = 1; next } { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_envadd() {      # <file> <text>: insert text as the first env items
+    T="$2" awk '{ print } /^        env:$/ && !d { printf "%s", ENVIRON["T"]; d = 1 }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_before() {      # <file> <anchor regex> <text>: insert text before the first matching line
+    A="$2" T="$3" awk '!d && $0 ~ ENVIRON["A"] { printf "%s", ENVIRON["T"]; d = 1 } { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_replace() {     # <file> <anchor regex> <text>: replace the first matching line
+    A="$2" T="$3" awk '!d && $0 ~ ENVIRON["A"] { printf "%s", ENVIRON["T"]; d = 1; next } { print }' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+inv20_p_cm() {          # <file> <name> <key> <value>: append a ConfigMap document
+    printf -- '---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\ndata:\n  %s: "%s"\n' "$2" "$3" "$4" >> "$1"
+}
+inv20_p_lit() {         # <file> <value text as written after "value: ">: the trusted env as a literal
+    inv20_p_envdel "$1" KC_PROXY_TRUSTED_ADDRESSES && \
+    inv20_p_envadd "$1" "        - name: KC_PROXY_TRUSTED_ADDRESSES
+          value: $2
+"
+}
+inv20_p_ref() {         # <file> <configmap> <key>: the trusted env from a configMapKeyRef
+    inv20_p_envdel "$1" KC_PROXY_TRUSTED_ADDRESSES && \
+    inv20_p_envadd "$1" "        - name: KC_PROXY_TRUSTED_ADDRESSES
+          valueFrom:
+            configMapKeyRef:
+              name: $2
+              key: $3
+"
+}
+inv20_p_jvm() {         # <file> <value>: a JAVA_OPTS_APPEND literal
+    inv20_p_envadd "$1" "        - name: JAVA_OPTS_APPEND
+          value: \"$2\"
+"
+}
+inv20_p_jvm_sq() {      # <file> <value>: a JAVA_OPTS_APPEND literal, single-quoted (the value may hold ")
+    inv20_p_envadd "$1" "        - name: JAVA_OPTS_APPEND
+          value: '$2'
+"
+}
+inv20_p_args() {        # <file> <replacement for the args line>
+    inv20_p_replace "$1" '^        args: \["start"\]$' "$2
+"
+}
+
+# A JAVA_OPTS_APPEND head long enough that kubectl folds the rest of the value onto a
+# continuation line (the fold is at about 80 characters; this is 133).
+INV20_LONG_PREFIX='-Xms64m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -Dfoo.bar.baz.qux=aaaaaaaaaaaaaaaaaaaa'
+# The reviewer's repro: kubectl folds this exactly before the `#` (verified on the render),
+# so the continuation line begins with "#b" and the rest of the value is on it.
+INV20_HASH_PREFIX='-Xms64m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd="file:/dev/./urandom #b"'
+INV20_ARMS=(env-removed optional-ref key-renamed secret-ref foreign-cm-absent foreign-cm-bad envfrom-duplicate
+    literal-any literal-single literal-public literal-empty whitespace-literal config-empty config-whitespace config-comma
+    legacy-proxy flag-legacy jvm-headers-only jvm-trusted-any jvm-trusted-override jvm-secret
+    flag-headers-only flag-trusted-any flag-repeated flag-bare shell-wrapped block-scalar
+    jvm-trusted-override-wrapped shell-wrapped-long long-harmless hash-after-fold hash-after-fold-harmless
+    envfrom-cm envfrom-secret image-quoted image-custom container-by-label idp-by-kcenv idp-by-args)
+
+inv20_plant() {
+    local arm="$1" root="$2" f before kc="$2/components/keycloak/keycloak.yaml"
+    case "$arm" in
+        config-empty|config-whitespace|config-comma) f="$root/staging/configmap-patch.yaml" ;;
+        *) f="$kc" ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        env-removed)      inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES ;;
+        optional-ref)
+            awk '{ print } /^              key: keycloak\.proxy-trusted-addresses$/ { print "              optional: true" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        key-renamed)      inv20_p_ref "$f" app-config keycloak.proxy-trusted-addresses-renamed ;;
+        secret-ref)
+            inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_envadd "$f" "        - name: KC_PROXY_TRUSTED_ADDRESSES
+          valueFrom:
+            secretKeyRef:
+              name: kc-proxy-secret
+              key: trusted
+" ;;
+        foreign-cm-absent) inv20_p_ref "$f" kc-foreign proxy ;;
+        foreign-cm-bad)    inv20_p_ref "$f" kc-extra proxy && inv20_p_cm "$f" kc-extra proxy "0.0.0.0/0" ;;
+        envfrom-duplicate)
+            inv20_p_before "$f" '^        env:$' "        envFrom:
+        - configMapRef:
+            name: kc-extra
+" && inv20_p_cm "$f" kc-extra KC_PROXY_TRUSTED_ADDRESSES "10.244.0.0/16" ;;
+        literal-any)       inv20_p_lit "$f" '"0.0.0.0/0"' ;;
+        literal-single)    inv20_p_lit "$f" "'0.0.0.0/0'" ;;
+        literal-public)    inv20_p_lit "$f" '"8.8.8.0/24"' ;;
+        literal-empty)     inv20_p_lit "$f" '""' ;;
+        whitespace-literal) inv20_p_lit "$f" '"10.244.0.0/16, 10.0.0.0/8"' ;;
+        config-empty)      awk '{ if ($0 ~ /^  keycloak\.proxy-trusted-addresses: /) $0 = "  keycloak.proxy-trusted-addresses: \"\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        config-whitespace) awk '{ if ($0 ~ /^  keycloak\.proxy-trusted-addresses: /) $0 = "  keycloak.proxy-trusted-addresses: \"10.244.0.0/16, 10.0.0.0/8\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        config-comma)      awk '{ if ($0 ~ /^  keycloak\.proxy-trusted-addresses: /) $0 = "  keycloak.proxy-trusted-addresses: \"10.244.0.0/16,\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        legacy-proxy)
+            awk '{ print } /^          value: "xforwarded"$/ { print "        - name: KC_PROXY"; print "          value: \"edge\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        flag-legacy)       inv20_p_args "$f" '        args: ["start", "--proxy=edge"]' ;;
+        jvm-headers-only)  inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_jvm "$f" "-Dkc.proxy-headers=xforwarded" ;;
+        jvm-trusted-any)   inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_jvm "$f" "-Xmx1g -Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        jvm-trusted-override) inv20_p_jvm "$f" "-Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        jvm-secret)
+            inv20_p_envadd "$f" "        - name: JAVA_OPTS_APPEND
+          valueFrom:
+            secretKeyRef:
+              name: kc-jvm
+              key: opts
+" ;;
+        flag-headers-only) inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-headers=xforwarded"]' ;;
+        flag-trusted-any)  inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-trusted-addresses=0.0.0.0/0"]' ;;
+        flag-repeated)     inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-trusted-addresses=0.0.0.0/0", "--proxy-trusted-addresses=10.244.0.0/16"]' ;;
+        flag-bare)         inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_args "$f" '        args: ["start", "--proxy-trusted-addresses", "10.244.0.0/16"]' ;;
+        shell-wrapped)
+            inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_args "$f" '        command: ["/bin/sh", "-c", "exec /opt/keycloak/bin/kc.sh start --proxy-headers=xforwarded"]' ;;
+        jvm-trusted-override-wrapped) inv20_p_jvm "$f" "$INV20_LONG_PREFIX -Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        shell-wrapped-long)
+            inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_args "$f" "        command: [/bin/sh, -c, 'echo starting the keycloak server with a long preamble to push the option past the fold; exec /opt/keycloak/bin/kc.sh start --proxy-trusted-addresses=0.0.0.0/0']" ;;
+        long-harmless)     inv20_p_jvm "$f" "$INV20_LONG_PREFIX -Dfoo.bar.baz.quux=bbbbbbbbbbbbbbbbbbbbbbbb" ;;
+        hash-after-fold)   inv20_p_jvm_sq "$f" "$INV20_HASH_PREFIX -Dkc.proxy-trusted-addresses=0.0.0.0/0" ;;
+        hash-after-fold-harmless) inv20_p_jvm_sq "$f" "$INV20_HASH_PREFIX -Dfoo.bar.baz.quux=bbbbbbbbbbbbbbbbbbbbbbbb" ;;
+        block-scalar)
+            inv20_p_envdel "$f" KC_PROXY_HEADERS && inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_args "$f" '        command:
+        - /bin/sh
+        - -c
+        - |
+          exec /opt/keycloak/bin/kc.sh start --proxy-headers=xforwarded' ;;
+        envfrom-cm)
+            inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && \
+            inv20_p_before "$f" '^        env:$' "        envFrom:
+        - configMapRef:
+            name: kc-extra
+" && inv20_p_cm "$f" kc-extra KC_PROXY_TRUSTED_ADDRESSES "0.0.0.0/0" ;;
+        envfrom-secret)
+            inv20_p_before "$f" '^        env:$' "        envFrom:
+        - secretRef:
+            name: kc-secret
+" ;;
+        image-quoted)      inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_replace "$f" '^        image: quay\.io/keycloak/keycloak' '        image: "keycloak:26.8.1"
+' ;;
+        image-custom)      inv20_p_envdel "$f" KC_PROXY_TRUSTED_ADDRESSES && inv20_p_replace "$f" '^        image: quay\.io/keycloak/keycloak' '        image: registry.example.io/jtoye/idp:26
+' ;;
+        container-by-label)
+            inv20_p_before "$f" '^      volumes:$' '      - name: idp-sidecar
+        image: registry.example.io/jtoye/idp:1
+        env:
+        - name: JAVA_OPTS_APPEND
+          value: "-Dkc.proxy-headers=xforwarded"
+' ;;
+        idp-by-kcenv)
+            printf -- '---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: idp\nspec:\n  selector:\n    matchLabels:\n      app: idp\n  template:\n    metadata:\n      labels:\n        app: idp\n    spec:\n      containers:\n      - name: idp\n        image: registry.example.io/jtoye/idp:1\n        env:\n        - name: KC_PROXY_HEADERS\n          value: xforwarded\n' >> "$f" ;;
+        idp-by-args)
+            printf -- '---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: idp\nspec:\n  selector:\n    matchLabels:\n      app: idp\n  template:\n    metadata:\n      labels:\n        app: idp\n    spec:\n      containers:\n      - name: idp\n        image: registry.example.io/jtoye/idp:1\n        args: ["--proxy-headers=xforwarded"]\n' >> "$f" ;;
+        *) return 1 ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+# The unit arms' probe, run in a fresh bash against the script under test.
+inv20_unit_probe() {
+    local src="$1" pass=1 paths found
+    eval "$(sed -n '/^unq() {/,/^}/p; /^INV20_[A-Z_]*_RE=/p; /^inv20_fail()/p; /^inv20_mentions()/p; /^inv20_word() {/,/^}/p; /^inv20_token() {/,/^}/p' "$src")"
+    eval "$(sed -n "/^KEYCLOAK_IMAGE_RE=/p; /^KEYCLOAK_CTRS_AWK='/,/^'\$/p" "$src")"
+    eval "$(sed -n '/^render_paths() {/,/^}/p' "$src")"
+    local RENDER_PATHS_PY="$(dirname "$src")/render_paths.py"
+    local rel=unit who20=unit inv20_bad=0
+    local -a I20_TV=() I20_TS=()
+    local I20_HDR=0 I20_LEGACY=0 I20_UNJ=0
+    case "$2" in
+        unq)
+            unq "'x'"; [[ "$UNQ" == x ]] || pass=0
+            unq '"x"'; [[ "$UNQ" == x ]] || pass=0
+            unq 'x'; [[ "$UNQ" == x ]] || pass=0
+            unq "'x"; [[ "$UNQ" == "'x" ]] || pass=0
+            unq "''"; [[ -z "$UNQ" ]] || pass=0 ;;
+        quoted-flag)
+            inv20_token "'--proxy-trusted-addresses=0.0.0.0/0'" args 2>/dev/null
+            [[ "${I20_TV[0]:-}" == "0.0.0.0/0" && ${#I20_TV[@]} -eq 1 ]] || pass=0
+            inv20_token '"--proxy-headers=xforwarded"' args 2>/dev/null
+            (( I20_HDR == 1 )) || pass=0 ;;
+        quoted-image)
+            paths="$(printf '%s\t%s\t%s\t%s\n' \
+                Deployment d1 'spec::template::spec::containers::[0]::name' c1 \
+                Deployment d1 'spec::template::spec::containers::[0]::image' '"keycloak:26.8.1"' \
+                Deployment d2 'spec::template::spec::containers::[0]::name' c2 \
+                Deployment d2 'spec::template::spec::containers::[0]::image' "'quay.io/keycloak/keycloak:26.8.1'" \
+                Deployment d3 'spec::template::spec::containers::[0]::name' c3 \
+                Deployment d3 'spec::template::spec::containers::[0]::image' 'jtoye-core-java:1' \
+                Deployment d4 'spec::template::metadata::labels::app' 'keycloak' \
+                Deployment d4 'spec::template::spec::containers::[0]::name' c4 \
+                Deployment d4 'spec::template::spec::containers::[0]::image' 'registry.example.io/idp:1')"
+            found="$(awk -F'\t' -v re="$KEYCLOAK_IMAGE_RE" "$KEYCLOAK_CTRS_AWK" <<< "$paths" | sort | cut -f2 | tr '\n' ' ')"
+            [[ "$found" == "d1 d2 d4 " ]] || { pass=0; echo "found: '$found'" >&2; } ;;
+        walker-fold)
+            local tmp want v
+            tmp="$(mktemp -d)"
+            printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'metadata:' '  name: fold' 'data:' \
+                "  single: 'aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg \"file:/dev/./urandom" \
+                "    #b\" -Dkc.proxy-trusted-addresses=0.0.0.0/0'" \
+                '  double: "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg' \
+                '    #c tail"' \
+                "  flow: [alpha, 'beta" \
+                "    #gamma delta']" \
+                '  tabbed: "a\tb"' > "$tmp/fold.yaml"
+            render_paths "$tmp/fold.yaml" > "$tmp/out.tsv" 2> "$tmp/err" || { pass=0; echo "walker failed: $(cat "$tmp/err")" >&2; }
+            want="'aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg \"file:/dev/./urandom #b\" -Dkc.proxy-trusted-addresses=0.0.0.0/0'"
+            v="$(awk -F'\t' '$3 == "data::single" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == "$want" ]] || { pass=0; echo "single: '$v'" >&2; }
+            want='"aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggg #c tail"'
+            v="$(awk -F'\t' '$3 == "data::double" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == "$want" ]] || { pass=0; echo "double: '$v'" >&2; }
+            v="$(awk -F'\t' '$3 == "data::flow" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == "[alpha, 'beta #gamma delta']" ]] || { pass=0; echo "flow: '$v'" >&2; }
+            v="$(awk -F'\t' '$3 == "data::tabbed" { print $4 }' "$tmp/out.tsv")"
+            [[ "$v" == '"a\tb"' ]] || { pass=0; echo "tabbed: '$v'" >&2; }
+            [[ "$(awk -F'\t' 'NF != 4' "$tmp/out.tsv" | wc -l)" == 0 ]] || { pass=0; echo "a record is not 4 fields" >&2; }
+            rm -rf "$tmp" ;;
+        walker-void)
+            local tmp out rc
+            tmp="$(mktemp -d)"
+            printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'metadata:' '  name: ok' > "$tmp/ok.yaml"
+            printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'data:' '  a: [unclosed' > "$tmp/bad.yaml"
+            printf 'raise ImportError("planted: PyYAML absent")\n' > "$tmp/yaml.py"
+            # (1) no interpreter
+            out="$(RENDER_PATHS_PYTHON=/nonexistent/python3 render_paths "$tmp/ok.yaml" 2>&1)"; rc=$?
+            { (( rc == 2 )) && [[ "$out" == *"PARSE ERROR"* ]]; } || { pass=0; echo "no-interpreter: rc=$rc out='$out'" >&2; }
+            # (2) an interpreter that cannot import PyYAML (a planted yaml.py first on the path)
+            out="$(PYTHONPATH="$tmp" render_paths "$tmp/ok.yaml" 2>&1)"; rc=$?
+            { (( rc == 2 )) && [[ "$out" == *"PARSE ERROR"* && "$out" == *"PyYAML is not importable"* ]]; } || { pass=0; echo "no-pyyaml: rc=$rc out='$out'" >&2; }
+            # (3) a document YAML rejects: rc 2, and NOTHING on stdout to be judged
+            out="$(render_paths "$tmp/bad.yaml" 2>/dev/null)"; rc=$?
+            { (( rc == 2 )) && [[ -z "$out" ]]; } || { pass=0; echo "bad-yaml: rc=$rc stdout='$out'" >&2; }
+            # (4) the control: the good document walks and exits 0
+            out="$(render_paths "$tmp/ok.yaml" 2>&1)"; rc=$?
+            { (( rc == 0 )) && [[ "$out" == *$'ConfigMap\tok\tmetadata::name\tok'* ]]; } || { pass=0; echo "control: rc=$rc out='$out'" >&2; }
+            rm -rf "$tmp" ;;
+    esac
+    (( pass )) 
+}
+
+inv20_selftest() {
+    local fmt="${INV20_SELFTEST_FORMAT:-plain}" st arm want out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv20 could not copy $K8S_DIR" >&2; exit 2; }
+    local P="INV-20: Deployment keycloak container 'keycloak'"
+    local H="$P turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+    local TWO="$P sets the trusted proxy addresses 2 times"
+    local ANY="$P KC_PROXY_TRUSTED_ADDRESSES entry '0.0.0.0/0'"
+    declare -A WANT=(
+        [env-removed]="$H"
+        [optional-ref]="$P KC_PROXY_TRUSTED_ADDRESSES reads ConfigMap 'app-config' through an optional configMapKeyRef"
+        [key-renamed]="$P KC_PROXY_TRUSTED_ADDRESSES reads ConfigMap 'app-config' key 'keycloak.proxy-trusted-addresses-renamed', which the render does not define"
+        [secret-ref]="$P KC_PROXY_TRUSTED_ADDRESSES is not a literal or a configMapKeyRef"
+        [foreign-cm-absent]="$P KC_PROXY_TRUSTED_ADDRESSES reads ConfigMap 'kc-foreign', which is not in the render"
+        [foreign-cm-bad]="$ANY"
+        [envfrom-duplicate]="$TWO"
+        [literal-any]="$ANY"
+        [literal-single]="$ANY"
+        [literal-public]="$P KC_PROXY_TRUSTED_ADDRESSES entry '8.8.8.0/24'"
+        [literal-empty]="$P KC_PROXY_TRUSTED_ADDRESSES is empty"
+        [whitespace-literal]="$P KC_PROXY_TRUSTED_ADDRESSES contains whitespace in '10.244.0.0/16, 10.0.0.0/8'"
+        [config-empty]="$P KC_PROXY_TRUSTED_ADDRESSES is empty (env KC_PROXY_TRUSTED_ADDRESSES from ConfigMap app-config key keycloak.proxy-trusted-addresses)"
+        [config-whitespace]="$P KC_PROXY_TRUSTED_ADDRESSES contains whitespace in '10.244.0.0/16, 10.0.0.0/8' (env KC_PROXY_TRUSTED_ADDRESSES from ConfigMap app-config key keycloak.proxy-trusted-addresses)"
+        [config-comma]="$P KC_PROXY_TRUSTED_ADDRESSES has an empty entry in '10.244.0.0/16,'"
+        [legacy-proxy]="$P sets the legacy KC_PROXY"
+        [flag-legacy]="$P sets the legacy KC_PROXY"
+        [jvm-headers-only]="$H"
+        [jvm-trusted-any]="$ANY"
+        [jvm-trusted-override]="$TWO"
+        [jvm-secret]="$P JAVA_OPTS_APPEND is not a literal or a configMapKeyRef"
+        [flag-headers-only]="$H"
+        [flag-trusted-any]="$ANY"
+        [flag-repeated]="$TWO"
+        [flag-bare]="$P passes --proxy-trusted-addresses without '=value'"
+        [shell-wrapped]="$P mentions a proxy option inside a larger string in its command"
+        [jvm-trusted-override-wrapped]="$TWO"
+        [shell-wrapped-long]="$P mentions a proxy option inside a larger string in its command"
+        [long-harmless]=""
+        [hash-after-fold]="$TWO"
+        [hash-after-fold-harmless]=""
+        [block-scalar]="$P has a block scalar ('|') in its command"
+        [envfrom-cm]="$ANY"
+        [envfrom-secret]="$P has an envFrom Secret 'kc-secret'"
+        [image-quoted]="$H"
+        [image-custom]="$H"
+        [container-by-label]="INV-20: Deployment keycloak container 'idp-sidecar' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+        [idp-by-kcenv]="INV-20: Deployment idp container 'idp' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+        [idp-by-args]="INV-20: Deployment idp container 'idp' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+    )
+    for arm in "${INV20_ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv20_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"
+            if [[ -z "$want" ]] && (( rc == 0 )); then
+                caught=yes; line="rc=0 (a control: this arm must PASS)"
+            elif [[ -n "$want" ]] && (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=1"
+            else
+                caught=no
+                line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-20|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    for arm in unit-unq unit-quoted-flag unit-quoted-image unit-walker-fold unit-walker-void; do
+        n=$((n + 1))
+        if line="$(bash -c "$(declare -f inv20_unit_probe); inv20_unit_probe \"\$1\" \"\$2\"" _ "${BASH_SOURCE[0]}" "${arm#unit-}" 2>&1)"; then caught=yes; line="ok"; else caught=no; line="probe failed: $line"; fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv20" ]]; then
+    inv20_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
@@ -1375,6 +1854,44 @@ REALM_LOGIN_CLIENTS=" $(awk -F'\t' -v b="$KC_BUILTIN_CLIENTS" 'index(b, " " $1 "
 # among the discovered targets (checked after the loop), as for WI_TARGETS.
 TRUSTSTORE_TARGETS=("k8s/staging")
 declare -A TRUSTSTORE_TARGET_SEEN=()
+# INV-20 (#976): the targets that MUST render a Keycloak container (its absence
+# there is a PARSE ERROR, not "not applicable", so a renamed component cannot make
+# the proxy-trust check silently stop running). A container IS Keycloak's when ANY of
+#   - its image, unquoted, names keycloak (quay.io/keycloak/keycloak:26.8.1,
+#     keycloak:26.8.1, acr.example/jtoye-keycloak:26, a custom or optimized build);
+#   - it sets one of Keycloak's own server envs (KC_PROXY*, KC_HOSTNAME*, KC_HTTP*,
+#     KC_DB / KC_DB_*, KC_BOOTSTRAP_*, KC_CACHE*, KC_HEALTH_*, KC_METRICS_*, KC_FEATURES*:
+#     a build with no keycloak in its name still needs them; core-java's own KC_ADMIN_*,
+#     KC_ISSUER_URI and KC_*_REALM are NOT Keycloak's), or its command/args name kc.sh,
+#     keycloak or a --proxy option;
+#   - its pod template is labelled app: keycloak (every container in that pod).
+# The first version matched the RAW image value with '(^|/)keycloak(:|@|$)', so a
+# quoted bare image or a renamed build was reported "not applicable" on any target
+# that is not in KEYCLOAK_TARGETS.
+KEYCLOAK_TARGETS=("k8s/staging")
+declare -A KEYCLOAK_TARGET_SEEN=()
+KEYCLOAK_IMAGE_RE='keycloak'
+# Output: <kind> TAB <name> TAB <container path>.
+KEYCLOAK_CTRS_AWK='
+function unq(v) { if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2); return v }
+{
+    if ($3 ~ /::(containers|initContainers)::\[[0-9]+\]::name$/) { c = $3; sub(/::name$/, "", c); allc[$1 "\t" $2 "\t" c] = 1 }
+    if ($3 ~ /::(containers|initContainers)::\[[0-9]+\]::image$/ && tolower(unq($4)) ~ re) { c = $3; sub(/::image$/, "", c); hit[$1 "\t" $2 "\t" c] = 1 }
+    if ($3 ~ /::(containers|initContainers)::\[[0-9]+\]::env::\[[0-9]+\]::name$/ && unq($4) ~ /^KC_(PROXY|HOSTNAME|HTTP|DB($|_)|BOOTSTRAP|CACHE|HEALTH|METRICS|FEATURES)/) { c = $3; sub(/::env::.*$/, "", c); hit[$1 "\t" $2 "\t" c] = 1 }
+    if ($3 ~ /::(containers|initContainers)::\[[0-9]+\]::(args|command)(::\[[0-9]+\])?$/ && tolower($4) ~ /--proxy|kc[._]proxy|kc\.sh|keycloak/) { c = $3; sub(/::(args|command)(::.*)?$/, "", c); hit[$1 "\t" $2 "\t" c] = 1 }
+    if ($3 ~ /(^|::)template::metadata::labels::app$/ && unq($4) == "keycloak") { p = $3; sub(/metadata::labels::app$/, "", p); lab[$1 "\t" $2 "\t" p] = 1 }
+}
+END {
+    for (k in allc) {
+        keep = (k in hit)
+        if (!keep) for (l in lab) {
+            split(k, a, "\t"); split(l, b, "\t")
+            if (a[1] == b[1] && a[2] == b[2] && index(a[3], b[3] "spec::") == 1) keep = 1
+        }
+        if (keep) print k
+    }
+}
+'
 TRUSTSTORE_PATH="/truststore/cacerts"
 # INIT_ITEMS_AWK: one record per initContainers item of Deployment <want>, read
 # from the RAW render because the builder's command is a block scalar:
@@ -1759,8 +2276,8 @@ function flush(  i, kind, nm, indata, l, k, v) {
 END { flush() }
 '
 
-# --- awk: walk every document into full key PATHS (INV-8/9/10, LOC-7).
-#     Output: <kind> <TAB> <metadata.name> <TAB> <path> <TAB> <raw value>
+# --- render_paths.py: walk every document into full key PATHS (INV-7/8/9/10/11/16/18/20, LOC-7).
+#     Output: <kind> <TAB> <metadata.name> <TAB> <path> <TAB> <value>
 #     Path segments are joined with "::"; a sequence item becomes "[i]", indexed
 #     from 0 per parent path, so containers::[0]::env::[3]::name is unambiguous.
 #
@@ -1770,58 +2287,45 @@ END { flush() }
 #     by its name and reads FORWARD sees none of its env — the ordering trap INV-3
 #     and INV-7 already document. A full path is independent of emission order.
 #
-#     kustomize emits a sequence at the SAME indent as its parent key
-#     ("containers:" and "- env:" share a column), which is why a list item pops
-#     only deeper frames and earlier sibling items, never its parent. Block
-#     scalars (| and >) are skipped whole so their text is never read as keys.
-RENDER_PATHS_AWK='
-function flush(  i) {
-    if (n == 0) return
-    kind = ""; nm = ""
-    for (i = 1; i <= n; i++) {
-        if (buf[i] ~ /^kind: /)   { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
-        if (nm == "" && buf[i] ~ /^  name: /) { nm = buf[i]; sub(/^  name:[[:space:]]*/, "", nm) }
-    }
-    sp = 0; delete sind; delete sseg; delete slist; delete cnt; blockind = -1
-    for (i = 1; i <= n; i++) walk(buf[i])
-    n = 0; delete buf
+#     WHY A PARSER (#976 round 3). The walker used to be a hand-written awk
+#     re-implementation of YAML, and it was wrong three times on one value: it read
+#     only the first line of a folded scalar, then its continuation regex was dead,
+#     then it dropped a continuation line starting with `#` as a comment BEFORE the
+#     continuation check. kubectl folds a long quoted value at any space, including
+#     the one before a `#`, and inside a quoted scalar `#b" -Dkc.proxy-trusted-
+#     addresses=0.0.0.0/0` is part of the value, so INV-20 never saw the flag and
+#     the walker returned rc 0. Each of the three was a hole in a re-implementation
+#     of the grammar, and a fourth would have been the same kind (rule D1: fix at the
+#     authority, never per spelling). The authority is now PyYAML, in the sibling
+#     k8s/scripts/render_paths.py, whose header is the record contract: values are
+#     the COMPLETE scalar, written back in the RAW spelling (quotes kept, so "true"
+#     is still told from true and unq still strips one pair), a TAB or line break in
+#     a value is escaped (\t \n) so it cannot break the TSV, and a block scalar is its
+#     indicator only (INV-20 refuses it as unreadable).
+#
+#     NO FALLBACK. If python3 or PyYAML is missing, the input is not YAML, or a
+#     document is not a mapping, the walker exits 2 with a PARSE ERROR and the caller
+#     is VOID. Falling back to a line reader would put the truncating reader back
+#     behind a green run on the machine that lacks PyYAML. PyYAML is the runner's
+#     (the Key Vault chain gate in the same CI job needs it too); locally run under a
+#     conda env on PATH (the host shim refuses a bare python3), or point
+#     RENDER_PATHS_PYTHON at an interpreter. Callers must treat a non-zero status as
+#     VOID and never judge partial output.
+RENDER_PATHS_PY="$SCRIPT_DIR/render_paths.py"
+render_paths() {   # <render.yaml>: the path table on stdout; rc 2 + PARSE ERROR on failure
+    local -a py
+    read -r -a py <<< "${RENDER_PATHS_PYTHON:-python3}"
+    if ! command -v "${py[0]}" > /dev/null 2>&1; then
+        echo "PARSE ERROR: render_paths: python3 not found ('${py[0]}'); the render cannot be walked and there is no fallback walker." >&2
+        return 2
+    fi
+    [[ -r "$RENDER_PATHS_PY" ]] || { echo "PARSE ERROR: render_paths: $RENDER_PATHS_PY is not readable." >&2; return 2; }
+    "${py[@]}" "$RENDER_PATHS_PY" "$1"
 }
-function path(  j, p) {
-    p = ""
-    for (j = 1; j <= sp; j++) p = p (p == "" ? "" : "::") sseg[j]
-    return p
-}
-function keyline(rest, ind,   k, v) {
-    k = rest; sub(/:([[:space:]].*)?$/, "", k)
-    v = rest; if (v ~ /^[^:]*:[[:space:]]/) sub(/^[^:]*:[[:space:]]*/, "", v); else v = ""
-    sp++; sind[sp] = ind; sseg[sp] = k; slist[sp] = 0
-    printf "%s\t%s\t%s\t%s\n", kind, nm, path(), v
-    if (v ~ /^[|>][-+0-9]*$/) blockind = ind
-}
-function walk(l,   ind, rest, P) {
-    if (l ~ /^[[:space:]]*$/ || l ~ /^[[:space:]]*#/) return
-    ind = match(l, /[^ ]/) - 1
-    if (blockind >= 0) { if (ind > blockind) return; blockind = -1 }
-    rest = substr(l, ind + 1)
-    if (rest ~ /^- / || rest == "-") {
-        while (sp > 0 && (sind[sp] > ind || (sind[sp] == ind && slist[sp]))) sp--
-        P = path()
-        sp++; sind[sp] = ind; sseg[sp] = "[" (cnt[P]++) "]"; slist[sp] = 1
-        rest = substr(rest, 3)
-        if (rest ~ /^[A-Za-z0-9_.\/-]+:([[:space:]]|$)/) keyline(rest, ind + 2)
-        else if (rest != "") printf "%s\t%s\t%s\t%s\n", kind, nm, path(), rest
-        return
-    }
-    while (sp > 0 && sind[sp] >= ind) sp--
-    if (rest ~ /^[A-Za-z0-9_.\/-]+:([[:space:]]|$)/) keyline(rest, ind)
-}
-/^---[[:space:]]*$/ { flush(); next }
-{ buf[++n] = $0 }
-END { flush() }
-'
+
 
 # --- awk: NetworkPolicy rule TUPLES from the path walk (INV-7).
-#     Input: the RENDER_PATHS_AWK output (<kind> TAB <name> TAB <path> TAB <value>).
+#     Input: the render_paths output (<kind> TAB <name> TAB <path> TAB <value>).
 #     Output records:
 #       DOC <TAB> <kind> <TAB> <name> <TAB> <apiVersion>   every *NetworkPolicy doc
 #       T   <TAB> <policy> <TAB> <tuple>                   see the INV-7 header
@@ -1956,6 +2460,177 @@ path_get() {
     awk -F'\t' -v k="$2" -v n="$3" -v p="$4" '
         $1 == k && $2 == n && $3 == p { print $4; found = 1; exit }
         END { if (!found) print "(ABSENT)" }' "$1"
+}
+
+# unq <value> — one pair of surrounding quotes removed (double OR single), left in
+# $UNQ. The shell twin of cfg_get's and NETPOL_TUPLES_AWK's unq: the walker's values
+# are raw YAML scalars, so a quoted '0.0.0.0/0' or "keycloak:26.8.1" must be
+# unquoted ONCE, here, before it is compared (YAML escapes inside the quotes are not
+# interpreted: none of the values judged with it can legitimately carry one).
+unq() {
+    UNQ="$1"
+    if [[ "$UNQ" =~ ^\"(.*)\"$ || "$UNQ" =~ ^\'(.*)\'$ ]]; then UNQ="${BASH_REMATCH[1]}"; fi
+}
+
+# ---------------------------------------------------------------------------
+# INV-20 helpers (#976). They judge the EFFECTIVE proxy-trust configuration of one
+# Keycloak container, wherever it is spelled, into these globals (reset per
+# container by the INV-20 loop):
+#   I20_HDR     how many places turn proxy headers on (KC_PROXY_HEADERS,
+#               --proxy-headers, -Dkc.proxy-headers)
+#   I20_LEGACY  1 = the legacy KC_PROXY / --proxy / -Dkc.proxy other than none
+#   I20_UNJ     1 = a source was met that cannot be read from the render (a Secret,
+#               a block scalar, a ConfigMap that is not rendered): fail closed
+#   I20_TV/TS   each trusted-addresses value found, and where it came from
+# Spellings read (Keycloak 26.8.1 takes each option from env, CLI, or JVM property):
+#   env           KC_PROXY_HEADERS, KC_PROXY_TRUSTED_ADDRESSES, KC_PROXY, and any
+#                 JAVA_OPTS* / JAVA_TOOL_OPTIONS / JDK_JAVA_OPTIONS (words -Dkc.proxy*)
+#   envFrom       every key of a ConfigMap in the render, by the same rules
+#   args/command each item, as --proxy-headers / --proxy-trusted-addresses= / --proxy
+#                 or the -Dkc.proxy* spelling; an item that only MENTIONS one (a
+#                 sh -c script) or is a block scalar cannot be judged and fails
+# A configMapKeyRef is followed into ANY ConfigMap in the render.
+# ---------------------------------------------------------------------------
+INV20_MENTION_RE='--proxy(-headers|-trusted-addresses)?([^a-z0-9_-]|$)|kc[._]proxy([-_](headers|trusted[-_]addresses))?([^a-z0-9_-]|$)'
+INV20_BLOCK_RE='^[|>][-+0-9]*$'
+INV20_JAVAOPTS_NORM_RE='^(javaopts[a-z0-9]*|javatooloptions|jdkjavaoptions)$'
+
+inv20_fail() { echo "  FAIL [$rel] INV-20: $who20 $1" >&2; inv20_bad=1; }
+
+inv20_mentions() { local t="${1,,}"; [[ "$t" =~ $INV20_MENTION_RE ]]; }
+
+# inv20_word <word> <origin> — one WORD that is exactly a proxy option. rc 1 = not one.
+inv20_word() {
+    local w="$1" o="$2" v
+    case "$w" in
+        --proxy-headers|--proxy-headers=*|-Dkc.proxy-headers|-Dkc.proxy-headers=*)
+            I20_HDR=$((I20_HDR + 1)) ;;
+        --proxy-trusted-addresses=*|-Dkc.proxy-trusted-addresses=*)
+            unq "${w#*=}"; I20_TV+=("$UNQ"); I20_TS+=("$o ${w%%=*}") ;;
+        -Dkc.proxy-trusted-addresses)
+            I20_TV+=(""); I20_TS+=("$o $w") ;;
+        --proxy-trusted-addresses)
+            inv20_fail "passes --proxy-trusted-addresses without '=value' ($o), so its value cannot be judged here. Write --proxy-trusted-addresses=<cidr list> or use the KC_PROXY_TRUSTED_ADDRESSES env."
+            I20_UNJ=1 ;;
+        --proxy|--proxy=*|-Dkc.proxy|-Dkc.proxy=*)
+            v=""; [[ "$w" == *=* ]] && v="${w#*=}"
+            unq "$v"
+            [[ "$w" == *=* && "$UNQ" == none ]] || I20_LEGACY=1 ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+# inv20_token <raw value> <origin> — one command/args item.
+inv20_token() {
+    local t o="$2"
+    if [[ "$1" =~ $INV20_BLOCK_RE ]]; then
+        inv20_fail "has a block scalar ('$1') in its $o, whose text this check cannot read, so a proxy option inside it would go unseen. Write each argument as its own plain list item."
+        I20_UNJ=1; return
+    fi
+    unq "$1"; t="$UNQ"
+    inv20_word "$t" "$o" && return
+    if inv20_mentions "$t"; then
+        inv20_fail "mentions a proxy option inside a larger string in its $o ('${t:0:70}'), such as a shell -c script, so it cannot be judged here. Pass each Keycloak option as its own args item or use the KC_* env."
+        I20_UNJ=1
+    fi
+}
+
+# inv20_javaopts <value> <origin> — the words of a JAVA_OPTS-style value.
+inv20_javaopts() {
+    local -a words=()
+    local w
+    IFS=$' \t\n' read -ra words <<< "$1"
+    for w in "${words[@]}"; do
+        unq "$w"; w="$UNQ"
+        inv20_word "$w" "$2" && continue
+        if inv20_mentions "$w"; then
+            inv20_fail "mentions a proxy option in a form this check cannot judge in $2 ('${w:0:70}')."
+            I20_UNJ=1
+        fi
+    done
+}
+
+# inv20_cm_exists <configmap> / inv20_cm_value <configmap> <key> (-> $R20_VAL; rc 0
+# ok, 1 no such ConfigMap in the render, 2 no such key, 3 block scalar).
+inv20_cm_exists() {
+    awk -F'\t' -v n="$1" '$1 == "ConfigMap" && $2 == n { f = 1; exit } END { exit !f }' "$TMP/inv11_paths.tsv"
+}
+inv20_cm_value() {
+    local raw
+    raw="$(path_get "$TMP/inv11_paths.tsv" ConfigMap "$1" "data::$2")"
+    if [[ "$raw" == "(ABSENT)" ]]; then
+        inv20_cm_exists "$1" && return 2
+        return 1
+    fi
+    [[ "$raw" =~ $INV20_BLOCK_RE ]] && return 3
+    unq "$raw"; R20_VAL="$UNQ"
+    return 0
+}
+
+# inv20_resolve <kind> <name> <env item path> <label> — the value of an env item as
+# $R20_VAL (+ $R20_SRC, where a ConfigMap supplied it). rc 1 = unreadable (FAIL given).
+inv20_resolve() {
+    local lit cmn cmk opt rc
+    R20_SRC=""
+    lit="$(path_get "$TMP/inv11_paths.tsv" "$1" "$2" "$3::value")"
+    if [[ "$lit" != "(ABSENT)" ]]; then
+        if [[ "$lit" =~ $INV20_BLOCK_RE ]]; then
+            inv20_fail "$4 is a block scalar, which this check cannot read."; return 1
+        fi
+        unq "$lit"; R20_VAL="$UNQ"; return 0
+    fi
+    cmk="$(path_get "$TMP/inv11_paths.tsv" "$1" "$2" "$3::valueFrom::configMapKeyRef::key")"
+    if [[ "$cmk" == "(ABSENT)" ]]; then
+        inv20_fail "$4 is not a literal or a configMapKeyRef (a secretKeyRef, fieldRef or resourceFieldRef?), so its value cannot be judged in the render."
+        return 1
+    fi
+    unq "$cmk"; cmk="$UNQ"
+    unq "$(path_get "$TMP/inv11_paths.tsv" "$1" "$2" "$3::valueFrom::configMapKeyRef::name")"; cmn="$UNQ"
+    unq "$(path_get "$TMP/inv11_paths.tsv" "$1" "$2" "$3::valueFrom::configMapKeyRef::optional")"; opt="$UNQ"
+    if [[ "$opt" != "(ABSENT)" && "$opt" != "false" ]]; then
+        inv20_fail "$4 reads ConfigMap '$cmn' through an optional configMapKeyRef, so a missing key would silently drop the setting and Keycloak would trust every source."
+        return 1
+    fi
+    inv20_cm_value "$cmn" "$cmk"; rc=$?
+    case "$rc" in
+        0) R20_SRC=" from ConfigMap $cmn key $cmk"; return 0 ;;
+        1) inv20_fail "$4 reads ConfigMap '$cmn', which is not in the render, so its value cannot be judged." ;;
+        2) inv20_fail "$4 reads ConfigMap '$cmn' key '$cmk', which the render does not define." ;;
+        *) inv20_fail "$4 reads ConfigMap '$cmn' key '$cmk', a block scalar this check cannot read." ;;
+    esac
+    return 1
+}
+
+# inv20_value_of <label> <origin> <item|lit> <env item path | raw literal> — an env
+# ITEM is resolved through the render; a literal (an envFrom ConfigMap key) is just
+# unquoted. rc 1 = unreadable (FAIL given).
+inv20_value_of() {
+    if [[ "$3" == lit ]]; then
+        if [[ "$4" =~ $INV20_BLOCK_RE ]]; then inv20_fail "$1 (envFrom) is a block scalar, which this check cannot read."; return 1; fi
+        unq "$4"; R20_VAL="$UNQ"; R20_SRC=""; return 0
+    fi
+    inv20_resolve "$k20" "$n20" "$4" "$1"
+}
+
+# inv20_apply_name <env name> <origin> <item|lit> <env item path | raw literal>
+inv20_apply_name() {
+    local nm="$1" o="$2" norm
+    case "$nm" in
+        KC_PROXY_HEADERS) I20_HDR=$((I20_HDR + 1)) ;;
+        KC_PROXY_TRUSTED_ADDRESSES)
+            inv20_value_of "$nm" "$o" "$3" "$4" || { I20_UNJ=1; return; }
+            I20_TV+=("$R20_VAL"); I20_TS+=("$o$R20_SRC") ;;
+        KC_PROXY)
+            inv20_value_of "$nm" "$o" "$3" "$4" || { I20_UNJ=1; return; }
+            [[ "$R20_VAL" == none ]] || I20_LEGACY=1 ;;
+        *)
+            norm="${nm,,}"; norm="${norm//[^a-z0-9]/}"
+            if [[ "$norm" =~ $INV20_JAVAOPTS_NORM_RE ]]; then
+                inv20_value_of "$nm" "$o" "$3" "$4" || { I20_UNJ=1; return; }
+                inv20_javaopts "$R20_VAL" "$o"
+            fi ;;
+    esac
 }
 
 is_wi_target() {
@@ -2301,7 +2976,7 @@ for dir in "${TARGETS[@]}"; do
         parse_fail "[$rel] INV-7: app-config 'ingress.controller-namespace' is '$ingress_ns', which is not a valid namespace name, so no namespaceSelector carrying it can match anything."
     fi
 
-    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv7_paths.tsv"
+    render_paths "$render" > "$TMP/inv7_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     awk "$NETPOL_TUPLES_AWK" "$TMP/inv7_paths.tsv" > "$TMP/netpol.tsv"
     mapfile -t inv7_pols < <(awk -F'\t' '$1 == "DOC" && $2 == "NetworkPolicy" { print $3 }' "$TMP/netpol.tsv" | LC_ALL=C sort -u)
     (( ${#inv7_pols[@]} > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships seven; zero means the parser is blind and every rule assertion below would pass vacuously. Fix the parser, do not delete the invariant."
@@ -2419,8 +3094,8 @@ for dir in "${TARGETS[@]}"; do
     # or exact PATH, never by a forward scan (kustomize sorts map keys).
     if is_wi_target "$rel"; then
         WI_TARGET_SEEN["$rel"]=1
-        awk "$RENDER_PATHS_AWK" "$render" > "$TMP/paths.tsv"
-        (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] INV-8..INV-10: the path walker emitted 0 records for the render — it is blind, and every storage assertion below would pass vacuously. Fix RENDER_PATHS_AWK, do not delete the invariants."
+        render_paths "$render" > "$TMP/paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
+        (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] INV-8..INV-10: the path walker emitted 0 records for the render — it is blind, and every storage assertion below would pass vacuously. Fix render_paths.py, do not delete the invariants."
         if [[ "$(path_get "$TMP/paths.tsv" Deployment core-java 'spec::template::spec::containers::[0]::name')" == "(ABSENT)" ]]; then
             parse_fail "[$rel] INV-8..INV-10: no Deployment core-java container found by path — either the render lost core-java (a far bigger problem) or the path walker is blind. Fix it, do not delete the invariants."
         fi
@@ -2606,7 +3281,7 @@ for dir in "${TARGETS[@]}"; do
         inv11_bad=1
     fi
     # (b) + (c) per core-java container, by exact path.
-    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv11_paths.tsv"
+    render_paths "$render" > "$TMP/inv11_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     inv11_ctrs=$(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" \
         '$3 ~ /::(containers|initContainers)::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
         "$TMP/inv11_paths.tsv")
@@ -3049,14 +3724,130 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-20 (#976) ----------------
+    # Every Keycloak container with proxy headers on, in ANY spelling, must say WHICH
+    # peers it believes them from, once, as a private CIDR list it can start on. See
+    # the header for the rules and the helpers (inv20_*) for the spellings read.
+    inv20_bad=0
+    inv20_n=0
+    inv20_required=0
+    for t in "${KEYCLOAK_TARGETS[@]}"; do [[ "$rel" == "$t" ]] && inv20_required=1; done
+    inv20_ctrs=$(awk -F'\t' -v re="$KEYCLOAK_IMAGE_RE" "$KEYCLOAK_CTRS_AWK" "$TMP/inv11_paths.tsv" | sort)
+    if [[ -z "$inv20_ctrs" ]]; then
+        (( inv20_required == 0 )) || parse_fail "[$rel] INV-20: $rel is in KEYCLOAK_TARGETS but renders no Keycloak container (image matching '$KEYCLOAK_IMAGE_RE', a KC_* env, or a pod labelled app: keycloak), so the proxy-trust check would pass over nothing. Either the component left the overlay or the path walker is blind; fix it in the SAME change, do not delete the invariant."
+        inv20_msg="not applicable (no Keycloak container in this render)"
+    else
+        (( inv20_required == 0 )) || KEYCLOAK_TARGET_SEEN["$rel"]=1
+        while IFS=$'\t' read -r k20 n20 c20; do
+            [[ -n "$k20" ]] || continue
+            inv20_n=$((inv20_n + 1))
+            unq "$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$c20::name")"; cn20="$UNQ"
+            who20="$k20 $n20 container '$cn20'"
+            I20_HDR=0; I20_LEGACY=0; I20_UNJ=0; I20_TV=(); I20_TS=()
+            # (1) env items, by name
+            while IFS=$'\t' read -r ipath iname; do
+                [[ -n "$ipath" ]] || continue
+                unq "$iname"; inv20_apply_name "$UNQ" "env $UNQ" item "$ipath"
+            done <<< "$(awk -F'\t' -v k="$k20" -v n="$n20" -v c="$c20::env::" '$1 == k && $2 == n && index($3, c) == 1 { r = substr($3, length(c) + 1); if (r ~ /^\[[0-9]+\]::name$/) { sub(/::name$/, "", $3); print $3 "\t" $4 } }' "$TMP/inv11_paths.tsv")"
+            # (2) envFrom: a ConfigMap in the render is read key by key (prefix applied); a
+            # Secret, or a ConfigMap that is not rendered, cannot be read: fail closed.
+            while IFS= read -r efp; do
+                [[ -n "$efp" ]] || continue
+                sref="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$efp::secretRef::name")"
+                cref="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$efp::configMapRef::name")"
+                unq "$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$efp::prefix")"; pfx20="$UNQ"
+                [[ "$pfx20" != "(ABSENT)" ]] || pfx20=""
+                if [[ "$sref" == "(ABSENT)" && "$cref" == "(ABSENT)" ]]; then
+                    inv20_fail "has an envFrom item ($efp) that is neither a configMapRef nor a secretRef, so what it imports cannot be judged."
+                    I20_UNJ=1
+                fi
+                if [[ "$sref" != "(ABSENT)" ]]; then
+                    unq "$sref"
+                    inv20_fail "has an envFrom Secret '$UNQ', which can set KC_PROXY_* or JAVA_OPTS this check cannot read. Name each env explicitly."
+                    I20_UNJ=1
+                fi
+                if [[ "$cref" != "(ABSENT)" ]]; then
+                    unq "$cref"; cm20="$UNQ"
+                    if ! inv20_cm_exists "$cm20"; then
+                        inv20_fail "has an envFrom ConfigMap '$cm20', which is not in the render, so what it imports cannot be judged."
+                        I20_UNJ=1
+                    else
+                        while IFS=$'\t' read -r dk20 dv20; do
+                            [[ -n "$dk20" ]] || continue
+                            inv20_apply_name "$pfx20$dk20" "envFrom ConfigMap $cm20 key $dk20" lit "$dv20"
+                        done <<< "$(awk -F'\t' -v n="$cm20" '$1 == "ConfigMap" && $2 == n && $3 ~ /^data::[^:]+$/ { k = $3; sub(/^data::/, "", k); print k "\t" $4 }' "$TMP/inv11_paths.tsv")"
+                    fi
+                fi
+            done <<< "$(awk -F'\t' -v k="$k20" -v n="$n20" -v c="$c20::envFrom::" '$1 == k && $2 == n && index($3, c) == 1 { r = substr($3, length(c) + 1); sub(/::.*$/, "", r); print c r }' "$TMP/inv11_paths.tsv" | sort -u)"
+            # (3) command / args: each item is a flag, a -D property, or something that
+            # must not mention one. NOTE index(), not a regex built from the path: the
+            # path carries "[0]", which a regex reads as a character class (the first
+            # version of this loop never matched a single item for that reason).
+            while IFS=$'\t' read -r apath av; do
+                [[ -n "$av" ]] || continue
+                a_o=args; [[ "$apath" == "$c20::command"* ]] && a_o=command
+                inv20_token "$av" "$a_o"
+            done <<< "$(awk -F'\t' -v k="$k20" -v n="$n20" -v c="$c20" '$1 == k && $2 == n && (index($3, c "::args") == 1 || index($3, c "::command") == 1) { print $3 "\t" $4 }' "$TMP/inv11_paths.tsv")"
+            if (( I20_LEGACY )); then
+                inv20_fail "sets the legacy KC_PROXY / --proxy (edge, reencrypt, passthrough). It trusts X-Forwarded-* from every source and has no trusted-addresses option; use KC_PROXY_HEADERS=xforwarded with KC_PROXY_TRUSTED_ADDRESSES."
+            fi
+            (( I20_UNJ == 0 )) || continue          # an unreadable source: already FAILed above
+            (( I20_HDR > 0 )) || continue
+            tcount20=${#I20_TV[@]}
+            if (( tcount20 == 0 )); then
+                inv20_fail "turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES (env, --proxy-trusted-addresses, -Dkc.proxy-trusted-addresses or envFrom), so Keycloak believes X-Forwarded-Host/-Proto/-For from EVERY source address (#976). Set it to the ingress path's private pod range."
+                continue
+            fi
+            if (( tcount20 > 1 )); then
+                inv20_fail "sets the trusted proxy addresses $tcount20 times ($(printf '%s; ' "${I20_TS[@]}")), so which one wins cannot be judged here. Set it once."
+                continue
+            fi
+            val20="${I20_TV[0]}"; src20=" (${I20_TS[0]})"
+            if [[ -z "$val20" ]]; then
+                inv20_fail "KC_PROXY_TRUSTED_ADDRESSES is empty$src20. Keycloak 26.8.1 refuses to start on an empty value (measured) and a missing one trusts every source; declare the ingress path's private pod range."
+                continue
+            fi
+            if [[ "$val20" =~ [[:space:]] ]]; then
+                # Measured with quay.io/keycloak/keycloak:26.8.1 (KC_PROXY_TRUSTED_ADDRESSES=
+                # "10.244.0.0/16, 10.0.0.0/8"): the server exits 2 with "Invalid value for
+                # multivalued option 'KC_PROXY_TRUSTED_ADDRESSES': list value ' 10.0.0.0/8'
+                # should not have leading nor trailing whitespace". It does NOT trim, so a
+                # spaced list would pass every other test here and crash-loop at rollout.
+                inv20_fail "KC_PROXY_TRUSTED_ADDRESSES contains whitespace in '$val20'$src20. Keycloak 26.8.1 does not trim list entries and refuses to start (measured: \"list value ' 10.0.0.0/8' should not have leading nor trailing whitespace\"); write the list with bare commas."
+                continue
+            fi
+            if [[ "$val20" == ,* || "$val20" == *, || "$val20" == *,,* ]]; then
+                inv20_fail "KC_PROXY_TRUSTED_ADDRESSES has an empty entry in '$val20'$src20."
+                continue
+            fi
+            inv20_entries=0
+            IFS=',' read -ra ent20 <<< "$val20"
+            for e20 in "${ent20[@]}"; do
+                inv20_entries=$((inv20_entries + 1))
+                v20="$(tp_entry_verdict "$e20")"
+                if [[ -n "$v20" ]]; then
+                    inv20_fail "KC_PROXY_TRUSTED_ADDRESSES entry '$e20' $v20$src20."
+                fi
+            done
+            (( inv20_entries > 0 )) || parse_fail "[$rel] INV-20: $who20 trusted addresses '$val20' yielded 0 entries — the splitter is blind. Fix it, do not delete the invariant."
+        done <<< "$inv20_ctrs"
+        (( inv20_n > 0 )) || parse_fail "[$rel] INV-20: Keycloak containers were found but none was iterated."
+        if (( inv20_bad != 0 )); then
+            FAILED=1
+            inv20_msg="FAIL"
+        else
+            inv20_msg="OK ($inv20_n Keycloak container(s): proxy headers trusted only from a private CIDR list, once, in a form the render can read)"
+        fi
+    fi
+
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg"
     fi
 done
 
@@ -3064,6 +3855,10 @@ done
 # silently stop running. Every listed target must have been rendered and checked.
 for t in "${WI_TARGETS[@]}"; do
     [[ -n "${WI_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-8..INV-10: WI_TARGETS names '$t', but no kustomize target at that path was discovered, so its storage invariants never ran. Update WI_TARGETS in the SAME change that renames an overlay."
+done
+
+for t in "${KEYCLOAK_TARGETS[@]}"; do
+    [[ -n "${KEYCLOAK_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-20: KEYCLOAK_TARGETS names '$t', but no kustomize target at that path was discovered, so INV-20 never ran there. Update KEYCLOAK_TARGETS in the SAME change that renames an overlay."
 done
 
 for t in "${TRUSTSTORE_TARGETS[@]}"; do
@@ -3446,8 +4241,8 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
     # ---------------- LOC-7 ----------------
     # Phase 36: the emulator path is WIRED, not just configured. The connection
     # strings exist only in k8s/local, so an unwired key is a silently ignored value.
-    awk "$RENDER_PATHS_AWK" "$LOCAL_RENDER" > "$TMP/loc_paths.tsv"
-    (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix RENDER_PATHS_AWK, do not delete the invariant."
+    render_paths "$LOCAL_RENDER" > "$TMP/loc_paths.tsv" || parse_fail "path walker could not read $LOCAL_RENDER safely (see the PARSE ERROR above): refusing to judge a truncated value."
+    (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix render_paths.py, do not delete the invariant."
     loc7_bad=0
     loc_mode="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.auth-mode)"
     loc_create="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.create-containers)"
@@ -3544,4 +4339,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); $LOCAL_SECTION."
