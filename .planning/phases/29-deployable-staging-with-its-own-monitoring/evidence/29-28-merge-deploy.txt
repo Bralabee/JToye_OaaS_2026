@@ -38,7 +38,21 @@ Steps: 1-14 success (Key Vault preflight, apply, rollout status for all three); 
 Parity output: core-java e46092ee... MATCH (bffd2f74) AND 0a462ba9... NOT IN THE EXPECTED SET; edge-go MATCH; frontend MATCH.
 Cause (measured 16:24Z): 0a462ba9 is ghcr.io/bralabee/jtoye-core-java:6e95ee6c, the previous revision, read from a pod still in its grace period. rollout status had printed "1 old replicas are pending termination" and then success; the gate listed every app=core-java pod, a terminating one included (it still reported ready=true). The built image itself was correct.
 Rollback rule: gh variable set DEPLOY_STAGING_ENABLED false at 2026-10-20T16:22:01Z, read back [false]. No issue touched.
-Estate after rollback: core-java, edge-go and frontend all on 6e95ee6c (the pre-merge state); check-deploy-digest-parity.sh --tag 6e95ee6c (fixed gate) rc 0, 3 services MATCH.
+Estate after rollback: core-java, edge-go and frontend all on 6e95ee6c (the pre-merge state); `bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag 6e95ee6c44e357e3ff88964ed9674bf066fd7b61` (fixed gate) rc 0, 3 services MATCH.
 Fix: branch fix/29-parity-drain, commit e6542927: the gate waits up to --drain-timeout (default 180 s) for terminating pods, FAILs if one stays, then reads only pods without a deletionTimestamp.
 Fix proof: --selftest 25/25 rc 0; break arm (wait removed): old-pod-stuck rc 0 (want 1), selftest rc 1; restored (cmp equal), rc 0 again.
 Live proof: rollout restart deployment/core-java (same image 6e95ee6c), rollout status success, a pod still terminating right after it (core-java-869648bdf-4knpm); the fixed gate printed "1 old pod(s) still terminating; waiting up to 180s", then MATCH, rc 0, 20 s. (The same sequence on edge-go drained before the first poll: no wait printed.)
+
+## Fix PR #986, review round 1 (code-review on 3b32b3ca): the filter itself is now under test
+Reproduced: with the first fix, misspelling the filter key (`deletionTimestampX`) still gave selftest 25/25 rc 0, so the filter could not fail.
+Redesign (ac867be2): one `kubectl get pods -o json` per poll, sorted by one jq program (POD_JQ) into live digests and terminating pods; the selftest feeds POD_JQ pod-list JSON; one drain deadline shared by all services; a pod still terminating at the deadline is named and counted, and the remaining services are still compared.
+Selftest: 31/31 rc 0 (adds old-pod-live and five content checks: the drain arm waited and matched only the new pod; the stuck arm names the stuck pod AND still reports a wrong frontend image).
+Break arms, each red, then restored by sha256 and clean again rc 0:
+  POD_JQ key misspelled (deletionTimestampX): selftest rc 1 (old-pod-drains rc 1, two content checks fail).
+  POD_JQ drops terminating pods (`then empty`): selftest rc 1 (two content checks fail).
+Live, failing direction, on one real terminating pod with a DIFFERENT digest (2026-10-20, staging): `kubectl set image deployment/core-java core-java=ghcr.io/bralabee/jtoye-core-java:bffd2f74b87558eb966d548bd2813529b53c2464`, `rollout status` success, then at once, both `--context jtoye-stg-aks --tag bffd2f74b87558eb966d548bd2813529b53c2464 --services core-java`:
+  the gate as on main (copied into scripts/ for the run, then removed): rc 1, `0a462ba9... NOT IN THE EXPECTED SET` + `e46092ee... MATCH` (the CI output, reproduced);
+  the fixed gate: "core-java: 1 old pod(s) still terminating; waiting until the shared 180s deadline", then `e46092ee... MATCH`, rc 0.
+  Then `kubectl rollout undo deployment/core-java`; full parity against 6e95ee6c44e357e3ff88964ed9674bf066fd7b61 rc 0.
+  (An earlier attempt ran the main copy from /tmp, where it resolved its repo root to /tmp and VOIDed (rc 2) on the missing context guard; it compared nothing and is not counted.)
+Staging changes made for these proofs, all reverted: rollout restart edge-go and core-java (same image), set image core-java to bffd2f74 twice, each followed by rollout undo.

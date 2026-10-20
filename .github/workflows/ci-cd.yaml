@@ -807,6 +807,10 @@ jobs:
       # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
       # mismatch, plant-stale, empty actual, zero services, no context, employer
       # context, short tag, fixture-with-context) against fixtures: no cluster.
+      # Issue #985: the drain arms feed the terminating-pod filter (POD_JQ) pod-list
+      # JSON: an old pod that drains (pass), one that stays (fail, and the other
+      # services are still compared), an old image on a live pod (fail), and a
+      # zero or non-numeric --drain-timeout (VOID). Needs jq (present on the runner).
       - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
         run: bash scripts/check-deploy-digest-parity.sh --selftest
 
