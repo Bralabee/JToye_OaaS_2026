@@ -164,3 +164,30 @@ only issues caused by the current task are fixed in it).
   `ALERTMANAGER_SMTP_PASSWORD_FILE` from the CSI mount, so this fails closed and is harmless,
   but an operator who sets the env literal during an incident takes Alertmanager down.
   **Next:** note it in 29-27's runbook (rotate through Key Vault, never through env).
+
+## Filed as issues 2026-10-20 (owner: "any and all issues should be filed")
+
+Every open item above now has a tracker entry; this file stays the narrative, the issues are the work.
+
+| Item | Issue |
+| --- | --- |
+| Grafana OOMKilled twice on staging (found at housekeeping) | #968 |
+| deploy.sh does not wait on the monitoring Deployments | #969 |
+| Staging selftests in no CI job (secrets, preflight, db-bootstrap) | #970 |
+| Frontend has no Prometheus scrape job (#98 criterion 1) | #971 |
+| Mailpit certificate read only at start (breaks about 2027-01-17) | #972 |
+| Order counter vanishes on core-java restart | #973 |
+| STOMP dashboard datasource uid | #974 |
+| Edge rate limits per Traefik replica | #975 |
+| Keycloak trusts X-Forwarded-* from any peer | #976 |
+| Truststore init image outside digest parity | #977 |
+| deploy.sh two passes around the realm import | #978 |
+| Small gate and doc corrections (checklist) | #979 |
+| FRONTEND_PUBLIC_API_URL points at staging | #980 |
+| Order-state emails lack List-Unsubscribe (follow-up to #592) | #981 |
+| #112 remainder (SLOs, alerts.md stubs) | #982 |
+| Production DB HA, assumption A11 (remainder of #101) | #983 |
+| dotfiles: uncommitted review-repos.txt edit, settings.json drift (machine session) | Bralabee/dotfiles#334 |
+
+Resolved, no issue: storefront image (29-29), core-java/keycloak could not roll (D-34, 4th node), check-doc-citations C-3 (gate exits 0, 2026-10-20).
+Recorded in 29-27 Task 2's runbook, no issue: an env-literal SMTP password crashes Alertmanager in k8s (rotate through Key Vault).
