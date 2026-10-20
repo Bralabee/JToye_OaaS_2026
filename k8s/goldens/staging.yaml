@@ -5571,6 +5571,9 @@ spec:
         - mountPath: /mnt/secrets-store-mailpit-ui
           name: kv-mailpit-ui
           readOnly: true
+        - mountPath: /mnt/secrets-store-grafana-edge
+          name: kv-grafana-edge
+          readOnly: true
       securityContext:
         runAsGroup: 65535
         runAsNonRoot: true
@@ -5591,6 +5594,12 @@ spec:
           volumeAttributes:
             secretProviderClass: mailpit-ui-kv
         name: kv-mailpit-ui
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: grafana-edge-kv
+        name: kv-grafana-edge
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -5979,6 +5988,10 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    nginx.ingress.kubernetes.io/auth-realm: J'Toye staging Grafana - operators only
+    nginx.ingress.kubernetes.io/auth-secret: grafana-edge-credentials
+    nginx.ingress.kubernetes.io/auth-secret-type: auth-file
+    nginx.ingress.kubernetes.io/auth-type: basic
     nginx.ingress.kubernetes.io/configuration-snippet: |
       more_set_headers "X-Frame-Options: DENY";
       more_set_headers "X-Content-Type-Options: nosniff";
@@ -7476,6 +7489,36 @@ spec:
     - key: client-secret
       objectName: keycloak-credentials--frontend-client-secret
     secretName: frontend-oidc-credentials
+    type: Opaque
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: grafana-edge-kv
+  namespace: jtoye-staging
+spec:
+  parameters:
+    clientID: 231ad919-8aad-4dd2-a6b5-0e2089edf4e4
+    keyvaultName: jtoye-stg-kv
+    objects: |
+      array:
+        - |
+          objectName: grafana-edge-credentials--auth
+          objectType: secret
+    tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
+    usePodIdentity: "false"
+  provider: azure
+  secretObjects:
+  - data:
+    - key: auth
+      objectName: grafana-edge-credentials--auth
+    secretName: grafana-edge-credentials
     type: Opaque
 ---
 apiVersion: secrets-store.csi.x-k8s.io/v1

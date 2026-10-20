@@ -160,6 +160,18 @@ elif arm == "ingress-auth-unsynced":
     spec["volumes"] = [v for v in spec["volumes"] if v.get("name") != "kv-mailpit-ui"]
     for c in spec["containers"]:
         c["volumeMounts"] = [m for m in c.get("volumeMounts", []) if m.get("name") != "kv-mailpit-ui"]
+elif arm == "grafana-auth-unproduced":
+    # #968 item 3: the Grafana edge gate's auth-secret renamed to a Secret no SPC produces
+    find("Ingress", "grafana-public")["metadata"]["annotations"]["nginx.ingress.kubernetes.io/auth-secret"] = "grafana-edge-planted"
+elif arm == "grafana-spc-missing":
+    # the SPC that produces grafana-edge-credentials is gone from the render
+    docs = [d for d in docs if not (d.get("kind") == "SecretProviderClass" and (d.get("metadata") or {}).get("name") == "grafana-edge-kv")]
+elif arm == "grafana-mount-missing":
+    # secret-sync stops mounting grafana-edge-kv: the Secret would exist only by accident
+    spec = find("Deployment", "secret-sync")["spec"]["template"]["spec"]
+    spec["volumes"] = [v for v in spec["volumes"] if v.get("name") != "kv-grafana-edge"]
+    for c in spec["containers"]:
+        c["volumeMounts"] = [m for m in c.get("volumeMounts", []) if m.get("name") != "kv-grafana-edge"]
 elif arm == "zero-spc":
     docs = [d for d in docs if d.get("kind") != "SecretProviderClass"]
 else:
@@ -181,7 +193,7 @@ selftest() {
     "$KUBECTL" kustomize "$K8S_DIR/staging" > "$tmp/real.yaml" 2> "$tmp/err" || { cat "$tmp/err" >&2; void "the staging render failed"; }
     [[ -s "$tmp/real.yaml" ]] || void "the staging render is empty"
 
-    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted cert-secret-spc-producer cert-secret-foreign-key ingress-auth-unproduced ingress-auth-unsynced zero-spc pyyaml-missing kubectl-missing)
+    local -a ARMS=(undeclared-key two-producers clientid-mismatch sync-lifetime shared-identity object-not-mounted cert-secret-spc-producer cert-secret-foreign-key ingress-auth-unproduced ingress-auth-unsynced grafana-auth-unproduced grafana-spc-missing grafana-mount-missing zero-spc pyyaml-missing kubectl-missing)
     declare -A WANT=(
         [undeclared-key]="Deployment/core-java reads dsar-credentials/not-a-key"
         [two-producers]="Secret postgres-credentials has two producers"
@@ -193,6 +205,9 @@ selftest() {
         [cert-secret-foreign-key]="Deployment/core-java reads jtoye-staging-ca/password (env PLANTED_CA): Secret jtoye-staging-ca is written by cert-manager Certificate jtoye-staging-ca, which holds only ca.crt, tls.crt, tls.key"
         [ingress-auth-unproduced]="Deployment/secret-sync reads mailpit-ui-planted/auth (auth-secret of Ingress/mailpit-ui), which no SecretProviderClass produces"
         [ingress-auth-unsynced]="Deployment/secret-sync reads mailpit-ui-credentials/auth (auth-secret of Ingress/mailpit-ui), produced by mailpit-ui-kv, which Deployment/secret-sync does not mount"
+        [grafana-auth-unproduced]="Deployment/secret-sync reads grafana-edge-planted/auth (auth-secret of Ingress/grafana-public), which no SecretProviderClass produces"
+        [grafana-spc-missing]="Deployment/secret-sync reads grafana-edge-credentials/auth (auth-secret of Ingress/grafana-public), which no SecretProviderClass produces"
+        [grafana-mount-missing]="Deployment/secret-sync reads grafana-edge-credentials/auth (auth-secret of Ingress/grafana-public), produced by grafana-edge-kv, which Deployment/secret-sync does not mount"
         [zero-spc]="the render holds no SecretProviderClass"
         [pyyaml-missing]="PyYAML is not importable"
         [kubectl-missing]="kubectl not found"

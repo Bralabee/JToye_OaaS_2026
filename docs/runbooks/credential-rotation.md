@@ -226,9 +226,55 @@ it changes, so the old password stops working once secret-sync's new pod has syn
 
 ---
 
+## 6.1a Staging Grafana edge gate (`grafana-edge-credentials`)
+
+The operator gate in front of `https://grafana-staging.olajay.co.uk` (#968 item 3, approved
+2026-10-20) has the same shape as section 6.1 and one shared login, user `staging-operator`.
+Two Key Vault objects in `jtoye-stg-kv` hold it:
+
+- `grafana-edge-credentials--password`, the plaintext an operator types at the browser prompt.
+  It is mounted by no pod and granted to no workload identity.
+- `grafana-edge-credentials--auth`, its apr1 htpasswd line. secret-sync syncs it into Secret
+  `grafana-edge-credentials` (key `auth`), which Traefik's basic auth reads.
+
+This is NOT Grafana's own admin login (`grafana-admin-credentials--admin-password`, class
+"random, admin logins" in section 6.2): that one sits behind this gate and rotates separately.
+
+Rotate when an operator leaves, or when the password may have been seen anywhere it should not
+be. **Never use `scripts/staging-secrets.sh` for this** (write-once; it refuses an object that
+exists). Rotation writes a NEW VERSION of both objects, the password first:
+
+```bash
+export JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94
+. scripts/lib/azure-guard.sh && az_guard_init
+d=$(umask 077 && mktemp -d)
+# 0. keep the OLD password for the refusal check (mode 600, never printed)
+az_read keyvault secret show --vault-name jtoye-stg-kv -n grafana-edge-credentials--password --query value -o tsv > "$d/old"
+# 1. a new random value, then its apr1 line; the password reaches openssl on stdin only
+openssl rand -base64 96 | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32 > "$d/pw"
+printf 'staging-operator:%s' "$(openssl passwd -apr1 -stdin < "$d/pw")" > "$d/auth"
+az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n grafana-edge-credentials--password --file "$d/pw" --encoding utf-8
+az_mutate --no-echo keyvault secret set --vault-name jtoye-stg-kv -n grafana-edge-credentials--auth --file "$d/auth" --encoding utf-8
+# 2. the CSI driver fetches only on mount (rotation is off), so restart the syncing pod
+#    (maxUnavailable 0: the new pod mounts before the old one goes).
+kubectl --context jtoye-stg-aks -n jtoye-staging rollout restart deploy/secret-sync
+kubectl --context jtoye-stg-aks -n jtoye-staging rollout status deploy/secret-sync --timeout=10m
+# 3. the new password works (4/4), and the OLD one is refused with 401
+bash scripts/staging-grafana-edge.sh --probe --context jtoye-stg-aks
+(umask 077; printf 'user = "staging-operator:%s"\n' "$(cat "$d/old")" > "$d/old.curlrc")
+curl -sS -o /dev/null -w '%{http_code}\n' -K "$d/old.curlrc" https://grafana-staging.olajay.co.uk/login   # expect 401
+rm -rf "$d"
+```
+
+Traefik re-reads the Secret when it changes, so the old password stops working once
+secret-sync's new pod has synced it. The first-time creation of these two objects (before the
+deploy that introduces the gate) is `scripts/staging-secrets.sh`, not this procedure.
+
+---
+
 ## 6.2 Staging Key Vault objects, by class (plan 29-27, 2026-10-20)
 
-Staging holds 41 objects in `jtoye-stg-kv` (`bash scripts/staging-secrets.sh --list` prints the
+Staging holds 43 objects in `jtoye-stg-kv` (`bash scripts/staging-secrets.sh --list` prints the
 names and classes, offline). The list is derived from the render, never typed. **Key Vault is
 write-once by construction:** `scripts/staging-secrets.sh` never writes an object that exists, in
 any mode, so it is never the rotation tool. Rotation is a deliberate act by the operator that writes
@@ -248,7 +294,7 @@ section 3. Day-to-day access to the objects: the same page, section 2.
 | **random, DSAR key** | `dsar-credentials--encryption-key` | **Rotation requires re-encrypting open requests. Not a routine rotation.** core-java refuses to start without a valid 64-hex key, and every open data-subject request holds its subject address as ciphertext under the current key; a new key makes them unreadable. Do not rotate it without a re-encryption plan. |
 | **random, broker and cache** | `rabbitmq-credentials--password`, `redis-credentials--password` | New version, then restart the broker or cache and every consumer. The RabbitMQ composites (`rabbitmq-credentials--stomp-passcode`, `rabbitmq-default-user--default-user-conf`) are derived from `rabbitmq-credentials--password` and must be rewritten in the same step, in that order; the broker reads `rabbitmq-default-user` through `secret-sync`. |
 | **random, admin logins** | `grafana-admin-credentials--admin-password`, `keycloak-credentials--admin-password`, `staging-seed--test-vendor-password`, `smtp-credentials--password` | Grafana applies `GF_SECURITY_ADMIN_*` on every fresh start and keeps no state, so a new version and `rollout restart deploy/grafana` is enough (login: old refused, new accepted). Keycloak applies its admin password only when it first creates the admin, and the seed password is a Keycloak user's, so for those two a new vault version changes nothing until the value is also changed in the running Keycloak (the trap of section 2). Mailpit takes no SMTP auth in staging. |
-| **composite** | `mailpit-ui-credentials--auth`, the RabbitMQ composites | Derived from other objects: rotate the input, then rewrite the composite. The mail UI is section 6.1. |
+| **composite** | `mailpit-ui-credentials--auth`, `grafana-edge-credentials--auth`, the RabbitMQ composites | Derived from other objects: rotate the input, then rewrite the composite. The mail UI is section 6.1, the Grafana edge gate section 6.1a. |
 | **external** | `stripe-credentials--api-key`, `stripe-credentials--webhook-secret`, `alertmanager-smtp-credentials--from/username/password/to` | Supplied by the owner. The value is created at the provider (Stripe test mode, Zoho), then written as a new version by hand with the same prefix rule the writer enforces: `sk_test_` and `whsec_` only, because a live Stripe key never enters staging (D-28); no whitespace; an address object is one address. Restart `core-java` for Stripe and `deploy/alertmanager` for the mail objects, then re-run `scripts/check-alert-liveness.sh` (section 5 of the staging operations page). |
 
 Never use `scripts/staging-secrets.sh --set-external` for a rotation: it refuses an existing object.

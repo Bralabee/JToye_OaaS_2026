@@ -17,6 +17,8 @@
 #                    bash scripts/staging-mail-ui.sh --list-kv-objects            (plan 29-22: the
 #                      mail-UI PLAINTEXT, which no SecretProviderClass names, so no workload
 #                      identity is granted it; only its apr1 hash is mounted, D-33)
+#                    bash scripts/staging-grafana-edge.sh --list-kv-objects       (#968 item 3: the
+#                      Grafana edge-auth PLAINTEXT, the same shape as the mail UI's)
 #     access       `<clientID> TAB <objectName>`, from keyvault-chain.py access: the objects
 #                  each SecretProviderClass's identity may read, and nothing else
 #   Any source failing, or an empty result, is VOID (return 2): "found nothing" is not
@@ -86,7 +88,7 @@ ss_derive() {
   printf '%s\n' "$out" > "$dir/access"
 
   local lister
-  for lister in staging-realm-import.sh staging-seed.sh staging-mail-ui.sh; do
+  for lister in staging-realm-import.sh staging-seed.sh staging-mail-ui.sh staging-grafana-edge.sh; do
     rc=0; out=$(bash "$SS_REPO_ROOT/scripts/$lister" --list-kv-objects 2> "$dir/lister.err") || rc=$?
     if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
       cat "$dir/lister.err" >&2
@@ -139,6 +141,11 @@ ss_classify() {
     # htpasswd line Traefik's basic auth reads, derived from it (the only one mounted).
     mailpit-ui-credentials--password)                   echo "random alnum32" ;;
     mailpit-ui-credentials--auth)                       echo "composite htpasswd-apr1:staging-tester:mailpit-ui-credentials--password" ;;
+    # The Grafana edge gate (#968 item 3, owner approval 2026-10-20, option A): the same two
+    # objects as the mail UI, one operator login (user staging-operator) in front of the public
+    # Grafana login page. The --password row is stated, not left to the *password* catch-all.
+    grafana-edge-credentials--password)                 echo "random alnum32" ;;
+    grafana-edge-credentials--auth)                     echo "composite htpasswd-apr1:staging-operator:grafana-edge-credentials--password" ;;
     # Stated, not left to *password* below (plan 29-23; 29-12 noted it missing from the list).
     postgres-exporter-credentials--password)            echo "random alnum32" ;;
     # Alertmanager's alert mail (plan 29-24, D-17 as corrected: Zoho smtp.zoho.eu:587 from
