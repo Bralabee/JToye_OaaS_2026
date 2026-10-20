@@ -17,6 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Measured with the same image.** A forged header from an untrusted source changes nothing; from a trusted source, and with the setting unset, it changes the recorded client address and (with a full-URL `KC_HOSTNAME`) the backchannel `token_endpoint`, not the `issuer`. An empty value makes 26.8.1 refuse to start, which INV-20 turns into a render-time failure.
 - **Not yet proven live.** Staging was frozen for a deploy; the post-deploy steps are in the PR body.
 
+### Digest Parity Waits for the Old Replicas to Drain (#986) — 2026-10-20
+
+The first staging deploy after the Phase 29 merge (run 39440780472) failed at digest parity on a correct deploy and was rolled back. The gate read core-java 2.4 s after `rollout status` returned, and counted the previous revision's pod, which was still terminating, as running (issue #985).
+
+- **`scripts/check-deploy-digest-parity.sh`.**
+  - Each poll reads a service's pods as one JSON list, and one jq program (`POD_JQ`) sorts them into live digests and terminating pods.
+  - The gate waits for the terminating pods to go, against one `--drain-timeout` deadline (default 180 s) shared by all services.
+  - A pod still terminating at the deadline is named and counted as a failure, and the remaining services are still compared.
+  - Only live digests are compared.
+- **Selftest.** 33 arms. `POD_JQ` is fed pod-list JSON for:
+  - an old pod that drains;
+  - one that stays, with a wrong frontend image also planted;
+  - one that stays while every live digest matches;
+  - an old image on a live pod.
+
+  Content checks back each of these. Breaking the filter or the stuck-pod check turns the selftest red.
+- **Live proof (staging).** core-java was set to `bffd2f74` so that a real pod with a different digest was still terminating. The gate as it was gave rc 1 with the CI output, and the fixed gate gave rc 0 after waiting for the drain. The deploy was then undone. The record is in `evidence/29-28-merge-deploy.txt`.
+- **`ci-cd.yaml`.** The selftest step's comment names the drain arms.
+
 ### `/for-operators` Redesigned: One Dark Band, Five Sections, Four Product Images (#967) — 2026-10-19
 
 The page said the right things (PR #965) in the wrong shape: fifteen identical cards, seven uppercase-tracked eyebrows, six H2s at three sizes and no product anywhere on it. It is now a kitchen docket: one oxblood band that holds the product and the number, warm paper below, hairlines instead of boxes. Measured on the production build, `<main>` before / after: 622 / 441 words; document height 7745 / 5991 px at 390 wide, 4185 / 3679 px at 1440 (3679 at 1280 and 4216 at 768 too); no horizontal overflow at 390 (scrollWidth 390).
