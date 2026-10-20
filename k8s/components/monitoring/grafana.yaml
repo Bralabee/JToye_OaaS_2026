@@ -117,12 +117,20 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 4
+        # MEMORY (issue #968). Measured on grafana/grafana:13.2.4 with the staging env, a 384Mi
+        # cgroup and a scan-shaped burst (8 parallel clients, ~14k junk-path and login requests):
+        # anonymous memory 240Mi at start, 275-301Mi under the burst, +10Mi kernel, so 78-81% of the
+        # old limit with no room for the next spike; kubectl top on the live pod read 224Mi idle
+        # against a 128Mi request. The request now sits at the idle working set (256Mi) and the
+        # limit at 512Mi (1.65x the worst measured anon+kernel). Staging node budget: the Grafana
+        # node carried 1718Mi of 2788Mi requested, so +128Mi of request fits; a memory LIMIT is not
+        # scheduled against, only the request is.
         resources:
           requests:
             cpu: "50m"
-            memory: "128Mi"
+            memory: "256Mi"
           limits:
-            memory: "384Mi"
+            memory: "512Mi"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
