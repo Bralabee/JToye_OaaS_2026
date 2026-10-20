@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 29 CI Hardening: Selftests Wired, an Edge Probe Job, Digest-less Containers VOID, Action Sha Pins (#989) — 2026-10-20
+
+Four changes to what CI proves, each shown failing on a planted break before it was trusted.
+
+- **Digest parity (C-9).** A container that reports `state.running` or `ready: true` but has no `@sha256:` imageID used to drop out of the compared set. `check-deploy-digest-parity.sh` now exits 2 (VOID) naming the pod and container. A Pending or ContainerCreating container with an empty imageID is not VOID. The selftest gains 3 VOID arms, 2 control arms and 6 content checks.
+- **Selftests in CI (C-1).**
+  - `staging-secrets.sh`, `staging-secrets-preflight.sh`, `staging-pitr-drill.sh` and `check-networkpolicy-enforcement.sh` run `--selftest` in `k8s-validate`.
+  - `staging-db-bootstrap.sh --selftest` runs in `ops-contracts`, because it pulls `postgres:18` and that job is not on the deploy path.
+  - `ops-contracts` is not added to `deploy-staging.needs` (27-06 section 5).
+- **Edge probe (C-2).**
+  - `check-staging-edge.sh --skip-burst` runs the four read-only arms and not the timing-sensitive 429 burst.
+  - The new `staging-edge-probe` job (`needs: deploy-staging`, its own OIDC login and kubeconfig) runs it after each staging deploy. It is a separate job so its red cannot trigger the deploy rollback.
+  - The false "plan 29-21 runs it from the deploy job" text is gone from the script and from `gate-enforcement.conf`.
+- **Action pins (M2).** All 42 remaining `uses:` refs that pointed at a tag are pinned to the full 40-hex commit with a `# <tag>` comment, third-party ones included. Dependabot's `github-actions` entry stays and now moves the pins.
+- **Docs.** No metrics change: no `@Test`, `it`, `test()` or Go `Test*` block is added.
+
 ### Digest Parity Waits for the Old Replicas to Drain (#986) — 2026-10-20
 
 The first staging deploy after the Phase 29 merge (run 39440780472) failed at digest parity on a correct deploy and was rolled back. The gate read core-java 2.4 s after `rollout status` returned, and counted the previous revision's pod, which was still terminating, as running (issue #985).
