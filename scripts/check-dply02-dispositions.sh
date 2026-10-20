@@ -126,11 +126,18 @@ while [ "$#" -gt 0 ]; do
 done
 
 # ===========================================================================
-# The gate — RED STUB (plan 29-27, Task 1): it only counts the table's rows and reports success
-# in every mode, which is the "a gate that only counts rows" the selftest below must catch.
+# The gate. Everything below reads ROOT (the repository, or --root DIR).
 # ===========================================================================
 
 FINDINGS=0
+finding() { echo "FINDING $*"; FINDINGS=$((FINDINGS + 1)); }
+
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
 
 set_paths() {
   [ -n "$ROOT" ] || ROOT="$REPO_ROOT_DEFAULT"
@@ -142,17 +149,374 @@ set_paths() {
   APPROVAL="$ROOT/$APPROVAL_REL"
 }
 
+# --- the required list, derived from the ROADMAP --------------------------------------
+DERIVED=()
+derive_required() {
+  local sec parsed rc n
+  [ -f "$ROADMAP" ] || void "cannot read $ROADMAP_REL under $ROOT"
+  sec=$(awk '/^### Phase 29[:. ]/{f=1;print;next} f&&/^### Phase /{exit} f' "$ROADMAP"); rc=$?
+  [ "$rc" -eq 0 ] || void "awk failed reading $ROADMAP_REL (rc $rc)"
+  [ -n "$sec" ] || void "no '### Phase 29' section in $ROADMAP_REL — the parser is blind, not the list empty"
+  parsed=$(command grep -oE '#[0-9]+' <<< "$sec"); rc=$?
+  case "$rc" in
+    0) ;;
+    1) void "zero issue references parsed from the Phase 29 section of $ROADMAP_REL — the parser is blind, not the list empty" ;;
+    *) void "grep failed over the Phase 29 section (rc $rc)" ;;
+  esac
+  SECTION_COUNT=$(command grep -c . <<< "$(LC_ALL=C sort -u <<< "$parsed")")
+  while IFS= read -r n; do DERIVED+=("${n#\#}"); done < <(
+    { printf '%s\n' "$parsed"; for n in "${EXTRA_ISSUES[@]}"; do printf '#%s\n' "$n"; done; } | sort -t'#' -k2,2n -u
+  )
+  [ "${#DERIVED[@]}" -gt 0 ] || void "derivation produced an empty list"
+}
+
+# --- the table --------------------------------------------------------------------------
+declare -A ROW_TITLE ROW_STATE ROW_DISP ROW_EVID ROW_COMMENT ROW_EXPECT ROW_LINE
+ROW_NUMS=()
+parse_table() {
+  local line ln=0 cells n cnt
+  [ -f "$TABLE" ] || void "cannot read the dispositions table $TABLE_REL under $ROOT"
+  while IFS= read -r line || [ -n "$line" ]; do
+    ln=$((ln + 1))
+    [[ $line == '|'* ]] || continue
+    IFS='|' read -r -a cells <<< "$line"
+    n=$(trim "${cells[1]:-}")
+    [[ $n =~ ^#[0-9]+$ ]] || continue
+    n="${n#\#}"
+    cnt="${#cells[@]}"
+    if [ "$cnt" -ne 8 ]; then
+      finding "$TABLE_REL:$ln — row #$n has $((cnt - 1)) cell(s), the table has 7 (Issue | Title | State at phase start | Disposition | Evidence | Comment file | Expected state after 29-28)"
+      continue
+    fi
+    if [ -n "${ROW_LINE[$n]+set}" ]; then
+      finding "$TABLE_REL:$ln — duplicate row for #$n (first at line ${ROW_LINE[$n]})"
+      continue
+    fi
+    ROW_TITLE[$n]=$(trim "${cells[2]}")
+    ROW_STATE[$n]=$(trim "${cells[3]}")
+    ROW_DISP[$n]=$(trim "${cells[4]}")
+    ROW_EVID[$n]=$(trim "${cells[5]}")
+    ROW_COMMENT[$n]=$(trim "${cells[6]}")
+    ROW_EXPECT[$n]=$(trim "${cells[7]}")
+    ROW_LINE[$n]="$ln"
+    ROW_NUMS+=("$n")
+  done < "$TABLE"
+  [ "${#ROW_NUMS[@]}" -gt 0 ] || void "no table rows parsed from $TABLE_REL — the parser is blind, not the table empty"
+  mapfile -t ROW_NUMS < <(printf '%s\n' "${ROW_NUMS[@]}" | sort -n)
+}
+
+first_word() { local s="$1"; s="${s%%[[:space:]]*}"; printf '%s' "$s"; }
+
+# --- evidence ---------------------------------------------------------------------------
+EV_PATHS=()
+check_evidence() {
+  local n="$1" cell="${ROW_EVID[$n]}" entry p l total
+  local -a entries=()
+  EV_PATHS=()
+  if [ -z "$cell" ]; then
+    finding "$TABLE_REL:${ROW_LINE[$n]} — #$n has no evidence (a disposition without evidence is the silence DPLY-02 names)"
+    return
+  fi
+  IFS=';' read -r -a entries <<< "$cell"
+  for entry in "${entries[@]}"; do
+    entry=$(trim "$entry")
+    if ! [[ $entry =~ ^([^:[:space:]]+):([0-9]+)$ ]]; then
+      finding "$TABLE_REL:${ROW_LINE[$n]} — #$n evidence entry '$entry' is not repo/relative/path:LINE"
+      continue
+    fi
+    p="${BASH_REMATCH[1]}"; l="${BASH_REMATCH[2]}"
+    case "$p" in
+      /*|*..*) finding "$TABLE_REL:${ROW_LINE[$n]} — #$n evidence path '$p' is absolute or climbs out of the repository"; continue ;;
+    esac
+    if [ ! -f "$ROOT/$p" ]; then
+      finding "$TABLE_REL:${ROW_LINE[$n]} — #$n evidence path does not exist: $p"
+      continue
+    fi
+    total=$(awk 'END { print NR }' "$ROOT/$p")
+    if [ "$l" -lt 1 ] || [ "$l" -gt "$total" ]; then
+      finding "$TABLE_REL:${ROW_LINE[$n]} — #$n evidence line $l is outside $p ($total line(s))"
+      continue
+    fi
+    EV_PATHS+=("$p")
+  done
+}
+
+# --- the public-text rule ---------------------------------------------------------------
+# Closing keyword + optional colon + whitespace + an issue reference, case-insensitive, on one
+# line or with the keyword ending a line and the reference opening the next. mawk has no
+# IGNORECASE, so the text is lower-cased first.
+KEYWORD_AWK='
+BEGIN {
+  kw  = "(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)"
+  ref = "(#[0-9]+|[a-z0-9._-]+/[a-z0-9._-]+#[0-9]+|https?://github[.]com/[^ \t]*/issues/[0-9]+)"
+  one = "(^|[^a-z0-9_])" kw ":?[ \t]+" ref
+  end = "(^|[^a-z0-9_])" kw ":?[ \t]*$"
+  nxt = "^[ \t]*" ref
+}
+{ line[NR] = $0 }
+END {
+  for (i = 1; i <= NR; i++) {
+    l = tolower(line[i])
+    if (l ~ one) { print i "\t" line[i]; continue }
+    if (i < NR && l ~ end && tolower(line[i + 1]) ~ nxt) print i "\t" line[i] " " line[i + 1]
+  }
+}'
+ATTRIBUTION_PATTERNS=('co-authored-by[[:space:]]*:' 'generated with' 'claude\.ai/code' 'claude-session[[:space:]]*:')
+
+# scan_public_text FILE DISPLAY — prints one FINDING per hit, bumps FINDINGS.
+scan_public_text() {
+  local file="$1" disp="$2" out rc ln text pat robot
+  out=$(awk "$KEYWORD_AWK" "$file"); rc=$?
+  [ "$rc" -eq 0 ] || void "awk failed scanning $disp (rc $rc)"
+  if [ -n "$out" ]; then
+    while IFS=$'\t' read -r ln text; do
+      finding "$disp:$ln — closing keyword next to an issue reference (GitHub closes it even inside a negation): ${text:0:140}"
+    done <<< "$out"
+  fi
+  for pat in "${ATTRIBUTION_PATTERNS[@]}"; do
+    out=$(LC_ALL=C command grep -niE -- "$pat" "$file"); rc=$?
+    case "$rc" in
+      0) while IFS= read -r text; do finding "$disp:${text%%:*} — AI-attribution line (owner ruling 2026-08-30): ${text#*:}"; done <<< "$out" ;;
+      1) ;;
+      *) void "grep failed scanning $disp for /$pat/ (rc $rc)" ;;
+    esac
+  done
+  robot=$(printf '\xf0\x9f\xa4\x96')
+  out=$(LC_ALL=C command grep -nF -- "$robot" "$file"); rc=$?
+  case "$rc" in
+    0) while IFS= read -r text; do finding "$disp:${text%%:*} — AI-attribution line (the robot-emoji footer)"; done <<< "$out" ;;
+    1) ;;
+    *) void "grep failed scanning $disp for the robot-emoji footer (rc $rc)" ;;
+  esac
+}
+
+# --- one comment file -------------------------------------------------------------------
+check_comment() {
+  local n="$1" cf="${ROW_COMMENT[$n]}" file disp p tok rc cited
+  if [ "$(first_word "${ROW_DISP[$n]}")" = pr-reference ]; then
+    [ "$cf" = "$EM_DASH" ] || finding "$TABLE_REL:${ROW_LINE[$n]} — #$n is a pr-reference row and carries no comment file (cell must be an em dash), got '$cf'"
+    return
+  fi
+  case "$cf" in
+    "$COMMENTS_SUB"/*.txt) ;;
+    *) finding "$TABLE_REL:${ROW_LINE[$n]} — #$n comment file '$cf' is not $COMMENTS_SUB/<name>.txt"; return ;;
+  esac
+  file="$ROOT/$PHASE_REL/$cf"
+  disp="$PHASE_REL/$cf"
+  if [ ! -s "$file" ]; then
+    finding "$disp — #$n comment file is missing or empty"
+    return
+  fi
+  for p in "${EV_PATHS[@]}"; do
+    if ! command grep -qF -- "$p" "$file"; then
+      finding "$disp — comment file does not cite its row's evidence path $p"
+    fi
+  done
+  cited=$(command grep -oE '(^|[^A-Za-z0-9_.-])(\.planning|\.github|docs|scripts|k8s|infra|core-java|frontend|edge-go|mcp-server)/[A-Za-z0-9_./-]*' "$file"); rc=$?
+  case "$rc" in 0|1) ;; *) void "grep failed reading cited paths in $disp (rc $rc)" ;; esac
+  if [ -n "$cited" ]; then
+    while IFS= read -r tok; do
+      tok=$(sed -E 's/^[^.A-Za-z0-9]//' <<< "$tok")
+      while [[ $tok == *. ]]; do tok="${tok%.}"; done
+      if [ ! -e "$ROOT/$tok" ]; then
+        finding "$disp — comment file cites a path that does not exist: $tok"
+      fi
+    done < <(LC_ALL=C sort -u <<< "$cited")
+  fi
+  scan_public_text "$file" "$disp"
+}
+
+# --- one row ----------------------------------------------------------------------------
+check_row() {
+  local n="$1" disp kw reason state expect pr=0
+  disp="${ROW_DISP[$n]}"
+  kw=$(first_word "$disp")
+  kw="${kw%%:*}"
+  reason=""
+  [[ $disp == *:* ]] && reason=$(trim "${disp#*:}")
+  state=$(first_word "${ROW_STATE[$n]}")
+  expect=$(first_word "${ROW_EXPECT[$n]}")
+  [ "$kw" = pr-reference ] && pr=1
+  case "$kw" in
+    fixed-in-phase|already-closed|deferred|superseded|pr-reference) ;;
+    *) finding "$TABLE_REL:${ROW_LINE[$n]} — #$n disposition '$disp' does not begin with fixed-in-phase, already-closed, deferred, superseded or pr-reference"; kw="" ;;
+  esac
+  if [ "$kw" = deferred ] || [ "$kw" = superseded ]; then
+    case "$(tr '[:upper:]' '[:lower:]' <<< "$reason")" in
+      ''|tbd|todo|'n/a'|na|none|'-'|"$EM_DASH")
+        finding "$TABLE_REL:${ROW_LINE[$n]} — #$n is $kw but gives no written reason (write '$kw: <why>')" ;;
+    esac
+  fi
+  if [ "$pr" -eq 1 ]; then
+    [ "$state" = MERGED ] || finding "$TABLE_REL:${ROW_LINE[$n]} — #$n pr-reference: state at phase start must begin MERGED, got '$state'"
+    [ "$expect" = MERGED ] || finding "$TABLE_REL:${ROW_LINE[$n]} — #$n pr-reference: expected state must begin MERGED (no state change is ever made to a PR), got '$expect'"
+  else
+    case "$state" in OPEN|CLOSED) ;; *) finding "$TABLE_REL:${ROW_LINE[$n]} — #$n state at phase start must begin OPEN or CLOSED, got '$state'" ;; esac
+    case "$expect" in OPEN|CLOSED) ;; *) finding "$TABLE_REL:${ROW_LINE[$n]} — #$n expected state must begin OPEN or CLOSED, got '$expect'" ;; esac
+    case "$kw" in
+      fixed-in-phase|superseded)
+        [ "$expect" = CLOSED ] || finding "$TABLE_REL:${ROW_LINE[$n]} — #$n is $kw but expects '$expect' after 29-28 (it must expect CLOSED)" ;;
+      already-closed)
+        [ "$state" = CLOSED ] && [ "$expect" = CLOSED ] || finding "$TABLE_REL:${ROW_LINE[$n]} — #$n is already-closed but the states read '$state' -> '$expect' (both must be CLOSED)" ;;
+      deferred)
+        [ "$expect" = OPEN ] || finding "$TABLE_REL:${ROW_LINE[$n]} — #$n is deferred but expects '$expect' after 29-28 (a deferral leaves the issue OPEN)" ;;
+    esac
+  fi
+  check_evidence "$n"
+  check_comment "$n"
+  echo "ROW #$n ${kw:-?} ${state:-?}->${expect:-?} evidence=${#EV_PATHS[@]} comment=${ROW_COMMENT[$n]##*/}"
+}
+
+# --- the static checks ------------------------------------------------------------------
 run_static() {
-  local rows
-  rows=$(command grep -cE '^[|] *#[0-9]+ *[|]' "$TABLE" 2>/dev/null)
-  echo "STUB rows=${rows:-0}"
+  local n d have missing extra f base ref orphan_dir listed
+  derive_required
+  parse_table
+  echo "derived : ${#DERIVED[@]} reference(s) — ${SECTION_COUNT} parsed from the ROADMAP Phase 29 section, unioned with: ${EXTRA_ISSUES[*]}"
+  echo "          $(printf '#%s ' "${DERIVED[@]}")"
+  echo "table   : ${#ROW_NUMS[@]} row(s) in $TABLE_REL"
+  for n in "${DERIVED[@]}"; do
+    [ -n "${ROW_LINE[$n]+set}" ] || finding "$TABLE_REL — MISSING row #$n: the ROADMAP's Phase 29 section (or the union list) names it and the table has no disposition for it"
+  done
+  for n in "${ROW_NUMS[@]}"; do
+    have=0
+    for d in "${DERIVED[@]}"; do [ "$d" = "$n" ] && have=1; done
+    [ "$have" -eq 1 ] || finding "$TABLE_REL:${ROW_LINE[$n]} — EXTRA row #$n: not derived from the ROADMAP's Phase 29 section nor in the union list"
+  done
+  for n in "${ROW_NUMS[@]}"; do check_row "$n"; done
+  # Orphan comment files: a file the table does not name is text nobody approved.
+  orphan_dir="$ROOT/$PHASE_REL/$COMMENTS_SUB"
+  if [ -d "$orphan_dir" ]; then
+    listed=" "
+    for n in "${ROW_NUMS[@]}"; do listed="$listed${ROW_COMMENT[$n]##*/} "; done
+    while IFS= read -r f; do
+      base="${f##*/}"
+      [[ $listed == *" $base "* ]] || finding "$PHASE_REL/$COMMENTS_SUB/$base — orphan comment file: the table names no row that uses it"
+    done < <(/usr/bin/find "$orphan_dir/" -type f | LC_ALL=C sort)
+  fi
+  echo "SUMMARY derived=${#DERIVED[@]} table=${#ROW_NUMS[@]} findings=$FINDINGS"
+  [ "$FINDINGS" -eq 0 ] || return 1
   return 0
 }
-run_scan_text() { return 0; }
-run_live() { return 0; }
-run_write_manifest() { return 0; }
-run_verify_approval() { return 0; }
 
+# --- --scan-text ------------------------------------------------------------------------
+run_scan_text() {
+  [ -f "$ARG_FILE" ] || void "--scan-text: cannot read $ARG_FILE"
+  [ -s "$ARG_FILE" ] || void "--scan-text: $ARG_FILE is empty — scanning nothing proves nothing"
+  scan_public_text "$ARG_FILE" "$ARG_FILE"
+  echo "SUMMARY scan-text file=$ARG_FILE findings=$FINDINGS"
+  [ "$FINDINGS" -eq 0 ] || return 1
+  return 0
+}
+
+# --- --pre-close / --post-close ---------------------------------------------------------
+live_state() {  # kind n -> prints OPEN|CLOSED|MERGED; rc 2 when gh could not answer
+  local kind="$1" n="$2" out rc
+  out=$(gh "$kind" view "$n" --json state --jq .state 2>/dev/null); rc=$?
+  [ "$rc" -eq 0 ] || return 2
+  out=$(trim "$out")
+  case "$out" in OPEN|CLOSED|MERGED) printf '%s' "$out" ;; *) return 2 ;; esac
+}
+
+run_live() {  # pre|post
+  local which="$1" n kind live want col
+  command -v gh >/dev/null 2>&1 || void "gh not found — the live states cannot be read"
+  parse_table
+  if [ "$which" = pre ]; then col="state at phase start"; else col="expected state after 29-28"; fi
+  for n in "${ROW_NUMS[@]}"; do
+    if [ "$(first_word "${ROW_DISP[$n]}")" = pr-reference ]; then kind=pr; else kind=issue; fi
+    live=$(live_state "$kind" "$n"); rc=$?
+    [ "$rc" -eq 0 ] || void "gh could not report the state of $kind #$n (rc $rc) — a failed read is not a verdict"
+    if [ "$which" = pre ]; then want=$(first_word "${ROW_STATE[$n]}"); else want=$(first_word "${ROW_EXPECT[$n]}"); fi
+    if [ "$live" = "$want" ]; then
+      echo "OK #$n ($kind) live $live matches the table's $col"
+    elif [ "$which" = pre ]; then
+      finding "$TABLE_REL:${ROW_LINE[$n]} — STATE DRIFT #$n ($kind): live $live, the table recorded $want — someone changed it after the table was written; re-measure and re-approve before 29-28 acts"
+    else
+      finding "$TABLE_REL:${ROW_LINE[$n]} — #$n ($kind): live $live, the table expects $want after 29-28"
+    fi
+  done
+  echo "SUMMARY $which-close rows=${#ROW_NUMS[@]} findings=$FINDINGS"
+  [ "$FINDINGS" -eq 0 ] || return 1
+  return 0
+}
+
+# --- --write-manifest -------------------------------------------------------------------
+manifest_paths() {  # prints the repo-relative path set the manifest must pin
+  local n
+  { printf '%s\n' "$TABLE_REL"
+    for n in "${ROW_NUMS[@]}"; do
+      [ "${ROW_COMMENT[$n]}" = "$EM_DASH" ] || printf '%s\n' "$PHASE_REL/${ROW_COMMENT[$n]}"
+    done
+  } | LC_ALL=C sort -u
+}
+
+run_write_manifest() {
+  local -a paths=()
+  local own rc
+  command -v sha256sum >/dev/null 2>&1 || void "sha256sum not found"
+  FINDINGS=0
+  if ! run_static; then
+    echo "REFUSED: the static checks above failed, and a manifest must not pin a table that does not pass them" >&2
+    return 1
+  fi
+  mapfile -t paths < <(manifest_paths)
+  [ "${#paths[@]}" -gt 1 ] || void "manifest path set has no comment file in it"
+  (cd "$ROOT" && sha256sum -- "${paths[@]}") > "$MANIFEST"; rc=$?
+  [ "$rc" -eq 0 ] || void "sha256sum failed writing $MANIFEST_REL (rc $rc)"
+  read -r own _ < <(sha256sum "$MANIFEST")
+  echo "manifest: $MANIFEST_REL (${#paths[@]} path(s))"
+  echo "Manifest-SHA256: $own"
+}
+
+# --- --verify-approval ------------------------------------------------------------------
+run_verify_approval() {
+  local file="${ARG_FILE:-$APPROVAL}" own want out rc line f re
+  local -a approved=() have=() need=()
+  command -v sha256sum >/dev/null 2>&1 || void "sha256sum not found"
+  [ -f "$file" ] || void "--verify-approval: the approval file $file does not exist"
+  mapfile -t approved < <(command grep -E '^Approved-Manifest-SHA256: [0-9a-f]{64}$' "$file")
+  [ "${#approved[@]}" -eq 1 ] || void "--verify-approval: $file must hold exactly one 'Approved-Manifest-SHA256: <64 hex>' line, found ${#approved[@]}"
+  want="${approved[0]#Approved-Manifest-SHA256: }"
+  [ -f "$MANIFEST" ] || void "--verify-approval: the manifest $MANIFEST_REL does not exist"
+  [ -s "$MANIFEST" ] || void "--verify-approval: the manifest $MANIFEST_REL is empty"
+  read -r own _ < <(sha256sum "$MANIFEST")
+  if [ "$own" != "$want" ]; then
+    finding "$MANIFEST_REL — the manifest's sha256 is $own but the owner approved $want"
+  fi
+  # Every pinned file must still hash to what the manifest recorded.
+  out=$(cd "$ROOT" && sha256sum -c --strict "$MANIFEST" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        *': FAILED open or read'*) finding "${line%%: *} — pinned file cannot be read (missing)" ;;
+        *': FAILED') finding "${line%%: *} — changed after the manifest was written (its sha256 no longer matches)" ;;
+      esac
+    done <<< "$out"
+    if ! command grep -qE ': FAILED' <<< "$out"; then
+      finding "$MANIFEST_REL — sha256sum -c --strict rejected the manifest (malformed line or none usable): $(tr '\n' ' ' <<< "$out" | cut -c1-160)"
+    fi
+  fi
+  # The pinned set must be exactly the table plus the comment files the table names.
+  parse_table
+  mapfile -t need < <(manifest_paths)
+  re='^[0-9a-f]{64}  (.+)$'
+  while IFS= read -r line; do
+    [[ $line =~ $re ]] && have+=("${BASH_REMATCH[1]}")
+  done < "$MANIFEST"
+  mapfile -t have < <(printf '%s\n' "${have[@]}" | LC_ALL=C sort -u)
+  for f in "${need[@]}"; do
+    [[ " ${have[*]} " == *" $f "* ]] || finding "$MANIFEST_REL — path-set drift: the table names $f but the manifest does not pin it"
+  done
+  for f in "${have[@]}"; do
+    [[ " ${need[*]} " == *" $f "* ]] || finding "$MANIFEST_REL — path-set drift: the manifest pins $f, which the table does not name"
+  done
+  echo "SUMMARY verify-approval approved=$want manifest=$own pinned=${#have[@]} findings=$FINDINGS"
+  [ "$FINDINGS" -eq 0 ] || return 1
+  return 0
+}
+
+# ==== end of the gate ====
 # ===========================================================================
 # --selftest: every arm builds a throwaway repository root, plants ONE condition, runs THIS
 # script against it with --root, and asserts the exit code and the lines it must (and must not)
