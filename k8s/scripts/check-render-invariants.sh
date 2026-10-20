@@ -426,6 +426,32 @@
 #          catching each hole by --selftest-inv18; the live proof is
 #          scripts/staging-mail-ui.sh --probe (UI-1..UI-8).
 #
+#   INV-20 #976 (plan 29-10 finding), RENDER level, every target that renders a
+#          container whose image is Keycloak (KEYCLOAK_TARGETS, k8s/staging, MUST
+#          render one; production and local print "not applicable" until they do).
+#          Keycloak's --proxy-headers makes it believe X-Forwarded-Host/-Proto/-For
+#          from whoever connects, unless --proxy-trusted-addresses is set ("By
+#          default all addresses are trusted", `kc.sh start --help`): a client could
+#          then choose the issuer URL, the scheme and the address Keycloak records
+#          for it. So a Keycloak container that has proxy headers on (KC_PROXY_HEADERS
+#          or --proxy-headers) must
+#            a. carry exactly one KC_PROXY_TRUSTED_ADDRESSES env (or the
+#               --proxy-trusted-addresses flag); none = trusts every source;
+#            b. get it as a literal, or from a NON-optional configMapKeyRef on an
+#               app-config key present in the render (a Secret source, an envFrom
+#               and an optional ref are refused: the value could not be judged, or
+#               could silently vanish into trust-everyone);
+#            c. have a non-empty value (Keycloak 26.8.1 refuses to start on an empty
+#               one, measured; this fails it at render time instead of at rollout);
+#            d. have every entry pass the SAME judge as INV-12 (tp_entry_verdict):
+#               not /0, no shorter than /8, inside RFC 1918 / fc00::/7.
+#          And a Keycloak container must not use the legacy KC_PROXY / --proxy
+#          (edge, reencrypt, passthrough): it trusts the headers and has no trusted
+#          addresses option at all.
+#          ACCEPTED RESIDUAL, recorded: the range is the pod network, so the in-cluster
+#          callers that keycloak-allow admits on 8080 are inside it. Traefik has no
+#          narrower stable range. Shown catching each hole by --selftest-inv20.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -523,7 +549,7 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
@@ -531,6 +557,7 @@
 #   --selftest-inv16 the same for INV-16 (inv16_selftest)
 #   --selftest-inv17 the same for INV-17 (inv17_selftest)
 #   --selftest-inv18 the same for INV-18 (inv18_selftest)
+#   --selftest-inv20 the same for INV-20 (inv20_selftest)
 
 set -euo pipefail
 
@@ -1129,6 +1156,110 @@ if [[ "${1:-}" == "--selftest-inv18" ]]; then
     inv18_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv20 (#976): INV-20 shown CATCHING planted holes in Keycloak's
+# proxy-trust configuration. Same harness shape as -inv18. Arms (the first seven in
+# the copy's k8s/components/keycloak/keycloak.yaml, the last in k8s/staging):
+#   env-removed      KC_PROXY_TRUSTED_ADDRESSES is deleted (trust every source)
+#   optional-ref     its configMapKeyRef becomes optional: true (a missing key
+#                    would silently drop the env)
+#   key-renamed      the configMapKeyRef names an app-config key that does not exist
+#   legacy-proxy     the container also sets KC_PROXY=edge (no trusted-addresses)
+#   literal-any      the value is the literal 0.0.0.0/0
+#   literal-public   the value is the literal public range 8.8.8.0/24
+#   literal-empty    the value is the literal empty string
+#   config-empty     app-config security.trusted-proxies is "" in k8s/staging
+#                    (INV-12 only WARNs on that; INV-20 must FAIL it for Keycloak)
+# INV20_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv20_plant() {
+    local arm="$1" root="$2" f before
+    case "$arm" in
+        config-empty) f="$root/staging/configmap-patch.yaml" ;;
+        env-removed|optional-ref|key-renamed|legacy-proxy|literal-any|literal-public|literal-empty) f="$root/components/keycloak/keycloak.yaml" ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        env-removed)
+            awk '/^        - name: KC_PROXY_TRUSTED_ADDRESSES$/ { skip = 5 } skip > 0 { skip--; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        optional-ref)
+            awk '{ print } /^              key: security\.trusted-proxies$/ { print "              optional: true" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        key-renamed)
+            awk '{ if ($0 ~ /^              key: security\.trusted-proxies$/) $0 = "              key: security.trusted-proxies-renamed"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        legacy-proxy)
+            awk '{ print } /^          value: "xforwarded"$/ { print "        - name: KC_PROXY"; print "          value: \"edge\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        literal-any|literal-public|literal-empty)
+            local lit
+            case "$arm" in literal-any) lit="0.0.0.0/0" ;; literal-public) lit="8.8.8.0/24" ;; literal-empty) lit="" ;; esac
+            awk -v lit="$lit" '/^        - name: KC_PROXY_TRUSTED_ADDRESSES$/ { print; print "          value: \"" lit "\""; skip = 4; next } skip > 0 { skip--; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        config-empty)
+            awk '{ if ($0 ~ /^  security\.trusted-proxies: /) $0 = "  security.trusted-proxies: \"\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv20_selftest() {
+    local fmt="${INV20_SELFTEST_FORMAT:-plain}" st arm want out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv20 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(env-removed optional-ref key-renamed legacy-proxy literal-any literal-public literal-empty config-empty)
+    declare -A WANT=(
+        [env-removed]="INV-20: Deployment keycloak container 'keycloak' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+        [optional-ref]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES reads app-config through an optional configMapKeyRef"
+        [key-renamed]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES reads app-config key 'security.trusted-proxies-renamed', which the render does not define"
+        [legacy-proxy]="INV-20: Deployment keycloak container 'keycloak' sets the legacy KC_PROXY"
+        [literal-any]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES entry '0.0.0.0/0'"
+        [literal-public]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES entry '8.8.8.0/24'"
+        [literal-empty]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES is empty"
+        [config-empty]="INV-20: Deployment keycloak container 'keycloak' KC_PROXY_TRUSTED_ADDRESSES is empty (app-config security.trusted-proxies)"
+    )
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv20_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"
+            if (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=1"
+            else
+                caught=no
+                line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-20|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv20" ]]; then
+    inv20_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
@@ -1375,6 +1506,12 @@ REALM_LOGIN_CLIENTS=" $(awk -F'\t' -v b="$KC_BUILTIN_CLIENTS" 'index(b, " " $1 "
 # among the discovered targets (checked after the loop), as for WI_TARGETS.
 TRUSTSTORE_TARGETS=("k8s/staging")
 declare -A TRUSTSTORE_TARGET_SEEN=()
+# INV-20 (#976): the targets that MUST render a Keycloak container (its absence
+# there is a PARSE ERROR, not "not applicable", so a renamed component cannot make
+# the proxy-trust check silently stop running), and the image test that finds one.
+KEYCLOAK_TARGETS=("k8s/staging")
+declare -A KEYCLOAK_TARGET_SEEN=()
+KEYCLOAK_IMAGE_RE='(^|/)keycloak(:|@|$)'
 TRUSTSTORE_PATH="/truststore/cacerts"
 # INIT_ITEMS_AWK: one record per initContainers item of Deployment <want>, read
 # from the RAW render because the builder's command is a block scalar:
@@ -3049,14 +3186,145 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-20 (#976) ----------------
+    # Every Keycloak container with proxy headers on must say WHICH peers it believes
+    # them from, as a private CIDR list it can start on. See the header for the rules.
+    inv20_bad=0
+    inv20_n=0
+    inv20_required=0
+    for t in "${KEYCLOAK_TARGETS[@]}"; do [[ "$rel" == "$t" ]] && inv20_required=1; done
+    inv20_ctrs=$(awk -F'\t' -v re="$KEYCLOAK_IMAGE_RE" '$3 ~ /::containers::\[[0-9]+\]::image$/ && $4 ~ re { c = $3; sub(/::image$/, "", c); print $1 "\t" $2 "\t" c }' "$TMP/inv11_paths.tsv")
+    if [[ -z "$inv20_ctrs" ]]; then
+        (( inv20_required == 0 )) || parse_fail "[$rel] INV-20: $rel is in KEYCLOAK_TARGETS but renders no container whose image is Keycloak ($KEYCLOAK_IMAGE_RE), so the proxy-trust check would pass over nothing. Either the component left the overlay or the path walker is blind; fix it in the SAME change, do not delete the invariant."
+        inv20_msg="not applicable (no Keycloak container in this render)"
+    else
+        (( inv20_required == 0 )) || KEYCLOAK_TARGET_SEEN["$rel"]=1
+        while IFS=$'\t' read -r k20 n20 c20; do
+            [[ -n "$k20" ]] || continue
+            inv20_n=$((inv20_n + 1))
+            cn20="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$c20::name")"
+            cn20="${cn20#\"}"; cn20="${cn20%\"}"
+            who20="$k20 $n20 container '$cn20'"
+            hdr20=0; legacy20=0; trusted20=()
+            # env: one record per env item NAME, as <item path> TAB <name>
+            while IFS=$'\t' read -r ipath iname; do
+                [[ -n "$ipath" ]] || continue
+                iname="${iname#\"}"; iname="${iname%\"}"
+                case "$iname" in
+                    KC_PROXY_HEADERS) hdr20=1 ;;
+                    KC_PROXY_TRUSTED_ADDRESSES) trusted20+=("$ipath") ;;
+                    KC_PROXY)
+                        iv="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$ipath::value")"; iv="${iv#\"}"; iv="${iv%\"}"
+                        [[ "$iv" == "none" ]] || legacy20=1 ;;
+                esac
+            done <<< "$(awk -F'\t' -v k="$k20" -v n="$n20" -v c="$c20::env::" '$1 == k && $2 == n && index($3, c) == 1 { r = substr($3, length(c) + 1); if (r ~ /^\[[0-9]+\]::name$/) { sub(/::name$/, "", $3); print $3 "\t" $4 } }' "$TMP/inv11_paths.tsv")"
+            # command / args: the same options spelled as flags
+            flagtrusted20=""
+            while IFS= read -r av; do
+                [[ -n "$av" ]] || continue
+                av="${av#\"}"; av="${av%\"}"
+                case "$av" in
+                    --proxy-headers|--proxy-headers=*) hdr20=1 ;;
+                    --proxy-trusted-addresses=*) flagtrusted20="${av#*=}" ;;
+                    --proxy-trusted-addresses)
+                        echo "  FAIL [$rel] INV-20: $who20 passes --proxy-trusted-addresses without '=value', so its value cannot be judged here. Write --proxy-trusted-addresses=<cidr list> or use the KC_PROXY_TRUSTED_ADDRESSES env." >&2
+                        inv20_bad=1 ;;
+                    --proxy|--proxy=none) [[ "$av" == "--proxy=none" ]] || legacy20=1 ;;
+                    --proxy=*) legacy20=1 ;;
+                esac
+            done <<< "$(awk -F'\t' -v k="$k20" -v n="$n20" -v c="$c20" '$1 == k && $2 == n && ($3 ~ ("^" c "::(args|command)::\\[[0-9]+\\]$")) { print $4 }' "$TMP/inv11_paths.tsv")"
+            if awk -F'\t' -v k="$k20" -v n="$n20" -v c="$c20::envFrom" '$1 == k && $2 == n && index($3, c) == 1 { f = 1 } END { exit !f }' "$TMP/inv11_paths.tsv"; then
+                echo "  FAIL [$rel] INV-20: $who20 has an envFrom, which can set KC_PROXY_* options this check cannot see. Name each env explicitly." >&2
+                inv20_bad=1
+            fi
+            if (( legacy20 )); then
+                echo "  FAIL [$rel] INV-20: $who20 sets the legacy KC_PROXY / --proxy (edge, reencrypt, passthrough). It trusts X-Forwarded-* from every source and has no trusted-addresses option; use KC_PROXY_HEADERS=xforwarded with KC_PROXY_TRUSTED_ADDRESSES." >&2
+                inv20_bad=1
+            fi
+            (( hdr20 )) || continue
+            tcount20=$(( ${#trusted20[@]} + (${#flagtrusted20} > 0 ? 1 : 0) ))
+            if (( tcount20 == 0 )); then
+                echo "  FAIL [$rel] INV-20: $who20 turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES, so Keycloak believes X-Forwarded-Host/-Proto/-For from EVERY source address (#976). Set it to the ingress path's private pod range." >&2
+                inv20_bad=1
+                continue
+            fi
+            if (( tcount20 > 1 )); then
+                echo "  FAIL [$rel] INV-20: $who20 sets the trusted proxy addresses $tcount20 times (env and/or flag), so which one wins cannot be judged here. Set it once." >&2
+                inv20_bad=1
+                continue
+            fi
+            val20=""; src20=""
+            if [[ -n "$flagtrusted20" ]]; then
+                val20="$flagtrusted20"; src20=" (--proxy-trusted-addresses)"
+            else
+                ip20="${trusted20[0]}"
+                lit20="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$ip20::value")"
+                if [[ "$lit20" != "(ABSENT)" ]]; then
+                    val20="${lit20#\"}"; val20="${val20%\"}"
+                else
+                    ref20="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$ip20::valueFrom::configMapKeyRef::key")"
+                    if [[ "$ref20" == "(ABSENT)" ]]; then
+                        echo "  FAIL [$rel] INV-20: $who20 KC_PROXY_TRUSTED_ADDRESSES is neither a literal nor an app-config configMapKeyRef (a secretKeyRef or fieldRef?), so its value cannot be judged in the render." >&2
+                        inv20_bad=1; continue
+                    fi
+                    cmn20="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$ip20::valueFrom::configMapKeyRef::name")"
+                    cmn20="${cmn20#\"}"; cmn20="${cmn20%\"}"
+                    if [[ "$cmn20" != "app-config" ]]; then
+                        echo "  FAIL [$rel] INV-20: $who20 KC_PROXY_TRUSTED_ADDRESSES reads ConfigMap '$cmn20', not app-config, so its value cannot be judged in the render." >&2
+                        inv20_bad=1; continue
+                    fi
+                    opt20="$(path_get "$TMP/inv11_paths.tsv" "$k20" "$n20" "$ip20::valueFrom::configMapKeyRef::optional")"
+                    opt20="${opt20#\"}"; opt20="${opt20%\"}"
+                    if [[ "$opt20" != "(ABSENT)" && "$opt20" != "false" ]]; then
+                        echo "  FAIL [$rel] INV-20: $who20 KC_PROXY_TRUSTED_ADDRESSES reads app-config through an optional configMapKeyRef, so a missing key would silently drop the env and Keycloak would trust every source." >&2
+                        inv20_bad=1; continue
+                    fi
+                    val20="$(cfg_get "$TMP/cfg.tsv" "$ref20")"
+                    if [[ "$val20" == "(ABSENT)" ]]; then
+                        echo "  FAIL [$rel] INV-20: $who20 KC_PROXY_TRUSTED_ADDRESSES reads app-config key '${ref20#\"}', which the render does not define." >&2
+                        inv20_bad=1; continue
+                    fi
+                    src20=" (app-config $ref20)"
+                fi
+            fi
+            clean20="${val20//[[:space:]]/}"
+            if [[ -z "$clean20" ]]; then
+                echo "  FAIL [$rel] INV-20: $who20 KC_PROXY_TRUSTED_ADDRESSES is empty$src20. Keycloak 26.8.1 refuses to start on an empty value (measured) and a missing one trusts every source; declare the ingress path's private pod range." >&2
+                inv20_bad=1; continue
+            fi
+            inv20_entries=0
+            IFS=',' read -ra ent20 <<< "$clean20"
+            for e20 in "${ent20[@]}"; do
+                inv20_entries=$((inv20_entries + 1))
+                if [[ -z "$e20" ]]; then
+                    echo "  FAIL [$rel] INV-20: $who20 KC_PROXY_TRUSTED_ADDRESSES$src20 has an empty entry in '$clean20'." >&2
+                    inv20_bad=1; continue
+                fi
+                v20="$(tp_entry_verdict "$e20")"
+                if [[ -n "$v20" ]]; then
+                    echo "  FAIL [$rel] INV-20: $who20 KC_PROXY_TRUSTED_ADDRESSES entry '$e20' $v20$src20." >&2
+                    inv20_bad=1
+                fi
+            done
+            (( inv20_entries > 0 )) || parse_fail "[$rel] INV-20: $who20 trusted addresses '$clean20' yielded 0 entries — the splitter is blind. Fix it, do not delete the invariant."
+        done <<< "$inv20_ctrs"
+        (( inv20_n > 0 )) || parse_fail "[$rel] INV-20: Keycloak containers were found but none was iterated."
+        if (( inv20_bad != 0 )); then
+            FAILED=1
+            inv20_msg="FAIL"
+        else
+            inv20_msg="OK ($inv20_n Keycloak container(s): proxy headers trusted only from a private CIDR list)"
+        fi
+    fi
+
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg"
     fi
 done
 
@@ -3064,6 +3332,10 @@ done
 # silently stop running. Every listed target must have been rendered and checked.
 for t in "${WI_TARGETS[@]}"; do
     [[ -n "${WI_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-8..INV-10: WI_TARGETS names '$t', but no kustomize target at that path was discovered, so its storage invariants never ran. Update WI_TARGETS in the SAME change that renames an overlay."
+done
+
+for t in "${KEYCLOAK_TARGETS[@]}"; do
+    [[ -n "${KEYCLOAK_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-20: KEYCLOAK_TARGETS names '$t', but no kustomize target at that path was discovered, so INV-20 never ran there. Update KEYCLOAK_TARGETS in the SAME change that renames an overlay."
 done
 
 for t in "${TRUSTSTORE_TARGETS[@]}"; do
@@ -3544,4 +3816,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); $LOCAL_SECTION."

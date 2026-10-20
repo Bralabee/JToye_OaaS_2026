@@ -729,6 +729,14 @@ jobs:
       - name: Prove INV-18 catches planted mail-UI holes (--selftest-inv18)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv18
 
+      # #976: INV-20 keeps Keycloak from believing X-Forwarded-* from every source
+      # address. A Keycloak container with proxy headers on must carry a
+      # KC_PROXY_TRUSTED_ADDRESSES that resolves, in the render, to a non-empty
+      # private CIDR list (never /0, never public); the legacy KC_PROXY is refused.
+      # Eight planted holes; the clean copy must exit 0.
+      - name: Prove INV-20 catches planted Keycloak proxy-trust holes (--selftest-inv20)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv20
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,

@@ -133,14 +133,34 @@ spec:
         # TLS terminates at Traefik; Keycloak serves plain HTTP inside the cluster
         # and reads X-Forwarded-* to learn the original scheme and client address.
         # Without proxy-headers, origin-checked requests through the proxy are 403.
-        # RESIDUAL (recorded, not fixed here): KC_PROXY_TRUSTED_ADDRESSES is unset,
-        # so Keycloak believes those headers from any peer; keycloak-allow admits
-        # only Traefik and three in-namespace workloads on 8080, and the pod CIDR
-        # to narrow it to is measured in plan 29-14 (Pitfall 10).
+        # #976: KC_PROXY_TRUSTED_ADDRESSES (--proxy-trusted-addresses; "If set, then
+        # proxy headers from other addresses will be ignored. By default all addresses
+        # are trusted", `kc.sh start --help` of the 26.8.1 image) is the SAME list
+        # core-java's TRUSTED_PROXY_CIDRS reads, app-config security.trusted-proxies:
+        # the ingress path's pod range, measured in plan 29-15 (staging: the AKS
+        # overlay pod CIDR 10.244.0.0/16). One key, so the two consumers cannot
+        # disagree about who the proxy is. Peers outside it (a node address, a
+        # hostNetwork pod, anything routed in from outside the pod network) can no
+        # longer set the scheme, host or client address Keycloak records.
+        # ACCEPTED RESIDUAL: Traefik has no narrower stable range (its pods share
+        # each node's /24 with app pods and take a new address on every reschedule),
+        # so the frontend, core-java and edge-go pods, which keycloak-allow admits on
+        # 8080 and which sit inside that range, are still believed. Narrowing that
+        # needs a different network shape, not a smaller CIDR.
+        # An EMPTY app-config value is not "trust none": the 26.8.1 server refuses to
+        # start on it (" is not a valid IP address (IPv4 or IPv6) nor valid CIDR
+        # notation", measured), and a MISSING env is trust-everyone. INV-20
+        # (k8s/scripts/check-render-invariants.sh) refuses a render where this env is
+        # missing, optional, empty or not a private CIDR, before either can ship.
         - name: KC_HTTP_ENABLED
           value: "true"
         - name: KC_PROXY_HEADERS
           value: "xforwarded"
+        - name: KC_PROXY_TRUSTED_ADDRESSES
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: security.trusted-proxies
         # Health and metrics on the management interface, port 9000 (Keycloak 26
         # default when enabled). The readiness probe below and 29-04's import
         # script (:19000/health/ready) both need KC_HEALTH_ENABLED. Compose keeps

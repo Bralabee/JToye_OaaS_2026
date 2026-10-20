@@ -4843,6 +4843,11 @@ spec:
           value: "true"
         - name: KC_PROXY_HEADERS
           value: xforwarded
+        - name: KC_PROXY_TRUSTED_ADDRESSES
+          valueFrom:
+            configMapKeyRef:
+              key: security.trusted-proxies
+              name: app-config
         - name: KC_HEALTH_ENABLED
           value: "true"
         - name: KC_METRICS_ENABLED
