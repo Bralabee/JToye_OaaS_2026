@@ -3205,9 +3205,11 @@ for dir in "${TARGETS[@]}"; do
     inv21_routes=$(awk -F'\t' '$1 == "Ingress" && $3 ~ /^spec::rules::\[[0-9]+\]::http::paths::\[[0-9]+\]::backend::service::name$/ && $4 == "grafana" {
         p = $3; sub(/::backend::service::name$/, "", p); print $2 "\t" p }' "$TMP/inv11_paths.tsv")
     if (( inv21_dep == 0 )) && [[ -z "$inv21_routes" ]]; then
-        # Staging is where D-19 publishes Grafana. If the component vanished from its render, "not
-        # applicable" would be a pass over a deleted route; make the author say so in this file.
-        [[ "$rel" != "k8s/staging" ]] || parse_fail "[$rel] INV-21 found no grafana Deployment and no Ingress route to Service grafana in the staging render. D-19 publishes Grafana there; if the monitoring component was removed on purpose, drop this check in the SAME change."
+        # Not guarded with a staging-only parse error: staging cannot render WITHOUT Grafana (the
+        # azure-keyvault component patches the monitoring Deployments, and `kubectl kustomize`
+        # fails on a patch with no target; shown 2026-10-20 by dropping ../components/monitoring: "no
+        # resource matches strategic merge patch Deployment.v1.apps/postgres-exporter"), so such a
+        # guard could never fire and would be an assertion nobody had seen fail.
         inv21_msg="not applicable (no grafana component in this render)"
     else
         (( inv21_dep == 1 )) || parse_fail "[$rel] INV-21: the render has an Ingress route for Service grafana but no Deployment grafana (by path). Either the component lost its workload or the path walker is blind; the auth rules would pass vacuously."
