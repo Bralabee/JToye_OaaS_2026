@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Staging Grafana Memory Limit 384Mi to 512Mi, Request 256Mi (#987) — 2026-10-20
+
+Issue #968: Grafana on staging was OOMKilled once (exit 137) with a 384Mi limit and 224Mi in use at idle.
+
+- **`k8s/components/monitoring/grafana.yaml`, `k8s/goldens/staging.yaml`.** Memory request 128Mi to 256Mi, limit 384Mi to 512Mi (staging only; production renders no monitoring component). Measured on the staging image digest under a 384Mi cgroup: anonymous memory 240Mi at start and 275-301Mi under a scan-shaped burst, so 78-81% of the old limit before kernel memory. The OOM itself was not reproduced, and the killed pod was lost to a node replacement, so the sizing is headroom against the measured peak (1.65x), not a proven trigger. The Grafana node goes from 61% to 66% requested.
+- **Not changed.** Rate-limiting or IP-restricting the public Grafana host (issue item 3) alters what is exposed and awaits the owner.
+
 ### `/for-operators` Redesigned: One Dark Band, Five Sections, Four Product Images (#967) — 2026-10-19
 
 The page said the right things (PR #965) in the wrong shape: fifteen identical cards, seven uppercase-tracked eyebrows, six H2s at three sizes and no product anywhere on it. It is now a kitchen docket: one oxblood band that holds the product and the number, warm paper below, hairlines instead of boxes. Measured on the production build, `<main>` before / after: 622 / 441 words; document height 7745 / 5991 px at 390 wide, 4185 / 3679 px at 1440 (3679 at 1280 and 4216 at 768 too); no horizontal overflow at 390 (scrollWidth 390).
