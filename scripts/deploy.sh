@@ -39,8 +39,9 @@
 # ORDER, each refusal before anything after it: flags -> environment -> image tag
 # -> (render-only: render, exit) -> context guard -> staging preflight
 # (scripts/staging-secrets-preflight.sh, plan 29-13: any non-zero, a VOID 2
-# included, refuses) -> apply -k <wrapper> -> rollout status per Deployment, with
-# rollout undo on failure -> the final stdout line `DEPLOYED_SHA=<sha>`, printed
+# included, refuses) -> apply -k <wrapper> -> rollout status per Deployment; a failed
+# rollout undoes EVERY Deployment that apply changed (not only the failed one, and
+# not one it left alone) -> the final stdout line `DEPLOYED_SHA=<sha>`, printed
 # only after every rollout is green. That line is the record of what was applied;
 # plan 29-14's tracer and every digest-parity check read it back instead of
 # re-deriving a sha from HEAD.
@@ -103,7 +104,7 @@ _st_render() {
 selftest() {
   local real_bash real_kubectl st fails=0 why t p fqdn arm
   local sha="0123456789abcdef0123456789abcdef01234567"
-  local arms="no-context employer-context stale-server image-tag preflight-refusal render-only rollout-failure deployed-sha"
+  local arms="no-context employer-context stale-server image-tag preflight-refusal render-only rollout-failure rollout-failure-first rollout-failure-unchanged deployed-sha"
   real_bash=$(type -P bash) || { echo "VOID: bash not found" >&2; return 2; }
   if ! real_kubectl=$(type -P kubectl); then
     for arm in $arms; do _st_result "FAIL $arm VOID: the selftest needs a real kubectl for the offline render and the guard's local config read"; done
@@ -134,7 +135,16 @@ case "\${1:-}" in config|kustomize) exec "\$REAL_KUBECTL" "\$@" ;; esac
 case " \$* " in
   *" apply -k "*)
     # Keep the render of what was applied, for the arm to read back.
-    "\$REAL_KUBECTL" kustomize "\${@: -1}" > "\$STUB_LOG_DIR/applied-render.yaml" 2>"\$STUB_LOG_DIR/applied-render.err" || exit 1 ;;
+    "\$REAL_KUBECTL" kustomize "\${@: -1}" > "\$STUB_LOG_DIR/applied-render.yaml" 2>"\$STUB_LOG_DIR/applied-render.err" || exit 1
+    : > "\$STUB_LOG_DIR/applied" ;;
+  *" get deployment/"*"metadata.generation"*)
+    # The generation read behind "which Deployments did THIS apply change". 1 before the apply;
+    # 2 after it, except for the Deployments an arm lists in STUB_UNCHANGED (an apply that
+    # changed nothing leaves metadata.generation alone, e.g. the same sha redeployed).
+    svc=""
+    for a in "\$@"; do case "\$a" in deployment/*) svc="\${a#deployment/}" ;; esac; done
+    if [ -f "\$STUB_LOG_DIR/applied" ] && case " \${STUB_UNCHANGED:-} " in *" \$svc "*) false ;; *) true ;; esac; then echo 2; else echo 1; fi
+    exit 0 ;;
 esac
 if [ -n "\${STUB_FAIL_ROLLOUT:-}" ]; then
   case " \$* " in *" rollout status deployment/\${STUB_FAIL_ROLLOUT} "*) echo "stub: rollout of \${STUB_FAIL_ROLLOUT} failed" >&2; exit 1 ;; esac
@@ -177,7 +187,7 @@ KCFG
     while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done
     shift
     : > "$st/logs/kubectl.log"; : > "$st/logs/kubelogin.log"; : > "$st/logs/preflight.log"; : > "$st/logs/calls.log"
-    rm -f "$st/logs/applied-render.yaml"
+    rm -f "$st/logs/applied-render.yaml" "$st/logs/applied"
     command env -i PATH="$st/stub:$st/tools" HOME="$st/home" KUBECONFIG="$st/kubeconfig" TMPDIR="$st/tmp" \
       STUB_LOG_DIR="$st/logs" REAL_KUBECTL="$real_kubectl" ${extra[@]+"${extra[@]}"} \
       "$real_bash" "$st/repo/scripts/deploy.sh" "$@" > "$st/out" 2> "$st/err"; ST_RC=$?
@@ -285,6 +295,37 @@ KCFG
   fi
   if [ -z "$why" ]; then _st_result "PASS rollout-failure rc=$ST_RC undo_frontend=1 deployed_sha_lines=0"
   else _st_result "FAIL rollout-failure $why"; fails=$((fails + 1)); fi
+
+  # --- rollout-failure-first: the FIRST Deployment failing must not strand the others
+  # at the new sha. core-java fails; edge-go and frontend were applied in the same
+  # `apply -k` and were never waited on. All three are undone, so the environment is
+  # one version, not core-java old + gateway and UI new (round 1, F3).
+  _st_run STUB_FAIL_ROLLOUT=core-java -- staging --context jtoye-stg-aks --image-tag "$sha"
+  why=""
+  local svc u
+  if [ "$ST_RC" -eq 0 ]; then why="rc=0 after a failed core-java rollout"
+  elif command grep -q '^DEPLOYED_SHA=' <<<"$ST_OUT"; then why="a DEPLOYED_SHA line was printed after a failed rollout"
+  fi
+  if [ -z "$why" ]; then
+    for svc in core-java edge-go frontend; do
+      u=$(_st_kubectl_matching "rollout undo deployment/${svc}( |\$)")
+      if [ "$u" -ne 1 ]; then why="rollout undo deployment/${svc} calls=$u (want 1: core-java failed, so the whole apply is undone, not just core-java)"; break; fi
+    done
+  fi
+  if [ -z "$why" ]; then _st_result "PASS rollout-failure-first rc=$ST_RC undo_core-java=1 undo_edge-go=1 undo_frontend=1 deployed_sha_lines=0"
+  else _st_result "FAIL rollout-failure-first $why"; fails=$((fails + 1)); fi
+
+  # --- rollout-failure-unchanged: undo only what THIS apply changed. The same sha
+  # redeployed leaves edge-go and frontend's metadata.generation alone; undoing them
+  # would roll two healthy, current Deployments back to an OLDER revision.
+  _st_run STUB_FAIL_ROLLOUT=core-java STUB_UNCHANGED="edge-go frontend" -- staging --context jtoye-stg-aks --image-tag "$sha"
+  why=""
+  if [ "$ST_RC" -eq 0 ]; then why="rc=0 after a failed core-java rollout"
+  elif [ "$(_st_kubectl_matching 'rollout undo deployment/core-java( |$)')" -ne 1 ]; then why="rollout undo deployment/core-java calls=$(_st_kubectl_matching 'rollout undo deployment/core-java( |$)') (want 1)"
+  elif [ "$(_st_kubectl_matching 'rollout undo deployment/(edge-go|frontend)( |$)')" -ne 0 ]; then why="an unchanged Deployment was rolled back to an older revision: $(command grep -E 'rollout undo' "$st/logs/kubectl.log" | tr '\n' ' ')"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS rollout-failure-unchanged rc=$ST_RC undo_core-java=1 undo_unchanged=0"
+  else _st_result "FAIL rollout-failure-unchanged $why"; fails=$((fails + 1)); fi
 
   # --- deployed-sha: every rollout green -> the LAST stdout line is the record
   _st_run -- staging --context jtoye-stg-aks --image-tag "$sha"
@@ -480,6 +521,24 @@ kc() { kubectl --context "$KUBE_CONTEXT" "$@"; }
 # real environment while reporting success. One `apply -k` per environment is the
 # only form that deploys what the overlay says. The overlay carries its own
 # Namespace, so the old create-namespace step is gone with the ambient context.
+# metadata.generation moves when, and only when, the API server accepts a CHANGED spec, so
+# before-versus-after is "did THIS apply change this Deployment". It is what a rollback is
+# scoped to: re-deploying the same sha changes nothing, and `rollout undo` on a Deployment this
+# run did not change would roll a healthy, current service back to an OLDER revision.
+# --ignore-not-found: a Deployment that does not exist yet reads as generation 0 (a first deploy);
+# any other read failure refuses BEFORE the apply, while nothing has changed.
+read_generation() { # read_generation <svc> -> generation on stdout; rc 1 when it cannot be read
+    local out rc=0
+    out=$(kc -n "$NAMESPACE" get deployment/"$1" --ignore-not-found -o jsonpath='{.metadata.generation}') || rc=$?
+    [ "$rc" -eq 0 ] || return 1
+    printf '%s\n' "${out:-0}"
+}
+declare -A GEN_BEFORE=()
+for svc in "${ROLLOUTS[@]}"; do
+    GEN_BEFORE[$svc]=$(read_generation "$svc") \
+        || { echo -e "${RED}REFUSED [generation]: could not read deployment/${svc} generation before the apply; nothing was applied${NC}" >&2; exit 1; }
+done
+
 echo -e "\n${BLUE}Applying k8s/${ENVIRONMENT} at ${IMAGE_TAG}...${NC}"
 rc=0; kc apply -k "$WRAPPER" || rc=$?
 if [ "$rc" -ne 0 ]; then
@@ -487,21 +546,40 @@ if [ "$rc" -ne 0 ]; then
     exit 1
 fi
 
-# Wait for one Deployment's rollout, rolling it back on failure.
+# The Deployments this apply changed. A generation that cannot be read AFTER the apply counts
+# as changed: undoing one too many is recoverable, leaving one stranded is not noticed.
+CHANGED=()
+for svc in "${ROLLOUTS[@]}"; do
+    gen_after=$(read_generation "$svc") || gen_after="unreadable"
+    if [ "$gen_after" != "${GEN_BEFORE[$svc]}" ]; then CHANGED+=("$svc"); fi
+done
+echo "Changed by this apply: ${CHANGED[*]:-(none)}"
+
+# One apply updates all three Deployments, so a failed rollout is a failed DEPLOY, not a failed
+# service: undoing only the one that failed leaves the others at the new sha (mixed versions),
+# and exiting before waiting on them leaves their state unrecorded. Undo every Deployment this
+# apply changed (Round 1, F3), then say so.
+rollback_changed() {
+    local u
+    echo "Rolling back every Deployment this apply changed: ${CHANGED[*]:-(none)}" >&2
+    for u in ${CHANGED[@]+"${CHANGED[@]}"}; do
+        kc -n "$NAMESPACE" rollout undo deployment/"${u}" || echo "rollout undo of ${u} failed too" >&2
+    done
+}
+
+# Wait for one Deployment's rollout.
 deploy_service() {
     local svc=$1
     echo -e "\n${BLUE}Waiting for ${svc} rollout...${NC}"
     if ! kc -n "$NAMESPACE" rollout status deployment/"${svc}" --timeout=10m; then
         echo -e "${RED}Error: Rollout failed for ${svc}${NC}" >&2
-        echo "Rolling back..." >&2
-        kc -n "$NAMESPACE" rollout undo deployment/"${svc}" || echo "rollout undo of ${svc} failed too" >&2
         return 1
     fi
     echo -e "${GREEN}✓ ${svc} deployed successfully${NC}"
 }
 
 for svc in "${ROLLOUTS[@]}"; do
-    deploy_service "$svc" || exit 1
+    deploy_service "$svc" || { rollback_changed; exit 1; }
 done
 
 # Informational read-outs; a failure here does not unmake a green rollout.
