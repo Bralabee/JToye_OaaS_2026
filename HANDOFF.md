@@ -846,10 +846,12 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 56 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 57 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-20 (PR #984 review round 1, p29/r1-platform): 56 -> 57. check-deploy-rollback-guard
+# fails a deploy-staging rollback that can run before the apply was reached (F2).
 # 2026-10-20 (phase 29, branch phase-29-deployable-staging): 48 -> 56. Phase 29 added
 # check-alertmanager-render, check-az-subscription-pin, check-deploy-digest-parity,
 # check-dply02-dispositions, check-frontend-baked-origin, check-k8s-copy-parity,
