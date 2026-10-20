@@ -78,7 +78,7 @@ Operator-host parity: `bash scripts/check-deploy-digest-parity.sh --context jtoy
 DPLY-01 spec: staging-login spec, STAGING_E2E=1, desktop project, against https://app-staging.olajay.co.uk, vendor password read via az_read: 2 passed (13.5s), rc 0, at 2026-10-20T19:36:38Z.
 This is the first green CI deploy of the phase (D-04): #99 closing evidence.
 
-### Dispositions applied (verbatim /tmp/claude-29-28/apply.log, timestamps UTC)
+### Dispositions applied (verbatim copy of /tmp/claude-29-28/apply.log, committed whole as evidence/29-28-dispositions-apply.txt; timestamps UTC; the "✓ Closed issue" lines are gh's own untimestamped output, each followed by the script's timestamped readback line)
 2026-10-20T19:36:44+00:00 --verify-approval rc=0 :: SUMMARY verify-approval approved=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 manifest=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 pinned=19 findings=0
 2026-10-20T19:36:53+00:00 --pre-close rc=0 :: SUMMARY pre-close rows=20 findings=0
 2026-10-20T19:36:56+00:00 #98 comment=equal readback; state OPEN -> OPEN (want OPEN)
@@ -111,3 +111,9 @@ This is the first green CI deploy of the phase (D-04): #99 closing evidence.
 2026-10-20T19:37:51+00:00 #859 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
 2026-10-20T19:37:59+00:00 --post-close rc=0 :: SUMMARY post-close rows=20 findings=0
 Summary of the apply: 18 comments posted and read back equal; 10 issues closed by this run (99, 100, 101, 112, 296, 297, 299, 300, 592, 859) and 4 already closed (271, 292, 293, 302), so 14 issues CLOSED in all; 4 OPEN as approved (98, 294, 301, 304); the 2 pr-reference rows (953, 954) are MERGED and were not touched (14 + 4 + 2 = 20 rows). --verify-approval and --pre-close (19:36:44Z and 19:36:53Z) both precede the first comment (19:36:56Z).
+
+## After the close: the deploy variable and the #987 deploy (read 2026-10-20, closing PR round 1)
+`gh variable get DEPLOY_STAGING_ENABLED -R Bralabee/JToye_OaaS_2026` at 19:52Z: true. Left on deliberately (owner-delegated): every merge to main now redeploys staging, so follow-up merges are serial and each is watched.
+PR #987 (Grafana memory) merged as 1db60c70ada0d51a660f84086f2eb4c9d68f6809 at 2026-10-20T19:38:28Z; its deploy is run 39485184302. At 19:53:44Z the run was status in_progress, conclusion empty (Integration Tests (Testcontainers RLS) still running; no deploy job yet). Its conclusion is not recorded here.
+Live staging images at 2026-10-20T19:52:06Z (`kubectl --context jtoye-stg-aks -n jtoye-staging get deploy core-java edge-go frontend`, read-only): ghcr.io/bralabee/jtoye-{core-java,edge-go,frontend}:33585b230a95e37100c3f4e0b19dcacf4e37123e.
+Merging the closing docs PR (#991) redeploys staging as well.

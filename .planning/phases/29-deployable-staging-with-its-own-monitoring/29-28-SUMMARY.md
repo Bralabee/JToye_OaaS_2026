@@ -17,7 +17,7 @@ provides:
   - The first green CI deploy of the phase (run 39471893302, Deploy to Staging success), with digest parity from the operator host (rc 0, three services MATCH) and the staging-login spec (2 passed)
   - A fix to the digest-parity gate (PR #986, issue #985): it waits for terminating pods to drain, and the filter that does so is exercised by the selftest (33 arms)
   - The approved dispositions applied: 18 comments posted and read back equal, 10 issues closed, 4 already closed and recorded, 4 left open as approved; --post-close rc 0 on 20 rows
-  - evidence/29-28-merge-deploy.txt, the closing evidence for #99
+  - evidence/29-28-merge-deploy.txt, the closing evidence for #99, and evidence/29-28-dispositions-apply.txt, the whole apply log it quotes
 affects: [phase 29 verification, phase 29 security sign-off, phase 32]
 
 actuals:
@@ -39,10 +39,13 @@ tech-stack:
 key-files:
   created:
     - .planning/phases/29-deployable-staging-with-its-own-monitoring/29-28-SUMMARY.md
+    - .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-28-dispositions-apply.txt   # the apply log, committed whole
   modified:
     - .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-28-merge-deploy.txt
+    - .planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md
     - .planning/STATE.md
     - .planning/ROADMAP.md
+    - .planning/REQUIREMENTS.md
     - scripts/check-deploy-digest-parity.sh   # in PR #986
     - scripts/check-deploy-rollback-guard.sh  # created in PR #984 round 1
     - scripts/deploy.sh                       # PR #984 round 1
@@ -57,14 +60,14 @@ requirements-completed: [DPLY-02]   # DPLY-02 is marked here, as 29-27's SUMMARY
 
 coverage:
   - id: D1
-    description: "deploy-staging runs on the merge commit and is green end to end; the first green CI deploy of the phase (#99, D-04)"
+    description: "deploy-staging is green end to end on 33585b23, the #986 merge (the parity-gate fix); the phase merge bffd2f74 itself deployed red and was rolled back. The first green CI deploy of the phase (#99, D-04)"
     requirement: DPLY-02
     verification:
       - kind: integration
-        ref: "Run 39471893302, job Deploy to Staging success at 2026-10-20T19:35Z; steps 1-17 success, step 18 Rollback skipped (evidence/29-28-merge-deploy.txt, Task 3 attempt 2)"
+        ref: "Run 39471893302 on 33585b23 (the #986 merge), job Deploy to Staging success at 2026-10-20T19:35Z; steps 1-17 success, step 18 Rollback skipped (evidence/29-28-merge-deploy.txt, Task 3 attempt 2)"
         status: pass
       - kind: integration
-        ref: "Fail direction: run 39440780472 on bffd2f74, step 15 Digest parity FAILURE, steps 16-17 skipped, step 18 Rollback ran (evidence, Task 3 attempt 1)"
+        ref: "Fail direction: run 39440780472 on bffd2f74 (the phase merge), step 15 Digest parity FAILURE, steps 16-17 skipped, step 18 Rollback ran; the run failed at parity and rolled back (evidence, Task 3 attempt 1)"
         status: pass
     human_judgment: false
   - id: D2
@@ -121,10 +124,10 @@ completed: 2026-10-20
 
 ## What this plan delivered
 
-- **The first green CI deploy of the phase (D-04).** Run 39471893302 on the #986 merge commit `33585b23`: Deploy to Staging success at 19:35Z, steps 1-17 success (OIDC, kubelogin, CR-02 guard, names-only preflight, full-sha apply, rollout, digest parity, health, smoke test), step 18 Rollback skipped.
+- **The first green CI deploy of the phase (D-04).** Run 39471893302 on the #986 merge commit `33585b23` (the phase merge `bffd2f74` run, 39440780472, failed at parity and rolled back): Deploy to Staging success at 19:35Z, steps 1-17 success (OIDC, kubelogin, CR-02 guard, names-only preflight, full-sha apply, rollout, digest parity, health, smoke test), step 18 Rollback skipped.
 - **Runtime parity from outside the job.** `check-deploy-digest-parity.sh --context jtoye-stg-aks --tag 33585b23...` rc 0 from the operator host, three services MATCH. The staging-login spec passed 2 of 2 against the CI-deployed runtime.
 - **#99 closed on evidence.** Its comment carries the run URL; the closing evidence is `evidence/29-28-merge-deploy.txt`.
-- **The dispositions applied** (rows 20): 10 issues closed by this plan (#99 #100 #101 #112 #296 #297 #299 #300 #592 #859), 4 already closed and recorded (#271 #292 #293 #302), 4 left open as approved (#98 #294 #301 #304), 2 merged PRs untouched (#953 #954). `--post-close` rc 0, `findings=0`.
+- **The dispositions applied** (rows 20): 10 issues closed by this plan (#99 #100 #101 #112 #296 #297 #299 #300 #592 #859), 4 already closed and recorded (#271 #292 #293 #302), 4 left open as approved (#98 #294 #301 #304), 2 merged PRs untouched (#953 #954). `--post-close` rc 0, `findings=0`. The whole apply log is committed as `evidence/29-28-dispositions-apply.txt`; the `Closed issue` lines in it are gh's own untimestamped output, each followed by the script's timestamped readback line.
 - **A digest-parity gate that survives a real rollout** (issue #985, PR #986), found by the first deploy failing.
 
 ## Performance
@@ -173,7 +176,7 @@ Not a `type: tdd` plan. The #986 fix followed the same shape informally: the fai
 - **Issue:** `rollout status` had printed "1 old replicas are pending termination" and then success; the parity gate listed every `app=core-java` pod, including one still in its grace period (`0a462ba9`, the previous revision) that still reported `ready=true`. The built image itself was correct.
 - **Rule applied:** `DEPLOY_STAGING_ENABLED` set back to false at 16:22:01Z and read back `[false]`; #99 stayed open; no issue touched. The estate was left on the pre-merge images and `check-deploy-digest-parity.sh --tag 6e95ee6c...` (fixed gate) rc 0.
 - **Fix:** issue #985, PR #986: the gate waits up to `--drain-timeout` (default 180 s, one deadline shared by all services) for terminating pods, fails if one stays and names it, then compares only live pods.
-- **Review of the fix, four rounds, admissible 1 → 1 → 0 → 0** (Review-Resolution comments on #986): round 1 found the filter itself could not fail (a misspelt key left the selftest at 25/25) and the gate was redesigned around one `POD_JQ` program the selftest feeds; round 2 found the stuck-pod check had no arm of its own (`if false` left the selftest green) and arm `stuck-only` was added; rounds 3 and 4 admitted zero and round 4 ended the series. The squash merge `33585b23` is at 2026-10-20T18:06:34Z; #985 closed with it.
+- **Review of the fix, four rounds, admissible 1 → 1 → 0 → 0** (Review-Resolution comments on #986): round 1 found the filter itself could not fail (a misspelt key left the selftest at 25/25) and the gate was redesigned around one `POD_JQ` program the selftest feeds; round 2 found the stuck-pod check had no arm of its own (`if false` left the selftest green) and arm `stuck-only` was added; round 3 (on `449deb57e09e`) admitted zero, and that first zero-admissible round ended the series. Round 4 reviewed the changelog-only commit `bf85ae46` pushed after it, because a new head needs a new round; it also admitted zero and is not what ended the series. The squash merge `33585b23` is at 2026-10-20T18:06:34Z; #985 closed with it.
 - **Commits:** `e6542927`, `ac867be2`, `e6a6c539`, `bf85ae46` (changelog entry required by docs-freshness), and evidence commits `3b32b3ca`, `97282566`, `449deb57`.
 
 **3. [Order] Task 3 completed on attempt 2.** The pre-flip checks were repeated on the #986 head (`bf85ae46`, behind-base rc 0, health 200, main unchanged) and `DEPLOY_STAGING_ENABLED` was set to true again, read back `[true]`, at the #986 merge. Everything in "What this plan delivered" is attempt 2.
@@ -210,17 +213,23 @@ Recorded for what 29-28 changed: deploy tooling (a CI deploy job, `deploy.sh`, t
 
 None of these is a 29-28 deliverable; they are the findings of the deploy week, filed and approved by the owner.
 
-- **#987, staging Grafana memory** (issue #968): MERGED as `1db60c70` (request 320Mi, limit 512Mi); it deploys through this pipeline.
+- **#987, staging Grafana memory** (issue #968): MERGED as `1db60c70` at 2026-10-20T19:38:28Z (request 320Mi, limit 512Mi). Its deploy is CI run 39485184302 on `1db60c70`. Read at 2026-10-20T19:53:44Z the run was in progress (only Integration Tests (Testcontainers RLS) still running, so the deploy job had not started); the live staging images at 19:52:06Z were still `33585b23` for core-java, edge-go and frontend. This SUMMARY does not claim that run's conclusion.
 - **#988, Keycloak trusted proxies** (issue #976): OPEN. Keycloak believes `X-Forwarded-*` only from the pod network; invariant INV-20 keeps it so.
 - **#989, CI hardening batch**: OPEN. Selftests wired into CI, an edge probe job, a digest-less VOID, action sha pins.
 - **#990, Grafana edge basic auth** (issue #968): OPEN. A basic-auth gate at the Traefik edge in front of staging Grafana.
 - **Accepted residual: Keycloak in-cluster forwarded headers.** A pod-network caller can still spoof them. Traefik overwrites client-supplied forwarded headers, measured: a public request carrying a spoofed `X-Forwarded-Host` left the realm's `token_endpoint` unchanged, while the same header sent direct to `keycloak:8080` moved it to `evil.example`. The exposure is therefore the pod network and the trusted-proxies change in #988 narrows who may be believed. This plan recorded the residual as accepted; it did not measure what else on the pod network can reach Keycloak.
 
+## End state of `DEPLOY_STAGING_ENABLED`
+
+- **The variable is `true`, deliberately left on.** Read back with `gh variable get DEPLOY_STAGING_ENABLED` at 2026-10-20T19:52Z: `true`. It was set to true at the #984 merge, set to false by the rollback rule on attempt 1, and set to true again at the #986 merge.
+- **Owner-delegated, and its consequence is accepted:** every merge to main now runs `deploy-staging` and so redeploys staging (the job has no path filter). The follow-up merges are therefore serial, each one watched, and each merge supersedes the previous runtime-parity reading.
+- **That has already happened once.** The #987 merge (`1db60c70`, 19:38:28Z) started deploy run 39485184302 (see Follow-ups). **Merging this docs-only PR (#991) also redeploys staging.** The operator-host parity proof in "What this plan delivered" is a reading of `33585b23` taken at 19:35Z-19:36Z, true of that moment and superseded by each later deploy.
+
 ## What is not done
 
 - **Phase 29 is not yet verified and not security-signed.** All 29 plans have a SUMMARY; `/gsd-verify-work` and `/gsd-secure-phase` remain.
 - **#98, #294, #301 and #304 stay open** as the approved table says, each with its written reason.
-- **`.planning/REQUIREMENTS.md` was not edited by this closing PR**; its DPLY rows still read "not yet planned" from before the phase was planned. This plan marks DPLY-02 in this SUMMARY's `requirements-completed` as 29-27 said it would.
+- **`.planning/REQUIREMENTS.md` was reconciled by this closing PR** (round 1 of #991 found the drift): the five DPLY rows now list the plans whose SUMMARY `requirements-completed` names them (DPLY-01 18 plans, DPLY-02 14, DPLY-03 3, DPLY-04 3, DPLY-05 4) and read Complete, each marked as pending phase verification. This plan marks DPLY-02 in this SUMMARY's `requirements-completed` as 29-27 said it would.
 
 ## Known Stubs
 
