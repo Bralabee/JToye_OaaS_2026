@@ -59,6 +59,28 @@
 #   digests therefore cannot be plumbed through outputs at all. They are resolved from the
 #   registry at deploy time, which is why the job needs `packages: read`.
 #
+# WAIT FOR THE OLD REPLICAS TO DRAIN, THEN COMPARE ONLY THE PODS THAT STAY
+#
+#   `kubectl rollout status` reports success once the old ReplicaSet is scaled to zero, which
+#   is BEFORE its pods have finished terminating. A pod in its grace period still carries the
+#   `app=<svc>` label, still reports `ready: true` and still reports its imageID. The first
+#   post-flip deploy-staging run (29-28, run 39440780472) read core-java 2.4 s after rollout
+#   status returned and found the new digest (MATCH) plus the previous revision's digest from
+#   the pod still shutting down (NOT IN THE EXPECTED SET), so a correct deploy failed and was
+#   rolled back.
+#
+#   So the gate reads each service's pods as one JSON list per poll and sorts them with one jq
+#   program (POD_JQ): a pod with a deletionTimestamp is TERMINATING, every other pod's
+#   containers are LIVE. It polls until a service has no terminating pod, against ONE deadline
+#   shared by all services (--drain-timeout seconds, default 180, set once before the first
+#   service; a poll already in flight can overrun it by up to its 30 s request timeout). A pod
+#   still terminating at the deadline counts as a mismatch, not a pod to ignore: it may still
+#   be serving the old code. The remaining services are still compared, so one stuck pod does
+#   not hide a wrong image elsewhere. Only LIVE digests are compared.
+#
+#   The selftest feeds POD_JQ real pod-list JSON (DIR/<svc>.pods.<poll>.json), so the filter
+#   that decides what counts as running is the code under test, not a stand-in for it.
+#
 # FAIL CLOSED — "could not check" is NEVER "clean"
 #
 #   An unreadable digest, an EMPTY actual set, an EMPTY expected set, or ZERO services
@@ -98,9 +120,14 @@
 #               REPLACED by one deliberately wrong digest, so every running container must
 #               come out NOT IN THE EXPECTED SET and the gate must exit 1. An exit 0 here
 #               means the gate cannot see a wrong image.
+#   --drain-timeout N  seconds to wait for terminating pods of each service to go before
+#               comparing (default 180; a positive integer). Still terminating at N = FAIL.
 #   --fixture DIR  comparison logic only: read DIR/<svc>.actual and DIR/<svc>.expected
 #               instead of the cluster and the registry. Refused together with --context, so
-#               a cluster run can never be fed files. --selftest drives it.
+#               a cluster run can never be fed files. --selftest drives it. When
+#               DIR/<svc>.pods.1.json exists, the service's pods are read from
+#               DIR/<svc>.pods.<poll>.json instead of <svc>.actual (the highest-numbered file
+#               repeats once the sequence runs out), through the same POD_JQ as a cluster run.
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -124,6 +151,7 @@ REGISTRY_PREFIX="ghcr.io/bralabee/jtoye-"
 FIXTURE=""
 PLANT_STALE=0
 SELFTEST=0
+DRAIN_TIMEOUT=180
 # One deliberately wrong digest for --plant-stale: sha256 of the string "plant-stale".
 STALE_DIGEST="sha256:$(printf 'plant-stale' | sha256sum | awk '{print $1}')"
 # Contexts refused by name before the guard even runs (the guard refuses it too).
@@ -142,26 +170,45 @@ while [ "$#" -gt 0 ]; do
     --tag)         needval "$@"; GIT_SHA="$2"; shift 2 ;;
     --services)    needval "$@"; SERVICES="$2"; shift 2 ;;
     --fixture)     needval "$@"; FIXTURE="$2"; shift 2 ;;
+    --drain-timeout) needval "$@"; DRAIN_TIMEOUT="$2"; shift 2 ;;
     --plant-stale) PLANT_STALE=1; shift ;;
     --selftest)    SELFTEST=1; shift ;;
     -h|--help)
-      echo "usage: $0 --context <ctx> --tag <40-hex sha> [--namespace ns] [--services \"a b c\"] [--plant-stale] | --selftest"
+      echo "usage: $0 --context <ctx> --tag <40-hex sha> [--namespace ns] [--services \"a b c\"] [--drain-timeout N] [--plant-stale] | --selftest"
       exit 0 ;;
     *) void "unknown argument '$1' — refusing to guess what was meant while holding cluster credentials" ;;
   esac
 done
+[[ "$DRAIN_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || void "--drain-timeout must be a positive integer number of seconds (got '$DRAIN_TIMEOUT')"
 
 # ---- --selftest: the comparison and refusal arms, no cluster, no registry -------------
 if [ "$SELFTEST" -eq 1 ]; then
   st="$(mktemp -d)" || void "mktemp -d failed"
   trap 'rm -rf "$st"' EXIT
   d1="sha256:$(printf a | sha256sum | awk '{print $1}')"; d2="sha256:$(printf b | sha256sum | awk '{print $1}')"
-  mkdir -p "$st/match" "$st/mismatch" "$st/empty"
+  mkdir -p "$st/match" "$st/mismatch" "$st/empty" "$st/drains" "$st/stuck" "$st/stuckonly" "$st/oldlive"
   for s in core-java edge-go frontend; do
     printf '%s\n' "$d1" > "$st/match/$s.actual"; printf '%s\n%s\n' "$d2" "$d1" > "$st/match/$s.expected"
     printf '%s\n' "$d1" > "$st/mismatch/$s.actual"; printf '%s\n' "$d1" > "$st/mismatch/$s.expected"
     : > "$st/empty/$s.actual"; printf '%s\n' "$d1" > "$st/empty/$s.expected"
+    for x in drains stuck stuckonly oldlive; do printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"; done
   done
+  # The 29-28 shape, as pod-list JSON: core-java's new pod (d1) is live and the previous
+  # revision's pod (d2) is still terminating, still reporting its imageID.
+  pod() { # pod NAME DIGEST TERMINATING(0|1)
+    local del=""; [ "$3" -eq 1 ] && del=',"deletionTimestamp":"2026-10-20T16:21:00Z"'
+    printf '{"metadata":{"name":"%s"%s},"status":{"containerStatuses":[{"name":"core-java","ready":true,"imageID":"ghcr.io/bralabee/jtoye-core-java@%s"}]}}' "$1" "$del" "$2"
+  }
+  new=$(pod core-java-new "$d1" 0); old=$(pod core-java-old "$d2" 1)
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/drains/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/drains/core-java.pods.2.json"
+  printf '{"items":[%s]}' "$new" > "$st/drains/core-java.pods.3.json"
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuck/core-java.pods.1.json"
+  # The stuck pod alone, every live digest matching: only the STUCK check can fail this one.
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuckonly/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$(pod core-java-old "$d2" 0)" > "$st/oldlive/core-java.pods.1.json"
+  # The stuck arm also plants a wrong frontend image: one stuck pod must not hide it.
+  printf '%s\n' "$d2" > "$st/stuck/frontend.actual"
   printf '%s\n' "$d2" > "$st/mismatch/frontend.actual"
   fails=0
   arm() { # arm NAME WANT_RC ARGS...
@@ -181,11 +228,28 @@ if [ "$SELFTEST" -eq 1 ]; then
   arm employer        2 --context sipbihs2aks --tag 0123456789abcdef0123456789abcdef01234567
   arm short-tag       2 --context jtoye-stg-aks --tag 0123abc
   arm fixture-context 2 --fixture "$st/match" --context jtoye-stg-aks
+  arm old-pod-drains  0 --fixture "$st/drains" --drain-timeout 10
+  arm old-pod-stuck   1 --fixture "$st/stuck" --drain-timeout 1
+  arm old-pod-live    1 --fixture "$st/oldlive"
+  arm stuck-only      1 --fixture "$st/stuckonly" --drain-timeout 1
+  arm drain-zero      2 --fixture "$st/match" --drain-timeout 0
+  arm drain-word      2 --fixture "$st/match" --drain-timeout soon
   # A value-taking flag as the LAST argument: VOID (2), not a hang (124).
-  for f in --context --namespace --tag --services --fixture; do
+  for f in --context --namespace --tag --services --fixture --drain-timeout; do
     arm "dangling${f}" 2 "$f"
     arm "dangling${f}-after-ok" 2 --fixture "$st/match" "$f"
   done
+  # Content, not only rc: the drain arm must have waited and then compared only the new pod,
+  # and the stuck arm must name the stuck pod AND still report frontend's wrong image.
+  want_line() { # want_line ARM PATTERN
+    if command grep -Eq -- "$2" "$st/$1.out"; then echo "PASS $1 shows /$2/"; else echo "FAIL $1 lacks /$2/"; fails=$((fails + 1)); fi
+  }
+  want_line old-pod-drains "core-java: 1 old pod\(s\) still terminating"
+  want_line old-pod-drains "core-java +$d1 +MATCH"
+  want_line old-pod-stuck  "core-java-old +STILL TERMINATING"
+  want_line old-pod-stuck  "frontend +$d2 +NOT IN THE EXPECTED SET"
+  want_line old-pod-live   "core-java +$d2 +NOT IN THE EXPECTED SET"
+  want_line stuck-only     "FAIL: 1 pod\\(s\\) were still terminating"
   [ "$fails" -eq 0 ] || exit 1
   exit 0
 fi
@@ -216,6 +280,8 @@ else
   # ---- 1. tooling and context guard ----------------------------------------------------
   command -v kubectl >/dev/null 2>&1 \
     || void "kubectl not on PATH — the running image digest cannot be read without a cluster client"
+  command -v jq >/dev/null 2>&1 \
+    || void "jq not on PATH — the pod list is sorted into live and terminating pods with jq"
   command -v docker >/dev/null 2>&1 \
     || void "docker not on PATH — the expected digest set is resolved with 'docker buildx imagetools inspect'"
 
@@ -256,20 +322,30 @@ echo
 # ---- 2. digest readers -----------------------------------------------------------------
 # Both go through a single function each, so fixture mode is total rather than best-effort.
 
-read_actual() { # read_actual <svc> -> newline-separated digests on stdout
-  local svc="$1"
+# POD_JQ: one line per LIVE container ("live <imageID>") and one per TERMINATING pod
+# ("terminating <pod name>"). This program is the filter; the selftest runs it on pod JSON.
+POD_JQ='.items[] | if .metadata.deletionTimestamp then "terminating \(.metadata.name)" else ((.status.containerStatuses // [])[] | "live \(.imageID)") end'
+
+classify() { # classify <svc> <poll> -> POD_JQ lines on stdout; rc 2 = the pods could not be read
+  local svc="$1" poll="$2" f json rc
   if [ -n "$FIXTURE" ]; then
-    [ -f "$FIXTURE/$svc.actual" ] && cat "$FIXTURE/$svc.actual"
-    return 0
+    if [ ! -f "$FIXTURE/$svc.pods.1.json" ]; then
+      [ -f "$FIXTURE/$svc.actual" ] && sed -n 's/^\(sha256:.*\)$/live @\1/p' "$FIXTURE/$svc.actual"
+      return 0
+    fi
+    while [ "$poll" -gt 1 ] && [ ! -f "$FIXTURE/$svc.pods.$poll.json" ]; do poll=$((poll - 1)); done
+    json=$(cat "$FIXTURE/$svc.pods.$poll.json") || return 2
+  else
+    json=$(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" --request-timeout=30s get pods -l "app=$svc" -o json 2>/dev/null); rc=$?
+    [ "$rc" -eq 0 ] || return 2
   fi
-  # imageID is reported per container as e.g.
-  #   ghcr.io/bralabee/jtoye-core-java@sha256:abcd...
-  # Take the digest portion only; a bare image id with no @sha256 is unusable and will
-  # surface below as an empty set, which is VOID.
-  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" --request-timeout=30s \
-    get pods -l "app=$svc" -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}' 2>/dev/null \
-    | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\).*/\1/p' | sort -u
+  jq -r "$POD_JQ" <<<"$json" 2>/dev/null || return 2
 }
+
+# imageID is reported per container as e.g. ghcr.io/bralabee/jtoye-core-java@sha256:abcd...
+# Take the digest portion only; a bare image id with no @sha256 is unusable and surfaces as an
+# empty set, which is VOID.
+live_digests() { sed -n 's/^live .*@\(sha256:[0-9a-f]\{64\}\).*/\1/p' | sort -u; }
 
 read_expected() { # read_expected <svc> -> newline-separated digests on stdout
   local svc="$1"
@@ -286,10 +362,30 @@ read_expected() { # read_expected <svc> -> newline-separated digests on stdout
 
 # ---- 3. compare ------------------------------------------------------------------------
 MISMATCHES=0
+STUCK=0
 CHECKED=0
+DRAIN_END=$(( $(date +%s) + DRAIN_TIMEOUT ))
 
 for svc in $SERVICES; do
-  actual="$(read_actual "$svc")"
+  # Poll until no pod of this service is terminating, or the shared deadline passes.
+  poll=1; pods=""; waited=0; svc_stuck=0
+  while :; do
+    pods="$(classify "$svc" "$poll")" || void "could not read the pods of '$svc' in namespace '$NAMESPACE'"
+    term="$(sed -n 's/^terminating //p' <<<"$pods")"
+    [ -z "$term" ] && break
+    if [ "$waited" -eq 0 ]; then
+      log "$svc: $(command grep -c . <<<"$term") old pod(s) still terminating; waiting until the shared ${DRAIN_TIMEOUT}s deadline"
+      waited=1
+    fi
+    if [ "$(date +%s)" -ge "$DRAIN_END" ]; then
+      while IFS= read -r t; do printf '  %-12s %s  STILL TERMINATING at the deadline\n' "$svc" "$t"; svc_stuck=$((svc_stuck + 1)); done <<<"$term"
+      break
+    fi
+    if [ -n "$FIXTURE" ]; then sleep 0.2; else sleep 5; fi
+    poll=$((poll + 1))
+  done
+  STUCK=$((STUCK + svc_stuck))
+  actual="$(live_digests <<<"$pods")"
   expected="$(read_expected "$svc")"
   if [ "$PLANT_STALE" -eq 1 ] && [ -n "$expected" ]; then
     expected="$STALE_DIGEST"
@@ -326,6 +422,12 @@ done
 
 echo
 [ "$CHECKED" -gt 0 ] || void "no service was actually compared despite a non-empty service list — VOID, never clean."
+
+if [ "$STUCK" -gt 0 ]; then
+  fail "$STUCK pod(s) were still terminating at the ${DRAIN_TIMEOUT}s deadline (named above), and $MISMATCHES
+      live container digest(s) were not built for ${GIT_SHA:-this commit}. A terminating pod may still be
+      serving the previous image, so parity is not proven. Find out why it did not go."
+fi
 
 if [ "$MISMATCHES" -gt 0 ]; then
   fail "$MISMATCHES running container image digest(s) across $CHECKED service(s) are NOT the images

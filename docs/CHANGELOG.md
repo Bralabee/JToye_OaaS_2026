@@ -7,12 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Staging Grafana Memory Limit 384Mi to 512Mi, Request 256Mi (#987) — 2026-10-20
+### Staging Grafana Memory Limit 384Mi to 512Mi, Request 320Mi (#987) — 2026-10-20
 
-Issue #968: Grafana on staging was OOMKilled once (exit 137) with a 384Mi limit and 224Mi in use at idle.
+Issue #968: Grafana on staging restarted twice; the last restart was confirmed OOMKilled (exit 137) with a 384Mi limit. Idle use read 263Mi in the issue and 224Mi on the replacement pod.
 
-- **`k8s/components/monitoring/grafana.yaml`, `k8s/goldens/staging.yaml`.** Memory request 128Mi to 256Mi, limit 384Mi to 512Mi (staging only; production renders no monitoring component). Measured on the staging image digest under a 384Mi cgroup: anonymous memory 240Mi at start and 275-301Mi under a scan-shaped burst, so 78-81% of the old limit before kernel memory. The OOM itself was not reproduced, and the killed pod was lost to a node replacement, so the sizing is headroom against the measured peak (1.65x), not a proven trigger. The Grafana node goes from 61% to 66% requested.
-- **Not changed.** Rate-limiting or IP-restricting the public Grafana host (issue item 3) alters what is exposed and awaits the owner.
+- **`k8s/components/monitoring/grafana.yaml`, `k8s/goldens/staging.yaml`.** Memory request 128Mi to 320Mi, limit 384Mi to 512Mi (staging only; production renders no monitoring component). Measured on the staging image digest under a 384Mi cgroup: anonymous memory 240Mi at start and 275-301Mi under a scan-shaped burst, so 78-81% of the old limit before kernel memory. The OOM itself was not reproduced, and the killed pod was lost to a node replacement, so the sizing is headroom against the measured peak (1.65x), not a proven trigger. The Grafana node goes from 61% to 66% requested.
+- **Not changed here.** The host already carries per-IP rate limits (limit-rps 50, which Traefik enforces); the owner approved an edge basic-auth gate for item 3, which ships in its own PR.
+
+### Digest Parity Waits for the Old Replicas to Drain (#986) — 2026-10-20
+
+The first staging deploy after the Phase 29 merge (run 39440780472) failed at digest parity on a correct deploy and was rolled back. The gate read core-java 2.4 s after `rollout status` returned, and counted the previous revision's pod, which was still terminating, as running (issue #985).
+
+- **`scripts/check-deploy-digest-parity.sh`.**
+  - Each poll reads a service's pods as one JSON list, and one jq program (`POD_JQ`) sorts them into live digests and terminating pods.
+  - The gate waits for the terminating pods to go, against one `--drain-timeout` deadline (default 180 s) shared by all services.
+  - A pod still terminating at the deadline is named and counted as a failure, and the remaining services are still compared.
+  - Only live digests are compared.
+- **Selftest.** 33 arms. `POD_JQ` is fed pod-list JSON for:
+  - an old pod that drains;
+  - one that stays, with a wrong frontend image also planted;
+  - one that stays while every live digest matches;
+  - an old image on a live pod.
+
+  Content checks back each of these. Breaking the filter or the stuck-pod check turns the selftest red.
+- **Live proof (staging).** core-java was set to `bffd2f74` so that a real pod with a different digest was still terminating. The gate as it was gave rc 1 with the CI output, and the fixed gate gave rc 0 after waiting for the drain. The deploy was then undone. The record is in `evidence/29-28-merge-deploy.txt`.
+- **`ci-cd.yaml`.** The selftest step's comment names the drain arms.
 
 ### `/for-operators` Redesigned: One Dark Band, Five Sections, Four Product Images (#967) — 2026-10-19
 
