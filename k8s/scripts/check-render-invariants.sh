@@ -1206,6 +1206,17 @@ fi
 #   image-custom       image: .../idp:26 (no keycloak in the name) and none
 #   container-by-label a sidecar with no keycloak image and no KC_* env, in the pod
 #                      labelled app: keycloak, turning headers on by -D
+#   idp-by-kcenv       a second Deployment (not labelled keycloak, image .../idp:1)
+#                      whose only Keycloak sign is KC_PROXY_HEADERS
+#   idp-by-args        the same, whose only sign is args --proxy-headers=xforwarded
+# Unit arms (the unquoting helper and the image finder, called directly, because
+# `kubectl kustomize` re-emits '0.0.0.0/0' and "keycloak:26.8.1" UNQUOTED, so a quoted
+# value cannot be planted through a render; the helpers are still the ones that decide):
+#   unit-unq           unq strips one pair of double or single quotes and nothing else
+#   unit-quoted-flag   a single-quoted --proxy-trusted-addresses=... and a double-quoted
+#                      --proxy-headers=... item are read as the flags they are
+#   unit-quoted-image  a quoted bare image, a single-quoted full image and a custom
+#                      image on a labelled pod are found as Keycloak; core-java's is not
 # INV20_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
 # ===========================================================================
 # Plant primitives. Text with newlines travels through the environment, never -v.
@@ -1253,7 +1264,7 @@ INV20_ARMS=(env-removed optional-ref key-renamed secret-ref foreign-cm-absent fo
     literal-any literal-single literal-public literal-empty whitespace-literal config-empty config-whitespace config-comma
     legacy-proxy flag-legacy jvm-headers-only jvm-trusted-any jvm-trusted-override jvm-secret
     flag-headers-only flag-trusted-any flag-repeated flag-bare shell-wrapped block-scalar
-    envfrom-cm envfrom-secret image-quoted image-custom container-by-label)
+    envfrom-cm envfrom-secret image-quoted image-custom container-by-label idp-by-kcenv idp-by-args)
 
 inv20_plant() {
     local arm="$1" root="$2" f before kc="$2/components/keycloak/keycloak.yaml"
@@ -1339,9 +1350,50 @@ inv20_plant() {
         - name: JAVA_OPTS_APPEND
           value: "-Dkc.proxy-headers=xforwarded"
 ' ;;
+        idp-by-kcenv)
+            printf -- '---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: idp\nspec:\n  selector:\n    matchLabels:\n      app: idp\n  template:\n    metadata:\n      labels:\n        app: idp\n    spec:\n      containers:\n      - name: idp\n        image: registry.example.io/jtoye/idp:1\n        env:\n        - name: KC_PROXY_HEADERS\n          value: xforwarded\n' >> "$f" ;;
+        idp-by-args)
+            printf -- '---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: idp\nspec:\n  selector:\n    matchLabels:\n      app: idp\n  template:\n    metadata:\n      labels:\n        app: idp\n    spec:\n      containers:\n      - name: idp\n        image: registry.example.io/jtoye/idp:1\n        args: ["--proxy-headers=xforwarded"]\n' >> "$f" ;;
         *) return 1 ;;
     esac
     [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+# The unit arms' probe, run in a fresh bash against the script under test.
+inv20_unit_probe() {
+    local src="$1" pass=1 paths found
+    eval "$(sed -n '/^unq() {/,/^}/p; /^INV20_[A-Z_]*_RE=/p; /^inv20_fail()/p; /^inv20_mentions()/p; /^inv20_word() {/,/^}/p; /^inv20_token() {/,/^}/p' "$src")"
+    eval "$(sed -n "/^KEYCLOAK_IMAGE_RE=/p; /^KEYCLOAK_CTRS_AWK='/,/^'\$/p" "$src")"
+    local rel=unit who20=unit inv20_bad=0
+    local -a I20_TV=() I20_TS=()
+    local I20_HDR=0 I20_LEGACY=0 I20_UNJ=0
+    case "$2" in
+        unq)
+            unq "'x'"; [[ "$UNQ" == x ]] || pass=0
+            unq '"x"'; [[ "$UNQ" == x ]] || pass=0
+            unq 'x'; [[ "$UNQ" == x ]] || pass=0
+            unq "'x"; [[ "$UNQ" == "'x" ]] || pass=0
+            unq "''"; [[ -z "$UNQ" ]] || pass=0 ;;
+        quoted-flag)
+            inv20_token "'--proxy-trusted-addresses=0.0.0.0/0'" args 2>/dev/null
+            [[ "${I20_TV[0]:-}" == "0.0.0.0/0" && ${#I20_TV[@]} -eq 1 ]] || pass=0
+            inv20_token '"--proxy-headers=xforwarded"' args 2>/dev/null
+            (( I20_HDR == 1 )) || pass=0 ;;
+        quoted-image)
+            paths="$(printf '%s\t%s\t%s\t%s\n' \
+                Deployment d1 'spec::template::spec::containers::[0]::name' c1 \
+                Deployment d1 'spec::template::spec::containers::[0]::image' '"keycloak:26.8.1"' \
+                Deployment d2 'spec::template::spec::containers::[0]::name' c2 \
+                Deployment d2 'spec::template::spec::containers::[0]::image' "'quay.io/keycloak/keycloak:26.8.1'" \
+                Deployment d3 'spec::template::spec::containers::[0]::name' c3 \
+                Deployment d3 'spec::template::spec::containers::[0]::image' 'jtoye-core-java:1' \
+                Deployment d4 'spec::template::metadata::labels::app' 'keycloak' \
+                Deployment d4 'spec::template::spec::containers::[0]::name' c4 \
+                Deployment d4 'spec::template::spec::containers::[0]::image' 'registry.example.io/idp:1')"
+            found="$(awk -F'\t' -v re="$KEYCLOAK_IMAGE_RE" "$KEYCLOAK_CTRS_AWK" <<< "$paths" | sort | cut -f2 | tr '\n' ' ')"
+            [[ "$found" == "d1 d2 d4 " ]] || { pass=0; echo "found: '$found'" >&2; } ;;
+    esac
+    (( pass )) 
 }
 
 inv20_selftest() {
@@ -1387,6 +1439,8 @@ inv20_selftest() {
         [image-quoted]="$H"
         [image-custom]="$H"
         [container-by-label]="INV-20: Deployment keycloak container 'idp-sidecar' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+        [idp-by-kcenv]="INV-20: Deployment idp container 'idp' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
+        [idp-by-args]="INV-20: Deployment idp container 'idp' turns proxy headers on but sets no KC_PROXY_TRUSTED_ADDRESSES"
     )
     for arm in "${INV20_ARMS[@]}"; do
         n=$((n + 1))
@@ -1403,6 +1457,18 @@ inv20_selftest() {
                 line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-20|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
             fi
         fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    for arm in unit-unq unit-quoted-flag unit-quoted-image; do
+        n=$((n + 1))
+        if line="$(bash -c "$(declare -f inv20_unit_probe); inv20_unit_probe \"\$1\" \"\$2\"" _ "${BASH_SOURCE[0]}" "${arm#unit-}" 2>&1)"; then caught=yes; line="ok"; else caught=no; line="probe failed: $line"; fi
         [[ "$caught" == yes ]] || bad=$((bad + 1))
         if [[ "$fmt" == tap ]]; then
             if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
