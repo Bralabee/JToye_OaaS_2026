@@ -811,6 +811,9 @@ jobs:
       # JSON: an old pod that drains (pass), one that stays (fail, and the other
       # services are still compared), an old image on a live pod (fail), and a
       # zero or non-numeric --drain-timeout (VOID). Needs jq (present on the runner).
+      # C-9: a running or ready container whose imageID has no @sha256 digest is VOID
+      # naming the pod and container (three arms), and a Pending/ContainerCreating
+      # container with an empty imageID is not (two control arms).
       - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
         run: bash scripts/check-deploy-digest-parity.sh --selftest
 
@@ -831,6 +834,45 @@ jobs:
       # kubectl/az and TCP connect: no cluster, no Azure, no network.
       - name: Prove the mail-UI probe's arms can fail (29-22 --selftest)
         run: bash scripts/staging-mail-ui.sh --selftest
+
+      # C-1 (Phase 29 follow-ups, plan item 4): the four staging operator scripts below each have
+      # a --selftest that was written, run by hand and then wired nowhere, so none of them could
+      # fail a pull request. Each is stub-only (no cluster, no Azure, no network) and runs here
+      # because this job already has kubectl, python3 with PyYAML and the runner's openssl.
+      # Each was shown red on a planted break and clean again before being wired.
+      #
+      # Plan 29-12/29-22: the Key Vault secret generator, against a stub vault. Generate and
+      # set-external are write-once (a second run writes nothing), no secret value reaches argv,
+      # every value shape holds (hex64, alnum32, b64url32, the htpasswd-apr1 composite), an
+      # unclassified object refuses before any write, the leak scan names a hit, and a missing
+      # python is VOID (rc 2).
+      - name: Prove the staging secret generator's arms can fail (--selftest)
+        run: bash scripts/staging-secrets.sh --selftest
+
+      # The Key Vault pre-flight that decides whether a deploy may mount: against a stub vault
+      # it must name a missing object, a missing access grant, a disabled or empty object, a
+      # stale identity file, a wrong-prefix Stripe key and an invalid external value, and
+      # --names-only must read no value at all (the detector is shown to fire in full mode).
+      - name: Prove the staging secrets pre-flight's arms can fail (--selftest)
+        run: bash scripts/staging-secrets-preflight.sh --selftest
+
+      # Plan 29-20: the PITR drill's own safety predicates, against stubs (no cluster, no
+      # restore, no Azure): a write to the SOURCE server is refused before any kubectl call, only
+      # the drill-<digits> server is admitted, the cleanup trap is installed before the restore
+      # is requested, a zero-byte or junk dump is refused by the size floor, and per-table counts
+      # compare by name (reordered equal; differing, missing or empty do not).
+      - name: Prove the staging PITR drill's predicates can fail (--selftest)
+        run: bash scripts/staging-pitr-drill.sh --selftest
+
+      # Plan 29-17 (DPLY-05, #297): the NetworkPolicy-enforcement VERDICT logic. The live probe
+      # (agnhost pods, a probe namespace, a run-scoped egress policy) needs a cluster credential
+      # and an enforcing CNI and stays operator-run, so scripts/gates/gate-enforcement.conf no
+      # longer lists it, but the live arm is NOT in CI. What runs here is the classifier, 22 TAP
+      # arms with no cluster: a timeout is DENIED, a reset is not, a control that does not
+      # connect is VOID, a denied arm that connects is FAIL, and a foreign or miscounted
+      # artefact is refused. They are what stops a false "enforced" verdict.
+      - name: Prove the NetworkPolicy-enforcement verdict classifier can fail (--selftest)
+        run: bash scripts/check-networkpolicy-enforcement.sh --selftest
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |
@@ -1448,6 +1490,17 @@ jobs:
         run: |
           chmod +x ./scripts/check-layout-width-contract.sh
           ./scripts/check-layout-width-contract.sh
+
+      # C-1 (Phase 29 follow-ups, plan item 4): staging-db-bootstrap.sh --selftest starts and
+      # removes its own postgres:18 stand-in, with a CREATEROLE non-superuser in place of
+      # azure_pg_admin, and proves the pre-stage is idempotent, the owners can create, the
+      # post-stage fails before a migration and reads back after, the scratch DB is refused for
+      # jtoye and keycloak, the relay goes through the named kube context, and no password
+      # reaches any psql argv. It needs docker and pulls postgres:18, so it lives HERE and not in
+      # k8s-validate: this job is not in any deploy `needs:` list (27-06 section 5), so an
+      # image-pull outage reds a PR check and never blocks or rolls back a deploy.
+      - name: Prove the staging DB bootstrap's guards and role model (--selftest)
+        run: bash scripts/staging-db-bootstrap.sh --selftest
 
       #   11. The meta-gate, so the three steps above are the LAST time this is found by
       #      hand. It asserts that every scripts/check-*.sh either runs in a workflow or
@@ -2158,6 +2211,95 @@ jobs:
           kubectl rollout undo deployment/edge-go -n jtoye-staging
           kubectl rollout undo deployment/frontend -n jtoye-staging
           exit 1
+
+  # Job 4b: Probe the staging edge after a successful staging deploy (C-2, Phase 29 follow-ups).
+  #
+  # scripts/check-staging-edge.sh asks the LIVE edge whether Traefik honours the annotations the
+  # render gates only prove are written: the six security headers, the CSP admitting the realm
+  # endpoints, the CORS preflight and the Keycloak admin-path restriction. Until this job it ran
+  # nowhere, and its gate-enforcement.conf entry said "plan 29-21 runs it from the deploy job",
+  # which was never true.
+  #
+  # A SEPARATE JOB, NOT A STEP OF deploy-staging, and that is the whole design. A failing step in
+  # deploy-staging runs "Rollback on failure" (kubectl rollout undo on all three Deployments), so
+  # an edge-probe step that flaked on a DNS blip or a Traefik restart would roll back a CORRECT
+  # deploy. Here a red is a red check on the run and nothing else: this job holds no write
+  # permission on anything, runs no kubectl verb that changes the cluster, and no later job
+  # `needs:` it. `needs: deploy-staging` with the implicit success() means it is skipped, not
+  # run, against a deploy that failed or was rolled back.
+  #
+  # READ-ONLY ARMS ONLY, with --skip-burst. The 429 burst arm (1500 requests at concurrency 40,
+  # passing only above ~150 rps) is timing-sensitive and says as much about the client as about
+  # the edge; it stays operator-run, as does --fail-arms (it creates a scratch Ingress). The
+  # script's own PASS line says the burst arm was not run, so this job's green cannot be read as
+  # the full five-arm result.
+  #
+  # Same `if:` as deploy-staging, same `environment: staging` (the Entra federated credential
+  # admits exactly the subject repo:Bralabee/JToye_OaaS_2026:environment:staging), and the same
+  # pinned login, kubelogin and kubeconfig steps. The normal run makes no cluster call: the
+  # script's context guard only reads the kubeconfig (the server URL, and kubelogin on PATH), so
+  # no `can-i` step is repeated here.
+  staging-edge-probe:
+    name: Staging Edge Probe
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: staging
+      url: https://app-staging.olajay.co.uk
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+        with:
+          version: 'v1.36.4'
+
+      - name: Refuse a subscription that is not J'Toye's
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          if [ "$AZURE_SUBSCRIPTION_ID" != "c483d353-5f61-4587-a790-addb9ab5fb94" ]; then
+            echo "FATAL: environment variable AZURE_SUBSCRIPTION_ID is '${AZURE_SUBSCRIPTION_ID:-<unset>}', not the J'Toye subscription c483d353-5f61-4587-a790-addb9ab5fb94." >&2
+            exit 1
+          fi
+
+      - name: Azure login (OIDC, jtoye-ci, no stored secret)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install kubelogin (pinned, checksum-verified)
+        run: |
+          KUBELOGIN_VERSION="v0.2.21"
+          KUBELOGIN_SHA256="934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66"
+          curl -sSfL -o kubelogin.zip "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip"
+          echo "${KUBELOGIN_SHA256}  kubelogin.zip" | sha256sum -c -
+          unzip -o -j kubelogin.zip bin/linux_amd64/kubelogin -d kubelogin-bin
+          sudo install -m 0755 kubelogin-bin/kubelogin /usr/local/bin/kubelogin
+          kubelogin --version
+
+      - name: Configure kubeconfig (az aks get-credentials + kubelogin, Entra only)
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          az aks get-credentials --subscription "$AZURE_SUBSCRIPTION_ID" -g jtoye-rg -n jtoye-stg-aks --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+          kubectl config current-context
+
+      # curl, jq and getent are on the runner image. Exit 1 = an arm failed on the live edge,
+      # exit 2 = VOID (a host did not resolve, a request did not complete): both fail this job
+      # and neither touches the cluster.
+      - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin)
+        run: bash scripts/check-staging-edge.sh --context "$(kubectl config current-context)" --skip-burst
 
   # Job 5: Deploy to production
   #
