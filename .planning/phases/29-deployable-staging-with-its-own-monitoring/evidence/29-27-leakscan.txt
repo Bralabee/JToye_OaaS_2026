@@ -1,0 +1,21 @@
+# T-29-100: scripts/staging-secrets.sh --leak-scan over every non-manifest file the 29-27 docs commits touched
+# (f49a015d fe74d1fb 9dcf2cb4 fe2742f8 40a41b93 7a8b6a80 2d512c30 f926c535), checked against the live jtoye-stg-kv values; values never printed.
+# Run: 2026-10-20T11:13:14Z, env jtoye-ops, head 4dfb6ae2
+rc=0 docs/runbooks/credential-rotation.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 docs/runbooks/sealed-secrets.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 docs/runbooks/staging-operations.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 k8s/DEPLOYMENT.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 k8s/LOCAL.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 k8s/PRODUCTION_READINESS_REPORT.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 k8s/QUICK_START.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 .planning/phases/29-deployable-staging-with-its-own-monitoring/29-DPLY02-DISPOSITIONS.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 .planning/phases/29-deployable-staging-with-its-own-monitoring/deferred-items.md :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-citations-baseline.txt :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-comments/issue-101.txt :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-comments/issue-112.txt :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-comments/issue-592.txt :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+rc=0 .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-comments/issue-98.txt :: leak-scan: 29 objects checked, 0 found (12 estate identifiers not secret, skipped)
+# Fail direction: --selftest leak-scan arm (a planted value is named, rc 1; clean 0; missing/empty VOID)
+PASS leak-scan hit=1-named clean=0 missing=VOID empty=VOID
+SELFTEST: 13/13 (derived objects=41, generated=35, grants=45)
+selftest rc=0

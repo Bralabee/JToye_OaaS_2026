@@ -68,5 +68,16 @@ It is outside the estate total above and outside this phase's ceiling; its dispo
 
 ## Owner decision
 
-**Pending.** The owner answers option-hold, option-raise (with the number) or option-lever (naming the lever).
-This section records the answer and its date before the phase closes.
+**option-raise, £178/month — owner, 2026-10-20** (reply: "raise to £178").
+
+The D-03 estate ceiling moves from about £150 to **£178/month**. Against it:
+
+| Case | £/month | Headroom under £178 |
+|---|---|---|
+| Measured today | £156.00 | £22.00 |
+| LB leaves its free meter | £169.80 | £8.20 |
+| FreeTierInfrastructureCost bills | £183.52 | over by £5.52 |
+| Both | £197.32 | over by £19.32 |
+
+Either AKS meter billing (FreeTierInfrastructureCost) or both meters billing would breach the new ceiling, and that
+returns this decision to the owner. snackpass-pg stays outside the ceiling (another project's server).

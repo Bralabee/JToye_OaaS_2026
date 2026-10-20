@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 26/29 | Context gathered 2026-10-18 | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 28/29 | Context gathered 2026-10-18 | — |
 | 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
@@ -592,7 +592,7 @@ and hosting-target decisions; DPLY-04's **ADR-0002 sign-off** blocker is RESOLVE
 | **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
 | **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
 
-**Plans:** 26/29 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
+**Plans:** 28/29 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
 
 Plans:
 - [x] 29-29-PLAN.md
@@ -626,7 +626,7 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 29-15-PLAN.md — Edge fidelity under Traefik (D-29 b), CSP/#293, trusted proxies measured
 - [x] 29-16-PLAN.md — TDD: required STARTTLS literals under the deployed profiles (D-20)
-- [ ] 29-19-PLAN.md — 24 h measured cost-meter checkpoint (D-03)
+- [x] 29-19-PLAN.md — 24 h measured cost-meter checkpoint (D-03)
 - [x] 29-21-PLAN.md — CI deploy gate wiring: OIDC + kubelogin, true smoke test, GitHub staging environment (#99 part 1)
 
 **Wave 8** *(blocked on Wave 7 completion)*
@@ -648,7 +648,7 @@ Plans:
 - [x] 29-26-PLAN.md — Deploy-knot config: customer realm (#299, #859) and one-click unsubscribe (#592)
 
 **Wave 13** *(blocked on Wave 12 completion)*
-- [ ] 29-27-PLAN.md — DPLY-02 dispositions + gate, the D-18 runbook page, supersede notes, ADR-0002 D-24 amendment
+- [x] 29-27-PLAN.md — DPLY-02 dispositions + gate, the D-18 runbook page, supersede notes, ADR-0002 D-24 amendment
 
 **Wave 14** *(blocked on Wave 13 completion)*
 - [ ] 29-28-PLAN.md — Merge gate, the first green CI deploy with runtime parity, issue dispositions applied (#99)

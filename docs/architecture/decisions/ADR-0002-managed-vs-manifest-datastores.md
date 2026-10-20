@@ -151,3 +151,19 @@ What this entry does **not** carry over from the branch, deliberately:
 The `rabbitmq-k8s` horizon row (`infra/dependency-horizons.yaml`) stays as it is. Accepting the
 operator route decides *how* the broker's version becomes declared in-repo; the row closes when
 Phase 29 actually ships that manifest, not when this entry lands.
+
+## Amendment 2026-10-20 — D-24: Redis in-cluster for staging
+
+Phase 29 decided D-24 by measurement: **staging runs Redis in-cluster** (`k8s/components/redis`), not on a managed
+Redis service. This amends, for staging only, the Accepted section's "Redis to managed".
+
+- **Measured estate (plan 29-19, `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-COST-CHECKPOINT.md`):**
+  £156.00/month on 2026-10-20 with four B2s nodes, from the subscription's own Cost Management data. The load
+  balancer is still on its free meter, and research priced it at +£13.80/month once it bills (£169.80).
+- **Managed Redis priced by research:** Azure Managed Redis B0 bills two node-hours per hour with HA, £19.86/month
+  (measured in the August usage data). On today's measured estate it would make £175.86; once the load balancer
+  bills, £189.66.
+- **Ceiling:** the owner moved the D-03 ceiling to £178/month on 2026-10-20. Managed Redis would sit £2.14 under it
+  today, and £11.66 over it as soon as the load balancer meter bills, so in-cluster Redis stands.
+- **Production is not decided here.** Production's Redis hosting is a Phase 32 decision, made against production's
+  own budget and availability needs.
