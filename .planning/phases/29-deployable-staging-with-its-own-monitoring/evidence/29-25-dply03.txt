@@ -1,0 +1,341 @@
+# 29-25 DPLY-03 evidence — staging alerting live (kube-context jtoye-stg-aks, subscription c483d353, vault jtoye-stg-kv)
+# Values are never printed. Every check is shown in its fail direction before its pass.
+
+== Task 1: Key Vault generated objects + grants, preflight
+
+-- Order note: the four owner values alertmanager-smtp-credentials--{from,username,password,to} were
+   written by the orchestrator BEFORE this plan ran (checkpoint resolution 2026-10-19 ~17:25Z: equal to
+   the repo .env ALERTMANAGER_SMTP_* values; Zoho STARTTLS login with them succeeded, wrong-password
+   control 535). So the plan's Task 1 verify ("missing set == exactly the four Zoho objects") can no
+   longer be produced; the live fail direction recorded instead is the preflight BEFORE --generate.
+
+-- 1a. preflight before --generate (fail direction, live)
+2026-10-19T17:27:18Z
+MISSING grafana-admin-credentials--admin-password
+MISSING grafana-admin-credentials--admin-user
+MISSING-ACCESS grafana-admin-credentials--admin-password 99264ed4-8b66-48fc-b510-26af24baa3d2
+MISSING-ACCESS grafana-admin-credentials--admin-user 99264ed4-8b66-48fc-b510-26af24baa3d2
+MISSING-ACCESS alertmanager-smtp-credentials--from 2422de69-5161-4350-ab2b-7158625a0989
+MISSING-ACCESS alertmanager-smtp-credentials--password 2422de69-5161-4350-ab2b-7158625a0989
+MISSING-ACCESS alertmanager-smtp-credentials--to 2422de69-5161-4350-ab2b-7158625a0989
+MISSING-ACCESS alertmanager-smtp-credentials--username 2422de69-5161-4350-ab2b-7158625a0989
+NOT-TEST-MODE alertmanager-smtp-credentials--from
+NOT-TEST-MODE alertmanager-smtp-credentials--password
+NOT-TEST-MODE alertmanager-smtp-credentials--to
+NOT-TEST-MODE alertmanager-smtp-credentials--username
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 41 objects, 45 grants, 12 gap(s)
+rc=1
+
+   Finding: the four NOT-TEST-MODE lines are a preflight DEFECT, not a vault gap. 29-24 classed the
+   owner values "external @email"/"external @nonempty" (validator kinds) in the writer, but the
+   preflight read the kind as a literal value prefix, so it could pass on NO vault. Its own
+   --selftest was 8/16 on HEAD 4945dc00 (unwired in CI, so unseen).
+   Fix (Rule 3, TDD): f34f084d RED 8/17 (RED_EVIDENCE_OK, evidence/29-25-t1-red-preflight-validators.json),
+   2382de1e GREEN: one rule ss_external_valid shared by writer and preflight; an invalid @-kind value
+   is INVALID-VALUE <object>. preflight --selftest 17/17, writer --selftest 13/13.
+   Break arm on the committed GREEN (accept-all @email planted in the lib):
+== break arm: accept-all @email planted in scripts/lib/staging-secrets-common.sh
+FAIL invalid-external-value gap lines were: INVALID-VALUE alertmanager-smtp-credentials--password
+SELFTEST: 16/17 (derived objects=41, grants=45)
+rc=1
+   restored: md5 ab3d5c81fade762061804ced687f47d0 == committed; git status clean before and after
+
+-- 1b. --generate (owner-approved write, [az-ok] 29-25)
+2026-10-19T17:30:58Z
+$ bash scripts/staging-secrets.sh --generate
+external (owner supplies via --set-external): alertmanager-smtp-credentials--from
+external (owner supplies via --set-external): alertmanager-smtp-credentials--password
+external (owner supplies via --set-external): alertmanager-smtp-credentials--to
+external (owner supplies via --set-external): alertmanager-smtp-credentials--username
+written: grafana-admin-credentials--admin-password (version c49edf043bd343d7a615bedf6f8fcd82; value not printed)
+written: grafana-admin-credentials--admin-user (version 8bd958a5d0494863916b4d2ef76ff0fc; value not printed)
+external (owner supplies via --set-external): stripe-credentials--api-key
+external (owner supplies via --set-external): stripe-credentials--webhook-secret
+generate: 2 written, 33 exist (write-once, untouched), 6 external left to the owner
+rc=0
+   (33 'exists (write-once)' lines elided: untouched)
+
+-- 1c. --assign-access (owner-approved write, [az-ok] 29-25)
+2026-10-19T17:31:30Z
+$ bash scripts/staging-secrets.sh --assign-access
+assigned: Key Vault Secrets User on grafana-admin-credentials--admin-password to 99264ed4-8b66-48fc-b510-26af24baa3d2
+assigned: Key Vault Secrets User on grafana-admin-credentials--admin-user to 99264ed4-8b66-48fc-b510-26af24baa3d2
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--from to 2422de69-5161-4350-ab2b-7158625a0989
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--password to 2422de69-5161-4350-ab2b-7158625a0989
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--to to 2422de69-5161-4350-ab2b-7158625a0989
+assigned: Key Vault Secrets User on alertmanager-smtp-credentials--username to 2422de69-5161-4350-ab2b-7158625a0989
+assign-access: 45 grants, 6 created, 39 existing, 0 deferred
+rc=0
+
+-- 1d. preflight after (pass direction, live)
+2026-10-19T17:32:23Z
+test-mode: yes (stripe-credentials--api-key)
+test-mode: yes (stripe-credentials--webhook-secret)
+preflight: 41 objects, 45 grants, 0 gap(s)
+rc=0
+
+== Task 2: owner values — SATISFIED by the orchestrator's checkpoint resolution (2026-10-19 ~17:25Z);
+   the preflight above is Task 2's own verification (rc 0, 0 gaps, the four names gone).
+
+== Task 3: deploy, both DPLY-03 gates against staging, routing, break arm, Grafana
+
+-- 3a. capacity before (kubectl describe nodes; allocatable 2787Mi each): requested node0 2182Mi, node1 1364Mi, node2 2688Mi, node3 1638Mi
+   (free 605 / 1423 / 99 / 1149 Mi). Alertmanager+Grafana request 192Mi: fits node 1 or 3 only.
+-- 3b. kubectl diff of the render vs live before deploying: only NEW objects (alertmanager, grafana, their SPCs, policies,
+   ConfigMaps, Services, ServiceAccounts, Ingress grafana-public). No existing object changed, so core-java did NOT roll and the
+   order counter survived (no seed-order-metric.sh run was needed; the pre-approved order was NOT used).
+-- 3c. deploy (2026-10-19T17:34:08Z): rc=0 DEPLOYED_SHA=6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+   rollout status alertmanager rc 0, grafana rc 0 (both on node 3 at first); Certificate jtoye-staging-grafana-tls Ready=True ~30 s after
+   Finding: deploy.sh printed DEPLOYED_SHA while both new pods were still ContainerCreating — it waits only on core-java, edge-go, frontend.
+
+-- 3d. port-forwards: svc/prometheus 19090:9090, svc/mailpit 18025:8025, svc/alertmanager 19093:9093, PIDs captured; killed by PID at the end
+   (the alertmanager forward was restarted by PID after each Alertmanager pod change).
+
+-- 3e. check-alert-metrics.sh — FAIL direction (planted rule with no series, scratch copy of alerts.yml, same live Prometheus)
+check-alert-metrics  (2026-10-19T17:36:43Z)
+FAIL: M-1 rule 'PlantedNoSeries29x25' selector matches ZERO series — this rule can never fire: jtoye_planted_nonexistent_metric_total
+FAILED: 1 live alert-metric violation(s).
+   rc=1
+-- 3f. check-alert-metrics.sh — PASS direction (run 1)
+check-alert-metrics  (2026-10-19T17:36:04Z)
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+   rc=0 ts-lines=1
+-- 3g. check-alert-metrics.sh — PASS direction (run 2, after the break/restore arms)
+check-alert-metrics  (2026-10-19T18:09:14Z)
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+   rc=0 ts-lines=1
+
+-- 3h. check-alert-liveness.sh run 1 (gate at 4945dc00/2382de1e, BEFORE the L-3 fix), start 2026-10-19T17:36:57Z: rc=0 ts-lines=1 fail-or-void-lines=0
+alert-liveness summary  (2026-10-19T17:37:36Z)
+  L-0   served md5=7368261df6b44519ddd8d12267862856 == infra/monitoring/prometheus/alerts.yml md5=7368261df6b44519ddd8d12267862856 (via kubectl)
+  L-1   targets=8  down=0
+  L-1b  exporter-jobs=2  blind=0  gauge-read-by-no-rule=0
+  L-2   rules=19  selectors-matching-0-series=0
+  L-2b  wrong-subject=0
+  L-3   probe delivered=1  sink=Mailpit at http://localhost:18025  attempts{email} 0 -> 2  failed{email} 0 -> 0
+  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink.
+        It does NOT prove a human reads that sink (mailpit has no human behind it).
+PASS: 8 targets up, 2 exporter gauge(s) healthy and rule-referenced, 19 rules match live series of the job they claim, transport verified end-to-end.
+
+L3-PROBE-ID probe-1792431424-1876833
+   send: liveness run 1 posted it at ~17:37:04Z (owner's mail: Started 2026-10-19 17:37:04.925Z); Mailpit copy Created 2026-10-19T17:37:34.954Z,
+   id 14LkHTYO…, subject '[FIRING:1] SyntheticDeliveryProbe-1792431424-1876833 platform (probe-1792431424-1876833 info)',
+   From <the --from address>. Alertmanager after the run: notifications_total{email}=2 (Zoho + Mailpit), failed_total{email}=0 for every reason.
+
+OWNER-INBOX-CONFIRMED
+  recorded at: 2026-10-19T17:44:18Z (owner confirmation relayed in-session by the orchestrator, 2026-10-19)
+  location: inbox (<the --to/--username address>), not spam
+  owner-pasted body, verbatim: "Status: FIRING / Alert: synthetic transport probe probe-1792431424-1876833 — not a real alert / Description: posted by scripts/check-alert-liveness.sh run probe-1792431424-1876833 / Severity: info / Service: platform / Started: 2026-10-19 17:37:04.925743972 +0000 UTC"
+  match: run id == L3-PROBE-ID probe-1792431424-1876833; Started 17:37:04Z is inside the liveness run (17:36:57Z..17:37:36Z)
+
+-- 3i. routing (amtool inside the running pod, rendered /etc/alertmanager/alertmanager.yml)
+2026-10-19T17:38:08Z
+$ amtool config routes test alertname=NoOrdersCreated
+mute-null
+rc=0
+$ amtool config routes test alertname=NoOrdersCreated severity=warning service=core-api
+mute-null
+rc=0
+$ amtool config routes test alertname=StagingProbe severity=info service=core-api
+email-default
+rc=0
+-- verify.receivers fail direction: assert StagingProbe goes to the mute receiver (must fail)
+mute receiver name: mute-null
+email-default
+WARNING: Expected receivers did not match resolved receivers.
+command terminated with exit code 1
+rc=1
+-- verify.receivers pass direction
+email-default
+rc=0
+mute-null
+rc=0
+-- the mute route as rendered (structural)
+route:
+  receiver: email-default
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - receiver: mute-null
+      matchers:
+        - alertname=~"^(NoOrdersCreated)$"
+
+receivers:
+-- anchoring: names next to the muted one are NOT muted; severity/service never mute
+alertname=NoOrdersCreatedX -> email-default
+alertname=XNoOrdersCreated -> email-default
+alertname=CoreApiDown severity=critical service=core-api -> email-default
+alertname=HighErrorRate severity=warning service=platform -> email-default
+   Note: the mute renders as alertname=~"^(NoOrdersCreated)$" — anchored, so equality in effect; the near-name arms above route to email-default.
+   Live: at 18:15Z Alertmanager held a real NoOrdersCreated alert, active, receivers=mute-null (no mail).
+
+-- 3j. break arm (delivery failure must be visible)
+2026-10-19T17:39:04Z
+-- pod before patch: pod/alertmanager-6688ccf5b6-ss2nx
+$ kubectl set env deploy/alertmanager ALERTMANAGER_SMTP_PASSWORD_FILE- ALERTMANAGER_SMTP_PASSWORD=<wrong literal, not the real value>
+deployment.apps/alertmanager env updated
+rc=0
+Waiting for deployment "alertmanager" rollout to finish: 0 of 1 updated replicas are available...
+error: timed out waiting for the condition
+rc=1
+broken pod: pod/alertmanager-6c6cb9fd4b-45hkx
+-- broken pod spec env (names; PASSWORD value redacted to its length):
+ALERTMANAGER_SMTP_PASSWORD len=21
+
+-- plan's shape REFUSED in staging: previous-container log of the env-literal pod:
+   /etc/alertmanager-src/entrypoint.sh: line 99: can't create /tmp/alertmanager-smtp-password: Read-only file system
+   FATAL: cannot write the SMTP password file /tmp/alertmanager-smtp-password.  (CrashLoopBackOff x5, rollout status timed out)
+-- adapted arm: the password FILE points at a non-secret readable wrong value (/etc/hostname)
+2026-10-19T17:44:42Z
+$ kubectl set env deploy/alertmanager ALERTMANAGER_SMTP_PASSWORD- ALERTMANAGER_SMTP_PASSWORD_FILE=/etc/hostname
+deployment.apps/alertmanager env updated
+rc=0
+Waiting for deployment "alertmanager" rollout to finish: 0 of 1 updated replicas are available...
+deployment "alertmanager" successfully rolled out
+rc=0
+broken pod: pod/alertmanager-8595c68f4-v8ws8
+ALERTMANAGER_SMTP_PASSWORD_FILE=/etc/hostname
+-- broken state, probe break-174513
+before: notifications_total{email}=0 failed_total{email,all reasons}=0
+2026-10-19T17:45:14Z
+time=2026-10-19T17:45:15.070Z level=WARN source=parse.go:136 msg="Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted and backslashes are escaped. If you are still seeing this message please open an issue." input="summary=29-25 break arm break-174513 - not a real alert" origin=cli err="14:19: unexpected break: expected a comma or close brace" suggestion="summary=\"29-25 break arm break-174513 - not a real alert\""
+amtool alert add rc=0
+2026-10-19T17:47:59Z
+after: notifications_total{email}=2 failed_total{email,all reasons}=0
+mailpit search break-174513: messages_count= 1 [('2026-10-19T17:45:45.112Z', '[FIRING:1] BreakArm29x25 platform (break-174513 info)')]
+mailpit control (absent id): messages_count= 0
+alertmanager log (auth lines):
+alertmanager entrypoint: SMTP auth ENABLED for smtp.zoho.eu:587 (password from file /etc/hostname)
+time=2026-10-19T17:45:45.737Z level=WARN source=retry_stage.go:165 msg="Notify attempt failed, will retry later" component=dispatcher receiver=email-default integration=email[0] aggrGroup="{}:{alertname=\"BreakArm29x25\", service=\"platform\"}" attempts=1 err="*email.loginAuth auth: 535 \"5.7.8 Auth
+2026-10-19T17:50:54Z
+after retry window: failed_total{email,all reasons}=1
+alertmanager_notifications_failed_total{integration="email",reason="other"} 1
+alertmanager_notifications_total{integration="email"} 3
+time=2026-10-19T17:45:45.737Z level=WARN source=retry_stage.go:165 msg="Notify attempt failed, will retry later" component=dispatcher receiver=email-default integration=email[0] aggrGroup="{}:{alertname=\"BreakArm29x25\", service=\"platform\"}" attempts=1 err=
+time=2026-10-19T17:50:45.077Z level=ERROR source=dispatch.go:589 msg="Notify for alerts failed" component=dispatcher aggrGroup="{}:{alertname=\"BreakArm29x25\", service=\"platform\"}" num_alerts=1 err="email-default/email[0]: notify retry canceled after 16 att
+-- restore (deploy.sh at 6e95ee6c, 2026-10-19T17:52:17Z) rc=0; restored pod pod/alertmanager-6688ccf5b6-fhvk7
+   pod spec env PASSWORD entries (content read-back; pod env is immutable = what the process received):
+   ALERTMANAGER_SMTP_PASSWORD_FILE=/mnt/secrets-store/alertmanager-smtp-credentials--password
+   count of ALERTMANAGER_SMTP_PASSWORD= entries: 0
+
+-- 3k. restore arm result (restored pod, alert posted 17:53:19Z, read 400 s later)
+-- restored state, alert restored-175319
+before: notifications_total{email}=0 failed_total{email,all reasons}=0
+2026-10-19T17:53:19Z
+amtool rc=0
+2026-10-19T18:00:00Z
+after 400 s (> group_interval 5m retry horizon): notifications_total{email}=6 failed_total{email,all reasons}=0
+(no non-zero failed_total series)
+mailpit search restored-175319: messages_count= 2 [('2026-10-19T17:58:50.719Z', '[RESOLVED] RestoreArm29x25 platform (restored-175319 info)'), ('2026-10-19T17:53:50.72Z', '[FIRING:1] RestoreArm29x25 platform (restored-175319 info)')]
+alertmanager WARN/ERROR since restore: 0
+ID=restored-175319
+
+-- 3l. DETECTION DEFECT found by 3j: the liveness gate PASSED with Zoho broken (old gate, start 2026-10-19T17:51:07Z):
+  L-3   probe delivered=1  sink=Mailpit at http://localhost:18025  attempts{email} 3 -> 5  failed{email} 1 -> 1
+  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink.
+PASS: 8 targets up, 2 exporter gauge(s) healthy and rule-referenced, 19 rules match live series of the job they claim, transport verified end-to-end.
+   Cause: L-3 stopped at the first sink hit; Alertmanager counts a failing integration only when its retry window (group_interval 5m) closes.
+   Fix (TDD): b039fde2 RED, see evidence/29-25-t3-red-liveness-settle.json (8/10, RED_EVIDENCE_OK); 2e17479a GREEN 10/10: L-3 holds through
+   route.group_interval (read from /api/v2/status) + 30 s polling failed_total{email}.
+
+-- 3m. FIXED gate, PASS direction, restored staging, start=2026-10-19T17:55:27Z
+alert-liveness summary  (2026-10-19T18:01:39Z)
+  L-0   served md5=7368261df6b44519ddd8d12267862856 == infra/monitoring/prometheus/alerts.yml md5=7368261df6b44519ddd8d12267862856 (via kubectl)
+  L-1   targets=8  down=0
+  L-1b  exporter-jobs=2  blind=0  gauge-read-by-no-rule=0
+  L-2   rules=19  selectors-matching-0-series=0
+  L-2b  wrong-subject=0
+  L-3   probe delivered=1  sink=Mailpit at http://localhost:18025  attempts{email} 2 -> 4  failed{email} 0 -> 0 -> 0 after 331s (retry horizon 330s = group_interval 5m + 30s)
+  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink.
+        It does NOT prove a human reads that sink (mailpit has no human behind it).
+PASS: 8 targets up, 2 exporter gauge(s) healthy and rule-referenced, 19 rules match live series of the job they claim, transport verified end-to-end.
+
+-- 3n. FIXED gate, FAIL direction, Zoho re-broken (password file -> /etc/hostname)
+-- fixed gate, live fail direction: re-break at 2026-10-19T18:01:54Z
+deployment.apps/alertmanager env updated
+Waiting for deployment "alertmanager" rollout to finish: 0 out of 1 new replicas have been updated...
+Waiting for deployment "alertmanager" rollout to finish: 0 of 1 updated replicas are available...
+deployment "alertmanager" successfully rolled out
+start=2026-10-19T18:02:13Z rc=1
+FAIL: L-3 failed_total{email} rose 0 -> 1 300s after the probe reached Mailpit at http://localhost:18025: another email integration on the same route (the human one, when the sink is a copy) failed and was counted when its retry window closed (group_interval 5m). The sink copy does not prove the human path. Inspect: the Alertmanager log for 'Notify attempt failed'.
+  L-3   probe delivered=1  sink=Mailpit at http://localhost:18025  attempts{email} 0 -> 2  failed{email} 0 -> 0 -> 1 after 300s (retry horizon 330s = group_interval 5m + 30s)
+  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink.
+FAILED: 1 live detection defect(s).
+-- restore 2 (deploy.sh at 6e95ee6c, 2026-10-19T18:08:06Z) rc=0 DEPLOYED_SHA=6e95ee6c44e357e3ff88964ed9674bf066fd7b61; pod pod/alertmanager-6688ccf5b6-jvtl7
+   ALERTMANAGER_SMTP_PASSWORD_FILE=/mnt/secrets-store/alertmanager-smtp-credentials--password
+   ALERTMANAGER_SMTP_PASSWORD entries: 0
+   [first comparison INVALID: it relied on yq, which is not installed here, so it compared against nothing; replaced by the line below]
+   live alertmanager env == render (jq -S): diff rc=0; control with the broken value: rc 1
+
+-- 3o. FIXED gate, PASS direction, final run after restore 2 (start 2026-10-19T18:09:18Z): rc=0 ts-lines=1 fail-or-void-lines=0
+alert-liveness summary  (2026-10-19T18:15:27Z)
+  L-0   served md5=7368261df6b44519ddd8d12267862856 == infra/monitoring/prometheus/alerts.yml md5=7368261df6b44519ddd8d12267862856 (via kubectl)
+  L-1   targets=8  down=0
+  L-1b  exporter-jobs=2  blind=0  gauge-read-by-no-rule=0
+  L-2   rules=19  selectors-matching-0-series=0
+  L-2b  wrong-subject=0
+  L-3   probe delivered=1  sink=Mailpit at http://localhost:18025  attempts{email} 0 -> 2  failed{email} 0 -> 0 -> 0 after 330s (retry horizon 330s = group_interval 5m + 30s)
+  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink.
+        It does NOT prove a human reads that sink (mailpit has no human behind it).
+PASS: 8 targets up, 2 exporter gauge(s) healthy and rule-referenced, 19 rules match live series of the job they claim, transport verified end-to-end.
+
+-- 3p. Grafana (admin pair read with az_read in a subshell, handed to curl on stdin via -K -, never echoed)
+2026-10-19T17:38:41Z
+admin /api/user: 200
+wrong password /api/user: 401
+anonymous /api/search: 401
+anonymous /api/user: 401
+datasource Prometheus: uid url type = PBFA97CFB590B2093 http://prometheus:9090 prometheus
+health: {"details":{"application":"Prometheus","features":{"rulerApiEnabled":false}},"message":"Successfully queried the Prometheus API.","status":"OK"}
+health of a non-existent uid (fail direction): {"message":"Unable to load datasource metadata"} http=500
+search stomp: [('STOMP Broker Relay', 'dash-db')]
+search control (no match): []
+sign-up disabled: allowSignUp= None anonymousEnabled= None authProxy= None
+-- served certificate
+subject=CN=grafana-staging.olajay.co.uk
+issuer=C=US, O=Let's Encrypt, CN=YR2
+notAfter=Jan 17 16:36:23 2027 GMT
+-- no public name for prometheus/alertmanager (D-19): ingress hosts in jtoye-staging
+grafana-public grafana-staging.olajay.co.uk
+jtoye-ingress api-staging.olajay.co.uk app-staging.olajay.co.uk
+jtoye-sse-ingress api-staging.olajay.co.uk
+keycloak-public auth-staging.olajay.co.uk
+mailpit-ui mail-staging.olajay.co.uk
+prometheus-staging.olajay.co.uk DNS: no record
+alertmanager-staging.olajay.co.uk DNS: no record
+
+-- 3q. #98 criterion 1 ("Prometheus scrapes all three services"): #98 does not name them; read as the three app services.
+   Live targets at 18:16Z (job, instance, health):
+   core-java	10.244.2.36:9091	up
+   edge-go	10.244.2.248:8080	up
+   keycloak	keycloak:9000	up
+   postgres	postgres-exporter:9187	up
+   prometheus	prometheus:9090	up
+   rabbitmq-queues	rabbitmq:15692	up
+   rabbitmq	rabbitmq:15692	up
+   redis	redis-exporter:9121	up
+   core-java UP (per pod 10.244.2.36:9091), edge-go UP (per pod 10.244.2.248:8080). frontend: NO scrape job in compose
+   (infra/monitoring/prometheus/prometheus.yml.tmpl) or k8s — the 8 jobs are equal by the copy-parity jobs pair. Recorded for 29-27's
+   disposition of #98; not widened here.
+
+-- observations at 2026-10-19T18:15:37Z (persona swarm running since ~17:45Z)
+Prometheus alerts (state name):
+  (end)
+Alertmanager active alerts:
+  NoOrdersCreated active receivers=mute-null
+  (end)
+Mailpit FIRING messages since 17:30Z not from this plan's ids:
+  none
+-- capacity after (requested memory per node, allocatable 2787Mi each)
+  aks-nodepool1-24453234-vmss000000 requested=2182Mi
+  aks-nodepool1-24453234-vmss000001 requested=1428Mi
+  aks-nodepool1-24453234-vmss000002 requested=2688Mi
+  aks-nodepool1-24453234-vmss000003 requested=1766Mi
+  no pod outside Running
+
+# Redaction: the three alert-mail addresses are Key Vault object values; staging-secrets.sh --leak-scan reports them, so they appear
+# here only by object name (<the --from address>, <the --to/--username address>).

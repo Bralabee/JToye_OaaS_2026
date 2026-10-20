@@ -1,0 +1,10 @@
+{
+  "command": "BOOTSTRAP_SELFTEST_FORMAT=tap bash scripts/staging-db-bootstrap.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..6\nok 1 - pre-idempotent\nok 2 - owners-can-create\nok 3 - post-before-migration-fails\nnot ok 4 - post-readback\n  ---\n  message: 'readback shows no \"flyway|jtoye_app|2|t|\" row: the first migration\"s installer is not read back'\n  ...\nok 5 - via-context-relay\nok 6 - no-password-in-argv",
+  "targetTest": "post-readback",
+  "targetFile": "scripts/staging-db-bootstrap.sh",
+  "expected": "ok - post-readback: after a simulated first migration with a flyway_schema_history installed as jtoye_app, the readback prints flyway|jtoye_app|2|t|…",
+  "actual": "not ok 4 - post-readback: readback shows no flyway|jtoye_app|2|t| row",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion: the unmodified readback SQL never reads flyway_schema_history, so it cannot say which role ran the first migration. The live need: the first boot of core-java on staging migrated during a crash-looping rollout and its log was rotated away, so the database history is the only surviving record of the migrating role. Not a harness fault: the role assertions of the same arm passed before this new check and the other five arms passed."
+}

@@ -1,0 +1,259 @@
+# In-cluster Mailpit (D-13 as amended by D-20): ServiceAccount, Deployment, Service,
+# NetworkPolicy. The staging mail trap: every application email is captured here and
+# never leaves the cluster.
+#
+# STARTTLS REQUIRED. MP_SMTP_TLS_CERT/KEY load the cert-manager certificate
+# mailpit-tls (cluster-ca.yaml); MP_SMTP_REQUIRE_STARTTLS refuses any message sent
+# before a STARTTLS upgrade. core-java requires it from its side as a literal (plan
+# 29-16), so a server that offers no STARTTLS makes every send fail with JavaMail's
+# "STARTTLS is required but host does not support STARTTLS" (D-22 arm 2).
+#
+# NO SMTP AUTH. No MP_SMTP_AUTH* is set, so Mailpit does not advertise AUTH in its
+# EHLO reply, and Jakarta Mail authenticates only when the server advertises it
+# (mail.smtp.auth is "false", and smtp-credentials is an optional Secret that
+# staging does not create). The answer to plan 29-14's open item is read live in
+# plan 29-22 Task 3 from the EHLO reply.
+#
+# SENDS NOTHING. No relay, release or forward variable is set (MP_SMTP_RELAY_*,
+# MP_SMTP_FORWARD_*), and the policy below has no egress rule at all. Without DNS
+# egress a reverse-DNS lookup of each SMTP client could only time out, so
+# MP_SMTP_DISABLE_RDNS skips it; MP_DISABLE_VERSION_CHECK stops the UI asking
+# GitHub for the latest release.
+#
+# THE SEND API IS LOCKED (D-33, T-29-110). POST /api/v1/send injects a message into
+# the mailbox testers read. With neither MP_SEND_API_AUTH_FILE nor MP_SEND_API_AUTH
+# set, Mailpit falls back to its UI auth, which is unset here, so the Send API would be
+# OPEN to anyone who reaches 8025 (measured: 200 before the lock). The init container
+# send-api-lock writes `locked:<64 random hex>` into a Memory emptyDir at pod start, and
+# MP_SEND_API_AUTH_FILE points at it: the credential is random per pod and held by
+# NOBODY, so every Send API call answers 401 (through the edge, where Traefik also
+# strips Authorization, and through a port-forward alike), while the UI and the read
+# API stay open on 8025 behind Traefik's basic auth (Ingress mailpit-ui). It runs the
+# SAME pinned image, so the images transformer and the horizon row cover it, and it
+# prints only the file's byte count, never its content.
+#
+# STORE. An emptyDir: a pod restart empties the mailbox, by design (captured
+# staging mail is disposable). MP_MAX_MESSAGES bounds it; Mailpit deletes the
+# oldest first.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mailpit
+  labels:
+    app.kubernetes.io/name: mailpit
+    app.kubernetes.io/component: mail
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  labels:
+    app: mailpit
+    component: mail
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: mailpit
+  template:
+    metadata:
+      labels:
+        app: mailpit
+        component: mail
+    spec:
+      serviceAccountName: mailpit
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image runs as root by default (measured: uid=0); any non-root uid can
+        # run /mailpit (0755). fsGroup makes the TLS key (Secret volume, 0440) and
+        # the data emptyDir readable and writable by that uid.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: send-api-lock
+        image: axllent/mailpit:v1.31.6   # the same pin as the main container
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          umask 077
+          printf 'locked:%s\n' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > /send-api-lock/passwords
+          echo "send-api-lock: wrote $(wc -c < /send-api-lock/passwords) bytes (a random credential nobody holds)"
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            memory: "32Mi"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: send-api-lock
+          mountPath: /send-api-lock
+      containers:
+      - name: mailpit
+        image: axllent/mailpit:v1.31.6   # horizon row axllent-mailpit
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MP_SMTP_TLS_CERT
+          value: /tls/tls.crt
+        - name: MP_SMTP_TLS_KEY
+          value: /tls/tls.key
+        - name: MP_SMTP_REQUIRE_STARTTLS
+          value: "true"
+        - name: MP_SMTP_DISABLE_RDNS
+          value: "true"
+        - name: MP_DISABLE_VERSION_CHECK
+          value: "true"
+        - name: MP_MAX_MESSAGES
+          value: "500"
+        - name: MP_DATABASE
+          value: /data/mailpit.db
+        - name: MP_SEND_API_AUTH_FILE
+          value: /send-api-lock/passwords
+        ports:
+        - containerPort: 1025
+          name: smtp
+          protocol: TCP
+        - containerPort: 8025
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "20m"
+            memory: "64Mi"
+          limits:
+            memory: "128Mi"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tls
+          mountPath: /tls
+          readOnly: true
+        - name: data
+          mountPath: /data
+        - name: send-api-lock
+          mountPath: /send-api-lock
+          readOnly: true
+      volumes:
+      - name: tls
+        secret:
+          secretName: mailpit-tls
+          defaultMode: 0440
+          items:
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+      - name: data
+        emptyDir:
+          sizeLimit: 256Mi
+      - name: send-api-lock
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  labels:
+    app: mailpit
+spec:
+  type: ClusterIP
+  selector:
+    app: mailpit
+  ports:
+  - port: 1025
+    targetPort: smtp
+    protocol: TCP
+    name: smtp
+  - port: 8025
+    targetPort: http
+    protocol: TCP
+    name: http
+---
+# mailpit-allow. INV-7 row mailpit-allow@k8s/staging; k8s/base/networkpolicies/README.md
+# carries the same rows.
+#   Ingress: core-java, keycloak and alertmanager pods, TCP 1025 (SMTP); and the
+#            ingress controller namespace (a LITERAL `traefik`, as in keycloak-allow;
+#            INV-7's row says __INGRESS_NS__, so a disagreement fails the render) on TCP
+#            8025 ONLY, for the authenticated testers' UI (Ingress mailpit-ui, D-33).
+#            1025 never gains a peer: SMTP is never published. Operator reads of 8025
+#            through a port-forward are not seen by NetworkPolicy.
+#   Egress:  NONE. Mailpit sends nothing anywhere (no relay, no forward) and needs no
+#            DNS (MP_SMTP_DISABLE_RDNS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit-allow
+  labels:
+    app.kubernetes.io/name: mailpit-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: mailpit
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+        - podSelector:
+            matchLabels:
+              app: keycloak
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 1025
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8025

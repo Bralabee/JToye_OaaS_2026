@@ -2,19 +2,16 @@
 # 50-observability.yaml
 #
 # This file reserves the policy slot for observability workloads (Prometheus,
-# Grafana, Alertmanager) that we expect to run in a `monitoring` or
-# `jtoye-infrastructure` namespace. We do NOT ship those workloads from this
-# repo, so this file intentionally contains only a documentation-style
-# placeholder policy naming the expected labels.
+# Grafana, Alertmanager). Phase 29 (D-16) runs them in the APPLICATION namespace
+# with the pod labels app=prometheus / app=alertmanager / app=grafana; plan 29-23
+# ships those workloads and replaces this placeholder with concrete policies.
+# Until then this file intentionally contains only a documentation-style
+# placeholder policy.
 #
-# The Prometheus scrape ingress rules for core-java (:9090) and edge-go (:8080)
-# are already in 20-core-java.yaml and 30-edge-go.yaml respectively — that's
-# where they live because the rule is attached to the TARGET pod, not the
-# scraper pod.
-#
-# If a future phase ships Grafana / Prometheus / Alertmanager manifests in
-# the jtoye-production namespace, replace the contents of this file with
-# concrete policies.
+# The Prometheus scrape ingress rules for core-java (:9091, the management port)
+# and edge-go (:8080) are already in 20-core-java.yaml and 30-edge-go.yaml
+# respectively, admitting pods labelled app=prometheus — that's where they live
+# because the rule is attached to the TARGET pod, not the scraper pod.
 
 # -----------------------------------------------------------------------------
 # Placeholder policy — matches no pods today (app=nonexistent-placeholder).

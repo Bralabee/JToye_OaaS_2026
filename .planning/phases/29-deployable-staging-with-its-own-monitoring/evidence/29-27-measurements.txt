@@ -1,0 +1,80 @@
+# 29-27 measurements: the dispositions that no earlier plan's evidence file carries (#100 render, #101 doc claim, #112 stubs, #300, #301, #304)
+# Read-only, local, no cluster or Azure contact. Taken 2026-10-20T03:44:14Z at 06a6a7e5 on branch phase-29-deployable-staging.
+# rg -uu throughout (the interactive rg honours .gitignore); every exit code is captured on the statement that produced it.
+# Each absence claim is paired with a control that must hit, so an empty result is a statement about the tree, not about the pattern.
+# Two first-draft absence checks were wrong and are replaced, not hidden: a pattern for sealed/external secret kinds matched a comment
+# and an example file (so the check below reads the kustomize builds instead), and 'SLO' matched 'SLOTS' in ADR-0007 (dropped: that
+# the SLOs are deferred is a ruling, D-18, not a measurement).
+
+== #301 no mcp-server manifest set, and no connection-budget row for one
+rg -uu 'image:.*mcp' k8s -> rc=1 (want 1) out=[]
+control: rg -uu -c 'image:.*frontend' k8s/base -> rc=0 (want 0) out=[k8s/base/frontend-deployment.yaml:1]
+/usr/bin/find k8s/ -iname '*mcp*' -> 0 file(s) (want 0)
+control: /usr/bin/find k8s/ -iname '*frontend*' -> 3 file(s) (want > 0)
+rg -uu -i mcp k8s/scripts/connection-budget.conf -> rc=1 (want 1: no pool for it in the budget) out=[]
+control: rg -uu -c k8s-staging k8s/scripts/connection-budget.conf -> rc=0 (want 0) out=[3]
+the server itself exists, with a Dockerfile: mcp-server/Dockerfile mcp-server/package.json 
+
+== #304 frontend/e2e/stomp-relay.spec.ts: the four structural mismatches the issue names are all still in the file
+rg -uu -n 'e2e-stub' frontend/e2e/stomp-relay.spec.ts -> rc=0
+    62:        value: "e2e-stub",
+    150:        value: "e2e-stub",
+rg -uu -n 'EDGE_URL' frontend/e2e/stomp-relay.spec.ts -> rc=0
+    29:const API = process.env.EDGE_URL || "http://localhost:8089"
+rg -uu -n 'networkidle' frontend/e2e/stomp-relay.spec.ts -> rc=0
+    76:    await page.waitForLoadState("networkidle")
+    167:    await page.waitForLoadState("networkidle")
+rg -uu -n 'test.skip\(!process.env.RELAY_E2E' frontend/e2e/stomp-relay.spec.ts -> rc=0
+    46:  test.skip(!process.env.RELAY_E2E, "Set RELAY_E2E=true to run against multi-replica stack")
+rg -uu -n 'TEST_SHOP_ID' frontend/e2e/stomp-relay.spec.ts -> rc=0
+    15: *   RELAY_E2E=true TEST_SHOP_ID=<uuid> TEST_PRODUCT_ID=<uuid> npx playwright test e2e/stomp-relay.spec.ts
+    80:    const shopId = process.env.TEST_SHOP_ID
+    85:        "Set TEST_SHOP_ID and TEST_PRODUCT_ID env vars for relay e2e"
+control: a pattern that cannot occur -> rc=1 (want 1)
+git log --oneline -2 -- frontend/e2e/stomp-relay.spec.ts:
+    a67f50d9 Phase 26: Local-K8s Overlay + Verified Breakage Fixes (v2.3) (#267)
+    f6bec6c6 Phase 11: STOMP broker relay + deep audit P0 security fixes (#39)
+
+== #300 local secrets path: still the gitignored .env; deployed environments take Key Vault through SecretProviderClass (D-23)
+scripts/k8s-local-secrets.sh -> rc=0: 30:#   out-of-band from here, sourced from the gitignored .env, and nothing this
+rg -uu -l 'kind: SecretProviderClass' k8s/components -> rc=0 (want 0):
+    k8s/components/azure-keyvault/secretproviderclasses.yaml
+kubectl kustomize k8s/staging -> rc=0  SealedSecret/ExternalSecret=0 (want 0)  SecretProviderClass=11 (staging > 0; production and local 0: the local path is accepted as it is, production is Phase 32)
+kubectl kustomize k8s/production -> rc=0  SealedSecret/ExternalSecret=0 (want 0)  SecretProviderClass=0 (staging > 0; production and local 0: the local path is accepted as it is, production is Phase 32)
+kubectl kustomize k8s/local -> rc=0  SealedSecret/ExternalSecret=0 (want 0)  SecretProviderClass=0 (staging > 0; production and local 0: the local path is accepted as it is, production is Phase 32)
+
+== #100 no plaintext Secret in any live kustomize build (the issue's acceptance criterion)
+kubectl kustomize k8s/staging -> rc=0  kind: Secret=0 (want 0)  control kind: Deployment=12 (want > 0)
+kubectl kustomize k8s/production -> rc=0  kind: Secret=0 (want 0)  control kind: Deployment=3 (want > 0)
+kubectl kustomize k8s/local -> rc=0  kind: Secret=0 (want 0)  control kind: Deployment=3 (want > 0)
+fail direction: a scratch build with one planted Secret -> rc=0  kind: Secret=1 (want 1)
+k8s/scripts/check-no-plaintext-secrets.sh -> rc=0
+    OK   [k8s/local]: build succeeded, 27 resources, 0 plaintext Secrets
+    OK   [k8s/production]: build succeeded, 27 resources, 0 plaintext Secrets
+    OK   [k8s/staging]: build succeeded, 92 resources, 0 plaintext Secrets
+    All kustomize builds are free of plaintext Secret material.
+ls k8s/base/secrets-template.yaml -> rc=2 (want 2: the plaintext template is no longer a file at that path)
+
+== #101 the false WAL-G claim in SYSTEM_DESIGN_V2.md is corrected in place (the issue's second acceptance criterion)
+docs/architecture/SYSTEM_DESIGN_V2.md lines 859-868, now:
+    
+    > **⚠️ CURRENT STATE (2026-07-12) — none of the diagram below is deployed.**
+    > Production-shaped reality is a **single PostgreSQL 18 instance** (compose/k8s),
+    > no replicas, no Patroni, no PgBouncer, **no WAL archiving and therefore no
+    > PITR**. Backups are a daily 2 AM logical `pg_dump` via the hardened k8s
+    > CronJob from #90 (custom-format, integrity-verified via `pg_restore --list`,
+    > size-floor check; since Phase 36 no in-job prune, retention is the backup container's
+    > immutability + soft delete + lifecycle rule; restore drill proven locally 2026-07-10 — RPO
+    > ≤ 24h, RTO ≈ minutes). WAL-based PITR and DB HA are tracked in **#101**;
+    > the managed-vs-manifest decision is **ADR-0002 (Accepted 2026-08-10)**.
+control: a pattern that cannot occur -> rc=1 (want 1)
+
+== #112 what the alert runbook still lacks (the remainder this disposition defers post-GTM, D-18)
+rg -uu -n TODO docs/runbooks/alerts.md -> rc=0 (want 0: stubs remain)
+    95:<!-- TODO: fill in when a real incident provides first-response lessons. -->
+    101:<!-- TODO: fill in. Rule: P95 latency > 1s for 5m. service=core-java -->
+    105:<!-- TODO: fill in. Rule: hikaricp_connections_active/max > 90% for 5m. -->
+    154:<!-- TODO: fill in. Rule: pg_stat_database_numbackends > 100 for 5m. -->
+    236:<!-- TODO: fill in. Rule: rate(tenant_context_missing_total[5m]) > 0.1. Security-critical — investigate the request path that bypassed
+    691:fall behind `alerts.yml` again. Remaining TODO stubs are pre-existing and are the ones no incident
+control: a pattern that cannot occur -> rc=1 (want 1)

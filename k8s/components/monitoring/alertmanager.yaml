@@ -1,0 +1,258 @@
+# Alertmanager for jtoye-staging (Phase 29 plan 29-24, DPLY-03 part B, D-16, D-17 as corrected, D-19).
+#
+# ONE ROUTING CORPUS. The container runs the canonical entrypoint against the canonical template,
+# both committed byte copies under alertmanager/ (k8s/copy-parity.conf), served by the content-hashed
+# ConfigMap alertmanager-src. The entrypoint renders, runs amtool check-config and execs alertmanager,
+# exactly as in compose; scripts/check-alertmanager-render.sh proves the staging render (CI).
+#
+# ONE RECEIVER, TWO EMAIL_CONFIGS (email-default):
+#   [0] the real inbox through Zoho smtp.zoho.eu:587, TLS required, authenticated as the
+#       alertmanager-smtp-credentials username with the password read from the CSI FILE
+#       /mnt/secrets-store/alertmanager-smtp-credentials--password (auth_password_file). The
+#       password is in no env var and no Secret: alertmanager-kv mounts it as a file only.
+#   [1] Mailpit (mailpit.jtoye-staging.svc.cluster.local:1025), STARTTLS required, trusting the
+#       cluster CA (Secret jtoye-staging-ca, cert-manager, plan 29-22), no auth. The L-3
+#       inspectable sink on the SAME route as the inbox (A1: every integration in a receiver is
+#       notified; proven live by plan 29-25).
+#
+# THE STAGING MUTE (RESEARCH Pitfall 5): NoOrdersCreated fires 30 minutes after the last order,
+# and on a quiet staging it would email the real inbox every repeat_interval (12h). The mute is
+# alertname EQUALITY only: the entrypoint refuses any other matcher syntax, so the L-3 probe
+# (severity=info, service=platform) is never swallowed. The rule still evaluates and still shows
+# firing in Prometheus and in this Alertmanager. It also means a core-java restart, which empties
+# the order counter (29-23 open item), never pages anyone. scripts/check-alert-mute.sh M-5 allows
+# the variable in the staging render only, with allow-listed names only.
+#
+# CLUSTER-INTERNAL ONLY (D-19, T-29-89): a ClusterIP Service and no Ingress. Reach it with
+#     kubectl --context jtoye-stg-aks -n jtoye-staging port-forward svc/alertmanager 19093:9093
+#
+# Recreate, one replica, emptyDir storage: a second Alertmanager during a rollout would send each
+# notification twice (they are not clustered), and silences are short-lived operator state here.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alertmanager
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/component: monitoring
+# Its own Workload Identity (client_id_alertmanager, federated to
+# system:serviceaccount:jtoye-staging:alertmanager), used only by the CSI Key Vault fetch.
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  labels:
+    app: alertmanager
+    component: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+        component: monitoring
+    spec:
+      serviceAccountName: alertmanager
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        # prom/alertmanager runs as nobody (65534).
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: alertmanager
+        # = infra/monitoring/docker-compose.monitoring.yml pin; horizon row prom/alertmanager.
+        image: prom/alertmanager:v0.34.1
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/sh
+          - /etc/alertmanager-src/entrypoint.sh
+        env:
+        # The template is read from the ConfigMap; the render goes to the default
+        # /etc/alertmanager/alertmanager.yml, an emptyDir (the root filesystem is read-only).
+        - name: ALERTMANAGER_TEMPLATE
+          value: /etc/alertmanager-src/alertmanager.yml.tmpl
+        - name: ALERTMANAGER_SMTP_SMARTHOST
+          value: "smtp.zoho.eu:587"
+        - name: ALERTMANAGER_SMTP_REQUIRE_TLS
+          value: "true"
+        - name: ALERTMANAGER_SMTP_FROM
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-smtp-credentials
+              key: from
+        - name: ALERTMANAGER_SMTP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-smtp-credentials
+              key: username
+        - name: ALERTMANAGER_SMTP_TO
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-smtp-credentials
+              key: to
+        # A PATH, never the password: the CSI mount writes each SPC object as a file.
+        - name: ALERTMANAGER_SMTP_PASSWORD_FILE
+          value: /mnt/secrets-store/alertmanager-smtp-credentials--password
+        - name: ALERTMANAGER_SINK_SMARTHOST
+          value: "mailpit.jtoye-staging.svc.cluster.local:1025"
+        - name: ALERTMANAGER_SINK_CA_FILE
+          value: /cluster-ca/ca.crt
+        - name: ALERTMANAGER_MUTE_ALERTNAMES
+          value: "NoOrdersCreated"
+        # Where notification links point (--web.external-url): the in-cluster Service, since
+        # Alertmanager has no public name (D-19). The entrypoint requires it.
+        - name: ALERTMANAGER_WEB_EXTERNAL_URL
+          value: "http://alertmanager.jtoye-staging.svc.cluster.local:9093"
+        ports:
+        - containerPort: 9093
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "20m"
+            memory: "64Mi"
+          limits:
+            memory: "128Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: src
+          mountPath: /etc/alertmanager-src
+          readOnly: true
+        - name: rendered
+          mountPath: /etc/alertmanager
+        - name: data
+          mountPath: /alertmanager
+        - name: cluster-ca
+          mountPath: /cluster-ca
+          readOnly: true
+      volumes:
+      - name: src
+        configMap:
+          # kustomize rewrites this to the generated, content-hashed ConfigMap.
+          name: alertmanager-src
+      - name: rendered
+        emptyDir:
+          sizeLimit: 1Mi
+      - name: data
+        emptyDir:
+          sizeLimit: 64Mi
+      - name: cluster-ca
+        secret:
+          # Written by cert-manager (k8s/components/mailpit), the CA Mailpit's certificate chains to.
+          secretName: jtoye-staging-ca
+          items:
+          - key: ca.crt
+            path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  labels:
+    app: alertmanager
+spec:
+  type: ClusterIP
+  selector:
+    app: alertmanager
+  ports:
+  - port: 9093
+    targetPort: http
+    protocol: TCP
+    name: http
+---
+# alertmanager-allow. INV-7 row alertmanager-allow@k8s/staging; k8s/base/networkpolicies/README.md
+# carries the same rows.
+#   Ingress: Prometheus (alert delivery) and core-java (core-java-allow already declares its
+#            egress to 9093), TCP 9093. No Ingress object, no other reader.
+#   Egress:  kube-dns; the public internet minus RFC1918 on TCP 587 only (Zoho submission, STARTTLS);
+#            Mailpit on 1025 (mailpit-allow admits app=alertmanager there).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager-allow
+  labels:
+    app.kubernetes.io/name: alertmanager-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: alertmanager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 9093
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 587
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mailpit
+      ports:
+        - protocol: TCP
+          port: 1025

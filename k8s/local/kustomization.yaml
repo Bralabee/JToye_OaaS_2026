@@ -48,7 +48,10 @@ kind: Kustomization
 #      `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`.
 #      Secrets required before apply: postgres-credentials,
 #      redis-credentials, rabbitmq-credentials, keycloak-credentials,
-#      nextauth-secret. No object-store credential is among them any more
+#      nextauth-secret, frontend-oidc-credentials and pg-backup-credentials
+#      (the last two since plan 29-12: a second consumer reads a Secret of its
+#      own name; `scripts/k8s-local-secrets.sh --help` lists every name). No
+#      object-store credential is among them any more
 #      (Phase 36): the Azurite emulator string carries no key, so it is a
 #      local-only ConfigMap value wired by storage-env-patch.yaml, not a Secret.
 #
@@ -59,14 +62,20 @@ kind: Kustomization
 #      would rehearse a configuration that never ships.
 #
 # NETWORKPOLICIES ARE UNPATCHED ON PURPOSE (D-11)
-#   All 6 NetworkPolicies render unchanged here. Local proves their manifest
-#   VALIDITY, never their ENFORCEMENT: minikube's default CNI does not enforce
-#   NetworkPolicies at all. 26-RESEARCH.md PIT-7 records that the rendered egress
-#   set (`ipBlock 0.0.0.0/0` with RFC1918 in `except[]`, plus an in-cluster allow
-#   targeting a `jtoye-infrastructure` namespace that does not exist locally)
-#   would deny the ENTIRE local traffic pattern under an enforcing CNI. Inert
-#   today; the concrete CIDR + port list lives in the k8s/LOCAL.md runbook so the
-#   Calico follow-up starts from the truth rather than from a guess.
+#   All 7 NetworkPolicies render here with only their two DERIVED values
+#   changed — the Postgres port (db.port 5433) and the ingress-controller
+#   namespace (ingress-nginx, the minikube addon's) — both through the
+#   `replacements:` block below, never by a policy patch. Local proves their
+#   manifest VALIDITY, never their ENFORCEMENT: minikube's default CNI does not
+#   enforce NetworkPolicies at all. 26-RESEARCH.md PIT-7 records that the
+#   rendered egress set would deny the ENTIRE local traffic pattern under an
+#   enforcing CNI: every out-of-pod peer is `ipBlock 0.0.0.0/0` with RFC1918 in
+#   `except[]`, and the host gateway (host.minikube.internal) is an RFC1918
+#   address, while the in-namespace podSelectors (redis, rabbitmq, keycloak,
+#   mailpit, alertmanager) match no pod locally because those services are
+#   compose containers on the host. Inert today; the concrete CIDR + port list
+#   lives in the k8s/LOCAL.md runbook so the enforcing-CNI follow-up starts from
+#   the truth rather than from a guess.
 # =============================================================================
 namespace: jtoye-local
 
@@ -155,6 +164,7 @@ patches:
   # and pg-backup — local ONLY; staging/production have none (D-02, INV-9).
   # Two documents, matched by GVK + name. LOC-7 asserts it is wired.
   - path: storage-env-patch.yaml
+  - path: mail-env-patch.yaml
 
 # Local runs ONE of each service (D-09, DEF-3).
 #
@@ -184,9 +194,10 @@ replicas:
 # assumed; see the writeup in k8s/base/kustomization.yaml.
 #
 # LOCALLY THIS RULE IS DOUBLY INERT and that is worth stating plainly, so nobody
-# reads a green render as a working path: there is no `jtoye-infrastructure`
-# namespace on the local cluster (Postgres is a compose container on the HOST,
-# reached via host.minikube.internal), and minikube's default CNI does not
+# reads a green render as a working path: its peer is `ipBlock 0.0.0.0/0` minus
+# RFC1918 (the managed-Postgres shape, Phase 29 Blocker D), and the local
+# Postgres is a compose container on the HOST reached via host.minikube.internal,
+# an RFC1918 address that rule excludes; and minikube's default CNI does not
 # enforce NetworkPolicies at all (D-11, k8s/LOCAL.md §6). What the local render
 # proves is that the DERIVATION works at a non-default port — which is exactly
 # the case no other target covers. Issue #297 (install Calico) is what turns
@@ -208,3 +219,36 @@ replacements:
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+  # Phase 29 D-29(c) — the ingress-controller namespace follows app-config
+  # `ingress.controller-namespace`. REPEATED FROM k8s/base/kustomization.yaml
+  # for the same measured reason as the db.port block above: configmap-patch.yaml
+  # sets the key to `ingress-nginx` (the minikube addon's namespace), and the
+  # base pass has already written the BASE value (`traefik`) into the policies
+  # before this overlay's patch touches the ConfigMap. Without this entry the
+  # local render names a `traefik` namespace that does not exist on minikube.
+  # The fieldPath indices are load-bearing; see the base kustomization.
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.ingress\.controller-namespace
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: frontend-allow
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.ingress.1.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+      - select:
+          kind: NetworkPolicy
+          name: edge-go-allow
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+      - select:
+          kind: NetworkPolicy
+          name: acme-http01-solver-allow
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name

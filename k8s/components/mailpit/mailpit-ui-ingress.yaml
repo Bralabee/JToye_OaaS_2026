@@ -1,0 +1,85 @@
+# The testers' mail UI (plan 29-22 Task 4, owner ruling D-33 of 2026-10-19).
+#
+# THE RULE THIS ROUTE EXISTS UNDER. Persona testers read the mail staging captures
+# (verification, invitation and order emails) at https://mail-staging.olajay.co.uk:
+# Mailpit's web UI and /api on 8025, behind ONE shared basic-auth credential (user
+# staging-tester). Whoever holds it reads EVERY staging email, password-reset,
+# staff-invite and DSAR-export links included, which is equivalent to taking over any
+# staging account. That is acceptable ONLY because staging holds test personas and no
+# real personal data: a standing rule, written in the tester note (k8s/DEPLOYMENT.md,
+# "Staging hosts (Phase 29)"). The credential is generated into Key Vault by
+# scripts/staging-secrets.sh and reaches the cluster only as an apr1 hash: Secret
+# mailpit-ui-credentials, key `auth`, synced by the always-on secret-sync pod through
+# SecretProviderClass mailpit-ui-kv.
+#
+# WHY TRAEFIK'S BASIC AUTH, NOT MAILPIT'S OWN (MP_UI_AUTH / MP_UI_AUTH_FILE).
+#   1. Mailpit's UI auth guards every request on 8025, the in-cluster API included, so
+#      every port-forward reader (plan 29-22's own proofs, the SINK=mailpit liveness
+#      adapter of 29-23/29-25, the List-Unsubscribe read of 29-26) would need the
+#      credential on the operator host.
+#   2. Traefik already watches Secrets in jtoye-staging (Role traefik-provider), so no
+#      new RBAC is needed.
+#   3. Traefik strips the Authorization header before forwarding (v3.7.15 translator,
+#      the remove-authorization-header service middleware), so the credential never
+#      reaches Mailpit at all.
+#
+# HOW TRAEFIK READS THESE ANNOTATIONS (v3.7.15, pkg/provider/kubernetes/ingress-nginx):
+#   - auth-type basic + auth-secret (a SAME-namespace name: cross-namespace resources are
+#     off) + auth-secret-type auth-file, which reads key `auth` as htpasswd lines. apr1
+#     (MD5), SHA1 and bcrypt hashes are accepted.
+#   - A Secret that cannot be resolved makes the provider log "Cannot resolve auth
+#     secret, skipping ingress" and SKIP this Ingress: fail CLOSED (no route, never an
+#     open one; shown live by plan 29-22 arm UI-9).
+#   - The non-TLS router carries only the redirect-scheme middleware, so plain http
+#     answers a redirect before auth and the credential is never sent over http.
+#   - On the TLS router basic auth runs BEFORE the rate-limit and in-flight middlewares,
+#     so limit-rps does not throttle failed guesses (T-29-111, accepted: a ~190-bit
+#     password), and before the configuration-snippet headers, so a 401 carries none.
+#
+# The rest follows keycloak-public: its own certificate and Secret (INV-15(a)/(b)), the
+# staging snippet with the base security headers plus X-Robots-Tag noindex (INV-15(c)),
+# and tighter per-IP limits (a human reading mail, not an app). INV-18
+# (k8s/scripts/check-render-invariants.sh) refuses a route to Service mailpit without
+# basic auth, on any port but 8025, or with a cross-namespace auth-secret.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mailpit-ui
+  labels:
+    app: mailpit
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: "mailpit-ui-credentials"
+    nginx.ingress.kubernetes.io/auth-secret-type: "auth-file"
+    nginx.ingress.kubernetes.io/auth-realm: "J'Toye staging mail - test personas only, no real customer data"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "X-Robots-Tag: noindex, nofollow";
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - mail-staging.olajay.co.uk
+    secretName: jtoye-staging-mail-tls
+  rules:
+  - host: mail-staging.olajay.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mailpit
+            port:
+              number: 8025

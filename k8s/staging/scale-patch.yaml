@@ -1,0 +1,79 @@
+# =============================================================================
+# STAGING scale floors (Phase 29 plan 29-08, 29-RESEARCH Pitfall 1)
+#
+# WHY THIS FILE EXISTS
+#   Base renders HPA minReplicas 3 / 5 / 3 (core-java / edge-go / frontend) and
+#   PDB minAvailable 2 / 3 / 2. On the staging node pool (3 x Standard_B2s:
+#   ~1900m CPU and ~2.7 GiB allocatable per node, with system pods taking a large
+#   share) the floors alone ask for 11 application pods before Keycloak,
+#   RabbitMQ, Redis, Mailpit and the monitoring stack, so nothing else schedules.
+#   The overlay's old `replicas: 2` list could not help: the `replicas:`
+#   transformer reaches Deployments only, never an HPA, and the HPA floor wins at
+#   runtime. So the floors are lowered HERE, on the HPA and the PDB themselves.
+#
+# minAvailable IS 0, NOT 1 (unlike k8s/local)
+#   A PDB with minAvailable 1 over a Deployment running ONE replica allows ZERO
+#   voluntary disruptions. AKS node-image upgrades (the NodeImage channel) drain
+#   every node in turn, and a drain waits on every PDB, so a minAvailable-1 PDB
+#   over a single-replica workload stalls the upgrade on that node indefinitely.
+#   Staging accepts a brief single-pod outage of each app while its node drains;
+#   it is not a production availability promise. Production keeps the base
+#   floors (Phase 32).
+#
+# maxReplicas IS DELIBERATELY UNTOUCHED — same reason as k8s/local/scale-patch.yaml
+#   HPA maxReplicas is an INPUT to the Postgres connection budget that
+#   k8s/scripts/check-connection-math.sh asserts (maxReplicas x DB_POOL_SIZE plus
+#   Keycloak, the exporter and pg-backup must fit max_connections with headroom).
+#   Lowering it here would make the staging render disagree with the arithmetic
+#   the gate checks. The ceiling costs nothing while load is low: the HPA scales
+#   up only on demand, and Pending pods past the node pool's capacity are the
+#   visible signal that the ceiling, not the floor, needs a decision.
+#
+# ONE FILE, SIX DOCUMENTS, ONE FIELD EACH
+#   kustomize matches each document to its target by GVK + name, so the single
+#   `patches: - path: scale-patch.yaml` entry in kustomization.yaml covers all six
+#   objects, and a base change to metrics, behaviour or selectors flows through
+#   untouched.
+# =============================================================================
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-java-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: edge-go-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: core-java-pdb
+spec:
+  minAvailable: 0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+spec:
+  minAvailable: 0
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: edge-go-pdb
+spec:
+  minAvailable: 0

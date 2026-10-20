@@ -204,3 +204,71 @@ regexTarget = "secret"
 regexes = [
   '''^37-42-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
 ]
+
+# ---- Phase 29 staging-estate identifiers (plans 29-09, 29-13, 2026-10-19) ----
+# k8s/staging/azure-identity.yaml holds the IDENTIFIERS of the staging estate, read
+# back from Azure (threat T-29-32, accepted: a client id, an object id or the AKS
+# API host is not a credential; a Workload Identity token still needs the federated
+# subject). 29-13's access evidence names each identity's principal id and the
+# built-in "Key Vault Secrets User" role-definition id, which is Microsoft's
+# published constant (identical in every tenant). generic-api-key flags them on
+# 8.30.1 (6 hits over the 29 range). Matched on the LINE, anchored at both ends,
+# so only these exact key shapes clear: a UUID under any other key, a non-UUID
+# value under client_id_*, an FQDN outside *.hcp.<region>.azmk8s.io, and a real
+# key on any of these lines still fire. Plan 29-21 adds principal_id_* (the same
+# identities' object ids, which the CI preflight resolves grants through; 2 hits on
+# the keycloak and secret_sync keys), under the same anchored UUID shape.
+[[allowlists]]
+description = "Phase 29 staging-estate identifiers: azure-identity.yaml client_id_*/principal_id_*/aks_api_server_fqdn, 29-13 principal-id access lines and the built-in Key Vault Secrets User role id (identifiers, not credentials; T-29-32)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''^\s*(client|principal)_id_[a-z_]+: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\s*$''',
+  '''^\s*aks_api_server_fqdn: "[a-z0-9-]+\.hcp\.[a-z0-9]+\.azmk8s\.io"\s*$''',
+  '''^\s*\+?jtoye-staging-[a-z-]+-id principal=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} want=[0-9]+ got=[0-9]+ vault-wide=[0-9]+ scopes-equal=(yes|no)\s*$''',
+  '''^\s*\+?role definition 'Key Vault Secrets User' = 4633458b-17de-408a-b874-0445c86b69e6\s*$''',
+]
+
+# ---- Phase 29-14 Kubernetes object UIDs (2026-10-19) ----
+# evidence/29-14-tracer.txt Task 4 (A7) tracks the synced Secret rabbitmq-default-user
+# by its Kubernetes metadata.uid across a pod deletion. A uid is a server-assigned
+# object identifier, not a credential; generic-api-key flags "secret uid=<uuid>" and
+# "secret=<uuid>" (4 hits). Anchored on the whole line in exactly the tracer's two
+# shapes, so a uid under any other key, or a real key on these lines, still fires.
+[[allowlists]]
+description = "Phase 29-14 A7 evidence: Kubernetes Secret metadata.uid tracking lines (object identifiers, not credentials)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''^\s*\+?## [0-9TZ:-]+ (before|after): secret uid=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} created=[0-9TZ:-]+ owners=[A-Za-z]+/[a-z0-9-]+\s*$''',
+  '''^\s*\+?[0-9:.]+ secret=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} pods=\[[A-Za-z0-9:. -]*\]\s*$''',
+]
+
+# ---- Phase 29-22 Mailpit message ids (2026-10-19) ----
+# evidence/29-22-mail-tls.txt records the id Mailpit assigned to the Keycloak SMTP test
+# message. It is Mailpit's own 22-character message identifier, not a credential.
+# generic-api-key reads "test message: ... id=<22 chars>" as a key (1 hit). Anchored on
+# the full line shape, so the same token anywhere else, or a real key on this line, fires.
+[[allowlists]]
+description = "Phase 29-22 evidence: Mailpit message id of the Keycloak SMTP test message (an identifier, not a credential)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''^\s*\+?[0-9TZ:-]+ Mailpit received the Keycloak test message: id=[A-Za-z0-9]{22} subject="[^"]*" to=[a-z0-9.@-]+ from=[a-z0-9.@-]+ date=[0-9TZ:-]+\s*$''',
+]
+
+# ---- Phase 29-26 Mailpit message ids (2026-10-19) ----
+# evidence/29-26-config.txt lists Mailpit messages after a header ending "unsubscribe
+# tokens redacted:". Each listing line starts with Mailpit's 22-character message id.
+# generic-api-key reads the id as that "token"'s value across the line break (1 hit).
+# The unsubscribe tokens themselves are already redacted. Anchored on the header and the
+# "<id> Date: <RFC 5322 date> (GMT)" line, so an id-shaped string anywhere else, or a
+# real key on either line, still fires. gitleaks hands the allowlist the whole two-line
+# fragment (header + id line) for this cross-line match, so the regex spans both.
+[[allowlists]]
+description = "Phase 29-26 evidence: Mailpit message-id listing lines (identifiers, not credentials; unsubscribe tokens redacted)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''^\s*\+?Mailpit after the transition \([0-9TZ:-]+\), [a-z]+ new messages?; unsubscribe tokens redacted:\s*\n\s*\+?[A-Za-z0-9]{22} Date: [A-Z][a-z]{2}, [0-9]{1,2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} \+0000 \(GMT\)\s*$''',
+]

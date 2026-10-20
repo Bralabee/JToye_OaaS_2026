@@ -53,3 +53,13 @@ f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/s
 # carries an inline gitleaks:allow; this fingerprint covers the original commit.
 # Do not quote the finding's output line here: that re-triggers the rule.
 4e39487f434dcbc6d6d3e68c89c14144837c7004:.planning/phases/38-spring-boot-4-1-migration/evidence/38-18-ci-and-nightly.txt:generic-api-key:24
+# ---- Phase 29-18 selftest fixtures (2026-10-19) ----
+# Commit 9e13b945 (the RED commit of scripts/staging-seed.sh --selftest) wrote two
+# SYNTHETIC Stripe-shaped strings as Key Vault stub answers for the order stage's
+# test-key and live-key arms. They are made-up stub values, never issued by Stripe,
+# and reach no account; stripe-access-token reads them by shape. The live file
+# composes them at run time (29-18's leak-scan fix commit), so only this commit's two
+# lines carry them. Fingerprints are commit-pinned: the same shape in any other
+# commit, file or line still fires.
+9e13b94535a898d8e130610c7397eeff373349c1:scripts/staging-seed.sh:stripe-access-token:924
+9e13b94535a898d8e130610c7397eeff373349c1:scripts/staging-seed.sh:stripe-access-token:925

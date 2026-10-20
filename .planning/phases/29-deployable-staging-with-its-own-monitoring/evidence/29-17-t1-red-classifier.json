@@ -1,0 +1,10 @@
+{
+  "command": "bash scripts/check-networkpolicy-enforcement.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..21\nok 1 - classify-timeout-is-denied\nok 2 - classify-timeout-with-kubectl-trailer\nok 3 - classify-empty-rc0-is-connected\nnot ok 4 - classify-REFUSED-is-reset\n  ---\n  message: 'expected RESET, got DENIED'\n  ...\nnot ok 5 - classify-connection-refused-is-reset\n  ---\n  message: 'expected RESET, got DENIED'\n  ...\nnot ok 6 - classify-refused-with-trailer-is-reset\n  ---\n  message: 'expected RESET, got DENIED'\n  ...\nok 7 - classify-timeout-rc0-is-unknown\nok 8 - classify-empty-rc1-is-unknown\nok 9 - classify-dns-error-is-unknown\nok 10 - classify-exec-error-is-unknown\nok 11 - classify-trailer-code-mismatch-unknown\nok 12 - pair-control-connected-denied-pass\nok 13 - pair-control-denied-is-void\nok 14 - pair-control-unknown-is-void\nok 15 - pair-denied-arm-connected-is-fail\nok 16 - pair-denied-arm-reset-is-fail-never-pass\nok 17 - policy-free-not-connected-is-void\nok 18 - policy-free-connected-ok\nok 19 - foreign-artefact-refused\nok 20 - own-artefacts-not-refused\nok 21 - artefact-count-mismatch-void\n# FAIL: 3 of 21",
+  "targetTest": "classify-REFUSED-is-reset",
+  "targetFile": "scripts/check-networkpolicy-enforcement.sh",
+  "expected": "ok - classify-REFUSED-is-reset: agnhost REFUSED (a reset: the packet reached a host that answered) classifies as RESET, never DENIED",
+  "actual": "not ok 4 - classify-REFUSED-is-reset: expected RESET, got DENIED",
+  "semanticAssessment": "Target case executed and failed on its planned assertion: the RED classifier puts *refused*/*REFUSED* in the same case branch as *TIMEOUT*, so a reset is reported as a policy denial (the exact false-denial the plan forbids). The two sibling refused cases (connection refused inside OTHER:, REFUSED with the kubectl exit-code trailer) fail the same way; the 18 other cases pass, so the harness, the TAP output and the other pure functions are sound. Not a load or syntax fault: bash -n rc 0 and 21 of 21 cases ran."
+}

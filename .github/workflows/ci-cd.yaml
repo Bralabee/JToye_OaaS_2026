@@ -653,7 +653,8 @@ jobs:
   #      and `valueFrom` (the API server rejects that apply), no common labels
   #      injected into the kube-dns DNS-egress podSelector (D-17 — a total DNS
   #      outage under an enforcing CNI), no localhost/storage-emulator literal in a
-  #      non-local render, and no DB superuser in the secret recipe or template.
+  #      non-local render, no DB superuser in the secret recipe or template, and
+  #      (INV-7) every rendered NetworkPolicy equal to its declared rule set.
   #   5. render-golden.sh — byte-compares the staging and production renders
   #      against the reviewed goldens in k8s/goldens/. A k8s/base edit that
   #      changes either render without a regenerated, reviewed golden fails the
@@ -681,6 +682,9 @@ jobs:
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
 
+      - name: Prove the connection-math gate can fail (D-25 per-target reserve, parse arms)
+        run: ./k8s/scripts/check-connection-math.sh --selftest
+
       - name: Assert the core-java, edge-go and frontend env contracts hold in both directions (D-07/D-08)
         run: |
           chmod +x ./k8s/scripts/check-env-contract.sh
@@ -690,6 +694,139 @@ jobs:
         run: |
           chmod +x ./k8s/scripts/check-render-invariants.sh
           ./k8s/scripts/check-render-invariants.sh
+
+      # INV-7 asserts the WHOLE NetworkPolicy allow-list (Phase 29, plan 29-02).
+      # This proves it can fail: five holes planted in a copy of k8s/ (an extra
+      # egress port, the dropped 9091 scrape rule, an undeclared policy, an
+      # undeclared ipBlock shape, a CiliumNetworkPolicy), each must exit 1 with
+      # the message naming it, and the clean copy must exit 0.
+      - name: Prove INV-7 catches planted NetworkPolicy holes (--selftest-inv7)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv7
+
+      # Plan 29-08: the same shape for INV-15 (per-host TLS, one cert-manager
+      # owner per Secret, staging noindex with no base-header drift, production
+      # indexable, every nginx annotation Traefik-documented). Each planted hole
+      # must exit with its expected rc and name the hole; the clean copy exits 0.
+      - name: Prove INV-15 catches planted Ingress holes (--selftest-inv15)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv15
+
+      # Plan 29-22: the same shape for INV-16 (core-java's truststore is the JDK
+      # cacerts PLUS the cluster CA, never the CA alone; JVM flags arrive as a
+      # literal JAVA_TOOL_OPTIONS, never JAVA_OPTS; staging must build it).
+      - name: Prove INV-16 catches planted truststore holes (--selftest-inv16)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv16
+
+      # Plan 29-26 (#859): INV-17 keeps the customer realm's require-verified-email
+      # gate on in every deployed core-java (a literal, an app-config value, a
+      # relaxed-binding spelling, the dev profile, application.yml's default).
+      # Six planted holes; the default line removed is a PARSE ERROR (rc 2).
+      - name: Prove INV-17 catches a disabled require-verified-email (--selftest-inv17)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv17
+
+      # Plan 29-22 (D-33): INV-18 keeps the testers' public mail UI authenticated
+      # and on 8025 only, keeps every mailpit Service ClusterIP and keeps Mailpit
+      # from sending (no relay/forward, Send API locked). Six planted holes.
+      - name: Prove INV-18 catches planted mail-UI holes (--selftest-inv18)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv18
+
+      # Plan 29-12 (D-23): the Key Vault chain of every target that includes
+      # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
+      # has exactly one producing SecretProviderClass that the consuming pod mounts,
+      # each SPC's clientID is its pod's ServiceAccount client-id, and every
+      # identifier is GUID-shaped (an unreplaced placeholder fails). The selftest
+      # runs first: six planted breaks into a copy of the real staging render
+      # (an undeclared key, two producers, a clientID mismatch, a consumer that
+      # does not mount its producer, two workloads sharing one identity, an
+      # objectName not mounted) must each exit 1,
+      # three VOID arms (no SPC, no PyYAML, no kubectl) must exit 2, and the real
+      # render must exit 0. python3 here is the runner's, with PyYAML (the same
+      # interpreter ops-contracts' horizons gate uses).
+      - name: Prove the Key Vault chain gate catches planted breaks (29-12 --selftest)
+        run: bash k8s/scripts/check-keyvault-chain.sh --selftest
+
+      - name: Assert the Key Vault chain holds on every azure-keyvault target (29-12)
+        run: bash k8s/scripts/check-keyvault-chain.sh
+
+      # k8s/platform/* (Phase 29, plan 29-03: Traefik, the ClusterIssuers, the CI
+      # deployer RBAC, the ACME probe) sits at depth 3, so the gates above never
+      # discover it — deliberately, to keep it out of the goldens. The bootstrap
+      # applies it to the staging cluster, so it gets its own render check here:
+      # every kustomization renders, renders SOMETHING (an empty render would make
+      # the Secret count vacuous), and holds no `kind: Secret`.
+      - name: Assert every k8s/platform kustomization renders and holds no Secret (29-03)
+        run: |
+          bad=0; n=0
+          for d in k8s/platform/*/; do
+            [ -f "$d/kustomization.yaml" ] || continue
+            n=$((n + 1))
+            r=$(kubectl kustomize "$d"); rc=$?
+            kinds=$(grep -cE '^kind: ' <<<"$r" || true)
+            secrets=$(grep -cx 'kind: Secret' <<<"$r" || true)
+            echo "$d rc=$rc kinds=$kinds secrets=$secrets"
+            if [ "$rc" -ne 0 ] || [ "$kinds" -eq 0 ] || [ "$secrets" -ne 0 ]; then bad=$((bad + 1)); fi
+          done
+          echo "platform_kustomizations=$n bad=$bad"
+          [ "$n" -ge 4 ] && [ "$bad" -eq 0 ]
+
+      # The staging bootstrap's guards are shown refusing before anything trusts
+      # them (29-03): no context, the employer's sipbihs2aks, an unreadable or
+      # ambiguous identity file, a stale or re-pointed server URL, a tampered
+      # upstream manifest, a missing kubelogin, and a dry run that mutates nothing
+      # — each against stub kubectl/kubelogin/curl, so no cluster and no network.
+      - name: Prove the staging bootstrap guards refuse (29-03 --selftest)
+        run: bash scripts/staging-bootstrap.sh --selftest
+
+      # Plan 29-04: the staging realm assertion suite refuses the raw dev template
+      # and passes the staging transform of BOTH templates, built-in tokens survive,
+      # a surviving secret placeholder is named, and --apply refuses no context, the
+      # employer context and a stale server before the Azure guard is sourced (stub
+      # kubectl/kubelogin/curl/az, so no cluster, no network, no Azure).
+      - name: Prove the staging realm transform and import guards (29-04 --selftest)
+        run: bash scripts/staging-realm-import.sh --selftest
+
+      # Plan 29-06: the staging seed refuses the production and local API bases,
+      # no context, a stale server URL (the shared staging_kube_guard), and any
+      # Ready core-java pod not running SPRING_PROFILES_ACTIVE=prod (a dev pod, a
+      # mixed rollout, no Ready pod: DemoDataSeeder must never run on staging);
+      # its dry run calls nothing; and its per-run realm-admin operator is
+      # DELETEd after a failing step and after a successful run, with no Key
+      # Vault value in any curl argv or output (stubs only: no cluster, no Azure).
+      - name: Prove the staging seed guards and operator cleanup (29-06 --selftest)
+        run: bash scripts/staging-seed.sh --selftest
+
+      # Plan 29-14: deploy.sh refuses no --context, the employer's sipbihs2aks, a
+      # context whose server is not the staging API server, a non-40-hex
+      # --image-tag and a failed (or VOID) staging preflight, all before any apply;
+      # --render-only retags exactly core-java/frontend/edge-go through a wrapper
+      # and leaves the committed overlay byte-identical; a failed rollout is undone
+      # with no DEPLOYED_SHA record, and a green one ends on that record (stub
+      # kubectl/kubelogin and a stub preflight: no cluster, no Azure).
+      - name: Prove the deploy script's guards and DEPLOYED_SHA record (29-14 --selftest)
+        run: bash scripts/deploy.sh --selftest
+
+      # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
+      # mismatch, plant-stale, empty actual, zero services, no context, employer
+      # context, short tag, fixture-with-context) against fixtures: no cluster.
+      - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
+        run: bash scripts/check-deploy-digest-parity.sh --selftest
+
+      # PR #984 review round 1 (F2): the staging rollback step must be gated on the apply step's
+      # `applied` output, or any pre-apply failure (Key Vault pre-flight, kubeconfig, origin
+      # guard) undoes healthy live staging. The check reads the workflow; the selftest plants
+      # each hole (bare failure(), wrong output, output set after the apply, no step id, no
+      # rollback step) and requires the check to catch every one.
+      - name: Assert the staging rollback only runs once the apply was reached (r1 F2)
+        run: |
+          bash scripts/check-deploy-rollback-guard.sh
+          bash scripts/check-deploy-rollback-guard.sh --selftest
+
+      # Plan 29-22 (D-33): every live mail-UI probe arm (UI-1..UI-8) FAILS on a
+      # planted wrong response (an open UI, a wrong password accepted, http serving
+      # the UI, SMTP published, the default certificate, relay on, the Send API
+      # open, no 429) and passes on the right one; stubbed curl/openssl/dig/
+      # kubectl/az and TCP connect: no cluster, no Azure, no network.
+      - name: Prove the mail-UI probe's arms can fail (29-22 --selftest)
+        run: bash scripts/staging-mail-ui.sh --selftest
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |
@@ -1007,6 +1144,81 @@ jobs:
           chmod +x ./scripts/check-no-object-store-residue.sh
           bash ./scripts/gates/object-store-residue-selftest.sh
           ./scripts/check-no-object-store-residue.sh
+
+      # Phase 29-01 (T-29-01, D-01/D-32). The az CLI's ambient default subscription on the
+      # operator host has been the EMPLOYER's, and an empty --subscription silently resolves
+      # to it. scripts/lib/azure-guard.sh pins every call (az_guard_init asserts the J'Toye
+      # id; az_mutate/az_read append --subscription); this makes "no raw az call anywhere in
+      # scripts/" a property every PR re-proves, not a habit. Its only admission is a declared
+      # AZ_PIN_EXEMPT row for a connection-string `az storage` data-plane call, printed and
+      # counted; a stale row fails. The selftest runs nine planted arms first (a raw call,
+      # four prefixed shapes, an empty tree that must VOID, a stale exemption, ...), so a
+      # gate that can no longer fail goes red here rather than passing quietly below.
+      #
+      # Static by construction: reads scripts/ only, invokes no az, no network, no stack.
+      - name: Assert the subscription-pin gate can fail (29-01 selftest)
+        run: bash scripts/check-az-subscription-pin.sh --selftest
+
+      - name: Assert no raw az call bypasses the subscription pin (29-01)
+        run: bash scripts/check-az-subscription-pin.sh
+
+      # Plan 29-27 (DPLY-02, T-29-98, T-29-99, T-29-104). "Closed or explicitly deferred with a
+      # reason recorded per issue" is only a property if the list of issues is DERIVED: the
+      # gate reads the ROADMAP's Phase 29 section, unions the four references the section does
+      # not carry, and holds the dispositions table to exact set equality with that list (no
+      # missing row, no extra row), an existing evidence path and line per row, a written
+      # reason per deferral, and a comment file per issue that cites its evidence and passes the
+      # public-text rule. That rule exists because GitHub's closing-keyword parser is lexical:
+      # "does not close #100" closed #100 through docs PR #955, so a closing keyword next to any
+      # issue reference, and any AI-attribution line, is a finding. The selftest runs first: its
+      # planted-file arms (a deleted row, an extra row, a dead evidence path, an empty deferral
+      # reason, each keyword shape plus its negative control, each attribution shape, an unparsed
+      # ROADMAP section and table, a stubbed gh for the live modes, and the manifest/approval
+      # hash arms) must each be caught, so a gate that can no longer fail goes red here rather
+      # than passing quietly below.
+      #
+      # Static by construction: reads committed files only, no gh, no network, no stack. The
+      # live modes (--pre-close, --post-close) and the approval check run in plan 29-28.
+      - name: Assert the DPLY-02 dispositions gate can fail (29-27 selftest)
+        run: bash scripts/check-dply02-dispositions.sh --selftest
+
+      - name: Assert every ROADMAP Phase 29 issue has an evidence-linked disposition (29-27)
+        run: bash scripts/check-dply02-dispositions.sh
+
+      # Plan 29-10 (T-29-36). kustomize cannot read a file outside its own root, so a
+      # file both runtimes serve (compose by bind mount, k8s by ConfigMap: the Keycloak
+      # login theme now, the alert corpus and dashboards from plan 29-23) is a
+      # committed COPY, declared with its canonical side in k8s/copy-parity.conf. The
+      # gate md5-compares every pair. The selftest runs first: eighteen planted holes
+      # (a one-byte edit of a binary copy, a missing copy or canonical, no md5sum, an
+      # empty or comment-only list, a self-pair, a symlink copy, and since plan 29-23 a
+      # renamed job, a dropped label, zero jobs and no python3 for the `jobs` pair kind,
+      # which parses YAML with the runner's python3 + PyYAML) must each exit with their
+      # rc, so a gate that can no longer fail goes red here.
+      #
+      # Static by construction: reads committed files only, no stack, no network.
+      - name: Assert the copy-parity gate can fail (29-10 selftest)
+        run: bash scripts/check-k8s-copy-parity.sh --selftest
+
+      - name: Assert every committed copy is byte-equal to its canonical file (29-10)
+        run: bash scripts/check-k8s-copy-parity.sh
+
+      # Plan 29-24 (DPLY-03 part B, T-29-87, T-29-90). The ONE Alertmanager template and
+      # entrypoint are mounted by compose and (as byte copies) by staging Kubernetes. The
+      # gate runs the real entrypoint inside the compose-pinned prom/alertmanager image
+      # (docker, --network none), runs amtool check-config on each render, and holds the
+      # compose render byte-identical to compose-render.golden.yml, which was taken from
+      # the files BEFORE 29-24 added SMTP auth and the extra email_config. The staging arm
+      # asserts auth on the Zoho integration only, the Mailpit sink with the cluster CA,
+      # the alertname-only mute and no password string in the render. The selftest runs
+      # first: six planted holes (an unknown __TOKEN__, a drifted golden, the auth line
+      # removed, auth planted in global, a widened mute validator, a password in a render)
+      # must each be caught. PyYAML is the runner's python3, as for copy-parity above.
+      - name: Assert the Alertmanager render gate can fail (29-24 selftest)
+        run: bash scripts/check-alertmanager-render.sh --selftest
+
+      - name: Assert the Alertmanager corpus renders for compose and staging (29-24)
+        run: bash scripts/check-alertmanager-render.sh
 
       # Plan 31-06 (LGL-01, D-08). docs/retention-manifest.json is the source of truth for a
       # LEGALLY OPERATIVE document — the published per-category retention schedule. A period
@@ -1639,17 +1851,35 @@ jobs:
     # is set to 'true' (the old branch-name gate could never fire — that branch
     # does not exist on the remote).
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    # Plan 29-21 (D-04, D-32): Azure is reached ONLY through an OIDC federated credential.
+    # id-token: write lets azure/login request the GitHub token that Entra exchanges for
+    # jtoye-ci, whose federated credential gh-deploy-staging admits exactly the subject
+    # repo:Bralabee/JToye_OaaS_2026:environment:staging, i.e. this job's `environment:`
+    # below. Renaming that environment breaks authentication silently, so it is not renamed.
+    # No long-lived kubeconfig secret exists or is read.
+    permissions:
+      id-token: write
+      contents: read
     environment:
       name: staging
       url: https://app-staging.olajay.co.uk
+    env:
+      # Plan 29-14: ONE variable names the deployed tag. The pin step deploys it and
+      # the digest-parity step checks it, so the check cannot drift from the deploy.
+      DEPLOY_TAG: ${{ github.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Plan 29-21: within one minor of the cluster. jtoye-stg-aks reported
+      # kubernetesVersion 1.36.4 (az_read, 2026-10-19; evidence/29-21-ci.txt), and kubectl
+      # is supported only within one minor of the API server, so this pins that patch.
+      # Re-read and re-pin when the cluster is upgraded (K8S_MINOR in
+      # scripts/azure-staging-provision.sh).
       - name: Set up kubectl
         uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
         with:
-          version: 'v1.28.0'
+          version: 'v1.36.4'
 
       - name: Install kustomize (pinned, checksum-verified)
         # Same checksum-verified-pinned-binary shape as the oasdiff install in the
@@ -1688,34 +1918,21 @@ jobs:
       # fix is per-environment frontend images (or a genuinely runtime CSP origin);
       # both are larger changes than this review finding, and both deploy jobs are
       # gated OFF by repo variable today.
+      #
+      # Plan 29-21: the comparison lives in scripts/check-frontend-baked-origin.sh (one
+      # implementation, with a --selftest that shows the production origin against this
+      # overlay being refused). The selftest runs first, so a guard that cannot fail is
+      # never trusted here. The render below feeds the logout pre-flight that follows.
+      - name: Prove the CR-02 baked-origin guard can fail (29-21 --selftest)
+        run: bash scripts/check-frontend-baked-origin.sh --selftest
+
       - name: Assert the baked frontend API origin matches this environment (CR-02)
         env:
           BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
         run: |
           set -euo pipefail
           kustomize build k8s/staging > /tmp/staging-render.yaml
-          # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
-          RENDER_API_URL="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' /tmp/staging-render.yaml)"
-          if [ -z "$RENDER_API_URL" ]; then
-            echo "FATAL: could not read app-config api.url from the k8s/staging render — this guard is blind, so it fails closed." >&2
-            exit 2
-          fi
-          if [ -z "$BAKED_API_URL" ]; then
-            echo "FATAL: repo variable FRONTEND_PUBLIC_API_URL is unset, so the frontend image baked an EMPTY API origin." >&2
-            echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
-            echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
-            exit 2
-          fi
-          if [ "$RENDER_API_URL" != "$BAKED_API_URL" ]; then
-            echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
-            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
-            echo "         k8s/staging app-config api.url:                           $RENDER_API_URL" >&2
-            echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
-            echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
-            echo "       origin — refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
-            exit 1
-          fi
-          echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url ($RENDER_API_URL)"
+          bash scripts/check-frontend-baked-origin.sh --overlay k8s/staging
 
       # FE-1 / E-5 (QA council 20260902-134741): before deploying, ask the DEPLOYED realm
       # whether it accepts the post_logout_redirect_uri this overlay's vendor sign-out
@@ -1759,12 +1976,72 @@ jobs:
             echo "ADVISORY (flag off, deploy proceeds on today's /auth/signin leg): the staging realm did not cleanly accept $URI (rc=$rc; 2 = unreachable/VOID). Register <frontend.url>/api/vendor-auth/logout-complete on client $CLIENT and re-run before flipping vendor.logout-complete.enabled."
           fi
 
-      - name: Configure kubeconfig
+      # ---- Plan 29-21: authentication (D-04, D-32) --------------------------------------
+      # Every credential below is short-lived and minted for this run: the GitHub OIDC
+      # token, the Entra token azure/login exchanges it for, and the AKS token kubelogin
+      # obtains through the Azure CLI. The cluster is Entra-only with local accounts
+      # disabled, so the kubeconfig az writes holds no credential; kubelogin supplies one.
+      # The identifiers are environment variables of the `staging` environment (not
+      # secrets: a client id and a tenant id are not credentials, T-29-32).
+      - name: Refuse a subscription that is not J'Toye's
+        # An empty --subscription silently resolves to the CLI's default (measured
+        # 2026-09-28), so the variable is checked byte-for-byte before any az call.
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+          if [ "$AZURE_SUBSCRIPTION_ID" != "c483d353-5f61-4587-a790-addb9ab5fb94" ]; then
+            echo "FATAL: environment variable AZURE_SUBSCRIPTION_ID is '${AZURE_SUBSCRIPTION_ID:-<unset>}', not the J'Toye subscription c483d353-5f61-4587-a790-addb9ab5fb94." >&2
+            exit 1
+          fi
+
+      - name: Azure login (OIDC, jtoye-ci, no stored secret)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install kubelogin (pinned, checksum-verified)
+        # Same checksum-verified-pinned-binary shape as kustomize above. Version and
+        # linux_amd64 zip sha256 taken from the Azure/kubelogin v0.2.21 release's own
+        # .sha256 asset and re-computed locally before pinning (evidence/29-21-ci.txt).
+        run: |
+          KUBELOGIN_VERSION="v0.2.21"
+          KUBELOGIN_SHA256="934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66"
+          curl -sSfL -o kubelogin.zip "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip"
+          echo "${KUBELOGIN_SHA256}  kubelogin.zip" | sha256sum -c -
+          unzip -o -j kubelogin.zip bin/linux_amd64/kubelogin -d kubelogin-bin
+          sudo install -m 0755 kubelogin-bin/kubelogin /usr/local/bin/kubelogin
+          kubelogin --version
+
+      - name: Configure kubeconfig (az aks get-credentials + kubelogin, Entra only)
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          az aks get-credentials --subscription "$AZURE_SUBSCRIPTION_ID" -g jtoye-rg -n jtoye-stg-aks --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+          kubectl config current-context
+          # Fetch the AKS token now, while the federated assertion is fresh, and prove this
+          # identity may write in the staging namespace before anything is applied.
+          can="$(kubectl auth can-i create deployments -n jtoye-staging)"
+          echo "can-i create deployments -n jtoye-staging: $can"
+          [ "$can" = yes ]
+
+      # D-23 / T-29-49..51: refuse a half-configured vault before applying. --names-only
+      # reads object names, enabled flags and per-secret role assignments, never a value
+      # (jtoye-ci holds Key Vault Reader at vault scope, not Secrets User). The script
+      # initialises the subscription guard itself; JTOYE_AZURE_SUBSCRIPTION_ID is what
+      # az_guard_init compares with the pinned id, so a wrong or missing variable refuses.
+      - name: Pre-flight — every staging Key Vault object present, enabled and granted (29-13 / 29-21)
+        env:
+          JTOYE_AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: bash scripts/staging-secrets-preflight.sh --names-only
 
       - name: Pin full-sha images + deploy staging overlay
+        # `id` is what the rollback step is gated on (see its comment): this step sets the
+        # `applied` output immediately before `kubectl apply`.
+        id: deploy
         env:
           IMAGE_OWNER: ${{ github.repository_owner }}
         run: |
@@ -1797,11 +2074,11 @@ jobs:
             exit 2
           fi
           IMAGE_PUBLISH_BASE="${REGISTRY}/${IMAGE_OWNER,,}/jtoye"
-          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${{ github.sha }}"
+          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${DEPLOY_TAG}"
           (cd k8s/staging && kustomize edit set image \
-            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${{ github.sha }}" \
-            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${{ github.sha }}" \
-            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${{ github.sha }}")
+            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${DEPLOY_TAG}" \
+            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${DEPLOY_TAG}" \
+            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${DEPLOY_TAG}")
           # Premortem guard: assert the RENDERED overlay actually pins :<sha> on
           # all three jtoye images BEFORE apply. A silent images[].name key
           # mismatch would fall back to the static 2.1.0 default and deploy the
@@ -1815,13 +2092,16 @@ jobs:
           # why it survives testing: it waits for the render to grow.
           RENDERED="$(kustomize build k8s/staging)"
           for svc in core-java edge-go frontend; do
-            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" <<< "$RENDERED"; then
-              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" >&2
+            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" <<< "$RENDERED"; then
+              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" >&2
               echo "Rendered jtoye image refs were:" >&2
               grep -E "image: .*/jtoye-" <<< "$RENDERED" >&2 || true
               exit 1
             fi
           done
+          # From here on a failure means a deploy was STARTED, so the rollback step may undo it.
+          # Set before the apply, not after: an apply that fails half way has changed Deployments.
+          echo "applied=true" >> "$GITHUB_OUTPUT"
           kubectl apply -k k8s/staging
 
       - name: Wait for rollout
@@ -1829,6 +2109,18 @@ jobs:
           kubectl rollout status deployment/core-java -n jtoye-staging --timeout=5m
           kubectl rollout status deployment/edge-go -n jtoye-staging --timeout=3m
           kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
+
+      - name: Digest parity — the running pods are the images pushed for DEPLOY_TAG (29-14)
+        # The Kubernetes half of runtime parity: every running core-java, edge-go and
+        # frontend container's imageID must be in the digest set GHCR holds for the tag
+        # this job deployed (DEPLOY_TAG, the same variable the pin step used). Exit 1 is a
+        # wrong image; exit 2 is VOID (the shared staging context guard refused the
+        # context, kubelogin or docker is missing, or no pod was read) and fails the job
+        # too: "could not check" is never "clean". The guard needs kubelogin and the
+        # kubeconfig's server to equal the staging API server; since plan 29-21 both come
+        # from the Configure kubeconfig step above (az aks get-credentials + kubelogin).
+        run: |
+          bash scripts/check-deploy-digest-parity.sh --context "$(kubectl config current-context)" --tag "$DEPLOY_TAG"
 
       - name: Health check after core-java deployment
         # issue #98 [P2-7] item 4: actuator now lives on the INTERNAL management
@@ -1841,13 +2133,22 @@ jobs:
           kubectl exec -n jtoye-staging deployment/core-java -- curl -f http://localhost:9091/actuator/health || exit 1
 
       - name: Run smoke tests
-        # Staging exposes Swagger (application-staging.yml) — assert it is reachable.
+        # Plan 29-21 (Blocker G, #549): k8s staging runs the PROD Spring profile
+        # deliberately, for parity with production, so the API docs are off there and
+        # #549 keeps them off a public host. EXPECT_SWAGGER=false asserts /swagger-ui.html
+        # and /v3/api-docs are NOT served. Expecting them (the old line) would fail every
+        # healthy deploy and the rollback below would undo it.
         run: |
           chmod +x ./scripts/smoke-test.sh
-          EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
+          EXPECT_SWAGGER=false ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 
       - name: Rollback on failure
-        if: failure()
+        # failure() alone is true when ANY earlier step failed, including the ones that run
+        # BEFORE the apply (baked-origin guard, logout pre-flight, subscription check,
+        # kubelogin, can-i, Key Vault pre-flight). Nothing is deployed then, and an undo would
+        # roll healthy live staging back a revision. So it also needs the `applied` output of
+        # the apply step. scripts/check-deploy-rollback-guard.sh pins this shape (R-1..R-4).
+        if: failure() && steps.deploy.outputs.applied == 'true'
         run: |
           kubectl rollout undo deployment/core-java -n jtoye-staging
           kubectl rollout undo deployment/edge-go -n jtoye-staging

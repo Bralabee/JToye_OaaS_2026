@@ -1,0 +1,25 @@
+# 29-28 merge and deploy evidence
+
+## Task 1: pre-PR checks and PR open (2026-10-20T06:53:35Z)
+Static suite on 652ac77d (after the residue allowlist renumber; that gate was rc=1 on 2d32870d before it):
+  head 2d32870dac94272b34e8c182cb70875cee26c9ef 2026-10-20T06:51:36Z
+  rc=0 scripts/check-branch-behind-base.sh
+  rc=0 k8s/scripts/check-render-invariants.sh
+  rc=0 k8s/scripts/render-golden.sh
+  rc=0 k8s/scripts/check-env-contract.sh
+  rc=0 k8s/scripts/check-no-plaintext-secrets.sh
+  rc=0 k8s/scripts/check-connection-math.sh
+  rc=0 scripts/check-dependency-horizons.sh
+  rc=0 scripts/check-no-create-extension.sh
+  rc=0 scripts/check-gate-enforcement.sh
+  rc=0 scripts/check-alert-rules.sh
+  rc=1 scripts/check-no-object-store-residue.sh  (on 2d32870d; rc=0 on 652ac77d after the renumber)
+  rc=0 scripts/check-doc-citations.sh
+  rc=0 scripts/check-handoff-contract.sh
+  rc=0 scripts/check-dply02-dispositions.sh
+check-branch-behind-base.sh at PR open: rc=0
+PR body --scan-text: rc=0 findings=0; controls: Co-Authored-By line rc=1, 'closes #99' rc=1
+PR=984 https://github.com/Bralabee/JToye_OaaS_2026/pull/984
+Stored body read back: diff vs /tmp/claude-29-28/pr-body.md empty
+Attribution lines in stored body: 0; positive controls: Co-Authored-By=1, robot-emoji=1
+Deviation: the PR was opened before 29-19 and the 29-27 SUMMARY, so round 1 runs while the cost data posts. The cost commits land on this branch before merge.

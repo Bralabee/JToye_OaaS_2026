@@ -13,8 +13,14 @@ kind: Ingress
 metadata:
   name: jtoye-sse-ingress
   annotations:
-    # TLS Configuration (mirrors jtoye-ingress)
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # TLS: NO cert-manager.io/cluster-issuer here (plan 29-08). This Ingress
+    # serves only the api host, whose certificate jtoye-ingress already requests
+    # into Secret jtoye-api-tls. With the annotation, cert-manager's ingress-shim
+    # would also try to manage a Certificate for that Secret from THIS Ingress:
+    # two owners for one Secret, each with its own host list, contending over
+    # what the Secret holds (at best a conflict, at worst re-issuing over each
+    # other). So this Ingress only references the Secret (spec.tls below); the
+    # main Ingress is its one owner.
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
@@ -48,7 +54,7 @@ spec:
   tls:
   - hosts:
     - api.olajay.co.uk
-    secretName: jtoye-tls
+    secretName: jtoye-api-tls   # owned by jtoye-ingress (see the annotation note)
   rules:
   - host: api.olajay.co.uk
     http:

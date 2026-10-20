@@ -1,0 +1,5 @@
+Phase 29 disposition for #304 (DPLY-02): deferred; the issue stays open.
+
+Re-measured on the tree: all four structural mismatches are still in frontend/e2e/stomp-relay.spec.ts. The session is a stub cookie (e2e-stub at two sites), orders are posted to an EDGE_URL that defaults to localhost:8089, networkidle is awaited at two sites, and there are two silent skip conditions (RELAY_E2E and TEST_SHOP_ID). Each marker is paired with a control pattern that cannot occur: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-measurements.txt, lines 18 to 37.
+
+Why it waits: it is a design task, not configuration. It has to choose an authentication helper, an order-creation path and a wait strategy, and it has to make the runner assert that the spec actually ran rather than skipped. None of that is on the path Phase 29 had to prove, which is a real vendor login through the ingress to a dashboard and has its own spec. What did change is the precondition: staging now has an ingress and an in-cluster RabbitMQ broker with the STOMP plugin enabled, so the rework can target a real ingress instead of a local one, and should be planned with that in hand.

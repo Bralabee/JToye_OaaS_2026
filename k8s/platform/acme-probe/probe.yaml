@@ -1,0 +1,159 @@
+# k8s/platform/acme-probe/probe.yaml
+#
+# A throwaway end-to-end probe of the public edge, run ONCE by
+# scripts/staging-bootstrap.sh --stage acme-probe (plan 29-11) and then removed
+# with --stage acme-probe-delete. It proves the whole chain
+#
+#   DNS app-staging.olajay.co.uk -> static IP jtoye-stg-ingress-ip -> Traefik
+#   -> HTTP-01 challenge -> certificate issued by letsencrypt-staging -> HTTPS
+#   request routed to a backend in jtoye-staging
+#
+# BEFORE any real host carries the production issuer (T-29-11: a challenge that
+# keeps failing against the production directory burns Let's Encrypt's real rate
+# limits). It uses the STAGING issuer, so its certificate is deliberately
+# untrusted; the bootstrap's curl uses -k, and what it asserts is that the
+# certificate was ISSUED (Certificate Ready) and the route answers.
+#
+# The backend is agnhost netexec. Its "/" handler answers "NOW: <time>", and any
+# path it has no exact handler for (such as /acme-probe) falls through to it. The
+# Ingress forwards only the /acme-probe prefix, so netexec's /exit, /shutdown and
+# /upload handlers are not reachable from outside; readOnlyRootFilesystem also
+# refuses an upload.
+#
+# Pinned: registry.k8s.io/e2e-test-images/agnhost:2.66.1 (the newest tag the
+# registry served on 2026-10-18; RESEARCH named 2.33 from an older MS Learn
+# recipe), by tag and index digest. The same image is the DPLY-05 probe in
+# plan 29-17. Horizon row: infra/dependency-horizons.yaml `agnhost`.
+#
+# Applies into jtoye-staging, where k8s/base's default-deny selects every pod: the
+# NetworkPolicy below admits the controller namespace on 8080 and nothing else.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acme-probe
+  namespace: jtoye-staging
+  labels:
+    app: acme-probe
+    app.kubernetes.io/name: acme-probe
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acme-probe
+  template:
+    metadata:
+      labels:
+        app: acme-probe
+        app.kubernetes.io/name: acme-probe
+        app.kubernetes.io/part-of: jtoye-platform
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: netexec
+          image: registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+          imagePullPolicy: IfNotPresent
+          args: ["netexec", "--http-port=8080"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-probe
+  namespace: jtoye-staging
+  labels:
+    app: acme-probe
+    app.kubernetes.io/name: acme-probe
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  selector:
+    app: acme-probe
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+# Ingress from the controller namespace only, on the one port; no egress (the
+# probe initiates nothing). Kubelet readiness probes come from the pod's own node,
+# which Cilium admits without a rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acme-probe-allow
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: acme-probe-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: acme-probe
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: acme-probe
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: acme-probe
+    app.kubernetes.io/part-of: jtoye-platform
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app-staging.olajay.co.uk
+      secretName: acme-probe-tls
+  rules:
+    - host: app-staging.olajay.co.uk
+      http:
+        paths:
+          - path: /acme-probe
+            pathType: Prefix
+            backend:
+              service:
+                name: acme-probe
+                port:
+                  number: 8080

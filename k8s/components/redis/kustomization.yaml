@@ -1,0 +1,33 @@
+# In-cluster Redis for jtoye-staging (Phase 29 plan 29-10, D-24).
+#
+# D-24 resolved BY MEASUREMENT to in-cluster (29-RESEARCH §Cost, 2026-10-18): Azure
+# Managed Redis B0 does not fit the D-03 ceiling once the load balancer meter bills,
+# and Azure Cache for Redis Basic can no longer be created. So staging runs one pod,
+# cache-only, with no persistence. The decision is recorded as a dated ADR-0002
+# amendment; production chooses its own in Phase 32.
+#
+# A kustomize COMPONENT for the same reasons as ../keycloak: k8s/local uses the host
+# compose Redis (LOC-1), and production opts in deliberately. Only k8s/staging lists
+# it under `components:`.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - redis.yaml
+
+# The same label shape as k8s/base/kustomization.yaml (D-17).
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+    includeSelectors: false
+    includeTemplates: true
+    fields:
+      - path: spec/selector/matchLabels
+        create: true
+        group: apps
+        kind: Deployment
+      - path: spec/selector
+        create: true
+        version: v1
+        kind: Service

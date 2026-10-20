@@ -1,0 +1,825 @@
+# Plan 29-11 evidence: the staging edge brought up for real (Phase 29; DPLY-01, DPLY-02)
+#
+# Raw, timestamped (ISO-8601 UTC) output of every stage and read-back, in run order. Each block:
+#   ----- [timestamp] label
+#   $ command
+#   output (stdout and stderr interleaved)
+#   [rc=N]
+# Cluster: kube-context jtoye-stg-aks (passed explicitly on every call; the kubeconfig's
+# current-context is jtoye-staging, the dead August cluster, and was neither used nor changed).
+# Azure calls go through scripts/lib/azure-guard.sh (az_read / az_mutate), pinned to subscription
+# c483d353-5f61-4587-a790-addb9ab5fb94. No secret values appear in this file.
+
+----- [2026-10-19T06:11:54Z] precondition: nodes
+$ kubectl --context jtoye-stg-aks get nodes
+NAME                                STATUS   ROLES    AGE     VERSION
+aks-nodepool1-24453234-vmss000000   Ready    <none>   5h26m   v1.36.4
+aks-nodepool1-24453234-vmss000001   Ready    <none>   5h26m   v1.36.4
+aks-nodepool1-24453234-vmss000002   Ready    <none>   5h26m   v1.36.4
+[rc=0]
+
+----- [2026-10-19T06:11:55Z] precondition: current-context (read only, not used)
+$ kubectl config current-context
+jtoye-staging
+[rc=0]
+
+----- [2026-10-19T06:12:00Z] BEFORE ci-rbac: can-i patch namespace/jtoye-staging as CI
+$ kubectl --context jtoye-stg-aks auth can-i patch namespace/jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67
+Warning: resource 'namespaces' is not namespace scoped
+
+no - Azure does not have opinion for this non AAD user. If you are an AAD user, please set Extra:oid parameter for impersonated user in the kubeconfig
+[rc=1]
+
+----- [2026-10-19T06:12:10Z] BEFORE ci-rbac: can-i create secretproviderclasses in jtoye-staging as CI
+$ kubectl --context jtoye-stg-aks auth can-i create secretproviderclasses.secrets-store.csi.x-k8s.io -n jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67
+no - Azure does not have opinion for this non AAD user. If you are an AAD user, please set Extra:oid parameter for impersonated user in the kubeconfig
+[rc=1]
+
+----- [2026-10-19T06:12:11Z] BEFORE ci-rbac: can-i create clusterroles as CI
+$ kubectl --context jtoye-stg-aks auth can-i create clusterroles --as 4cce597e-719e-4181-b045-8ba024f5bc67
+Warning: resource 'clusterroles' is not namespace scoped in group 'rbac.authorization.k8s.io'
+
+no - Azure does not have opinion for this non AAD user. If you are an AAD user, please set Extra:oid parameter for impersonated user in the kubeconfig
+[rc=1]
+
+----- [2026-10-19T06:12:12Z] POSITIVE CONTROL: the operator itself can create clusterroles (proves can-i can answer yes)
+$ kubectl --context jtoye-stg-aks auth can-i create clusterroles
+Warning: resource 'clusterroles' is not namespace scoped in group 'rbac.authorization.k8s.io'
+
+yes
+[rc=0]
+
+----- [2026-10-19T06:12:25Z] BEFORE ci-rbac (with Extra:oid, as the webhook asked): can-i patch namespace/jtoye-staging
+$ kubectl --context jtoye-stg-aks auth can-i patch namespace/jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67 --as-user-extra oid=4cce597e-719e-4181-b045-8ba024f5bc67
+Error from server (Forbidden): userextras.authentication.k8s.io "4cce597e-719e-4181-b045-8ba024f5bc67" is forbidden: User "admin@jtoyedigital.co.uk" cannot impersonate resource "userextras/oid" in API group "authentication.k8s.io" at the cluster scope: an error on the server ("unknown") has prevented the request from succeeding
+[rc=1]
+
+----- [2026-10-19T06:12:44Z] BEFORE ci-rbac (Extra:oid): can-i create secretproviderclasses in jtoye-staging
+$ kubectl --context jtoye-stg-aks auth can-i create secretproviderclasses.secrets-store.csi.x-k8s.io -n jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67 --as-user-extra oid=4cce597e-719e-4181-b045-8ba024f5bc67
+E1019 07:12:54.110395 2201834 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: unknown"
+E1019 07:13:03.088945 2201834 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: unknown"
+E1019 07:13:12.416970 2201834 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: unknown"
+Warning: the server doesn't have a resource type 'secretproviderclasses' in group 'secrets-store.csi.x-k8s.io'
+
+Error from server (Forbidden): userextras.authentication.k8s.io "4cce597e-719e-4181-b045-8ba024f5bc67" is forbidden: User "admin@jtoyedigital.co.uk" cannot impersonate resource "userextras/oid" in API group "authentication.k8s.io" at the cluster scope: an error on the server ("unknown") has prevented the request from succeeding
+[rc=1]
+
+----- [2026-10-19T06:13:21Z] BEFORE ci-rbac (Extra:oid): can-i create clusterroles
+$ kubectl --context jtoye-stg-aks auth can-i create clusterroles --as 4cce597e-719e-4181-b045-8ba024f5bc67 --as-user-extra oid=4cce597e-719e-4181-b045-8ba024f5bc67
+Error from server (Forbidden): userextras.authentication.k8s.io "4cce597e-719e-4181-b045-8ba024f5bc67" is forbidden: User "admin@jtoyedigital.co.uk" cannot impersonate resource "userextras/oid" in API group "authentication.k8s.io" at the cluster scope: an error on the server ("unknown") has prevented the request from succeeding
+[rc=1]
+
+----- [2026-10-19T06:13:40Z] BEFORE ci-rbac (Extra:oid) POSITIVE CONTROL for the CI identity: Azure RBAC Writer on namespaces/jtoye-staging grants create configmaps there
+$ kubectl --context jtoye-stg-aks auth can-i create configmaps -n jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67 --as-user-extra oid=4cce597e-719e-4181-b045-8ba024f5bc67
+Error from server (Forbidden): userextras.authentication.k8s.io "4cce597e-719e-4181-b045-8ba024f5bc67" is forbidden: User "admin@jtoyedigital.co.uk" cannot impersonate resource "userextras/oid" in API group "authentication.k8s.io" at the cluster scope: an error on the server ("unknown") has prevented the request from succeeding
+[rc=1]
+
+----- [2026-10-19T06:13:58Z] BEFORE ci-rbac (Extra:oid) control: create configmaps in default (outside the Writer scope)
+$ kubectl --context jtoye-stg-aks auth can-i create configmaps -n default --as 4cce597e-719e-4181-b045-8ba024f5bc67 --as-user-extra oid=4cce597e-719e-4181-b045-8ba024f5bc67
+Error from server (Forbidden): userextras.authentication.k8s.io "4cce597e-719e-4181-b045-8ba024f5bc67" is forbidden: User "admin@jtoyedigital.co.uk" cannot impersonate resource "userextras/oid" in API group "authentication.k8s.io" at the cluster scope: an error on the server ("unknown") has prevented the request from succeeding
+[rc=1]
+
+NOTE (executor, 2026-10-19T06:14Z): the BEFORE measurement, read.
+  * Plain `--as <oid>`: AKS's Azure RBAC webhook answers "does not have opinion for this non AAD user" for an impersonated
+    name without Extra:oid, so the decision falls through to Kubernetes RBAC. "no" on all three is therefore the
+    Kubernetes-RBAC half, measured: no binding grants the CI object id anything before the ci-rbac stage.
+  * `--as-user-extra oid=<oid>` (what the webhook asks for, to evaluate the AZURE RBAC half: Cluster User Role + RBAC Writer
+    on namespaces/jtoye-staging) is REFUSED for the operator, verbatim above: "cannot impersonate resource userextras/oid".
+    Per the plan, the Azure-RBAC half of the CI principal's reach is DEFERRED to plan 29-21's real CI run (the workflow
+    authenticates as jtoye-ci itself, so no impersonation is needed there). Also open there: that the Kubernetes user name
+    of the federated jtoye-ci token is its object id (the binding subject assumes it; 29-03 SUMMARY D5).
+  * The positive control (the operator's own can-i create clusterroles = yes) proves can-i can answer yes on this cluster.
+
+----- [2026-10-19T06:14:32Z] STAGE namespace
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage namespace
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage namespace: jtoye-staging ===
+namespace/jtoye-staging created
+OK: kubernetes.io/metadata.name=jtoye-staging
+OK: stages complete: namespace
+[rc=0]
+
+----- [2026-10-19T06:27:29Z] BREAK ARM: cert-manager stage with ONE byte of the downloaded manifest changed (expect REFUSED [digest], nothing applied)
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage cert-manager
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== artefacts (verified before any stage runs) ===
+cert-manager v1.21.2: fetching https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml
+corrupt-curl: changed byte 100 of /tmp/tmp.xEuRlzsO28/cert-manager.yaml
+cert-manager v1.21.2: expected sha256 e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f
+cert-manager v1.21.2: actual   sha256 06ce3df95f7c447e7a28356eea379b50c7e55341a195a56f6ac03f1ae39985bc (1034400 bytes)
+REFUSED [digest]: cert-manager v1.21.2 from https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml does not match its pinned sha256. Either the upstream artefact changed under a pinned tag or what arrived is not what was pinned. NOTHING has been applied: every artefact is verified before any stage runs.
+[rc=1]
+
+----- [2026-10-19T06:27:29Z] BREAK ARM read-back: nothing applied (cert-manager namespace and CRDs absent)
+$ bash -c kubectl --context jtoye-stg-aks get ns cert-manager; echo "ns rc=$?"; n=$(kubectl --context jtoye-stg-aks get crd -o name | command grep -c cert-manager.io); echo "cert-manager.io CRDs=$n"
+Error from server (NotFound): namespaces "cert-manager" not found
+ns rc=1
+cert-manager.io CRDs=0
+[rc=0]
+
+----- [2026-10-19T06:27:38Z] STAGE cert-manager (clean re-run after the break arm)
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage cert-manager
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== artefacts (verified before any stage runs) ===
+cert-manager v1.21.2: fetching https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml
+OK: cert-manager v1.21.2 verified: 1034400 bytes, sha256 e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f
+OK: every artefact the selected stages need is verified; nothing has been applied yet
+
+=== stage cert-manager v1.21.2 ===
+namespace/cert-manager serverside-applied
+customresourcedefinition.apiextensions.k8s.io/challenges.acme.cert-manager.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/orders.acme.cert-manager.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/certificaterequests.cert-manager.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/certificates.cert-manager.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/clusterissuers.cert-manager.io serverside-applied
+customresourcedefinition.apiextensions.k8s.io/issuers.cert-manager.io serverside-applied
+serviceaccount/cert-manager-cainjector serverside-applied
+serviceaccount/cert-manager serverside-applied
+serviceaccount/cert-manager-webhook serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-cainjector serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-issuers serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-clusterissuers serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-certificates serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-orders serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-challenges serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-ingress-shim serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-cluster-view serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-view serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-edit serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-approve:cert-manager-io serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-controller-certificatesigningrequests serverside-applied
+clusterrole.rbac.authorization.k8s.io/cert-manager-webhook:subjectaccessreviews serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-cainjector serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-issuers serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-clusterissuers serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-certificates serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-orders serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-challenges serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-ingress-shim serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-approve:cert-manager-io serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-controller-certificatesigningrequests serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/cert-manager-webhook:subjectaccessreviews serverside-applied
+role.rbac.authorization.k8s.io/cert-manager-cainjector:leaderelection serverside-applied
+role.rbac.authorization.k8s.io/cert-manager:leaderelection serverside-applied
+role.rbac.authorization.k8s.io/cert-manager-webhook:dynamic-serving serverside-applied
+rolebinding.rbac.authorization.k8s.io/cert-manager-cainjector:leaderelection serverside-applied
+rolebinding.rbac.authorization.k8s.io/cert-manager:leaderelection serverside-applied
+rolebinding.rbac.authorization.k8s.io/cert-manager-webhook:dynamic-serving serverside-applied
+service/cert-manager-cainjector serverside-applied
+service/cert-manager serverside-applied
+service/cert-manager-webhook serverside-applied
+deployment.apps/cert-manager-cainjector serverside-applied
+deployment.apps/cert-manager serverside-applied
+deployment.apps/cert-manager-webhook serverside-applied
+mutatingwebhookconfiguration.admissionregistration.k8s.io/cert-manager-webhook serverside-applied
+validatingwebhookconfiguration.admissionregistration.k8s.io/cert-manager-webhook serverside-applied
+deployment.apps/cert-manager condition met
+deployment.apps/cert-manager-cainjector condition met
+deployment.apps/cert-manager-webhook condition met
+OK: cert-manager webhook answers
+OK: stages complete: cert-manager
+[rc=0]
+
+----- [2026-10-19T06:28:02Z] STAGE rabbitmq-operator
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage rabbitmq-operator
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== artefacts (verified before any stage runs) ===
+rabbitmq cluster-operator v2.23.1: fetching https://github.com/rabbitmq/cluster-operator/releases/download/v2.23.1/cluster-operator.yml
+OK: rabbitmq cluster-operator v2.23.1 verified: 360452 bytes, sha256 ae35a547751656bc64bb734026249a845d226d96aba5a73783e05c5ec3444687
+OK: every artefact the selected stages need is verified; nothing has been applied yet
+
+=== stage rabbitmq-operator v2.23.1 ===
+namespace/rabbitmq-system serverside-applied
+customresourcedefinition.apiextensions.k8s.io/rabbitmqclusters.rabbitmq.com serverside-applied
+serviceaccount/rabbitmq-cluster-operator serverside-applied
+role.rbac.authorization.k8s.io/rabbitmq-cluster-leader-election-role serverside-applied
+clusterrole.rbac.authorization.k8s.io/rabbitmq-cluster-operator-role serverside-applied
+clusterrole.rbac.authorization.k8s.io/rabbitmq-cluster-service-binding-role serverside-applied
+rolebinding.rbac.authorization.k8s.io/rabbitmq-cluster-leader-election-rolebinding serverside-applied
+clusterrolebinding.rbac.authorization.k8s.io/rabbitmq-cluster-operator-rolebinding serverside-applied
+service/cluster-operator-webhook-service serverside-applied
+service/rabbitmq-cluster-operator-metrics-service serverside-applied
+deployment.apps/rabbitmq-cluster-operator serverside-applied
+certificate.cert-manager.io/cluster-operator-serving-cert serverside-applied
+certificate.cert-manager.io/metrics-certs serverside-applied
+issuer.cert-manager.io/selfsigned-issuer serverside-applied
+mutatingwebhookconfiguration.admissionregistration.k8s.io/cluster-operator-mutating-webhook-configuration serverside-applied
+validatingwebhookconfiguration.admissionregistration.k8s.io/cluster-operator-validating-webhook-configuration serverside-applied
+deployment.apps/rabbitmq-cluster-operator condition met
+NOTE: upgrading this operator rolls EVERY RabbitmqCluster it manages. Before a bump, pause
+      reconciliation on each cluster (label rabbitmq.com/pauseReconciliation=true), upgrade,
+      then unpause one cluster at a time (docs/runbooks/rabbitmq-broker-upgrade.md).
+OK: stages complete: rabbitmq-operator
+[rc=0]
+
+----- [2026-10-19T06:28:32Z] AZURE READ: control-plane identity and the outbound IP's role assignments, BEFORE the grant
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/az-pre.sh
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+control-plane identity (az aks show identity):
+SystemAssigned	371d48a6-e45c-4df8-8300-618e0b1d8ce7	b56df236-36b2-49ab-a25f-050cbaa9787c
+outbound IP resource:
+/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-outbound-ip	40.120.43.119	Standard	Static
+role assignments on jtoye-stg-outbound-ip BEFORE:
+(end of list)
+role assignments on jtoye-stg-ingress-ip (context, read only):
+371d48a6-e45c-4df8-8300-618e0b1d8ce7	Network Contributor	/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-ingress-ip
+(end of list)
+[rc=0]
+
+----- [2026-10-19T06:28:49Z] AZURE MUTATION (owner-approved 2026-10-19): Network Contributor for the AKS control-plane identity on jtoye-stg-outbound-ip ONLY, then read back
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/az-grant.sh
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+granting Network Contributor to 371d48a6-e45c-4df8-8300-618e0b1d8ce7 (ServicePrincipal) at /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-outbound-ip
+create rc=0; reading back (bounded: 6 x 10 s):
+371d48a6-e45c-4df8-8300-618e0b1d8ce7	Network Contributor	/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-outbound-ip
+assignments_on_scope=1 exact_match=1
+[rc=0]
+
+----- [2026-10-19T06:29:00Z] STAGE traefik
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage traefik
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage traefik (k8s/platform/traefik) ===
+namespace/traefik created
+serviceaccount/traefik created
+role.rbac.authorization.k8s.io/traefik-provider created
+clusterrole.rbac.authorization.k8s.io/traefik-ingressclasses created
+rolebinding.rbac.authorization.k8s.io/traefik-provider created
+clusterrolebinding.rbac.authorization.k8s.io/traefik-ingressclasses created
+service/traefik created
+deployment.apps/traefik created
+poddisruptionbudget.policy/traefik created
+ingressclass.networking.k8s.io/nginx created
+networkpolicy.networking.k8s.io/traefik-ingress created
+deployment.apps/traefik condition met
+OK: service traefik holds 51.105.43.14
+OK: stages complete: traefik
+[rc=0]
+
+----- [2026-10-19T06:29:39Z] READ-BACK: Traefik Service events (any LinkedAuthorizationFailed / SyncLoadBalancerFailed?)
+$ bash -c kubectl --context jtoye-stg-aks -n traefik get events --field-selector involvedObject.kind=Service -o custom-columns=TIME:.lastTimestamp,TYPE:.type,REASON:.reason,MSG:.message
+TIME                   TYPE     REASON                 MSG
+2026-10-19T06:29:05Z   Normal   EnsuringLoadBalancer   Ensuring load balancer
+2026-10-19T06:29:11Z   Normal   EnsuredLoadBalancer    Ensured load balancer
+[rc=0]
+
+----- [2026-10-19T06:29:40Z] STAGE issuers
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage issuers
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage issuers (k8s/platform/cert-manager) ===
+clusterissuer.cert-manager.io/letsencrypt-prod created
+clusterissuer.cert-manager.io/letsencrypt-staging created
+clusterissuer.cert-manager.io/letsencrypt-staging condition met
+clusterissuer.cert-manager.io/letsencrypt-prod condition met
+OK: stages complete: issuers
+[rc=0]
+
+----- [2026-10-19T06:29:52Z] STAGE ci-rbac
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage ci-rbac
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage ci-rbac (k8s/platform/rbac) ===
+role.rbac.authorization.k8s.io/jtoye-ci-custom-resources created
+clusterrole.rbac.authorization.k8s.io/jtoye-ci-namespace-jtoye-staging created
+rolebinding.rbac.authorization.k8s.io/jtoye-ci-custom-resources created
+clusterrolebinding.rbac.authorization.k8s.io/jtoye-ci-namespace-jtoye-staging created
+OK: stages complete: ci-rbac
+[rc=0]
+
+----- [2026-10-19T06:29:54Z] AFTER ci-rbac: can-i patch namespace/jtoye-staging as CI (expect yes)
+$ kubectl --context jtoye-stg-aks auth can-i patch namespace/jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67
+Warning: resource 'namespaces' is not namespace scoped
+
+yes
+[rc=0]
+
+----- [2026-10-19T06:29:54Z] AFTER ci-rbac: can-i create secretproviderclasses in jtoye-staging as CI (expect yes)
+$ kubectl --context jtoye-stg-aks auth can-i create secretproviderclasses.secrets-store.csi.x-k8s.io -n jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67
+yes
+[rc=0]
+
+----- [2026-10-19T06:29:55Z] AFTER ci-rbac: can-i create clusterroles as CI (expect no)
+$ kubectl --context jtoye-stg-aks auth can-i create clusterroles --as 4cce597e-719e-4181-b045-8ba024f5bc67
+Warning: resource 'clusterroles' is not namespace scoped in group 'rbac.authorization.k8s.io'
+
+no - Azure does not have opinion for this non AAD user. If you are an AAD user, please set Extra:oid parameter for impersonated user in the kubeconfig
+[rc=1]
+
+----- [2026-10-19T06:29:56Z] AFTER ci-rbac controls: patch namespace/default (outside resourceNames; expect no), create certificates in jtoye-staging (expect yes), create secretproviderclasses in default (expect no)
+$ bash -c kubectl --context jtoye-stg-aks auth can-i patch namespace/default --as 4cce597e-719e-4181-b045-8ba024f5bc67; kubectl --context jtoye-stg-aks auth can-i create certificates.cert-manager.io -n jtoye-staging --as 4cce597e-719e-4181-b045-8ba024f5bc67; kubectl --context jtoye-stg-aks auth can-i create secretproviderclasses.secrets-store.csi.x-k8s.io -n default --as 4cce597e-719e-4181-b045-8ba024f5bc67; true
+Warning: resource 'namespaces' is not namespace scoped
+
+no - Azure does not have opinion for this non AAD user. If you are an AAD user, please set Extra:oid parameter for impersonated user in the kubeconfig
+yes
+no - Azure does not have opinion for this non AAD user. If you are an AAD user, please set Extra:oid parameter for impersonated user in the kubeconfig
+[rc=0]
+
+----- [2026-10-19T06:30:08Z] READ-BACK: Deployments Available (cert-manager, rabbitmq-system, traefik)
+$ bash -c kubectl --context jtoye-stg-aks get deploy -n cert-manager -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,AVAILABLE:'.status.conditions[?(@.type=="Available")].status',READY:.status.readyReplicas,IMAGE:'.spec.template.spec.containers[0].image'; kubectl --context jtoye-stg-aks get deploy -n rabbitmq-system -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,AVAILABLE:'.status.conditions[?(@.type=="Available")].status',READY:.status.readyReplicas,IMAGE:'.spec.template.spec.containers[0].image' --no-headers; kubectl --context jtoye-stg-aks get deploy -n traefik -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,AVAILABLE:'.status.conditions[?(@.type=="Available")].status',READY:.status.readyReplicas,IMAGE:'.spec.template.spec.containers[0].image' --no-headers
+NS             NAME                      AVAILABLE   READY   IMAGE
+cert-manager   cert-manager              True        1       quay.io/jetstack/cert-manager-controller:v1.21.2
+cert-manager   cert-manager-cainjector   True        1       quay.io/jetstack/cert-manager-cainjector:v1.21.2
+cert-manager   cert-manager-webhook      True        1       quay.io/jetstack/cert-manager-webhook:v1.21.2
+rabbitmq-system   rabbitmq-cluster-operator   True   1     ghcr.io/rabbitmq/cluster-operator:2.23.1
+traefik   traefik   True   2     traefik:v3.7.15@sha256:0f6150202bc1fed72a7bd2107460eaa510e5b8a905f3fdb5b84f2c8619c33368
+[rc=0]
+
+----- [2026-10-19T06:30:10Z] READ-BACK: ingressclass nginx controller (expect k8s.io/ingress-nginx)
+$ kubectl --context jtoye-stg-aks get ingressclass nginx -o jsonpath={.spec.controller}{"\n"}
+k8s.io/ingress-nginx
+[rc=0]
+
+----- [2026-10-19T06:30:11Z] TASK 1 VERIFY 1 (as written)
+$ bash -c kubectl --context jtoye-stg-aks -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip} {.spec.externalTrafficPolicy}'; echo " rc=$?"
+51.105.43.14 Local rc=0
+[rc=0]
+
+----- [2026-10-19T06:30:11Z] TASK 1 VERIFY 2 (as written)
+$ bash -c kubectl --context jtoye-stg-aks get clusterissuer letsencrypt-staging letsencrypt-prod -o jsonpath='{range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status} {end}'; echo " rc=$?"
+letsencrypt-staging=True letsencrypt-prod=True  rc=0
+[rc=0]
+
+----- [2026-10-19T06:30:12Z] READ-BACK: Service loadBalancerIP / annotations (the static IP binding)
+$ bash -c kubectl --context jtoye-stg-aks -n traefik get svc traefik -o jsonpath='{.spec.type} {.spec.loadBalancerIP} {.metadata.annotations}{"\n"}'
+LoadBalancer  {"kubectl.kubernetes.io/last-applied-configuration":"{\"apiVersion\":\"v1\",\"kind\":\"Service\",\"metadata\":{\"annotations\":{\"service.beta.kubernetes.io/azure-load-balancer-resource-group\":\"jtoye-rg\",\"service.beta.kubernetes.io/azure-pip-name\":\"jtoye-stg-ingress-ip\"},\"labels\":{\"app.kubernetes.io/name\":\"traefik\",\"app.kubernetes.io/part-of\":\"jtoye-platform\"},\"name\":\"traefik\",\"namespace\":\"traefik\"},\"spec\":{\"externalTrafficPolicy\":\"Local\",\"ports\":[{\"name\":\"web\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":\"web\"},{\"name\":\"websecure\",\"port\":443,\"protocol\":\"TCP\",\"targetPort\":\"websecure\"}],\"selector\":{\"app.kubernetes.io/name\":\"traefik\"},\"type\":\"LoadBalancer\"}}\n","service.beta.kubernetes.io/azure-load-balancer-resource-group":"jtoye-rg","service.beta.kubernetes.io/azure-pip-name":"jtoye-stg-ingress-ip"}
+[rc=0]
+
+----- [2026-10-19T06:30:30Z] AZURE READ: jtoye-stg-ingress-ip (address and what it is attached to)
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/az-ingress.sh
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+51.105.43.14	Static	Standard	/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/Microsoft.Network/loadBalancers/kubernetes/frontendIPConfigurations/a81eeaef2b09844c6bfeb8da9611c36c
+[rc=0]
+
+----- [2026-10-19T06:30:31Z] EQUALITY: Azure address == Service status == identity file, policy Local
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/ip-eq.sh k8s/staging/azure-identity.yaml
+azure=51.105.43.14 service=51.105.43.14 policy=Local identity_file=51.105.43.14 rc_az=0 rc_k=0
+EQUAL
+[rc=0]
+
+----- [2026-10-19T06:30:33Z] EQUALITY fail direction: same check against a scratch identity file naming 203.0.113.10 (expect MISMATCH, rc 1)
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/ip-eq.sh /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/identity-wrongip.yaml
+azure=51.105.43.14 service=51.105.43.14 policy=Local identity_file=203.0.113.10 rc_az=0 rc_k=0
+MISMATCH
+[rc=1]
+
+----- [2026-10-19T06:30:34Z] TASK 1 VERIFY 2 fail direction: a ClusterIssuer name that does not exist (expect rc non-zero)
+$ bash -c kubectl --context jtoye-stg-aks get clusterissuer letsencrypt-staging letsencrypt-nonexistent -o jsonpath='{range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status} {end}'; echo " rc=$?"
+letsencrypt-staging=True Error from server (NotFound): clusterissuers.cert-manager.io "letsencrypt-nonexistent" not found
+ rc=1
+[rc=0]
+
+----- [2026-10-19T06:31:58Z] READ-BACK: Traefik logs, both pods, ANSI stripped (provider start; any forbidden/error lines)
+$ bash -c for p in $(kubectl --context jtoye-stg-aks -n traefik get pods -o name); do echo "== $p"; kubectl --context jtoye-stg-aks -n traefik logs $p 2>&1 | sed -E 's/\x1b\[[0-9;]*m//g' | command grep -E 'version=|Starting provider|ERR|forbidden' ; done; echo "error_or_forbidden_lines=$(for p in $(kubectl --context jtoye-stg-aks -n traefik get pods -o name); do kubectl --context jtoye-stg-aks -n traefik logs $p 2>&1; done | command grep -cE 'ERR|forbidden')"
+== pod/traefik-564ff689f8-k9tb9
+2026-10-19T06:29:11Z INF Traefik version 3.7.15 built on 2026-10-15T14:33:48Z version=3.7.15
+2026-10-19T06:29:11Z INF Starting provider aggregator *aggregator.ProviderAggregator
+2026-10-19T06:29:11Z INF Starting provider *traefik.Provider
+2026-10-19T06:29:11Z INF Starting provider *ingressnginx.Provider
+2026-10-19T06:29:11Z INF Starting provider *acme.ChallengeTLSALPN
+== pod/traefik-564ff689f8-sg5dz
+2026-10-19T06:29:12Z INF Traefik version 3.7.15 built on 2026-10-15T14:33:48Z version=3.7.15
+2026-10-19T06:29:12Z INF Starting provider aggregator *aggregator.ProviderAggregator
+2026-10-19T06:29:12Z INF Starting provider *traefik.Provider
+2026-10-19T06:29:12Z INF Starting provider *ingressnginx.Provider
+2026-10-19T06:29:12Z INF Starting provider *acme.ChallengeTLSALPN
+error_or_forbidden_lines=0
+[rc=0]
+
+----- [2026-10-19T06:32:02Z] READ-BACK: the running Traefik's provider args (watchNamespace is not printed at INFO, so it is read from the live Deployment)
+$ bash -c kubectl --context jtoye-stg-aks -n traefik get deploy traefik -o jsonpath='{range .spec.template.spec.containers[0].args[*]}{@}{"\n"}{end}' | command grep -E 'kubernetesingressnginx'
+--providers.kubernetesingressnginx=true
+--providers.kubernetesingressnginx.watchnamespace=jtoye-staging
+--providers.kubernetesingressnginx.ingressclass=nginx
+--providers.kubernetesingressnginx.controllerclass=k8s.io/ingress-nginx
+--providers.kubernetesingressnginx.allowsnippetannotations=true
+--providers.kubernetesingressnginx.proxyrequestbuffering=true
+--providers.kubernetesingressnginx.httpentrypoint=web
+--providers.kubernetesingressnginx.httpsentrypoint=websecure
+[rc=0]
+
+----- [2026-10-19T06:32:41Z] control for error_or_forbidden_lines=0: the same counter over the same stream counts WRN lines (must be > 0)
+$ bash -c all=$(for p in $(kubectl --context jtoye-stg-aks -n traefik get pods -o name); do kubectl --context jtoye-stg-aks -n traefik logs $p 2>&1; done); echo "WRN_lines=$(command grep -c 'WRN' <<<"$all") ERR_or_forbidden=$(command grep -cE 'ERR|forbidden' <<<"$all")"
+WRN_lines=10 ERR_or_forbidden=0
+[rc=0]
+INGRESS IP FOR THE OWNER: 51.105.43.14
+
+===== TASK 2 (checkpoint:human-action) — DNS measured after Task 1; bounded poll every 60 s, deadline 600 s =====
+2026-10-19T06:33:14Z resolved_to_ingress=0/8
+2026-10-19T06:34:15Z resolved_to_ingress=0/8
+2026-10-19T06:35:15Z resolved_to_ingress=0/8
+2026-10-19T06:36:15Z resolved_to_ingress=0/8
+2026-10-19T06:37:16Z resolved_to_ingress=0/8
+2026-10-19T06:38:16Z resolved_to_ingress=0/8
+2026-10-19T06:39:16Z resolved_to_ingress=0/8
+2026-10-19T06:40:17Z resolved_to_ingress=0/8
+2026-10-19T06:41:17Z resolved_to_ingress=0/8
+2026-10-19T06:42:17Z resolved_to_ingress=0/8
+2026-10-19T06:43:18Z resolved_to_ingress=0/8
+DEADLINE reached (600 s) without all four records
+
+----- [2026-10-19T06:43:37Z] TASK 2 VERIFICATION at the deadline: four staging names, production api/app, at dns1, dns2 and 1.1.1.1; NS/MX controls
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-final.sh
+@dns1.registrar-servers.com A app-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A api-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A api-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@1.1.1.1 A app-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A api-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A auth-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A grafana-staging.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+positive control NS @dns1: dns1.registrar-servers.com. dns2.registrar-servers.com. 
+positive control MX @dns1: 10 mx.zoho.eu. 20 mx2.zoho.eu. 50 mx3.zoho.eu. 
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792318860 43200 3600 604800 3601  (serial 1792318860 read as a Unix time is 2026-10-18T10:21:00Z; if the registrar uses time-based serials, the zone has not been saved since then — an inference, not a measurement)
+.uk delegation (nsa.nic.uk, norecurse): dns1.registrar-servers.com. dns2.registrar-servers.com. 
+[rc=0]
+
+RESULT (executor, 2026-10-19T06:44Z): Task 2 NOT satisfied. None of the four staging A records exists at the
+authoritative servers (NXDOMAIN with the aa flag at dns1 and dns2) or at 1.1.1.1, after a 600 s bounded poll. D-08 holds:
+api/app are NXDOMAIN (aa). Controls answer (NS, MX via Zoho, .uk delegation to registrar-servers). Task 3 NOT started;
+plan stopped at the Task 2 checkpoint (human-action). The platform from Task 1 stays applied; Traefik holds 51.105.43.14.
+
+----- [2026-10-19T07:10:47Z] TASK 2 VERIFICATION after the owner's 'dns added' (2026-10-19): staging + production names at dns1, dns2, 1.1.1.1, 8.8.8.8; NS/MX/SOA controls; gate = 4/4 staging -> 51.105.43.14 and api/app aa-NXDOMAIN at both authoritative servers
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-t2v.sh
+@dns1.registrar-servers.com A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns1.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns1.registrar-servers.com A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr aa rd;
+@dns2.registrar-servers.com A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@dns2.registrar-servers.com A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr aa rd;
+@1.1.1.1 A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@1.1.1.1 A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@1.1.1.1 A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A app-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A api-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A auth-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A grafana-staging.olajay.co.uk -> answer=[51.105.43.14 ] status: NOERROR flags: qr rd ra;
+@8.8.8.8 A api.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A app.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A auth.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A grafana.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+@8.8.8.8 A grafana-stating.olajay.co.uk -> answer=[] status: NXDOMAIN flags: qr rd ra;
+positive control NS @dns1: dns1.registrar-servers.com. dns2.registrar-servers.com. 
+positive control MX @dns1: 10 mx.zoho.eu. 20 mx2.zoho.eu. 50 mx3.zoho.eu. 
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792393745 43200 3600 604800 3601  (serial 1792393745 read as Unix time = 2026-10-19T07:09:05Z; an inference about time-based serials, not a measurement)
+VERDICT INPUTS:
+  dns1.registrar-servers.com staging_to_ingress=4/4 production_api_app_aa_nxdomain=2/2
+  dns2.registrar-servers.com staging_to_ingress=4/4 production_api_app_aa_nxdomain=2/2
+[rc=0]
+
+----- [2026-10-19T07:10:57Z] TASK 2 gate FAIL direction: the same script with the expected IP changed by one octet (51.105.43.15) must exit non-zero (staging_to_ingress=0/4)
+$ bash -c bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-t2v-wrongip.sh | tail -3
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792393745 43200 3600 604800 3601  (serial 1792393745 read as Unix time = 2026-10-19T07:09:05Z; an inference about time-based serials, not a measurement)
+VERDICT INPUTS:
+  dns1.registrar-servers.com staging_to_ingress=0/4 production_api_app_aa_nxdomain=2/2
+[rc=0]
+
+----- [2026-10-19T07:11:10Z] TASK 2 gate FAIL direction (re-run): the record above shows rc=0 because '| tail -3' masked the script's status (no pipefail in bash -c) — the instrument, not the gate. Same arm, script status captured directly
+$ bash -c out=$(bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/dig-t2v-wrongip.sh); rc=$?; tail -3 <<<"$out"; exit $rc
+SOA @dns1: dns1.registrar-servers.com. hostmaster.registrar-servers.com. 1792393745 43200 3600 604800 3601  (serial 1792393745 read as Unix time = 2026-10-19T07:09:05Z; an inference about time-based serials, not a measurement)
+VERDICT INPUTS:
+  dns1.registrar-servers.com staging_to_ingress=0/4 production_api_app_aa_nxdomain=2/2
+[rc=1]
+
+RESULT (executor, 2026-10-19T07:11Z): Task 2 SATISFIED after the owner's "dns added". At BOTH authoritative servers
+(dns1/dns2.registrar-servers.com, aa flag) app-staging, api-staging, auth-staging and grafana-staging resolve to
+51.105.43.14; api, app, auth and grafana stay NXDOMAIN with aa (D-08 holds); the mistyped host grafana-stating no
+longer resolves anywhere. Public resolvers 1.1.1.1 and 8.8.8.8 already agree (no lag observed). Gate shown both ways:
+expected IP 51.105.43.14 -> rc 0 (4/4 at each server); expected IP 51.105.43.15 -> rc 1 (0/4). Controls: NS, MX (Zoho),
+SOA serial moved from 1792318860 (06:43 measurement) to 1792393745.
+
+----- [2026-10-19T07:12:07Z] TASK 3 in-flight: Challenge for app-staging while the order is open (Challenges are removed once the Order is valid, so captured now)
+$ kubectl --context jtoye-stg-aks -n jtoye-staging get challenge -o jsonpath={range .items[*]}{.metadata.name} domain={.spec.dnsName} type={.spec.type} state={.status.state} presented={.status.presented} processing={.status.processing} reason={.status.reason}{"\n"}{end}
+acme-probe-tls-1-2987034195-1955570327 domain=app-staging.olajay.co.uk type=HTTP-01 state=pending presented=true processing=true reason=Waiting for HTTP-01 challenge propagation: wrong status code '404', expected '200'
+[rc=0]
+
+----- [2026-10-19T07:11:44Z] TASK 3 stage acme-probe (letsencrypt-staging, HTTP-01; script deadline 900 s)
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage acme-probe
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage acme-probe (k8s/platform/acme-probe) ===
+service/acme-probe created
+deployment.apps/acme-probe created
+ingress.networking.k8s.io/acme-probe created
+networkpolicy.networking.k8s.io/acme-probe-allow created
+OK: certificate acme-probe-tls is Ready
+OK: edge answered through Traefik: NOW: 2026-10-19 07:12:19.385051611 +0000 UTC m=+26.255460495
+NEXT: record the evidence, then run --stage acme-probe-delete
+OK: stages complete: acme-probe
+[rc=0]
+
+----- [2026-10-19T07:12:30Z] TASK 3 plan verify #1 (before delete): certificate acme-probe-tls Ready
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get certificate acme-probe-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'; echo " rc=$?"
+True rc=0
+[rc=0]
+
+----- [2026-10-19T07:12:30Z] TASK 3 Certificate, CertificateRequest, Order (the Challenge was already removed on Order valid; its in-flight state is recorded above)
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get certificate,certificaterequest,order -o wide; echo; kubectl --context jtoye-stg-aks -n jtoye-staging get order -o jsonpath='{range .items[*]}{.metadata.name} state={.status.state} url={.status.url} authorizations={.status.authorizations[*].identifier} challenge_types={.status.authorizations[*].challenges[*].type}{"\n"}{end}'
+NAME                                         READY   SECRET           ISSUER                STATUS                                          AGE
+certificate.cert-manager.io/acme-probe-tls   True    acme-probe-tls   letsencrypt-staging   Certificate is up to date and has not expired   45s
+
+NAME                                                  APPROVED   DENIED   READY   ISSUER                REQUESTER                                         STATUS                                         AGE
+certificaterequest.cert-manager.io/acme-probe-tls-1   True                True    letsencrypt-staging   system:serviceaccount:cert-manager:cert-manager   Certificate fetched from issuer successfully   44s
+
+NAME                                                     STATE   ISSUER                REASON   AGE
+order.acme.cert-manager.io/acme-probe-tls-1-2987034195   valid   letsencrypt-staging            44s
+
+acme-probe-tls-1-2987034195 state=valid url=https://acme-staging-v02.api.letsencrypt.org/acme/order/355233653/51809588503 authorizations=app-staging.olajay.co.uk challenge_types=http-01 dns-01 dns-persist-01 tls-alpn-01
+[rc=0]
+
+----- [2026-10-19T07:12:31Z] TASK 3 events for the Certificate, CertificateRequest, Order, Challenge and solver objects (jtoye-staging)
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get events --sort-by=.lastTimestamp -o custom-columns=LAST:.lastTimestamp,KIND:.involvedObject.kind,NAME:.involvedObject.name,REASON:.reason,MSG:.message | command grep -E 'LAST|Certificate|Order|Challenge|acme'
+LAST                   KIND                 NAME                                     REASON               MSG
+2026-10-19T07:11:46Z   ReplicaSet           acme-probe-c9877ff68                     SuccessfulCreate     Created pod: acme-probe-c9877ff68-r6ph4
+2026-10-19T07:11:46Z   Deployment           acme-probe                               ScalingReplicaSet    Scaled up replica set acme-probe-c9877ff68 from 0 to 1
+2026-10-19T07:11:46Z   Pod                  acme-probe-c9877ff68-r6ph4               Scheduled            Successfully assigned jtoye-staging/acme-probe-c9877ff68-r6ph4 to aks-nodepool1-24453234-vmss000002
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   Ingress              acme-probe                               CreateCertificate    Successfully created Certificate "acme-probe-tls"
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         OrderCreated         Created Order resource jtoye-staging/acme-probe-tls-1-2987034195
+2026-10-19T07:11:47Z   Certificate          acme-probe-tls                           Generated            Stored new private key in temporary Secret resource "acme-probe-tls-gzxk7"
+2026-10-19T07:11:47Z   Certificate          acme-probe-tls                           Issuing              Issuing certificate as Secret does not exist
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         cert-manager.io      Certificate request has been approved by cert-manager.io
+2026-10-19T07:11:47Z   Certificate          acme-probe-tls                           Requested            Created new CertificateRequest resource "acme-probe-tls-1"
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:47Z   CertificateRequest   acme-probe-tls-1                         WaitingForApproval   Not signing CertificateRequest until it is Approved
+2026-10-19T07:11:48Z   Challenge            acme-probe-tls-1-2987034195-1955570327   Started              Challenge scheduled for processing
+2026-10-19T07:11:48Z   Order                acme-probe-tls-1-2987034195              Created              Created Challenge resource "acme-probe-tls-1-2987034195-1955570327" for domain "app-staging.olajay.co.uk"
+2026-10-19T07:11:48Z   Pod                  cm-acme-http-solver-n5t9q                Scheduled            Successfully assigned jtoye-staging/cm-acme-http-solver-n5t9q to aks-nodepool1-24453234-vmss000002
+2026-10-19T07:11:48Z   Pod                  acme-probe-c9877ff68-r6ph4               Pulling              Pulling image "registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4"
+2026-10-19T07:11:48Z   Challenge            acme-probe-tls-1-2987034195-1955570327   Presented            Presented challenge using HTTP-01 challenge mechanism
+2026-10-19T07:11:50Z   Pod                  cm-acme-http-solver-n5t9q                Pulling              Pulling image "quay.io/jetstack/cert-manager-acmesolver:v1.21.2"
+2026-10-19T07:11:51Z   Pod                  acme-probe-c9877ff68-r6ph4               Pulled               Successfully pulled image "registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4" in 3.597s (3.597s including waiting). Image size: 63766119 bytes.
+2026-10-19T07:11:51Z   Pod                  acme-probe-c9877ff68-r6ph4               Created              Container created
+2026-10-19T07:11:52Z   Pod                  cm-acme-http-solver-n5t9q                Started              Container started
+2026-10-19T07:11:52Z   Pod                  cm-acme-http-solver-n5t9q                Created              Container created
+2026-10-19T07:11:52Z   Pod                  acme-probe-c9877ff68-r6ph4               Started              Container started
+2026-10-19T07:11:52Z   Pod                  cm-acme-http-solver-n5t9q                Pulled               Successfully pulled image "quay.io/jetstack/cert-manager-acmesolver:v1.21.2" in 1.62s (1.62s including waiting). Image size: 6617794 bytes.
+2026-10-19T07:11:54Z   Pod                  acme-probe-c9877ff68-r6ph4               Unhealthy            Readiness probe failed: Get "http://10.244.1.168:8080/": dial tcp 10.244.1.168:8080: connect: connection refused
+2026-10-19T07:12:09Z   Challenge            acme-probe-tls-1-2987034195-1955570327   DomainVerified       Domain "app-staging.olajay.co.uk" verified with "HTTP-01" validation
+2026-10-19T07:12:09Z   Pod                  cm-acme-http-solver-n5t9q                Killing              Stopping container acmesolver
+2026-10-19T07:12:13Z   CertificateRequest   acme-probe-tls-1                         CertificateIssued    Certificate fetched from issuer successfully
+2026-10-19T07:12:13Z   Certificate          acme-probe-tls                           Issuing              The certificate has been successfully issued
+2026-10-19T07:12:13Z   Order                acme-probe-tls-1-2987034195              Complete             Order completed successfully
+[rc=0]
+
+----- [2026-10-19T07:12:32Z] TASK 3 issued certificate read from Secret acme-probe-tls (issuer must carry (STAGING))
+$ bash -c kubectl --context jtoye-stg-aks -n jtoye-staging get secret acme-probe-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt; openssl x509 -in /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt -noout -subject -issuer -ext subjectAltName -dates -serial; echo chain_certs=$(command grep -c 'BEGIN CERTIFICATE' /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt); openssl crl2pkcs7 -nocrl -certfile /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/acme-probe-tls.crt | openssl pkcs7 -print_certs -noout | command grep -E 'subject|issuer'
+subject=CN=app-staging.olajay.co.uk
+issuer=C=US, O=Let's Encrypt, CN=(STAGING) Ersatz Emmer YR2
+X509v3 Subject Alternative Name: 
+    DNS:app-staging.olajay.co.uk
+notBefore=Oct 19 06:13:39 2026 GMT
+notAfter=Dec 22 06:13:38 2026 GMT
+serial=2CC796975C61122ADFB01AE12B6FC1C1053A
+chain_certs=3
+subject=CN=app-staging.olajay.co.uk
+issuer=C=US, O=Let's Encrypt, CN=(STAGING) Ersatz Emmer YR2
+subject=C=US, O=Let's Encrypt, CN=(STAGING) Ersatz Emmer YR2
+issuer=C=US, O=ISRG, CN=(STAGING) Yonder Yam Root YR
+subject=C=US, O=ISRG, CN=(STAGING) Yonder Yam Root YR
+issuer=C=US, O=(STAGING) Internet Security Research Group, CN=(STAGING) Pretend Pear X1
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 curl through the public edge, TLS VERIFIED against the downloaded LE staging root (Pretend Pear X1, sha256 E7:05:70:A9:...:21:98); expected netexec's 'NOW: ' body
+$ bash -c curl -sv --max-time 20 --resolve app-staging.olajay.co.uk:443:51.105.43.14 --cacert /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/le-stg-roots/letsencrypt-stg-root-x1.pem https://app-staging.olajay.co.uk/acme-probe 2>&1 | command grep -vE '^\* +(TLSv1.3 \(IN\), TLS handshake, (Newsession|Encrypted)|ALPN)|^\{ \[|^} \[' ; echo; exit ${PIPESTATUS[0]}
+* Added app-staging.olajay.co.uk:443:51.105.43.14 to DNS cache
+* Hostname app-staging.olajay.co.uk was found in DNS cache
+*   Trying 51.105.43.14:443...
+* Connected to app-staging.olajay.co.uk (51.105.43.14) port 443
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+*  CAfile: /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/le-stg-roots/letsencrypt-stg-root-x1.pem
+*  CApath: /etc/ssl/certs
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+* SSL connection using TLSv1.3 / TLS_AES_128_GCM_SHA256 / X25519 / RSASSA-PSS
+* Server certificate:
+*  subject: CN=app-staging.olajay.co.uk
+*  start date: Oct 19 06:13:39 2026 GMT
+*  expire date: Dec 22 06:13:38 2026 GMT
+*  subjectAltName: host "app-staging.olajay.co.uk" matched cert's "app-staging.olajay.co.uk"
+*  issuer: C=US; O=Let's Encrypt; CN=(STAGING) Ersatz Emmer YR2
+*  SSL certificate verify ok.
+*   Certificate level 0: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+*   Certificate level 1: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+*   Certificate level 2: Public key type RSA (4096/152 Bits/secBits), signed using sha256WithRSAEncryption
+*   Certificate level 3: Public key type RSA (4096/152 Bits/secBits), signed using sha256WithRSAEncryption
+* using HTTP/2
+* [HTTP/2] [1] OPENED stream for https://app-staging.olajay.co.uk/acme-probe
+* [HTTP/2] [1] [:method: GET]
+* [HTTP/2] [1] [:scheme: https]
+* [HTTP/2] [1] [:authority: app-staging.olajay.co.uk]
+* [HTTP/2] [1] [:path: /acme-probe]
+* [HTTP/2] [1] [user-agent: curl/8.5.0]
+* [HTTP/2] [1] [accept: */*]
+> GET /acme-probe HTTP/2
+> Host: app-staging.olajay.co.uk
+> User-Agent: curl/8.5.0
+> Accept: */*
+> 
+< HTTP/2 200 
+< content-type: text/plain; charset=utf-8
+< date: Mon, 19 Oct 2026 07:12:44 GMT
+< content-length: 59
+< 
+* Connection #0 to host app-staging.olajay.co.uk left intact
+NOW: 2026-10-19 07:12:44.66197593 +0000 UTC m=+51.532384814
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 control A: same curl against the SYSTEM trust store (no --cacert) must FAIL verification — proves verification is live and the certificate is the untrusted staging one
+$ bash -c curl -s -o /dev/null -w 'http=%{http_code} ssl_verify_result=%{ssl_verify_result}\n' --max-time 20 --resolve app-staging.olajay.co.uk:443:51.105.43.14 https://app-staging.olajay.co.uk/acme-probe; rc=$?; echo curl_rc=$rc; [ $rc -ne 0 ]
+http=000 ssl_verify_result=20
+curl_rc=60
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 control B: --cacert set to the OTHER staging root (Bogus Broccoli X2, not in this chain) must FAIL
+$ bash -c curl -s -o /dev/null --max-time 20 --resolve app-staging.olajay.co.uk:443:51.105.43.14 --cacert /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/le-stg-roots/letsencrypt-stg-root-x2.pem https://app-staging.olajay.co.uk/acme-probe; rc=$?; echo curl_rc=$rc; [ $rc -ne 0 ]
+curl_rc=60
+[rc=0]
+
+----- [2026-10-19T07:12:44Z] TASK 3 control C: plain HTTP on :80 to the same host and path (Traefik answers on web)
+$ bash -c curl -s -o /dev/null -w 'http=%{http_code} redirect=%{redirect_url}\n' --max-time 20 --resolve app-staging.olajay.co.uk:80:51.105.43.14 http://app-staging.olajay.co.uk/acme-probe
+http=308 redirect=https://app-staging.olajay.co.uk/acme-probe
+[rc=0]
+
+----- [2026-10-19T07:12:53Z] TASK 3 fail direction precondition: probe-nodns-staging.olajay.co.uk has NO record at either authoritative server
+$ bash -c for ns in dns1.registrar-servers.com dns2.registrar-servers.com; do o=$(dig @$ns A probe-nodns-staging.olajay.co.uk +time=5 +tries=2); echo "@$ns $(command grep -oE "status: [A-Z]+" <<<"$o") $(command grep -oE "flags: [a-z ]+;" <<<"$o" | head -1) answer=[$(dig @$ns +short A probe-nodns-staging.olajay.co.uk)]"; done
+@dns1.registrar-servers.com status: NXDOMAIN flags: qr aa rd; answer=[]
+@dns2.registrar-servers.com status: NXDOMAIN flags: qr aa rd; answer=[]
+[rc=0]
+
+----- [2026-10-19T07:12:53Z] TASK 3 fail direction: apply the scratch-only no-DNS probe Ingress (same issuer letsencrypt-staging, Secret acme-probe-nodns-tls)
+$ bash -c cat /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/probe-nodns.yaml | command grep -v '^#'; kubectl --context jtoye-stg-aks apply -f /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/probe-nodns.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: acme-probe-nodns
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: acme-probe-nodns
+    app.kubernetes.io/part-of: jtoye-platform
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - probe-nodns-staging.olajay.co.uk
+      secretName: acme-probe-nodns-tls
+  rules:
+    - host: probe-nodns-staging.olajay.co.uk
+      http:
+        paths:
+          - path: /acme-probe
+            pathType: Prefix
+            backend:
+              service:
+                name: acme-probe
+                port:
+                  number: 8080
+ingress.networking.k8s.io/acme-probe-nodns created
+[rc=0]
+
+----- [2026-10-19T07:13:06Z] TASK 3 fail direction: no-DNS probe observed every 60 s for 600 s (expected: Certificate never Ready, Challenge never valid)
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/nodns-watch.sh
+2026-10-19T07:13:07Z t+0s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:14:09Z t+61s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:15:11Z t+123s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:16:14Z t+185s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:17:16Z t+248s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:18:18Z t+310s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:19:20Z t+372s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:20:22Z t+434s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:21:24Z t+496s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:22:26Z t+558s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+2026-10-19T07:23:28Z t+620s cert[0]=False/DoesNotExist | challenge: acme-probe-nodns-tls-1-1233495213-3444108289 state=pending presented=true reason=Waiting for HTTP-01 challenge propagation: failed to perform self check GET request 'http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84': Get "http://probe-nodns-staging.olajay.co.uk/.well-known/acme-challenge/L2uq4NQsQUll2p-77T6JxAOz7_vPBrJDQjJUHOvrA84": dial tcp: lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host | orders: acme-probe-nodns-tls-1-1233495213=pending acme-probe-tls-1-2987034195=valid 
+samples_read_ok=11 ready_seen=0
+[rc=0]
+
+----- [2026-10-19T07:23:42Z] TASK 3 fail direction cleanup: delete the scratch no-DNS Ingress, its Certificate and Secret
+$ bash -c kubectl --context jtoye-stg-aks delete -f /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/probe-nodns.yaml --ignore-not-found; kubectl --context jtoye-stg-aks -n jtoye-staging delete certificate acme-probe-nodns-tls --ignore-not-found; kubectl --context jtoye-stg-aks -n jtoye-staging delete secret acme-probe-nodns-tls --ignore-not-found
+ingress.networking.k8s.io "acme-probe-nodns" deleted from jtoye-staging namespace
+[rc=0]
+
+----- [2026-10-19T07:23:45Z] TASK 3 fail direction cleanup read-back: no object for the no-DNS probe remains (Ingress, Certificate, CertificateRequest, Order, Challenge, solver pods, Secrets with the name prefix)
+$ bash -c set -o pipefail; r=$(kubectl --context jtoye-stg-aks -n jtoye-staging get ingress,certificate,certificaterequest,order,challenge,pod,secret -o name 2>&1); rc=$?; echo "kubectl rc=$rc"; echo "$r"; n=$(command grep -c 'nodns' <<<"$r"); echo nodns_objects=$n; c=$(command grep -c 'acme-probe' <<<"$r"); echo acme_probe_objects_control=$c; [ $rc -eq 0 ] && [ $n -eq 0 ] && [ $c -gt 0 ]
+kubectl rc=0
+ingress.networking.k8s.io/acme-probe
+certificate.cert-manager.io/acme-probe-tls
+certificaterequest.cert-manager.io/acme-probe-tls-1
+order.acme.cert-manager.io/acme-probe-tls-1-2987034195
+pod/acme-probe-c9877ff68-r6ph4
+secret/acme-probe-tls
+nodns_objects=0
+acme_probe_objects_control=6
+[rc=0]
+
+----- [2026-10-19T07:23:53Z] TASK 3 plan verify #2 POSITIVE CONTROL (before the delete stage): the explicit-name read sees all six probe objects (expect six names on stdout, kubectl rc 0; the gate itself must therefore report FAIL here)
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/verify2.sh
+kubectl rc=0 stdout=[deployment.apps/acme-probe
+service/acme-probe
+networkpolicy.networking.k8s.io/acme-probe-allow
+ingress.networking.k8s.io/acme-probe
+certificate.cert-manager.io/acme-probe-tls
+secret/acme-probe-tls]
+notfound=0 other=0
+[rc=1]
+
+----- [2026-10-19T07:24:02Z] TASK 3 stage acme-probe-delete
+$ bash scripts/staging-bootstrap.sh --context jtoye-stg-aks --stage acme-probe-delete
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+
+=== stage acme-probe-delete ===
+service "acme-probe" deleted from jtoye-staging namespace
+deployment.apps "acme-probe" deleted from jtoye-staging namespace
+ingress.networking.k8s.io "acme-probe" deleted from jtoye-staging namespace
+networkpolicy.networking.k8s.io "acme-probe-allow" deleted from jtoye-staging namespace
+secret "acme-probe-tls" deleted from jtoye-staging namespace
+OK: stages complete: acme-probe-delete
+[rc=0]
+
+----- [2026-10-19T07:24:05Z] TASK 3 plan verify #2 (after the delete stage): kubectl rc 1, empty stdout, notfound=6, other=0
+$ bash /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96b976cb-d880-439b-ae3a-761cdf973565/scratchpad/verify2.sh
+Error from server (NotFound): deployments.apps "acme-probe" not found
+Error from server (NotFound): services "acme-probe" not found
+Error from server (NotFound): networkpolicies.networking.k8s.io "acme-probe-allow" not found
+Error from server (NotFound): ingresses.networking.k8s.io "acme-probe" not found
+Error from server (NotFound): certificates.cert-manager.io "acme-probe-tls" not found
+Error from server (NotFound): secrets "acme-probe-tls" not found
+kubectl rc=1 stdout=[]
+notfound=6 other=0
+[rc=0]
+
+----- [2026-10-19T07:24:14Z] TASK 3 closing read-back: jtoye-staging holds no probe residue (certificaterequests, orders, challenges, pods, secrets) and the Task 1 platform is untouched (issuers Ready, Traefik on 51.105.43.14 Local)
+$ bash -c K='kubectl --context jtoye-stg-aks'; r=$($K -n jtoye-staging get all,ingress,networkpolicy,certificate,certificaterequest,order,challenge,secret -o name 2>&1); rc=$?; echo "jtoye-staging objects (rc=$rc): [$r]"; echo probe_residue=$(command grep -c 'acme' <<<"$r"); $K get clusterissuer letsencrypt-staging letsencrypt-prod -o jsonpath='{range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status} {end}'; echo; $K -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip} {.spec.externalTrafficPolicy}'; echo; $K get deploy -A -o custom-columns=NS:.metadata.namespace,N:.metadata.name,AVAIL:.status.availableReplicas | command grep -E 'NS|cert-manager|rabbitmq-system|traefik'
+jtoye-staging objects (rc=0): []
+probe_residue=0
+letsencrypt-staging=True letsencrypt-prod=True 
+51.105.43.14 Local
+NS                N                                     AVAIL
+cert-manager      cert-manager                          1
+cert-manager      cert-manager-cainjector               1
+cert-manager      cert-manager-webhook                  1
+rabbitmq-system   rabbitmq-cluster-operator             1
+traefik           traefik                               2
+[rc=0]
+
+RESULT (executor, 2026-10-19T07:24Z): Task 3 SATISFIED, both directions.
+  * Positive: the acme-probe stage (letsencrypt-staging, HTTP-01) took Certificate acme-probe-tls to Ready=True in
+    about 26 s (Ingress 07:11:47, DomainVerified 07:12:09, CertificateIssued 07:12:13). Its block sits below the
+    07:12:07 in-flight Challenge record because ev.sh appends when the command ENDS; the timestamps give the order.
+    Issued leaf: CN=app-staging.olajay.co.uk, issuer "(STAGING) Ersatz Emmer YR2", chain to "(STAGING) Yonder Yam Root YR"
+    cross-signed by "(STAGING) Pretend Pear X1". curl through 51.105.43.14 with TLS VERIFIED against the downloaded staging
+    root returned HTTP/2 200 and netexec's "NOW: ..." body. Controls: the system trust store refuses it (curl rc 60,
+    verify result 20); the other staging root (X2) refuses it (rc 60); HTTP :80 answers 308 to https.
+    The cluster-side self-check briefly saw a 404 at 07:12:07 (the solver route not yet in Traefik) and passed by 07:12:09.
+  * Negative: probe-nodns-staging.olajay.co.uk (aa-NXDOMAIN at dns1 and dns2) with the same issuer stayed
+    Ready=False/DoesNotExist for 620 s over 11 samples; its Challenge stayed pending, presented=true, reason "failed to
+    perform self check ... lookup probe-nodns-staging.olajay.co.uk on 10.0.0.10:53: no such host" (cert-manager's
+    self-check never passed, so nothing was submitted to Let's Encrypt for validation). Deleted; read-back nodns_objects=0
+    beside a control count of 6 probe objects from the same read.
+  * Delete: verify #2 positive control before the stage printed all six names (kubectl rc 0, gate rc 1); after
+    --stage acme-probe-delete: kubectl rc 1, stdout empty, notfound=6, other=0, gate rc 0. Namespace jtoye-staging now
+    holds no objects of those kinds; Task 1's platform is unchanged (both issuers Ready, Traefik 51.105.43.14 Local,
+    cert-manager x3, operator, Traefik x2 Available).
+  * Observation, not a defect: jtoye-staging has no NetworkPolicy yet (k8s/base, with 00-default-deny and
+    60-acme-http01-solver, is applied by the application deploy in a later plan), so this probe proved HTTP-01 WITHOUT the
+    default-deny in place. The solver allow-rule is exercised for the first time when the overlay deploys.
+  * No production-issuer certificate was requested.

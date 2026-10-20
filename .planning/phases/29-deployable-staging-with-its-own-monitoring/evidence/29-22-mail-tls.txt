@@ -1,0 +1,210 @@
+# Plan 29-22 Task 3 — live two-arm proofs on jtoye-stg-aks (kube-context jtoye-stg-aks only; subscription
+# c483d353-5f61-4587-a790-addb9ab5fb94 for Key Vault reads through scripts/lib/azure-guard.sh az_read).
+# D-22: staging app mail over REQUIRED STARTTLS to the in-cluster Mailpit (cert from the cert-manager internal CA),
+#       arm 1 a real staff invitation received, arm 2 the send refused when the server offers no STARTTLS.
+# D-30: core-java's JVM-wide truststore = JDK cacerts + cluster CA; arm 1 public TLS (Blob) works from the same pod,
+#       arm 2 a CA-only store fails public TLS at start-up.
+# Keycloak: realm SMTP over STARTTLS validates against KC_TRUSTSTORE_PATHS (the cluster CA).
+# Every line carries an ISO-8601 UTC timestamp. Message bodies, invite links and tokens are NEVER recorded here
+# (a staff-invite link is a bearer credential to a staging account): only message IDs, subjects, recipients and
+# the presence of the fragment link.
+
+================ PRE-ARM: the plan's marker check (third automated verify) on this header-only file — its fail direction ================
+# Recorded by INDEX, not by text: a verbatim (or merely defanged) copy of the MISSING lines plants the markers and the exception class names in this file and makes the final check pass vacuously (measured: a defanged copy dropped missing from 13 to 11).
+2026-10-19T12:22:28Z pre-arm marker check: rc=1; missing=13; markers missing: 10 of 10 (all ten); raw patterns missing: 3 of 3 (all three)
+
+================ PRECONDITION ================
+2026-10-19T13:10:13Z 29-16 GREEN ed07f053 (STARTTLS required literal) is an ancestor of the image tag efab17d79483b01f4397c9f82f34a36d1a2b4c11: yes
+2026-10-19T13:10:13Z app build paths changed between efab17d79483b01f4397c9f82f34a36d1a2b4c11 and HEAD 0394f5fb (core-java frontend edge-go): 0 file(s)
+2026-10-19T13:10:14Z image ghcr.io/bralabee/jtoye-core-java:efab17d79483b01f4397c9f82f34a36d1a2b4c11 present, index digest sha256:417265e8da0ab03e500f6ca35ec6503677b9b47b490c252f6d6049fe3b36f321
+2026-10-19T13:10:15Z image ghcr.io/bralabee/jtoye-frontend:efab17d79483b01f4397c9f82f34a36d1a2b4c11 present, index digest sha256:f7207a2c37d68150b7b00b4277187b857e10165230cad4afb4ccc6769f0c8f42
+2026-10-19T13:10:16Z image ghcr.io/bralabee/jtoye-edge-go:efab17d79483b01f4397c9f82f34a36d1a2b4c11 present, index digest sha256:2308a65ffc3cfa133d3e312f93c85f3dee1225b45ed19f295fbea8d8c3280bd4
+2026-10-19T13:10:25Z preflight: test-mode: yes (stripe-credentials--webhook-secret)
+2026-10-19T13:10:25Z preflight: preflight: 31 objects, 35 grants, 0 gap(s)
+2026-10-19T13:10:25Z preflight rc=0
+
+================ DEPLOY at efab17d7 (scripts/deploy.sh staging --context jtoye-stg-aks --image-tag efab17d79483b01f4397c9f82f34a36d1a2b4c11) ================
+2026-10-19T13:11:27Z new core-java pod: core-java-7d985cb6f8-zwhbb
+2026-10-19T13:11:28Z truststore-builder log: Certificate was added to keystore
+2026-10-19T13:11:28Z truststore-builder log: truststore-builder: jdk-entries=118 entries=119 (read with no store password, as the JVM reads it)
+2026-10-19T13:11:28Z init status: truststore-builder exit=0 reason=Completed
+2026-10-19T13:11:29Z JDK cacerts entries in eclipse-temurin:25-jre-alpine (local control, same JRE base): 118
+2026-10-19T13:11:39Z in the running pod: jdk-cacerts|built-store|alias jtoye-staging-ca present|JAVA_TOOL_OPTIONS|JAVA_OPTS(head) = 118|119|1|-Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStoreType=PKCS12|-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0
+2026-10-19T13:13:16Z deploy.sh: ✓ core-java deployed successfully
+2026-10-19T13:13:16Z deploy.sh: ✓ edge-go deployed successfully
+2026-10-19T13:13:16Z deploy.sh: ✓ frontend deployed successfully
+2026-10-19T13:13:16Z deploy.sh: DEPLOYED_SHA=efab17d79483b01f4397c9f82f34a36d1a2b4c11
+2026-10-19T13:13:16Z deploy.sh: DEPLOY_RC=0
+2026-10-19T13:13:23Z digest parity: 
+2026-10-19T13:13:23Z digest parity: PASS: every running container image digest across 3 service(s) is in the set of digests
+2026-10-19T13:13:23Z digest parity:       published for efab17d79483b01f4397c9f82f34a36d1a2b4c11. NOTE: this is the SET form (index digest plus each
+2026-10-19T13:13:23Z digest parity:       platform manifest digest). Narrowing it to a single measured digest is owed to a later plan.
+2026-10-19T13:13:23Z digest parity rc=0
+
+================ SMTP AUTH (29-14 open item b) and the certificate chain, read from Mailpit's EHLO over a port-forward ================
+2026-10-19T13:13:24Z cluster CA: subject=CN=J'Toye staging internal CA issuer=CN=J'Toye staging internal CA notAfter=Oct 19 13:10:51 2027 GMT X509v3 Basic Constraints: critical     CA:TRUE
+2026-10-19T13:13:28Z plain EHLO: 220 mailpit-5784f69b8b-qx4l5 Mailpit ESMTP Service ready
+2026-10-19T13:13:28Z plain EHLO: 250-mailpit-5784f69b8b-qx4l5 greets probe.jtoye-staging
+2026-10-19T13:13:28Z plain EHLO: 250-SIZE 52428800
+2026-10-19T13:13:28Z plain EHLO: 250-STARTTLS
+2026-10-19T13:13:28Z plain EHLO: 250-ENHANCEDSTATUSCODES
+2026-10-19T13:13:28Z plain EHLO: 250-8BITMIME
+2026-10-19T13:13:28Z plain EHLO: 250 SMTPUTF8
+2026-10-19T13:13:28Z plain EHLO: 221 2.0.0 mailpit-5784f69b8b-qx4l5 Mailpit ESMTP Service closing transmission channel
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): depth=1 CN=J'Toye staging internal CA
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): verify return:1
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): depth=0 CN=mailpit.jtoye-staging.svc.cluster.local
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): verify return:1
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 250 SMTPUTF8
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 250-mailpit-5784f69b8b-qx4l5 greets probe.jtoye-staging
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 250-SIZE 52428800
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 250-ENHANCEDSTATUSCODES
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 250-8BITMIME
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 250 SMTPUTF8
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 221 2.0.0 mailpit-5784f69b8b-qx4l5 Mailpit ESMTP Service closing transmission channel
+2026-10-19T13:13:31Z STARTTLS (CA + hostname verified): 40D75B7FE3710000:error:0A000197:SSL routines:SSL_shutdown:shutdown while in init:ssl/ssl_lib.c:2804:
+2026-10-19T13:13:32Z control, wrong host name: verify error:num=62:hostname mismatch
+2026-10-19T13:13:32Z control, wrong host name: 4047AFF66A770000:error:0A000086:SSL routines:tls_post_process_server_certificate:certificate verify failed:ssl/statem/statem_clnt.c:2125:
+2026-10-19T13:13:32Z control, wrong host name: 4047AFF66A770000:error:0A000197:SSL routines:SSL_shutdown:shutdown while in init:ssl/ssl_lib.c:2804:
+2026-10-19T13:13:40Z SMTP AUTH answer (29-14 item b): Mailpit advertises NO AUTH extension, before or after STARTTLS (above). Jakarta Mail authenticates only when the server advertises AUTH, so core-java's injected SMTP_USERNAME/SMTP_PASSWORD are never offered; no SMTP auth is attempted.
+
+================ Mailpit API, read off the instance (its own swagger) through svc/mailpit 18025:8025 ================
+2026-10-19T13:13:42Z swagger: version + paths: v1 /api/v1/chaos /api/v1/info /api/v1/message/{ID} /api/v1/message/{ID}/headers /api/v1/message/{ID}/html-check /api/v1/message/{ID}/link-check /api/v1/message/{ID}/part/{PartID} /api/v1/message/{ID}/part/{PartID}/thumb /api/v1/message/{ID}/raw /api/v1/message/{ID}/release /api/v1/message/{ID}/sa-check /api/v1/messages /api/v1/search /api/v1/send /api/v1/tags /api/v1/tags/{Tag} /api/v1/webui /view/{ID}.html /view/{ID}.txt
+2026-10-19T13:13:42Z GET /api/v1/webui: {"Label":"","MessageRelay":{"Enabled":false,"SMTPServer":"","ReturnPath":"","AllowedRecipients":"","BlockedRecipients":"","OverrideFrom":"","PreserveMessageIDs":false,"RecipientAllowlist":""},"SpamAssassin":false,"ChaosEnabled":false,"DuplicatesIgnored":false,"HideDeleteAllButton":false}
+2026-10-19T13:13:42Z GET /api/v1/info: {"Version":"v1.31.6","LatestVersion":"disabled","Messages":0}
+
+================ D-22 ARM 1: a real staff invitation (POST /api/v1/staff/invites as the staging vendor) lands in Mailpit over required STARTTLS ================
+2026-10-19T13:13:52Z Mailpit messages for staff.invite.staging@olajay.co.uk before the send: 0
+2026-10-19T13:13:54Z POST /api/v1/staff/invites {email: staff.invite.staging@olajay.co.uk, role: STAFF} as vendor.staging@olajay.co.uk: HTTP 201 id=4eaa495a-259c-4fc2-aa6a-f09f6795cfeb status=OPEN
+2026-10-19T13:13:57Z poll Mailpit search to:staff.invite.staging@olajay.co.uk (deadline 120 s): rc=0 new-id=1nLOiOjARQdr0JRuZ6f5vL
+2026-10-19T13:13:57Z received: id=1nLOiOjARQdr0JRuZ6f5vL subject="Staging Vendor invited you to J'Toye Staging Test Kitchen on J'Toye" to=staff.invite.staging@olajay.co.uk date=2026-10-19T13:13:54Z invite-fragment-link=present link-base=https://app-staging.olajay.co.uk/invite
+2026-10-19T13:14:03Z Received header: from core-java-7d985cb6f8-zwhbb (unknown [10.244.0.208]) by mailpit-5784f69b8b-qx4l5 (Mailpit) with SMTP for <staff.invite.staging@olajay.co.uk>; Mon, 19 Oct 2026 13:13:54 +0000 (UTC)
+2026-10-19T13:14:05Z core-java log: event=staff_invite_email_sent
+2026-10-19T13:14:05Z ARM D22-1 PASS (staff invitation 1nLOiOjARQdr0JRuZ6f5vL received by Mailpit for staff.invite.staging@olajay.co.uk over the required-STARTTLS path; the fragment link is present, never recorded)
+2026-10-19T13:14:23Z live Mailpit, MAIL FROM before STARTTLS: 530 5.7.0 Must issue a STARTTLS command first
+2026-10-19T13:14:23Z live Mailpit, MAIL FROM before STARTTLS: 221 2.0.0 mailpit-5784f69b8b-qx4l5 Mailpit ESMTP Service closing transmission channel
+2026-10-19T13:14:23Z So the delivery above was a STARTTLS session: this Mailpit refuses any message before STARTTLS (530), and core-java requires it from its side (D-20 literal).
+
+================ Aggregate health with Mailpit TLS live (the plan's fourth automated verify, verbatim) ================
+2026-10-19T13:14:25Z health verify: pod=core-java-7d985cb6f8-zwhbb rc=0 HTTP 200
+2026-10-19T13:14:25Z health verify: {"groups":["liveness","readiness"],"status":"UP"}
+2026-10-19T13:14:25Z health verify rc=0
+2026-10-19T13:14:27Z GET /actuator/health/mail (anonymous, recorded as found): 
+2026-10-19T13:14:27Z GET /actuator/health/mail (anonymous, recorded as found): HTTP 404
+2026-10-19T13:14:27Z HEALTH UP WITH MAILPIT TLS
+
+================ D-22 ARM 2: Mailpit serving NO STARTTLS (live patch: MP_SMTP_TLS_CERT, MP_SMTP_TLS_KEY, MP_SMTP_REQUIRE_STARTTLS removed) ================
+2026-10-19T13:14:45Z mailpit pod template sha256 before the patch: c323f20731efb6ec
+2026-10-19T13:14:46Z kubectl set env: deployment.apps/mailpit env updated
+2026-10-19T13:14:57Z rollout: deployment "mailpit" successfully rolled out
+2026-10-19T13:15:08Z second verify (Ready-pod env) DURING arm 2: pod=mailpit-cbcf56b6d-dcdln rc=0 count=0
+2026-10-19T13:15:08Z second verify rc=1 (the fail direction: count 0)
+2026-10-19T13:15:08Z pods: NAME                      READY   STATUS    RESTARTS   AGE
+2026-10-19T13:15:08Z pods: mailpit-cbcf56b6d-dcdln   1/1     Running   0          22s
+2026-10-19T13:15:21Z plain EHLO now (no STARTTLS offered): 250-mailpit-cbcf56b6d-dcdln greets probe 250-SIZE 52428800 250-ENHANCEDSTATUSCODES 250-8BITMIME 250 SMTPUTF8
+2026-10-19T13:15:22Z Mailpit messages for staff.invite.staging@olajay.co.uk before the send: 0 (the pod restart emptied the store)
+2026-10-19T13:15:23Z POST /api/v1/staff/invites/<previous id>/resend as the vendor: HTTP 201 id=7840ffe1-d304-4a07-8e49-249a4c3b17ad status=OPEN
+2026-10-19T13:16:40Z poll Mailpit search to:staff.invite.staging@olajay.co.uk (75 s): rc=1 new-id=none (expected none)
+2026-10-19T13:16:42Z core-java log after the send: "message":"event=staff_invite_email_failed error=MailSendException"
+2026-10-19T13:16:51Z fourth verify DURING arm 2: pod=core-java-7d985cb6f8-zwhbb rc=0 HTTP 503
+2026-10-19T13:16:51Z fourth verify DURING arm 2: {"groups":["liveness","readiness"],"status":"DOWN"}
+2026-10-19T13:16:51Z fourth verify rc=1
+2026-10-19T13:16:53Z core-java log (mail health indicator): WARN  Mail health check failed 
+2026-10-19T13:17:07Z core-java log raw: {"timestamp":"2026-10-19 13:16:51.888","level":"WARN","logger":"o.s.b.m.health.MailHealthIndicator","message":"Mail health check failed","thread":"http-nio-9091-exec-7","traceId":"6ad618437f600809b2d63c81614c83dc","spanId":"162c5ecfcf1ba13b"}
+2026-10-19T13:17:07Z core-java log raw: jakarta.mail.MessagingException: STARTTLS is required but host does not support STARTTLS
+2026-10-19T13:17:07Z core-java log raw:     at org.eclipse.angus.mail.smtp.SMTPTransport.protocolConnect(SMTPTransport.java:751)
+2026-10-19T13:17:07Z core-java log raw:     at jakarta.mail.Service.connect(Service.java:345)
+2026-10-19T13:17:07Z core-java log raw:     at org.springframework.mail.javamail.JavaMailSenderImpl.connectTransport(JavaMailSenderImpl.java:467)
+2026-10-19T13:17:07Z core-java log raw:     at org.springframework.mail.javamail.JavaMailSenderImpl.testConnection(JavaMailSenderImpl.java:347)
+2026-10-19T13:17:07Z ARM D22-2 PASS (with the server offering no STARTTLS: the invitation send failed in core-java (MailSendException; the JavaMail cause, raw above: 'jakarta.mail.MessagingException: STARTTLS is required but host does not support STARTTLS'), and Mailpit received nothing for staff.invite.staging@olajay.co.uk in 75 s)
+2026-10-19T13:17:07Z HEALTH DOWN DURING D22-2 (the aggregate /actuator/health the CI deploy step curls answered HTTP 503 status DOWN while only Mailpit changed: Boot's mail indicator is inside the aggregate)
+
+================ RESTORE mailpit (scripts/deploy.sh at the same tag), verified by content ================
+2026-10-19T13:17:36Z deploy.sh: DEPLOYED_SHA=efab17d79483b01f4397c9f82f34a36d1a2b4c11
+2026-10-19T13:17:36Z deploy.sh rc=0
+2026-10-19T13:17:37Z mailpit pod template sha256 after the restore: c323f20731efb6ec (before the patch: c323f20731efb6ec)
+2026-10-19T13:17:42Z second verify after restore: pod=mailpit-5784f69b8b-qgdf2 rc=0 count=1
+2026-10-19T13:17:42Z second verify rc=0
+2026-10-19T13:17:44Z fourth verify after restore: pod=core-java-7d985cb6f8-zwhbb rc=0 HTTP 200
+2026-10-19T13:17:44Z fourth verify after restore: {"groups":["liveness","readiness"],"status":"UP"}
+2026-10-19T13:17:44Z fourth verify rc=0
+2026-10-19T13:17:52Z resend after the restore: HTTP 201 id=66f22595-b003-444e-a43a-0a59652c796b status=OPEN
+2026-10-19T13:17:52Z poll Mailpit (120 s): rc=0 new-id=4HVrCK2G82lTNJvLo5G5oj
+2026-10-19T13:17:52Z received: id=4HVrCK2G82lTNJvLo5G5oj subject="Staging Vendor invited you to J'Toye Staging Test Kitchen on J'Toye" to=staff.invite.staging@olajay.co.uk date=2026-10-19T13:17:52Z invite-fragment-link=present link-base=https://app-staging.olajay.co.uk/invite
+2026-10-19T13:17:52Z RESTORE mailpit VERIFIED (template hash equal to the pre-patch one, Ready-pod env count 1, aggregate health 200 UP, and a new invitation 4HVrCK2G82lTNJvLo5G5oj received)
+
+================ D-30 ARM 1: core-java Ready on the built store (its start-up Entra/Blob TLS), and a Blob upload from the same pod ================
+2026-10-19T13:18:51Z core-java start-up log: Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStoreType=PKCS12
+2026-10-19T13:18:51Z core-java start-up log: {"timestamp":"2026-10-19 13:12:49.075","level":"INFO","logger":"uk.jtoye.core.CoreApplication","message":"Started CoreApplication in 90.379 seconds (process running for 93.596)","thread":"main","traceId":"","spanId":""}
+2026-10-19T13:18:51Z core-java start-up log: {"timestamp":"2026-10-19 13:12:53.075","level":"INFO","logger":"u.j.c.s.StorageStartupValidator","message":"Storage startup check passed: mode=workload-identity, endpointHost=jtoyestgmedia.blob.core.windows.net, publicContainer=jtoye-images (blob), quarantineC
+2026-10-19T13:18:52Z target product: 093dae8a-cff7-442f-a1c8-d8596879fbbf
+2026-10-19T13:18:54Z POST /api/v1/products/093dae8a-cff7-442f-a1c8-d8596879fbbf/image (640x480 PNG, Idempotency-Key set): {"assetId":"14add455-db95-4fa8-82dc-b952d60792a1","status":"PENDING"} HTTP 202
+2026-10-19T13:19:03Z asset 14add455-db95-4fa8-82dc-b952d60792a1 status read from GET /api/v1/products/093dae8a-cff7-442f-a1c8-d8596879fbbf media[]: {"assetId":"14add455-db95-4fa8-82dc-b952d60792a1","status":"ACTIVE","flagged":false,"failureReason":null,"url":"https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1.webp","thumbnailUrl":"https://jtoyestgmedia.blob.core.windows.net/jtoye-images/1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4/media/14add455-db95-4fa8-82dc-b952d60792a1_thumb.webp","width":640,"height":480,"redrivable":false,"delayed":false}
+2026-10-19T13:19:03Z ARM D30-1 PASS (core-java Ready with 0 restarts on the JDK cacerts + cluster CA store, and a vendor upload reached ACTIVE through Azure Blob over public TLS from the same pod)
+2026-10-19T13:19:15Z core-java (re-recorded; an earlier helper dropped this unterminated line): core-java-7d985cb6f8-zwhbb Ready=True restarts=0 image=ghcr.io/bralabee/jtoye-core-java:efab17d79483b01f4397c9f82f34a36d1a2b4c11
+2026-10-19T13:19:22Z GET /api/v1/webui (re-recorded after the restore; the first read's unterminated body was dropped by the helper bug): {"Label":"","MessageRelay":{"Enabled":false,"SMTPServer":"","ReturnPath":"","AllowedRecipients":"","BlockedRecipients":"","OverrideFrom":"","PreserveMessageIDs":false,"RecipientAllowlist":""},"SpamAssassin":false,"ChaosEnabled":false,"DuplicatesIgnored":false,"HideDeleteAllButton":false}
+
+================ D-30 ARM 2: the live core-java init command builds the store from the cluster CA ALONE (passwordless PKCS12, so the CA itself IS readable: the faithful CA-only shape) ================
+2026-10-19T13:19:41Z core-java pod template sha256 before the patch: 11710b2466ee7fb3
+2026-10-19T13:19:41Z serving pod before the arm: core-java-7d985cb6f8-zwhbb
+2026-10-19T13:19:42Z kubectl patch: deployment.apps/core-java patched
+2026-10-19T13:21:25Z new pod: core-java-5f556b4cc4-f58xc (waited 103 s)
+2026-10-19T13:21:25Z new pod truststore-builder log: Certificate was added to keystore
+2026-10-19T13:21:25Z new pod truststore-builder log: D30-2 break arm: CA-only store, entries=1
+2026-10-19T13:22:03Z new pod: core-java-5f556b4cc4-f58xc phase=Running Ready=False restarts=2 waiting=
+2026-10-19T13:22:03Z old pod (still serving, maxUnavailable 0): core-java-7d985cb6f8-zwhbb Ready=True restarts=0
+2026-10-19T13:22:04Z core-java EndpointSlice: core-java-7d985cb6f8-zwhbb ready=true
+2026-10-19T13:22:04Z core-java EndpointSlice: core-java-5f556b4cc4-f58xc ready=false
+2026-10-19T13:22:04Z public API through Traefik during the arm: GET /api/v1/public/shops HTTP 200
+2026-10-19T13:22:04Z Note: the FIRST start-up public-TLS call to fail is the managed Postgres connection (sslmode=verify-full validated through the JVM default truststore), before the Blob/Entra probe is reached; the same store would refuse Entra and Blob (measured off-cluster on the same JRE base: CA-only store -> 'PKIX path building failed' against login.microsoftonline.com).
+2026-10-19T13:22:04Z ARM D30-2 PASS (with the CA-only store core-java fails start-up public TLS with PKIX path building failed, CrashLoopBackOff, never Ready, while the old pod keeps serving)
+2026-10-19T13:22:27Z new pod start-up log raw (kubectl logs --previous, 206 lines, 9 PKIX lines): Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'flywayInitializer' defined in class path resource [org/springframework/boot/flyway/autoconfigure/FlywayAutoConfiguration$FlywayConfiguration.class]: Unable to obtain connection from database: SSL error: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to
+2026-10-19T13:22:27Z new pod start-up log raw (kubectl logs --previous, 206 lines, 9 PKIX lines): Message    : SSL error: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target
+2026-10-19T13:22:27Z new pod start-up log raw (kubectl logs --previous, 206 lines, 9 PKIX lines): Caused by: org.flywaydb.core.internal.exception.sqlExceptions.FlywaySqlUnableToConnectToDbException: Unable to obtain connection from database: SSL error: (certificate_unknown) PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target
+
+================ RESTORE truststore (scripts/deploy.sh at the same tag), verified by content ================
+2026-10-19T13:23:06Z deploy.sh: DEPLOYED_SHA=efab17d79483b01f4397c9f82f34a36d1a2b4c11
+2026-10-19T13:23:06Z deploy.sh rc=0
+2026-10-19T13:23:06Z core-java pod template sha256 after the restore: 11710b2466ee7fb3 (before the patch: 11710b2466ee7fb3)
+2026-10-19T13:23:07Z core-java pods: core-java-7d985cb6f8-zwhbb Ready=True restarts=0
+2026-10-19T13:23:08Z serving pod core-java-7d985cb6f8-zwhbb truststore-builder log: truststore-builder: jdk-entries=118 entries=119 (read with no store password, as the JVM reads it)
+2026-10-19T13:23:17Z fourth verify after the truststore restore: pod=core-java-7d985cb6f8-zwhbb rc=0 HTTP 200
+2026-10-19T13:23:17Z fourth verify after the truststore restore: {"groups":["liveness","readiness"],"status":"UP"}
+2026-10-19T13:23:17Z fourth verify rc=0
+2026-10-19T13:23:18Z core-java ReplicaSets: core-java-55995fd4f4 replicas=0
+2026-10-19T13:23:18Z core-java ReplicaSets: core-java-5f556b4cc4 replicas=0
+2026-10-19T13:23:18Z core-java ReplicaSets: core-java-7987cbb5cb replicas=0
+2026-10-19T13:23:18Z core-java ReplicaSets: core-java-7d985cb6f8 replicas=1
+2026-10-19T13:23:18Z core-java ReplicaSets: core-java-8f87b8b64 replicas=0
+2026-10-19T13:23:18Z RESTORE truststore VERIFIED (pod template hash equal to the pre-patch one, the CA-only ReplicaSet at 0, the serving pod's truststore-builder log jdk-entries=118 entries=119, Ready, aggregate health 200 UP)
+
+================ KEYCLOAK ARM: realm SMTP over STARTTLS validates against the cluster CA (KC_TRUSTSTORE_PATHS) ================
+2026-10-19T13:23:34Z keycloak pod keycloak-65f94bfdf9-5qwvx env: KC_TRUSTSTORE_PATHS=/cluster-ca/ca.crt
+2026-10-19T13:23:35Z keycloak /cluster-ca: lrwxrwxrwx 1 root root 13 Oct 19 13:11 ca.crt -> ..data/ca.crt
+2026-10-19T13:23:51Z master admin user before: {"id":"e8ee74ee-af74-4884-b83d-67f856fb1908","username":"jtoye-kc-admin","email":null,"emailVerified":false} (no email, so testSMTPConnection has no recipient; a non-routable test address is set for the arm and removed after)
+2026-10-19T13:23:51Z PUT master admin email=kc-smtp-test@staging.invalid: HTTP 204
+2026-10-19T13:24:03Z POST /admin/realms/jtoye-customers/testSMTPConnection with the realm's smtpServer {"starttls":"true","auth":"false","port":"1025","host":"mailpit.jtoye-staging.svc.cluster.local","from":"no-reply@olajay.co.uk","fromDisplayName":"J'Toye (staging)","ssl":"false"}:  HTTP 204
+2026-10-19T13:24:15Z Keycloak test message Received header: from keycloak-65f94bfdf9-5qwvx (unknown [10.244.1.141]) by mailpit-5784f69b8b-qgdf2 (Mailpit) with SMTP for <kc-smtp-test@staging.invalid>; Mon, 19 Oct 2026 13:24:03 +0000 (UTC)
+2026-10-19T13:24:24Z Mailpit received the Keycloak test message: id=69NTAFcaBZeLoRLe8ribij subject="[KEYCLOAK] - SMTP test message" to=kc-smtp-test@staging.invalid from=no-reply@olajay.co.uk date=2026-10-19T13:24:02Z
+2026-10-19T13:24:25Z control: the same test with host = the Service ClusterIP 10.0.80.50 (a name the certificate does not carry): {"errorMessage":"Failed to send email"} HTTP 500
+2026-10-19T13:24:26Z keycloak log (control): 2026-10-19 13:24:25,476 ERROR [org.keycloak.services] (executor-thread-3) KC-SERVICES0029: Failed to send email: org.keycloak.email.EmailException: Non authenticated connect failed
+2026-10-19T13:24:26Z keycloak log (control): Caused by: jakarta.mail.MessagingException: Could not convert socket to TLS;
+2026-10-19T13:24:26Z keycloak log (control): 	javax.net.ssl.SSLHandshakeException: (certificate_unknown) No subject alternative names matching IP address 10.0.80.50 found
+2026-10-19T13:24:40Z PUT master admin email='' (restore): HTTP 401; read back: {"id":null,"username":null,"email":null,"emailVerified":null}
+2026-10-19T13:24:52Z (the first restore PUT returned 401: the 60 s master token had expired; token re-issued) PUT master admin email='' (restore): token HTTP 200, PUT HTTP 204; read back: {"id":"e8ee74ee-af74-4884-b83d-67f856fb1908","username":"jtoye-kc-admin","email":null,"emailVerified":false}
+2026-10-19T13:24:52Z master admin user restored by content (read-back equals the before line byte for byte)
+2026-10-19T13:24:52Z Why the success is the cluster CA's doing: Keycloak's ServiceAccount token is not mounted (automountServiceAccountToken false), so its truststore-kubernetes default adds nothing, and the JDK set holds no internal CA; KC_TRUSTSTORE_PATHS=/cluster-ca/ca.crt is the only source of the jtoye-staging CA it validated against.
+2026-10-19T13:24:52Z ARM KC-SMTP PASS (Keycloak's realm SMTP test to Mailpit over STARTTLS succeeded, HTTP 204, and the message arrived; the same test to an IP literal the certificate does not name failed the hostname check)
+
+================ CLOSING CLEAN ================
+2026-10-19T13:25:21Z first verify (staging-login spec):   1 passed (9.9s)
+2026-10-19T13:25:21Z first verify: rc=0 passed=[1 passed] skipped-flaky-failed-lines=0
+2026-10-19T13:25:31Z closing invitation (resend): HTTP 201 id=c630ba9e-1196-49f6-8215-bcc6ac5ac3d7 status=OPEN
+2026-10-19T13:25:32Z received: id=1wdcj4BrpNNjGGYzUsPYgv subject="Staging Vendor invited you to J'Toye Staging Test Kitchen on J'Toye" to=staff.invite.staging@olajay.co.uk date=2026-10-19T13:25:31Z invite-fragment-link=present link-base=https://app-staging.olajay.co.uk/invite
+2026-10-19T13:25:36Z second verify (closing): pod=mailpit-5784f69b8b-qgdf2 rc=0 count=1
+2026-10-19T13:25:36Z fourth verify (closing): pod=core-java-7d985cb6f8-zwhbb rc=0 HTTP 200
+2026-10-19T13:25:36Z fourth verify (closing): {"groups":["liveness","readiness"],"status":"UP"}
+2026-10-19T13:25:36Z CLOSING CLEAN PASS (spec 1 passed, invitation 1wdcj4BrpNNjGGYzUsPYgv received, Mailpit Ready-pod env count 1, aggregate health 200 UP)
+
+================ FINAL: the plan's marker check (third automated verify), run last ================
+2026-10-19T13:25:50Z final marker check: rc=0 missing=0

@@ -1,0 +1,10 @@
+{
+  "command": "DEPLOY_SELFTEST_FORMAT=tap bash scripts/deploy.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..8\nnot ok 1 - no-context\n  ---\n  message: 'rc=0 (want 2):  '\n  ...\nnot ok 2 - employer-context\n  ---\n  message: 'rc=0 (want 1):  '\n  ...\nnot ok 3 - stale-server\n  ---\n  message: 'rc=0 (want 1):  '\n  ...\nnot ok 4 - image-tag\n  ---\n  message: 'tag \"0123abc\": rc=0 (want 2):  '\n  ...\nnot ok 5 - preflight-refusal\n  ---\n  message: 'preflight rc 1: rc=0 (want 1):  '\n  ...\nnot ok 6 - render-only\n  ---\n  message: 'app image lines at the tag=0 (want 3)'\n  ...\nnot ok 7 - rollout-failure\n  ---\n  message: 'rc=0 after a failed frontend rollout'\n  ...\nnot ok 8 - deployed-sha\n  ---\n  message: 'last stdout line is \"  kubectl get all -n jtoye-staging \", want DEPLOYED_SHA=0123456789abcdef0123456789abcdef01234567'\n  ...",
+  "targetTest": "preflight-refusal",
+  "targetFile": "scripts/deploy.sh",
+  "expected": "ok - preflight-refusal: a stub preflight exiting 1 (and 2) refuses with REFUSED [preflight], rc 1, zero apply calls",
+  "actual": "not ok 5 - preflight-refusal   ---   message: 'preflight rc 1: rc=0 (want 1):  '   ... ",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion: the unmodified script never runs scripts/staging-secrets-preflight.sh, so a failing preflight could not stop it (rc 0, apply made)."
+}

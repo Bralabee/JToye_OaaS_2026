@@ -18,6 +18,140 @@ set -eu
 : "${ALERTMANAGER_SMTP_TO:=ops@jtoye.local}"
 : "${ALERTMANAGER_SMTP_REQUIRE_TLS:=false}"
 
+# Where the template is read and the render written. The defaults are compose's mounts;
+# Kubernetes mounts the template from a ConfigMap elsewhere and renders into an emptyDir
+# (plan 29-24). ALERTMANAGER_RENDER_ONLY=1 renders, checks and exits 0 before exec — what
+# scripts/check-alertmanager-render.sh runs inside the pinned image.
+: "${ALERTMANAGER_TEMPLATE:=/etc/alertmanager/alertmanager.yml.tmpl}"
+: "${ALERTMANAGER_RENDERED:=/etc/alertmanager/alertmanager.yml}"
+: "${ALERTMANAGER_RENDER_ONLY:=0}"
+
+# The URL every notification links back to (--web.external-url). REQUIRED, with no default in
+# this file: compose passes the loopback URL on port 9093 that this file used to hard-code
+# (docker-compose.monitoring.yml, so compose's exec arguments are unchanged), and Kubernetes passes the
+# in-cluster Service URL. A default here would put a loopback literal into the staging render,
+# because this file IS in that render (a byte copy served by ConfigMap), and INV-4 of
+# k8s/scripts/check-render-invariants.sh refuses one there for good reason (DEF-6).
+: "${ALERTMANAGER_WEB_EXTERNAL_URL:=}"
+
+# fatal <message...> — one shape for every operator error below. Never prints a value that
+# could be a credential.
+fatal() {
+  echo "FATAL: $*" >&2
+  exit 1
+}
+
+# A value interpolated into a single-quoted YAML scalar must not end the quote or the line.
+yaml_safe() { # yaml_safe <VARNAME> <value>
+  case "$2" in
+    *"'"*) fatal "$1 contains a single quote, which would end the YAML scalar it is rendered into." ;;
+  esac
+  if [ "$(printf '%s' "$2" | wc -l)" -ne 0 ]; then
+    fatal "$1 contains a newline."
+  fi
+}
+
+case "${ALERTMANAGER_WEB_EXTERNAL_URL}" in
+  http://?*|https://?*)
+    case "${ALERTMANAGER_WEB_EXTERNAL_URL}" in
+      *[[:space:]]*) fatal "ALERTMANAGER_WEB_EXTERNAL_URL contains whitespace." ;;
+    esac ;;
+  "") fatal "ALERTMANAGER_WEB_EXTERNAL_URL is not set (the URL notifications link back to; compose sets it in docker-compose.monitoring.yml)." ;;
+  *) fatal "ALERTMANAGER_WEB_EXTERNAL_URL '${ALERTMANAGER_WEB_EXTERNAL_URL}' is not an http(s) URL." ;;
+esac
+
+# __SMTP_AUTH_BLOCK__ (plan 29-24) — SMTP AUTH for the primary email_config, ADDITIVE.
+#
+# Rendered on email_configs[0] ITSELF, never as global smtp_auth_*: Alertmanager copies the
+# global auth fields into EVERY email_config that does not set its own (config.go, v0.34.1),
+# and an empty per-config value cannot opt out. A global credential would therefore also be
+# offered to the extra sink below whenever that server advertised AUTH. Scoped here, it
+# reaches the one smarthost it belongs to.
+#
+# CREDENTIALS ARE ONLY RENDERED WITH ALERTMANAGER_SMTP_REQUIRE_TLS=true. Alertmanager
+# authenticates whenever the server advertises AUTH, and its LOGIN mechanism sends the
+# password in clear over a plain connection. This repo's own .env carries a USERNAME and a
+# PASSWORD while compose's smarthost defaults to Mailhog with no TLS, so rendering them there
+# would hand the real password to a capture server in clear. Instead the block renders
+# nothing and the reason is printed, which leaves the compose render byte-identical
+# (scripts/check-alertmanager-render.sh, arm compose-credentials-without-tls).
+#
+# The password reaches Alertmanager only as a FILE (auth_password_file): either the file
+# named by ALERTMANAGER_SMTP_PASSWORD_FILE (Kubernetes: the CSI mount), or
+# ALERTMANAGER_SMTP_PASSWORD written to a mode-600 file under /tmp. It is never inlined into
+# the config, and the variable is unset before exec, so it does not stay in the process
+# environment.
+: "${ALERTMANAGER_SMTP_USERNAME:=}"
+: "${ALERTMANAGER_SMTP_PASSWORD:=}"
+: "${ALERTMANAGER_SMTP_PASSWORD_FILE:=}"
+
+SMTP_AUTH_BLOCK=""
+if [ -n "${ALERTMANAGER_SMTP_USERNAME}${ALERTMANAGER_SMTP_PASSWORD}${ALERTMANAGER_SMTP_PASSWORD_FILE}" ]; then
+  case "${ALERTMANAGER_SMTP_REQUIRE_TLS}" in
+    true|True|TRUE)
+      [ -n "${ALERTMANAGER_SMTP_USERNAME}" ] || fatal "an SMTP password is set but ALERTMANAGER_SMTP_USERNAME is empty."
+      yaml_safe ALERTMANAGER_SMTP_USERNAME "${ALERTMANAGER_SMTP_USERNAME}"
+      if [ -n "${ALERTMANAGER_SMTP_PASSWORD}" ] && [ -n "${ALERTMANAGER_SMTP_PASSWORD_FILE}" ]; then
+        fatal "both ALERTMANAGER_SMTP_PASSWORD and ALERTMANAGER_SMTP_PASSWORD_FILE are set; set exactly one."
+      fi
+      if [ -n "${ALERTMANAGER_SMTP_PASSWORD}" ]; then
+        ALERTMANAGER_SMTP_PASSWORD_FILE="/tmp/alertmanager-smtp-password"
+        ( umask 077 && printf '%s' "${ALERTMANAGER_SMTP_PASSWORD}" > "${ALERTMANAGER_SMTP_PASSWORD_FILE}" ) \
+          || fatal "cannot write the SMTP password file ${ALERTMANAGER_SMTP_PASSWORD_FILE}."
+        chmod 600 "${ALERTMANAGER_SMTP_PASSWORD_FILE}" || fatal "cannot chmod 600 ${ALERTMANAGER_SMTP_PASSWORD_FILE}."
+      fi
+      [ -n "${ALERTMANAGER_SMTP_PASSWORD_FILE}" ] || fatal "ALERTMANAGER_SMTP_USERNAME is set but neither ALERTMANAGER_SMTP_PASSWORD nor ALERTMANAGER_SMTP_PASSWORD_FILE is."
+      yaml_safe ALERTMANAGER_SMTP_PASSWORD_FILE "${ALERTMANAGER_SMTP_PASSWORD_FILE}"
+      # Alertmanager reads the file at send time, and amtool does not open it at all, so an
+      # absent or empty file would surface only as a failed notification. Refuse it here.
+      [ -r "${ALERTMANAGER_SMTP_PASSWORD_FILE}" ] || fatal "the SMTP password file ${ALERTMANAGER_SMTP_PASSWORD_FILE} is not readable."
+      [ -s "${ALERTMANAGER_SMTP_PASSWORD_FILE}" ] || fatal "the SMTP password file ${ALERTMANAGER_SMTP_PASSWORD_FILE} is empty."
+      echo "alertmanager entrypoint: SMTP auth ENABLED for ${ALERTMANAGER_SMTP_SMARTHOST} (password from file ${ALERTMANAGER_SMTP_PASSWORD_FILE})"
+      SMTP_AUTH_BLOCK="        auth_username: '${ALERTMANAGER_SMTP_USERNAME}'
+        auth_password_file: '${ALERTMANAGER_SMTP_PASSWORD_FILE}'"
+      ;;
+    *)
+      echo "alertmanager entrypoint: SMTP credentials are set but ALERTMANAGER_SMTP_REQUIRE_TLS=${ALERTMANAGER_SMTP_REQUIRE_TLS} -> auth NOT rendered (credentials are only ever sent over a TLS-required connection; smarthost ${ALERTMANAGER_SMTP_SMARTHOST})"
+      ;;
+  esac
+fi
+unset ALERTMANAGER_SMTP_PASSWORD
+
+# __EXTRA_EMAIL_CONFIGS_BLOCK__ (plan 29-24) — a SECOND email_config in receiver
+# email-default, ADDITIVE. Staging uses it for Mailpit, the inspectable sink on the SAME
+# route as the real inbox: Alertmanager notifies every integration in a receiver, so a
+# message read back from the sink proves the real route dispatched (L-3), while the first
+# email_config proves the inbox itself. It always requires TLS (Mailpit in staging refuses
+# mail without STARTTLS), trusts ALERTMANAGER_SINK_CA_FILE when given (the cluster CA), and
+# carries NO auth (see the SMTP auth note above). Its `to` defaults to ALERTMANAGER_SMTP_TO,
+# so the sink holds a copy of exactly what the inbox was sent. Alertmanager's default email
+# body carries every label and annotation, so the probe id is searchable there.
+: "${ALERTMANAGER_SINK_SMARTHOST:=}"
+: "${ALERTMANAGER_SINK_TO:=}"
+: "${ALERTMANAGER_SINK_CA_FILE:=}"
+
+EXTRA_EMAIL_CONFIGS_BLOCK=""
+if [ -n "${ALERTMANAGER_SINK_SMARTHOST}" ]; then
+  : "${ALERTMANAGER_SINK_TO:=${ALERTMANAGER_SMTP_TO}}"
+  yaml_safe ALERTMANAGER_SINK_SMARTHOST "${ALERTMANAGER_SINK_SMARTHOST}"
+  yaml_safe ALERTMANAGER_SINK_TO "${ALERTMANAGER_SINK_TO}"
+  EXTRA_EMAIL_CONFIGS_BLOCK="      - to: '${ALERTMANAGER_SINK_TO}'
+        smarthost: '${ALERTMANAGER_SINK_SMARTHOST}'
+        require_tls: true
+        send_resolved: true"
+  if [ -n "${ALERTMANAGER_SINK_CA_FILE}" ]; then
+    yaml_safe ALERTMANAGER_SINK_CA_FILE "${ALERTMANAGER_SINK_CA_FILE}"
+    # amtool does not open ca_file either; an unreadable CA would fail every sink delivery.
+    [ -r "${ALERTMANAGER_SINK_CA_FILE}" ] || fatal "the sink CA file ${ALERTMANAGER_SINK_CA_FILE} is not readable."
+    EXTRA_EMAIL_CONFIGS_BLOCK="${EXTRA_EMAIL_CONFIGS_BLOCK}
+        tls_config:
+          ca_file: '${ALERTMANAGER_SINK_CA_FILE}'"
+  fi
+  echo "alertmanager entrypoint: extra email_config ENABLED to ${ALERTMANAGER_SINK_SMARTHOST} (require_tls${ALERTMANAGER_SINK_CA_FILE:+, ca_file ${ALERTMANAGER_SINK_CA_FILE}}; email-default notifies both)"
+elif [ -n "${ALERTMANAGER_SINK_TO}${ALERTMANAGER_SINK_CA_FILE}" ]; then
+  fatal "ALERTMANAGER_SINK_TO or ALERTMANAGER_SINK_CA_FILE is set but ALERTMANAGER_SINK_SMARTHOST is empty, so it would reach nothing."
+fi
+
 # __CHILD_ROUTES_BLOCK__ and __EXTRA_RECEIVERS_BLOCK__ are COMPOSED placeholders.
 #
 # `routes:` is a SINGLE YAML mapping key, so every feature that wants a child route
@@ -139,8 +273,8 @@ if [ -n "${ALERTMANAGER_MUTE_ALERTNAMES}" ]; then
   fi
 fi
 
-TEMPLATE="/etc/alertmanager/alertmanager.yml.tmpl"
-RENDERED="/etc/alertmanager/alertmanager.yml"
+TEMPLATE="${ALERTMANAGER_TEMPLATE}"
+RENDERED="${ALERTMANAGER_RENDERED}"
 
 if [ "${SLACK_CONFIGURED}" = "1" ]; then
   echo "alertmanager entrypoint: Slack receiver ENABLED on ${ALERTMANAGER_SLACK_CHANNEL} (email remains the default route)"
@@ -192,21 +326,25 @@ ${block}"
   fi
 done
 
-# Two passes. sed does the scalar SMTP fields; awk does the two whole blocks,
+# Two passes. sed does the scalar SMTP fields; awk does the four whole blocks,
 # because a block carries newlines and sed's s/// cannot substitute those
 # portably. ENVIRON is used rather than awk -v: -v applies backslash-escape
-# processing to the value, which would corrupt a webhook URL or a Go template.
-# When a block is empty its placeholder LINE IS DROPPED, not blanked, so the
-# unconfigured render is byte-identical to the pre-phase-27 output (AC-4.8).
+# processing to the value, which would corrupt a webhook URL, a Go template or a
+# credential path. When a block is empty its placeholder LINE IS DROPPED, not
+# blanked, so the unconfigured render is byte-identical to the pre-phase-27
+# output (AC-4.8) and to the pre-29-24 output (compose-render.golden.yml).
 sed \
   -e "s|__SMTP_SMARTHOST__|${ALERTMANAGER_SMTP_SMARTHOST}|g" \
   -e "s|__SMTP_FROM__|${ALERTMANAGER_SMTP_FROM}|g" \
   -e "s|__SMTP_TO__|${ALERTMANAGER_SMTP_TO}|g" \
   -e "s|__SMTP_REQUIRE_TLS__|${ALERTMANAGER_SMTP_REQUIRE_TLS}|g" \
   "${TEMPLATE}" \
-| CHILD_ROUTES_BLOCK="${CHILD_ROUTES_BLOCK}" EXTRA_RECEIVERS_BLOCK="${EXTRA_RECEIVERS_BLOCK}" awk '
-    /^__CHILD_ROUTES_BLOCK__$/    { if (ENVIRON["CHILD_ROUTES_BLOCK"]    != "") print ENVIRON["CHILD_ROUTES_BLOCK"];    next }
-    /^__EXTRA_RECEIVERS_BLOCK__$/ { if (ENVIRON["EXTRA_RECEIVERS_BLOCK"] != "") print ENVIRON["EXTRA_RECEIVERS_BLOCK"]; next }
+| CHILD_ROUTES_BLOCK="${CHILD_ROUTES_BLOCK}" EXTRA_RECEIVERS_BLOCK="${EXTRA_RECEIVERS_BLOCK}" \
+  SMTP_AUTH_BLOCK="${SMTP_AUTH_BLOCK}" EXTRA_EMAIL_CONFIGS_BLOCK="${EXTRA_EMAIL_CONFIGS_BLOCK}" awk '
+    /^__CHILD_ROUTES_BLOCK__$/        { if (ENVIRON["CHILD_ROUTES_BLOCK"]        != "") print ENVIRON["CHILD_ROUTES_BLOCK"];        next }
+    /^__EXTRA_RECEIVERS_BLOCK__$/     { if (ENVIRON["EXTRA_RECEIVERS_BLOCK"]     != "") print ENVIRON["EXTRA_RECEIVERS_BLOCK"];     next }
+    /^__SMTP_AUTH_BLOCK__$/           { if (ENVIRON["SMTP_AUTH_BLOCK"]           != "") print ENVIRON["SMTP_AUTH_BLOCK"];           next }
+    /^__EXTRA_EMAIL_CONFIGS_BLOCK__$/ { if (ENVIRON["EXTRA_EMAIL_CONFIGS_BLOCK"] != "") print ENVIRON["EXTRA_EMAIL_CONFIGS_BLOCK"]; next }
     { print }
   ' > "${RENDERED}"
 
@@ -221,7 +359,12 @@ fi
 
 /bin/amtool check-config "${RENDERED}"
 
+if [ "${ALERTMANAGER_RENDER_ONLY}" = "1" ]; then
+  echo "alertmanager entrypoint: RENDER_ONLY: rendered and checked ${RENDERED}; not starting alertmanager"
+  exit 0
+fi
+
 exec /bin/alertmanager \
   --config.file="${RENDERED}" \
   --storage.path=/alertmanager \
-  --web.external-url=http://localhost:9093
+  --web.external-url="${ALERTMANAGER_WEB_EXTERNAL_URL}"

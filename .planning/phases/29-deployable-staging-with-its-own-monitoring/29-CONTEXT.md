@@ -196,6 +196,43 @@ real app-email delivery and SES (D-13).
   money-path proof stays Phase 30's, but needs no further deploy work afterwards. TEST mode
   only; live keys never enter staging.
 
+### Owner rulings at plan time (2026-10-18, after 29-RESEARCH.md)
+- **D-29: the staging ingress controller is Traefik v3 with its Kubernetes Ingress-NGINX
+  provider**, not the retired ingress-nginx and not Gateway API. The existing `nginx.ingress.kubernetes.io/*`
+  annotations stay the source of truth. The plan must (a) list every annotation the overlays use
+  that the Traefik provider does NOT document (research: `proxy-buffer-size`,
+  `proxy-buffers-number`, `proxy-connect-timeout`, `proxy-send-timeout`) and say for each what
+  replaces it or why its loss is accepted; (b) prove fidelity on the live edge — the security
+  headers by `curl -sI`, a CORS preflight, a 429 on burst — each shown FAILING first;
+  (c) update every NetworkPolicy `namespaceSelector` that names the ingress namespace. Phase 37's
+  trusted-proxies item now measures Traefik's pod CIDR and `externalTrafficPolicy: Local` on
+  Traefik's Service.
+- **D-30: D-21 stands literally — the cluster CA goes into a JVM-wide truststore** (owner chose
+  this over the mail-scoped `spring.mail.ssl.bundle`). The truststore MUST be the JDK's own
+  `cacerts` plus the cert-manager CA, built at pod start (init container or image step) — never
+  the CA alone, which would break Stripe, Entra and Blob TLS. Proof: STARTTLS to Mailpit
+  verifies, AND a public-TLS call (Stripe test API or Blob) still succeeds from the same pod;
+  a CA-only truststore is the break arm and must red the public call.
+- **D-31: the D-26 seed order is paid by a Stripe TEST PaymentIntent** and settles through the
+  D-28 webhook. No cash order in the seed.
+- **D-32: AKS uses Entra ID + Azure RBAC with local accounts disabled.** CI authenticates by
+  GitHub OIDC to the reused `jtoye-ci` identity (its `environment:staging` federated credential
+  is already correct) and `kubelogin`. Role assignments are scripted, least-privilege
+  (cluster-scoped RBAC Writer on the staging namespace path, not Cluster Admin, unless a step
+  is shown to need more).
+
+### Corrections measured 2026-10-18 (29-RESEARCH.md §Corrections; these override the text above)
+- DNS for `olajay.co.uk` is **Namecheap BasicDNS**, not Netlify/NS1 (D-05/D-07). The owner edits records.
+- Alert SMTP is **Zoho** `smtp.zoho.eu:587` from `alerts@olajay.co.uk` (D-17 said Gmail);
+  the external values are `ALERTMANAGER_SMTP_{FROM,USERNAME,PASSWORD,TO}` plus Stripe TEST.
+- The `jtoye-ci` identity was NOT deleted (D-04); it is reused (D-32).
+- k8s runs the **`prod`** Spring profile in every environment (`k8s/base/core-java-deployment.yaml:69-70`),
+  so the D-20 literal that governs the cluster is the one in `application-prod.yml`.
+- **#100 was closed by mistake** by docs PR #955; reopen it and close it on the D-23 evidence.
+- D-24 is resolved by measurement: **in-cluster Redis** (Managed Redis breaches the ceiling once
+  the LB meter bills). Owner checkpoint after 24 h of cluster life on the
+  `FreeTierInfrastructureCost` AKS meter and on `snackpass-pg`.
+
 ### Claude's Discretion
 - **D-25: managed PostgreSQL major version.** The floor is ≥ 16: `jtoye_backup` BYPASSRLS
   cannot be created by `azure_pg_admin` on 15 or earlier. Prefer the highest Azure-supported
@@ -223,6 +260,78 @@ real app-email delivery and SES (D-13).
 - Phase 37's live-cluster items: measure the ingress pod CIDR and verify
   `externalTrafficPolicy: Local` on ingress-nginx before setting `security.trusted-proxies`
   (it stays `""`, fail-closed, until measured).
+
+### Owner rulings in session (2026-10-19, appended during 29-14's execution)
+- **D-33: two owner rulings of 2026-10-19.**
+  - **(a) Order: 29-26 runs right after 29-22.** 29-26 (the #592 one-click unsubscribe base URL
+    and the #299 customer realm) is the persona-testing unlock and has no functional dependency
+    on the monitoring chain 29-23..29-25. Its only coupling to them was shared files
+    (`k8s/goldens/staging.yaml`, `k8s/scripts/check-render-invariants.sh`,
+    `k8s/staging/kustomization.yaml`), so 29-23 now depends on 29-26 and those files stay
+    serialized. Ruled order: 29-22 -> 29-26 -> 29-23 -> 29-24 -> 29-25.
+    **Measured at the re-plan, recorded so it is not read as a deviation:** 29-26's live task
+    moves the D-26 seed order to its next state to send a customer email, and that order is
+    created by 29-18 (`scripts/staging-seed.sh --stage order`, which itself runs right after
+    29-22). So 29-26 depends on 29-22 AND 29-18. Effective order: 29-22 -> 29-18 -> 29-26 ->
+    29-23 -> 29-24 -> 29-25. Waves: 29-26 = 10, 29-23 = 11, 29-24 = 12, 29-25 = 13,
+    29-27 = 14, 29-28 = 15. — **Reversibility:** reversible (plan order only).
+  - **(b) Persona testers read staging mail at `https://mail-staging.olajay.co.uk`:** Mailpit's
+    web UI and its `/api` (port 8025) behind ONE shared HTTP basic-auth credential (plan 29-22,
+    Task 4).
+    - **DNS:** the A record points at the ingress IP 51.105.43.14. The owner adds it at
+      Namecheap; agents never edit DNS. It was measured present at both dns1 and
+      dns2.registrar-servers.com on 2026-10-19.
+    - **TLS:** from ClusterIssuer `letsencrypt-prod` over HTTP-01 through Traefik, like every
+      other staging host.
+    - **Network:** the Traefik namespace reaches Mailpit on TCP 8025 only. SMTP 1025 stays
+      reachable only from core-java, Keycloak and Alertmanager, and is never published.
+    - **The credential** is GENERATED by `scripts/staging-secrets.sh`: never chosen by a
+      human, never in git, never printed. It is stored in `jtoye-stg-kv` and delivered through
+      the D-23 Secrets Store CSI pattern. The owner retrieves it from Key Vault and hands it to
+      testers out of band.
+    - **Mailpit sends nothing:** relay, release and forward stay unconfigured, and its Send
+      API stays locked.
+    - **The accepted risk:** whoever holds the credential reads EVERY staging email,
+      password-reset, staff-invite and DSAR-export links included. That is equivalent to
+      taking over any staging account. It is acceptable ONLY because staging holds test
+      personas and no real personal data. So **no real customer data on staging** is now a
+      standing rule, stated in the tester note.
+    - **Rotation:** regenerate the Key Vault secret through
+      `docs/runbooks/credential-rotation.md`.
+    - **Reversibility:** reversible. Delete the Ingress, the DNS record and the two Key Vault
+      objects.
+  - **How D-33 relates to D-19, D-06, D-08 and D-13/D-20.**
+    - **D-19 ("only Grafana gets a public hostname")** is amended in its READING only. Mailpit
+      is not a monitoring host, so Grafana is still the only monitoring host with a public name,
+      and Prometheus and Alertmanager stay cluster-internal. But mail-staging is a second
+      publicly named non-app host.
+    - **D-06:** the flat `-staging` host list gains `mail-staging.olajay.co.uk`, in the same
+      shape.
+    - **D-08** is untouched: this is a staging record only.
+    - **D-13/D-20** are untouched: app mail is still captured and never delivered. The UI only
+      lets testers read what was captured.
+
+- **D-34: two more owner rulings of 2026-10-19, both after 29-14.**
+  - **(a) Fourth node; the D-03 ceiling is raised by its cost.**
+    - **Why:** 29-14 measured that core-java and Keycloak could not roll at all. Each takes a
+      1Gi surge pod with request equal to limit, and the three B2s nodes had 661, 399 and
+      803 Mi allocatable free.
+    - **Why the requests cannot shrink:** measured use is core-java 732Mi and Keycloak 621Mi,
+      both JVMs.
+    - **Change:** nodepool1 was scaled from 3 to 4 Standard_B2s on 2026-10-19, owner-approved.
+      `scripts/azure-staging-provision.sh` now has NODE_COUNT=4, so a re-provision matches.
+      The new node had 734Mi of 2.7Gi requested after it joined.
+    - **Cost:** £0.0356/h list price, about £26/month. The OS disk is ephemeral, so the
+      29-19 research projection is £77.96/month for 3 × B2s. The projected estate rises from
+      about £131–145 to about £157–171/month. The owner accepted going over D-03's ~£150
+      ceiling for this; 29-19 measures the real figure.
+    - **Reversible:** scale back to 3 once monitoring's footprint is known, if it fits.
+  - **(b) The storefront image defect is fixed inside Phase 29, before persona testing.**
+    - **The defect:** 29-14 found that `PublicStorefrontService.toPublicProductDto` reads only
+      `products.image_url`, while vendor uploads go through the media_asset pipeline (V53). An
+      uploaded photo therefore never reaches the public storefront. Production is affected the
+      same way.
+    - **Fix:** a dedicated plan, test-first, deployed before 29-26 so personas see photos.
 
 </decisions>
 

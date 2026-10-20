@@ -1,0 +1,10 @@
+{
+  "command": "STAGING_SEED_SELFTEST_FORMAT=tap bash scripts/staging-seed.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..9\nnot ok 1 - prod-api\n  ---\n  message: 'rc=2 (want 1): VOID: the vendor stage is not implemented yet '\n  ...\nnot ok 2 - local-api\n  ---\n  message: 'rc=2 (want 1): VOID: the vendor stage is not implemented yet '\n  ...\nok 3 - no-context\nnot ok 4 - stale-server\n  ---\n  message: 'rc=2 (want 1): VOID: the vendor stage is not implemented yet '\n  ...\nnot ok 5 - dev-profile\n  ---\n  message: 'rc=2 (want 1): VOID: the vendor stage is not implemented yet '\n  ...\nnot ok 6 - rollout-mixed\n  ---\n  message: 'rc=2 (want 1): VOID: the vendor stage is not implemented yet '\n  ...\nnot ok 7 - no-ready-pod\n  ---\n  message: 'rc=2 (want 1): VOID: the vendor stage is not implemented yet '\n  ...\nnot ok 8 - dry-run-plan\n  ---\n  message: 'guards did not run: config reads=0 pod reads=0 (want >=1, 1)'\n  ...\nok 9 - list-kv-objects",
+  "targetTest": "dev-profile",
+  "targetFile": "scripts/staging-seed.sh",
+  "expected": "ok - dev-profile: one Ready core-java pod with SPRING_PROFILES_ACTIVE=dev exits 1 with REFUSED [profile] after exactly one pod read",
+  "actual": "not ok 5 - dev-profile   ---   message: 'rc=2 (want 1): VOID: the vendor stage is not implemented yet '   ... ",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion: the guard-free skeleton let the run past the point where it must refuse (rc 2 from the unimplemented stage instead of rc 1 with the refusal tag). Not a harness fault: the same harness PASSes no-context and list-kv-objects in the same run."
+}

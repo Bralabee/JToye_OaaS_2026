@@ -199,6 +199,13 @@ naive `wc -l` over its output is off by one.
 
 ## 7. Staging / production — the operator action this repo cannot perform
 
+> **Staging, 2026-10-18 (plan 29-10):** step 4 below is DONE for staging. The staging broker is the
+> `RabbitmqCluster` `rabbitmq` in `k8s/components/rabbitmq/rabbitmq-cluster.yaml` (cluster operator
+> v2.23.1, `spec.image: rabbitmq:4.3.6-management-alpine`), included only by `k8s/staging`, and it is
+> a FRESH install, so steps 1-3 have nothing to read there. The `rabbitmq-k8s` horizon row carries
+> that pin at that site and its `manual_review` is retired. The text below still describes
+> **production**, whose broker is decided in Phase 32.
+
 **Until Phase 29 ships the operator manifest, the staging/production broker is not deployed from
 this repository and its version is unknown and
 unknowable from this checkout.** `k8s/base/configmap.yaml` points at

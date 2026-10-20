@@ -1,0 +1,194 @@
+# In-cluster Redis (D-24): ServiceAccount, Deployment, Service, NetworkPolicy.
+#
+# CACHE-ONLY, REBUILDABLE, NO PERSISTENCE. `--save ""` turns RDB snapshots off and
+# `--appendonly no` turns the AOF off, so a restarted pod starts EMPTY by design:
+# everything core-java keeps here (the Spring cache, the Bucket4j rate-limit
+# buckets keyed rate_limit::{tenantId}) is derived and rebuilds on demand. The
+# durable state is Postgres's. Compose runs `--appendonly yes` with a volume; that
+# is a dev convenience, not a requirement this pod inherits.
+#
+# What restarts and eviction cost (recorded, accepted for staging):
+#   - a restart or an LRU eviction resets the affected rate-limit buckets to full,
+#     so for that window a tenant's budget is briefly larger than configured;
+#   - Spring cache misses fall through to Postgres (RedisCacheErrorHandler keeps a
+#     Redis error from failing a request).
+# maxmemory 96mb with allkeys-lru keeps the dataset inside the 128Mi pod limit, so
+# the kernel never OOM-kills a full cache; Redis evicts instead.
+#
+# DOWN-ALERTING arrives with plan 29-23's redis job (redis-exporter, the app label
+# admitted below on 6379). Until then a dead Redis shows only in core-java's logs
+# and health.
+#
+# The password: Secret redis-server-credentials, key `password`, from Key Vault
+# (plan 29-12). core-java authenticates with redis-credentials/password; plan 29-12's
+# SecretProviderClasses fill BOTH from the one Key Vault object
+# redis-credentials--password, so the two cannot disagree.
+# Plaintext on the pod network is T-29-37 (accepted for staging: no real customer
+# data; this policy admits only core-java and the exporter).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+    component: cache
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        component: cache
+    spec:
+      serviceAccountName: redis
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # uid/gid 999 is the image's `redis` user. The entrypoint's root-then-gosu
+        # step is bypassed (command below), so the pod never runs as root.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: redis
+        image: redis:8.10-alpine   # = docker-compose.full-stack.yml pin; horizon row redis
+        imagePullPolicy: IfNotPresent
+        command: ["redis-server"]
+        # $(REDIS_PASSWORD) is expanded by the kubelet from the env entry below, so
+        # the value never appears in a manifest or a render.
+        args:
+        - "--save"
+        - ""
+        - "--appendonly"
+        - "no"
+        - "--maxmemory"
+        - "96mb"
+        - "--maxmemory-policy"
+        - "allkeys-lru"
+        - "--requirepass"
+        - "$(REDIS_PASSWORD)"
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-server-credentials
+              key: password
+        ports:
+        - containerPort: 6379
+          name: redis
+          protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: redis
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: redis
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            memory: "128Mi"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        # The working directory. Nothing is persisted (no RDB, no AOF); it is a
+        # writable scratch path because the root filesystem is read-only.
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        emptyDir:
+          sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: redis
+    protocol: TCP
+    name: redis
+---
+# redis-allow. INV-7 row redis-allow@k8s/staging; k8s/base/networkpolicies/README.md
+# carries the same rows.
+#   Ingress: core-java pods and redis-exporter pods (plan 29-23), TCP 6379.
+#   Egress:  kube-dns only. Redis originates no connection of its own.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-allow
+  labels:
+    app.kubernetes.io/name: redis-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+        - podSelector:
+            matchLabels:
+              app: redis-exporter
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

@@ -3,6 +3,9 @@
 ## Overview
 
 This directory contains the Keycloak realm configuration for the `jtoye-dev` realm used in development and testing.
+The same templates are also the ONLY source of the staging realms (`jtoye-staging`, and `jtoye-customers` on the
+staging cluster): `staging-realm.jq` derives them and `scripts/staging-realm-import.sh` imports them. See
+["Staging realm (Kubernetes)"](#staging-realm-kubernetes).
 
 > **Scoped machine credentials (#206 [AI-4]):** the `catalog:read`/`catalog:write` client
 > scopes, the read-only `integration-catalog-ro` machine client, the per-tenant
@@ -11,34 +14,43 @@ This directory contains the Keycloak realm configuration for the `jtoye-dev` rea
 
 ## Files
 
-- **realm-export.json**: Complete realm configuration including:
-  - Clients: `core-api`, `frontend`
+- **realm-export.template.json** (tracked) → **realm-export.json** (rendered, gitignored): the vendor realm, including:
+  - Clients (non-built-in): `core-api`, `edge-api`, `integration-catalog-ro`, `integration-orders-rw`.
+    There is **no client named `frontend`**: the frontend app signs in through `core-api` (phase 29
+    research, Blocker A — `k8s/base/configmap.yaml` still names `frontend` and the staging overlay
+    does not override it yet; staging must patch it to `core-api`, as `k8s/local` already does).
   - Groups: `tenant-a`, `tenant-b` with tenant_id attributes
   - Users: Pre-configured test users with tenant assignments
   - Protocol mappers: tenant_id claim injection into JWT
   - Realm settings: Token lifespans, security policies
+- **realm-export-customers.template.json** → **realm-export-customers.json**: the customer realm
+  `jtoye-customers` (client `storefront-client`). Not valid JSON until its fragment placeholders are
+  substituted.
+- **staging-realm.jq**: the staging transform over both templates (plan 29-04).
+- **configure-keycloak.sh**: a legacy admin-API helper for the dev realm.
 
 ## Realm Configuration Details
 
 ### Realm: `jtoye-dev`
 
 **Clients:**
-1. **core-api**
+1. **core-api** — the client the frontend app (NextAuth) signs in through
    - Client ID: `core-api`
    - Client Secret: rendered at import from `${KEYCLOAK_CLIENT_SECRET}` (set in `.env`; the rendered `realm-export.json` is gitignored — never committed)
    - Access Type: confidential
-   - Service Accounts Enabled: true
-   - Direct Access Grants: enabled
-   - Valid Redirect URIs: `http://localhost:9090/*`
+   - Service Accounts Enabled: **false** (#947; D-02 requires it in every realm a cluster imports)
+   - Valid Redirect URIs (dev): `http://localhost:8080/*`, `http://localhost:3000/*`,
+     `http://localhost:3100/*`, `http://localhost:9090/*`, `http://app.jtoye.local/*`
+   - Web Origins (dev): `*`
 
-2. **frontend**
-   - Client ID: `frontend`
-   - Access Type: public
-   - Direct Access Grants: enabled
-   - Valid Redirect URIs:
-     - `http://localhost:3000/*`
-     - `http://localhost:3000/api/auth/callback/keycloak`
-   - Web Origins: `http://localhost:3000`
+2. **edge-api** — confidential, service account enabled (the Go edge gateway).
+3. **integration-catalog-ro**, **integration-orders-rw** — confidential machine clients for
+   scoped integrations (`docs/security-scopes.md`).
+
+Until plan 29-04 this README also described a public `frontend` client. No version of either
+tracked realm file has ever held one (`git log -G'"clientId" *: *"frontend"'` over both finds no
+commit); the deployed configmap still names `frontend` (Blocker A). The public client plan 28-05
+removed (D-12, "Realm import provenance" below) was `test-client`.
 
 ### Session lifetimes (D-14, owner ruling 2026-10-10)
 
@@ -61,8 +73,10 @@ This directory contains the Keycloak realm configuration for the `jtoye-dev` rea
   `{"ssoSessionMaxLifespan": 50400}`), which leaves runtime-created users and live sessions alone,
   and read it back from `GET /admin/realms/jtoye-dev`. A full `--override` import would delete every
   user the template does not carry.
-- **Staging and production** vendor realms are not in this repository: an operator must make the
-  same `ssoSessionMaxLifespan` 50400 change there (rotation stays off there too).
+- **Staging** carries the change by construction: `jtoye-staging` is derived from this template by
+  `staging-realm.jq`, which leaves the session settings alone. **Production** vendor realms are not
+  in this repository: an operator must make the same `ssoSessionMaxLifespan` 50400 change there
+  (rotation stays off there too).
 
 ### Groups & Tenant Mapping
 
@@ -168,7 +182,11 @@ user attribute, declare it in the same profile, or Keycloak will hide and drop i
   drop is a no-op. Re-render the template (the `keycloak-realm-render` service), then run
   `docker exec -it jtoye-keycloak /opt/keycloak/bin/kc.sh import --file /opt/keycloak/data/import/realm-export.json --override true`
   and restart Keycloak (`docs/security-scopes.md` §4).
-- **Staging and production:** those realms are not in this repository. An operator must make the
+- **Staging:** `jtoye-staging` is derived from this template, so it carries this user profile; the
+  staging transform keeps `tenant_id` admin-only, and the assertion suite of
+  `scripts/staging-realm-import.sh` refuses a realm whose `tenant_id` is missing, user-editable, or
+  beside `unmanagedAttributePolicy: ENABLED` — on the rendered file AND on the live read-back.
+- **Production:** that realm is not in this repository. An operator must make the
   same change before staff invitations are used there: Keycloak admin console → realm → *Realm
   settings* → *User profile* → create attribute `tenant_id` (who can view: admin only; who can edit:
   admin only; not required), and leave *Unmanaged attributes* at **Disabled** (or *Admin can edit*,
@@ -244,9 +262,12 @@ rather than remove it. Reusing the existing `SMTP_HOST` name is worse still: the
 file points it at a public example domain, so anyone who copied the example would render a dead
 external host into their realm.
 
-**Staging and production do not consume these templates.** No k8s manifest mounts the rendered
-realm JSONs; the overlays configure Keycloak on their own. Any SMTP or branding override for a
-deployed environment is a k8s-side change, and editing these files will not reach it.
+**Staging consumes these templates only through `staging-realm.jq`, which REPLACES this block.**
+No k8s manifest mounts the rendered realm JSONs. The staging transform sets `smtpServer` to the
+in-cluster Mailpit (`mailpit.jtoye-staging.svc.cluster.local:1025`, `starttls: "true"`,
+`from: no-reply@olajay.co.uk`; D-20), and the staging assertion suite refuses any realm still
+naming `mailhog`. **Production** does not consume these templates at all; an SMTP or branding
+override there is a production-side change, and editing these files will not reach it.
 
 **No `connectionTimeout` / `timeout` keys — Keycloak 24.0.5 does not read them.** A review raised
 that an unbounded SMTP send could park a request thread on the public `reset-credentials`
@@ -557,6 +578,75 @@ To enable it, all four of these are required and none is sufficient alone:
 variables the moment step 2 lands, so a half-done enablement fails preflight rather than booting a
 provider with an empty client id.
 
+## Staging realm (Kubernetes)
+
+Plan 29-04 (Blocker H, D-02, D-20, D-27; #299, #859, #296). The staging Keycloak runs in-cluster
+(namespace `jtoye-staging`, Service `keycloak:8080`, management port 9000) and serves a PUBLIC host,
+so the dev-shaped template cannot be imported as it is: it names realm `jtoye-dev`, gives `core-api`
+localhost redirect URIs and `webOrigins: ["*"]`, seeds four users that share one templated
+password, and sends mail to Mailhog without TLS.
+
+**One template, one transform, no second realm file.** `staging-realm.jq` derives both staging
+realms from the templates in this directory:
+
+| | Vendor (`jtoye-staging`) | Customer (`jtoye-customers`) |
+|---|---|---|
+| Users | service-account-* only (D-27: no committed credential signs in to a public host) | none (the template ships none) |
+| URIs | `core-api` redirect `https://app-staging.olajay.co.uk/*`, origin `https://app-staging.olajay.co.uk`, post-logout the same; `edge-api` and both `integration-*` none | `storefront-client` the same host |
+| Clients | `integration-catalog-ro` / `-orders-rw` disabled, not deleted (no consumer: #301) | — |
+| SMTP | Mailpit `mailpit.jtoye-staging.svc.cluster.local:1025`, `starttls: "true"` (D-20) | the same |
+| Other | `core-api` service account off (D-02); `tenant_id` a managed admin-only attribute | `verifyEmail: true` (#859); Google IdP disabled, empty credentials, dev `_note_*` prose not copied (ADR-0005) |
+
+It rewrites only the named realm paths (`/realms/jtoye-dev/`, `/admin/jtoye-dev/`) and the default
+role name; any OTHER dev-shaped string is left for the assertion suite to refuse, never silently
+renamed. It touches no dollar-brace token: the lower-case ones are Keycloak built-ins and must
+survive byte for byte.
+
+**Imported by `scripts/staging-realm-import.sh`, never by `--import-realm`.** The templates live
+outside `k8s/`, where kustomize's load restrictor cannot read them, so an in-pod import would need a
+second committed copy; the customer template is not JSON until rendered; and the proof that matters
+is what Keycloak holds. The script:
+
+```bash
+scripts/staging-realm-import.sh --render-only --kind vendor --out /tmp/x.json   # TEST-ONLY secrets
+scripts/staging-realm-import.sh --assert /tmp/x.json --kind vendor              # the assertion suite
+scripts/staging-realm-import.sh --list-kv-objects                               # what 29-13 must generate
+scripts/staging-realm-import.sh --selftest                                      # every arm, PASS/FAIL
+# the live import (plan 29-14), from a shell that exports JTOYE_AZURE_SUBSCRIPTION_ID:
+scripts/staging-realm-import.sh --apply --context <the staging context>
+```
+
+`--apply` runs `staging_kube_guard` (`scripts/lib/staging-kube-guard.sh`) BEFORE it sources the Azure
+guard library: no context, the employer's `sipbihs2aks`, an unreadable identity file
+(`k8s/staging/azure-identity.yaml`) or a context whose API server is not
+`https://<aks_api_server_fqdn>:443` is refused before any network call. It then reads the four client
+secrets and the master admin credentials from Key Vault `jtoye-stg-kv` through `az_read` (values in
+variables and mode-600 files only, never argv, never printed), renders and asserts both realms, and
+only then opens `kubectl port-forward svc/keycloak 18080:8080 19000:9000`.
+
+**The admin API is reached only through that port-forward** (`http://127.0.0.1:18080`), never the
+public auth host. The public ingress (plan 29-10, not yet built) is to route only `/realms/jtoye-staging`,
+`/realms/jtoye-customers` and `/resources/`; the master realm, and with it the admin token
+endpoint and the admin console, is not exposed (#296, T-29-14).
+
+**The assertion suite** (`--assert`) is the same program for a rendered file and for the live
+realm. It refuses: the wrong realm name; any non-service user; `webOrigins` `*` on any client; any
+redirect URI off `https://app-staging.olajay.co.uk/`; any string containing `localhost`,
+`jtoye.local`, `mailhog` or `jtoye-dev`; SMTP that is not Mailpit with STARTTLS; a surviving
+substitution-list placeholder or any other non-built-in dollar-brace token; a changed set of
+built-in tokens; `core-api` with a service account; a missing or user-editable `tenant_id`; and,
+for the customer realm, `verifyEmail` false or an enabled or credentialed Google IdP. In mode
+`apply` it also refuses the TEST-ONLY values an offline render carries, so an offline file can
+never be imported. After the import, `--apply` reads the realm back (`GET /admin/realms/NAME`,
+`/clients`, `/users`, `/users/profile`, `/identity-provider/instances`) and runs the SAME suite on
+that reconstruction: a realm is proven by what Keycloak returns, not by the file it was sent.
+
+**An existing realm is skipped, not replaced.** A skipped realm is still read back and asserted, in
+mode `live-existing`, where users created after the import (the 29-06 test vendor, storefront
+registrations) are allowed and the template's seed users never are. **`--recreate` DELETES the
+realm first, and every user in it**: on the vendor realm that includes the staging test vendor
+(re-created by plan 29-06's seed), on the customer realm every storefront registration.
+
 ## Exporting Realm Configuration
 
 To export the current realm configuration (e.g., after making changes via UI):
@@ -697,7 +787,8 @@ the `basic` scope to the realm's default client scopes and to each client's defa
 ## Version History
 
 - **v0.7.0** (2025-12-31): Initial realm export to version control
-  - 2 clients configured (core-api, frontend)
+  - clients configured (this entry once read "core-api, frontend"; no tracked realm file has ever
+    held a `frontend` client, see "Realm Configuration Details")
   - 3 test users with tenant assignments
   - Protocol mappers for tenant_id injection
   - Development-ready configuration

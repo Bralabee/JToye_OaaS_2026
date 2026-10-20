@@ -4,13 +4,21 @@
 # Allow-list for Go edge gateway pods (`app=edge-go`).
 #
 # Ingress:
-#   - From ingress-nginx controller on port 8080.
-#   - From monitoring / jtoye-infrastructure namespace (Prometheus scrape)
-#     on port 8080 (/metrics).
+#   - From the ingress-controller namespace on port 8080. The namespace is
+#     overwritten at render time from app-config `ingress.controller-namespace`
+#     (traefik in base/staging/production, ingress-nginx in k8s/local; see the
+#     `replacements:` block in k8s/base/kustomization.yaml).
+#   - From Prometheus pods (`app=prometheus`, same namespace) on port 8080
+#     (/metrics). This replaces the former `monitoring` / `jtoye-infrastructure`
+#     namespace rule: neither namespace exists, and Prometheus runs in the
+#     application namespace (Phase 29 D-16).
 # Egress:
 #   - DNS to kube-dns.
 #   - core-java on port 9090 (proxied requests).
-#   - Public 443/TCP for Keycloak JWKS fetch.
+#   - Keycloak pods (`app=keycloak`, same namespace) on 8080 — the internal JWKS
+#     path (29-RESEARCH.md Pattern 5).
+#   - Public 443/TCP for the public Keycloak host where JWKS is still fetched
+#     that way.
 #
 # The edge pod deliberately does NOT have direct database, cache, or
 # message-bus egress. Anything it needs goes through core-java.
@@ -32,21 +40,20 @@ spec:
     - Ingress
     - Egress
   ingress:
+    # ingress.0.from.0 — the controller namespace; REPLACED from app-config
+    # ingress.controller-namespace (index is load-bearing, see kustomization.yaml).
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
+              kubernetes.io/metadata.name: traefik
       ports:
         - protocol: TCP
           port: 8080
     # Prometheus scrape
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: monitoring
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: jtoye-infrastructure
+              app: prometheus
       ports:
         - protocol: TCP
           port: 8080
@@ -72,7 +79,15 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
-    # Public 443 for Keycloak JWKS only (auth.olajay.co.uk)
+    # Keycloak in the same namespace (internal JWKS, Pattern 5)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Public 443 for the public Keycloak host's JWKS
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

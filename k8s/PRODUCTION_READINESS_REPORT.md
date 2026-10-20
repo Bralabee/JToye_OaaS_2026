@@ -651,3 +651,47 @@ those pages is a product decision left to the vendor-payments phase.
 
 **Full detail for all of the above:**
 `.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md`.
+
+---
+
+## 2026-10 — Phase 29 staging
+
+**Nature of this record: APPENDED, not a revision.** Everything above is dated and stays as signed.
+This section records what Phase 29 (a deployable staging environment with its own monitoring) built
+and measured, and, as important, what staging does **not** show about production. It is a defect and
+capability record, not a fresh readiness review: the manifests for production have not been
+re-audited, and `deploy-production` stays off until Phase 32.
+
+**What now exists and was measured (staging only; evidence under
+`.planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/`):**
+
+| Capability | Measured fact | Evidence |
+|---|---|---|
+| Cluster and data | AKS `jtoye-stg-aks` (Entra-only, local accounts disabled, AKS-native Cilium) and Azure Database for PostgreSQL Flexible Server `jtoye-stg-pg` (PostgreSQL 18) in J'Toye's own subscription | `29-09-provisioning.txt`, `29-14-tracer.txt` |
+| Secrets | Azure Key Vault `jtoye-stg-kv` through the Secrets Store CSI driver; no `Secret`, `SealedSecret` or `ExternalSecret` in the staging render (92 resources, 0 plaintext Secrets) | `29-13-secrets.txt`, `29-27-measurements.txt` |
+| Edge | Traefik v3 reading the nginx annotations; headers, CSP, CORS, rate limit and noindex proven against the live hosts | `29-15-edge.txt` |
+| NetworkPolicy | A denial captured on the Cilium cluster with controls (an unlabelled pod times out where a labelled one connects) | `29-17-enforcement.txt` |
+| Runtime parity | The running core-java, edge-go and frontend pods are the images pushed for the deployed commit, by digest | `29-14-tracer.txt`, `scripts/check-deploy-digest-parity.sh` |
+| Mail | Mailpit with STARTTLS required; a core-java that cannot negotiate it answers 503 `DOWN` and fails the deploy | `29-22-mail-tls.txt` |
+| Monitoring and alerting | Prometheus, Alertmanager and Grafana in the cluster with the compose rule corpus; 8 scrape targets up; a synthetic alert reached the owner's real inbox | `29-23-monitoring-a.txt`, `29-25-dply03.txt` |
+| Recovery | Point-in-time restore drilled two-arm by row count; the first scheduled backup ran unattended on 2026-10-20 and the container's retention policy is locked (30 days) | `29-20-pitr.txt` |
+
+**What this does NOT show about production.**
+- Production was not deployed, provisioned or audited by this phase. Its secrets path, ingress
+  controller, datastore SKU and connection budget are Phase 32 decisions (`deferred-items.md` in the
+  phase directory lists the inputs).
+- At Azure's reserved 15 connections, production at `max_connections` 200 does not fit the connection
+  budget (`k8s/scripts/check-connection-math.sh` prints the counterfactual on every run).
+- Database high availability is not provided: staging runs a Burstable tier, which has no
+  zone-redundant HA. Tracked on #983.
+- Monitoring covers Prometheus, Alertmanager and Grafana only. Log aggregation, traces across the
+  edge and the core, and a frontend scrape job are not built (#98 criterion 3; #971). SLOs and the
+  first-response runbooks are not written (#982).
+- The first CI run of `deploy-staging` as `jtoye-ci` is plan 29-28's proof, not this record's.
+- `FRONTEND_PUBLIC_API_URL` bakes the staging API origin into frontend builds made from `main`; it
+  must be reconciled before any production build (#980).
+
+The operating procedures for the staging estate are in `docs/runbooks/staging-operations.md` and the
+staging section of `docs/runbooks/credential-rotation.md`. The Sealed Secrets and ingress-nginx
+instructions in `docs/runbooks/sealed-secrets.md` and `k8s/DEPLOYMENT.md` are marked superseded for
+staging, not removed.

@@ -8,24 +8,89 @@ data:
   sql.log.level: "DEBUG"
 
   # Staging URLs
-  keycloak.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-staging"
+  #
+  # keycloak.issuer.uri is the POD-REACHABLE half of the D-13 split-horizon
+  # issuer (core KC_ISSUER_URI, frontend KEYCLOAK_ISSUER_INTERNAL): JWKS,
+  # discovery, token and userinfo calls. Plan 29-08 / Pattern 5: it is the
+  # in-cluster Keycloak Service, not the public host. Reaching
+  # auth-staging.olajay.co.uk from a pod would hairpin through the ingress
+  # LoadBalancer IP; Cilium may translate that before policy evaluation, and
+  # then the public-443 ipBlock rule would not admit it (29-RESEARCH A5,
+  # assumed, not measured; the in-cluster path is safe either way). The issuer
+  # Keycloak STAMPS into every token stays public (keycloak.public.issuer.uri
+  # below; plan 29-10 sets Keycloak's KC_HOSTNAME to the public origin), so
+  # `iss` validation is unchanged. This is the compose shape
+  # (docker-compose.full-stack.yml).
+  keycloak.issuer.uri: "http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-staging"
   api.url: "https://api-staging.olajay.co.uk"
   frontend.url: "https://app-staging.olajay.co.uk"
 
+  # Keycloak admin seam (issue #102 remainder, 31.1-11, 37-08): ON in staging.
+  # Staff-invite acceptance creates the invited person in the vendor realm, and
+  # offboard deprovisioning and DSAR account deletion call the same admin API;
+  # with the seam off all three stay NOT_CONFIGURED. base-url is the in-cluster
+  # Keycloak Service (same namespace, DEF-29-5: the jtoye-infrastructure
+  # namespace the base names does not exist in staging). The admin credential
+  # comes from keycloak-credentials, which Key Vault supplies (plan 29-12).
+  keycloak.admin.enabled: "true"
+  keycloak.admin.base-url: "http://keycloak.jtoye-staging.svc.cluster.local:8080"
+  # The in-cluster Keycloak itself (plan 29-10, k8s/components/keycloak).
+  # keycloak.hostname is its KC_HOSTNAME: the FULL public origin, so the issuer it
+  # stamps into every token is keycloak.public.issuer.uri below, while
+  # KC_HOSTNAME_BACKCHANNEL_DYNAMIC lets pods use keycloak.issuer.uri above.
+  # keycloak.db.url is its own `keycloak` database on the managed server (D-02),
+  # verify-full against the JVM truststore like core-java (plan 29-08). The host is
+  # the server name scripts/azure-staging-datastores.sh creates (jtoye-stg-pg);
+  # plan 29-09 records the FQDN it reads back in k8s/staging/azure-identity.yaml,
+  # and this value must equal it. The :5432 must equal db.port (the NetworkPolicy
+  # follows db.port by replacement; this URL is a separate string).
+  keycloak.hostname: "https://auth-staging.olajay.co.uk"
+  keycloak.db.url: "jdbc:postgresql://jtoye-stg-pg.postgres.database.azure.com:5432/keycloak?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory"
   # Keycloak deprovisioning realm (issue #102 remainder) — staging realm.
   keycloak.admin.realms: "jtoye-staging"
   # 37-08: the vendor realm staff-invite accepts create users in (same realm as above).
   keycloak.admin.vendor-realm: "jtoye-staging"
+
+  # DEF-29-5: in-namespace hosts. Base points all four at
+  # *.jtoye-infrastructure.svc.cluster.local, a namespace staging never has.
+  # Redis, RabbitMQ (the operator's RabbitmqCluster Service, AMQP and the STOMP
+  # relay alike) and Keycloak live in jtoye-staging itself; the NetworkPolicies
+  # admit them as same-namespace podSelectors (plan 29-02).
+  redis.host: "redis.jtoye-staging.svc.cluster.local"
+  rabbitmq.host: "rabbitmq.jtoye-staging.svc.cluster.local"
+  stomp.broker.relay-host: "rabbitmq.jtoye-staging.svc.cluster.local"
 
   # DEF-6 / D-13 / D-19 (Phase 26 / INFRA-02): the env-VARYING subset of the new
   # base app-config keys. Each value is derived from this overlay's OWN
   # keycloak.issuer.uri / frontend.url above — never from the production values
   # the base carries — so a staging email link, a staging CORS origin and a
   # staging Stripe Connect return all resolve to the staging platform.
+
+  # --- SMTP: captured in-cluster, never delivered (D-13 as amended by D-20) ---
+  # Staging app mail goes to the in-cluster Mailpit, never to a real relay: the
+  # base SES endpoint is production's, and SES itself defers to Phase 32. Mailpit
+  # takes no SMTP auth (smtp.auth "false", so the optional smtp-credentials
+  # Secret is not needed) and listens on 1025.
   #
-  # SMTP is deliberately NOT overridden here: the base value is the correct AWS
-  # eu-west-2 SES endpoint for staging and production alike, and smtp.auth stays
-  # "false" in both.
+  # THE MAIL ORDERING, because this host exists before its server does:
+  #   - smtp.starttls "true" sets JavaMail's OPPORTUNISTIC mail.smtp.starttls.enable
+  #     only. The D-20 ruling (STARTTLS REQUIRED) is written by plan 29-16 (wave 7)
+  #     as the LITERAL `.required: true` in application-prod.yml, the profile k8s
+  #     runs; it is deliberately not a configmap key, so a missing entry here can
+  #     never fall back to opportunistic TLS (#952's class).
+  #   - Mailpit is first created by plan 29-22 (wave 8), serving TLS from its first
+  #     start, with the cluster-CA truststore beside it (D-21/D-30). So no TLS-less
+  #     Mailpit ever exists in staging.
+  #   - From the tracer deploy (plan 29-14) until 29-22, every send fails on DNS for
+  #     mailpit.jtoye-staging.svc.cluster.local. That is harmless ONLY because sending
+  #     is asynchronous and the readiness group is readinessState alone (no
+  #     management.endpoint.health.group.readiness.include in any profile), so a dead
+  #     mail host cannot take core-java out of the Service. Plan 29-14 reads both back
+  #     and shows the readiness claim can fail. Do NOT add a readiness include for mail.
+  smtp.host: "mailpit.jtoye-staging.svc.cluster.local"
+  smtp.port: "1025"
+  smtp.auth: "false"
+  smtp.starttls: "true"
 
   # Media + backup storage (Phase 36, D-01/D-06/D-11): staging has its OWN two
   # storage accounts, never production's. Media is jtoyestgmedia (uksouth, with
@@ -40,19 +105,26 @@ data:
   storage.blob.public-url: "https://jtoyestgmedia.blob.core.windows.net/jtoye-images"
   backup.blob.endpoint: "https://jtoyestgbackup.blob.core.windows.net"
 
-  # D-13 split-horizon: in staging one host serves both roles today, so this is
-  # byte-identical to keycloak.issuer.uri above — the key exists so the two can
-  # diverge without a manifest edit.
+  # D-13 split-horizon: the PUBLIC half — the issuer Keycloak stamps into `iss`
+  # (core JWT_EXPECTED_ISSUER, edge JWT_EXPECTED_ISSUER, frontend KEYCLOAK_ISSUER)
+  # and the host the browser is redirected to. Since plan 29-08 it DIFFERS from
+  # keycloak.issuer.uri above (the in-cluster Service), exactly as compose does.
   keycloak.public.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-staging"
 
-  # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08). The base
-  # value is the byte-identical string `frontend` that used to be hardcoded in
-  # frontend-deployment.yaml, so staging keeps authenticating as exactly the same
-  # OIDC client it always has — the key exists so it CAN be changed per
-  # environment without patching the Deployment, not because staging needs a
-  # different value. Only k8s/local patches it (to `core-api`, the jtoye-dev
-  # realm's actual client). Adding a redundant `keycloak.client-id: "frontend"`
-  # line here would be noise, not documentation.
+  # #299: the customer-storefront realm (jtoye-customers, imported by plans
+  # 29-04/29-14), split exactly like the vendor realm above: pods reach the
+  # in-cluster Service, tokens carry the public host. The client id is inherited
+  # from base (storefront-client, the realm's public storefront client).
+  keycloak.customer.issuer.uri: "http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-customers"
+  keycloak.customer.public.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-customers"
+
+  # keycloak.client-id is inherited from base, which now names `core-api`
+  # (Blocker A, plan 29-08): the vendor client the staging realm actually has
+  # (infra/keycloak/staging-realm.jq keeps the template's clients). The earlier
+  # base value `frontend` named no client in ANY environment's realm, so a staging
+  # login could only have ended in invalid_client. INV-14 in
+  # k8s/scripts/check-render-invariants.sh fails a deployed render whose client id
+  # is not a clientId in infra/keycloak/realm-export.template.json.
 
   # Single staging platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).
@@ -61,6 +133,8 @@ data:
   # D-19: unsubscribe + email open/click tracking links in staging notifications.
   notification.email.tracking-base-url: "https://app-staging.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app-staging.olajay.co.uk"
+  # #592 / RFC 8058: the one-click POST target's origin = this overlay's api.url.
+  notification.unsubscribe.one-click-base-url: "https://api-staging.olajay.co.uk"
   gdpr.dsar.verify-base-url: "https://app-staging.olajay.co.uk/data-request/confirm"
   gdpr.dsar.export-download-base-url: "https://app-staging.olajay.co.uk/data-request/download"
   staff.invite.accept-base-url: "https://app-staging.olajay.co.uk/invite"
@@ -78,13 +152,31 @@ data:
   # k8s/base/configmap.yaml for the mechanism and the failure it guards.
   vendor.logout-complete.enabled: "false"
 
-  # --- Trusted proxies (37-24, D-19 / RWO-006): OPERATOR INPUT, deliberately empty --
-  # The ingress-nginx controller's pod CIDR on the staging AKS cluster is not in
-  # this repo (kubenet / Azure CNI assign it per cluster). Empty = trust none: core
-  # keys every client on its socket address, which behind the ingress is the
-  # ingress pod, so EVERY client shares ONE public bucket until this is set.
-  # INV-12 WARNS on this line (never fails) and refuses /0, anything shorter than
-  # /8 and any public range once a value is given. Fill it per 37-24's user_setup:
-  #   kubectl --context jtoye-staging get pods -n ingress-nginx -o wide
-  # and declare that pod range, a private /16 or narrower, never 0.0.0.0/0.
-  security.trusted-proxies: ""
+  # --- Trusted proxies (37-24, D-19 / RWO-006; set by plan 29-15 after measuring) --
+  # The ingress controller is Traefik (D-29) in namespace `traefik`. Its pods are
+  # the socket peer core-java sees, so their address range is the ONLY range whose
+  # X-Forwarded-For core-java may believe (ClientIpResolver walks the header from
+  # the right and skips only hops inside this list). Measured 2026-10-19, plan 29-15
+  # (evidence/29-15-edge.txt, TASK 2):
+  #   - az aks show networkProfile.podCidr (subscription-pinned az_read):
+  #     10.244.0.0/16 — Azure CNI overlay, Cilium dataplane; equals POD_CIDR in
+  #     29-ESTATE-DECISIONS.md.
+  #   - Traefik pods at 10.244.2.154 and 10.244.1.134, on two different nodes.
+  #   - Traefik Service `traefik`: type LoadBalancer, externalTrafficPolicy Local,
+  #     so the LoadBalancer does not SNAT and the client's own address reaches
+  #     Traefik, which appends it as the right-most X-Forwarded-For hop.
+  #   - Before this value: a request carrying X-Forwarded-For 203.0.113.9 was keyed
+  #     on 10.244.1.134 / 10.244.2.154 — every client shared the bucket of the
+  #     Traefik pod it landed on.
+  # Why the whole /16 and not the two pod IPs or a /24: a Traefik pod gets a new
+  # address on every reschedule, on any node, and the overlay hands each node its
+  # own block of this range (node .spec.podCIDR is not populated under overlay), so
+  # no narrower value stays true. A /16 is private and no wider than /8, which
+  # INV-12 accepts. Accepted residual: every pod in the cluster is inside this
+  # range, so a pod that can reach core-java directly (the frontend's server-side
+  # calls, admitted by the NetworkPolicies) could also supply X-Forwarded-For.
+  # The internet cannot: Traefik is the only path in, it appends the real peer as
+  # the right-most hop, and the walk stops at the first hop outside this range, so
+  # anything a client writes to the left of it is never read.
+  # Empty ("") restores trust-none.
+  security.trusted-proxies: "10.244.0.0/16"

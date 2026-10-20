@@ -1,0 +1,1000 @@
+# Plan 29-09 live provisioning log (the J'Toye subscription only)
+#
+# Every Azure call below went through scripts/lib/azure-guard.sh (az_read, or az_mutate inside
+# the three provisioning scripts), which appends `--subscription c483d353-5f61-4587-a790-addb9ab5fb94`
+# as the last two argv entries after az_guard_init has read the subscription's name and state back.
+# Timestamps are UTC ISO-8601. No secret value appears in this file: the PostgreSQL admin password
+# exists only as a mode-600 file inside azure-staging-datastores.sh's temp dir and in Key Vault.
+# Decision record: 29-ESTATE-DECISIONS.md (APPROVED: option-a, commit f9f39400).
+
+### precondition: subscription state
+# at 2026-10-19T00:36:34Z  rc=0
+# az account show --query state -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Enabled
+
+### operator account (name, type)
+# at 2026-10-19T00:36:34Z  rc=0
+# az account show --query {user:user.name,type:user.type,tenant:tenantId} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "tenant": "b56df236-36b2-49ab-a25f-050cbaa9787c",
+  "type": "user",
+  "user": "admin@jtoyedigital.co.uk"
+}
+
+### collision check: AKS clusters in jtoye-rg
+# at 2026-10-19T00:36:43Z  rc=0
+# az aks list -g jtoye-rg --query [].name -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+
+
+### collision check: PostgreSQL flexible servers
+# at 2026-10-19T00:36:44Z  rc=0
+# az postgres flexible-server list --query [].{name:name,rg:resourceGroup,state:state,version:version} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Name          Rg        State    Version
+------------  --------  -------  ---------
+snackpass-pg  jtoye-rg  Stopped  16
+
+### collision check: Key Vaults
+# at 2026-10-19T00:36:45Z  rc=0
+# az keyvault list --query [].name -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+
+
+### collision check: deleted (soft-deleted) Key Vaults
+# at 2026-10-19T00:37:05Z  rc=0
+# az keyvault list-deleted --query [].name -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+
+
+### collision check: public IPs in jtoye-rg
+# at 2026-10-19T00:37:07Z  rc=0
+# az network public-ip list -g jtoye-rg --query [].name -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+
+
+### collision check: identities in jtoye-rg
+# at 2026-10-19T00:37:07Z  rc=0
+# az identity list -g jtoye-rg --query [].name -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+jtoye-ci
+
+### collision check: storage accounts
+# at 2026-10-19T00:37:08Z  rc=0
+# az storage account list --query [].{name:name,rg:resourceGroup,loc:location} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+
+
+### storage name availability jtoyestgmedia
+# at 2026-10-19T00:37:09Z  rc=3
+# az storage account check-name --name jtoyestgmedia -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+ERROR: (SubscriptionNotFound) Subscription c483d353-5f61-4587-a790-addb9ab5fb94 was not found.
+Code: SubscriptionNotFound
+Message: Subscription c483d353-5f61-4587-a790-addb9ab5fb94 was not found.
+
+### storage name availability jtoyestgbackup
+# at 2026-10-19T00:37:10Z  rc=3
+# az storage account check-name --name jtoyestgbackup -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+ERROR: (SubscriptionNotFound) Subscription c483d353-5f61-4587-a790-addb9ab5fb94 was not found.
+Code: SubscriptionNotFound
+Message: Subscription c483d353-5f61-4587-a790-addb9ab5fb94 was not found.
+
+### Key Vault name availability
+# at 2026-10-19T00:37:11Z  rc=0
+# az keyvault check-name --name jtoye-stg-kv -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "message": null,
+  "nameAvailable": true,
+  "reason": null
+}
+
+### fail direction before create: the Task 2 verify read on jtoye-stg-aks
+# at 2026-10-19T00:37:12Z  rc=3
+# az aks show -g jtoye-rg -n jtoye-stg-aks --query [networkProfile.networkDataplane, networkProfile.networkPolicy, networkProfile.networkPluginMode, to_string(securityProfile.workloadIdentity.enabled), to_string(disableLocalAccounts), agentPoolProfiles[0].osDiskType] -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+ERROR: (ResourceNotFound) The Resource 'Microsoft.ContainerService/managedClusters/jtoye-stg-aks' under resource group 'jtoye-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+Code: ResourceNotFound
+Message: The Resource 'Microsoft.ContainerService/managedClusters/jtoye-stg-aks' under resource group 'jtoye-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+
+### fail direction before create: the Task 3 verify read on jtoye-stg-pg
+# at 2026-10-19T00:37:13Z  rc=3
+# az postgres flexible-server show -g jtoye-rg -n jtoye-stg-pg --query [version, sku.name, state] -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+ERROR: (ResourceNotFound) The Resource 'Microsoft.DBforPostgreSQL/flexibleServers/jtoye-stg-pg' under resource group 'jtoye-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+Code: ResourceNotFound
+Message: The Resource 'Microsoft.DBforPostgreSQL/flexibleServers/jtoye-stg-pg' under resource group 'jtoye-rg' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+
+### provider states before
+# at 2026-10-19T00:37:36Z  rc=0
+# az provider list --query [?namespace=='Microsoft.KeyVault' || namespace=='Microsoft.Storage' || namespace=='Microsoft.ContainerService' || namespace=='Microsoft.DBforPostgreSQL' || namespace=='Microsoft.ManagedIdentity' || namespace=='Microsoft.Network' || namespace=='Microsoft.Compute' || namespace=='Microsoft.OperationalInsights'].{ns:namespace,state:registrationState} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Ns                             State
+-----------------------------  -------------
+Microsoft.OperationalInsights  Registered
+Microsoft.DBforPostgreSQL      Registered
+Microsoft.ContainerService     Registered
+Microsoft.Network              Registered
+Microsoft.ManagedIdentity      Registered
+Microsoft.Compute              Registered
+Microsoft.KeyVault             NotRegistered
+Microsoft.Storage              NotRegistered
+
+### quota uksouth (standardBSFamily, cores)
+# at 2026-10-19T00:37:37Z  rc=0
+# az vm list-usage -l uksouth --query [?name.value=='standardBSFamily' || name.value=='cores'].[name.value, currentValue, limit] -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+cores	0	10
+standardBSFamily	0	10
+
+### Standard_B2s capabilities in uksouth (ephemeral OS)
+# at 2026-10-19T00:38:57Z  rc=0
+# az vm list-skus -l uksouth --size Standard_B2s --resource-type virtualMachines --query [?name=='Standard_B2s'].{name:name,restrictions:restrictions,caps:capabilities[?name=='EphemeralOSDiskSupported' || name=='CachedDiskBytes' || name=='MaxResourceVolumeMB' || name=='vCPUs' || name=='MemoryGB']} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+[
+  {
+    "caps": [
+      {
+        "name": "MaxResourceVolumeMB",
+        "value": "8192"
+      },
+      {
+        "name": "vCPUs",
+        "value": "2"
+      },
+      {
+        "name": "MemoryGB",
+        "value": "4"
+      },
+      {
+        "name": "CachedDiskBytes",
+        "value": "32212254720"
+      },
+      {
+        "name": "EphemeralOSDiskSupported",
+        "value": "True"
+      }
+    ],
+    "name": "Standard_B2s",
+    "restrictions": []
+  }
+]
+
+### AKS 1.36 patch versions uksouth
+# at 2026-10-19T00:38:57Z  rc=0
+# az aks get-versions -l uksouth --query values[?version=='1.36' && !isPreview].patchVersions | [0] | keys(@) -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+1.36.0
+1.36.1
+1.36.2
+1.36.3
+1.36.4
+
+### jtoye-ci federated credential
+# at 2026-10-19T00:38:58Z  rc=0
+# az identity federated-credential show --identity-name jtoye-ci -g jtoye-rg -n gh-deploy-staging --query {issuer:issuer,subject:subject,aud:audiences} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "aud": [
+    "api://AzureADTokenExchange"
+  ],
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:Bralabee/JToye_OaaS_2026:environment:staging"
+}
+
+### jtoye-ci role assignments before
+# at 2026-10-19T00:39:00Z  rc=0
+# az role assignment list --assignee 4cce597e-719e-4181-b045-8ba024f5bc67 --all --query [].{role:roleDefinitionName,scope:scope} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+
+
+### operator role assignments (jtoye-rg / subscription)
+# at 2026-10-19T00:39:02Z  rc=0
+# az role assignment list --assignee admin@jtoyedigital.co.uk --all --query [].{role:roleDefinitionName,scope:scope} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Role                       Scope
+-------------------------  ---------------------------------------------------
+Owner                      /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94
+User Access Administrator  /
+
+################ bash scripts/azure-staging-provision.sh --stage all  (provision-run1.log)
+start 2026-10-19T00:40:22Z
+=== J'Toye staging estate: compute + identity (dry-run=0, stage=all) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a: POD_CIDR=10.244.0.0/16 KV_PURGE_PROTECTION=true KV_RETENTION_DAYS=90
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+=== STAGE providers: Microsoft.KeyVault Microsoft.Storage ===
+WARNING: Registering is still on-going. You can monitor using 'az provider show -n Microsoft.KeyVault'
+WARNING: Registering is still on-going. You can monitor using 'az provider show -n Microsoft.Storage'
+OK: Microsoft.KeyVault Registered
+OK: Microsoft.Storage Registered
+
+=== STAGE network: quota + static IPs ===
+OK: quota: standardBSFamily 10 free, regional cores 10 free
+WARNING: [Coming breaking change] In the coming release, the default behavior will be changed as follows when sku is Standard and zone is not provided: For zonal regions, you will get a zone-redundant IP indicated by zones:["1","2","3"]; For non-zonal regions, you will get a non zone-redundant IP indicated by zones:null.
+WARNING: [Coming breaking change] In the coming release, the default behavior will be changed as follows when sku is Standard and zone is not provided: For zonal regions, you will get a zone-redundant IP indicated by zones:["1","2","3"]; For non-zonal regions, you will get a non zone-redundant IP indicated by zones:null.
+
+=== STAGE aks: jtoye-stg-aks ===
+REFUSED [aks]: jtoye-stg-aks read back as 'overlay cilium cilium 10.244.0.0/16 true true true true true ', want 'overlay cilium cilium 10.244.0.0/16 True True True True True'. An existing cluster with other one-way properties is never adopted
+end 2026-10-19T00:48:03Z rc=1
+
+################ bash scripts/azure-staging-provision.sh --stage all  (provision-run2.log)
+start 2026-10-19T00:49:33Z
+=== J'Toye staging estate: compute + identity (dry-run=0, stage=all) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a: POD_CIDR=10.244.0.0/16 KV_PURGE_PROTECTION=true KV_RETENTION_DAYS=90
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+=== STAGE providers: Microsoft.KeyVault Microsoft.Storage ===
+OK: Microsoft.KeyVault Registered
+OK: Microsoft.Storage Registered
+
+=== STAGE network: quota + static IPs ===
+REFUSED [quota]: standardBSFamily has 4 free vCPU in uksouth; 8 needed (3 x Standard_B2s + 1 surge)
+end 2026-10-19T00:49:37Z rc=1
+
+################ bash scripts/azure-staging-provision.sh --stage all  (provision.log)
+start 2026-10-19T00:50:26Z
+=== J'Toye staging estate: compute + identity (dry-run=0, stage=all) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a: POD_CIDR=10.244.0.0/16 KV_PURGE_PROTECTION=true KV_RETENTION_DAYS=90
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+=== STAGE providers: Microsoft.KeyVault Microsoft.Storage ===
+OK: Microsoft.KeyVault Registered
+OK: Microsoft.Storage Registered
+
+=== STAGE network: quota + static IPs ===
+OK: AKS cluster jtoye-stg-aks (quota already consumed by its nodes) already exists: read back, NOT recreated
+OK: quota: standardBSFamily 4 free, regional cores 4 free (2 needed: 1 surge Standard_B2s; the 3 nodes of the existing cluster are already counted)
+OK: public IP jtoye-stg-ingress-ip already exists: read back, NOT recreated
+OK: public IP jtoye-stg-outbound-ip already exists: read back, NOT recreated
+
+=== STAGE aks: jtoye-stg-aks ===
+OK: AKS cluster jtoye-stg-aks already exists: read back, NOT recreated
+OK: jtoye-stg-aks one-way properties read back as created
+
+=== STAGE keyvault: jtoye-stg-kv ===
+OK: jtoye-stg-kv read back: true 90 true 
+
+=== STAGE identities: 10 user-assigned identities + federated credentials ===
+
+=== STAGE ci: jtoye-ci (reused, never created here) ===
+OK: jtoye-ci/gh-deploy-staging subject repo:Bralabee/JToye_OaaS_2026:environment:staging
+OK: jtoye-ci holds no AKS cluster-admin role
+
+=== STEP 9: evidence (identifiers only) ===
+--- BEGIN STAGING ESTATE EVIDENCE ---
+captured        : 2026-10-19T00:52:36Z
+git commit      : edc118f0
+dry-run         : 0
+stage           : all
+decision record : /home/sanmi/IdeaProjects/JToye_OaaS_2026/.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ESTATE-DECISIONS.md (option-a)
+subscription    : JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94)
+resource group  : jtoye-rg (uksouth)
+provider Microsoft.KeyVault : Registered
+provider Microsoft.Storage : Registered
+public IP jtoye-stg-ingress-ip : /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-ingress-ip
+public IP jtoye-stg-outbound-ip : /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-outbound-ip
+AKS cluster jtoye-stg-aks : /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/Microsoft.ContainerService/managedClusters/jtoye-stg-aks
+AKS kubernetes version : 1.36.4
+AKS control-plane principal : 371d48a6-e45c-4df8-8300-618e0b1d8ce7 (Network Contributor on jtoye-stg-ingress-ip only)
+operator admin@jtoyedigital.co.uk : Azure Kubernetes Service RBAC Cluster Admin on jtoye-stg-aks
+Key Vault jtoye-stg-kv : /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.KeyVault/vaults/jtoye-stg-kv
+operator admin@jtoyedigital.co.uk : Key Vault Secrets Officer on jtoye-stg-kv
+AKS OIDC issuer : https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/
+identity jtoye-staging-media-id -> system:serviceaccount:jtoye-staging:core-java : clientId/principalId 3a14636b-91d7-42cf-9b23-8d40d799a9c1 033b06e0-d670-4009-a820-af379b62f27c
+identity jtoye-staging-backup-id -> system:serviceaccount:jtoye-staging:pg-backup : clientId/principalId ca38c385-c0c1-467d-a638-88e62db7a65f 14f5c6c4-5876-4dd8-88c1-0a4382f06ae0
+identity jtoye-staging-frontend-id -> system:serviceaccount:jtoye-staging:frontend : clientId/principalId 348fa334-898c-4640-a29a-49a71623ea5b ffa2def7-2ee2-4527-9434-6a0b3ecdd47b
+identity jtoye-staging-keycloak-id -> system:serviceaccount:jtoye-staging:keycloak : clientId/principalId ccf8147d-74da-4acd-ac06-4b0a3291e6e6 cb10b3d7-fe1a-4d7f-ad4f-d554ff1429fa
+identity jtoye-staging-secret-sync-id -> system:serviceaccount:jtoye-staging:secret-sync : clientId/principalId 231ad919-8aad-4dd2-a6b5-0e2089edf4e4 018272ad-d224-4d71-b9a9-93df84da623d
+identity jtoye-staging-redis-id -> system:serviceaccount:jtoye-staging:redis : clientId/principalId ec5b9f1a-2147-4f6f-a7d5-a8bd49b641e8 14c35561-9066-44e8-aa8d-2e2f91ee46f3
+identity jtoye-staging-pg-exporter-id -> system:serviceaccount:jtoye-staging:postgres-exporter : clientId/principalId 7d826f77-3088-45fd-a98e-0613159ae327 9180744f-9a6c-4bb1-8a39-c6574aa8b741
+identity jtoye-staging-redis-exporter-id -> system:serviceaccount:jtoye-staging:redis-exporter : clientId/principalId 8584f8ee-e2e0-4ac3-879e-56a4cadb4fed 2d09e95f-7180-4164-819e-69e6cfa1758e
+identity jtoye-staging-grafana-id -> system:serviceaccount:jtoye-staging:grafana : clientId/principalId d7e2365f-9d8b-4950-99e5-34b603f5c01c 99264ed4-8b66-48fc-b510-26af24baa3d2
+identity jtoye-staging-alertmanager-id -> system:serviceaccount:jtoye-staging:alertmanager : clientId/principalId eb0c4d74-032e-4ac8-9aa3-cfb59ee814b0 2422de69-5161-4350-ab2b-7158625a0989
+CI jtoye-ci principal : 4cce597e-719e-4181-b045-8ba024f5bc67 (Azure Kubernetes Service Cluster User Role on jtoye-stg-aks; Azure Kubernetes Service RBAC Writer on namespaces/jtoye-staging)
+--- END STAGING ESTATE EVIDENCE ---
+
+PASS: stage(s) 'all' provisioned and read back.
+end 2026-10-19T00:52:36Z rc=0
+
+# NOTE on the three runs above: run 1 CREATED the providers, both IPs and jtoye-stg-aks, then refused
+# at the AKS read-back because azure-cli 2.91.0 prints tsv booleans as `true` and the script compared
+# against `True` (fixed in c5aed4ab). Run 2 refused at the quota check, which demanded 8 free vCPU even
+# though the existing cluster already held 6 of the 10 (fixed in edc118f0). Run 3 read back the cluster
+# (not recreated) and created the Key Vault, the ten identities with their federated credentials, and
+# the role assignments; it completed rc 0.
+
+### Task 2 read-back: aks show (network, WI, OIDC, KV add-on, AAD, local accounts, pools)
+# at 2026-10-19T00:53:04Z  rc=0
+# az aks show -g jtoye-rg -n jtoye-stg-aks --query {np:networkProfile, wi:securityProfile.workloadIdentity, oidc:oidcIssuerProfile, kv:addonProfiles.azureKeyvaultSecretsProvider, aad:aadProfile, local:disableLocalAccounts, k8s:currentKubernetesVersion, tier:sku.tier, fqdn:fqdn, state:provisioningState, power:powerState.code, identity:identity.type, pools:agentPoolProfiles[].{name:name,vm:vmSize,count:count,os:osDiskType,size:osDiskSizeGb,mode:mode}} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "aad": {
+    "adminGroupObjectIDs": null,
+    "clientAppId": null,
+    "enableAzureRbac": true,
+    "managed": true,
+    "serverAppId": null,
+    "serverAppSecret": null,
+    "tenantId": "b56df236-36b2-49ab-a25f-050cbaa9787c"
+  },
+  "fqdn": "jtoye-stg--jtoye-rg-c483d3-mkb3vdnc.hcp.uksouth.azmk8s.io",
+  "identity": "SystemAssigned",
+  "k8s": "1.36.4",
+  "kv": {
+    "config": {
+      "enableSecretRotation": "false",
+      "rotationPollInterval": "2m"
+    },
+    "enabled": true,
+    "identity": {
+      "clientId": "fa4fef7f-ace9-416d-a929-1c7c7088800f",
+      "objectId": "267283d8-5995-40aa-964f-ecf05f1d8671",
+      "resourceId": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/MC_jtoye-rg_jtoye-stg-aks_uksouth/providers/Microsoft.ManagedIdentity/userAssignedIdentities/azurekeyvaultsecretsprovider-jtoye-stg-aks"
+    }
+  },
+  "local": true,
+  "np": {
+    "advancedNetworking": null,
+    "dnsServiceIp": "10.0.0.10",
+    "ipFamilies": [
+      "IPv4"
+    ],
+    "loadBalancerProfile": {
+      "allocatedOutboundPorts": null,
+      "backendPoolType": "nodeIPConfiguration",
+      "effectiveOutboundIPs": [
+        {
+          "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-outbound-ip",
+          "resourceGroup": "jtoye-rg"
+        }
+      ],
+      "enableMultipleStandardLoadBalancers": null,
+      "idleTimeoutInMinutes": null,
+      "managedOutboundIPs": null,
+      "outboundIPs": {
+        "publicIPs": [
+          {
+            "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-outbound-ip",
+            "resourceGroup": "jtoye-rg"
+          }
+        ]
+      },
+      "outboundIpPrefixes": null
+    },
+    "loadBalancerSku": "standard",
+    "natGatewayProfile": null,
+    "networkDataplane": "cilium",
+    "networkMode": null,
+    "networkPlugin": "azure",
+    "networkPluginMode": "overlay",
+    "networkPolicy": "cilium",
+    "outboundType": "loadBalancer",
+    "podCidr": "10.244.0.0/16",
+    "podCidrs": [
+      "10.244.0.0/16"
+    ],
+    "serviceCidr": "10.0.0.0/16",
+    "serviceCidrs": [
+      "10.0.0.0/16"
+    ],
+    "staticEgressGatewayProfile": null
+  },
+  "oidc": {
+    "enabled": true,
+    "issuerUrl": "https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/"
+  },
+  "pools": [
+    {
+      "count": 3,
+      "mode": "System",
+      "name": "nodepool1",
+      "os": "Ephemeral",
+      "size": 30,
+      "vm": "Standard_B2s"
+    }
+  ],
+  "power": "Running",
+  "state": "Succeeded",
+  "tier": "Free",
+  "wi": {
+    "enabled": true
+  }
+}
+
+### keyvault show
+# at 2026-10-19T00:53:12Z  rc=0
+# az keyvault show -n jtoye-stg-kv -g jtoye-rg --query {name:name,uri:properties.vaultUri,rbac:properties.enableRbacAuthorization,purge:properties.enablePurgeProtection,softDelete:properties.enableSoftDelete,retention:properties.softDeleteRetentionInDays,sku:properties.sku.name,tenant:properties.tenantId,public:properties.publicNetworkAccess} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "name": "jtoye-stg-kv",
+  "public": "Enabled",
+  "purge": true,
+  "rbac": true,
+  "retention": 90,
+  "sku": "standard",
+  "softDelete": true,
+  "tenant": "b56df236-36b2-49ab-a25f-050cbaa9787c",
+  "uri": "https://jtoye-stg-kv.vault.azure.net/"
+}
+
+### identity list
+# at 2026-10-19T00:53:13Z  rc=0
+# az identity list -g jtoye-rg --query sort_by([], &name)[].{name:name,clientId:clientId,principalId:principalId} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Name                             ClientId                              PrincipalId
+-------------------------------  ------------------------------------  ------------------------------------
+jtoye-ci                         ec29905d-231c-43eb-9385-c6f7f72409db  4cce597e-719e-4181-b045-8ba024f5bc67
+jtoye-staging-alertmanager-id    eb0c4d74-032e-4ac8-9aa3-cfb59ee814b0  2422de69-5161-4350-ab2b-7158625a0989
+jtoye-staging-backup-id          ca38c385-c0c1-467d-a638-88e62db7a65f  14f5c6c4-5876-4dd8-88c1-0a4382f06ae0
+jtoye-staging-frontend-id        348fa334-898c-4640-a29a-49a71623ea5b  ffa2def7-2ee2-4527-9434-6a0b3ecdd47b
+jtoye-staging-grafana-id         d7e2365f-9d8b-4950-99e5-34b603f5c01c  99264ed4-8b66-48fc-b510-26af24baa3d2
+jtoye-staging-keycloak-id        ccf8147d-74da-4acd-ac06-4b0a3291e6e6  cb10b3d7-fe1a-4d7f-ad4f-d554ff1429fa
+jtoye-staging-media-id           3a14636b-91d7-42cf-9b23-8d40d799a9c1  033b06e0-d670-4009-a820-af379b62f27c
+jtoye-staging-pg-exporter-id     7d826f77-3088-45fd-a98e-0613159ae327  9180744f-9a6c-4bb1-8a39-c6574aa8b741
+jtoye-staging-redis-exporter-id  8584f8ee-e2e0-4ac3-879e-56a4cadb4fed  2d09e95f-7180-4164-819e-69e6cfa1758e
+jtoye-staging-redis-id           ec5b9f1a-2147-4f6f-a7d5-a8bd49b641e8  14c35561-9066-44e8-aa8d-2e2f91ee46f3
+jtoye-staging-secret-sync-id     231ad919-8aad-4dd2-a6b5-0e2089edf4e4  018272ad-d224-4d71-b9a9-93df84da623d
+
+### public IP addresses
+# at 2026-10-19T00:53:14Z  rc=0
+# az network public-ip list -g jtoye-rg --query [].{name:name,ip:ipAddress,sku:sku.name,alloc:publicIPAllocationMethod,ver:publicIPAddressVersion,zones:zones} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Name                   Ip             Sku       Alloc    Ver
+---------------------  -------------  --------  -------  -----
+jtoye-stg-ingress-ip   51.105.43.14   Standard  Static   IPv4
+jtoye-stg-outbound-ip  40.120.43.119  Standard  Static   IPv4
+
+### federated credential jtoye-staging-media-id/core-java-jtoye-staging
+# at 2026-10-19T00:53:20Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-media-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+core-java-jtoye-staging	system:serviceaccount:jtoye-staging:core-java	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-backup-id/pg-backup-jtoye-staging
+# at 2026-10-19T00:53:20Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-backup-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+pg-backup-jtoye-staging	system:serviceaccount:jtoye-staging:pg-backup	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-frontend-id/frontend-jtoye-staging
+# at 2026-10-19T00:53:21Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-frontend-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+frontend-jtoye-staging	system:serviceaccount:jtoye-staging:frontend	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-keycloak-id/keycloak-jtoye-staging
+# at 2026-10-19T00:53:21Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-keycloak-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+keycloak-jtoye-staging	system:serviceaccount:jtoye-staging:keycloak	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-secret-sync-id/secret-sync-jtoye-staging
+# at 2026-10-19T00:53:22Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-secret-sync-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+secret-sync-jtoye-staging	system:serviceaccount:jtoye-staging:secret-sync	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-redis-id/redis-jtoye-staging
+# at 2026-10-19T00:53:22Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-redis-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+redis-jtoye-staging	system:serviceaccount:jtoye-staging:redis	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-pg-exporter-id/postgres-exporter-jtoye-staging
+# at 2026-10-19T00:53:23Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-pg-exporter-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+postgres-exporter-jtoye-staging	system:serviceaccount:jtoye-staging:postgres-exporter	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-redis-exporter-id/redis-exporter-jtoye-staging
+# at 2026-10-19T00:53:23Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-redis-exporter-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+redis-exporter-jtoye-staging	system:serviceaccount:jtoye-staging:redis-exporter	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-grafana-id/grafana-jtoye-staging
+# at 2026-10-19T00:53:24Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-grafana-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+grafana-jtoye-staging	system:serviceaccount:jtoye-staging:grafana	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### federated credential jtoye-staging-alertmanager-id/alertmanager-jtoye-staging
+# at 2026-10-19T00:53:25Z  rc=0
+# az identity federated-credential list --identity-name jtoye-staging-alertmanager-id -g jtoye-rg --query [].{name:name,subject:subject,issuer:issuer,aud:audiences[0]} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+alertmanager-jtoye-staging	system:serviceaccount:jtoye-staging:alertmanager	https://uksouth.oic.prod-aks.azure.com/b56df236-36b2-49ab-a25f-050cbaa9787c/ed347ef8-7c1f-41f8-a50f-e9941b79044d/	api://AzureADTokenExchange
+
+### jtoye-ci role assignments (all scopes)
+# at 2026-10-19T00:53:33Z  rc=0
+# az role assignment list --assignee-object-id 4cce597e-719e-4181-b045-8ba024f5bc67 --all --query [].{role:roleDefinitionName,scope:scope} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Role                                        Scope
+------------------------------------------  -----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Azure Kubernetes Service Cluster User Role  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/Microsoft.ContainerService/managedClusters/jtoye-stg-aks
+Azure Kubernetes Service RBAC Writer        /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/Microsoft.ContainerService/managedClusters/jtoye-stg-aks/namespaces/jtoye-staging
+
+### AKS control-plane identity role assignments (all scopes)
+# at 2026-10-19T00:53:35Z  rc=0
+# az role assignment list --assignee-object-id 371d48a6-e45c-4df8-8300-618e0b1d8ce7 --all --query [].{role:roleDefinitionName,scope:scope} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Role                 Scope
+-------------------  ----------------------------------------------------------------------------------------------------------------------------------------------
+Contributor          /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/MC_jtoye-rg_jtoye-stg-aks_uksouth
+Network Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Network/publicIPAddresses/jtoye-stg-ingress-ip
+
+### operator role assignments on the new resources
+# at 2026-10-19T00:53:37Z  rc=0
+# az role assignment list --assignee admin@jtoyedigital.co.uk --all --query [?contains(scope,'jtoye-stg')].{role:roleDefinitionName,scope:scope} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Role                                         Scope
+-------------------------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------
+Azure Kubernetes Service RBAC Cluster Admin  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/Microsoft.ContainerService/managedClusters/jtoye-stg-aks
+Key Vault Secrets Officer                    /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.KeyVault/vaults/jtoye-stg-kv
+
+### AKS control-plane principal id
+# at 2026-10-19T00:53:38Z  rc=0
+# az aks show -g jtoye-rg -n jtoye-stg-aks --query identity.principalId -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+371d48a6-e45c-4df8-8300-618e0b1d8ce7
+
+### AKS kubelet identity (MC_ RG)
+# at 2026-10-19T00:53:39Z  rc=0
+# az aks show -g jtoye-rg -n jtoye-stg-aks --query identityProfile.kubeletidentity.{clientId:clientId,objectId:objectId} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "clientId": "3a986dbe-3397-4e2d-9a46-1cea58791872",
+  "objectId": "4d52add8-c3a2-419b-b474-79e135aa4a96"
+}
+
+### aks get-credentials (writes the jtoye-stg-aks context into ~/.kube/config)
+# at 2026-10-19T00:54:02Z  rc=0
+# az aks get-credentials -g jtoye-rg -n jtoye-stg-aks --overwrite-existing --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+WARNING: Merged "jtoye-stg-aks" as current context in /home/sanmi/.kube/config
+WARNING: Converted kubeconfig to use Azure CLI authentication.
+
+### kubelogin convert-kubeconfig -l azurecli --context jtoye-stg-aks
+# at 2026-10-19T00:54:02Z rc=0
+
+
+### nodes
+# at 2026-10-19T00:54:11Z rc=0
+# kubectl --context jtoye-stg-aks get nodes -o wide
+NAME                                STATUS   ROLES    AGE     VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION             CONTAINER-RUNTIME
+aks-nodepool1-24453234-vmss000000   Ready    <none>   9m10s   v1.36.4   10.224.0.4    <none>        Ubuntu 24.04.5 LTS   6.8.0-1070-azure (amd64)   containerd://2.3.6-1
+aks-nodepool1-24453234-vmss000001   Ready    <none>   9m14s   v1.36.4   10.224.0.6    <none>        Ubuntu 24.04.5 LTS   6.8.0-1070-azure (amd64)   containerd://2.3.6-1
+aks-nodepool1-24453234-vmss000002   Ready    <none>   9m13s   v1.36.4   10.224.0.5    <none>        Ubuntu 24.04.5 LTS   6.8.0-1070-azure (amd64)   containerd://2.3.6-1
+
+### allocatable per node
+# at 2026-10-19T00:54:13Z rc=0
+# bash -c kubectl --context jtoye-stg-aks describe nodes | command grep -A6 Allocatable
+Allocatable:
+  cpu:                1900m
+  ephemeral-storage:  27076342535
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             2854292Ki
+  pods:               250
+--
+Allocatable:
+  cpu:                1900m
+  ephemeral-storage:  27076342535
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             2854304Ki
+  pods:               250
+--
+Allocatable:
+  cpu:                1900m
+  ephemeral-storage:  27076342535
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             2854304Ki
+  pods:               250
+
+### allocatable (jsonpath)
+# at 2026-10-19T00:54:14Z rc=0
+# kubectl --context jtoye-stg-aks get nodes -o jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.cpu}{"\t"}{.status.allocatable.memory}{"\t"}{.status.capacity.cpu}{"\t"}{.status.capacity.memory}{"\n"}{end}
+aks-nodepool1-24453234-vmss000000	1900m	2854292Ki	2	4005268Ki
+aks-nodepool1-24453234-vmss000001	1900m	2854304Ki	2	4005280Ki
+aks-nodepool1-24453234-vmss000002	1900m	2854304Ki	2	4005280Ki
+
+### system overhead already requested per node (describe nodes, Allocated resources)
+# at 2026-10-19T00:54:21Z rc=0
+Allocated resources:
+  cpu                636m (33%)   5192m (273%)
+  memory             966Mi (34%)  10248Mi (367%)
+Allocated resources:
+  cpu                719m (37%)   5890m (310%)
+  memory             884Mi (31%)  11698464Ki (409%)
+Allocated resources:
+  cpu                516m (27%)   1192m (62%)
+  memory             876Mi (31%)  8724Mi (312%)
+
+### 29-03 staging_kube_guard against the live identity file (pass arm, then the stale August context as the fail arm)
+# at 2026-10-19T00:55:27Z
+guard(jtoye-stg-aks) rc=0
+REFUSED [server-url] context jtoye-staging points at https://jtoye-stag-jtoye-rg-c483d3-2z8ofdgq.hcp.uksouth.azmk8s.io:443, expected https://jtoye-stg--jtoye-rg-c483d3-mkb3vdnc.hcp.uksouth.azmk8s.io:443
+guard(jtoye-staging, the August context) rc=1
+
+### local-config is consumed, not emitted (scratch wrapper over k8s/staging; arm A keeps the annotation, arm B deletes it)
+# at 2026-10-19T00:55:36Z; kubectl Client Version: v1.35.9
+arm A: kustomize rc=0 output_bytes=161908 n=0 stderr=
+arm B: kustomize rc=0 output_bytes=163025 n=1 stderr=
+
+### Task 2 <verify> 1 (as written in the plan), at 2026-10-19T00:55:51Z
+cilium
+cilium
+overlay
+true
+true
+Ephemeral
+rc=0
+
+### Task 2 <verify> 2 (as written in the plan)
+kubectl rc=0
+nodes total=3 ready=3
+verify2 exit=0
+
+### Task 2 verify 2, fail directions: an absent context (VOID), and a planted NotReady listing through the same counter
+Error in configuration: context was not found for specified context: jtoye-stg-aks-absent
+kubectl rc=1
+VOID: node listing failed or empty
+exit=2
+nodes total=3 ready=2
+exit=1
+
+### Capacity measured against RESEARCH Pitfall 2 (August estimate: 1900m / 2854308Ki allocatable per node, 1524m / 2212Mi system overhead across three nodes)
+# Allocatable per node: 1900m on all three (equal to the estimate); memory 2854292Ki, 2854304Ki, 2854304Ki (4 to 16 Ki under 2854308Ki).
+# Allocatable total: 5700m CPU, 8562900Ki (about 8362Mi) memory.
+# System requests already placed (kube-system, 36 pods, before any workload): 636m + 719m + 516m = 1871m CPU; 966Mi + 884Mi + 876Mi = 2726Mi memory.
+#   That is 347m and 514Mi MORE than August's 1524m / 2212Mi (this cluster runs the Cilium dataplane and the Key Vault CSI add-on).
+# Free for the workload: 3829m CPU and about 5636Mi memory. Against the Pitfall 2 workload estimate (about 2.5 vCPU / 4.6 GiB = 4710Mi),
+#   that is about 65% of the free CPU and about 84% of the free memory (August's figures were about 62% / 80%). It still fits, with less headroom;
+#   plan 29-11/29-12 should re-measure after the platform layer lands.
+
+### Task 3 read-back: postgres flexible-server show
+# at 2026-10-19T01:08:18Z  rc=0
+# az postgres flexible-server show -g jtoye-rg -n jtoye-stg-pg --query {v:version,minor:minorVersion,sku:sku.name,tier:sku.tier,state:state,fqdn:fullyQualifiedDomainName,backup:backup,storage:storage.storageSizeGb,public:network.publicNetworkAccess,admin:administratorLogin,ha:highAvailability.mode,location:location} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "admin": "jtoyepgadmin",
+  "backup": {
+    "backupRetentionDays": 7,
+    "earliestRestoreDate": "2026-10-19T01:02:46.244749+00:00",
+    "geoRedundantBackup": "Disabled"
+  },
+  "fqdn": "jtoye-stg-pg.postgres.database.azure.com",
+  "ha": "Disabled",
+  "location": "UK South",
+  "minor": "6",
+  "public": "Enabled",
+  "sku": "Standard_B2s",
+  "state": "Ready",
+  "storage": 32,
+  "tier": "Burstable",
+  "v": "18"
+}
+
+### firewall-rule list
+# at 2026-10-19T01:08:19Z  rc=0
+# az postgres flexible-server firewall-rule list -g jtoye-rg -s jtoye-stg-pg -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+EndIpAddress    Name                                 ResourceGroup    StartIpAddress
+--------------  -----------------------------------  ---------------  ----------------
+40.120.43.119   FirewallIPAddress_2026-10-19_2-1-40  jtoye-rg         40.120.43.119
+
+### firewall-rule count (AC: prints 1)
+# at 2026-10-19T01:08:20Z  rc=0
+# az postgres flexible-server firewall-rule list -g jtoye-rg -s jtoye-stg-pg --query length(@) -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+1
+
+### parameter azure.extensions
+# at 2026-10-19T01:08:21Z  rc=0
+# az postgres flexible-server parameter show -g jtoye-rg -s jtoye-stg-pg --name azure.extensions --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+UUID-OSSP
+
+### parameter require_secure_transport (T-29-34: TLS required)
+# at 2026-10-19T01:08:22Z  rc=0
+# az postgres flexible-server parameter show -g jtoye-rg -s jtoye-stg-pg --name require_secure_transport --query value -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+on
+
+### db list
+# at 2026-10-19T01:08:23Z  rc=0
+# az postgres flexible-server db list -g jtoye-rg -s jtoye-stg-pg --query [].{name:name,charset:charset,collation:collation} -o table --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+Name               Charset    Collation
+-----------------  ---------  -----------
+azure_maintenance  UTF8       en_US.utf8
+postgres           UTF8       en_US.utf8
+azure_sys          UTF8       en_US.utf8
+jtoye              UTF8       en_US.utf8
+keycloak           UTF8       en_US.utf8
+
+### Key Vault object pg-admin--password: metadata only (no value)
+# at 2026-10-19T01:08:24Z  rc=0
+# az keyvault secret show --vault-name jtoye-stg-kv -n pg-admin--password --query {id:id,enabled:attributes.enabled,created:attributes.created} -o json --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+{
+  "created": "2026-10-19T00:56:33+00:00",
+  "enabled": true,
+  "id": "https://jtoye-stg-kv.vault.azure.net/secrets/pg-admin--password/ed164d3214bb4769852bafe1ac597d96"
+}
+
+### AC: the single firewall rule equals outbound_ip_address in k8s/staging/azure-identity.yaml (at 2026-10-19T01:08:36Z)
+identity outbound=40.120.43.119 firewall start/end=40.120.43.119 40.120.43.119 
+
+################ bash scripts/azure-staging-datastores.sh
+start 2026-10-19T00:56:30Z
+=== J'Toye staging estate: managed PostgreSQL jtoye-stg-pg (dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a: PG_ADMIN_LOGIN=jtoyepgadmin PG_PUBLIC_ACCESS=public
+OK: azure.extensions source: UUID-OSSP (from core-java/src/main/resources/db/migration)
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+=== STEP 2: existence probes (Key Vault secret pg-admin--password, server jtoye-stg-pg) ===
+secret_exists=0 server_exists=0
+
+=== STEP 3a: fresh estate: generate the admin password, write it to Key Vault, create jtoye-stg-pg ===
+OK: admin password written to jtoye-stg-kv/pg-admin--password (write-once; value not printed)
+WARNING: Checking the existence of the resource group 'jtoye-rg'...
+WARNING: Resource group 'jtoye-rg' exists ? : True 
+WARNING: Creating PostgreSQL Server 'jtoye-stg-pg' in group 'jtoye-rg'...
+WARNING: Your server 'jtoye-stg-pg' is using sku 'Standard_B2s' (Paid Tier). Please refer to https://aka.ms/postgres-pricing for pricing details
+WARNING: Configuring server firewall rule to accept connections from '40.120.43.119'...
+WARNING: Make a note of your password. If you forget, you would have to reset your password with "az postgres flexible-server update -n jtoye-stg-pg -g jtoye-rg -p <new-password>".
+WARNING: Try using 'az postgres flexible-server connect' command to test out connection.
+OK: server create issued (output suppressed: it carries the password)
+
+=== STEP 4: read back jtoye-stg-pg ===
+OK: jtoye-stg-pg: 18 Ready jtoyepgadmin Enabled Standard_B2s 
+
+=== STEP 5: firewall (exactly one rule = jtoye-stg-outbound-ip) ===
+OK: firewall: one rule, 40.120.43.119 - 40.120.43.119
+
+=== STEP 6: azure.extensions = UUID-OSSP ===
+OK: azure.extensions = UUID-OSSP
+
+=== STEP 7: databases (jtoye keycloak) ===
+WARNING: Creating database with utf8 charset and en_US.utf8 collation
+OK: database jtoye present
+WARNING: Creating database with utf8 charset and en_US.utf8 collation
+OK: database keycloak present
+
+=== STEP 8: max_connections ===
+max_connections=429 (connection-budget.conf k8s-staging=429)
+
+=== STEP 9: evidence (identifiers only, never a value) ===
+  server jtoye-stg-pg : 18 Ready jtoyepgadmin Enabled Standard_B2s 
+  firewall jtoye-stg-pg : FirewallIPAddress_2026-10-19_2-1-40 40.120.43.119 40.120.43.119
+  azure.extensions : UUID-OSSP
+  database jtoye : present
+  database keycloak : present
+  max_connections : 429
+  fqdn : jtoye-stg-pg.postgres.database.azure.com
+DONE: jtoye-stg-pg (dry-run=0)
+end 2026-10-19T01:03:34Z rc=0
+
+# password scan of the datastores log: 32-character [A-Za-z0-9] runs = 0 (control: a random 32-hex string counts 1); /tmp/jtoye-pgadmin.* after the run: none
+
+################ bash scripts/azure-staging-storage.sh (run 1: stopped at runbook section 6, UnsupportedFilter on the apostrophe in the custom role name; fixed in e3b32c79)
+start 2026-10-19T01:04:08Z
+=== J'Toye staging Blob estate (mode=provision, dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+STEP runbook §2.1: Microsoft.Storage registered, then check-name for jtoyestgmedia and jtoyestgbackup
+OK: Microsoft.Storage Registered
+OK: jtoyestgmedia: name available
+OK: jtoyestgbackup: name available
+
+STEP runbook §2.2: create jtoyestgmedia (uksouth) and jtoyestgbackup (ukwest), shared-key access disabled
+OK: jtoyestgmedia: uksouth true false tls1_2 true 
+OK: jtoyestgbackup: ukwest false false tls1_2 true 
+
+STEP runbook §3: containers: jtoye-images (blob), jtoye-quarantine (private), jtoye-db-backups (private)
+OK: jtoyestgmedia/jtoye-images: publicAccess Blob
+OK: jtoyestgmedia/jtoye-quarantine: publicAccess None
+OK: jtoyestgbackup/jtoye-db-backups: publicAccess None
+
+STEP runbook §4: backup data protection: soft delete 14 d, retention 30 d UNLOCKED, lifecycle delete after 35 d
+OK: soft delete: true 14 
+OK: retention policy: 30 Unlocked 
+WORM retention left UNLOCKED: the lock is a human step after the plan 29-20 drill (runbook §4.4)
+OK: lifecycle: 1 jtoye-db-backups/backups/ 35.0 
+
+STEP runbook §5: workload identities jtoye-staging-media-id and jtoye-staging-backup-id (read only; plan 29-01 creates them)
+OK: principal ids read (identifiers, not secrets): jtoye-staging-media-id=033b06e0-d670-4009-a820-af379b62f27c jtoye-staging-backup-id=14f5c6c4-5876-4dd8-88c1-0a4382f06ae0
+
+STEP runbook §6: container-scope RBAC: Storage Blob Data Contributor for jtoye-staging-media-id; J'Toye Backup Blob Writer for jtoye-staging-backup-id
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-images
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+ERROR: (UnsupportedFilter) The filter 'roleName eq 'J'Toye Backup Blob Writer'' is not supported. Supported filters are either roleName eq '{value}' or type eq 'BuiltInRole|CustomRole'.
+Code: UnsupportedFilter
+Message: The filter 'roleName eq 'J'Toye Backup Blob Writer'' is not supported. Supported filters are either roleName eq '{value}' or type eq 'BuiltInRole|CustomRole'.
+FAIL: could not read count of custom role J'Toye Backup Blob Writer (az rc=1)
+VOID: count of custom role J'Toye Backup Blob Writer is not a number: ''
+end 2026-10-19T01:05:27Z rc=2
+
+################ bash scripts/azure-staging-storage.sh (run 2: accounts, containers and policies read back, not recreated; custom role created and assigned by id)
+start 2026-10-19T01:07:07Z
+=== J'Toye staging Blob estate (mode=provision, dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+STEP runbook §2.1: Microsoft.Storage registered, then check-name for jtoyestgmedia and jtoyestgbackup
+OK: Microsoft.Storage Registered
+OK: storage account jtoyestgmedia already exists: read back, NOT recreated
+OK: storage account jtoyestgbackup already exists: read back, NOT recreated
+
+STEP runbook §2.2: create jtoyestgmedia (uksouth) and jtoyestgbackup (ukwest), shared-key access disabled
+OK: storage account jtoyestgmedia already exists: read back, NOT recreated
+OK: jtoyestgmedia: uksouth true false tls1_2 true 
+OK: storage account jtoyestgbackup already exists: read back, NOT recreated
+OK: jtoyestgbackup: ukwest false false tls1_2 true 
+
+STEP runbook §3: containers: jtoye-images (blob), jtoye-quarantine (private), jtoye-db-backups (private)
+OK: container jtoyestgmedia/jtoye-images already exists: read back, NOT recreated
+OK: jtoyestgmedia/jtoye-images: publicAccess Blob
+OK: container jtoyestgmedia/jtoye-quarantine already exists: read back, NOT recreated
+OK: jtoyestgmedia/jtoye-quarantine: publicAccess None
+OK: container jtoyestgbackup/jtoye-db-backups already exists: read back, NOT recreated
+OK: jtoyestgbackup/jtoye-db-backups: publicAccess None
+
+STEP runbook §4: backup data protection: soft delete 14 d, retention 30 d UNLOCKED, lifecycle delete after 35 d
+OK: soft delete: true 14 
+OK: retention policy on jtoye-db-backups already exists, state Unlocked: NOT recreated
+OK: retention policy: 30 Unlocked 
+WORM retention left UNLOCKED: the lock is a human step after the plan 29-20 drill (runbook §4.4)
+OK: lifecycle: 1 jtoye-db-backups/backups/ 35.0 
+
+STEP runbook §5: workload identities jtoye-staging-media-id and jtoye-staging-backup-id (read only; plan 29-01 creates them)
+OK: principal ids read (identifiers, not secrets): jtoye-staging-media-id=033b06e0-d670-4009-a820-af379b62f27c jtoye-staging-backup-id=14f5c6c4-5876-4dd8-88c1-0a4382f06ae0
+
+STEP runbook §6: container-scope RBAC: Storage Blob Data Contributor for jtoye-staging-media-id; J'Toye Backup Blob Writer for jtoye-staging-backup-id
+OK: Storage Blob Data Contributor for 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-images already present (1): NOT recreated
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-images
+OK: Storage Blob Data Contributor for 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-quarantine already present (1): NOT recreated
+OK: Storage Blob Data Contributor -> 033b06e0-d670-4009-a820-af379b62f27c at jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+OK: custom role J'Toye Backup Blob Writer: /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/providers/Microsoft.Authorization/roleDefinitions/e728f8ca-6215-4f39-b050-4012fcf322f9
+OK: J'Toye Backup Blob Writer -> 14f5c6c4-5876-4dd8-88c1-0a4382f06ae0 at jtoyestgbackup/blobServices/default/containers/jtoye-db-backups
+
+DONE: Blob estate (dry-run=0). Record the runbook §8 read-backs next: scripts/azure-staging-storage.sh --readback
+end 2026-10-19T01:07:39Z rc=0
+
+################ Task 3 <verify> 2 as written: bash scripts/azure-staging-storage.sh --readback
+=== J'Toye staging Blob estate (mode=readback, dry-run=0) ===
+
+=== STEP 0: decision record ===
+OK: decision record option-a
+
+=== STEP 1: subscription guard ===
+OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+
+STEP runbook §8: read-backs (raw, 2026-10-19T01:07:45Z)
+--- account jtoyestgmedia (A10 allowBlobPublicAccess, A12 primaryLocation)
+{
+  "allowBlobPublicAccess": true,
+  "allowSharedKeyAccess": false,
+  "httpsOnly": true,
+  "location": "uksouth",
+  "minTls": "TLS1_2",
+  "name": "jtoyestgmedia",
+  "sku": "Standard_LRS"
+}
+--- account jtoyestgbackup (A10 allowBlobPublicAccess, A12 primaryLocation)
+{
+  "allowBlobPublicAccess": false,
+  "allowSharedKeyAccess": false,
+  "httpsOnly": true,
+  "location": "ukwest",
+  "minTls": "TLS1_2",
+  "name": "jtoyestgbackup",
+  "sku": "Standard_LRS"
+}
+--- container jtoyestgmedia/jtoye-images access level
+{
+  "name": "jtoye-images",
+  "publicAccess": "Blob"
+}
+--- container jtoyestgmedia/jtoye-quarantine access level
+{
+  "name": "jtoye-quarantine",
+  "publicAccess": "None"
+}
+--- container jtoyestgbackup/jtoye-db-backups access level
+{
+  "name": "jtoye-db-backups",
+  "publicAccess": "None"
+}
+--- retention policy on jtoye-db-backups (state, immutabilityPeriodSinceCreationInDays)
+{
+  "allowProtectedAppendWrites": false,
+  "allowProtectedAppendWritesAll": null,
+  "etag": "\"8df2d7d078badf5\"",
+  "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups/immutabilityPolicies/default",
+  "immutabilityPeriodSinceCreationInDays": 30,
+  "name": "default",
+  "resourceGroup": "jtoye-rg",
+  "state": "Unlocked",
+  "systemData": null,
+  "type": "Microsoft.Storage/storageAccounts/blobServices/containers/immutabilityPolicies"
+}
+--- blob soft delete on jtoyestgbackup
+{
+  "allowPermanentDelete": false,
+  "days": 14,
+  "enabled": true
+}
+--- lifecycle policy on jtoyestgbackup
+{
+  "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/managementPolicies/default",
+  "lastModifiedTime": "2026-10-19T01:07:24.839020+00:00",
+  "name": "DefaultManagementPolicy",
+  "policy": {
+    "rules": [
+      {
+        "definition": {
+          "actions": {
+            "baseBlob": {
+              "delete": {
+                "daysAfterCreationGreaterThan": null,
+                "daysAfterLastAccessTimeGreaterThan": null,
+                "daysAfterLastTierChangeGreaterThan": null,
+                "daysAfterModificationGreaterThan": 35.0
+              },
+              "enableAutoTierToHotFromCool": null,
+              "tierToArchive": null,
+              "tierToCold": null,
+              "tierToCool": null,
+              "tierToHot": null
+            },
+            "snapshot": null,
+            "version": null
+          },
+          "filters": {
+            "blobIndexMatch": null,
+            "blobTypes": [
+              "blockBlob"
+            ],
+            "prefixMatch": [
+              "jtoye-db-backups/backups/"
+            ]
+          }
+        },
+        "enabled": true,
+        "name": "delete-db-backups-after-35d",
+        "type": "Lifecycle"
+      }
+    ]
+  },
+  "resourceGroup": "jtoye-rg",
+  "systemData": null,
+  "type": "Microsoft.Storage/storageAccounts/managementPolicies"
+}
+--- role assignments at jtoyestgmedia/jtoye-images
+Principal                             Role                           Scope
+------------------------------------  -----------------------------  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-images
+--- role assignments at jtoyestgmedia/jtoye-quarantine
+Principal                             Role                           Scope
+------------------------------------  -----------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+--- role assignments at jtoyestgbackup/jtoye-db-backups
+Principal                             Role                       Scope
+------------------------------------  -------------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ca38c385-c0c1-467d-a638-88e62db7a65f  J'Toye Backup Blob Writer  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups
+--- every role assignment held by jtoye-staging-media-id (expect container scopes only)
+Principal                             Role                           Scope
+------------------------------------  -----------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-images
+3a14636b-91d7-42cf-9b23-8d40d799a9c1  Storage Blob Data Contributor  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgmedia/blobServices/default/containers/jtoye-quarantine
+--- every role assignment held by jtoye-staging-backup-id (expect container scopes only)
+Principal                             Role                       Scope
+------------------------------------  -------------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ca38c385-c0c1-467d-a638-88e62db7a65f  J'Toye Backup Blob Writer  /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups
+--- anonymous LIST of jtoyestgmedia/jtoye-images (#626: expect NOT 200, no EnumerationResults)
+HTTP 404
+EnumerationResults count: 0
+(the anonymous GET of a real derivative, runbook §8, needs an image core-java has written: plan 29-14)
+
+readback reads_failed=0
+rc=0
+
+################ Task 3 <verify> 2, fail direction: the same command with JTOYE_AZURE_SUBSCRIPTION_ID unset
+=== STEP 1: subscription guard ===
+REFUSED [subscription]: JTOYE_AZURE_SUBSCRIPTION_ID is unset; refusing to let the CLI resolve its ambient default, which on this host is EMPLOYER infrastructure
+rc=1
+verify exit=1
+
+### Task 3 <verify> 1 as written (at 2026-10-19T01:08:48Z)
+18
+Standard_B2s
+Ready
+rc=0
+# fail direction recorded before the create: the same read returned ResourceNotFound (rc 3), above.
+
+# The Blob functional proof (#626 anonymous GET of a real WebP derivative, upload -> WebP) runs in plan 29-14 once core-java is up.

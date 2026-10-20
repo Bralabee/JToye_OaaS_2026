@@ -1,0 +1,10 @@
+{
+  "command": "BOOTSTRAP_SELFTEST_FORMAT=tap bash scripts/staging-db-bootstrap.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..7\nok 1 - pre-idempotent\nok 2 - owners-can-create\nok 3 - post-before-migration-fails\nok 4 - post-readback\nnot ok 5 - scratch-db\n  ---\n  message: 'create rc=2 exists=0: USAGE ERROR: unknown argument \"--scratch-db\" USAGE ERROR: unknown argument \"--scratch-db\" USAGE   JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 \\     scripts/staging-db-bootstrap.sh --st'\n  ...\nok 6 - via-context-relay\nok 7 - no-password-in-argv",
+  "targetTest": "scratch-db",
+  "targetFile": "scripts/staging-db-bootstrap.sh",
+  "expected": "ok - scratch-db: scratch-create/scratch-drop of jtoye_st_arm create then drop it (pg_database read-back), and scratch-drop of jtoye or keycloak is REFUSED rc 1",
+  "actual": "not ok 5 - scratch-db: create rc=2 exists=0: USAGE ERROR: unknown argument --scratch-db",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion: the unmodified script has no way to create or drop a database as the admin, which 29-14 Task 3 arm 2 (Blocker E, migrator) needs on the live server and which 29-07 recorded as missing. Not a harness fault: the other six arms passed against the same stand-in."
+}

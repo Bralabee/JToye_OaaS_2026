@@ -1,0 +1,9 @@
+Phase 29 disposition for #100 (DPLY-02): fixed in the phase, by replacement. Sealed Secrets is superseded for deployed environments by Azure Key Vault read through the Secrets Store CSI driver with one Workload Identity per secret-reading workload (decision D-23).
+
+History: this issue was closed on 2026-10-18 by a lexical match in a docs PR body (PR 955) although nothing had been delivered. It was reopened during Phase 29 with that reason recorded, and it is closed now on evidence.
+
+The acceptance criterion was "No plaintext Secret in the live kustomize build; SealedSecrets applied".
+- No plaintext Secret in any live build: kubectl kustomize on k8s/staging, k8s/production and k8s/local each render 0 Secret objects beside 12, 3 and 3 Deployments as the control; a scratch build with one planted Secret counts 1; and k8s/scripts/check-no-plaintext-secrets.sh exits 0. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-measurements.txt, lines 46 to 57.
+- SealedSecrets are not applied and will not be. The chain is Key Vault object, SecretProviderClass, synced Secret, secretKeyRef, checked on the render by k8s/scripts/check-keyvault-chain.sh. The vault jtoye-stg-kv was populated write-once, and the preflight named every missing object on the empty vault (66 gaps, exit 1) before it passed on the populated one: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-13-secrets.txt, lines 11 to 79 and 189 to 200. Live, the derived Secrets exist while their consumers run (14 of 15; the backup credentials are absent until the backup job first runs, which is correct): .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-14-tracer.txt, lines 947 to 1000.
+
+Left to Phase 32: production has no secret delivery path yet (its render contains no SecretProviderClass), so a production Key Vault is a Phase 32 input.

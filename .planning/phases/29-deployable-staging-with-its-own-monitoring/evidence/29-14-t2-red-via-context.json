@@ -1,0 +1,10 @@
+{
+  "command": "BOOTSTRAP_SELFTEST_FORMAT=tap bash scripts/staging-db-bootstrap.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..6\nok 1 - pre-idempotent\nok 2 - owners-can-create\nok 3 - post-before-migration-fails\nok 4 - post-readback\nnot ok 5 - via-context-relay\n  ---\n  message: 'rc=2: USAGE ERROR: unknown argument \"--via-context\"'\n  ...\nok 6 - no-password-in-argv",
+  "targetTest": "via-context-relay",
+  "targetFile": "scripts/staging-db-bootstrap.sh",
+  "expected": "ok - via-context-relay: readback reaches the stand-in through the relay port-forward (hostaddr=127.0.0.1), one relay pod run/port-forward/delete of the same pod, no surviving port-forward, sipbihs2aks refused with 0 runs",
+  "actual": "not ok 5 - via-context-relay   ---   message: rc=2: USAGE ERROR: unknown argument \"--via-context\"   ...",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion: the unmodified script has no way to reach a server whose firewall admits only the cluster outbound IP (measured live 2026-10-19T09:4xZ: psql from this host to jtoye-stg-pg timed out), so --via-context is an unknown argument. Not a harness fault: the other five arms ran to completion against the same stand-in and passed."
+}

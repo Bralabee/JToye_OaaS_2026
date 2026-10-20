@@ -1,0 +1,49 @@
+---
+# 60-acme-http01-solver.yaml
+#
+# Allow-list for cert-manager's ACME HTTP-01 solver pods
+# (`acme.cert-manager.io/http01-solver=true`).
+#
+# WHY THIS EXISTS. cert-manager issues the per-host Let's Encrypt certificates by
+# HTTP-01 (Phase 29 D-07). For each challenge it creates a short-lived solver
+# Pod (listening on 8089), a Service and an Ingress IN THE CERTIFICATE'S
+# NAMESPACE — i.e. in this application namespace, where 00-default-deny.yaml
+# selects every pod. Without an allow-rule the controller cannot reach the
+# solver, Let's Encrypt's validation request never gets the token back, and
+# every certificate order fails with a challenge timeout that reads like a DNS
+# problem.
+#
+# Ingress:
+#   - From the ingress-controller namespace only, on TCP 8089 (the solver's
+#     listen port). The namespace is overwritten at render time from app-config
+#     `ingress.controller-namespace` (see k8s/base/kustomization.yaml).
+# Egress:
+#   - None. The solver only answers the challenge request; it initiates nothing.
+#     Listing Egress in policyTypes with no egress rules denies all egress.
+#
+# Enforces T-29-04 (only the controller reaches a pod from outside the namespace).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acme-http01-solver-allow
+  labels:
+    app.kubernetes.io/name: acme-http01-solver-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # ingress.0.from.0 — the controller namespace; REPLACED from app-config
+    # ingress.controller-namespace (index is load-bearing, see kustomization.yaml).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8089

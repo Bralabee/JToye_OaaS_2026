@@ -1,0 +1,39 @@
+# mail-env-patch.yaml — the LOCAL-ONLY relaxation of the D-20 STARTTLS requirement, so the
+# local cluster can still send mail to Mailhog.
+#
+# WHY IT LIVES HERE AND NOWHERE ELSE
+#   Owner ruling 2026-10-18 (D-20): STARTTLS is REQUIRED in staging and production.
+#   core-java's application-prod.yml enforces it with LITERALS (mail.smtp.starttls.enable
+#   and .required, both true) because k8s runs the prod profile in EVERY environment,
+#   local included (k8s/local/kustomization.yaml: no SPRING_PROFILES_ACTIVE override, D-10).
+#   Those literals outrank application.yml's ${SMTP_STARTTLS:true}, so this overlay's
+#   smtp.starttls "false" (configmap-patch.yaml) no longer has any effect, and JavaMail
+#   against Mailhog, which offers no STARTTLS, throws on every send:
+#     jakarta.mail.MessagingException: STARTTLS is required but host does not support STARTTLS
+#   (Reproduced with the shipped application.yml + application-prod.yml bound by Spring Boot
+#   and Angus Mail 2.0.5 against a plain SMTP server that does not advertise STARTTLS.)
+#
+# WHAT THIS DOES
+#   An environment variable outranks the profile yml in Spring's property order, and relaxed
+#   binding maps this name onto spring.mail.properties.mail.smtp.starttls.required. With it
+#   false, and .enable still true from the profile, JavaMail upgrades when the server offers
+#   STARTTLS and sends in clear when it does not: Mailhog, and nothing else here.
+#
+# WHAT KEEPS IT FROM LEAKING
+#   k8s/scripts/check-render-invariants.sh INV-19 fails any staging or production render
+#   whose core-java sets an env naming starttls (other than SMTP_STARTTLS), and LOC-8
+#   fails THIS overlay if the env goes missing. Do not copy this patch into another overlay.
+#
+# Strategic merge: `env` merges on `name`, so this ADDS one item to the core-java container.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-java
+spec:
+  template:
+    spec:
+      containers:
+        - name: core-java
+          env:
+            - name: SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED
+              value: "false"

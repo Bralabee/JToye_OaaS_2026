@@ -1,0 +1,12 @@
+Phase 29 disposition for #98 (DPLY-03): partly met, with the remainder deferred. The issue stays open for what is below.
+
+Met on the staging cluster (kube-context jtoye-stg-aks, 2026-10-19):
+- Prometheus, Alertmanager and Grafana run in Kubernetes from plain kustomize manifests, mounting the same alert rule corpus and dashboards as the compose stack.
+- Acceptance criterion 2, every alert references a metric that is actually emitted: scripts/check-alert-metrics.sh reports 19 live rules and 25 selectors, all matching at least one live series, and it was shown failing first on a planted rule with no series. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-25-dply03.txt, lines 96 to 108.
+- The transport works end to end: scripts/check-alert-liveness.sh exits 0 against staging (8 targets up, 2 exporter gauges healthy and rule-referenced, a synthetic alert delivered), and the same gate was shown failing with the real mail path broken before it was shown passing again (lines 110 to 284). The message arrived in the owner's inbox (line 127).
+
+Not met, recorded here instead of being closed over:
+- Acceptance criterion 1 reads "Prometheus scrapes all three services". core-java and edge-go are scraped on staging; the frontend has no scrape job in the compose configuration or in Kubernetes (the 8 jobs are identical in both). Evidence: the same file, lines 311 to 323. The missing frontend job is tracked as #971.
+- Acceptance criterion 3, log aggregation, single emission and traces that span the edge to the core, is outside the scope Phase 29 gave monitoring (decision D-16: Prometheus, Alertmanager and Grafana only). No follow-up issue covers it, so it stays tracked on #98 itself.
+
+Deferred: the frontend scrape job (criterion 1, #971) and criterion 3 (this issue), to the hardening work after the first tenant is live. Criterion 2 is met: scripts/check-alert-metrics.sh reports all 25 selectors live.

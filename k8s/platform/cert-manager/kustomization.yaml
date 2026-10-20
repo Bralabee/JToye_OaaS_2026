@@ -1,0 +1,10 @@
+# k8s/platform/cert-manager — our ClusterIssuers only (Phase 29, D-07).
+#
+# cert-manager itself (v1.21.2, ~1 MB of CRDs and controllers) is NOT vendored
+# here: scripts/staging-bootstrap.sh --stage cert-manager downloads the pinned
+# release manifest, checks its sha256 and applies it. Vendoring it would turn every
+# upstream bump into an unreviewable diff (RESEARCH Pattern 3).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - clusterissuers.yaml

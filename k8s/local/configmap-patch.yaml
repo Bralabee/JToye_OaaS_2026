@@ -81,15 +81,22 @@ data:
   # (`iss` mismatch). Set both to localhost and the pod cannot fetch JWKS at all.
   keycloak.issuer.uri: "http://host.minikube.internal:8085/realms/jtoye-dev"
   keycloak.public.issuer.uri: "http://localhost:8085/realms/jtoye-dev"
+  # #299: the customer-storefront realm on the same compose Keycloak, split the
+  # same way (pod -> host gateway; tokens stamped with localhost:8085).
+  keycloak.customer.issuer.uri: "http://host.minikube.internal:8085/realms/jtoye-customers"
+  keycloak.customer.public.issuer.uri: "http://localhost:8085/realms/jtoye-customers"
 
   # --- The realm's ACTUAL OIDC client (plan 26-08) ---------------------------
-  # Base holds `frontend`, which is byte-identical to the literal that used to be
-  # hardcoded in frontend-deployment.yaml. That client does NOT exist in the
-  # jtoye-dev realm:
+  # Since plan 29-08 (Blocker A) base holds `core-api` as well, so this line
+  # restates the inherited value; it is kept so the local login's client stays
+  # pinned here beside its redirect-URI note. Base USED to hold `frontend`, the
+  # literal once hardcoded in frontend-deployment.yaml. That client does NOT
+  # exist in the jtoye-dev realm:
   #   grep -c '"clientId" : "frontend"' infra/keycloak/realm-export.template.json
   # returns 0. The realm's confidential browser-flow client is `core-api`, which
   # is also what .env's KEYCLOAK_CLIENT_ID names and whose secret feeds the
-  # keycloak-credentials Secret's `frontend-client-secret` key (see
+  # keycloak-credentials Secret's `frontend-client-secret` key and, since plan
+  # 29-12, the frontend's own frontend-oidc-credentials `client-secret` (see
   # scripts/k8s-local-secrets.sh). Without this override the ingress login — the
   # only step that actually proves DEF-5 — fails at the authorize request.
   #
@@ -150,6 +157,24 @@ data:
   # enforced rather than described.
   db.port: "5433"
 
+  # Plan 29-08: the compose Postgres serves no TLS, so local keeps pgjdbc's own
+  # defaults (opportunistic, unverified). Base sets verify-full for the managed
+  # server; without this patch every local pod would fail its first connection.
+  db.ssl-mode: "prefer"
+  db.ssl-factory: "org.postgresql.ssl.LibPQFactory"
+
+  # --- Ingress-controller namespace for the NetworkPolicy derivation (D-29) ---
+  # Base says "traefik", the controller of record for every deployed
+  # environment. Locally the controller is the minikube ingress-nginx addon
+  # (k8s/LOCAL.md: minikube v1.36.0 bundles controller v1.12.2), which runs in
+  # the `ingress-nginx` namespace — so the local render keeps naming the
+  # controller it actually runs. Like db.port, no container reads this key: its
+  # consumer is the `replacements:` block in kustomization.yaml, which writes it
+  # into the controller namespaceSelector of frontend-allow, core-java-allow,
+  # edge-go-allow and acme-http01-solver-allow. That block is repeated in this
+  # overlay because this overlay patches the key (the measured #271 rule).
+  ingress.controller-namespace: "ingress-nginx"
+
   # --- Media storage: the Azurite emulator path (Phase 36) ------------------
   #
   # Local runs the connection-string auth mode against the HOST Azurite (the
@@ -202,6 +227,9 @@ data:
   # --- Email: Mailhog -------------------------------------------------------
   # Mailhog accepts anything and offers no auth and no TLS, so auth/starttls are
   # both false here (base ships auth "false" + starttls "true" for SES).
+  # smtp.starttls "false" alone is NOT enough under the prod profile: application-prod.yml
+  # requires STARTTLS by literal (D-20), which this key cannot undo. The effective relaxation
+  # is mail-env-patch.yaml (SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED=false).
   # Sent mail is viewable at http://localhost:8025.
   smtp.host: "host.minikube.internal"
   smtp.port: "1025"
@@ -223,6 +251,8 @@ data:
   # origin still has to be right or the redirect leaves the platform entirely.)
   notification.email.tracking-base-url: "http://app.jtoye.local"
   notification.unsubscribe.base-url: "http://app.jtoye.local"
+  # #592 / RFC 8058: the one-click POST target's origin = this overlay's api.url.
+  notification.unsubscribe.one-click-base-url: "http://api.jtoye.local"
   gdpr.dsar.verify-base-url: "http://app.jtoye.local/data-request/confirm"
   gdpr.dsar.export-download-base-url: "http://app.jtoye.local/data-request/download"
   staff.invite.accept-base-url: "http://app.jtoye.local/invite"

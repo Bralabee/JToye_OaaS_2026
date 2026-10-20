@@ -1,0 +1,392 @@
+# 29-15 evidence: the live staging edge (plan 29-15, D-29(b), Phase 37 trusted proxies)
+# Context: kube-context jtoye-stg-aks only; subscription c483d353 read-only (az_read).
+# Every block is the raw output of the command named in its header, with the UTC time it ran.
+
+=== TASK 1 RED 2026-10-19T10:59:18Z: stubbed arms, EDGE_FORMAT=tap bash scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms -> rc=1 ===
+TAP version 13
+1..6
+# check-staging-edge 2026-10-19T10:58:36Z mode=fail-arms context=jtoye-stg-aks
+not ok 1 - fail-arm-headers
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 2 - fail-arm-csp
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 3 - fail-arm-cors
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 4 - fail-arm-admin
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+not ok 5 - fail-arm-burst
+  ---
+  message: 'PASSED on the probe route, so this arm cannot fail: STUB: not implemented'
+  ...
+ok 6 - probe-cleanup
+  ---
+  message: 'deleted by name and verified NotFound: ingress/fidelity-probe service/fidelity-probe networkpolicy/fidelity-probe-allow pod/fidelity-probe'
+  ...
+# FAIL: 5 of 6
+(classifier: gsd_run check tdd-red-evidence evidence/29-15-t1-red-stub-arms.json -> RED_EVIDENCE_OK target_test_failed)
+
+=== TASK 1 GREEN: first normal run with burst on app-staging /robots.txt (2026-10-19T11:00:54Z) -> rc=1, kept as measured ===
+FAIL  [burst]
+        sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 200;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 22s (curl rc=0) -> 0 x 429 (edge 0, app 0), 0 x 503, 1500 x 2xx, 0 other; 429 content-types: 
+        NO EDGE 429: the burst was never limited at the edge
+FAIL: 1 of 5 check(s) failed
+(the 500m-CPU frontend held concurrency 40 to ~68 rps; the 500-token bucket never emptied. Burst retargeted to api-staging /api/v1/edge-burst-probe: Spring Security 401 before the app limiter; next run 416 edge 429s, rc=0)
+
+=== TASK 1 GREEN fail direction: bash scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms ===
+check-staging-edge  (2026-10-19T11:02:21Z)  mode=fail-arms  context=jtoye-stg-aks
+PASS  [fail-arm-headers]
+        FAILED on the probe route, as it must: https://app-staging.olajay.co.uk/fidelity-probe (HTTP 200): MISSING Strict-Transport-Security X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy X-Robots-Tag
+        https://api-staging.olajay.co.uk/fidelity-probe (HTTP 200): MISSING Strict-Transport-Security X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy X-Robots-Tag
+PASS  [fail-arm-csp]
+        FAILED on the probe route, as it must: https://app-staging.olajay.co.uk/fidelity-probe (HTTP 200): no Content-Security-Policy header
+PASS  [fail-arm-cors]
+        FAILED on the probe route, as it must: Origin https://app-staging.olajay.co.uk: HTTP 200, ACAO '<none>', ACAC '<none>' (NOT allowed with credentials)
+        Origin https://evil.example: HTTP 200, ACAO '<none>' (refused: not echoed)
+PASS  [fail-arm-admin]
+        FAILED on the probe route, as it must: https://auth-staging.olajay.co.uk/admin/: HTTP 200 (ROUTED: body starts 'NOW: 2026-10-19 11:02:27.005800506 +0000')
+        https://auth-staging.olajay.co.uk/admin/master/console/: HTTP 200 (ROUTED: body starts 'NOW: 2026-10-19 11:02:27.103917475 +0000')
+        https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration: HTTP 200, issuer https://auth-staging.olajay.co.uk/realms/jtoye-staging
+PASS  [fail-arm-burst]
+        FAILED on the probe route, as it must: sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 200;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 3s (curl rc=0) -> 0 x 429 (edge 0, app 0), 0 x 503, 1500 x 2xx, 0 other; 429 content-types: 
+        NO EDGE 429: the burst was never limited at the edge
+PASS  [probe-cleanup]
+        deleted by name and verified NotFound: ingress/fidelity-probe service/fidelity-probe networkpolicy/fidelity-probe-allow pod/fidelity-probe
+PASS: 6 of 6 check(s) hold on the live edge (mode=fail-arms)
+rc=0
+
+=== TASK 1 GREEN pass direction: bash scripts/check-staging-edge.sh --context jtoye-stg-aks ===
+check-staging-edge  (2026-10-19T11:02:50Z)  mode=normal  context=jtoye-stg-aks
+PASS  [headers]
+        https://app-staging.olajay.co.uk/ (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+        https://api-staging.olajay.co.uk/api/v1/public/shops (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+PASS  [csp]
+        Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-ZThlMzVmYzgtYWUwZC00NGY0LTk2MmMtZTAzMjM5OWNiOGZk' 'strict-dynamic' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:10000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api-staging.olajay.co.uk wss://api-staging.olajay.co.uk https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; base-uri 'self'; object-src 'none'
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+PASS  [cors]
+        Origin https://app-staging.olajay.co.uk: HTTP 200, ACAO 'https://app-staging.olajay.co.uk', ACAC 'true' (allowed with credentials)
+        Origin https://evil.example: HTTP 200, ACAO '<none>' (refused: not echoed)
+PASS  [admin]
+        https://auth-staging.olajay.co.uk/admin/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/admin/master/console/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration: HTTP 200, issuer https://auth-staging.olajay.co.uk/realms/jtoye-staging
+PASS  [burst]
+        sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 401;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 3s (curl rc=0) -> 759 x 429 (edge 759, app 0), 0 x 503, 0 x 2xx, 741 other; 429 content-types:  759 ;
+        layer that answered: edge (Traefik) 759, app (core-java) 0
+PASS: 5 of 5 check(s) hold on the live edge (mode=normal)
+rc=0
+
+=== TASK 1 raw curl -sI 2026-10-19T11:03:24Z ===
+$ curl -sI https://app-staging.olajay.co.uk/
+HTTP/2 200 
+access-control-allow-credentials: true
+cache-control: private, no-cache, no-store, max-age=0, must-revalidate
+content-security-policy: default-src 'self'; script-src 'self' 'nonce-MmJlZGY2YzktNTQ0ZC00OTRlLWFkYWQtMmRiZTU2OWE1NGU0' 'strict-dynamic' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:10000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api-staging.olajay.co.uk wss://api-staging.olajay.co.uk https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; base-uri 'self'; object-src 'none'
+content-type: text/html; charset=utf-8
+date: Mon, 19 Oct 2026 11:03:24 GMT
+link: </_next/static/media/7ddd198311ba7843-s.p.3kq6k02b2ysv1.woff2>; rel=preload; as="font"; crossorigin=""; nonce="MmJlZGY2YzktNTQ0ZC00OTRlLWFkYWQtMmRiZTU2OWE1NGU0"; type="font/woff2"
+permissions-policy: geolocation=(), microphone=(), camera=()
+referrer-policy: strict-origin-when-cross-origin
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch, Accept-Encoding
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-powered-by: Next.js
+x-robots-tag: noindex, nofollow
+x-xss-protection: 1; mode=block
+
+(set-cookie lines omitted: per-request CSRF values)
+$ curl -sI https://api-staging.olajay.co.uk/api/v1/public/shops
+HTTP/2 200 
+access-control-allow-credentials: true
+cache-control: no-cache, no-store, max-age=0, must-revalidate
+content-type: application/json
+date: Mon, 19 Oct 2026 11:03:24 GMT
+expires: 0
+permissions-policy: geolocation=(), microphone=(), camera=()
+pragma: no-cache
+referrer-policy: strict-origin-when-cross-origin
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+vary: origin,access-control-request-method,access-control-request-headers,accept-encoding
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-ratelimit-limit: 40
+x-ratelimit-remaining: 39
+x-ratelimit-reset: 1792407864
+x-robots-tag: noindex, nofollow
+x-xss-protection: 1; mode=block
+content-length: 1381
+
+
+=== TASK 1 CSP source-matcher table (src_matches SOURCE https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth; 0 = admits) ===
+1 https://auth-staging.olajay.co.uk/realms/jtoye-staging
+0 https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+0 https://auth-staging.olajay.co.uk
+1 https:/
+0 auth-staging.olajay.co.uk
+0 https:
+1 http:
+1 'self'
+0 https://*.olajay.co.uk
+1 https://auth-staging.olajay.co.uk:8443
+1 https://auth-staging.olajay.co.uk/realms/jtoye-customers/
+1 https://evil.olajay.co.uk
+Reading (#293): the served CSP lists each realm TWICE, bare and with a trailing slash. A CSP source with a path matches that path EXACTLY unless it ends in '/', so the bare https://auth-staging.olajay.co.uk/realms/jtoye-staging (row 1, rc 1) admits nothing the browser calls; the slash form (row 2, rc 0) admits the subtree /protocol/openid-connect/{auth,token}. The gate reports which source admitted each endpoint: always the slash form.
+
+=== TASK 1 check-gate-enforcement clean -> arm (registration line deleted) -> clean, 2026-10-19T11:03:24Z ===
+clean1 rc=0: PASS: every gate either runs in CI or has a declared reason it cannot.
+arm rc=1:
+check-gate-enforcement  (2026-10-19T11:03:09Z)
+  gates     : 51
+  workflows : 8
+  exempt    : 5 declared
+FAIL: 1 gate(s) are referenced by no workflow and carry no exemption:
+        check-staging-edge.sh (invokes: curl kubectl)
+      A gate that cannot fire on a pull request does not prevent anything.
+      Either add it to a workflow, or declare it in /home/sanmi/IdeaProjects/JToye_OaaS_2026/scripts/gates/gate-enforcement.conf with the reason
+      it cannot run on a hosted runner.
+restored by content: git hash-object cee2252cffeba30a38f55367903b94d626350ae1 == HEAD blob
+clean2 rc=0: PASS: every gate either runs in CI or has a declared reason it cannot.
+
+=== TASK 2 measurements 2026-10-19T11:04:22Z ===
+$ kubectl --context jtoye-stg-aks -n traefik get pods -o wide
+NAME                       READY   STATUS    RESTARTS   AGE     IP             NODE                                NOMINATED NODE   READINESS GATES
+traefik-564ff689f8-k9tb9   1/1     Running   0          4h35m   10.244.2.154   aks-nodepool1-24453234-vmss000000   <none>           <none>
+traefik-564ff689f8-sg5dz   1/1     Running   0          4h35m   10.244.1.134   aks-nodepool1-24453234-vmss000002   <none>           <none>
+$ kubectl --context jtoye-stg-aks -n traefik get svc traefik -o jsonpath={.spec.externalTrafficPolicy}
+Local LoadBalancer 51.105.43.14
+$ (export JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-...; source scripts/lib/azure-guard.sh && az_guard_init >/dev/null && az_read aks show -g jtoye-rg -n jtoye-stg-aks --query networkProfile.podCidr -o tsv)
+podCidr=[10.244.0.0/16] prc=0
+$ az_read aks show ... --query "networkProfile.{plugin:networkPlugin,mode:networkPluginMode,policy:networkPolicy,dataplane:networkDataplane,podCidrs:podCidrs,serviceCidr:serviceCidr}"
+{
+  "dataplane": "cilium",
+  "mode": "overlay",
+  "plugin": "azure",
+  "podCidrs": [
+    "10.244.0.0/16"
+  ],
+  "policy": "cilium",
+  "serviceCidr": "10.0.0.0/16"
+}
+$ kubectl --context jtoye-stg-aks get nodes -o custom-columns=NAME:.metadata.name,PODCIDR:.spec.podCIDR
+NAME                                PODCIDR
+aks-nodepool1-24453234-vmss000000   <none>
+aks-nodepool1-24453234-vmss000001   <none>
+aks-nodepool1-24453234-vmss000002   <none>
+aks-nodepool1-24453234-vmss000003   <none>
+29:POD_CIDR=10.244.0.0/16
+37:| POD_CIDR | 10.244.0.0/16 | AKS Azure CNI overlay pod address space | Delete and recreate the cluster |
+
+=== TASK 2 Traefik access log, request with X-Forwarded-For 203.0.113.9 from this host (public 81.96.202.37), 2026-10-19T11:06:40Z ===
+81.96.202.37 - - [19/Oct/2026:11:06:40 +0000] "GET /api/v1/public/shops?etp-probe=1 HTTP/2.0" 200 1381 "-" "-" 4138 "jtoye-staging-jtoye-ingress-rule-0-path-0-tls@kubernetesingressnginx" "http://10.244.0.145:9090" 35ms
+Reading: Traefik's ClientHost is the operator host's public address, so externalTrafficPolicy Local delivers the real client to Traefik (no SNAT).
+
+=== TASK 2 BEFORE (trust none): 110 x GET /api/v1/public/shops with X-Forwarded-For: 203.0.113.9, from 2026-10-19T11:04:57Z ===
+status codes:
+     58 200
+     52 429
+x-ratelimit-remaining on the first 12 responses (each value twice: two buckets, one per Traefik pod):
+39 38 37 36 35 34 33 32 31 30 29 28 
+core-java 'Public rate limit exceeded' WARN lines since T0: 52; resolved client per line:
+     50 10.244.1.134
+      2 10.244.2.154
+lines naming 203.0.113.9: 0; lines naming 81.96.202.37: 0
+first two lines:
+2026-10-19 11:05:02.479 Public rate limit exceeded for client 10.244.1.134 on path /api/v1/public/shops - retry after 34 seconds
+2026-10-19 11:05:02.634 Public rate limit exceeded for client 10.244.1.134 on path /api/v1/public/shops - retry after 34 seconds
+Reading: trust-none keys every client on the Traefik pod it lands on (10.244.1.134 / 10.244.2.154). The forged header is ignored, and so is the real client.
+
+=== TASK 2 INV-12 verify BEFORE the configmap edit (fail direction) ===
+podCidr=[10.244.0.0/16] prc=0 invariants_rc=0
+OK   [k8s/staging]: ... INV-12 OK (empty = trust none; WARN: operator input outstanding)  ...
+  WARN [k8s/staging] INV-12: security.trusted-proxies is EMPTY (trust none). Behind the ingress every client is the ingress pod, so ALL clients share ONE public rate-limit bucket until the operator declares the ingress-nginx controller's pod CIDR (37-24 user_setup; cluster-specific, not in this repo). Not a failure.
+OK   [k8s/staging]: ... INV-12 OK (empty = trust none; WARN: operator input outstanding)  ...
+PASS: INV-1..INV-7, INV-11 and INV-12 hold across 4 kustomize target(s); INV-8, INV-9, INV-10, INV-14 and INV-15 hold on k8s/staging k8s/production; LOC-1..LOC-6, LOC-7 checked on k8s/local.
+VERIFY rc=1
+
+=== TASK 2 golden: render-golden.sh check before --write -> rc=1 (staging drift); --write; check -> rc=0. Diff: ===
+-  security.trusted-proxies: ""
++  security.trusted-proxies: 10.244.0.0/16
+
+=== TASK 2 INV-12 verify AFTER the edit (pass direction) ===
+podCidr=[10.244.0.0/16] prc=0 invariants_rc=0
+INV-12 OK (1 private range(s): 10.244.0.0/16) 
+staging-warn-lines=0
+VERIFY rc=0
+configured:   security.trusted-proxies: "10.244.0.0/16"
+measured podCidr string: 10.244.0.0/16 ; configured string: 10.244.0.0/16 (equal)
+
+=== TASK 2 INV-12 verify VOID branch (JTOYE_AZURE_SUBSCRIPTION_ID unset -> guard refuses) ===
+REFUSED [subscription]: JTOYE_AZURE_SUBSCRIPTION_ID is unset; refusing to let the CLI resolve its ambient default, which on this host is EMPLOYER infrastructure
+podCidr=[] prc=1
+VOID: the live podCidr could not be read
+VERIFY rc=2
+
+=== TASK 3 (D-29(a) observed column). Pre-edit row count N=21 (awk over git show HEAD:k8s/platform/traefik/README.md, the table under '## D-29(a)') ===
+
+=== TASK 3 certificates 11:11:31Z: kubectl --context jtoye-stg-aks -n jtoye-staging get certificate; openssl s_client app-staging ===
+jtoye-staging-api-tls True letsencrypt-prod notAfter 2027-01-17T08:45:51Z
+jtoye-staging-app-tls True letsencrypt-prod notAfter 2027-01-17T08:45:50Z
+jtoye-staging-auth-tls True letsencrypt-prod notAfter 2027-01-17T08:45:51Z
+issuer=C=US, O=Let's Encrypt, CN=YR1 ; subject=CN=app-staging.olajay.co.uk ; notAfter=Jan 17 08:45:50 2027 GMT
+
+=== TASK 3 redirect 11:10:08Z: curl -sS -o /dev/null -w '%{http_code} Location=%{redirect_url}' http://<host>/realms/jtoye-staging/.well-known/openid-configuration ===
+app-staging -> 308 Location=https://app-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration
+api-staging -> 308 Location=https://api-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration
+auth-staging -> 308 Location=https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration
+
+=== TASK 3 limit-connections: N requests at once to app-staging /robots.txt (curl --http2 --parallel --parallel-max N), 10-12 s apart so the 500-token rate bucket is full each time ===
+11:10:19 --parallel-immediate concurrency 40 (40 connections): 40 x 200, 0 x 429, max latency 1.52 s
+11:10:33 --parallel-immediate concurrency 100 (100 connections): 100 x 200, 0 x 429, max latency 3.55 s
+11:10:54 multiplexed concurrency 150 (2 new connections): 63 x 200, 87 x 429 (content-type empty), wall 0.80 s
+11:11:11 --parallel-immediate concurrency 150 (150 connections): 114 x 200, 36 x 429 (content-type empty), wall 4.67 s
+Reading: 150 requests cannot exhaust a 500-token bucket, so these 429s are the in-flight cap. ~50 in flight per client per Traefik replica (two replicas; 100 connections spread across both stayed under it).
+
+=== TASK 3 body-size 11:09:55Z: curl -X POST --data-binary @<N zero bytes> https://api-staging.olajay.co.uk/api/v1/edge-body-probe ===
+11534336 bytes (11 MiB): HTTP 413 content-type=[] uploaded=0 time=0.18s body: Request Entity Too Large
+10485760 bytes (10 MiB): HTTP 401 content-type=[application/problem+json;charset=UTF-8] uploaded=10485760 time=1.15s
+1048576 bytes (1 MiB): HTTP 401 content-type=[application/problem+json;charset=UTF-8] uploaded=1048576 time=0.51s
+Reading: the edge refuses above 10m on the declared length before reading the body; at and below 10m the request reaches core-java, whose own 401 answers.
+
+=== TASK 3 cors-headers 11:12:50Z: curl -sS -o /dev/null -D - -X OPTIONS -H 'Origin: https://app-staging.olajay.co.uk' -H 'Access-Control-Request-Method: GET' -H 'Access-Control-Request-Headers: authorization,content-type' https://api-staging.olajay.co.uk/api/v1/products ===
+HTTP/2 200 
+access-control-allow-credentials: true
+access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+access-control-allow-origin: https://app-staging.olajay.co.uk
+access-control-max-age: 86400
+content-length: 0
+date: Mon, 19 Oct 2026 11:12:50 GMT
+
+
+=== TASK 3 sse: authenticated curl -N held 90 s (vendor.staging@olajay.co.uk; password and client secret read from jtoye-stg-kv by az_read into mode-600 files in a private temp dir, deleted on exit; token never printed) ===
+token obtained for vendor.staging@olajay.co.uk (value not shown)
+11:08:16.739 +0.0s START curl -N --max-time 90 https://api-staging.olajay.co.uk/api/v1/orders/stream
+11:08:34.701 +18.0s RECV :keep-alive
+11:08:34.705 +18.0s RECV 
+11:08:59.696 +43.0s RECV :keep-alive
+11:08:59.698 +43.0s RECV 
+11:09:24.703 +68.0s RECV :keep-alive
+11:09:24.705 +68.0s RECV 
+11:09:46.746 +90.0s END curl rc=28 (curl: (28) Operation timed out after 90000 milliseconds with 39 bytes received )
+response headers:
+HTTP/2 200 
+cache-control: no-cache, no-store, max-age=0, must-revalidate
+content-type: text/event-stream
+Reading: keep-alive comments arrive incrementally every 25 s (proxy-buffering off). The stream outlived 60 s and was ended by curl's own --max-time (rc 28), not by the edge. A 60 s IDLE timeout would also be reset by the 25 s keep-alives, so this shows no 60 s total cap, not the 3600 value.
+
+=== TASK 3 not-observable ===
+proxy-connect-timeout, proxy-send-timeout: a distinguishing probe needs a backend that refuses to accept or stops reading; no public staging path behaves so. Configured, not externally observable.
+proxy-buffer-size, proxy-buffers-number: inert while response buffering is off (provider default, README fact 2). Configured, not externally observable.
+proxy-request-buffering off on the SSE path: the stream is a GET with no body. Not externally observable there.
+main-Ingress proxy-read-timeout 60: no public path holds a response that long. Not externally observable.
+
+=== TASK 3 verify (awk Observed-column check) ===
+pre-edit README (git show HEAD:k8s/platform/traefik/README.md): VOID: no Observed column header rc=2
+scratch copy with the proxy-buffering Observed cell blanked: rows=21 filled=20 rc=1
+committed README: rows=21 filled=21 rc=0
+
+=== TASK 2 DEPLOY decision (orchestrator, option A, 2026-10-19) ===
+Image tag a784e7e2421c7aba164f3e7db858b1861b7df6be (the images already running). git diff a784e7e2..HEAD over the image build paths:
+ core-java/src/main/resources/application-prod.yml  |  17 ++
+ .../src/main/resources/application-staging.yml     |  16 ++
+ .../notification/MailStartTlsPropertyTest.java     | 103 +++++++++++-
+ frontend/e2e/staging-login.spec.ts                 | 179 +++++++++++++++++++++
+ frontend/playwright.config.ts                      |   7 +
+ 5 files changed, 319 insertions(+), 3 deletions(-)
+frontend/e2e/ and frontend/playwright.config.ts are in frontend/.dockerignore (lines 76-77), so the frontend image is unaffected; edge-go is unchanged.
+RUNNING core-java IS ONE CONFIG LITERAL BEHIND THE BRANCH, BY DESIGN: the only core-java image input changed since a784e7e2 is 29-16's ed07f053 (mail.smtp.starttls.required: true in application-prod.yml and application-staging.yml), merged into this branch by the orchestrator mid-plan (e33bf792). Shipping it before plan 29-22 gives Mailpit TLS would break staging mail early, so the gap is deliberate and closes at 29-22's deploy. Trusted proxies are app-config, read from the ConfigMap, independent of the image.
+
+=== TASK 2 deploy: source conda.sh && conda activate jtoye-ops; JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-...; bash scripts/deploy.sh staging --context jtoye-stg-aks --image-tag a784e7e2421c7aba164f3e7db858b1861b7df6be (started 2026-10-19T11:14:16Z) ===
+Context:     jtoye-stg-aks (guard passed)
+Staging secrets preflight (scripts/staging-secrets-preflight.sh)...
+preflight: 31 objects, 35 grants, 0 gap(s)
+Applying k8s/staging at a784e7e2421c7aba164f3e7db858b1861b7df6be...
+configmap/app-config configured
+Waiting for core-java rollout...
+deployment "core-java" successfully rolled out
+✓ core-java deployed successfully
+Waiting for edge-go rollout...
+deployment "edge-go" successfully rolled out
+✓ edge-go deployed successfully
+Waiting for frontend rollout...
+deployment "frontend" successfully rolled out
+✓ frontend deployed successfully
+✓ Deployment completed successfully!
+DEPLOYED_SHA=a784e7e2421c7aba164f3e7db858b1861b7df6be
+deploy rc=0
+
+=== TASK 2 restart: app-config is a plain ConfigMap read as env (TRUSTED_PROXY_CIDRS valueFrom configMapKeyRef) at pod start; the same-tag apply leaves the pod template unchanged, so the env stays stale until a restart ===
+live cm after deploy: [10.244.0.0/16]
+core-java pod before restart: core-java-7987cbb5cb-vn6jn
+env in running pod before restart: []
+11:14:46Z
+deployment.apps/core-java restarted
+Waiting for deployment "core-java" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "core-java" rollout to finish: 1 old replicas are pending termination...
+deployment "core-java" successfully rolled out
+rollout rc=0
+11:16:50Z
+core-java pod after: core-java-55995fd4f4-ltk58 Running aks-nodepool1-24453234-vmss000003 true
+core-java-7987cbb5cb-vn6jn Running aks-nodepool1-24453234-vmss000001 true
+env in running pod after restart: [10.244.0.0/16]
+image: ghcr.io/bralabee/jtoye-core-java:a784e7e2421c7aba164f3e7db858b1861b7df6be
+(the second core-java line is the old pod, still terminating; kubectl wait --for=delete returned 'condition met' before the after-probe)
+
+=== TASK 2 AFTER: 60 x GET /api/v1/public/shops with X-Forwarded-For: 203.0.113.9, from 11:17:06Z, one core-java pod ===
+status codes:
+     40 200
+     20 429
+x-ratelimit-remaining first 12 (each value once: ONE bucket now): 39 38 37 36 35 34 33 32 31 30 29 28 
+core-java WARN lines: 20; resolved client per line:
+     20 81.96.202.37
+lines naming 203.0.113.9: 0
+2026-10-19 11:17:13.150 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 53 seconds
+2026-10-19 11:17:13.269 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 53 seconds
+
+Same probe with an in-range spelling, X-Forwarded-For: 203.0.113.9, 10.244.9.9 (3 requests, 11:17:26Z):
+2026-10-19 11:17:26.310 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 40 seconds
+2026-10-19 11:17:26.425 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 40 seconds
+2026-10-19 11:17:26.543 Public rate limit exceeded for client 81.96.202.37 on path /api/v1/public/shops - retry after 40 seconds
+Reading: before, the key was the Traefik pod (10.244.1.134 / 10.244.2.154); after, it is the operator host's public address 81.96.202.37 (what Traefik appended on the right). 203.0.113.9 is never the resolved client, in either spelling.
+
+=== TASK 2 edge gate after the redeploy: bash scripts/check-staging-edge.sh --context jtoye-stg-aks ===
+check-staging-edge  (2026-10-19T11:18:35Z)  mode=normal  context=jtoye-stg-aks
+PASS  [headers]
+        https://app-staging.olajay.co.uk/ (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+        https://api-staging.olajay.co.uk/api/v1/public/shops (HTTP 200): all six present; X-Robots-Tag: noindex, nofollow
+PASS  [csp]
+        Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-ZWQ4YWFmNTgtNzBiMC00ZTBkLWI4NmYtNDg2MGUwZDI3ODE0' 'strict-dynamic' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:10000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api-staging.olajay.co.uk wss://api-staging.olajay.co.uk https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://auth-staging.olajay.co.uk/realms/jtoye-staging https://auth-staging.olajay.co.uk/realms/jtoye-staging/ https://auth-staging.olajay.co.uk/realms/jtoye-customers https://auth-staging.olajay.co.uk/realms/jtoye-customers/; base-uri 'self'; object-src 'none'
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        connect-src: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+        form-action: https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token admitted by https://auth-staging.olajay.co.uk/realms/jtoye-staging/
+PASS  [cors]
+        Origin https://app-staging.olajay.co.uk: HTTP 200, ACAO 'https://app-staging.olajay.co.uk', ACAC 'true' (allowed with credentials)
+        Origin https://evil.example: HTTP 200, ACAO '<none>' (refused: not echoed)
+PASS  [admin]
+        https://auth-staging.olajay.co.uk/admin/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/admin/master/console/: HTTP 404 (not routed)
+        https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration: HTTP 200, issuer https://auth-staging.olajay.co.uk/realms/jtoye-staging
+PASS  [burst]
+        sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 401;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 3s (curl rc=0) -> 679 x 429 (edge 679, app 0), 0 x 503, 0 x 2xx, 821 other; 429 content-types:  679 ;
+        layer that answered: edge (Traefik) 679, app (core-java) 0
+PASS: 5 of 5 check(s) hold on the live edge (mode=normal)
+rc=0
+
+=== TASK 2 digest parity after the redeploy: bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag a784e7e2... -> rc=0, every running digest in the set published for a784e7e2 ===
+

@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? on main (re-plan; 9/16 archived on `phase-29-research`) | Context gathered 2026-10-18 | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 28/29 | Context gathered 2026-10-18 | — |
 | 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
@@ -591,6 +591,67 @@ and hosting-target decisions; DPLY-04's **ADR-0002 sign-off** blocker is RESOLVE
 | **#300** | DPLY-02 | sealed-secrets / external-secrets for the local secrets path; sibling of #100 |
 | **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
 | **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
+
+**Plans:** 28/29 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
+
+Plans:
+- [x] 29-29-PLAN.md
+
+**Wave 1**
+- [x] 29-01-PLAN.md — Structural subscription pin (guard library + CI gate) and the compute/identity provisioning script
+- [x] 29-02-PLAN.md — NetworkPolicies for an enforcing cluster (Blockers D/F, Traefik namespace, ACME solver), INV-7 rewritten
+- [x] 29-03-PLAN.md — Platform bootstrap: Traefik with the Ingress-NGINX provider, cert-manager issuers, operator, scoped CI RBAC, horizons
+- [x] 29-05-PLAN.md — TDD: connection budget per target (D-25)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 29-04-PLAN.md — Staging realm transform + import for the vendor and customer realms (Blocker H)
+- [x] 29-06-PLAN.md — Real-flow seed script, vendor stage (D-26/D-27)
+- [x] 29-07-PLAN.md — Managed Postgres + Blob provisioning scripts and the managed-DB role bootstrap (Blocker E ordering)
+- [x] 29-08-PLAN.md — Login-path overlay fixes: migrator split + DB TLS, real client id, in-namespace hosts, scale floors, per-host TLS, noindex
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 29-09-PLAN.md — Provision the staging estate behind the one-way-doors checkpoint
+- [x] 29-10-PLAN.md — In-cluster platform components: Keycloak, Redis, RabbitMQ; copy-parity gate
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 29-11-PLAN.md — Bootstrap the cluster platform, owner DNS records, ACME end-to-end probe
+- [x] 29-12-PLAN.md — Key Vault component: one identity per secret-reading workload, the secret-chain gate (D-23)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 29-13-PLAN.md — Write-once Key Vault writer, derived preflight, owner Stripe TEST values
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 29-14-PLAN.md — TRACER: first deploy, first boot on the managed DB, realm, seed, the DPLY-01 L7 login + fail arms + runtime parity
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 29-15-PLAN.md — Edge fidelity under Traefik (D-29 b), CSP/#293, trusted proxies measured
+- [x] 29-16-PLAN.md — TDD: required STARTTLS literals under the deployed profiles (D-20)
+- [x] 29-19-PLAN.md — 24 h measured cost-meter checkpoint (D-03)
+- [x] 29-21-PLAN.md — CI deploy gate wiring: OIDC + kubelogin, true smoke test, GitHub staging environment (#99 part 1)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 29-17-PLAN.md — DPLY-05: denied connection captured under Cilium with control and policy-free arms (#297)
+- [x] 29-22-PLAN.md — Mailpit with required STARTTLS, cluster CA, JVM truststore, two-arm TLS proofs (D-20..D-22, D-30)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 29-18-PLAN.md — Stripe TEST webhook proof and the seed order paid by a PaymentIntent (D-28/D-31)
+- [x] 29-23-PLAN.md — Monitoring A: Prometheus + exporters in k8s, liveness gate k8s path, check-alert-metrics against staging
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 29-20-PLAN.md — DPLY-04: PITR two-arm drill, first real backup, WORM human lock (#101)
+- [x] 29-24-PLAN.md — Monitoring B build: Alertmanager (Zoho + Mailpit) and Grafana, additive canonical Alertmanager blocks
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 29-25-PLAN.md — DPLY-03 live: both alert gates exit 0 against staging, the real inbox, the failure arm (#98, #112)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 29-26-PLAN.md — Deploy-knot config: customer realm (#299, #859) and one-click unsubscribe (#592)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 29-27-PLAN.md — DPLY-02 dispositions + gate, the D-18 runbook page, supersede notes, ADR-0002 D-24 amendment
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 29-28-PLAN.md — Merge gate, the first green CI deploy with runtime parity, issue dispositions applied (#99)
 
 **UI hint**: no
 

@@ -1,0 +1,210 @@
+# 29-14 Task 1 — tracer tooling, gated before any live step. No cluster call and no public host in any arm below.
+# Branch phase-29-deployable-staging. RED f604776c, GREEN f124932d, bounded-wait fix 3d9caa82.
+
+================ RED: deploy.sh --selftest against the UNMODIFIED deploy body (commit f604776c) ================
+TAP version 13
+1..8
+not ok 1 - no-context
+  ---
+  message: 'rc=0 (want 2):  '
+  ...
+not ok 2 - employer-context
+  ---
+  message: 'rc=0 (want 1):  '
+  ...
+not ok 3 - stale-server
+  ---
+  message: 'rc=0 (want 1):  '
+  ...
+not ok 4 - image-tag
+  ---
+  message: 'tag "0123abc": rc=0 (want 2):  '
+  ...
+not ok 5 - preflight-refusal
+  ---
+  message: 'preflight rc 1: rc=0 (want 1):  '
+  ...
+not ok 6 - render-only
+  ---
+  message: 'app image lines at the tag=0 (want 3)'
+  ...
+not ok 7 - rollout-failure
+  ---
+  message: 'rc=0 after a failed frontend rollout'
+  ...
+not ok 8 - deployed-sha
+  ---
+  message: 'last stdout line is "  kubectl get all -n jtoye-staging ", want DEPLOYED_SHA=0123456789abcdef0123456789abcdef01234567'
+  ...
+rc=1   (RED_EVIDENCE_OK for no-context, stale-server, image-tag, preflight-refusal, deployed-sha: evidence/29-14-t1-red-*.json)
+
+================ RED: Playwright collection before the STAGING_E2E switch: evidence/29-14-t1-red-collection.txt ================
+
+================ GREEN: the plan's three Task 1 verify commands, verbatim ================
+## 2026-10-19T08:24:33Z verify 1 (verbatim): bash scripts/deploy.sh --selftest
+PASS no-context rc=2 kubectl_calls=0 preflight_calls=0
+PASS employer-context rc=1 kubectl_calls=0 preflight_calls=0
+PASS stale-server rc=1 kubectl_calls=1(config view) apply_calls=0 preflight_calls=0
+PASS image-tag short,branch,latest,uppercase,absent all rc=2 apply_calls=0 preflight_calls=0
+PASS preflight-refusal preflight_rc=1,2 -> rc=1 preflight_calls=1 apply_calls=0 rollout_calls=0
+PASS render-only rc=0 app_images_at_tag=3 pg_backup_18_blob=1 kustomization_sha256=fda23e26401b8e98(unchanged) mutating_calls=0
+PASS rollout-failure rc=1 undo_frontend=1 deployed_sha_lines=0
+PASS deployed-sha rc=0 last_line=DEPLOYED_SHA=0123456789abcdef0123456789abcdef01234567 apply=1 applied_images_at_tag=3 rollouts=3 all_calls_via_context=7/7 preflight_before_apply=yes
+rc=0
+verify1_exit=0
+
+## 2026-10-19T08:24:35Z verify 2 (verbatim, frontend/): collection with the switch off and on
+list rc off=0 on=0
+switch off: listed=432 staging=0 | switch on: staging=1 desktop=1
+verify2_exit=0
+
+## 2026-10-19T08:24:37Z verify 3 (verbatim): e2e contracts + doc metrics + docs-freshness
+check-e2e-baseurl-contract
+  authority : playwright.config.ts -> http://localhost:3000
+  scanned   : 46 spec file(s)
+  declared  : 18 local fallback(s), 0 divergent
+PASS: every PLAYWRIGHT_BASE_URL fallback under frontend/e2e/ agrees with playwright.config.ts.
+check-playwright-mobile-contract
+  config : frontend/playwright.config.ts
+  ok       project "mobile" (mobile, touch-capable)
+  ok       project "desktop" (ok)
+  parsed : 2 project(s), 0 blind
+PASS: every mobile Playwright project can report touch.
+check-doc-metrics  (2026-10-19T08:24:37Z)
+  manifest : docs/metrics.json
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+docs-freshness OK: metrics match source (total logical invocations: 6332).
+rc=0
+verify3_exit=0
+
+================ Fail directions of the two doc gates, observed before the counts were updated ================
+docs-freshness.sh before --write: ERROR: documentation metrics are stale (playwright_blocks 189 -> 190, playwright_specs 45 -> 46, total 6331 -> 6332); fresh_rc=1
+check-doc-metrics.sh before the prose edit: 10 FAIL lines (README/CLAUDE/AGENTS: 6331 vs 6332, 189 vs 190, 45 vs 46); dm_rc=1
+
+================ Acceptance lines: real script, real PATH ================
+## 2026-10-19T08:17:14Z no-context (real script, real PATH)
+USAGE ERROR: --context is required (no default: an ambient context is how a command lands on the wrong cluster)
+USAGE
+  scripts/deploy.sh staging|production --context NAME --image-tag SHA [all]
+rc=2
+
+## 2026-10-19T08:17:14Z render-only
+rc=0 render_lines=4535
+app_images_at_tag=3
+        image: ghcr.io/bralabee/jtoye-core-java:0123456789abcdef0123456789abcdef01234567
+        image: ghcr.io/bralabee/jtoye-edge-go:0123456789abcdef0123456789abcdef01234567
+        image: ghcr.io/bralabee/jtoye-frontend:0123456789abcdef0123456789abcdef01234567
+            image: ghcr.io/bralabee/jtoye-pg-backup:18-blob
+pg_backup_18_blob=1
+before: fda23e26401b8e987dbda25837f3c9013f5236e2863f8792c99df40d08447387  k8s/staging/kustomization.yaml
+after:  fda23e26401b8e987dbda25837f3c9013f5236e2863f8792c99df40d08447387  k8s/staging/kustomization.yaml
+leftover wrapper dirs: 0
+
+================ Spec offline arms (no navigation happens in either) ================
+## 2026-10-19T08:17:41Z spec offline arm A: switch on, PLAYWRIGHT_BASE_URL unset -> skip with reason
+Running 1 test using 1 worker
+
+  -  1 [desktop] › e2e/staging-login.spec.ts:72:5 › staging vendor signs in through the public edge and sees seeded products @desktop-only
+
+  1 skipped
+rc=0
+
+## 2026-10-19T08:17:43Z spec offline arm B: base URL = staging, credential absent -> FAIL (never skip), before any navigation
+    Error: STAGING_VENDOR_USERNAME and STAGING_VENDOR_PASSWORD must both be set (read the password from jtoye-stg-kv through scripts/lib/azure-guard.sh az_read); refusing to skip a credentialed run
+      82 |       "STAGING_VENDOR_USERNAME and STAGING_VENDOR_PASSWORD must both be set (read the password from " +
+  1 failed
+rc=1
+artifacts under --output: 2
+(arm B's two artifacts are .last-run.json and error-context.md; the latter holds no page snapshot because no page was opened)
+
+================ Spec end to end against a LOCAL stub impersonating app-staging + auth-staging ================
+# Scratch harness (not committed): a node https stub on 127.0.0.1:18443 with a self-signed cert, Chromium
+# --host-resolver-rules mapping both staging names to it, ignoreHTTPSErrors, a temporary config spreading the
+# real playwright.config.ts. The stub's request log is printed per arm: every request went to the stub.
+# The stub accepts one password (a fake canary); a wrong one re-renders the form WITH the typed value in it.
+### arm green  (2026-10-19T08:21:40Z)  stub env: 
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=core-api&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+FINAL_URL https://app-staging.olajay.co.uk/dashboard
+H1 Good morning
+PRODUCT_COUNT 1 (Doubles)
+  1 passed (1.3s)
+playwright rc=0
+password in output: 0   files under --output holding it: 0   (files under --output: 1)
+stub requests: GET app-staging.olajay.co.uk/auth/signin GET auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth POST auth-staging.olajay.co.uk/realms/jtoye-staging/login-actions/authenticate GET app-staging.olajay.co.uk/dashboard GET app-staging.olajay.co.uk/dashboard/products 
+
+### arm wrong-client  (2026-10-19T08:21:49Z)  stub env: STUB_CLIENT_ID=does-not-exist
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=does-not-exist&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+PAGE_URL_ON_FAILURE https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=does-not-exist&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+PAGE_TEXT_ON_FAILURE We are sorry... Client not found.
+    Error: expect(received).toBe(expected) // Object.is equality
+    Expected: "core-api"
+    Received: "does-not-exist"
+  1 failed
+playwright rc=1
+password in output: 0   files under --output holding it: 0   (files under --output: 2)
+stub requests: GET app-staging.olajay.co.uk/auth/signin GET auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth 
+
+### arm wrong-redirect  (2026-10-19T08:21:52Z)  stub env: STUB_REDIRECT=https://app.olajay.co.uk/api/auth/callback/keycloak
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=core-api&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+PAGE_URL_ON_FAILURE https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=core-api&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+PAGE_TEXT_ON_FAILURE Sign in to your account Email Password 
+    Error: expect(received).toContain(expected) // indexOf
+    Expected substring: "redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak"
+    Received string:    "https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=core-api&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate"
+  1 failed
+playwright rc=1
+password in output: 0   files under --output holding it: 0   (files under --output: 2)
+stub requests: GET app-staging.olajay.co.uk/auth/signin GET auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth 
+
+### arm no-products  (2026-10-19T08:22:25Z)  stub env: STUB_NO_PRODUCTS=1
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=core-api&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+FINAL_URL https://app-staging.olajay.co.uk/dashboard
+H1 Good morning
+PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/dashboard/products
+PAGE_TEXT_ON_FAILURE Products
+    Error: no seeded culinary-catalogue dish is visible on /dashboard/products
+    Expected: > 0
+    Received:   0
+      178 |   console.log(`PRODUCT_COUNT ${visible.length} (${visible.join(", ")})`)
+  1 failed
+playwright rc=1
+password in output: 0   files under --output holding it: 0   (files under --output: 2)
+stub requests: GET app-staging.olajay.co.uk/auth/signin GET auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth POST auth-staging.olajay.co.uk/realms/jtoye-staging/login-actions/authenticate GET app-staging.olajay.co.uk/dashboard GET app-staging.olajay.co.uk/dashboard/products 
+
+### arm leak-blanked  (2026-10-19T08:23:18Z)  stub env: 
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=core-api&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+    TimeoutError: page.waitForURL: Timeout 45000ms exceeded.
+      156 |   console.log(`FINAL_URL ${finalUrl}`)
+  1 failed
+playwright rc=1
+password in output: 0   files under --output holding it: 0   (files under --output: 2)
+stub requests: GET app-staging.olajay.co.uk/auth/signin GET auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth POST auth-staging.olajay.co.uk/realms/jtoye-staging/login-actions/authenticate 
+
+# Break arm (bracketed clean -> arm -> clean, restore verified by content): the about:blank blanking removed.
+clean before: worktree=185a8c898282817672f3c012c7b16204896681e1 HEAD=185a8c898282817672f3c012c7b16204896681e1 status=[]
+break planted: 1 line(s)
+### arm leak-unblanked-BREAK  (2026-10-19T08:24:13Z)  stub env: 
+AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?client_id=core-api&scope=openid&response_type=code&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&state=stubstate
+    TimeoutError: page.waitForURL: Timeout 45000ms exceeded.
+      156 |   console.log(`FINAL_URL ${finalUrl}`)
+  1 failed
+playwright rc=1
+password in output: 0   files under --output holding it: 1   (files under --output: 2)
+  holds it: staging-login-staging-vend-fe45e-eeded-products-desktop-only-desktop/error-context.md
+stub requests: GET app-staging.olajay.co.uk/auth/signin GET auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth POST auth-staging.olajay.co.uk/realms/jtoye-staging/login-actions/authenticate 
+arm rc=1
+clean after: worktree=185a8c898282817672f3c012c7b16204896681e1 HEAD=185a8c898282817672f3c012c7b16204896681e1 BREAK lines=0 blanking lines=1
+# error-context.md of the break arm, the lines that matter (Playwright writes an aria snapshot of the page on
+# failure even with trace/screenshot/video off, and it carries the password textbox's value):
+26:  - paragraph [ref=f2e3]: Invalid username or password.
+31:    - textbox "Password" [ref=f2e6]: wrong-pw-LEAKCANARY-55e1
+# => the leak vector is real, the Task 2/3 artifact grep can see it, and the blanking removes it (leak-blanked: 0 files).
+
+================ Local kubeconfig read (no API call): the shared guard against the three contexts on this host ================
+guard(jtoye-stg-aks) rc=0
+REFUSED [server-url] context jtoye-staging points at https://jtoye-stag-jtoye-rg-c483d3-2z8ofdgq.hcp.uksouth.azmk8s.io:443, expected https://jtoye-stg--jtoye-rg-c483d3-mkb3vdnc.hcp.uksouth.azmk8s.io:443
+guard(jtoye-staging) rc=1
+REFUSED [employer-context]: context 'sipbihs2aks' is the employer's cluster. Naming it explicitly does not make it allowed.
+guard(sipbihs2aks) rc=1

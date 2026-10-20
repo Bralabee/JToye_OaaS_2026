@@ -1,0 +1,357 @@
+# k8s/platform/traefik/traefik.yaml
+#
+# The staging ingress controller (Phase 29, D-29): Traefik v3 with its Kubernetes
+# Ingress-NGINX provider. The existing `nginx.ingress.kubernetes.io/*` annotations
+# on k8s/base/ingress.yaml and sse-ingress.yaml stay the configuration source of
+# truth; this provider translates them. What it does and does not translate, and
+# what replaces each gap, is recorded per annotation in README.md (D-29(a)).
+#
+# NOT A KUSTOMIZE GATE TARGET. k8s/platform/<component> sits at depth 3, so the
+# render gates (which discover kustomizations at depth 2) and render-golden.sh
+# (staging/production only) never see it. scripts/staging-bootstrap.sh applies it
+# with an explicit --context, after the shared staging_kube_guard has checked that
+# the context is the jtoye-stg-aks cluster (plan 29-03, Task 3).
+#
+# Pinned: traefik:v3.7.15 (released 2026-10-15, the newest v3.7 and the newest
+# Traefik release on that date), by tag AND index digest, measured 2026-10-18
+# from registry-1.docker.io (docker-content-digest of the multi-arch index).
+# Horizon row: infra/dependency-horizons.yaml `traefik`.
+#
+# Measured against the pinned source (traefik v3.7.15,
+# pkg/provider/kubernetes/ingress-nginx/{kubernetes,client,build}.go) and the
+# v3.7 reference pages, fetched 2026-10-18:
+#   - allowSnippetAnnotations is FALSE unless set (it is not in SetDefaults), and
+#     with it false an Ingress carrying configuration-snippet is SKIPPED WHOLE
+#     ("Invalid Ingress, skipping"), not merely stripped of its headers. Our
+#     jtoye-ingress carries the security headers in configuration-snippet, so the
+#     flag is set to true below. See README.md for the security note.
+#   - With watchNamespace set, every informer (ingresses, services,
+#     endpointslices, secrets, configmaps) is namespace-scoped; only
+#     ingressclasses is listed cluster-wide. That is what lets the RBAC below be a
+#     Role in jtoye-staging plus one cluster-scoped read.
+#   - publishService is resolved through the SAME namespace-scoped informer, so
+#     `publishService=traefik/traefik` fails ("namespace is not within watched
+#     namespaces") when only jtoye-staging is watched. It is therefore NOT set:
+#     Ingress .status stays empty, and nothing in this repo reads it (the bootstrap
+#     reads the Service's own .status.loadBalancer instead). Because status is
+#     never written, ingresses/status update is not granted either.
+#
+# Threat model: T-29-07 (Secrets read only in jtoye-staging, by a Role).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+    # Every container here satisfies the restricted profile (non-root, no
+    # privilege escalation, all capabilities dropped, RuntimeDefault seccomp).
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: traefik
+  namespace: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+# Traefik watches the Kubernetes API with this token; it is the one workload in
+# the platform that needs the in-cluster API token mounted.
+automountServiceAccountToken: true
+---
+# The ONLY cluster-scoped permission: read IngressClasses. The provider lists them
+# cluster-wide to find the classes whose spec.controller is k8s.io/ingress-nginx.
+# Verbs are the documented ones (list, watch); the provider never issues a get.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: traefik-ingressclasses
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: traefik-ingressclasses
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: traefik-ingressclasses
+subjects:
+  - kind: ServiceAccount
+    name: traefik
+    namespace: traefik
+---
+# Everything else, in the ONE watched namespace. This is the v3.7 documented RBAC
+# for this provider (kubernetes-ingress-nginx-rbac.yml at tag v3.7) narrowed to:
+#   - a Role in jtoye-staging, not a ClusterRole (watchNamespace=jtoye-staging);
+#   - no `namespaces` rule (only watchNamespaceSelector needs it; not used);
+#   - no `pods get` (only OTel attribute injection needs it; OTel is not enabled);
+#   - no `ingresses/status update` (publishService is not set, see header).
+# configmaps stay: the provider starts a configmap informer per watched namespace
+# and waits for it to sync, so withholding it would stall the provider at start.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: traefik-provider
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+rules:
+  - apiGroups: [""]
+    resources: ["services", "secrets", "configmaps"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: traefik-provider
+  namespace: jtoye-staging
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: traefik-provider
+subjects:
+  - kind: ServiceAccount
+    name: traefik
+    namespace: traefik
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik
+  namespace: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traefik
+        app.kubernetes.io/part-of: jtoye-platform
+    spec:
+      serviceAccountName: traefik
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          # Two replicas on two nodes where the scheduler can, so one node's
+          # loss (or its re-image on node-OS upgrade) does not drop the edge.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: traefik
+      containers:
+        - name: traefik
+          image: traefik:v3.7.15@sha256:0f6150202bc1fed72a7bd2107460eaa510e5b8a905f3fdb5b84f2c8619c33368
+          imagePullPolicy: IfNotPresent
+          # CLI spelling per the v3.7 reference page
+          # (doc.traefik.io/traefik/v3.7/reference/install-configuration/providers/kubernetes/kubernetes-ingress-nginx/, fetched 2026-10-18).
+          args:
+            - --global.checknewversion=false
+            - --global.sendanonymoususage=false
+            - --log.level=INFO
+            - --accesslog=true
+            - --entrypoints.web.address=:8000
+            - --entrypoints.websecure.address=:8443
+            - --entrypoints.metrics.address=:9100
+            - --entrypoints.ping.address=:8082
+            - --ping=true
+            - --ping.entrypoint=ping
+            - --metrics.prometheus=true
+            - --metrics.prometheus.entrypoint=metrics
+            - --providers.kubernetesingressnginx=true
+            - --providers.kubernetesingressnginx.watchnamespace=jtoye-staging
+            - --providers.kubernetesingressnginx.ingressclass=nginx
+            - --providers.kubernetesingressnginx.controllerclass=k8s.io/ingress-nginx
+            - --providers.kubernetesingressnginx.allowsnippetannotations=true
+            # Request buffering ON by default, as NGINX has it. Measured in
+            # middleware.go buildBuffering (v3.7.15): with request AND response
+            # buffering both off (the provider defaults) no Buffering middleware is
+            # built at all, so jtoye-ingress's proxy-body-size "10m" would be
+            # silently inert and the edge would forward bodies of any size. With
+            # this on, that Ingress gets MaxRequestBodyBytes=10m (413 above it);
+            # sse-ingress sets proxy-request-buffering "off" itself and stays
+            # unbuffered. README.md row proxy-body-size.
+            - --providers.kubernetesingressnginx.proxyrequestbuffering=true
+            - --providers.kubernetesingressnginx.httpentrypoint=web
+            - --providers.kubernetesingressnginx.httpsentrypoint=websecure
+          ports:
+            - name: web
+              containerPort: 8000
+              protocol: TCP
+            - name: websecure
+              containerPort: 8443
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+            - name: ping
+              containerPort: 8082
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: ping
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            # RESEARCH Pitfall 2: 3 x B2s, ~1900m / ~2.7 GiB allocatable per node.
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# The public edge (D-07): one Azure static public IP, created by
+# scripts/azure-staging-provision.sh in jtoye-rg, where the AKS control-plane
+# identity holds Network Contributor on that one IP. externalTrafficPolicy Local
+# keeps the client source address (Phase 37 trusted-proxies item) and only routes
+# to nodes that run a Traefik pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+  annotations:
+    service.beta.kubernetes.io/azure-pip-name: jtoye-stg-ingress-ip
+    service.beta.kubernetes.io/azure-load-balancer-resource-group: jtoye-rg
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: traefik
+  ports:
+    - name: web
+      port: 80
+      targetPort: web
+      protocol: TCP
+    - name: websecure
+      port: 443
+      targetPort: websecure
+      protocol: TCP
+---
+# The provider's defaults are ingressClass "nginx" and controllerClass
+# "k8s.io/ingress-nginx" (measured in SetDefaults), so the class name every
+# Ingress in k8s/base already names keeps working unchanged.
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: nginx
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  controller: k8s.io/ingress-nginx
+---
+# Ingress only: the controller must reach the API server and every backend, so
+# egress is left open here; the backends' own policies (k8s/base/networkpolicies)
+# decide what the controller namespace may reach. The ping port (8082) has no
+# rule: only the kubelet probes it, from the pod's own node, which Cilium admits
+# without a rule (host-to-local-pod traffic). Plan 29-11 reads the pods Ready.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik-ingress
+  namespace: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  policyTypes:
+    - Ingress
+  ingress:
+    # The public entrypoints, from anywhere (the LoadBalancer delivers internet
+    # traffic with its client source address preserved).
+    - ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8443
+    # The metrics entrypoint, from the staging Prometheus only.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jtoye-staging
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9100
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: traefik
+  namespace: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik

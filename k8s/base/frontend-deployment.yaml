@@ -23,6 +23,10 @@ spec:
         component: ui
         version: v1
     spec:
+      # Its own ServiceAccount (k8s/base/serviceaccounts.yaml, plan 29-12, D-23):
+      # in staging the frontend authenticates to Key Vault through Workload
+      # Identity as system:serviceaccount:<ns>:frontend, never as `default`.
+      serviceAccountName: frontend
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -183,20 +187,27 @@ spec:
         # So the literal here named a client that does not exist in the realm
         # whose secret was being presented: an OIDC flow that cannot complete.
         #
-        # The base VALUE is unchanged (app-config/keycloak.client-id is the
-        # byte-identical string `frontend`), so staging and production resolve
-        # exactly as before; only k8s/local patches it to `core-api`.
+        # Phase 29 plan 29-08 (Blocker A): the base VALUE is now `core-api`
+        # too (app-config/keycloak.client-id), because `frontend` named no
+        # client in any environment's realm; INV-14 in
+        # k8s/scripts/check-render-invariants.sh holds it to the realm template.
         # ---------------------------------------------------------------------
         - name: KEYCLOAK_CLIENT_ID
           valueFrom:
             configMapKeyRef:
               name: app-config
               key: keycloak.client-id
+        # Phase 29 plan 29-12 (D-23): the frontend reads the client secret from a
+        # Secret of its OWN name. keycloak-credentials is core-java's; in staging
+        # every synced Secret has exactly one producing SecretProviderClass, so a
+        # second consumer reads its own Secret mapped to the SAME Key Vault object
+        # (keycloak-credentials--frontend-client-secret). Locally
+        # scripts/k8s-local-secrets.sh fills it from the same .env value.
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              name: keycloak-credentials
-              key: frontend-client-secret
+              name: frontend-oidc-credentials
+              key: client-secret
         # ---------------------------------------------------------------------
         # DEF-5 / D-13 (Phase 26 / INFRA-02): the split-horizon issuer contract.
         # frontend/auth.ts has ALWAYS split these two — the k8s manifests simply
@@ -238,6 +249,27 @@ spec:
             configMapKeyRef:
               name: app-config
               key: keycloak.issuer.uri
+        # --- #299: the customer-storefront realm, the same split for the
+        # customer refresh-token exchange (frontend/lib/customer-token-refresh.ts):
+        # it posts to CUSTOMER_KEYCLOAK_ISSUER_INTERNAL, falling back to the public
+        # CUSTOMER_KEYCLOAK_ISSUER, and names CUSTOMER_KEYCLOAK_CLIENT_ID (it used to
+        # assume the literal "storefront-client"). The browser's authorize URL is
+        # the build-time NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL, not one of these.
+        - name: CUSTOMER_KEYCLOAK_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.customer.public.issuer.uri
+        - name: CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.customer.issuer.uri
+        - name: CUSTOMER_KEYCLOAK_CLIENT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.customer.client-id
         # ---------------------------------------------------------------------
         # ISSUE #293 — the third member of the issuer family, and the only one
         # k8s never supplied.

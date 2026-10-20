@@ -1,0 +1,10 @@
+{
+  "command": "DEPLOY_SELFTEST_FORMAT=tap bash scripts/deploy.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..8\nnot ok 1 - no-context\n  ---\n  message: 'rc=0 (want 2):  '\n  ...\nnot ok 2 - employer-context\n  ---\n  message: 'rc=0 (want 1):  '\n  ...\nnot ok 3 - stale-server\n  ---\n  message: 'rc=0 (want 1):  '\n  ...\nnot ok 4 - image-tag\n  ---\n  message: 'tag \"0123abc\": rc=0 (want 2):  '\n  ...\nnot ok 5 - preflight-refusal\n  ---\n  message: 'preflight rc 1: rc=0 (want 1):  '\n  ...\nnot ok 6 - render-only\n  ---\n  message: 'app image lines at the tag=0 (want 3)'\n  ...\nnot ok 7 - rollout-failure\n  ---\n  message: 'rc=0 after a failed frontend rollout'\n  ...\nnot ok 8 - deployed-sha\n  ---\n  message: 'last stdout line is \"  kubectl get all -n jtoye-staging \", want DEPLOYED_SHA=0123456789abcdef0123456789abcdef01234567'\n  ...",
+  "targetTest": "no-context",
+  "targetFile": "scripts/deploy.sh",
+  "expected": "ok - no-context: staging --image-tag <sha> with no --context exits 2 with USAGE ERROR and zero kubectl calls",
+  "actual": "not ok 1 - no-context   ---   message: 'rc=0 (want 2):  '   ... ",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion: the unmodified deploy.sh has no --context flag, treated '--image-tag' as the SERVICE positional and ran the whole deploy (rc 0) through the stub kubectl with the ambient context. Not a harness fault: the same harness ran every arm to completion through the stubs (deployed-sha shows the old script's real final output line)."
+}

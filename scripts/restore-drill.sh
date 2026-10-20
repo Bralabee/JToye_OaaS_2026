@@ -95,7 +95,7 @@ DB_NAME="${POSTGRES_DB:?POSTGRES_DB must be set}"
 #                                        = jtoye_backup     (the BYPASSRLS dump role)
 #   The first draft of this script used .env's DB_USER, dumped as jtoye_app, and
 #   pg_dump failed with "query would be affected by row-level security policy".
-#   That looked like a production fault and was not one — k8s/base/pg-backup-cronjob.yaml:75
+#   That looked like a production fault and was not one — k8s/base/pg-backup-cronjob.yaml:81
 #   sources a DIFFERENT secret key. Same variable name, different role, and only
 #   the k8s side is authoritative about what backups actually run as.
 DUMP_USER="${DRILL_DUMP_USER:-jtoye_backup}"
@@ -178,7 +178,7 @@ bypass="$(docker exec -e PGPASSWORD="$SUPER_PASS" "$SRC_CONTAINER" psql -U "$SUP
 # an uncast boolean column prints. Accept both rather than depending on which.
 case "$bypass" in
 	t|true) : ;;
-	f|false) void "dump role '${DUMP_USER}' exists but is NOT BYPASSRLS. Dumping FORCE-RLS tables as this role fails mid-dump. Set DRILL_DUMP_USER to the role the CronJob uses (postgres-credentials/backup-username), not .env's DB_USER." ;;
+	f|false) void "dump role '${DUMP_USER}' exists but is NOT BYPASSRLS. Dumping FORCE-RLS tables as this role fails mid-dump. Set DRILL_DUMP_USER to the role the CronJob uses (pg-backup-credentials/backup-username), not .env's DB_USER." ;;
 	ABSENT) void "dump role '${DUMP_USER}' does not exist on this server. Set DRILL_DUMP_USER, or create it — see infra/db/init/." ;;
 	*) void "could not read rolbypassrls for '${DUMP_USER}' (got '${bypass}') — refusing to dump on an unknown identity" ;;
 esac

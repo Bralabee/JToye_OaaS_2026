@@ -1,0 +1,10 @@
+{
+ "command": "RENDER_GATE_FORMAT=tap bash scripts/check-alertmanager-render.sh",
+ "exitCode": 1,
+ "output": "TAP version 13\n1..9\nok 1 - compose-render-identical\nok 2 - compose-credentials-without-tls\nnot ok 3 - staging-env\n  ---\n  message: 'email-default has 1 email_configs, want 2; email_configs[0].auth_username=None; email_configs[0].auth_password_file=None'\n  ...\nnot ok 4 - password-env-to-mode-600-file\n  ---\n  message: 'email_configs[0].auth_password_file is \"\", want a /tmp file'\n  ...\nok 5 - mute-matcher-refused\nnot ok 6 - password-and-file-refused\n  ---\n  message: 'a config was rendered despite the refusal'\n  ...\nnot ok 7 - username-without-password-refused\n  ---\n  message: 'a config was rendered despite the refusal'\n  ...\nnot ok 8 - unreadable-sink-ca-refused\n  ---\n  message: 'a config was rendered despite the refusal'\n  ...\nnot ok 9 - render-only-exits-before-exec\n  ---\n  message: 'entrypoint rc 1, want 0 (ALERTMANAGER_RENDER_ONLY=1 must exit before exec)'\n  ...",
+ "targetTest": "staging-env",
+ "targetFile": "scripts/check-alertmanager-render.sh",
+ "expected": "the staging env renders auth_username + auth_password_file on email_configs[0], a second email_config to Mailpit with tls_config.ca_file, the alertname-only mute, and amtool SUCCESS",
+ "actual": "the unmodified entrypoint renders ONE email_config with no auth fields (no SMTP-auth support exists), so the staging assertions fail",
+ "semanticAssessment": "The target arm ran (render completed: amtool SUCCESS in the entrypoint log) and failed on its planned assertions: email_configs count 1 not 2, no auth_username/auth_password_file, no sink. Arms 1, 2 and 5 passed in the same run, so the harness, docker and PyYAML were sound; the compose arms equal the golden taken from these same unmodified files."
+}
