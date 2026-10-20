@@ -23,3 +23,22 @@ PR=984 https://github.com/Bralabee/JToye_OaaS_2026/pull/984
 Stored body read back: diff vs /tmp/claude-29-28/pr-body.md empty
 Attribution lines in stored body: 0; positive controls: Co-Authored-By=1, robot-emoji=1
 Deviation: the PR was opened before 29-19 and the 29-27 SUMMARY, so round 1 runs while the cost data posts. The cost commits land on this branch before merge.
+
+## Task 2 (run by Claude on the owner's instruction "you can do most of these things on my behalf", 2026-10-20)
+Review series: round 1 /code-review --comment (admissible 4, all fixed), round 2 /review-verify 984 on 6e42c7e79a44 (admissible 0, Review-Record posted, issuecomment-6289824284).
+CI on 6e42c7e7: push run 39414681728 attempt 1 Run Tests failed at the frontend build (next/font/google could not fetch Work Sans: "Can't resolve '@vercel/turbopack-next/internal/font/google/font'"); the PR run on the same sha passed; attempt 2 completed success. gh pr checks 984: 29 pass, 7 skipping, 0 fail, rc 0; review-record pass.
+Step 2 (2026-10-20T14:36:06Z): local HEAD = PR head = 6e42c7e79a4467130f28558d4317fca16b9580a2; check-branch-behind-base.sh rc=0 (0 behind a5dd4d94); core-java aggregate health 200 (kubectl exec rc 0).
+Step 3: squash message /tmp/claude-29-28/squash-msg.md, check-dply02-dispositions.sh --scan-text rc=0 findings=0.
+Step 4: origin/main still a5dd4d94; gh variable set DEPLOY_STAGING_ENABLED true; read back [true]; gh pr merge 984 --squash rc=0 at 2026-10-20T14:36:23Z.
+Merged: bffd2f74b87558eb966d548bd2813529b53c2464 (committer 2026-10-20T15:36:28+01:00 = 14:36:28Z, after both step-2 reads). Attribution lines in the stored merge message: 0.
+
+## Task 3, attempt 1: deploy-staging on bffd2f74 FAILED at digest parity (rollback rule applied)
+Run 39440780472 https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/39440780472, job "Deploy to Staging" 118743386422 (2026-10-20T16:17Z..16:21Z).
+Steps: 1-14 success (Key Vault preflight, apply, rollout status for all three); 15 "Digest parity" FAILURE; 16 health and 17 smoke skipped; 18 "Rollback on failure" ran (rollout undo core-java, edge-go, frontend; exits 1 by design).
+Parity output: core-java e46092ee... MATCH (bffd2f74) AND 0a462ba9... NOT IN THE EXPECTED SET; edge-go MATCH; frontend MATCH.
+Cause (measured 16:24Z): 0a462ba9 is ghcr.io/bralabee/jtoye-core-java:6e95ee6c, the previous revision, read from a pod still in its grace period. rollout status had printed "1 old replicas are pending termination" and then success; the gate listed every app=core-java pod, a terminating one included (it still reported ready=true). The built image itself was correct.
+Rollback rule: gh variable set DEPLOY_STAGING_ENABLED false at 2026-10-20T16:22:01Z, read back [false]. No issue touched.
+Estate after rollback: core-java, edge-go and frontend all on 6e95ee6c (the pre-merge state); check-deploy-digest-parity.sh --tag 6e95ee6c (fixed gate) rc 0, 3 services MATCH.
+Fix: branch fix/29-parity-drain, commit e6542927: the gate waits up to --drain-timeout (default 180 s) for terminating pods, FAILs if one stays, then reads only pods without a deletionTimestamp.
+Fix proof: --selftest 25/25 rc 0; break arm (wait removed): old-pod-stuck rc 0 (want 1), selftest rc 1; restored (cmp equal), rc 0 again.
+Live proof: rollout restart deployment/core-java (same image 6e95ee6c), rollout status success, a pod still terminating right after it (core-java-869648bdf-4knpm); the fixed gate printed "1 old pod(s) still terminating; waiting up to 180s", then MATCH, rc 0, 20 s. (The same sequence on edge-go drained before the first poll: no wait printed.)
