@@ -7,20 +7,18 @@ import { OperatorPitch } from "@/components/marketing/operator-pitch"
  * no-FOUC floor — the headline and all four pilot steps stay fully visible and
  * the scope is never marked active.
  *
- * The scene is now an ON-LOAD entrance (no ScrollTrigger pinning, no
- * horizontally scrolled pilot rail); that behaviour, and the absence of any
- * pin-spacer, is proven live by e2e/marketing-motion.spec.ts.
+ * The scene is an ON-LOAD entrance (no ScrollTrigger of any kind, no pinning,
+ * no horizontally scrolled pilot rail); that behaviour, and the absence of any
+ * pin-spacer, is proven live by e2e/marketing-motion.spec.ts. The late-arrival
+ * gate (R-03) is proven in operator-entrance-scene-gate.test.tsx, which does
+ * stub matchMedia.
  */
 describe("OperatorEntranceScene enhancement — no-FOUC floor", () => {
-  beforeEach(() => {
-    Element.prototype.scrollIntoView = jest.fn()
-  })
-
   it("keeps the headline fully visible (splitWords is desktop-client-only)", () => {
     render(<OperatorPitch />)
     expect(
       screen.getByRole("heading", {
-        name: /keep the order.*keep the customer.*keep the kitchen moving/i,
+        name: /one kitchen\. weekday counter, weekend catering\./i,
       }),
     ).toBeVisible()
   })
@@ -30,13 +28,23 @@ describe("OperatorEntranceScene enhancement — no-FOUC floor", () => {
     expect(screen.getByRole("heading", { name: /map your service/i })).toBeVisible()
     expect(screen.getByRole("heading", { name: /set up the direct path/i })).toBeVisible()
     expect(screen.getByRole("heading", { name: /run a real service/i })).toBeVisible()
-    expect(screen.getByRole("heading", { name: /review before expanding/i })).toBeVisible()
+    expect(screen.getByRole("heading", { name: /review, then expand/i })).toBeVisible()
+  })
+
+  it("keeps the hero image frame and the price docket fully visible", () => {
+    const { container } = render(<OperatorPitch />)
+    const media = container.querySelector("[data-op-media]") as HTMLElement
+    expect(media).not.toBeNull()
+    expect(media).toBeVisible()
+    expect(media.style.opacity).not.toBe("0")
+    expect(container.querySelector("[data-op-figure]")).toBeVisible()
   })
 
   it("does not mark the scope active or split the headline in jsdom", () => {
     const { container } = render(<OperatorPitch />)
     const root = container.firstElementChild as HTMLElement
     expect(root).not.toHaveAttribute("data-motion-active")
+    expect(root).not.toHaveAttribute("data-entrance")
     expect(container.querySelectorAll(".gsap-word")).toHaveLength(0)
   })
 
@@ -47,7 +55,12 @@ describe("OperatorEntranceScene enhancement — no-FOUC floor", () => {
     const steps = document.querySelectorAll("[data-pilot-step]")
     expect(steps).toHaveLength(4)
     steps.forEach((step) => expect(step.tagName).toBe("LI"))
-    // terms count-up hooks keep the real number as their visible text
-    expect(screen.getByText(/per location, per month/i).textContent).toContain("£39")
+  })
+
+  it("has no count-up hooks: a price never animates from 0", () => {
+    const { container } = render(<OperatorPitch />)
+    expect(container.querySelectorAll("[data-count-to], [data-op-terms], [data-rail-item]")).toHaveLength(0)
+    const standard = screen.getByRole("row", { name: /standard/i })
+    expect(standard).toHaveTextContent("£39")
   })
 })

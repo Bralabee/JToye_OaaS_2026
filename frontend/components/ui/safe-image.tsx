@@ -42,7 +42,11 @@ export function SafeImage({
 
   if (!src || failed) {
     return (
-      <div className={`flex items-center justify-center bg-slate-100 ${fallbackClassName || className}`}>
+      <div
+        // Keep the image's description when the file is missing: a decorative placeholder would drop it.
+        {...(alt ? { role: "img", "aria-label": alt } : {})}
+        className={`flex items-center justify-center bg-slate-100 ${fallbackClassName || className}`}
+      >
         {fallbackIcon || <ImageIcon className="h-1/3 w-1/3 text-slate-300" />}
       </div>
     )

@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+import { PRICING } from "@/lib/pricing"
 
 type Confidence = "High" | "Working assumption" | "To validate"
 
@@ -35,16 +36,18 @@ const evidence: EvidenceItem[] = [
       "Start UK-first with established owner-led Nigerian and West African takeaways and caterers in one serviceable cluster. Shared menus, allergen-information requests, events and repeat customers make a useful vertical wedge.",
   },
   {
-    title: "Takeaway and catering have different buying moments",
-    confidence: "Working assumption",
+    title: "Takeaway and catering are two rhythms of one kitchen",
+    // BUSINESS_MODEL_DECISION_GUIDE.md section 3, line 69: "Dual-Rhythm OS: Counter
+    // Takeaway (Cohort A) + Scheduled Batch/Catering (Cohort B) | **High**".
+    confidence: "High",
     detail:
-      "Takeaways need a reliable daily order and kitchen flow; caterers need enquiries, deposits, date capacity and event handover. One account can support both, but neither journey should be flattened into the other.",
+      "Takeaways need a reliable daily order and kitchen flow; caterers and weekend-batch kitchens need scheduled slots with cut-offs, prep deposits and a consolidated cook sheet. One kitchen, one menu and one ledger run both, with the two rhythms' results kept distinct so conversion, order value and retention can be read for each.",
   },
   {
     title: "£39 core can be the uncomplicated entry point",
     confidence: "Working assumption",
     detail:
-      "A monthly core price is legible to established operators. Test it alongside a 0.5% GTV option or £79–£119 fixed packages, with a £99 setup fee and a £149–£199 capped or fixed option for high-volume merchants.",
+      `A monthly core price is legible to established operators. The billing code bills three plans: £${PRICING.coreMonthly} per location per month plus ${PRICING.usageLabel} of direct sales (the primary plan), a flat £${PRICING.flatLow}–£${PRICING.flatHigh} per location per month with no platform fee, and £0 per month plus ${PRICING.paygLabel} of direct sales for weekend and seasonal batch kitchens. Assisted setup is from £${PRICING.setupFrom}, scoped to the work agreed.`,
   },
   {
     title: "Assisted onboarding may beat a self-serve funnel",
@@ -58,7 +61,7 @@ const alternatives = [
   ["Assisted vertical SaaS", "Recommended", "Vendor retains the commercial relationship; J'Toye provides the operating system."],
   ["Marketplace", "Reject", "Would compete for the vendor’s customer relationship and pull the model towards commission dependency."],
   ["Owned delivery", "Reject", "Introduces fleet utilisation, insurance and service-quality exposure outside the operating-system thesis."],
-  ["Merchant of record / pooled funds", "Reject", "Adds payment, safeguarding and settlement obligations that are not needed to create the initial value."],
+  ["J'Toye as merchant of record by default / pooled funds", "Reject", "Adds payment, safeguarding and settlement obligations that are not needed to create the initial value."],
   ["Full POS or super-app", "Reject", "Broadens the product before the recurring order, catering and kitchen workflows have earned expansion."],
 ] as const
 
@@ -86,7 +89,7 @@ export function BusinessModelGuide() {
   const [feedback, setFeedback] = useState("")
 
   const economics = useMemo(() => {
-    const revenue = 39 + 0.005 * gtv
+    const revenue = PRICING.coreMonthly + PRICING.usageRate * gtv
     const costs = 9 + 0.001 * gtv
     const contribution = revenue - costs
     return { revenue, costs, contribution, margin: (contribution / revenue) * 100 }
@@ -137,7 +140,7 @@ export function BusinessModelGuide() {
         >
           <div className="flex flex-wrap items-center justify-between gap-4 text-xs font-bold uppercase tracking-[0.18em]">
             <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 bg-amber-300" /> J&apos;Toye OaaS / field guide</span>
-            <span className="font-medium tracking-[0.12em] text-slate-300 print:text-slate-600">Research cutoff · 10 July 2026</span>
+            <span className="font-medium tracking-[0.12em] text-slate-300 print:text-slate-600">Original research 10 July 2026 · reframed 17 October 2026</span>
           </div>
           <div className="mt-10 grid gap-8 lg:grid-cols-[1.3fr_0.7fr] lg:items-end">
             <div>
@@ -189,18 +192,18 @@ export function BusinessModelGuide() {
           <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
             <h2 id="decision-heading" className="text-3xl font-bold leading-tight tracking-[-0.035em] sm:text-4xl">UK-first assisted vertical SaaS, deliberately narrow.</h2>
             <div className="space-y-6 text-lg leading-8 text-slate-600">
-              <p>Sell a practical operating system to established, owner-led Nigerian and West African takeaways and caterers in one London cluster, where they already have recurring orders and meaningful volume. Keep the two cohorts&apos; evidence separate. The target model—not the current payment implementation—makes the vendor the <strong className="text-slate-900">seller, food business operator, merchant of record, payment recipient and fulfiller</strong>.</p>
-              <div className="border-l-4 border-amber-500 bg-orange-50 p-5 text-base leading-7 text-orange-900"><strong>Commercial starting point:</strong> £39/month core. Test 0.5% GTV and £79–£119 fixed plans concurrently. Charge at least £99 once for setup, pass card fees through transparently, and test a £149–£199 monthly cap or fixed plan for high-volume merchants.</div>
+              <p>Sell a practical operating system to established, owner-led Nigerian and West African takeaways and caterers in one London cluster, where they already have recurring orders and meaningful volume. Keep the two cohorts&apos; evidence separate. The model makes the vendor the <strong className="text-slate-900">seller, food business operator, merchant of record, payment recipient and fulfiller</strong>; once an operator&apos;s Stripe account is enabled, card payments are direct charges on that account and J&apos;Toye holds no funds for it. That flow is built and proven in Stripe test mode; until an operator is enabled, card payments fall back to the platform account, which is why going live waits for Stripe Connect onboarding.</p>
+              <div className="border-l-4 border-amber-500 bg-orange-50 p-5 text-base leading-7 text-orange-900"><strong>Commercial starting point:</strong> {`£${PRICING.coreMonthly} per location per month plus ${PRICING.usageLabel} of direct sales. A flat £${PRICING.flatLow}–£${PRICING.flatHigh} per location per month plan with no platform fee, and a £0 per month plus ${PRICING.paygLabel} plan for weekend and seasonal batch kitchens, are billed by the same code. Assisted setup is from £${PRICING.setupFrom}, scoped to the work agreed; card fees pass through to the vendor's own Stripe account.`}</div>
             </div>
           </div>
         </section>
 
         <section id="cohorts" aria-labelledby="cohorts-heading" className="mt-20 scroll-mt-20 border-t border-slate-200 pt-12">
-          <SectionLabel number="02" label="Two jobs, one trusted operator" />
-          <h2 id="cohorts-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">Do not make a caterer pretend to be a takeaway.</h2>
+          <SectionLabel number="02" label="Two rhythms, one trusted operator" />
+          <h2 id="cohorts-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">One kitchen, two rhythms.</h2>
           <div className="mt-8 grid gap-5 md:grid-cols-2">
             <CohortCard title="Takeaway cohort" signal="The daily counter" problems={["Phone, WhatsApp and walk-in orders lose context", "Kitchen handover is informal at busy peaks", "Repeat customers need a direct channel, not another marketplace fee"]} capabilities={["Online ordering and direct customer records", "Live kitchen status and fulfilment handover", "Vendor-entered allergen information and trading-hour control"]} />
-            <CohortCard title="Catering cohort" signal="The event ledger" problems={["Enquiries live across conversations and spreadsheets", "Deposits, headcounts and dietary requirements drift", "An event handover needs one source of truth"]} capabilities={["Validate structured enquiry and quote capture", "Validate deposits and event status tracking", "Test date, menu, guest and allergen handover"]} />
+            <CohortCard title="Catering cohort" signal="The event ledger" problems={["Enquiries live across conversations and spreadsheets", "Deposits, headcounts and dietary requirements drift", "An event handover needs one source of truth"]} capabilities={["Validate structured enquiry and quote capture", "Prep deposits with a balance payment link (built; Stripe test mode)", "Scheduled slots with cut-offs, a consolidated cook sheet and PPDS labels (built); validate event handover"]} />
           </div>
         </section>
 
@@ -209,7 +212,7 @@ export function BusinessModelGuide() {
           <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
             <div>
               <h2 id="economics-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">A model that tells you what must become true.</h2>
-              <p className="mt-5 max-w-md leading-7 text-slate-600">This is a planning calculator, not a forecast. It keeps the variable-price test honest: revenue = £39 + 0.5% of GTV; COGS = £9 + 0.1% of GTV.</p>
+              <p className="mt-5 max-w-md leading-7 text-slate-600">This is a planning calculator, not a forecast. It keeps the variable-price test honest: revenue = £{PRICING.coreMonthly} + {PRICING.usageLabel} of GTV; COGS = £9 + 0.1% of GTV.</p>
               <label htmlFor="gtv" className="mt-8 block text-xs font-bold uppercase tracking-[0.13em] text-slate-600">Monthly GTV: {money(gtv)}</label>
               <input id="gtv" aria-label="Monthly GTV" type="range" min="0" max="50000" step="1000" value={gtv} onChange={(event) => setGtv(Number(event.target.value))} className="mt-4 w-full accent-orange-600" />
               <div className="mt-3 flex justify-between text-xs text-slate-600"><span>£0</span><span>£50k</span></div>
@@ -232,13 +235,13 @@ export function BusinessModelGuide() {
           <div className="grid gap-8 lg:grid-cols-2">
             <div><h2 id="boundaries-heading" className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">Be unusually clear about what the product does not do.</h2><p className="mt-5 leading-7 text-slate-600">The credibility gain comes from giving operators a useful system without claiming an ecosystem. The first offer is SaaS and bounded assistance—not a substitute for legal, food-safety, payment or employment advice.</p></div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <BoundaryList title="We can support" icon={<Check className="text-emerald-700" />} items={["Direct ordering and kitchen coordination", "Catering workflows as a discovery track", "Vendor-controlled menus and customer data", "Configured onboarding within a clear cap"]} />
-              <BoundaryList title="We reject" icon={<X className="text-amber-700" />} items={["Marketplace and commission dependency", "Owned delivery and courier fleet", "Merchant-of-record or pooled funds", "Full POS, free SaaS, bespoke bundles, pan-Europe and super-app scope"]} />
+              <BoundaryList title="We can support" icon={<Check className="text-emerald-700" />} items={["Direct ordering and kitchen coordination", "Scheduled batch and catering workflows alongside the daily counter", "Vendor-controlled menus and customer data", "Configured onboarding within a clear cap"]} />
+              <BoundaryList title="We reject" icon={<X className="text-amber-700" />} items={["Marketplace and commission dependency", "Owned delivery and courier fleet", "J'Toye as merchant of record by default, or pooled funds", "Full POS, free SaaS, bespoke bundles, pan-Europe and super-app scope"]} />
             </div>
           </div>
-          <aside className="mt-8 flex gap-4 border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900"><ShieldCheck className="mt-0.5 shrink-0" /><p><strong>Target boundary—not current payment capability:</strong> a documented connected-account charge flow must make the vendor the seller, merchant of record and payment recipient. The vendor sets prices, controls recipes and allergen accuracy, and fulfils directly or through its own courier; J&apos;Toye invoices software separately. The current platform-account flow must not receive or settle funds for multiple vendors until the architecture, contracts and specialist review are complete.</p></aside>
+          <aside className="mt-8 flex gap-4 border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900"><ShieldCheck className="mt-0.5 shrink-0" /><p><strong>Payment boundary—built and proven in Stripe test mode; live cutover pending:</strong> once an operator&apos;s Stripe account is enabled, card payments are Stripe Connect direct charges on that account, so the vendor is the seller, merchant of record and payment recipient, and J&apos;Toye holds no funds for it. Until an operator is enabled, card payments fall back to the platform account, which is why going live waits for Connect onboarding and why the platform account must not receive or settle funds for multiple vendors. The vendor sets prices, controls recipes and allergen accuracy, and fulfils directly or through its own courier; J&apos;Toye invoices software separately. Platform-as-merchant-of-record exists only as an opt-in mode for curated marketplace tenants, not as the default. Card settlement stays in Stripe test mode until the first production tenant goes live.</p></aside>
           <div className="mt-5 border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-900"><strong>Food-information and privacy boundary:</strong> distance sellers must provide allergen information before purchase and again on delivery; PPDS rules apply only to food prepacked for direct sale. Customer allergy requirements may reveal health information, so collection needs an appropriate Article 9 condition, clear notice, restricted access and short retention.</div>
-          <div className="mt-5 border border-orange-200 bg-orange-50 p-5 text-sm leading-6 text-orange-900"><strong>Do not claim:</strong> production or enterprise readiness; guaranteed food-safety, Natasha&apos;s Law or GDPR compliance; HMRC accounting; payouts, wallets or escrow; offline KDS or ticket printing; general AI WhatsApp commerce; proven disaster recovery; self-service tenancy; or pan-European support.</div>
+          <div className="mt-5 border border-orange-200 bg-orange-50 p-5 text-sm leading-6 text-orange-900"><strong>Do not claim:</strong> production or enterprise readiness; guaranteed food-safety, Natasha&apos;s Law or GDPR compliance; HMRC accounting; live card settlement or payouts before the first production tenant (built and proven in Stripe test mode only); wallets or escrow; offline KDS or ticket printing; general AI WhatsApp commerce; proven disaster recovery; self-service tenancy; or pan-European support.</div>
         </section>
 
         <section id="evidence" aria-labelledby="evidence-heading" className="mt-20 scroll-mt-20 border-t border-slate-200 pt-12">
@@ -273,7 +276,7 @@ export function BusinessModelGuide() {
             ["ECB — SPACE 2024 payment study", "https://www.ecb.europa.eu/stats/ecb_surveys/space/html/ecb.space2024~19d46f0f17.en.html"],
             ["Jumia Food closure evidence", "https://techcrunch.com/2023/12/14/jumia-discontinues-food-delivery-across-seven-markets-shifts-focus-to-expanding-physical-goods-business/"],
           ].map(([label, href]) => <li key={href}><a className="group inline-flex items-start gap-2 font-semibold text-slate-700 underline decoration-amber-300 decoration-2 underline-offset-4 hover:text-amber-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500" href={href} target="_blank" rel="noreferrer">{label}<ExternalLink className="mt-1 shrink-0" size={14} /></a></li>)}</ul></div>
-          <p className="mt-10 border-t border-dashed border-slate-300 pt-5 text-xs uppercase tracking-[0.11em] text-slate-600">Research cutoff: 10 July 2026 · Review before expanding geography, payment role or product scope.</p>
+          <p className="mt-10 border-t border-dashed border-slate-300 pt-5 text-xs uppercase tracking-[0.11em] text-slate-600">Original research 10 July 2026 · reframed 17 October 2026 · Review before expanding geography, payment role or product scope.</p>
         </section>
       </div>
 

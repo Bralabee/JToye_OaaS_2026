@@ -303,8 +303,6 @@ const UNASSERTED_SITES: ReadonlySet<string> = new Set([
   "components/marketing/competitive-teardown.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   "components/marketing/competitive-teardown.tsx::text-slate-50", // 1.05 on white, 1.03 on cream
   "components/marketing/hero-search.tsx::text-slate-500", // 4.76 on white, 4.43 on cream
-  "components/marketing/operator-pitch.tsx::text-amber-300", // 1.44 on white, 1.34 on cream
-  "components/marketing/operator-pitch.tsx::text-emerald-600", // 3.77 on white, 3.51 on cream
   "components/public/public-header.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   "components/storefront/cart-drawer.tsx::text-red-400", // 2.77 on white, 2.57 on cream
   "components/storefront/cart-drawer.tsx::text-red-500", // 3.76 on white, 3.5 on cream

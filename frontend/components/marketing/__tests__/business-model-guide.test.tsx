@@ -66,6 +66,29 @@ describe("BusinessModelGuide", () => {
     expect(screen.getByText("£110")).toBeInTheDocument()
   })
 
+  it("prints the reframed date and only the prices the billing code bills (October 2026)", () => {
+    const { container } = render(<BusinessModelGuide />)
+    const text = container.textContent ?? ""
+
+    // Dates: the original research date stays as history, beside the reframing.
+    expect(text).toContain("Original research 10 July 2026 · reframed 17 October 2026")
+    expect(text).not.toMatch(/Research cutoff/)
+
+    // Prices: StripeProperties.Billing / V88 bill 39 + 0.5%, flat 79-149, 0 + 6%.
+    expect(text).toContain("£39 per location per month plus 0.5% of direct sales")
+    expect(text).toContain("£79–£149")
+    expect(text).toContain("£0 per month plus 6%")
+    expect(text).not.toMatch(/£119|£199|£195/)
+
+    // Payment boundary: direct charge once Connect is enabled, platform-account fallback before.
+    expect(text).toContain("card payments fall back to the platform account")
+    expect(text).toContain("merchant of record by default")
+    expect(text).not.toMatch(/Target boundary/)
+
+    // Status: shipped catering work is no longer described as hypothetical.
+    expect(text).not.toMatch(/Validate deposits|discovery track|Do not make a caterer pretend/)
+  })
+
   it("filters the evidence ledger by confidence", () => {
     render(<BusinessModelGuide />)
 

@@ -24,7 +24,10 @@
  *                                  none; `/for-operators` must now have NONE
  *                                  either (its pins were removed so the page
  *                                  arrives populated instead of filling on scroll)
- *   - `[data-rail-item]`         — the three Service-rail items (visible on load)
+ *   - `[data-op-media]`          — the `/for-operators` hero image frame (one element; fades and
+ *                                  rises on load) and `[data-op-figure]`, the price docket
+ *                                  pinned over it (moves with it)
+ *   - `[data-entrance]`          — "played" | "skipped": the late-arrival verdict (R-03)
  *   - `[data-pilot-step]`        — the four pilot steps (must stay visible on the floor)
  */
 import { test, expect } from "@playwright/test"
@@ -77,7 +80,7 @@ test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }
     expect(after).not.toBe(before)
   })
 
-  test("/for-operators arrives POPULATED — headline + rail visible without scrolling, no pin", async ({
+  test("/for-operators arrives POPULATED — headline + hero image + docket visible without scrolling, no pin", async ({
     page,
   }) => {
     await page.goto(`${BASE}/for-operators`)
@@ -93,10 +96,16 @@ test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }
       await page.locator("[data-op-headline] .gsap-word").count(),
     ).toBeGreaterThanOrEqual(2)
 
-    // The entrance plays on LOAD. Past the longest delay+duration (0.35 + 0.55)
+    // The entrance plays on LOAD. Past the longest delay+duration (0.25 + 0.6)
     // everything above the fold must be readable with the page never scrolled —
     // the hero used to be pinned and the Service rail scrubbed in, so both
-    // landed EMPTY until the user scrolled.
+    // landed EMPTY until the user scrolled. Whether the entrance PLAYED or was
+    // SKIPPED as late (R-03), the content must end up visible: the verdict is
+    // reported but not asserted, because it depends on how fast this machine
+    // hydrated, while visibility must not.
+    await expect(page.locator("[data-entrance]").first()).toBeAttached()
+    const verdict = await page.locator("[data-entrance]").first().getAttribute("data-entrance")
+    expect(["played", "skipped"]).toContain(verdict)
     await page.waitForTimeout(1400)
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
 
@@ -107,14 +116,16 @@ test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }
     )
     expect(Number(headlineOpacity)).toBeGreaterThan(0.9)
 
-    const rail = page.locator("[data-rail-item]")
-    const railCount = await rail.count()
-    expect(railCount).toBeGreaterThanOrEqual(3)
-    for (let i = 0; i < railCount; i++) {
-      await expect(rail.nth(i)).toBeVisible()
-      const opacity = await rail.nth(i).evaluate((el) => getComputedStyle(el).opacity)
-      expect(Number(opacity)).toBeGreaterThan(0.9)
-    }
+    // The hero image frame is ONE element now (the three-item rail it replaced
+    // is gone), and the price docket rides inside it.
+    const media = page.locator("[data-op-media]")
+    expect(await media.count()).toBe(1)
+    await expect(media).toBeVisible()
+    const mediaOpacity = await media.evaluate((el) => getComputedStyle(el).opacity)
+    expect(Number(mediaOpacity)).toBeGreaterThan(0.9)
+    const figure = page.locator("[data-op-figure]")
+    await expect(figure).toBeVisible()
+    await expect(figure).toContainText("%")
 
     // No scroll hijack anywhere on the page: nothing is pinned any more, and
     // the four pilot steps are a plain grid rather than a horizontal track.
