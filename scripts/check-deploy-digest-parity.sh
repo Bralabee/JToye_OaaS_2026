@@ -59,6 +59,21 @@
 #   digests therefore cannot be plumbed through outputs at all. They are resolved from the
 #   registry at deploy time, which is why the job needs `packages: read`.
 #
+# WAIT FOR THE OLD REPLICAS TO DRAIN, THEN COMPARE ONLY THE PODS THAT STAY
+#
+#   `kubectl rollout status` reports success once the old ReplicaSet is scaled to zero, which
+#   is BEFORE its pods have finished terminating. A pod in its grace period still carries the
+#   `app=<svc>` label, still reports `ready: true` and still reports its imageID. The first
+#   post-flip deploy-staging run (29-28, run 39440780472) read core-java 2.4 s after rollout
+#   status returned and found the new digest (MATCH) plus the previous revision's digest from
+#   the pod still shutting down (NOT IN THE EXPECTED SET), so a correct deploy failed and was
+#   rolled back.
+#
+#   So, per service, the gate first waits up to --drain-timeout seconds (default 180) for every
+#   pod with a deletionTimestamp to go. A pod still terminating at the deadline is a FAIL, not a
+#   pod to ignore: it may still be serving the old code. Only then are digests read, from pods
+#   with no deletionTimestamp.
+#
 # FAIL CLOSED — "could not check" is NEVER "clean"
 #
 #   An unreadable digest, an EMPTY actual set, an EMPTY expected set, or ZERO services
@@ -98,9 +113,13 @@
 #               REPLACED by one deliberately wrong digest, so every running container must
 #               come out NOT IN THE EXPECTED SET and the gate must exit 1. An exit 0 here
 #               means the gate cannot see a wrong image.
+#   --drain-timeout N  seconds to wait for terminating pods of each service to go before
+#               comparing (default 180; a positive integer). Still terminating at N = FAIL.
 #   --fixture DIR  comparison logic only: read DIR/<svc>.actual and DIR/<svc>.expected
 #               instead of the cluster and the registry. Refused together with --context, so
-#               a cluster run can never be fed files. --selftest drives it.
+#               a cluster run can never be fed files. --selftest drives it. DIR/<svc>.terminating,
+#               when present, holds how many drain polls that service's old pods survive
+#               (`never` = they never go).
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -124,6 +143,7 @@ REGISTRY_PREFIX="ghcr.io/bralabee/jtoye-"
 FIXTURE=""
 PLANT_STALE=0
 SELFTEST=0
+DRAIN_TIMEOUT=180
 # One deliberately wrong digest for --plant-stale: sha256 of the string "plant-stale".
 STALE_DIGEST="sha256:$(printf 'plant-stale' | sha256sum | awk '{print $1}')"
 # Contexts refused by name before the guard even runs (the guard refuses it too).
@@ -142,26 +162,33 @@ while [ "$#" -gt 0 ]; do
     --tag)         needval "$@"; GIT_SHA="$2"; shift 2 ;;
     --services)    needval "$@"; SERVICES="$2"; shift 2 ;;
     --fixture)     needval "$@"; FIXTURE="$2"; shift 2 ;;
+    --drain-timeout) needval "$@"; DRAIN_TIMEOUT="$2"; shift 2 ;;
     --plant-stale) PLANT_STALE=1; shift ;;
     --selftest)    SELFTEST=1; shift ;;
     -h|--help)
-      echo "usage: $0 --context <ctx> --tag <40-hex sha> [--namespace ns] [--services \"a b c\"] [--plant-stale] | --selftest"
+      echo "usage: $0 --context <ctx> --tag <40-hex sha> [--namespace ns] [--services \"a b c\"] [--drain-timeout N] [--plant-stale] | --selftest"
       exit 0 ;;
     *) void "unknown argument '$1' — refusing to guess what was meant while holding cluster credentials" ;;
   esac
 done
+[[ "$DRAIN_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || void "--drain-timeout must be a positive integer number of seconds (got '$DRAIN_TIMEOUT')"
 
 # ---- --selftest: the comparison and refusal arms, no cluster, no registry -------------
 if [ "$SELFTEST" -eq 1 ]; then
   st="$(mktemp -d)" || void "mktemp -d failed"
   trap 'rm -rf "$st"' EXIT
   d1="sha256:$(printf a | sha256sum | awk '{print $1}')"; d2="sha256:$(printf b | sha256sum | awk '{print $1}')"
-  mkdir -p "$st/match" "$st/mismatch" "$st/empty"
+  mkdir -p "$st/match" "$st/mismatch" "$st/empty" "$st/drains" "$st/stuck"
   for s in core-java edge-go frontend; do
     printf '%s\n' "$d1" > "$st/match/$s.actual"; printf '%s\n%s\n' "$d2" "$d1" > "$st/match/$s.expected"
     printf '%s\n' "$d1" > "$st/mismatch/$s.actual"; printf '%s\n' "$d1" > "$st/mismatch/$s.expected"
     : > "$st/empty/$s.actual"; printf '%s\n' "$d1" > "$st/empty/$s.expected"
+    for x in drains stuck; do printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"; done
   done
+  # The 29-28 shape: core-java's old pod is still terminating when the gate starts. It drains
+  # after two polls (pass), or never does (fail).
+  echo 2 > "$st/drains/core-java.terminating"
+  echo never > "$st/stuck/core-java.terminating"
   printf '%s\n' "$d2" > "$st/mismatch/frontend.actual"
   fails=0
   arm() { # arm NAME WANT_RC ARGS...
@@ -181,8 +208,12 @@ if [ "$SELFTEST" -eq 1 ]; then
   arm employer        2 --context sipbihs2aks --tag 0123456789abcdef0123456789abcdef01234567
   arm short-tag       2 --context jtoye-stg-aks --tag 0123abc
   arm fixture-context 2 --fixture "$st/match" --context jtoye-stg-aks
+  arm old-pod-drains  0 --fixture "$st/drains" --drain-timeout 10
+  arm old-pod-stuck   1 --fixture "$st/stuck" --drain-timeout 3
+  arm drain-zero      2 --fixture "$st/match" --drain-timeout 0
+  arm drain-word      2 --fixture "$st/match" --drain-timeout soon
   # A value-taking flag as the LAST argument: VOID (2), not a hang (124).
-  for f in --context --namespace --tag --services --fixture; do
+  for f in --context --namespace --tag --services --fixture --drain-timeout; do
     arm "dangling${f}" 2 "$f"
     arm "dangling${f}-after-ok" 2 --fixture "$st/match" "$f"
   done
@@ -256,6 +287,36 @@ echo
 # ---- 2. digest readers -----------------------------------------------------------------
 # Both go through a single function each, so fixture mode is total rather than best-effort.
 
+count_terminating() { # count_terminating <svc> -> number of pods with a deletionTimestamp; rc 2 = unreadable
+  local svc="$1" out rc
+  if [ -n "$FIXTURE" ]; then
+    local f="$FIXTURE/$svc.terminating" polls
+    [ -f "$f" ] || { echo 0; return 0; }
+    polls=$(( $(cat "$FIXTURE/.$svc.polls" 2>/dev/null || echo 0) + 1 ))
+    echo "$polls" > "$FIXTURE/.$svc.polls"
+    if [ "$(cat "$f")" = never ] || [ "$polls" -le "$(cat "$f")" ]; then echo 1; else echo 0; fi
+    return 0
+  fi
+  out=$(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" --request-timeout=30s get pods -l "app=$svc" \
+    -o go-template='{{range .items}}{{if .metadata.deletionTimestamp}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' 2>/dev/null); rc=$?
+  [ "$rc" -eq 0 ] || return 2
+  command grep -c . <<<"$out"
+  return 0
+}
+
+wait_for_drain() { # wait_for_drain <svc>: returns once no pod of <svc> is terminating; FAIL at the deadline
+  local svc="$1" end n first=1
+  end=$(( $(date +%s) + DRAIN_TIMEOUT ))
+  while :; do
+    n=$(count_terminating "$svc") || void "could not list the pods of '$svc' in '$NAMESPACE' to check that the old replicas drained"
+    [ "$n" -eq 0 ] && return 0
+    [ "$first" -eq 1 ] && { log "$svc: $n old pod(s) still terminating; waiting up to ${DRAIN_TIMEOUT}s"; first=0; }
+    [ "$(date +%s)" -lt "$end" ] || fail "$n pod(s) of '$svc' were still terminating after ${DRAIN_TIMEOUT}s. They may
+      still be serving the previous image, so parity is not proven. Find out why they did not go."
+    if [ -n "$FIXTURE" ]; then sleep 1; else sleep 5; fi
+  done
+}
+
 read_actual() { # read_actual <svc> -> newline-separated digests on stdout
   local svc="$1"
   if [ -n "$FIXTURE" ]; then
@@ -265,9 +326,10 @@ read_actual() { # read_actual <svc> -> newline-separated digests on stdout
   # imageID is reported per container as e.g.
   #   ghcr.io/bralabee/jtoye-core-java@sha256:abcd...
   # Take the digest portion only; a bare image id with no @sha256 is unusable and will
-  # surface below as an empty set, which is VOID.
+  # surface below as an empty set, which is VOID. Pods with a deletionTimestamp are skipped:
+  # wait_for_drain has already waited for them, so one here appeared after it returned.
   kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" --request-timeout=30s \
-    get pods -l "app=$svc" -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.imageID}{"\n"}{end}{end}' 2>/dev/null \
+    get pods -l "app=$svc" -o go-template='{{range .items}}{{if not .metadata.deletionTimestamp}}{{range .status.containerStatuses}}{{.imageID}}{{"\n"}}{{end}}{{end}}{{end}}' 2>/dev/null \
     | sed -n 's/.*@\(sha256:[0-9a-f]\{64\}\).*/\1/p' | sort -u
 }
 
@@ -289,6 +351,7 @@ MISMATCHES=0
 CHECKED=0
 
 for svc in $SERVICES; do
+  wait_for_drain "$svc"
   actual="$(read_actual "$svc")"
   expected="$(read_expected "$svc")"
   if [ "$PLANT_STALE" -eq 1 ] && [ -n "$expected" ]; then
