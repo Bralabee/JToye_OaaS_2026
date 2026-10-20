@@ -1,0 +1,488 @@
+# 29-19 cost evidence: raw Azure Cost Management query result
+# Queried: 2026-10-20T10:30Z (background job, try 1 rc=0) via scripts/lib/azure-guard.sh az_read rest, subscription c483d353-5f61-4587-a790-addb9ab5fb94
+# Endpoint: POST /subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/providers/Microsoft.CostManagement/query?api-version=2023-11-01
+# Cluster jtoye-stg-aks: nodes 0-2 created 2026-10-19T00:44:57Z..00:45:01Z, node 3 (D-34) 2026-10-19T10:48:10Z; sku Free; nodepool1 count 4 Standard_B2s (az aks show, 2026-10-20)
+# Day 20261020 is INCOMPLETE (Cost Management lags ~10 h); 20261019 holds the estate from 00:41Z.
+# Query body:
+{"type":"ActualCost","timeframe":"Custom","timePeriod":{"from":"2026-10-18T00:00:00Z","to":"2026-10-20T23:59:59Z"},
+ "dataset":{"granularity":"Daily","aggregation":{"c":{"name":"Cost","function":"Sum"},"q":{"name":"UsageQuantity","function":"Sum"}},
+ "grouping":[{"type":"Dimension","name":"Meter"},{"type":"Dimension","name":"ResourceId"}]}}
+
+# Result (verbatim JSON):
+{
+  "eTag": null,
+  "id": "subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/providers/Microsoft.CostManagement/query/ca1c6df0-7de3-4cab-9608-b7d39885135c",
+  "location": null,
+  "name": "ca1c6df0-7de3-4cab-9608-b7d39885135c",
+  "properties": {
+    "columns": [
+      {
+        "name": "Cost",
+        "type": "Number"
+      },
+      {
+        "name": "UsageQuantity",
+        "type": "Number"
+      },
+      {
+        "name": "UsageDate",
+        "type": "Number"
+      },
+      {
+        "name": "Meter",
+        "type": "String"
+      },
+      {
+        "name": "ResourceId",
+        "type": "String"
+      },
+      {
+        "name": "Currency",
+        "type": "String"
+      }
+    ],
+    "nextLink": null,
+    "rows": [
+      [
+        0.0,
+        1.3867e-05,
+        20261018,
+        "Analytics Logs Data Ingestion",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.operationalinsights/workspaces/snackpass-logs",
+        "GBP"
+      ],
+      [
+        0.0452847277255746,
+        12.0,
+        20261018,
+        "Standard IPv4 Static Public IP",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-staging-aks_uksouth/providers/microsoft.network/publicipaddresses/761438a5-df0e-41f0-9311-96679b1fc6e4",
+        "GBP"
+      ],
+      [
+        0.0452847277255746,
+        12.0,
+        20261018,
+        "Standard IPv4 Static Public IP",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-staging-aks_uksouth/providers/microsoft.network/publicipaddresses/jtoye-staging-ingress-ip",
+        "GBP"
+      ],
+      [
+        0.0,
+        12.0,
+        20261018,
+        "Standard Included LB Rules and Outbound Rules - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-staging-aks_uksouth/providers/microsoft.network/loadbalancers/kubernetes",
+        "GBP"
+      ],
+      [
+        0.0474921553136312,
+        0.473118279569893,
+        20261018,
+        "Storage Data Stored",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/jtoye-staging-pg",
+        "GBP"
+      ],
+      [
+        0.103619247957014,
+        1.03225806451613,
+        20261018,
+        "Storage Data Stored",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/snackpass-pg",
+        "GBP"
+      ],
+      [
+        1.4189214687347e-05,
+        0.004,
+        20261019,
+        "All Other Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        2.128382203102e-05,
+        0.006,
+        20261019,
+        "All Other Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgmedia",
+        "GBP"
+      ],
+      [
+        1.26193441261934,
+        22.0,
+        20261019,
+        "B2S",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/jtoye-stg-pg",
+        "GBP"
+      ],
+      [
+        2.95619764730745,
+        82.983349,
+        20261019,
+        "B2s",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.017760398505604,
+        0.017827,
+        20261019,
+        "E3 LRS Disk",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-5a186563-22cf-4a5a-b1f7-318e54c22a34",
+        "GBP"
+      ],
+      [
+        0.00942565379825654,
+        0.009461,
+        20261019,
+        "E3 LRS Disk",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-96a77647-27cc-475f-a7a4-88c30e863b14",
+        "GBP"
+      ],
+      [
+        0.000786293822408393,
+        0.5209,
+        20261019,
+        "E4 LRS Disk Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-5a186563-22cf-4a5a-b1f7-318e54c22a34",
+        "GBP"
+      ],
+      [
+        0.00230453979395449,
+        1.5267,
+        20261019,
+        "E4 LRS Disk Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-96a77647-27cc-475f-a7a4-88c30e863b14",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0002,
+        20261019,
+        "Hot LRS Write Operations - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0009,
+        20261019,
+        "Hot LRS Write Operations - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgmedia",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0005,
+        20261019,
+        "Hot Read Operations - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0107,
+        20261019,
+        "Hot Read Operations - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgmedia",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.000464893877506256,
+        20261019,
+        "Inter Continent Data Transfer Out - NAM or EU To Any",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.000109848364231124,
+        0.00727717950940132,
+        20261019,
+        "Intra Continent Data Transfer Out",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0005,
+        20261019,
+        "LRS List and Create Container Operations - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0003,
+        20261019,
+        "LRS List and Create Container Operations - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgmedia",
+        "GBP"
+      ],
+      [
+        0.00371561190988339,
+        0.1641,
+        20261019,
+        "Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.keyvault/vaults/jtoye-stg-kv",
+        "GBP"
+      ],
+      [
+        0.0,
+        10.5674405441,
+        20261019,
+        "Standard Data Processed - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.network/loadbalancers/kubernetes",
+        "GBP"
+      ],
+      [
+        0.0,
+        6e-06,
+        20261019,
+        "Standard Data Transfer In",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        0.0,
+        6.6e-05,
+        20261019,
+        "Standard Data Transfer In",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgmedia",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.000583,
+        20261019,
+        "Standard Data Transfer Out - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgmedia",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.266504064,
+        20261019,
+        "Standard Data Transfer Out - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.0841593603112906,
+        22.3013888888889,
+        20261019,
+        "Standard IPv4 Static Public IP",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.network/publicipaddresses/jtoye-stg-ingress-ip",
+        "GBP"
+      ],
+      [
+        0.0841593603112906,
+        22.3013888888889,
+        20261019,
+        "Standard IPv4 Static Public IP",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.network/publicipaddresses/jtoye-stg-outbound-ip",
+        "GBP"
+      ],
+      [
+        0.0,
+        22.2847222222,
+        20261019,
+        "Standard Included LB Rules and Outbound Rules - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.network/loadbalancers/kubernetes",
+        "GBP"
+      ],
+      [
+        0.0949843106272625,
+        0.946236559139785,
+        20261019,
+        "Storage Data Stored",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/jtoye-stg-pg",
+        "GBP"
+      ],
+      [
+        0.103619247957014,
+        1.03225806451613,
+        20261019,
+        "Storage Data Stored",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/snackpass-pg",
+        "GBP"
+      ],
+      [
+        3.90203403902e-06,
+        0.0011,
+        20261020,
+        "All Other Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        2.837842937469e-06,
+        0.0008,
+        20261020,
+        "All Other Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgmedia",
+        "GBP"
+      ],
+      [
+        0.172081965357183,
+        3.0,
+        20261020,
+        "B2S",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/jtoye-stg-pg",
+        "GBP"
+      ],
+      [
+        0.427487829729424,
+        12.0,
+        20261020,
+        "B2s",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.00669489414694894,
+        0.00672,
+        20261020,
+        "E3 LRS Disk",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-5a186563-22cf-4a5a-b1f7-318e54c22a34",
+        "GBP"
+      ],
+      [
+        0.00669489414694894,
+        0.00672,
+        20261020,
+        "E3 LRS Disk",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-96a77647-27cc-475f-a7a4-88c30e863b14",
+        "GBP"
+      ],
+      [
+        0.000116532699347145,
+        0.0772,
+        20261020,
+        "E4 LRS Disk Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-5a186563-22cf-4a5a-b1f7-318e54c22a34",
+        "GBP"
+      ],
+      [
+        0.00153832220083777,
+        1.0191,
+        20261020,
+        "E4 LRS Disk Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/disks/pvc-96a77647-27cc-475f-a7a4-88c30e863b14",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0001,
+        20261020,
+        "Hot LRS Write Operations - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        0.0,
+        9.3534588813782e-05,
+        20261020,
+        "Inter Continent Data Transfer Out - NAM or EU To Any",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.014773,
+        20261020,
+        "Intra Continent Data Transfer In",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        0.00023470564598704,
+        0.0155486622825265,
+        20261020,
+        "Intra Continent Data Transfer Out",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.00191101551001925,
+        0.0844,
+        20261020,
+        "Operations",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.keyvault/vaults/jtoye-stg-kv",
+        "GBP"
+      ],
+      [
+        0.0,
+        1.0466767445,
+        20261020,
+        "Standard Data Processed - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.network/loadbalancers/kubernetes",
+        "GBP"
+      ],
+      [
+        0.0,
+        9e-06,
+        20261020,
+        "Standard Data Transfer In",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.storage/storageaccounts/jtoyestgbackup",
+        "GBP"
+      ],
+      [
+        0.0,
+        0.0026336907,
+        20261020,
+        "Standard Data Transfer Out - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.compute/virtualmachinescalesets/aks-nodepool1-24453234-vmss",
+        "GBP"
+      ],
+      [
+        0.0150949092418582,
+        4.0,
+        20261020,
+        "Standard IPv4 Static Public IP",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.network/publicipaddresses/jtoye-stg-ingress-ip",
+        "GBP"
+      ],
+      [
+        0.0188686365523227,
+        5.0,
+        20261020,
+        "Standard IPv4 Static Public IP",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.network/publicipaddresses/jtoye-stg-outbound-ip",
+        "GBP"
+      ],
+      [
+        0.0,
+        5.0,
+        20261020,
+        "Standard Included LB Rules and Outbound Rules - Free",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/mc_jtoye-rg_jtoye-stg-aks_uksouth/providers/microsoft.network/loadbalancers/kubernetes",
+        "GBP"
+      ],
+      [
+        0.0129524059946267,
+        0.129032258064516,
+        20261020,
+        "Storage Data Stored",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/jtoye-stg-pg",
+        "GBP"
+      ],
+      [
+        0.0129524059946267,
+        0.129032258064516,
+        20261020,
+        "Storage Data Stored",
+        "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourcegroups/jtoye-rg/providers/microsoft.dbforpostgresql/flexibleservers/snackpass-pg",
+        "GBP"
+      ]
+    ]
+  },
+  "sku": null,
+  "type": "Microsoft.CostManagement/query"
+}
+
+
+# Plan verify block, both directions (2026-10-20):
+# on 29-COST-CHECKPOINT.md: FreeTierInfrastructureCost OK, Load Balancer OK, B2s OK, Static Public IP OK; read rc=0 bytes=5214 -> rc=0
+# on a scratch copy with every 'Load Balancer' line deleted: Load Balancer MISSING, others OK; read rc=0 bytes=5050 -> rc=1
+# on 29-COST-CHECKPOINT.md again -> rc=0
