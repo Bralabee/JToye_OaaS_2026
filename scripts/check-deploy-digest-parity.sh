@@ -81,6 +81,12 @@
 #   The selftest feeds POD_JQ real pod-list JSON (DIR/<svc>.pods.<poll>.json), so the filter
 #   that decides what counts as running is the code under test, not a stand-in for it.
 #
+#   A LIVE container WITHOUT A DIGEST IS VOID (C-9). A container that reports state.running or
+#   ready: true but whose imageID carries no @sha256:<64 hex> used to fall out of the digest
+#   set silently, so a wrong image could run beside a matching one and the gate still passed.
+#   It now exits 2 naming the pod and the container. A Pending or ContainerCreating container
+#   legitimately has an empty imageID until the pull finishes and is NOT VOID.
+#
 # FAIL CLOSED — "could not check" is NEVER "clean"
 #
 #   An unreadable digest, an EMPTY actual set, an EMPTY expected set, or ZERO services
@@ -207,6 +213,34 @@ if [ "$SELFTEST" -eq 1 ]; then
   # The stuck pod alone, every live digest matching: only the STUCK check can fail this one.
   printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuckonly/core-java.pods.1.json"
   printf '{"items":[%s,%s]}' "$new" "$(pod core-java-old "$d2" 0)" > "$st/oldlive/core-java.pods.1.json"
+  # C-9, as pod-list JSON. cpod NAME CONTAINER IMAGEID STATE(running|ready|waiting): a pod whose
+  # one container reports the given state and imageID. "running" = state.running set;
+  # "ready" = ready:true with no state.running; "waiting" = ContainerCreating, ready:false.
+  cpod() {
+    local st
+    case "$4" in
+      running) st='"ready":false,"state":{"running":{"startedAt":"2026-10-20T16:00:00Z"}}' ;;
+      ready)   st='"ready":true,"state":{}' ;;
+      waiting) st='"ready":false,"state":{"waiting":{"reason":"ContainerCreating"}}' ;;
+    esac
+    printf '{"metadata":{"name":"%s"},"status":{"containerStatuses":[{"name":"%s",%s,"imageID":"%s"}]}}' "$1" "$2" "$st" "$3"
+  }
+  mkdir -p "$st/unres-running" "$st/unres-ready" "$st/unres-short" "$st/pending-ok" "$st/pending-bare"
+  for x in unres-running unres-ready unres-short pending-ok pending-bare; do
+    for s in core-java edge-go frontend; do
+      printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"
+    done
+  done
+  # A live container that has a digest-less imageID next to a correct one: the correct one used to
+  # carry the gate to a PASS and the other was dropped unseen.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-bare sidecar "sha256:$(printf c | sha256sum | awk '{print $1}')" running)" > "$st/unres-running/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-nodigest core-java "" ready)" > "$st/unres-ready/core-java.pods.1.json"
+  # An @sha256: with a truncated digest is not comparable either.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-short core-java "ghcr.io/bralabee/jtoye-core-java@sha256:abcd" running)" > "$st/unres-short/core-java.pods.1.json"
+  # The control: a Pending pod (ContainerCreating, empty imageID) beside the live one is NOT VOID.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-pending core-java "" waiting)" > "$st/pending-ok/core-java.pods.1.json"
+  # ... and a waiting container is not VOID even if the runtime already filled in a bare image id.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-pulling core-java "sha256:$(printf c | sha256sum | awk '{print $1}')" waiting)" > "$st/pending-bare/core-java.pods.1.json"
   # The stuck arm also plants a wrong frontend image: one stuck pod must not hide it.
   printf '%s\n' "$d2" > "$st/stuck/frontend.actual"
   printf '%s\n' "$d2" > "$st/mismatch/frontend.actual"
@@ -232,6 +266,11 @@ if [ "$SELFTEST" -eq 1 ]; then
   arm old-pod-stuck   1 --fixture "$st/stuck" --drain-timeout 1
   arm old-pod-live    1 --fixture "$st/oldlive"
   arm stuck-only      1 --fixture "$st/stuckonly" --drain-timeout 1
+  arm unres-running   2 --fixture "$st/unres-running"
+  arm unres-ready     2 --fixture "$st/unres-ready"
+  arm unres-short     2 --fixture "$st/unres-short"
+  arm pending-ok      0 --fixture "$st/pending-ok"
+  arm pending-bare    0 --fixture "$st/pending-bare"
   arm drain-zero      2 --fixture "$st/match" --drain-timeout 0
   arm drain-word      2 --fixture "$st/match" --drain-timeout soon
   # A value-taking flag as the LAST argument: VOID (2), not a hang (124).
@@ -250,6 +289,13 @@ if [ "$SELFTEST" -eq 1 ]; then
   want_line old-pod-stuck  "frontend +$d2 +NOT IN THE EXPECTED SET"
   want_line old-pod-live   "core-java +$d2 +NOT IN THE EXPECTED SET"
   want_line stuck-only     "FAIL: 1 pod\\(s\\) were still terminating"
+  # C-9: VOID names the pod AND the container; the Pending control compares the live pod only.
+  want_line unres-running  "UNRESOLVED .*core-java-bare/sidecar imageID=sha256:"
+  want_line unres-running  "^VOID: 'core-java' has a running or ready container"
+  want_line unres-ready    "UNRESOLVED .*core-java-nodigest/core-java imageID="
+  want_line unres-short    "UNRESOLVED .*core-java-short/core-java imageID="
+  want_line pending-ok     "core-java +$d1 +MATCH"
+  want_line pending-bare   "core-java +$d1 +MATCH"
   [ "$fails" -eq 0 ] || exit 1
   exit 0
 fi
@@ -322,9 +368,13 @@ echo
 # ---- 2. digest readers -----------------------------------------------------------------
 # Both go through a single function each, so fixture mode is total rather than best-effort.
 
-# POD_JQ: one line per LIVE container ("live <imageID>") and one per TERMINATING pod
-# ("terminating <pod name>"). This program is the filter; the selftest runs it on pod JSON.
-POD_JQ='.items[] | if .metadata.deletionTimestamp then "terminating \(.metadata.name)" else ((.status.containerStatuses // [])[] | "live \(.imageID)") end'
+# POD_JQ: one line per LIVE container ("live <imageID>"), one per TERMINATING pod
+# ("terminating <pod name>"), and one per container that is RUNNING or READY yet reports no
+# usable @sha256:<64 hex> imageID ("unresolved <pod>/<container> imageID=<what it reported>").
+# A container that is neither (Pending, ContainerCreating, Waiting: its imageID is legitimately
+# empty until the pull finishes) emits nothing. This program is the filter; the selftest runs
+# it on pod JSON.
+POD_JQ='.items[] | if .metadata.deletionTimestamp then "terminating \(.metadata.name)" else (.metadata.name as $p | (.status.containerStatuses // [])[] | if ((.imageID // "") | test("@sha256:[0-9a-f]{64}")) then "live \(.imageID)" elif (.state.running != null) or (.ready == true) then "unresolved \($p)/\(.name) imageID=\(.imageID // "")" else empty end) end'
 
 classify() { # classify <svc> <poll> -> POD_JQ lines on stdout; rc 2 = the pods could not be read
   local svc="$1" poll="$2" f json rc
@@ -343,8 +393,9 @@ classify() { # classify <svc> <poll> -> POD_JQ lines on stdout; rc 2 = the pods 
 }
 
 # imageID is reported per container as e.g. ghcr.io/bralabee/jtoye-core-java@sha256:abcd...
-# Take the digest portion only; a bare image id with no @sha256 is unusable and surfaces as an
-# empty set, which is VOID.
+# Take the digest portion only. A RUNNING or READY container whose imageID carries no digest is
+# never dropped silently: POD_JQ emits it as "unresolved" and the loop below VOIDs on it (C-9).
+# A not-yet-started container (empty imageID) is correctly ignored.
 live_digests() { sed -n 's/^live .*@\(sha256:[0-9a-f]\{64\}\).*/\1/p' | sort -u; }
 
 read_expected() { # read_expected <svc> -> newline-separated digests on stdout
@@ -385,6 +436,15 @@ for svc in $SERVICES; do
     poll=$((poll + 1))
   done
   STUCK=$((STUCK + svc_stuck))
+  # A live container with no digest is a container this gate cannot compare. Dropping it would
+  # let a wrong image run unseen next to a matching one, so it is VOID, naming pod/container.
+  unresolved="$(sed -n 's/^unresolved //p' <<<"$pods")"
+  if [ -n "$unresolved" ]; then
+    printf '  %-12s UNRESOLVED (running or ready, imageID has no @sha256 digest): %s\n' "$svc" "$unresolved" >&2
+    void "'$svc' has a running or ready container whose imageID carries no @sha256:<digest> (named above).
+       The kubelet reported it live but the image it runs cannot be compared, and a container
+       skipped here is a wrong image the gate never saw. VOID, never clean."
+  fi
   actual="$(live_digests <<<"$pods")"
   expected="$(read_expected "$svc")"
   if [ "$PLANT_STALE" -eq 1 ] && [ -n "$expected" ]; then
