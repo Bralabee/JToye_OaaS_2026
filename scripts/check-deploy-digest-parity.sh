@@ -129,13 +129,19 @@ STALE_DIGEST="sha256:$(printf 'plant-stale' | sha256sum | awk '{print $1}')"
 # Contexts refused by name before the guard even runs (the guard refuses it too).
 FORBIDDEN_CONTEXTS="sipbihs2aks"
 
+# A value-taking flag given as the LAST argument has no value. Under `set -uo` (no -e) a bare
+# `shift 2` with one argument left FAILS and shifts NOTHING, so the loop re-reads the same flag
+# for ever: a hang, which in CI is a stuck job holding cluster credentials and in the selftest
+# is a stuck step. Refuse it instead (round 1, F4).
+needval() { [ "$#" -ge 2 ] || void "$1 needs a value, and none was given (it was the last argument)"; }
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --context)     KUBE_CONTEXT="${2:-}"; shift 2 ;;
-    --namespace)   NAMESPACE="${2:-}"; shift 2 ;;
-    --tag)         GIT_SHA="${2:-}"; shift 2 ;;
-    --services)    SERVICES="${2:-}"; shift 2 ;;
-    --fixture)     FIXTURE="${2:-}"; shift 2 ;;
+    --context)     needval "$@"; KUBE_CONTEXT="$2"; shift 2 ;;
+    --namespace)   needval "$@"; NAMESPACE="$2"; shift 2 ;;
+    --tag)         needval "$@"; GIT_SHA="$2"; shift 2 ;;
+    --services)    needval "$@"; SERVICES="$2"; shift 2 ;;
+    --fixture)     needval "$@"; FIXTURE="$2"; shift 2 ;;
     --plant-stale) PLANT_STALE=1; shift ;;
     --selftest)    SELFTEST=1; shift ;;
     -h|--help)
@@ -160,7 +166,10 @@ if [ "$SELFTEST" -eq 1 ]; then
   fails=0
   arm() { # arm NAME WANT_RC ARGS...
     local name="$1" want="$2" rc=0; shift 2
-    bash "$0" "$@" >"$st/$name.out" 2>&1 || rc=$?
+    # Bounded: a hang is a FAIL (rc 124), never a stuck selftest. (Round 1 F4: a value flag given
+    # as the LAST argument made the parser spin for ever, and the selftest had no arm that could
+    # notice, because every arm ran unbounded.)
+    timeout 20 bash "$0" "$@" >"$st/$name.out" 2>&1 || rc=$?
     if [ "$rc" -eq "$want" ]; then echo "PASS $name rc=$rc"; else echo "FAIL $name rc=$rc (want $want): $(tail -2 "$st/$name.out" | tr '\n' ' ')"; fails=$((fails + 1)); fi
   }
   arm match           0 --fixture "$st/match"
@@ -172,6 +181,11 @@ if [ "$SELFTEST" -eq 1 ]; then
   arm employer        2 --context sipbihs2aks --tag 0123456789abcdef0123456789abcdef01234567
   arm short-tag       2 --context jtoye-stg-aks --tag 0123abc
   arm fixture-context 2 --fixture "$st/match" --context jtoye-stg-aks
+  # A value-taking flag as the LAST argument: VOID (2), not a hang (124).
+  for f in --context --namespace --tag --services --fixture; do
+    arm "dangling${f}" 2 "$f"
+    arm "dangling${f}-after-ok" 2 --fixture "$st/match" "$f"
+  done
   [ "$fails" -eq 0 ] || exit 1
   exit 0
 fi
@@ -208,7 +222,7 @@ else
   [ -n "$KUBE_CONTEXT" ] || void "no kube context named.
        This gate reads with cluster credentials and will not inherit the ambient context to
        do it: on the maintainer's host the only context is employer infrastructure. Name it:
-         $0 --context <kube-context> --namespace $NAMESPACE --sha <git-sha>
+         $0 --context <kube-context> --namespace $NAMESPACE --tag <40-hex git-sha>
        An unnamed context is VOID, never clean."
 
   for forbidden in $FORBIDDEN_CONTEXTS; do
