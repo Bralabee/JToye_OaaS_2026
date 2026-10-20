@@ -381,24 +381,44 @@ cmd_selftest() {
   v=""
   if [ -z "$why" ]; then ss_result "PASS value-shapes hex64 alnum32 b64url32 vendor-policy composites=inputs"; else ss_result "FAIL value-shapes $why"; fails=$((fails + 1)); fi
 
-  # --- htpasswd-apr1 composite (plan 29-22, D-33): the password first, then its apr1 line,
-  # reproducible from the stored password by openssl with the stored salt, nothing printed --
+  # --- htpasswd-apr1 composites (plan 29-22, D-33; #968 item 3): EVERY classifier row, not a
+  # named one. For each: the password first, then its apr1 line, with the user the LIVE probe
+  # logs in as, reproducible from the stored password by openssl with the stored salt, nothing
+  # printed. The rows come from ss_classify over the derived objects; the probe's user comes
+  # from the script that consumes the input object (UI_USER / EDGE_USER), so a row edited to
+  # the wrong user, input or class goes red here and not at the first live probe, after the
+  # write-once object already exists. The row count must equal the count in the classifier
+  # SOURCE, so a row whose object left the render cannot silently drop out of this loop.
   why=""
-  local pwl authl au ap salt
-  pwl=$(command grep -n 'secret set .*-n mailpit-ui-credentials--password ' "$ST/state/argv.log" | head -n 1 | cut -d: -f1)
-  authl=$(command grep -n 'secret set .*-n mailpit-ui-credentials--auth ' "$ST/state/argv.log" | head -n 1 | cut -d: -f1)
-  { [ -n "$pwl" ] && [ -n "$authl" ] && [ "$pwl" -lt "$authl" ]; } || why="the --password write (line ${pwl:-none}) does not precede the --auth write (line ${authl:-none})"
-  if [ -z "$why" ]; then
-    au=$(cat "$s/mailpit-ui-credentials--auth"); ap=$(cat "$s/mailpit-ui-credentials--password")
-    if ! [[ "$au" =~ ^staging-tester:\$apr1\$ ]]; then why="the --auth line does not match ^staging-tester:\$apr1\$"
+  local pwl authl au ap salt hk hu hin hrows=0 hsrc probe pu pf
+  hsrc=$(command grep -c 'echo "composite htpasswd-apr1:' "$SS_REPO_ROOT/scripts/lib/staging-secrets-common.sh")
+  while IFS= read -r n; do
+    hk=$(ss_classify "$n") || continue
+    [[ "$hk" == "composite htpasswd-apr1:"* ]] || continue
+    hrows=$((hrows + 1))
+    hk="${hk#composite htpasswd-apr1:}"; hu="${hk%%:*}"; hin="${hk#*:}"
+    pwl=$(command grep -n "secret set .*-n $hin " "$ST/state/argv.log" | head -n 1 | cut -d: -f1)
+    authl=$(command grep -n "secret set .*-n $n " "$ST/state/argv.log" | head -n 1 | cut -d: -f1)
+    { [ -n "$pwl" ] && [ -n "$authl" ] && [ "$pwl" -lt "$authl" ]; } || { why="${why}$n: the $hin write (line ${pwl:-none}) does not precede the $n write (line ${authl:-none}); "; continue; }
+    # the user the live probe uses: the one script that declares UI_USER/EDGE_USER and names the input
+    probe=""; pf=0
+    for f in $(command grep -lE '^(UI_USER|EDGE_USER)=' "$SS_REPO_ROOT"/scripts/staging-*.sh); do
+      command grep -qF -- "$hin" "$f" && { probe="$f"; pf=$((pf + 1)); }
+    done
+    [ "$pf" = 1 ] || { why="${why}$n: want exactly 1 probe script naming $hin that declares its login user, found $pf; "; continue; }
+    pu=$(command sed -n 's/^\(UI_USER\|EDGE_USER\)="\([^"]*\)".*/\2/p' "$probe" | head -n 1)
+    [ "$pu" = "$hu" ] || { why="${why}$n: the classifier row writes user '$hu' but $(basename "$probe") logs in as '${pu:-<none>}'; "; continue; }
+    au=$(cat "$s/$n"); ap=$(cat "$s/$hin")
+    if [[ "$au" != "$hu":'$apr1$'* ]]; then why="${why}$n: the line does not start with $hu:\$apr1\$; "
     else
       salt=$(cut -d'$' -f3 <<< "$au")
-      [ "staging-tester:$(printf '%s' "$ap" | openssl passwd -apr1 -salt "$salt" -stdin)" = "$au" ] || why="openssl passwd -apr1 -salt <stored salt> over the stored password does not reproduce the --auth line"
+      [ "$hu:$(printf '%s' "$ap" | openssl passwd -apr1 -salt "$salt" -stdin)" = "$au" ] || why="${why}$n: openssl passwd -apr1 -salt <stored salt> over the stored $hin does not reproduce the line; "
     fi
-    [ -z "$why" ] && command grep -qF -e "$ap" -e "${au#staging-tester:}" "$ST/gen1.out" && why="the password or its hash was printed"
+    command grep -qF -e "$ap" -e "${au#"$hu":}" "$ST/gen1.out" && why="${why}$n: the password or its hash was printed; "
     au=""; ap=""
-  fi
-  if [ -z "$why" ]; then ss_result "PASS htpasswd-composite order=password-then-auth apr1=reproducible printed=0"; else ss_result "FAIL htpasswd-composite $why"; fails=$((fails + 1)); fi
+  done < "$ST/objects"
+  { [ "$hrows" -gt 0 ] && [ "$hrows" = "$hsrc" ]; } || why="${why}htpasswd rows: $hrows derived from the render but $hsrc in the classifier source; "
+  if [ -z "$why" ]; then ss_result "PASS htpasswd-composite rows=$hrows order=password-then-auth user=probe-user apr1=reproducible printed=0"; else ss_result "FAIL htpasswd-composite $why"; fails=$((fails + 1)); fi
 
   # --- a second generate writes nothing --------------------------------------------------
   n=$(st_sets); rc=$(st_run gen2 --generate); why=""
