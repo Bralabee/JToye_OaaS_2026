@@ -226,6 +226,35 @@ it changes, so the old password stops working once secret-sync's new pod has syn
 
 ---
 
+## 6.2 Staging Key Vault objects, by class (plan 29-27, 2026-10-20)
+
+Staging holds 41 objects in `jtoye-stg-kv` (`bash scripts/staging-secrets.sh --list` prints the
+names and classes, offline). The list is derived from the render, never typed. **Key Vault is
+write-once by construction:** `scripts/staging-secrets.sh` never writes an object that exists, in
+any mode, so it is never the rotation tool. Rotation is a deliberate act by the operator that writes
+a **new version** of an object, then restarts what reads it, as shown for the mail UI in section 6.1
+(`az_mutate --no-echo keyvault secret set ... --file FILE --encoding utf-8`, a mode-700 temp
+directory, no value on argv, nothing printed). The acceptance shape is unchanged (section 2): the
+superseded value is refused and the current one accepted, read off the RUNNING service, in the same
+run. Why a restart is needed (rotation is off, fetch happens at mount): `docs/runbooks/staging-operations.md`
+section 3. Day-to-day access to the objects: the same page, section 2.
+
+| Class | Objects | How to rotate |
+|---|---|---|
+| **estate** | `*-username`, `postgres-credentials--host/port/database`, `grafana-admin-credentials--admin-user` | Not secrets: facts about the estate. They are not rotated; a change is a code change to the class table in `scripts/lib/staging-secrets-common.sh`. |
+| **random, database role passwords** | `postgres-credentials--password`, `--migration-password`, `--backup-password`, `postgres-exporter-credentials--password`, `keycloak-server-credentials--db-password` | The object and the role on the server must change together (`ALTER ROLE` on `jtoye-stg-pg`; `scripts/staging-db-bootstrap.sh` is the role writer). Write the new version, set the role password, then `rollout restart` every consumer; new connections from a consumer that has not yet restarted fail until it does, so do it in a quiet period. Prove it over the network: the superseded password is refused, the current one accepted (section 1: never over a loopback that is trusted). |
+| **random, Keycloak realm secrets** | `keycloak-realm--*-secret`, `keycloak-credentials--frontend-client-secret` | The realm lives in Postgres and holds the live value, so writing a vault version alone changes nothing. `scripts/staging-realm-import.sh --apply` SKIPS a realm that already exists; `--recreate` deletes the realm **and every user in it**, so it is not a routine rotation. Rotate by regenerating the client secret in the running realm, writing that same value as the new vault version, and, for `keycloak-credentials--frontend-client-secret` (the only one of these a workload mounts: `frontend`), restarting `deploy/frontend`. The three `keycloak-realm--*` objects are read only by `staging-realm-import.sh`, so nothing restarts for them. Prove it with a token request, as in section 3. |
+| **random, application keys** | `nextauth-secret--secret`, `notification-credentials--unsubscribe-signing-secret`, `client-ip-credentials--hmac-key` | New version, then restart the consumer (`frontend` for the NextAuth secret, `core-java` for the other two). A rotation invalidates what the old key produced: sessions signed with the NextAuth secret, unsubscribe links already emailed, and the client-address digests stored on existing orders (they stop matching new ones). Pick a quiet moment and accept those. |
+| **random, DSAR key** | `dsar-credentials--encryption-key` | **Rotation requires re-encrypting open requests. Not a routine rotation.** core-java refuses to start without a valid 64-hex key, and every open data-subject request holds its subject address as ciphertext under the current key; a new key makes them unreadable. Do not rotate it without a re-encryption plan. |
+| **random, broker and cache** | `rabbitmq-credentials--password`, `redis-credentials--password` | New version, then restart the broker or cache and every consumer. The RabbitMQ composites (`rabbitmq-credentials--stomp-passcode`, `rabbitmq-default-user--default-user-conf`) are derived from `rabbitmq-credentials--password` and must be rewritten in the same step, in that order; the broker reads `rabbitmq-default-user` through `secret-sync`. |
+| **random, admin logins** | `grafana-admin-credentials--admin-password`, `keycloak-credentials--admin-password`, `staging-seed--test-vendor-password`, `smtp-credentials--password` | Grafana applies `GF_SECURITY_ADMIN_*` on every fresh start and keeps no state, so a new version and `rollout restart deploy/grafana` is enough (login: old refused, new accepted). Keycloak applies its admin password only when it first creates the admin, and the seed password is a Keycloak user's, so for those two a new vault version changes nothing until the value is also changed in the running Keycloak (the trap of section 2). Mailpit takes no SMTP auth in staging. |
+| **composite** | `mailpit-ui-credentials--auth`, the RabbitMQ composites | Derived from other objects: rotate the input, then rewrite the composite. The mail UI is section 6.1. |
+| **external** | `stripe-credentials--api-key`, `stripe-credentials--webhook-secret`, `alertmanager-smtp-credentials--from/username/password/to` | Supplied by the owner. The value is created at the provider (Stripe test mode, Zoho), then written as a new version by hand with the same prefix rule the writer enforces: `sk_test_` and `whsec_` only, because a live Stripe key never enters staging (D-28); no whitespace; an address object is one address. Restart `core-java` for Stripe and `deploy/alertmanager` for the mail objects, then re-run `scripts/check-alert-liveness.sh` (section 5 of the staging operations page). |
+
+Never use `scripts/staging-secrets.sh --set-external` for a rotation: it refuses an existing object.
+
+---
+
 ## 7. What did NOT go as written on 2026-08-10 (recorded, not omitted)
 
 - **The pg_hba `127.0.0.1 trust` trap (§1) cost the first DB arm.** An in-container
