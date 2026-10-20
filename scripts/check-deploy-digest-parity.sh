@@ -186,12 +186,12 @@ if [ "$SELFTEST" -eq 1 ]; then
   st="$(mktemp -d)" || void "mktemp -d failed"
   trap 'rm -rf "$st"' EXIT
   d1="sha256:$(printf a | sha256sum | awk '{print $1}')"; d2="sha256:$(printf b | sha256sum | awk '{print $1}')"
-  mkdir -p "$st/match" "$st/mismatch" "$st/empty" "$st/drains" "$st/stuck" "$st/oldlive"
+  mkdir -p "$st/match" "$st/mismatch" "$st/empty" "$st/drains" "$st/stuck" "$st/stuckonly" "$st/oldlive"
   for s in core-java edge-go frontend; do
     printf '%s\n' "$d1" > "$st/match/$s.actual"; printf '%s\n%s\n' "$d2" "$d1" > "$st/match/$s.expected"
     printf '%s\n' "$d1" > "$st/mismatch/$s.actual"; printf '%s\n' "$d1" > "$st/mismatch/$s.expected"
     : > "$st/empty/$s.actual"; printf '%s\n' "$d1" > "$st/empty/$s.expected"
-    for x in drains stuck oldlive; do printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"; done
+    for x in drains stuck stuckonly oldlive; do printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"; done
   done
   # The 29-28 shape, as pod-list JSON: core-java's new pod (d1) is live and the previous
   # revision's pod (d2) is still terminating, still reporting its imageID.
@@ -204,6 +204,8 @@ if [ "$SELFTEST" -eq 1 ]; then
   printf '{"items":[%s,%s]}' "$new" "$old" > "$st/drains/core-java.pods.2.json"
   printf '{"items":[%s]}' "$new" > "$st/drains/core-java.pods.3.json"
   printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuck/core-java.pods.1.json"
+  # The stuck pod alone, every live digest matching: only the STUCK check can fail this one.
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuckonly/core-java.pods.1.json"
   printf '{"items":[%s,%s]}' "$new" "$(pod core-java-old "$d2" 0)" > "$st/oldlive/core-java.pods.1.json"
   # The stuck arm also plants a wrong frontend image: one stuck pod must not hide it.
   printf '%s\n' "$d2" > "$st/stuck/frontend.actual"
@@ -229,6 +231,7 @@ if [ "$SELFTEST" -eq 1 ]; then
   arm old-pod-drains  0 --fixture "$st/drains" --drain-timeout 10
   arm old-pod-stuck   1 --fixture "$st/stuck" --drain-timeout 1
   arm old-pod-live    1 --fixture "$st/oldlive"
+  arm stuck-only      1 --fixture "$st/stuckonly" --drain-timeout 1
   arm drain-zero      2 --fixture "$st/match" --drain-timeout 0
   arm drain-word      2 --fixture "$st/match" --drain-timeout soon
   # A value-taking flag as the LAST argument: VOID (2), not a hang (124).
@@ -246,6 +249,7 @@ if [ "$SELFTEST" -eq 1 ]; then
   want_line old-pod-stuck  "core-java-old +STILL TERMINATING"
   want_line old-pod-stuck  "frontend +$d2 +NOT IN THE EXPECTED SET"
   want_line old-pod-live   "core-java +$d2 +NOT IN THE EXPECTED SET"
+  want_line stuck-only     "FAIL: 1 pod\\(s\\) were still terminating"
   [ "$fails" -eq 0 ] || exit 1
   exit 0
 fi
