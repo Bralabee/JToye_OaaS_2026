@@ -107,6 +107,30 @@ selftest() {
     _arm script-wired-without-selftest 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/foo.sh apply')"
     _arm name-suffix-collision 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/xfoo.sh --selftest')"
     _arm static-gate-unwired 1 check-a.sh "$wired_st"
+
+    # Review round 1 on #1005. F5: a TRAILING comment on a code line is a comment too.
+    _arm selftest-inline-comment-only 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: echo skip  # bash scripts/foo.sh --selftest')"
+    _arm inline-hash-inside-quotes-still-wired 0 - "$(printf '%s\n%s' "$wired_gate" '      - run: echo "a #b"; bash scripts/foo.sh --selftest')"
+    # F2: pass 2 reads scripts/ recursively and k8s/scripts/, not only scripts/*.sh.
+    mkdir -p "$t/k8s/scripts"
+    printf '#!/usr/bin/env bash\ncase "${1:-}" in\n  --selftest) echo selftest ;;\nesac\n' > "$t/scripts/gates/baz.sh"
+    _arm subdir-selftest-unwired 1 baz.sh "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    _arm subdir-selftest-wired 0 - "$(printf '%s\n%s\n%s' "$wired_gate" "$wired_st" '      - run: bash scripts/gates/baz.sh --selftest')"
+    rm -f "$t/scripts/gates/baz.sh"
+    printf '#!/usr/bin/env bash\nif [[ "${1:-}" == "--selftest" ]]; then echo selftest; fi\n' > "$t/k8s/scripts/qux.sh"
+    _arm k8s-scripts-selftest-unwired 1 qux.sh "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/k8s/scripts/qux.sh"
+    # F4: "dispatches a --selftest" is a DISPATCH SHAPE (a case arm or an equality test against
+    # exactly --selftest), not the substring. Each of these needs no `<name>.sh --selftest` line.
+    printf '#!/usr/bin/env bash\nif [[ "${1:-}" == "--selftest-inv1" ]]; then echo planted; fi\n' > "$t/scripts/variant.sh"
+    _arm flag-variant-only-not-a-selftest 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/scripts/variant.sh"
+    printf '#!/usr/bin/env bash\necho "usage: usage.sh [--selftest]"\n' > "$t/scripts/usage.sh"
+    _arm usage-text-only-not-a-selftest 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/scripts/usage.sh"
+    printf '#!/usr/bin/env bash\nbash "$(dirname "$0")/foo.sh" --selftest\n' > "$t/scripts/caller.sh"
+    _arm calls-another-scripts-selftest-not-a-selftest 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/scripts/caller.sh"
     rm -f "$t/scripts/foo.sh"
     _arm no-selftest-script-in-tree 2 "no non-check" "$wired_gate"
     [ "$fails" -eq 0 ]
