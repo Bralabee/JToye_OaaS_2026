@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### STAFF Can No Longer Drive the Onboarding Lifecycle, and the Shops Page Stops Offering STAFF Shop-Admin Controls (#961) (#1014) — 2026-10-21
+
+Issue #961 (swarm finding SW-TND-06) asked whether the API refuses a STAFF member `PUT` / `DELETE /shops/{id}`, because the Shops page offered Add shop, Edit shop and Delete shop. Measured on unmodified main against real Postgres under a NOSUPERUSER role: shop create, edit and delete were already refused for STAFF (per-shop and tenant-wide grants; own shop, sibling shop, another tenant's published and unpublished shops), 403 `shop-access-denied`, database unchanged. What was open was the onboarding lifecycle.
+
+- **Onboarding gate.** `POST /onboarding`, `/submit`, `/resubmit`, `/withdraw`, `/go-live` and `/company-number` had no role gate: STAFF and an ungranted tenant user got 200 / 201 and the state changed (withdraw reached WITHDRAWN, submit reached VERIFYING and started the gate chain), and `go-live` is the sole writer of `shops.published`. `VendorOnboardingService` now takes SHOP_MANAGER on the onboarded shop through `ShopAccessService.require` (the floor of `ShopService.updateShop`; no shop means Group admin only); STAFF get the typed 403. The admin approve / reject / resolve-gate queue is unchanged.
+- **`staff/me`** gains an additive `shopRoles` map (the caller's role on each granted shop). A hint for hiding controls, never an authorization input; the OpenAPI snapshot changes by that one property.
+- **Dashboard.** Add Shop and Delete shop only for a Group admin, Edit shop and slot create / close only with SHOP_MANAGER on that shop, the `?edit=` deep link and the home hours notice follow the same rule. STAFF keep the shop list, slot read, WhatsApp link, pause and resume. Fails toward offering when `staff/me` cannot be read; offers nothing while it loads.
+- **Proof.** `ShopAdminStaffRefusalIntegrationTest` (13 arms, NOSUPERUSER, owner / Group admin / shop manager controls) failed 2 of 13 on unfixed main and passes; frontend role-gating tests failed on the unfixed source and pass. Seven onboarding integration tests moved from `@WithMockUser` to a realm-admin JWT.
+
 ### follow-redirects 1.16.1: Two HIGH Advisories Had Stopped Every Staging Deploy (#1001) — 2026-10-21
 
 Trivy began failing the Security Scan on main (run 39531194956, #989's merge) on CVE-2026-111755 and CVE-2026-111756 in `follow-redirects` 1.16.0, reached only through axios. The tree had not changed, the advisory data had, and Security Scan gates build-and-push and so the staging deploy. The lock entry moves to 1.16.1 inside axios's existing `^1.16.0` range, with the integrity recomputed from the registry tarball. Trivy on main's lockfile: rc 1 naming both CVEs; on this one: rc 0, and the whole-tree scan is clean.
