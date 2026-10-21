@@ -51,6 +51,15 @@
 #   gate could never pass. The statement lives in the kustomization beside each
 #   generator and in k8s/copy-parity.conf.
 #
+#   K8S-ONLY JOBS (issue #972). A scrape job whose series exist only in the cluster (cert-manager's
+#   metrics: compose has no cert-manager) is declared with a third directive,
+#       k8s-only-job <k8s-config> <job_name>
+#   where <k8s-config> is the k8s side of a `jobs` pair. The job is then left out of the job-set
+#   comparison, and the declaration is itself checked both ways: the job MUST exist in the k8s
+#   config (else the declaration is stale) and MUST NOT exist in the compose config (else it is a
+#   shared job now and the declaration hides a real comparison). An undeclared k8s-only job is
+#   still a job-set difference, so the exemption cannot be widened by editing the config alone.
+#
 # WHAT IT DOES NOT ASSERT
 #
 #   That the content is correct, that the generator actually lists the copy, or that
@@ -142,7 +151,8 @@ compare_jobs() {
     local py="${COPY_PARITY_PYTHON:-python3}"
     command -v "$py" >/dev/null 2>&1 \
         || { echo "VOID: $py not on PATH — the jobs pair cannot be evaluated (activate an env with PyYAML)" >&2; return 2; }
-    "$py" - "$1" "$2" <<'PY'
+    local k8s_cfg="$1" compose_cfg="$2"; shift 2
+    "$py" - "$k8s_cfg" "$compose_cfg" "$@" <<'PY'
 import sys
 try:
     import yaml
@@ -192,8 +202,16 @@ def load(path):
     return jobs
 
 k8s_path, compose_path = sys.argv[1], sys.argv[2]
+k8s_only = sys.argv[3:]
 a, b = load(k8s_path), load(compose_path)
 diffs = []
+for name in k8s_only:
+    if name not in a:
+        diffs.append("k8s-only job %r is declared but absent from the k8s config (stale declaration: remove it)" % name)
+    elif name in b:
+        diffs.append("k8s-only job %r also exists in the compose config (it is a shared job now; remove the declaration so it is compared)" % name)
+    else:
+        del a[name]
 only_a, only_b = sorted(set(a) - set(b)), sorted(set(b) - set(a))
 if only_a or only_b:
     diffs.append("job sets differ: only in the k8s config %s; only in the compose config %s"
@@ -207,8 +225,8 @@ if diffs:
     for d in diffs:
         sys.stderr.write("  " + d + "\n")
     sys.exit(1)
-print("jobs=%d (%s), labels/metrics_path/params/metric_relabel_configs equal per job"
-      % (len(a), ",".join(sorted(a))))
+print("jobs=%d (%s), labels/metrics_path/params/metric_relabel_configs equal per job%s"
+      % (len(a), ",".join(sorted(a)), ("; %d k8s-only job(s) declared (%s)" % (len(k8s_only), ",".join(k8s_only))) if k8s_only else ""))
 PY
 }
 
@@ -220,7 +238,7 @@ run_check() {
     [[ -e "$CONF" ]] || { echo "VOID: pair list not found: $CONF" >&2; return 2; }
     [[ -f "$CONF" && -r "$CONF" ]] || { echo "VOID: pair list not readable: $CONF" >&2; return 2; }
 
-    local -a copies=() canons=() f=() jk8s=() jcompose=()
+    local -a copies=() canons=() f=() jk8s=() jcompose=() ko_cfg=() ko_name=()
     local -A seen=()
     local raw line ln=0 voids=0
     while IFS= read -r raw || [[ -n "$raw" ]]; do
@@ -244,8 +262,14 @@ run_check() {
             jk8s+=("${f[1]}"); jcompose+=("${f[2]}")
             continue
         fi
+        # The `k8s-only-job` directive (issue #972): <k8s-config> <job_name>.
+        if (( ${#f[@]} == 3 )) && [[ "${f[0]}" == k8s-only-job ]]; then
+            check_path "${f[1]}" "$ln" || { voids=$((voids + 1)); continue; }
+            ko_cfg+=("${f[1]}"); ko_name+=("${f[2]}")
+            continue
+        fi
         if (( ${#f[@]} != 2 )); then
-            echo "VOID: $CONF:$ln is malformed — want '<copy-path> <canonical-path>' or 'jobs <k8s-config> <compose-config>', got: $raw" >&2
+            echo "VOID: $CONF:$ln is malformed — want '<copy-path> <canonical-path>', 'jobs <k8s-config> <compose-config>' or 'k8s-only-job <k8s-config> <job_name>', got: $raw" >&2
             voids=$((voids + 1)); continue
         fi
         check_path "${f[0]}" "$ln" || { voids=$((voids + 1)); continue; }
@@ -261,6 +285,16 @@ run_check() {
         seen["${f[0]}"]="$ln"
         copies+=("${f[0]}"); canons+=("${f[1]}")
     done < "$CONF"
+
+    local ko_i ko_hit ko_j
+    for ko_i in "${!ko_cfg[@]}"; do
+        ko_hit=0
+        for ko_j in "${jk8s[@]}"; do [[ "$ko_j" == "${ko_cfg[$ko_i]}" ]] && ko_hit=1; done
+        if (( ko_hit == 0 )); then
+            echo "VOID: $CONF declares k8s-only-job '${ko_name[$ko_i]}' for '${ko_cfg[$ko_i]}', which is not the k8s side of any jobs pair" >&2
+            voids=$((voids + 1))
+        fi
+    done
 
     if (( ${#copies[@]} + ${#jk8s[@]} == 0 )); then
         echo "VOID: $CONF declares zero pairs — refusing to report parity over nothing" >&2
@@ -302,7 +336,12 @@ run_check() {
         check_side "jobs k8s config" "$c" || { voids=$((voids + 1)); continue; }
         check_side "jobs compose config" "$k" || { voids=$((voids + 1)); continue; }
         # Captured on the SAME statement as the invocation (see the md5 note above).
-        jout="$(compare_jobs "$ROOT/$c" "$ROOT/$k")"; jrc=$?
+        local -a ko_args=()
+        ko_args=()
+        for ko_i in "${!ko_cfg[@]}"; do
+            [[ "${ko_cfg[$ko_i]}" == "$c" ]] && ko_args+=("${ko_name[$ko_i]}")
+        done
+        jout="$(compare_jobs "$ROOT/$c" "$ROOT/$k" ${ko_args[@]+"${ko_args[@]}"})"; jrc=$?
         case "$jrc" in
             0) ok_lines+=("  ok   jobs $c ~ $k  $jout") ;;
             1) drift=$((drift + 1))
@@ -405,12 +444,17 @@ scrape_configs:
     relabel_configs:
       - target_label: service
         replacement: 'core-api'
+  - job_name: 'certm'
+    static_configs:
+      - targets: ['certm.ns.svc:9402']
+        labels:
+          component: 'platform'
 YML
         printf 'parent=keycloak\nstyles=css/login.css css/jtoye.css\n' > "$1/canon/a.properties"
         printf '\x00\x01wOF2\xff\xfe\x10binary-font-bytes\x00' > "$1/canon/b.woff2"
         cp "$1/canon/a.properties" "$1/copies/a.properties"
         cp "$1/canon/b.woff2" "$1/copies/b.woff2"
-        printf '# selftest list\n\ncopies/a.properties   canon/a.properties   # text pair\ncopies/b.woff2 canon/b.woff2\njobs copies/prom.yml canon/prom.tmpl\n' > "$1/list.conf"
+        printf '# selftest list\n\ncopies/a.properties   canon/a.properties   # text pair\ncopies/b.woff2 canon/b.woff2\njobs copies/prom.yml canon/prom.tmpl\nk8s-only-job copies/prom.yml certm\n' > "$1/list.conf"
     }
 
     # arm <name> <want-rc> <must-contain> <plant-shell> [env-path]
@@ -465,6 +509,12 @@ YML
     arm changed-relabel-label 1 "job 'core-java' labels differ" "sed -i \"s/replacement: 'core-api'/replacement: 'core-java'/\" copies/prom.yml"
     arm zero-jobs 2 "declares zero jobs" "printf 'global: {}\n' > copies/prom.yml"
     arm duplicate-job 2 "declares job_name 'keycloak' twice" "sed -i \"s/job_name: 'prometheus'/job_name: 'keycloak'/\" copies/prom.yml"
+    # The k8s-only-job directive (issue #972): the exemption is checked both ways and cannot be
+    # widened by editing the k8s config alone.
+    arm undeclared-k8s-job 1 "only in the k8s config ['certm']" "sed -i '/^k8s-only-job /d' list.conf"
+    arm k8s-only-now-in-compose 1 "k8s-only job 'certm' also exists in the compose config" "printf \"  - job_name: 'certm'\n    static_configs:\n      - targets: ['x:1']\n        labels:\n          component: 'platform'\n\" >> canon/prom.tmpl"
+    arm k8s-only-stale 1 "k8s-only job 'certm' is declared but absent from the k8s config" "sed -i \"/job_name: 'certm'/,\\\$d\" copies/prom.yml"
+    arm k8s-only-unlisted-config 2 "not the k8s side of any jobs pair" "printf 'k8s-only-job canon/prom.tmpl certm\n' >> list.conf"
     arm no-python 2 "python3 not on PATH" ":" "$fbp"
 
     # Clean: the unmodified tree passes and states its count.

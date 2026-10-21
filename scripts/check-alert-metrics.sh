@@ -65,6 +65,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RULES_FILE="${1:-$REPO_ROOT/infra/monitoring/prometheus/alerts.yml}"
 PROM_URL="${PROM_URL:-http://localhost:9091}"
 
+# ALERT_RUNTIME (issue #972): `compose` (default) or `k8s`. Rules listed in scripts/alert-k8s-only.txt
+# read series only the cluster produces; against compose their empty selector is expected and is
+# NOT a violation. Against the staging Prometheus (ALERT_RUNTIME=k8s) no exemption applies.
+ALERT_RUNTIME="${ALERT_RUNTIME:-compose}"
+K8S_ONLY_FILE="${K8S_ONLY_FILE:-$SCRIPT_DIR/alert-k8s-only.txt}"
+case "$ALERT_RUNTIME" in
+  compose|k8s) ;;
+  *) echo "VOID: ALERT_RUNTIME must be 'compose' or 'k8s' (got '$ALERT_RUNTIME'); nothing was checked" >&2; exit 2 ;;
+esac
+
 VIOLATIONS=0
 violation() { echo "FAIL: $*" >&2; VIOLATIONS=$((VIOLATIONS + 1)); }
 void()      { echo "VOID: $*" >&2; exit 2; }
@@ -421,6 +431,24 @@ for entry in "${SELF_HEALING[@]}"; do
 done
 
 # =================================================================================
+# K8S_ONLY hygiene (issue #972): scripts/alert-k8s-only.txt, same rules as KNOWN_DATALESS
+# =================================================================================
+declare -A K8S_ONLY_MAP=()
+[ -r "$K8S_ONLY_FILE" ] || void "k8s-only list not readable: $K8S_ONLY_FILE"
+while IFS= read -r ko_line || [ -n "$ko_line" ]; do
+  case "$ko_line" in ''|'#'*) continue ;; esac
+  IFS='|' read -r ko_name ko_reason ko_owner <<<"$ko_line"
+  [ -n "${ko_name:-}" ] || { violation "k8s-only entry is malformed: '$ko_line'"; continue; }
+  [ -n "${ko_reason:-}" ] || violation "k8s-only '$ko_name' has an EMPTY reason"
+  [ -n "${ko_owner:-}" ]  || violation "k8s-only '$ko_name' has an EMPTY owner"
+  [ -n "${K8S_ONLY_MAP[$ko_name]:-}" ] && violation "k8s-only list has a DUPLICATE entry: $ko_name"
+  K8S_ONLY_MAP[$ko_name]=1
+  printf '%s\n' "$EXTRACT" | awk -F'\t' -v n="$ko_name" '$1==n {f=1} END {exit !f}' \
+    || violation "k8s-only list names '$ko_name', which is not a live rule in $RULES_FILE — STALE entry, remove it"
+done < "$K8S_ONLY_FILE"
+K8S_ONLY_SKIPPED=0
+
+# =================================================================================
 # M-1 — every live rule's selectors must match >= 1 series
 # =================================================================================
 declare -A RULE_EMPTY=()
@@ -431,6 +459,13 @@ while IFS=$'\t' read -r rule sel; do
   CHECKED=$((CHECKED + 1))
   count="$(query_count "$sel")"
   if [ "$count" -lt 1 ]; then
+    # A rule that reads cluster-only series, against compose: expected, said out loud, and not
+    # entered in RULE_EMPTY (it is not a KNOWN_DATALESS candidate). Against k8s it falls through.
+    if [ "$ALERT_RUNTIME" != k8s ] && [ -n "${K8S_ONLY_MAP[$rule]:-}" ]; then
+      K8S_ONLY_SKIPPED=$((K8S_ONLY_SKIPPED + 1))
+      echo "  M-1   '$rule' selector empty — K8S-ONLY rule against ALERT_RUNTIME=$ALERT_RUNTIME (issue #972, scripts/alert-k8s-only.txt); run with ALERT_RUNTIME=k8s against the staging Prometheus to check it"
+      continue
+    fi
     RULE_EMPTY["$rule"]="${RULE_EMPTY["$rule"]:-}${sel}"$'\n'
     # SELF_HEALING: the empty selector is expected and resolves itself. S-2 is asserted
     # HERE, against the live runtime, because it is a property of the metric family and
@@ -501,6 +536,7 @@ echo "  live rules : $LIVE_RULES"
 echo "  selectors  : $SELECTORS extracted, $CHECKED queried (incl. ${#DORMANT_RULES[@]} dormant)"
 echo "  self-heal  : $SELF_HEALED rule(s) empty-but-self-healing (#384), ${#SELF_HEALING[@]} declared"
 echo "  exemptions : ${#KNOWN_DATALESS[@]} KNOWN_DATALESS, ${#DORMANT_RULES[@]} DORMANT_RULES"
+echo "  k8s-only   : ${#K8S_ONLY_MAP[@]} declared, $K8S_ONLY_SKIPPED selector(s) skipped on ALERT_RUNTIME=$ALERT_RUNTIME"
 
 if [ "$VIOLATIONS" -gt 0 ]; then
   echo "FAILED: $VIOLATIONS live alert-metric violation(s)." >&2

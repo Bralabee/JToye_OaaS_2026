@@ -589,3 +589,34 @@ groups:
       #   annotations:
       #     summary: "STOMP broker message lag detected"
       #     description: "Undelivered messages in STOMP subscription queues: {{ $value }}. Kitchen display clients may experience delayed order updates."
+
+  # ---------------------------------------------------------------------------
+  # Certificates (issue #972). K8S-ONLY SERIES: certmanager_* comes from cert-manager's own
+  # /metrics, which only the k8s Prometheus scrapes (job cert-manager, a k8s-only job declared in
+  # k8s/copy-parity.conf). Compose has no cert-manager, so there the rule is silent;
+  # scripts/alert-k8s-only.txt tells the live gates so. The rule stays in this ONE corpus (D-16).
+  # ---------------------------------------------------------------------------
+  - name: certificate_alerts
+    interval: 1m
+    rules:
+      # A certificate cert-manager has not renewed. cert-manager renews 15 to 30 days before expiry
+      # (renewBefore), so fewer than 7 days left means issuance has been failing for a week or
+      # more, long enough to act on and still before anything serves an expired certificate.
+      # Covers every Certificate cert-manager manages in the cluster: the Let's Encrypt edge
+      # certificates, the internal CA and mailpit-tls.
+      #
+      # WHAT IT DOES NOT COVER. It reads the Certificate's EXPIRY as cert-manager sees it, i.e.
+      # the Secret. It cannot tell that a workload is still serving an OLD certificate from before
+      # a renewal; for Mailpit, which reads its certificate only at start, that is closed by the
+      # supervisor in k8s/components/mailpit/mailpit.yaml (INV-22), and in kubectl terms by a
+      # container restart count that rises at each renewal.
+      - alert: CertificateExpiringSoon
+        expr: certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400
+        for: 10m
+        labels:
+          severity: warning
+          component: platform
+          service: platform
+        annotations:
+          summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in under 7 days"
+          description: "cert-manager has not renewed certificate {{ $labels.namespace }}/{{ $labels.name }} and it expires in {{ $value | humanizeDuration }} (a negative value means it has already expired). cert-manager renews at least 15 days early, so a certificate this close to expiry means renewal is failing. See docs/runbooks/alerts.md (## CertificateExpiringSoon)."

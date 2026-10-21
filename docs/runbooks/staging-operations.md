@@ -149,6 +149,9 @@ within about two minutes with no action (issue #972; INV-22 pins the supervisor 
 container restart count rising by one at each renewal is that working, and
 `kubectl ... logs deploy/mailpit -c mailpit --previous` shows `mailpit-cert-reload`. A Mailpit that
 served an expired certificate would fail the STARTTLS handshake core-java requires (section 6).
+The `CertificateExpiringSoon` alert fires when cert-manager has not renewed any certificate by 7 days
+before expiry (docs/runbooks/alerts.md); to compare what Mailpit serves with the Secret by hand see
+the steps there.
 
 **A deploy does not wait for the monitoring workloads.** `scripts/deploy.sh` prints
 `DEPLOYED_SHA` after `rollout status` of `core-java`, `edge-go` and `frontend` only, so after a

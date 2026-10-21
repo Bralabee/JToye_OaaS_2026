@@ -703,6 +703,58 @@ different:**
    window — `RabbitMQDown` at any point in the last 15 minutes explains it, and the resurrection pass
    will clear it without intervention.
 
+## CertificateExpiringSoon
+
+**Expression:**
+`certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400`
+· **for:** 10m · **severity:** warning · **k8s only** (cert-manager exists only in the cluster; the
+rule is listed in `scripts/alert-k8s-only.txt` so the compose gates do not call it dataless)
+
+### What it means
+
+cert-manager has a certificate with fewer than 7 days left and has not renewed it. It renews 15 to
+30 days before expiry (`renewBefore`), so a certificate this close means issuance has been failing for
+a week or more. The value in the alert is the time remaining; a negative value means it has already
+expired.
+
+Every Certificate in the cluster is covered: the Let's Encrypt edge certificates
+(`jtoye-staging-*-tls`), the internal CA (`jtoye-staging-ca`, 1 year) and `mailpit-tls` (90 days,
+renewed 15 days early).
+
+### First-response steps
+
+1. Read the Certificate and its last issuance attempt:
+   `kubectl --context jtoye-stg-aks -n jtoye-staging describe certificate <name>` and then
+   `kubectl ... get certificaterequest,order,challenge` (the Let's Encrypt ones) or the Issuer
+   (`jtoye-staging-ca-issuer`, `jtoye-staging-selfsigned`) for the internal ones.
+2. The usual causes: the HTTP-01 challenge cannot be reached (Traefik, DNS, the
+   `acme-http01-solver-allow` policy), an Let's Encrypt rate limit, or the CA Secret missing for the
+   internal issuer.
+3. **`mailpit-tls` specifically.** Mailpit reads its certificate only at process start. The
+   `mailpit` container runs a supervisor (`k8s/components/mailpit/mailpit.yaml`, INV-22) that hashes
+   the mounted certificate and key every 15 s and restarts the container when they change, so a
+   renewal reaches Mailpit within about two minutes without anyone acting. Check it did:
+   `kubectl ... logs deploy/mailpit -c mailpit --previous` shows
+   `mailpit-cert-reload: certificate or key changed on disk`, and the container's restart count has
+   risen by one. To compare what Mailpit **serves** with the Secret by hand:
+   `kubectl ... port-forward svc/mailpit 1025:1025` and
+   `openssl s_client -starttls smtp -connect 127.0.0.1:1025 </dev/null | openssl x509 -noout -fingerprint -sha256 -enddate`,
+   against `kubectl ... get secret mailpit-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -fingerprint -sha256 -enddate`.
+   A mismatch means the supervisor is not running: restart the Deployment
+   (`kubectl ... rollout restart deploy/mailpit`).
+
+### What this alert does NOT tell you
+
+That a workload is serving an old certificate after a successful renewal. It reads the Certificate as
+cert-manager sees it (the Secret). Mailpit is the one workload here that needs a restart to pick up a
+renewal, and its supervisor, not this alert, covers that.
+
+### Escalation
+
+Warning: act within the 7 days. If the issuer cannot be fixed in that time, an expired edge
+certificate breaks every browser and the deploy health step, an expired `mailpit-tls` breaks
+`core-java`'s mail health (and so the deploy-staging health step).
+
 ---
 
 *Last updated: 2026-07-29 — phase 27 plan 27-03. Added the Messaging section and the four missing

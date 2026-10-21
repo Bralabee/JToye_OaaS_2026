@@ -212,6 +212,9 @@ spec:
 #            port, then Alertmanager (plan 29-24) on 9093. The TARGET side of each scrape is
 #            admitted by that workload's own policy (core-java-allow 9091, edge-go-allow 8080,
 #            keycloak-allow 9000, rabbitmq-allow 15692, and the two exporter policies).
+#            The one exception is cert-manager (issue #972): its namespace carries no policy of
+#            its own, so the egress rule below to its controller pods on 9402 is the whole
+#            admission. It feeds CertificateExpiringSoon.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -297,3 +300,15 @@ spec:
       ports:
         - protocol: TCP
           port: 9093
+    # cert-manager's controller metrics (issue #972), for CertificateExpiringSoon. Port 9402 is
+    # the pod's http-metrics port, which the cert-manager Service forwards to unchanged.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cert-manager
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cert-manager
+      ports:
+        - protocol: TCP
+          port: 9402

@@ -2089,7 +2089,8 @@ declare -A NETPOL_RULES_EXPECTED=(
       in:pod=app=grafana:9090
       $NETPOL_DNS_EG eg:pod=app=core-java:9091 eg:pod=app=edge-go:8080 eg:pod=app=keycloak:9000
       eg:pod=app.kubernetes.io/name=rabbitmq:15692 eg:pod=app=postgres-exporter:9187
-      eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093"
+      eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093
+      eg:nspod=cert-manager/app.kubernetes.io/name=cert-manager:9402"
   # The two exporters: scraped only by Prometheus. postgres-exporter's egress.1 is the
   # managed server on db.port (the staging replacement, #271); redis-exporter reaches only
   # the in-cluster Redis.
