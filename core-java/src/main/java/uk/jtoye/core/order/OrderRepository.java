@@ -42,6 +42,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      */
     Optional<Order> findByOrderNumber(String orderNumber);
 
+    /** The order, only when it belongs to {@code tenantId}: a tenant-explicit lookup that does not lean on RLS alone. */
+    Optional<Order> findByIdAndTenantId(UUID id, UUID tenantId);
+
     // Vendor-scoped access (Phase 23, VSA-02 / D-01): grant-set-narrowed read-scope
     // finders for the authenticated order lists. A non-GROUP_ADMIN sees only orders
     // whose shop_id is in their grant set — narrowed at the QUERY, never a post-hoc
