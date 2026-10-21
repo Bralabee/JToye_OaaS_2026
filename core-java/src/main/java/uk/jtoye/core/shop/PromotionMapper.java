@@ -19,5 +19,8 @@ public interface PromotionMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
+    // The shop is not copied from the request: PromotionService authorises a changed shopId against the
+    // target shop and assigns it explicitly.
+    @Mapping(target = "shopId", ignore = true)
     void updateEntity(CreatePromotionRequest request, @MappingTarget ShopPromotion entity);
 }

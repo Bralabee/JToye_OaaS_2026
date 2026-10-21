@@ -98,5 +98,8 @@ public interface ProductMapper {
     @Mapping(target = "additionalImageUrls", ignore = true)
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "allergenSpans", ignore = true)
+    // The shop is not copied from the request: ProductService authorises a changed shopId against the
+    // target shop and assigns it explicitly.
+    @Mapping(target = "shopId", ignore = true)
     void updateEntity(CreateProductRequest request, @MappingTarget Product product);
 }

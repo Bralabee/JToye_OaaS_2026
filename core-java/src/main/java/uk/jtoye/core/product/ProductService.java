@@ -400,12 +400,19 @@ public class ProductService {
         // VSA-02 (D-02): parent-lookup — catalogue update requires SHOP_MANAGER on the
         // product's owning shop.
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
+        // A body that names a different shop re-points the product, so that shop is authorised too, before
+        // anything is applied. An omitted shopId keeps the stored shop.
+        shopAccessService.requireForShopChange(product.getShopId(), request.getShopId());
         // 37-39 (UXT-016): refused before the mapper touches the entity, so a 400 changes nothing.
         validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
 
         // Update all fields via mapper (handles both core and storefront fields). quantityInStock is
-        // IGNORE-null like every other field; the explicit tracking switch is applied after it.
+        // IGNORE-null like every other field; the explicit tracking switch is applied after it. The mapper
+        // does not copy shopId; the checked shop is assigned here.
         productMapper.updateEntity(request, product);
+        if (request.getShopId() != null) {
+            product.setShopId(request.getShopId());
+        }
         applyStockTracking(request.getTrackInventory(), product);
 
         // Re-parse the (possibly edited) ingredients_text and refresh the cached

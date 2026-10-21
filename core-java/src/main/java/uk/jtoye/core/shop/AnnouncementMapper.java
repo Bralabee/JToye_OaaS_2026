@@ -19,5 +19,8 @@ public interface AnnouncementMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
+    // The shop is not copied from the request: AnnouncementService authorises a changed shopId against the
+    // target shop and assigns it explicitly.
+    @Mapping(target = "shopId", ignore = true)
     void updateEntity(CreateAnnouncementRequest request, @MappingTarget ShopAnnouncement entity);
 }
