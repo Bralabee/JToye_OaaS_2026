@@ -432,8 +432,9 @@ class ShopAdminStaffRefusalIntegrationTest {
         Onb withdraw = Onb.seed(this);
         Onb companyNumber = Onb.seed(this);
         Onb submit = Onb.seed(this);
-        Onb resubmit = Onb.seed(this);
-        Onb goLive = Onb.seed(this);
+        // The states from which the transition is LEGAL, so an unchanged status is the gate and not the state machine.
+        Onb resubmit = Onb.seed(this, "ACTION_REQUIRED");
+        Onb goLive = Onb.seed(this, "APPROVED");
         Onb create = Onb.seedWithoutOnboarding(this);
 
         assertSoftly(s -> {
@@ -460,8 +461,94 @@ class ShopAdminStaffRefusalIntegrationTest {
 
         assertThat(onboardingStatus(withdraw)).as("a refused withdraw changed nothing").isEqualTo("DRAFT");
         assertThat(onboardingStatus(submit)).as("a refused submit changed nothing").isEqualTo("DRAFT");
+        assertThat(onboardingStatus(resubmit)).as("a refused resubmit changed nothing").isEqualTo("ACTION_REQUIRED");
+        assertThat(onboardingStatus(goLive)).as("a refused go-live changed nothing").isEqualTo("APPROVED");
+        assertThat(shopPublished(goLive)).as("a refused go-live published nothing").isFalse();
         assertThat(companyNumberOf(companyNumber)).as("a refused company-number edit changed nothing").isNull();
         assertThat(onboardingRows(create)).as("a refused create wrote no onboarding").isZero();
+    }
+
+    @Test
+    @DisplayName("#961 F3: a caller with no row, a manager of a DIFFERENT shop, and a tenant-wide STAFF are all refused the lifecycle")
+    void everyoneBelowManagerOfTheOnboardedShop_isRefused() throws Exception {
+        Onb o = Onb.seed(this, "APPROVED");
+        Onb c = Onb.seedWithoutOnboarding(this);
+        String companyBody = "{\"companyNumber\":\"12345678\"}";
+
+        assertSoftly(s -> {
+            try {
+                softDenied(s, call("ungranted POST /onboarding/go-live",
+                        post("/api/v1/onboarding/go-live").with(o.ungranted)), "ungranted go-live");
+                softDenied(s, call("ungranted POST /onboarding/withdraw",
+                        post("/api/v1/onboarding/withdraw").with(o.ungranted)), "ungranted withdraw");
+                softDenied(s, call("ungranted POST /onboarding/company-number",
+                        post("/api/v1/onboarding/company-number").with(o.ungranted)
+                                .contentType(MediaType.APPLICATION_JSON).content(companyBody)), "ungranted company number");
+                softDenied(s, call("ungranted POST /onboarding", post("/api/v1/onboarding").with(c.ungranted)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"model\":\"MARKETPLACE\",\"shopId\":\"" + c.shop + "\"}")), "ungranted create");
+                softDenied(s, call("SHOP_MANAGER(other shop) POST /onboarding/go-live",
+                        post("/api/v1/onboarding/go-live").with(o.managerOfOtherShop)), "other-shop manager go-live");
+                softDenied(s, call("SHOP_MANAGER(other shop) POST /onboarding/withdraw",
+                        post("/api/v1/onboarding/withdraw").with(o.managerOfOtherShop)), "other-shop manager withdraw");
+                softDenied(s, call("SHOP_MANAGER(other shop) POST /onboarding", post("/api/v1/onboarding")
+                        .with(c.managerOfOtherShop).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"model\":\"MARKETPLACE\",\"shopId\":\"" + c.shop + "\"}")), "other-shop manager create");
+                softDenied(s, call("STAFF(tenant-wide) POST /onboarding/go-live",
+                        post("/api/v1/onboarding/go-live").with(o.tenantWideStaff)), "tenant-wide staff go-live");
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+
+        assertThat(onboardingStatus(o)).as("nothing a refused caller sent changed the onboarding").isEqualTo("APPROVED");
+        assertThat(shopPublished(o)).as("nothing a refused caller sent published the shop").isFalse();
+        assertThat(onboardingRows(c)).as("no refused create wrote an onboarding").isZero();
+    }
+
+    @Test
+    @DisplayName("#961 F3 positive: a SHOP_MANAGER of the onboarded shop, and a tenant-wide SHOP_MANAGER (a manager on every shop of the tenant), drive the lifecycle")
+    void managerOfTheOnboardedShop_drivesTheLifecycle() throws Exception {
+        Onb withdraw = Onb.seed(this);
+        Onb companyNumber = Onb.seed(this);
+        Onb submit = Onb.seed(this);
+        Onb goLive = Onb.seed(this, "APPROVED");
+        Onb create = Onb.seedWithoutOnboarding(this);
+        Onb twWithdraw = Onb.seed(this);
+        Onb twCreate = Onb.seedWithoutOnboarding(this);
+
+        MvcResult w = call("SHOP_MANAGER POST /onboarding/withdraw",
+                post("/api/v1/onboarding/withdraw").with(withdraw.manager));
+        MvcResult c = call("SHOP_MANAGER POST /onboarding/company-number",
+                post("/api/v1/onboarding/company-number").with(companyNumber.manager)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"companyNumber\":\"12345678\"}"));
+        MvcResult sub = call("SHOP_MANAGER POST /onboarding/submit",
+                post("/api/v1/onboarding/submit").with(submit.manager));
+        MvcResult live = call("SHOP_MANAGER POST /onboarding/go-live",
+                post("/api/v1/onboarding/go-live").with(goLive.manager));
+        MvcResult cr = call("SHOP_MANAGER POST /onboarding", post("/api/v1/onboarding").with(create.manager)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"model\":\"MARKETPLACE\",\"shopId\":\"" + create.shop + "\"}"));
+        MvcResult tw = call("SHOP_MANAGER(tenant-wide) POST /onboarding/withdraw",
+                post("/api/v1/onboarding/withdraw").with(twWithdraw.tenantWideManager));
+        MvcResult twc = call("SHOP_MANAGER(tenant-wide) POST /onboarding", post("/api/v1/onboarding")
+                .with(twCreate.tenantWideManager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"model\":\"MARKETPLACE\",\"shopId\":\"" + twCreate.shop + "\"}"));
+
+        assertThat(w.getResponse().getStatus()).as("withdraw: %s", body(w)).isEqualTo(200);
+        assertThat(c.getResponse().getStatus()).as("company number: %s", body(c)).isEqualTo(200);
+        assertThat(sub.getResponse().getStatus()).as("submit: %s", body(sub)).isEqualTo(200);
+        assertThat(cr.getResponse().getStatus()).as("create: %s", body(cr)).isEqualTo(201);
+        assertThat(tw.getResponse().getStatus()).as("tenant-wide withdraw: %s", body(tw)).isEqualTo(200);
+        assertThat(twc.getResponse().getStatus()).as("tenant-wide create: %s", body(twc)).isEqualTo(201);
+        // Go-live reaches the state machine (its gates are not satisfied in this fixture: 400), which is the
+        // proof the authorisation passed; a 403 here would be the gate.
+        assertThat(live.getResponse().getStatus()).as("go-live is not refused: %s", body(live)).isEqualTo(400);
+        assertThat(type(live)).isNotEqualTo(SHOP_ACCESS_DENIED);
+        assertThat(onboardingStatus(withdraw)).isEqualTo("WITHDRAWN");
+        assertThat(onboardingStatus(twWithdraw)).isEqualTo("WITHDRAWN");
+        assertThat(companyNumberOf(companyNumber)).isEqualTo("12345678");
+        assertThat(onboardingStatus(submit)).isEqualTo("VERIFYING");
     }
 
     @Test
@@ -515,25 +602,47 @@ class ShopAdminStaffRefusalIntegrationTest {
         }
     }
 
-    /** A tenant with one shop, a STAFF member of it, a Group admin and (optionally) a DRAFT onboarding. */
-    private record Onb(UUID tenant, UUID shop, UUID onboarding, RequestPostProcessor staff,
-                       RequestPostProcessor groupAdmin) {
+    /**
+     * A tenant with an onboarded shop, a second shop, one principal per role relationship to the onboarded
+     * shop, and (optionally) an onboarding in a chosen state. {@code ungranted} has no shop_staff row at all.
+     */
+    private record Onb(UUID tenant, UUID shop, UUID otherShop, UUID onboarding, RequestPostProcessor staff,
+                       RequestPostProcessor groupAdmin, RequestPostProcessor manager,
+                       RequestPostProcessor managerOfOtherShop, RequestPostProcessor tenantWideManager,
+                       RequestPostProcessor tenantWideStaff, RequestPostProcessor ungranted) {
         static Onb seed(ShopAdminStaffRefusalIntegrationTest t) {
+            return seed(t, "DRAFT");
+        }
+
+        static Onb seed(ShopAdminStaffRefusalIntegrationTest t, String status) {
             Onb o = seedWithoutOnboarding(t);
             UUID id = UUID.randomUUID();
             t.pinned(o.tenant, () -> t.jdbc.update("INSERT INTO vendor_onboarding (id, tenant_id, shop_id, model, status) "
-                    + "VALUES (?, ?, ?, 'MARKETPLACE', 'DRAFT')", id, o.tenant, o.shop));
-            return new Onb(o.tenant, o.shop, id, o.staff, o.groupAdmin);
+                    + "VALUES (?, ?, ?, 'MARKETPLACE', ?)", id, o.tenant, o.shop, status));
+            return new Onb(o.tenant, o.shop, o.otherShop, id, o.staff, o.groupAdmin, o.manager,
+                    o.managerOfOtherShop, o.tenantWideManager, o.tenantWideStaff, o.ungranted);
         }
 
         static Onb seedWithoutOnboarding(ShopAdminStaffRefusalIntegrationTest t) {
             UUID tenant = t.nextTenant();
             UUID shop = t.seedShop(tenant, "Onb Shop " + UUID.randomUUID(), false);
+            UUID otherShop = t.seedShop(tenant, "Onb Other Shop " + UUID.randomUUID(), false);
             UUID staff = UUID.randomUUID();
             UUID admin = UUID.randomUUID();
+            UUID manager = UUID.randomUUID();
+            UUID managerOther = UUID.randomUUID();
+            UUID twManager = UUID.randomUUID();
+            UUID twStaff = UUID.randomUUID();
             ShopGrants.grantOperator(t.jdbc, tenant, staff, shop, "STAFF", "staff-" + staff + "@example.com");
             ShopGrants.grantOperator(t.jdbc, tenant, admin, null, "GROUP_ADMIN", "admin-" + admin + "@example.com");
-            return new Onb(tenant, shop, null, TenantJwts.vendorJwt(staff, tenant), TenantJwts.vendorJwt(admin, tenant));
+            ShopGrants.grantOperator(t.jdbc, tenant, manager, shop, "SHOP_MANAGER", "mgr-" + manager + "@example.com");
+            ShopGrants.grantOperator(t.jdbc, tenant, managerOther, otherShop, "SHOP_MANAGER", "mgr2-" + managerOther + "@example.com");
+            ShopGrants.grantOperator(t.jdbc, tenant, twManager, null, "SHOP_MANAGER", "twm-" + twManager + "@example.com");
+            ShopGrants.grantOperator(t.jdbc, tenant, twStaff, null, "STAFF", "tws-" + twStaff + "@example.com");
+            return new Onb(tenant, shop, otherShop, null, TenantJwts.vendorJwt(staff, tenant),
+                    TenantJwts.vendorJwt(admin, tenant), TenantJwts.vendorJwt(manager, tenant),
+                    TenantJwts.vendorJwt(managerOther, tenant), TenantJwts.vendorJwt(twManager, tenant),
+                    TenantJwts.vendorJwt(twStaff, tenant), TenantJwts.vendorJwt(UUID.randomUUID(), tenant));
         }
     }
 
@@ -592,6 +701,11 @@ class ShopAdminStaffRefusalIntegrationTest {
     private String companyNumberOf(Onb o) {
         return pinned(o.tenant, () -> jdbc.queryForObject(
                 "SELECT company_number FROM vendor_onboarding WHERE tenant_id = ?", String.class, o.tenant));
+    }
+
+    private boolean shopPublished(Onb o) {
+        return pinned(o.tenant, () -> jdbc.queryForObject(
+                "SELECT published FROM shops WHERE id = ?", Boolean.class, o.shop));
     }
 
     private long onboardingRows(Onb o) {
