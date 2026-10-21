@@ -35,20 +35,36 @@ jobs:
   # pipeline. A trap on EXIT writes `false` if the step dies before it has written anything.
   # The downstream gates are also written so that this job FAILING (a runner fault before the
   # step even starts) runs the integration suite rather than skipping it - see integration-tests.
+  #
+  # WHY A HAND-WRITTEN DETECTOR AND NOT dorny/paths-filter (which this file uses elsewhere).
+  # On a push, dorny diffs against `before` (the previous push) or a fixed `base:`; it cannot
+  # diff against "the head of the newest run whose Deploy to Staging job succeeded", which is
+  # the base this job needs so that a failed deploy of a code merge is repaired by the next
+  # merge even when that merge is docs-only. dorny also gives a list of matching files, not the
+  # all-paths-allowed-and-nothing-else answer plus the hygiene rules (renames, quoting,
+  # traversal, empty list) that scripts/ci-docs-only.sh enforces. Both detectors stay: dorny
+  # still answers "can any Java have changed" inside integration-tests.
+  #
+  # WHY fetch-depth: 0. A push is diffed from an arbitrary earlier deploy and must prove that
+  # commit is an ancestor of HEAD, which needs the history between them; there is no fixed pair
+  # of commits to fetch shallowly. The clone is a few seconds on this repository.
   changes:
     name: Classify Changes (doc-only skip)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # actions: read lets the step ask which main commit last deployed to staging (a push is
+    # diffed against that commit, not against the previous push).
     permissions:
       contents: read
+      actions: read
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          # Full history: the diff needs the push's `before` commit, or the PR's merge base,
-          # neither of which a depth-1 clone contains.
+          # Full history: a push is diffed from the last deployed commit and must be shown to be an
+          # ancestor of HEAD; a PR needs its merge base. Neither is in a depth-1 clone.
           fetch-depth: 0
 
       - name: Classify the changed paths (docs_only is true only if EVERY path is documentation)
@@ -59,6 +75,8 @@ jobs:
           PUSH_AFTER: ${{ github.sha }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           # The default Actions shell is `bash -e`; every failure below is handled by reading
           # its exit code on the same statement, so errexit is turned OFF for this step.
@@ -70,11 +88,14 @@ jobs:
           # Whatever happens after this line, an unwritten output becomes `false`.
           trap 'if [ "$emitted" = 0 ]; then echo "docs_only=false" >> "$out"; echo "docs_only=false  (step ended before deciding)"; fi' EXIT
 
+          # `base` is the commit whose classifier is trusted: the PR's base, or a push's
+          # `before`. Where the DIFF starts is the same for a pull_request, but not for a push:
+          # see "WHAT A PUSH IS DIFFED AGAINST" below.
           case "$EVENT_NAME" in
             push)
-              base="$PUSH_BEFORE"; head="$PUSH_AFTER"; range="$PUSH_BEFORE..$PUSH_AFTER" ;;
+              base="$PUSH_BEFORE"; head="$PUSH_AFTER" ;;
             pull_request)
-              base="$PR_BASE"; head="$PR_HEAD"; range="$PR_BASE...$PR_HEAD" ;;
+              base="$PR_BASE"; head="$PR_HEAD" ;;
             *)
               emit false "event '$EVENT_NAME' is not push or pull_request: run everything"; exit 0 ;;
           esac
@@ -92,6 +113,57 @@ jobs:
               emit false "commit $c is not in the clone (force-push?): run everything"; exit 0
             fi
           done
+
+          # WHAT A PUSH IS DIFFED AGAINST: the last commit that was actually DEPLOYED, not the
+          # previous push. Before the doc-only skip every merge to main rebuilt and redeployed
+          # HEAD, so a code merge X whose build or deploy failed was repaired by the next merge.
+          # Diffing before..after would break that: X fails, a docs-only Y follows, Y alone is
+          # "docs only", and staging stays on the code from before X. So take the head SHA of the
+          # newest completed push run of this workflow on main whose "Deploy to Staging" job
+          # concluded success, and classify THAT..HEAD. Invariant kept: staging runs the newest
+          # code commit on main, or the full pipeline runs. Anything unprovable is `false`: the
+          # API fails, no such run in the newest 50, a SHA that is malformed, absent from the
+          # clone, or not an ancestor of HEAD (a force-push, a branch that forked before it).
+          # If DEPLOY_STAGING_ENABLED is false nothing ever deploys, the search finds an older
+          # deploy (or none), and later docs-only merges simply run everything: fail-safe.
+          if [ "$EVENT_NAME" = push ]; then
+            repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}"
+            runs=$(gh api "repos/$repo/actions/workflows/ci-cd.yaml/runs?branch=main&event=push&status=completed&per_page=50"); rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "listing workflow runs failed (rc=$rc): run everything"; exit 0
+            fi
+            list=$(jq -r '.workflow_runs[] | "\(.id) \(.head_sha)"' <<< "$runs"); rc=$?
+            if [ "$rc" -ne 0 ] || [ -z "$list" ]; then
+              emit false "no usable workflow runs in the API answer (jq rc=$rc): run everything"; exit 0
+            fi
+            deployed=""
+            while read -r run_id run_sha; do
+              jobs=$(gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100"); rc=$?
+              if [ "$rc" -ne 0 ]; then
+                emit false "listing jobs of run $run_id failed (rc=$rc): run everything"; exit 0
+              fi
+              ok=$(jq -r '[.jobs[] | select(.name == "Deploy to Staging" and .conclusion == "success")] | length' <<< "$jobs"); rc=$?
+              if [ "$rc" -ne 0 ] || ! [[ "$ok" =~ ^[0-9]+$ ]]; then
+                emit false "unreadable jobs answer for run $run_id (jq rc=$rc): run everything"; exit 0
+              fi
+              if [ "$ok" -gt 0 ]; then deployed="$run_sha"; break; fi
+            done <<< "$list"
+            if ! [[ "$deployed" =~ $sha_re ]]; then
+              emit false "no run in the newest 50 deployed to staging successfully: run everything"; exit 0
+            fi
+            git cat-file -e "$deployed^{commit}" 2>/dev/null; rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "last deployed commit $deployed is not in the clone: run everything"; exit 0
+            fi
+            git merge-base --is-ancestor "$deployed" "$head"; rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "last deployed commit $deployed is not an ancestor of $head (merge-base rc=$rc): run everything"; exit 0
+            fi
+            range="$deployed..$head"
+          else
+            range="$base...$head"
+          fi
+          echo "Diffing $range (classifier read from $base)"
 
           # --no-renames: with rename detection a code file moved to docs/ lists only its NEW
           # path and would read as documentation. quotePath=false keeps UTF-8 names raw; any

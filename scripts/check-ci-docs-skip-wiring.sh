@@ -282,56 +282,120 @@ glue_extract() {
   ' "$1"
 }
 
-# glue_run GLUE_FILE REPO_DIR OUT_FILE EVENT BEFORE AFTER PRBASE PRHEAD [PATH-PREFIX]
-# Runs the extracted step exactly as Actions does (bash -e, only the step's env), in REPO_DIR.
+# glue_run GLUE_FILE REPO_DIR OUT_FILE EVENT BEFORE AFTER PRBASE PRHEAD STUB_DIR
+# Runs the extracted step exactly as Actions does (bash -e, only the step's env), in REPO_DIR,
+# with a fake `gh` first on PATH answering from STUB_DIR (see mkstub).
 glue_run() {
-  local glue="$1" dir="$2" out="$3" ev="$4" b="$5" a="$6" pb="$7" ph="$8" pre="${9:-}"
+  local glue="$1" dir="$2" out="$3" ev="$4" b="$5" a="$6" pb="$7" ph="$8" stub="${9:-}"
   : > "$out"
-  ( cd "$dir" && env -i PATH="${pre:+$pre:}$PATH" HOME="${HOME:-/tmp}" GITHUB_OUTPUT="$out" RUNNER_TEMP="$dir/.rt" \
-      GH_TOKEN=stub GITHUB_REPOSITORY=o/r EVENT_NAME="$ev" PUSH_BEFORE="$b" PUSH_AFTER="$a" PR_BASE="$pb" PR_HEAD="$ph" \
+  ( cd "$dir" && env -i PATH="${stub:+$stub/bin:}$PATH" HOME="${HOME:-/tmp}" GITHUB_OUTPUT="$out" RUNNER_TEMP="$dir/.rt" \
+      GH_TOKEN=stub GITHUB_REPOSITORY=o/r GH_STUB_DIR="${stub:-}" GH_STUB_FAIL="${GH_STUB_FAIL:-0}" \
+      EVENT_NAME="$ev" PUSH_BEFORE="$b" PUSH_AFTER="$a" PR_BASE="$pb" PR_HEAD="$ph" \
       bash -e "$glue" >"$dir/.glue.log" 2>&1 )
   return $?
+}
+
+# mkstub DIR -> a fake `gh` that serves $DIR/runs.json for the runs listing and $DIR/jobs-<id>.json
+# for a run's jobs, and fails for anything else (or for everything when GH_STUB_FAIL=1).
+mkstub() {
+  mkdir -p "$1/bin"
+  cat > "$1/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+[ "${GH_STUB_FAIL:-0}" = 1 ] && exit 1
+[ "$1" = api ] || exit 2
+case "$2" in
+  */actions/workflows/ci-cd.yaml/runs\?*) cat "$GH_STUB_DIR/runs.json" ;;
+  */actions/runs/*/jobs*) id="${2#*/actions/runs/}"; id="${id%%/*}"; cat "$GH_STUB_DIR/jobs-$id.json" ;;
+  *) exit 1 ;;
+esac
+STUB
+  chmod +x "$1/bin/gh"
+}
+
+# stub_runs DIR "ID:SHA:CONCLUSION" ... newest first. CONCLUSION is that run's "Deploy to Staging" job.
+stub_runs() {
+  local d="$1" spec id sha conc sep="" body=""; shift
+  for spec in "$@"; do
+    IFS=: read -r id sha conc <<< "$spec"
+    body="$body$sep{\"id\":$id,\"head_sha\":\"$sha\"}"; sep=","
+    printf '{"jobs":[{"name":"Lint","conclusion":"success"},{"name":"Deploy to Staging","conclusion":"%s"}]}' "$conc" > "$d/jobs-$id.json"
+  done
+  printf '{"workflow_runs":[%s]}' "$body" > "$d/runs.json"
 }
 
 # behaviour_arms WORKFLOW DIR -> runs the classify step of WORKFLOW against fixture repos under DIR,
 # prints PASS/FAIL lines, returns the number of failing arms.
 behaviour_arms() {
-  local WF="$1" st="$2" fails=0 glue r pre CLS_REAL
+  local WF="$1" st="$2" fails=0 glue r pre CLS_REAL stub br c0 c1 c2 c3 ghost
   mkdir -p "$st"
   glue="$st/glue.sh"
   glue_extract "$WF" > "$glue"
   if [ ! -s "$glue" ]; then
-    echo "FAIL glue-extract: could not extract the classify step's run block from $WF"; fails=$((fails + 1))
-  else
-    CLS_REAL="$REPO_ROOT/scripts/ci-docs-only.sh"
-    mkrepo() { # mkrepo DIR WITH_CLASSIFIER(1/0)
-      mkdir -p "$1/scripts" "$1/docs" "$1/core-java/src" "$1/.rt"
-      git -C "$1" init -q && git -C "$1" config user.email t@t && git -C "$1" config user.name t || return 1
-      [ "$2" = 1 ] && cp "$CLS_REAL" "$1/scripts/ci-docs-only.sh"
-      printf 'doc\n' > "$1/docs/a.md"; printf 'class A {}\n' > "$1/core-java/src/A.java"
-      git -C "$1" add -A >/dev/null && git -C "$1" commit -q -m base
-    }
-    verdict_of() { grep -h '^docs_only=' "$1" | tail -1; }
-    bsha() { git -C "$1" rev-parse "$2"; }
-    barm() { # barm NAME WANT_LINE OUTFILE
-      if [ "$(verdict_of "$3")" = "$2" ]; then echo "PASS $1 ($2)"; else echo "FAIL $1 (wanted $2, got '$(verdict_of "$3")'): $(tail -2 "$(dirname "$3")/.glue.log" 2>/dev/null | tr '\n' ' ')"; fails=$((fails + 1)); fi
-    }
-
-    # B1 control: an honest docs-only PR is judged true, so the arms below can fail by saying false.
-    r="$st/b1"; mkrepo "$r" 1; printf 'more\n' >> "$r/docs/a.md"; git -C "$r" commit -qam pr
-    glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)"; barm "B1 honest docs-only PR -> true" "docs_only=true" "$r/out"
-    # B2: the PR edits the classifier to print true AND changes code. Precondition: that edited
-    # classifier really would say true on this list; the base classifier must still say false.
-    r="$st/b2"; mkrepo "$r" 1
-    printf '#!/usr/bin/env bash\necho docs_only=true\n' > "$r/scripts/ci-docs-only.sh"; printf 'class A { int x; }\n' > "$r/core-java/src/A.java"; git -C "$r" commit -qam pr
-    pre="$(printf 'scripts/ci-docs-only.sh\ncore-java/src/A.java\n' | bash "$r/scripts/ci-docs-only.sh" --file -)"
-    if [ "$pre" = "docs_only=true" ]; then echo "PASS B2 precondition: the PR-edited classifier alone WOULD print true"; else echo "FAIL B2 precondition (got '$pre')"; fails=$((fails + 1)); fi
-    glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)"; barm "B2 PR-edited classifier printing true cannot flip a code PR (pull_request)" "docs_only=false" "$r/out"
-    glue_run "$glue" "$r" "$r/out" push "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)" "" ""; barm "B2 same on push (classifier read at before)" "docs_only=false" "$r/out"
-    # B3: the base has no classifier (first introduction): false, even though the change is docs + a classifier.
-    r="$st/b3"; mkrepo "$r" 0; cp "$CLS_REAL" "$r/scripts/ci-docs-only.sh"; printf 'more\n' >> "$r/docs/a.md"; git -C "$r" add -A >/dev/null; git -C "$r" commit -qm pr
-    glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)"; barm "B3 base without a classifier -> false" "docs_only=false" "$r/out"
+    echo "FAIL glue-extract: could not extract the classify step's run block from $WF"; return 1
   fi
+  CLS_REAL="$REPO_ROOT/scripts/ci-docs-only.sh"
+  mkrepo() { # mkrepo DIR WITH_CLASSIFIER(1/0)
+    mkdir -p "$1/scripts" "$1/docs" "$1/core-java/src" "$1/.rt"
+    git -C "$1" init -q && git -C "$1" config user.email t@t && git -C "$1" config user.name t || return 1
+    [ "$2" = 1 ] && cp "$CLS_REAL" "$1/scripts/ci-docs-only.sh"
+    printf 'doc\n' > "$1/docs/a.md"; printf 'class A {}\n' > "$1/core-java/src/A.java"
+    git -C "$1" add -A >/dev/null && git -C "$1" commit -q -m base
+  }
+  verdict_of() { grep -h '^docs_only=' "$1" | tail -1; }
+  barm() { # barm NAME WANT_LINE OUTFILE
+    if [ "$(verdict_of "$3")" = "$2" ]; then echo "PASS $1 ($2)"; else echo "FAIL $1 (wanted $2, got '$(verdict_of "$3")'): $(tail -2 "$(dirname "$3")/.glue.log" 2>/dev/null | tr '\n' ' ')"; fails=$((fails + 1)); fi
+  }
+  ghost=ffffffffffffffffffffffffffffffffffffffff
+
+  # ---- B: the classifier comes from the base ----
+  # B1 control: an honest docs-only PR is judged true, so the arms below can fail by saying false.
+  r="$st/b1"; mkrepo "$r" 1; printf 'more\n' >> "$r/docs/a.md"; git -C "$r" commit -qam pr
+  glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(git -C "$r" rev-parse HEAD~1)" "$(git -C "$r" rev-parse HEAD)"
+  barm "B1 honest docs-only PR -> true" "docs_only=true" "$r/out"
+  # B2: the PR edits the classifier to print true AND changes code. Precondition: that edited
+  # classifier really would say true on this list; the base classifier must still say false.
+  r="$st/b2"; mkrepo "$r" 1
+  printf '#!/usr/bin/env bash\necho docs_only=true\n' > "$r/scripts/ci-docs-only.sh"; printf 'class A { int x; }\n' > "$r/core-java/src/A.java"; git -C "$r" commit -qam pr
+  pre="$(printf 'scripts/ci-docs-only.sh\ncore-java/src/A.java\n' | bash "$r/scripts/ci-docs-only.sh" --file -)"
+  if [ "$pre" = "docs_only=true" ]; then echo "PASS B2 precondition: the PR-edited classifier alone WOULD print true"; else echo "FAIL B2 precondition (got '$pre')"; fails=$((fails + 1)); fi
+  glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(git -C "$r" rev-parse HEAD~1)" "$(git -C "$r" rev-parse HEAD)"
+  barm "B2 PR-edited classifier printing true cannot flip a code PR (pull_request)" "docs_only=false" "$r/out"
+  mkstub "$r/stub"; stub_runs "$r/stub" "11:$(git -C "$r" rev-parse HEAD~1):success"
+  glue_run "$glue" "$r" "$r/out" push "$(git -C "$r" rev-parse HEAD~1)" "$(git -C "$r" rev-parse HEAD)" "" "" "$r/stub"
+  barm "B2 same on push (classifier read at before; deployed = before)" "docs_only=false" "$r/out"
+  # B3: the base has no classifier (first introduction): false, though the change is docs + a classifier.
+  r="$st/b3"; mkrepo "$r" 0; cp "$CLS_REAL" "$r/scripts/ci-docs-only.sh"; printf 'more\n' >> "$r/docs/a.md"; git -C "$r" add -A >/dev/null; git -C "$r" commit -qm pr
+  glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(git -C "$r" rev-parse HEAD~1)" "$(git -C "$r" rev-parse HEAD)"
+  barm "B3 base without a classifier -> false" "docs_only=false" "$r/out"
+
+  # ---- C: a push is diffed against the last DEPLOYED commit ----
+  # history: c0 (deployed once) -> c1 (CODE) -> c2 (docs only). Push of c2 has before=c1.
+  r="$st/c"; mkrepo "$r" 1; br="$(git -C "$r" rev-parse --abbrev-ref HEAD)"; c0="$(git -C "$r" rev-parse HEAD)"
+  # c3: a DIFFERENT commit carrying the same code as c1 but not in c2's history, so c3..c2 is a
+  # docs-only diff and only the ancestry check can refuse it.
+  git -C "$r" checkout -q -b side && printf 'class A { int y; }\n' > "$r/core-java/src/A.java" && git -C "$r" commit -qam side && c3="$(git -C "$r" rev-parse HEAD)"
+  git -C "$r" checkout -q "$br"
+  printf 'class A { int y; }\n' > "$r/core-java/src/A.java"; git -C "$r" commit -qam code; c1="$(git -C "$r" rev-parse HEAD)"
+  printf 'more\n' >> "$r/docs/a.md"; git -C "$r" commit -qam docs; c2="$(git -C "$r" rev-parse HEAD)"
+  mkstub "$r/stub"
+  carm() { # carm NAME WANT [runs...]
+    local name="$1" want="$2"; shift 2
+    stub_runs "$r/stub" "$@"
+    glue_run "$glue" "$r" "$r/out" push "$c1" "$c2" "" "" "$r/stub"; barm "$name" "$want" "$r/out"
+  }
+  carm "C1 control: c1 deployed, c2 docs-only -> true"                                   "docs_only=true"  "12:$c1:success" "11:$c0:success"
+  carm "C2 c1's deploy FAILED, c2 docs-only: diff is c0..c2, includes code -> false"     "docs_only=false" "12:$c1:failure" "11:$c0:success"
+  carm "C2b c1's deploy was skipped: same -> false"                                      "docs_only=false" "12:$c1:skipped" "11:$c0:success"
+  carm "C3 no run in the list deployed -> false"                                         "docs_only=false" "12:$c1:failure" "11:$c0:failure"
+  carm "C5 deployed SHA absent from the clone -> false"                                  "docs_only=false" "11:$ghost:success"
+  carm "C6 deployed SHA is not an ancestor of HEAD (side branch) -> false"               "docs_only=false" "11:$c3:success"
+  carm "C7 malformed SHA in the answer -> false"                                         "docs_only=false" "11:not-a-sha:success"
+  carm "C8 empty run list -> false"                                                      "docs_only=false"
+  printf 'not json' > "$r/stub/runs.json"; glue_run "$glue" "$r" "$r/out" push "$c1" "$c2" "" "" "$r/stub"; barm "C9 unparseable runs answer -> false" "docs_only=false" "$r/out"
+  # C10: the newest run's jobs cannot be read. Skipping it would reach an older run of the same
+  # commit and say true; fail closed says false.
+  stub_runs "$r/stub" "12:$c1:success" "11:$c1:success"; rm -f "$r/stub/jobs-12.json"; glue_run "$glue" "$r" "$r/out" push "$c1" "$c2" "" "" "$r/stub"; barm "C10 jobs endpoint fails for the run -> false" "docs_only=false" "$r/out"
+  stub_runs "$r/stub" "12:$c1:success"; GH_STUB_FAIL=1 glue_run "$glue" "$r" "$r/out" push "$c1" "$c2" "" "" "$r/stub"; barm "C4 the API fails outright -> false" "docs_only=false" "$r/out"
   return "$fails"
 }
 
@@ -382,15 +446,22 @@ if [ "$SELFTEST" -eq 1 ]; then
   beh_out="$(behaviour_arms "$WORKFLOW" "$st/beh-real")"; beh_rc=$?
   echo "$beh_out"
   fails=$((fails + beh_rc))
-  # The same arms against a workflow whose step runs the PR's own copy must NOT all pass.
-  sed -E 's#verdict=\$\(bash "\$cls" --file "\$changed"\)#verdict=$(bash scripts/ci-docs-only.sh --file "$changed")#' "$WORKFLOW" > "$st/glue-uses-pr-copy.yaml"
-  if cmp -s "$WORKFLOW" "$st/glue-uses-pr-copy.yaml"; then
-    echo "FAIL glue-uses-pr-copy: the planting edit changed nothing"; fails=$((fails + 1))
-  else
-    beh_out="$(behaviour_arms "$st/glue-uses-pr-copy.yaml" "$st/beh-broken")"; beh_rc=$?
-    if [ "$beh_rc" -gt 0 ] && grep -q 'FAIL B2' <<< "$beh_out"; then echo "PASS glue-uses-pr-copy: running the PR's own classifier is caught by arm B2"
-    else echo "FAIL glue-uses-pr-copy: planting the PR-copy classifier was not caught (rc=$beh_rc)"; fails=$((fails + 1)); fi
-  fi
+  # The same arms against a workflow with one planted break in the classify step must NOT all
+  # pass, and the arm named must be among the red ones.
+  gplant() { # gplant NAME SED-EXPR RED-ARM-PREFIX
+    sed -E "$2" "$WORKFLOW" > "$st/$1.yaml"
+    if cmp -s "$WORKFLOW" "$st/$1.yaml"; then
+      echo "FAIL $1: the planting edit changed nothing"; fails=$((fails + 1)); return
+    fi
+    beh_out="$(behaviour_arms "$st/$1.yaml" "$st/beh-$1")"; beh_rc=$?
+    if [ "$beh_rc" -gt 0 ] && grep -q "FAIL $3" <<< "$beh_out"; then echo "PASS $1: caught by arm $3"
+    else echo "FAIL $1: the planted break was not caught by arm $3 (rc=$beh_rc)"; fails=$((fails + 1)); fi
+  }
+  gplant glue-uses-pr-copy      's#verdict=\$\(bash "\$cls" --file "\$changed"\)#verdict=$(bash scripts/ci-docs-only.sh --file "$changed")#' B2
+  gplant glue-diffs-vs-before   's#^( +)range="\$deployed\.\.\$head"#\1range="$base..$head"#' "C2 c1's deploy FAILED"
+  gplant glue-skips-ancestry    's#git merge-base --is-ancestor "\$deployed" "\$head"; rc=\$\?#true; rc=0#' "C6"
+  gplant glue-skips-unreadable-run 's#^( +)emit false "listing jobs of run \$run_id failed \(rc=\$rc\): run everything"; exit 0#\1continue#' "C10"
+  gplant glue-falls-back-to-before 's#^( +)emit false "no run in the newest 50 deployed to staging successfully: run everything"; exit 0#\1deployed="$base"#' "C3"
   # Blind extractor: a file that is not the workflow is VOID, never a pass.
   printf 'name: x\njobs:\n  a:\n    runs-on: x\n' > "$st/blind.yaml"
   arm blind-extractor 2 "$st/blind.yaml"

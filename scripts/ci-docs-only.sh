@@ -9,6 +9,10 @@
 #   merge that changes only documentation then costs the cheap gates, not ~72 minutes and a
 #   staging redeploy.
 #
+#   The workflow runs the copy of this script that exists in the BASE commit (the PR's base, or
+#   a push's `before`), never the copy in the change being judged, so a change cannot vouch for
+#   itself. A base without this file (its first introduction) is answered `false`.
+#
 # THE ONE RULE: FAIL CLOSED
 #
 #   `docs_only=true` is printed only when EVERY path matches the allow-list below. Anything
