@@ -124,12 +124,13 @@ public class FinancialTransactionController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Transaction created successfully"),
             @ApiResponse(responseCode = "400", description = "Validation error - missing required fields"),
-            @ApiResponse(responseCode = "403", description = "shop-access-denied: not a Group admin")
+            @ApiResponse(responseCode = "403", description = "shop-access-denied: not a Group admin"),
+            @ApiResponse(responseCode = "404", description = "orderId is not an order of the caller's tenant, or shopId is not a shop of it")
     })
     public ResponseEntity<FinancialTransactionDto> createTransaction(
             @Parameter(description = "Transaction creation request") @Valid @RequestBody CreateTransactionRequest request) {
         shopAccessService.requireGroupAdmin();
-        FinancialTransactionDto dto = financialTransactionService.createTransaction(request);
+        FinancialTransactionDto dto = financialTransactionService.createTransactionForCaller(request);
         // issue #97 [P2-6]: inherit the WebConfig /api/v1-prefixed request path so Location resolves
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")

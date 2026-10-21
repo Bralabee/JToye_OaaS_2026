@@ -8897,6 +8897,16 @@
               }
             },
             "description" : "shop-access-denied: not a Group admin"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "orderId is not an order of the caller's tenant, or shopId is not a shop of it"
           }
         },
         "security" : [

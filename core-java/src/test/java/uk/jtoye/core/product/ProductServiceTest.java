@@ -15,6 +15,8 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.storage.StorageService;
@@ -342,6 +344,43 @@ class ProductServiceTest {
 
         verify(productRepository).findById(productId);
         verify(productRepository).saveAndFlush(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("updateProduct - a changed shopId is authorised against the target shop before anything is applied")
+    void testUpdateProduct_ChangedShop_IsAuthorisedBeforeAnythingIsApplied() {
+        UUID currentShop = UUID.randomUUID();
+        UUID targetShop = UUID.randomUUID();
+        testProduct.setShopId(currentShop);
+        validRequest.setShopId(targetShop);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
+        doThrow(new ShopAccessDeniedException(targetShop, ShopRole.SHOP_MANAGER))
+                .when(shopAccessService).requireForShopChange(currentShop, targetShop);
+
+        assertThrows(ShopAccessDeniedException.class, () -> productService.updateProduct(productId, validRequest));
+
+        verify(productMapper, never()).updateEntity(any(CreateProductRequest.class), any(Product.class));
+        verify(productRepository, never()).saveAndFlush(any(Product.class));
+        assertEquals(currentShop, testProduct.getShopId(), "the product still points at its own shop");
+    }
+
+    @Test
+    @DisplayName("updateProduct - an authorised shop change assigns the target shop explicitly; an omitted shopId keeps the shop")
+    void testUpdateProduct_AuthorisedShopChange_AssignsTargetShop_OmittedKeeps() {
+        UUID currentShop = UUID.randomUUID();
+        UUID targetShop = UUID.randomUUID();
+        testProduct.setShopId(currentShop);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
+        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        validRequest.setShopId(null);
+        productService.updateProduct(productId, validRequest);
+        assertEquals(currentShop, testProduct.getShopId(), "an omitted shopId keeps the stored shop");
+
+        validRequest.setShopId(targetShop);
+        productService.updateProduct(productId, validRequest);
+        verify(shopAccessService).requireForShopChange(currentShop, targetShop);
+        assertEquals(targetShop, testProduct.getShopId());
     }
 
     @Test

@@ -23,6 +23,18 @@ Issue #961 (swarm finding SW-TND-06) asked whether the API refuses a STAFF membe
 - **Dashboard.** Add Shop and Delete shop only for a Group admin, Edit shop and slot create / close only with SHOP_MANAGER on that shop, the `?edit=` deep link and the home hours notice follow the same rule. STAFF keep the shop list, slot read, WhatsApp link, pause and resume. Fails toward offering when `staff/me` cannot be read; offers nothing while it loads.
 - **Proof.** `ShopAdminStaffRefusalIntegrationTest` (13 arms, NOSUPERUSER, owner / Group admin / shop manager controls) failed 2 of 13 on unfixed main and passes; frontend role-gating tests failed on the unfixed source and pass. Seven onboarding integration tests moved from `@WithMockUser` to a realm-admin JWT.
 
+### Shop-Child Updates Authorise a Changed shopId (#1021) — 2026-10-21
+
+`PUT /products/{id}`, `PUT /promotions/{id}` and `PUT /announcements/{id}` required SHOP_MANAGER on the row's current shop only, while the update mappers also copied the request's `shopId` onto the row, so the shop named in the body was never itself authorised. The create paths already did that check.
+
+- **Change.** `ShopAccessService.requireForShopChange` requires SHOP_MANAGER on the target shop (through `require()`, so the same-tenant check applies) whenever the body names a shop other than the row's current one. It runs before anything is applied. The three `updateEntity` mappings no longer copy `shopId`; each service assigns the checked shop explicitly.
+- **Unchanged.** An omitted `shopId` on a product PUT keeps the stored shop; moving a row between shops the caller manages, a Group admin moving a row within their own business, and assigning a shop to a shop-less product all still work.
+- **Other paths checked.** Product PATCH, sync upsert, CSV import, product copy, culinary-pack seed, customer and order updates and the MCP tools have no request-supplied shop on update or already authorise it; the sync update goes through `updateProduct` and so gets the new check.
+- **Tests.** `ShopChildUpdateTargetShopIntegrationTest` (27 tests, real Postgres, NOSUPERUSER so FORCE RLS applies, strict scoping on, JWTs through the filter chain; 16 refusal arms failed on the unfixed code, the 11 control arms passed on both) and six service unit tests.
+- **Ledger create.** `POST /financial-transactions` now authorises the `orderId` and `shopId` the caller supplies (`FinancialTransactionService.createTransactionForCaller`): an `orderId` must name an order of the caller's tenant (404 otherwise), the row's shop is that order's shop and a body `shopId` that disagrees is a 400, and a `shopId` given with no order needs SHOP_MANAGER on it (which also binds it to the caller's tenant). The order writers (completion, card settlement, reversal) derive both from the order or sale they hold and are unchanged. `LedgerCreateCallerLinksIntegrationTest` (9 tests, rows read through a BYPASSRLS read-only role); 6 failed on the unfixed code, the 3 controls passed.
+- **Callers covered.** The update test now also drives a tenant-wide SHOP_MANAGER and a realm admin; removing the tenant check from either branch of `ShopAccessService.require` turns those arms red.
+- **Not done.** A composite `(shop_id, tenant_id)` foreign key: it needs a unique index on `shops` and a constraint per shop-child table, and finding rows that already violate it is a separate data audit.
+
 ### Phase 29 Follow-ups: deploy.sh Waits on Every Workload, the Gate Guards the Staging Selftests, Staging core-java Is Labelled staging (#1005) — 2026-10-21
 
 Three follow-ups to Phase 29 (issues #969, #970, #999), each shown failing before it was trusted.

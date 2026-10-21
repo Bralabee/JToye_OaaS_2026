@@ -115,8 +115,14 @@ public class AnnouncementService {
                 .orElseThrow(() -> new ResourceNotFoundException("Announcement not found: " + id));
         // VSA-02 (D-02): parent-lookup — marketing update requires SHOP_MANAGER.
         shopAccessService.require(entity.getShopId(), ShopRole.SHOP_MANAGER);
+        // A body that names a different shop re-points the row, so that shop is authorised too, before
+        // anything is applied.
+        shopAccessService.requireForShopChange(entity.getShopId(), request.getShopId());
 
         announcementMapper.updateEntity(request, entity);
+        if (request.getShopId() != null) {
+            entity.setShopId(request.getShopId());
+        }
 
         try {
             entity = announcementRepository.saveAndFlush(entity);
