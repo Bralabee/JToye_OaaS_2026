@@ -16,7 +16,12 @@
 #   R-3  that step writes `<name>=true` to $GITHUB_OUTPUT on a line BEFORE its first
 #        `kubectl apply` (the output means "the apply was reached", so it must be set before it
 #        and by nothing earlier in the job);
-#   R-4  that step is the FIRST step in the job that runs `kubectl apply`.
+#   R-4  that step is the FIRST step in the job that runs `kubectl apply`;
+#   R-5  (issue #969) the rollback `if:` also contains steps.wait_other.outcome != 'failure', and a
+#        step with `id: wait_other` exists BEFORE the rollback and runs
+#        scripts/wait-other-workloads.sh. That step waits on the workloads the job did NOT retag
+#        (monitoring, Keycloak, ...); when it fails the retagged apps are Ready, and an undo of
+#        them for a Prometheus fault would trade a monitoring fault for an application one.
 #   Comment lines are ignored (a rule that must name the token it forbids would otherwise match
 #   its own explanation).
 #
@@ -51,17 +56,17 @@ check_workflow() {
   local file="$1" job="$2" steps n
   [ -f "$file" ] || { echo "VOID: workflow file '$file' not found" >&2; return 2; }
   # One record per step of the job:
-  #   idx <TAB> id <TAB> name <TAB> if <TAB> first-apply-line <TAB> output-name <TAB> output-line
+  #   idx <TAB> id <TAB> name <TAB> if <TAB> first-apply-line <TAB> output-name <TAB> output-line <TAB> waits-others
   steps="$(awk -v job="$job" '
     function flush() {
       # "-" for an empty field: `read` with a tab IFS collapses empty fields and shifts the rest.
-      if (idx > 0) printf "%d\t%s\t%s\t%s\t%d\t%s\t%d\n", idx, (id == "" ? "-" : id), (name == "" ? "-" : name), (cond == "" ? "-" : cond), apply, (oname == "" ? "-" : oname), oline
+      if (idx > 0) printf "%d\t%s\t%s\t%s\t%d\t%s\t%d\t%d\n", idx, (id == "" ? "-" : id), (name == "" ? "-" : name), (cond == "" ? "-" : cond), apply, (oname == "" ? "-" : oname), oline, waits
     }
     $0 == "  " job ":" { injob = 1; next }
     injob && /^  [A-Za-z0-9_-]+:/ { flush(); idx = 0; injob = 0 }
     !injob { next }
     /^      - / {
-      flush(); idx++; id = ""; name = ""; cond = ""; apply = 0; oname = ""; oline = 0
+      flush(); idx++; id = ""; name = ""; cond = ""; apply = 0; oname = ""; oline = 0; waits = 0
     }
     idx == 0 { next }
     {
@@ -72,6 +77,7 @@ check_workflow() {
       if (match(line, /^        if: */)) { cond = substr(line, RLENGTH + 1) }
       if (line ~ /^[ \t]*#/) next
       if (apply == 0 && line ~ /kubectl apply/) apply = NR
+      if (line ~ /wait-other-workloads\.sh/) waits = 1
       if (oline == 0 && match(line, /echo +"?[A-Za-z_][A-Za-z0-9_]*=true"? *>> *"?\$GITHUB_OUTPUT"?/)) {
         t = substr(line, RSTART, RLENGTH); sub(/^echo +"?/, "", t); sub(/=true.*$/, "", t); oname = t; oline = NR
       }
@@ -85,7 +91,7 @@ check_workflow() {
   fi
 
   local bad=0 rb_idx rb_if rb_name ref_id ref_out id_idx id_apply id_oname id_oline first_apply_idx
-  IFS=$'\t' read -r rb_idx _ rb_name rb_if _ _ _ < <(awk -F'\t' '$3 ~ /^Rollback on failure/ { print; exit }' <<<"$steps")
+  IFS=$'\t' read -r rb_idx _ rb_name rb_if _ _ _ _ < <(awk -F'\t' '$3 ~ /^Rollback on failure/ { print; exit }' <<<"$steps")
   if [ -z "${rb_idx:-}" ]; then
     echo "FAIL [$job] R-1: no 'Rollback on failure' step found" >&2; return 1
   fi
@@ -105,7 +111,7 @@ check_workflow() {
   if [ "$id_idx" -ge "$rb_idx" ]; then
     echo "FAIL [$job] R-2: step id '$ref_id' (#$id_idx) is not BEFORE the rollback step (#$rb_idx)" >&2; bad=1
   fi
-  IFS=$'\t' read -r _ _ _ _ id_apply id_oname id_oline < <(awk -F'\t' -v i="$id_idx" '$1 == i { print; exit }' <<<"$steps")
+  IFS=$'\t' read -r _ _ _ _ id_apply id_oname id_oline _ < <(awk -F'\t' -v i="$id_idx" '$1 == i { print; exit }' <<<"$steps")
   if [ "${id_apply:-0}" -eq 0 ]; then
     echo "FAIL [$job] R-3: step '$ref_id' runs no 'kubectl apply' — the output cannot mean 'the apply was reached'" >&2; bad=1
   fi
@@ -117,6 +123,18 @@ check_workflow() {
   first_apply_idx="$(awk -F'\t' '$5 > 0 { print $1; exit }' <<<"$steps")"
   if [ -n "$first_apply_idx" ] && [ "$first_apply_idx" != "$id_idx" ]; then
     echo "FAIL [$job] R-4: step #$first_apply_idx runs 'kubectl apply' before step '$ref_id' (#$id_idx): an apply the output does not cover" >&2; bad=1
+  fi
+  # R-5 (#969): a failure of the other-workloads wait must not roll the retagged apps back.
+  local wo_idx wo_waits
+  if [[ "$rb_if" != *"steps.wait_other.outcome != 'failure'"* ]]; then
+    echo "FAIL [$job] R-5: 'Rollback on failure' has if: '$rb_if' — it does not exclude steps.wait_other.outcome != 'failure', so a monitoring-only failure would undo the three healthy retagged Deployments" >&2; bad=1
+  fi
+  IFS=$'\t' read -r wo_idx _ _ _ _ _ _ wo_waits < <(awk -F'\t' '$2 == "wait_other" { print; exit }' <<<"$steps")
+  if [ -z "${wo_idx:-}" ]; then
+    echo "FAIL [$job] R-5: no step has 'id: wait_other', so nothing waits on the workloads the job did not retag (#969)" >&2; bad=1
+  else
+    [ "$wo_idx" -lt "$rb_idx" ] || { echo "FAIL [$job] R-5: step wait_other (#$wo_idx) is not BEFORE the rollback step (#$rb_idx)" >&2; bad=1; }
+    [ "${wo_waits:-0}" -eq 1 ] || { echo "FAIL [$job] R-5: step wait_other does not run scripts/wait-other-workloads.sh" >&2; bad=1; }
   fi
   [ "$bad" -eq 0 ] || return 1
   echo "OK   [$job] rollback is gated on steps.$ref_id.outputs.$ref_out (set at line $id_oline, before the apply at line $id_apply)"
@@ -156,12 +174,18 @@ if [ "$SELFTEST" -eq 1 ]; then
   # no-rollback: the rollback step is gone (renamed).
   sed -E "/^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/^(      - name: )Rollback on failure/\1Undo/" "$WORKFLOW" > "$st/norb.yaml"
   arm no-rollback 1 "$st/norb.yaml"
+  # R-5 plants. no-outcome-guard: the rollback `if:` loses the wait_other exclusion (the reviewed
+  # defect: a monitoring-only failure undoes the apps). no-wait-step: the wait step is gone.
+  sed -E "/^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/ && steps\.wait_other\.outcome != 'failure'//" "$WORKFLOW" > "$st/nooutcome.yaml"
+  arm no-outcome-guard 1 "$st/nooutcome.yaml"
+  sed -E "/^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/^        id: wait_other\$/        id: wait_other_renamed/" "$WORKFLOW" > "$st/nowait.yaml"
+  arm no-wait-step 1 "$st/nowait.yaml"
   # void: a job that does not exist is VOID, never clean.
   rc=0; check_workflow "$WORKFLOW" "no-such-job" >"$st/void.out" 2>&1 || rc=$?
   if [ "$rc" -eq 2 ]; then echo "PASS missing-job rc=2"; else echo "FAIL missing-job rc=$rc (want 2)"; fails=$((fails + 1)); fi
   # Controls on the planting itself: every mutated copy must DIFFER from the real file,
   # otherwise a plant that silently changed nothing would "fail" for the wrong reason.
-  for p in bare wrongout after noid norb; do
+  for p in bare wrongout after noid norb nooutcome nowait; do
     if cmp -s "$WORKFLOW" "$st/$p.yaml"; then echo "FAIL plant-$p changed nothing — the arm above proves nothing"; fails=$((fails + 1)); fi
   done
   [ "$fails" -eq 0 ] || exit 1
