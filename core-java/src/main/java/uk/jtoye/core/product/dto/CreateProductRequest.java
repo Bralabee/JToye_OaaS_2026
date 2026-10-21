@@ -126,7 +126,8 @@ public class CreateProductRequest {
     // type (alongside a missing shop address). See docs/ppds-label-markup.md.
 
     @Min(value = 0, message = "Shelf life days must be non-negative")
-    @Schema(description = "Per-product shelf life in days. The PPDS label prints a durability date "
+    @Max(value = 3650, message = "Shelf life must not exceed 3650 days (ten years)")
+    @Schema(description = "Per-product shelf life in days (0 to 3650). The PPDS label prints a durability date "
             + "computed as generationDate + shelfLifeDays. Required for a compliant label (the "
             + "label 422s when absent).", example = "3")
     private Integer shelfLifeDays;

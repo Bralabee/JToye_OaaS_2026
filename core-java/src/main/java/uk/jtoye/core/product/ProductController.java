@@ -285,7 +285,9 @@ public class ProductController {
                     description = "The caller holds no STAFF grant on the product's shop (errors/shop-access-denied)"),
             @ApiResponse(responseCode = "404", description = "Product not found"),
             @ApiResponse(responseCode = "422",
-                    description = "The product lacks required label data (errors/incomplete-label-data), "
+                    description = "The product lacks required label data (errors/incomplete-label-data: a "
+                            + "plain-words detail plus a missingFields member naming shelfLifeDays, "
+                            + "durabilityType, shopId, shopName and/or shopAddress), "
                             + "or productionDate is after today (UK time) or gives a durability date "
                             + "that has already passed (errors/invalid-production-date, field "
                             + "productionDate)")

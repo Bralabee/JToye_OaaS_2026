@@ -627,6 +627,13 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Incomplete Label Data");
         problem.setType(URI.create("https://jtoye.uk/errors/incomplete-label-data"));
+        // #960: the machine-readable twin of the plain-words detail. Field names, never columns.
+        if (!ex.getMissingFields().isEmpty()) {
+            problem.setProperty("missingFields", ex.getMissingFields());
+        }
+        if (ex.getProductId() != null) {
+            problem.setProperty("productId", ex.getProductId());
+        }
         return problem;
     }
 

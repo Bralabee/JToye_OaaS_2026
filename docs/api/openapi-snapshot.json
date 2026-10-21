@@ -1368,9 +1368,10 @@
             "type" : "integer"
           },
           "shelfLifeDays" : {
-            "description" : "Per-product shelf life in days. The PPDS label prints a durability date computed as generationDate + shelfLifeDays. Required for a compliant label (the label 422s when absent).",
+            "description" : "Per-product shelf life in days (0 to 3650). The PPDS label prints a durability date computed as generationDate + shelfLifeDays. Required for a compliant label (the label 422s when absent).",
             "example" : 3,
             "format" : "int32",
+            "maximum" : 3650,
             "minimum" : 0,
             "type" : "integer"
           },
@@ -13062,7 +13063,7 @@
                 }
               }
             },
-            "description" : "The product lacks required label data (errors/incomplete-label-data), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
+            "description" : "The product lacks required label data (errors/incomplete-label-data: a plain-words detail plus a missingFields member naming shelfLifeDays, durabilityType, shopId, shopName and/or shopAddress), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
           }
         },
         "security" : [

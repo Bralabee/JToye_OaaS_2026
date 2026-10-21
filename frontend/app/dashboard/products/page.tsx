@@ -75,6 +75,7 @@ import {
 // App Router page.tsx may not export non-route symbols (A11Y-8 / A11Y-11).
 import {
   mayContainMaskSchema,
+  parseDurabilityInputs,
   productSchema,
   toPricePennies,
   type ProductFormData,
@@ -157,7 +158,9 @@ function blobText(blob: Blob): Promise<string> {
  * The status and RFC 7807 detail of a failed request. A blob request (the label PDF) delivers
  * its error body as a Blob too, so the problem JSON is read out of it.
  */
-async function readProblem(error: unknown): Promise<{ status?: number; detail?: string }> {
+async function readProblem(
+  error: unknown
+): Promise<{ status?: number; detail?: string; type?: string; missingFields?: string[] }> {
   const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response
   if (!response) return {}
   let body: unknown = response.data
@@ -168,13 +171,24 @@ async function readProblem(error: unknown): Promise<{ status?: number; detail?: 
       body = undefined
     }
   }
-  const detail = (body as { detail?: unknown } | undefined)?.detail
-  return { status: response.status, detail: typeof detail === "string" ? detail : undefined }
+  const problem = body as { detail?: unknown; type?: unknown; missingFields?: unknown } | undefined
+  return {
+    status: response.status,
+    detail: typeof problem?.detail === "string" ? problem.detail : undefined,
+    type: typeof problem?.type === "string" ? problem.type : undefined,
+    missingFields: Array.isArray(problem?.missingFields)
+      ? problem.missingFields.filter((f): f is string => typeof f === "string")
+      : undefined,
+  }
 }
 
 /** #959: shown under Shop Assignment when a new product is saved without a shop. */
 const SHOP_REQUIRED_COPY =
   "Choose which shop sells this product. A product with no shop does not appear on any storefront."
+
+/** #960: shown if the server's incomplete-label answer carries no detail. */
+const LABEL_INCOMPLETE_COPY =
+  "This allergen label cannot be printed yet. Add a shelf life and choose use-by or best-before on the product."
 
 const LABEL_DATE_REQUIRED_COPY = "Enter the date the food was made."
 const LABEL_DATE_FUTURE_COPY = "The production date cannot be in the future."
@@ -216,6 +230,8 @@ export default function ProductsPage() {
   const [labelMaxDate, setLabelMaxDate] = useState("")
   const [labelFormat, setLabelFormat] = useState<LabelFormat>("STANDARD_100X60MM")
   const [labelError, setLabelError] = useState<string | null>(null)
+  // #960: the label endpoint's plain-words 422 (errors/incomplete-label-data): what to add on the product.
+  const [labelIncomplete, setLabelIncomplete] = useState<string | null>(null)
   const [labelDownloading, setLabelDownloading] = useState(false)
   const [seedDialogOpen, setSeedDialogOpen] = useState(false)
   const [featured, setFeatured] = useState(false)
@@ -225,6 +241,10 @@ export default function ProductsPage() {
   const [selectedShopId, setSelectedShopId] = useState<string>("")
   // #959: a new product must name its shop. Set when a create is submitted without one.
   const [shopError, setShopError] = useState(false)
+  // #960: the two inputs the allergen label is dated from. Held as typed; parsed at save.
+  const [shelfLifeText, setShelfLifeText] = useState("")
+  const [durabilityType, setDurabilityType] = useState("")
+  const [durabilityError, setDurabilityError] = useState<string | null>(null)
   const [trackInventory, setTrackInventory] = useState(false)
   const [quantityInStock, setQuantityInStock] = useState<number>(0)
   // F2 (FEB-1): a 429/network failure must render an error panel, never the
@@ -387,6 +407,9 @@ export default function ProductsPage() {
     // select starts on "Choose a shop…" and the form refuses to save until one is picked.
     setSelectedShopId(contextShopId ?? (shops.length === 1 ? shops[0].id : ""))
     setShopError(false)
+    setShelfLifeText("")
+    setDurabilityType("")
+    setDurabilityError(null)
     setTrackInventory(false)
     setQuantityInStock(0)
     setAiSuggestions(null)
@@ -407,6 +430,9 @@ export default function ProductsPage() {
     setFeatured(product.featured ?? false)
     setSelectedShopId(product.shopId || "")
     setShopError(false)
+    setShelfLifeText(product.shelfLifeDays != null ? String(product.shelfLifeDays) : "")
+    setDurabilityType(product.durabilityType ?? "")
+    setDurabilityError(null)
     setTrackInventory(product.quantityInStock != null)
     setQuantityInStock(product.quantityInStock ?? 0)
     setAiSuggestions(null)
@@ -488,6 +514,13 @@ export default function ProductsPage() {
       document.getElementById("shopId")?.focus()
       return
     }
+    // #960: shelf life and use-by / best-before go together, in range, or are both left blank.
+    const durability = parseDurabilityInputs(shelfLifeText, durabilityType)
+    if (!durability.ok) {
+      setDurabilityError(durability.error)
+      document.getElementById(shelfLifeText.trim() === "" ? "shelfLifeDays" : "durabilityType")?.focus()
+      return
+    }
     try {
       setSubmitting(true)
 
@@ -520,6 +553,9 @@ export default function ProductsPage() {
         preparationTimeMinutes: prepTimeEl?.value ? parseInt(prepTimeEl.value) : undefined,
         dietaryTags: dietaryTagsEl?.value || undefined,
         shopId: selectedShopId || undefined,
+        // #960: omitted when blank, so an edit keeps what is stored and a create stores nothing.
+        shelfLifeDays: durability.shelfLifeDays,
+        durabilityType: durability.durabilityType,
         // UXT-016 (37-39): the tracking intent is stated, not inferred from a null. The server keeps the
         // stored stock when trackInventory is absent, so without it unticking would no longer stop tracking.
         trackInventory,
@@ -596,12 +632,22 @@ export default function ProductsPage() {
     setLabelMaxDate(today)
     setLabelFormat("STANDARD_100X60MM")
     setLabelError(null)
+    setLabelIncomplete(null)
     setLabelProduct(product)
   }
 
   const closeLabelDialog = () => {
     setLabelProduct(null)
     setLabelError(null)
+    setLabelIncomplete(null)
+  }
+
+  // #960: the label dialog's way out of the dead end — straight to the product's edit form, where the
+  // shelf life and use-by / best-before inputs are.
+  const editProductFromLabelDialog = () => {
+    const target = labelProduct
+    closeLabelDialog()
+    if (target) openEditDialog(target)
   }
 
   const downloadLabel = async (event: FormEvent<HTMLFormElement>) => {
@@ -617,6 +663,7 @@ export default function ProductsPage() {
       return
     }
     setLabelError(null)
+    setLabelIncomplete(null)
     setLabelDownloading(true)
     try {
       const formatParam = labelFormat === "THERMAL_62MM" ? "&format=THERMAL_62MM" : ""
@@ -636,7 +683,11 @@ export default function ProductsPage() {
       closeLabelDialog()
     } catch (error: unknown) {
       const problem = await readProblem(error)
-      if (problem.status === 422) {
+      if (problem.status === 422 && problem.type?.endsWith("/incomplete-label-data")) {
+        // #960: the product lacks what the label is made from. The server's detail says what to add
+        // in plain words; it is not about the date, so it is not shown under the date field.
+        setLabelIncomplete(problem.detail ?? LABEL_INCOMPLETE_COPY)
+      } else if (problem.status === 422) {
         // 31.1-14: errors/invalid-production-date, field productionDate — a future date, or
         // one whose use-by has already passed. Said under the field it is about.
         setLabelError(problem.detail ?? LABEL_DATE_REFUSED_COPY)
@@ -1411,6 +1462,58 @@ export default function ProductsPage() {
                   <Input id="dietaryTags" name="dietaryTags" placeholder="Vegan, GF" defaultValue={editingProduct?.dietaryTags || ""} />
                 </div>
               </div>
+              {/* #960: what the allergen (PPDS / Natasha's Law) label is dated from. Optional here, but the
+                  label cannot be printed without both. */}
+              <fieldset className="space-y-1.5" aria-describedby="durability-help">
+                <legend className="text-sm font-medium">Allergen label dating</legend>
+                <p id="durability-help" className="text-xs text-slate-500">
+                  Needed to print this product&apos;s allergen label: the label shows a use-by or
+                  best-before date counted from the day the food is made.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="shelfLifeDays">Shelf life (days)</Label>
+                    <Input
+                      id="shelfLifeDays"
+                      name="shelfLifeDays"
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="3"
+                      value={shelfLifeText}
+                      onChange={(e) => {
+                        setShelfLifeText(e.target.value)
+                        setDurabilityError(null)
+                      }}
+                      aria-invalid={durabilityError ? "true" : undefined}
+                      aria-describedby={durabilityError ? "durability-error" : undefined}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="durabilityType">Use by or best before</Label>
+                    <select
+                      id="durabilityType"
+                      name="durabilityType"
+                      value={durabilityType}
+                      onChange={(e) => {
+                        setDurabilityType(e.target.value)
+                        setDurabilityError(null)
+                      }}
+                      aria-invalid={durabilityError ? "true" : undefined}
+                      aria-describedby={durabilityError ? "durability-error" : undefined}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="">Not set</option>
+                      <option value="USE_BY">Use by</option>
+                      <option value="BEST_BEFORE">Best before</option>
+                    </select>
+                  </div>
+                </div>
+                {durabilityError && (
+                  <p id="durability-error" role="alert" className="text-sm text-red-600">
+                    {durabilityError}
+                  </p>
+                )}
+              </fieldset>
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
@@ -1517,6 +1620,18 @@ export default function ProductsPage() {
               food was made.
             </DialogDescription>
           </DialogHeader>
+          {labelIncomplete && (
+            <div
+              role="alert"
+              data-testid="label-incomplete"
+              className="space-y-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            >
+              <p>{labelIncomplete}</p>
+              <Button type="button" size="sm" variant="outline" onClick={editProductFromLabelDialog}>
+                Edit this product
+              </Button>
+            </div>
+          )}
           <form onSubmit={downloadLabel} noValidate className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="label-production-date">Production date</Label>

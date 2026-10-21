@@ -75,3 +75,41 @@ export const mayContainMaskSchema = z
   .min(0)
   .max(MAY_CONTAIN_MASK_MAX)
   .nullable()
+
+/**
+ * #960 (swarm SW-ADE-03): the two inputs the allergen (PPDS / Natasha's Law) label is dated from.
+ * The server stores them as `shelf_life_days` and `durability_type` (V41) and takes them as
+ * CreateProductRequest.shelfLifeDays (@Min(0) @Max(3650)) and durabilityType (USE_BY | BEST_BEFORE);
+ * the label endpoint answers 422 without both.
+ */
+export const SHELF_LIFE_MAX_DAYS = 3650
+
+export const DURABILITY_TYPES = ["USE_BY", "BEST_BEFORE"] as const
+export type DurabilityType = (typeof DURABILITY_TYPES)[number]
+
+export const DURABILITY_PAIR_COPY =
+  "Add a shelf life and choose use-by or best-before together, so the label can print a date."
+export const SHELF_LIFE_RANGE_COPY = `Enter a whole number of days, from 0 to ${SHELF_LIFE_MAX_DAYS}.`
+
+export type DurabilityInputs =
+  | { ok: true; shelfLifeDays?: number; durabilityType?: DurabilityType }
+  | { ok: false; error: string }
+
+/**
+ * Reads the two inputs as typed. Both blank is valid and means "not recorded" (nothing is sent, and an
+ * edit keeps what is stored); one without the other is refused, because a label needs both; the
+ * shelf life must be a whole number of days in range. Anchored like the price pattern: "3abc", "1e2",
+ * "2.5" and "-1" are all rejected.
+ */
+export function parseDurabilityInputs(shelfLifeText: string, durabilityType: string): DurabilityInputs {
+  const text = shelfLifeText.trim()
+  if (text === "" && durabilityType === "") return { ok: true }
+  if (text === "" || durabilityType === "") return { ok: false, error: DURABILITY_PAIR_COPY }
+  if (!/^\d{1,4}$/.test(text)) return { ok: false, error: SHELF_LIFE_RANGE_COPY }
+  const days = Number(text)
+  if (days > SHELF_LIFE_MAX_DAYS) return { ok: false, error: SHELF_LIFE_RANGE_COPY }
+  if (!(DURABILITY_TYPES as readonly string[]).includes(durabilityType)) {
+    return { ok: false, error: DURABILITY_PAIR_COPY }
+  }
+  return { ok: true, shelfLifeDays: days, durabilityType: durabilityType as DurabilityType }
+}

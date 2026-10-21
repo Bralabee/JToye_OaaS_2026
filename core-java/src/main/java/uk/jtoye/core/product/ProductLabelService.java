@@ -195,28 +195,62 @@ public class ProductLabelService {
     }
 
     /**
-     * Collect and report EVERY missing required PPDS field at once, so the vendor
+     * Collect and report EVERY missing required PPDS item at once, so the vendor
      * sees the full list rather than fixing them one 422 at a time.
+     *
+     * <p>Issue #960 (SW-ADE-03): the detail is plain words for the vendor, with no column name and
+     * no UUID; the same facts go out as the {@code missingFields} problem member (field names the
+     * product form uses), so a client can point at the right input without parsing prose.
      */
     private void validatePpdsData(Product product, Shop shop) {
         List<String> missing = new ArrayList<>();
-        if (shop == null || shop.getName() == null || shop.getName().isBlank()) {
-            missing.add("business identity (shop name)");
-        }
-        if (shop == null || shop.getAddress() == null || shop.getAddress().isBlank()) {
-            missing.add("business address");
+        if (shop == null) {
+            missing.add(IncompleteLabelDataException.FIELD_SHOP);
+        } else {
+            if (shop.getName() == null || shop.getName().isBlank()) {
+                missing.add(IncompleteLabelDataException.FIELD_SHOP_NAME);
+            }
+            if (shop.getAddress() == null || shop.getAddress().isBlank()) {
+                missing.add(IncompleteLabelDataException.FIELD_SHOP_ADDRESS);
+            }
         }
         if (product.getShelfLifeDays() == null) {
-            missing.add("shelf life (shelf_life_days)");
+            missing.add(IncompleteLabelDataException.FIELD_SHELF_LIFE);
         }
         if (product.getDurabilityType() == null || product.getDurabilityType().isBlank()) {
-            missing.add("durability type (durability_type)");
+            missing.add(IncompleteLabelDataException.FIELD_DURABILITY_TYPE);
         }
         if (!missing.isEmpty()) {
-            throw new IncompleteLabelDataException(
-                    "Cannot generate PPDS label for product " + product.getId()
-                            + ": missing " + String.join(", ", missing));
+            throw new IncompleteLabelDataException(plainMissingMessage(missing), product.getId(), missing);
         }
+    }
+
+    /** The vendor-facing sentence for a set of missing field names (see {@link #validatePpdsData}). */
+    static String plainMissingMessage(List<String> missing) {
+        boolean shelf = missing.contains(IncompleteLabelDataException.FIELD_SHELF_LIFE);
+        boolean durability = missing.contains(IncompleteLabelDataException.FIELD_DURABILITY_TYPE);
+        List<String> sentences = new ArrayList<>();
+        if (shelf && durability) {
+            sentences.add("Add a shelf life (in days) and choose use-by or best-before on the product");
+        } else if (shelf) {
+            sentences.add("Add a shelf life (in days) on the product");
+        } else if (durability) {
+            sentences.add("Choose use-by or best-before on the product");
+        }
+        if (missing.contains(IncompleteLabelDataException.FIELD_SHOP)) {
+            sentences.add("Choose a shop for the product, so the label can carry the shop's name and address");
+        } else {
+            boolean name = missing.contains(IncompleteLabelDataException.FIELD_SHOP_NAME);
+            boolean address = missing.contains(IncompleteLabelDataException.FIELD_SHOP_ADDRESS);
+            if (name && address) {
+                sentences.add("Add the shop's name and business address in the shop's settings");
+            } else if (name) {
+                sentences.add("Add the shop's name in the shop's settings");
+            } else if (address) {
+                sentences.add("Add the shop's business address in the shop's settings");
+            }
+        }
+        return "This allergen label cannot be printed yet. " + String.join(". ", sentences) + ".";
     }
 
     /**
