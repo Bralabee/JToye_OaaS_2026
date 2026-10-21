@@ -25,9 +25,10 @@
 # RENEWAL. rotationPolicy Never on the CA keeps its key across renewals, so a
 # truststore built before a renewal still anchors a leaf signed after it (the JDK
 # anchors on the CA's name and key, not on its validity dates). mailpit-tls rotates
-# normally (90 days, renewed 15 days early) and Mailpit reads it at start: a renewed
-# leaf takes effect on the next Mailpit restart, and the old leaf stays valid until
-# then.
+# normally (90 days, renewed 15 days early) and Mailpit reads it only at start: a renewed
+# leaf reaches it when the container restarts, which the supervisor in mailpit.yaml does by
+# itself within about two minutes of the Secret changing (issue #972, INV-23); the old leaf stays
+# valid until then.
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer

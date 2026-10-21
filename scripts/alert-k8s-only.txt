@@ -1,0 +1,18 @@
+# Alert rules whose series exist ONLY in the Kubernetes Prometheus (issue #972).
+#
+# The rule corpus is ONE file for both runtimes (D-16, infra/monitoring/prometheus/alerts.yml and
+# its byte copy). A rule that reads a series only the cluster produces is therefore silent in
+# compose BY CONSTRUCTION, and the two live gates would call that a defect there:
+# check-alert-metrics.sh (M-1, "every live rule's selector matches >= 1 series") and
+# check-alert-liveness.sh (L-2, the same on the running Prometheus). This list is how they tell
+# "dataless because the runtime cannot produce it" from "dataless because it is broken".
+#
+# FORMAT: AlertName|reason|owner, one per line; `#` starts a comment line. Hygiene (enforced by
+# check-alert-metrics.sh, as for its KNOWN_DATALESS): the name must be a LIVE rule, reason and
+# owner may not be empty, no duplicates.
+#
+# HOW THE GATES USE IT. ALERT_RUNTIME=compose (implicit in check-alert-metrics.sh only when PROM_URL is unset) skips the series check for these rules
+# and says so on a line of its own; ALERT_RUNTIME=k8s (set it when the gate points at the staging
+# Prometheus) applies NO exemption, so on the cluster the rule must have data like any other. In
+# check-alert-liveness.sh an exported ALERT_RUNTIME wins; unset, the runtime is k8s whenever PROM_EXEC drives kubectl.
+CertificateExpiringSoon|certmanager_certificate_expiration_timestamp_seconds is cert-manager's own metric, scraped only by the k8s Prometheus (job cert-manager, a k8s-only job in k8s/copy-parity.conf); compose runs no cert-manager.|issue #972

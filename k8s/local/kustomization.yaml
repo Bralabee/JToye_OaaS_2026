@@ -165,6 +165,9 @@ patches:
   # Two documents, matched by GVK + name. LOC-7 asserts it is wired.
   - path: storage-env-patch.yaml
   - path: mail-env-patch.yaml
+  # core-java exports metrics labelled environment="local", not the prod profile's
+  # "production" (issue #999). Held by INV-22 in k8s/scripts/check-render-invariants.sh.
+  - path: core-java-metrics-env-patch.yaml
 
 # Local runs ONE of each service (D-09, DEF-3).
 #
