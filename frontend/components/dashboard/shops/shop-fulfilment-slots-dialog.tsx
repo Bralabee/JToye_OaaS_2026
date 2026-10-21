@@ -27,6 +27,12 @@ export interface ShopFulfilmentSlotsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   shop: Shop | null
+  /**
+   * #961: whether the caller may create and close slots (SHOP_MANAGER on the shop; the server refuses
+   * STAFF with 403). Reading the slots and generating the WhatsApp link stay open to STAFF. Defaults to
+   * true: absent, the dialog decides nothing and the server is the boundary.
+   */
+  canManage?: boolean
 }
 
 /**
@@ -41,6 +47,7 @@ export function ShopFulfilmentSlotsDialog({
   open,
   onOpenChange,
   shop,
+  canManage = true,
 }: ShopFulfilmentSlotsDialogProps) {
   const { toast } = useToast()
   const [slots, setSlots] = useState<FulfilmentSlotDto[]>([])
@@ -281,18 +288,20 @@ export function ShopFulfilmentSlotsDialog({
                           <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
                           WhatsApp Link
                         </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          data-testid={`slot-deactivate-btn-${slot.id}`}
-                          disabled={deactivatingId === slot.id}
-                          onClick={() => void handleDeactivate(slot.id)}
-                          className="h-8 gap-1 text-xs text-red-700 hover:bg-red-50 hover:text-red-800"
-                        >
-                          <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                          Close slot
-                        </Button>
+                        {canManage && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            data-testid={`slot-deactivate-btn-${slot.id}`}
+                            disabled={deactivatingId === slot.id}
+                            onClick={() => void handleDeactivate(slot.id)}
+                            className="h-8 gap-1 text-xs text-red-700 hover:bg-red-50 hover:text-red-800"
+                          >
+                            <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                            Close slot
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
@@ -345,91 +354,93 @@ export function ShopFulfilmentSlotsDialog({
         )}
 
         {/* Create New Scheduled Slot Form */}
-        <form onSubmit={handleCreateSlot} className="space-y-3 border-t border-slate-200 pt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-            Add Scheduled Fulfilment Slot
-          </h4>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <Label htmlFor="slot-service-date">Service date</Label>
-              <Input
-                id="slot-service-date"
-                type="date"
-                value={serviceDate}
-                onChange={(e) => setServiceDate(e.target.value)}
-                required
-              />
+        {canManage && (
+          <form onSubmit={handleCreateSlot} className="space-y-3 border-t border-slate-200 pt-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              Add Scheduled Fulfilment Slot
+            </h4>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label htmlFor="slot-service-date">Service date</Label>
+                <Input
+                  id="slot-service-date"
+                  type="date"
+                  value={serviceDate}
+                  onChange={(e) => setServiceDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="slot-window-start">Window start (UK)</Label>
+                <Input
+                  id="slot-window-start"
+                  type="time"
+                  value={windowStart}
+                  onChange={(e) => setWindowStart(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="slot-window-end">Window end (UK)</Label>
+                <Input
+                  id="slot-window-end"
+                  type="time"
+                  value={windowEnd}
+                  onChange={(e) => setWindowEnd(e.target.value)}
+                  required
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="slot-window-start">Window start (UK)</Label>
-              <Input
-                id="slot-window-start"
-                type="time"
-                value={windowStart}
-                onChange={(e) => setWindowStart(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="slot-window-end">Window end (UK)</Label>
-              <Input
-                id="slot-window-end"
-                type="time"
-                value={windowEnd}
-                onChange={(e) => setWindowEnd(e.target.value)}
-                required
-              />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <Label htmlFor="slot-cutoff-at">Pre-order cutoff (date &amp; time)</Label>
-              <Input
-                id="slot-cutoff-at"
-                type="datetime-local"
-                value={cutoffLocal}
-                onChange={(e) => setCutoffLocal(e.target.value)}
-                required
-              />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label htmlFor="slot-cutoff-at">Pre-order cutoff (date &amp; time)</Label>
+                <Input
+                  id="slot-cutoff-at"
+                  type="datetime-local"
+                  value={cutoffLocal}
+                  onChange={(e) => setCutoffLocal(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="slot-max-orders">Max orders (optional)</Label>
+                <Input
+                  id="slot-max-orders"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 25"
+                  value={maxOrders}
+                  onChange={(e) => setMaxOrders(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="slot-max-units">Max portions (optional)</Label>
+                <Input
+                  id="slot-max-units"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 60"
+                  value={maxUnits}
+                  onChange={(e) => setMaxUnits(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="slot-max-orders">Max orders (optional)</Label>
-              <Input
-                id="slot-max-orders"
-                type="number"
-                min="1"
-                placeholder="e.g. 25"
-                value={maxOrders}
-                onChange={(e) => setMaxOrders(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="slot-max-units">Max portions (optional)</Label>
-              <Input
-                id="slot-max-units"
-                type="number"
-                min="1"
-                placeholder="e.g. 60"
-                value={maxUnits}
-                onChange={(e) => setMaxUnits(e.target.value)}
-              />
-            </div>
-          </div>
 
-          <div className="flex justify-end">
-            <Button
-              type="submit"
-              size="sm"
-              data-testid="create-slot-submit-btn"
-              disabled={submitting}
-              className="gap-1.5"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              {submitting ? "Adding slot…" : "Add Scheduled Slot"}
-            </Button>
-          </div>
-        </form>
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                size="sm"
+                data-testid="create-slot-submit-btn"
+                disabled={submitting}
+                className="gap-1.5"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                {submitting ? "Adding slot…" : "Add Scheduled Slot"}
+              </Button>
+            </div>
+          </form>
+        )}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

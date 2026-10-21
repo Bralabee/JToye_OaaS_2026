@@ -195,11 +195,20 @@ public class StaffManagementService {
         UUID userId = currentCallerSub();
         String businessName = currentBusinessName();
         if (shopAccessService.isGroupAdmin()) {
-            return new MyAccessDto(userId, true, null, null, businessName);
+            return new MyAccessDto(userId, true, null, null, businessName, null);
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();
-        return new MyAccessDto(userId, false, granted,
-                shopAccessService.resolveMembership(userId).tenantWideRole(), businessName);
+        Membership membership = shopAccessService.resolveMembership(userId);
+        // #961: the role on each granted shop, so the dashboard hides what the server would refuse.
+        Map<UUID, ShopRole> shopRoles = new LinkedHashMap<>();
+        for (UUID shopId : granted) {
+            ShopRole role = membership.roleOn(shopId);
+            if (role != null) {
+                shopRoles.put(shopId, role);
+            }
+        }
+        return new MyAccessDto(userId, false, granted, membership.tenantWideRole(), businessName,
+                Map.copyOf(shopRoles));
     }
 
     /**

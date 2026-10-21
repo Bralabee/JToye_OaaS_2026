@@ -9,7 +9,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -19,6 +18,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.onboarding.dto.CreateOnboardingRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.TenantJwts;
 
 import java.util.UUID;
 
@@ -89,7 +89,6 @@ class OnboardingCreateCrossTenantIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createWithForeignPublishedShopIsRejected404_noCrossTenantBinding() throws Exception {
         // Tenant B owns a PUBLISHED shop, readable cross-tenant under shops_public_read.
         UUID tenantB = UUID.randomUUID();
@@ -102,6 +101,7 @@ class OnboardingCreateCrossTenantIntegrationTest {
 
         // Tenant A points its onboarding at tenant B's published shop -> 404, not bound.
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody(shopB)))
@@ -117,12 +117,12 @@ class OnboardingCreateCrossTenantIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createWithNonexistentShopIsRejected404NotDuplicate409() throws Exception {
         // A nonexistent shopId used to surface as an FK DataIntegrityViolationException
         // mapped to 409 "Duplicate Entry" (a shop-UUID existence oracle); it must now
         // be a clean 404.
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody(UUID.randomUUID())))
@@ -130,10 +130,10 @@ class OnboardingCreateCrossTenantIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createWithOwnShopSucceeds() throws Exception {
         // The ownership guard must not over-reject the caller's own shop.
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody(shopId)))

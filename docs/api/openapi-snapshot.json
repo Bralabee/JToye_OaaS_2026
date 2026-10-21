@@ -3449,6 +3449,21 @@
             "description" : "True if the caller has unrestricted (tenant-wide GROUP_ADMIN) access.",
             "type" : "boolean"
           },
+          "shopRoles" : {
+            "additionalProperties" : {
+              "enum" : [
+                "STAFF",
+                "SHOP_MANAGER",
+                "GROUP_ADMIN"
+              ],
+              "type" : "string"
+            },
+            "description" : "The role the caller holds on each shop in grantedShopIds (the higher of the shop's own grant and the tenant-wide role). Null for a GROUP_ADMIN (unrestricted). A hint for hiding controls the server would refuse; the server still decides every request.",
+            "type" : [
+              "object",
+              "null"
+            ]
+          },
           "tenantWideRole" : {
             "description" : "The role a tenant-wide STAFF or SHOP_MANAGER grant gives the caller on EVERY shop of the tenant; grantedShopIds then lists every current shop. Null when the caller holds no such grant, and always null for a GROUP_ADMIN.",
             "enum" : [
