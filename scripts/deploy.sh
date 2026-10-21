@@ -39,10 +39,15 @@
 # ORDER, each refusal before anything after it: flags -> environment -> image tag
 # -> (render-only: render, exit) -> context guard -> staging preflight
 # (scripts/staging-secrets-preflight.sh, plan 29-13: any non-zero, a VOID 2
-# included, refuses) -> apply -k <wrapper> -> rollout status per Deployment; a failed
+# included, refuses) -> render the wrapper (a render that fails is VOID, before any
+# apply) -> apply -k <wrapper> -> rollout status per retagged Deployment; a failed
 # rollout undoes EVERY Deployment that apply changed (not only the failed one, and
-# not one it left alone) -> the final stdout line `DEPLOYED_SHA=<sha>`, printed
-# only after every rollout is green. That line is the record of what was applied;
+# not one it left alone) -> rollout status for every OTHER Deployment and StatefulSet
+# in the render (monitoring, Keycloak, Redis, the mail trap...), read from the render,
+# sharing one 600 s budget, every failure named, rc 1, and NO undo: those were not
+# retagged and the retagged apps are Ready (issue #969) -> the final stdout line
+# `DEPLOYED_SHA=<sha>`, printed only after every workload the apply touched is Ready.
+# That line is the record of what was applied;
 # plan 29-14's tracer and every digest-parity check read it back instead of
 # re-deriving a sha from HEAD.
 #
@@ -54,7 +59,8 @@
 #
 # EXIT CODES
 #   0  rendered (--render-only), or applied and every rollout green
-#   1  refused (environment, context guard, preflight) or a rollout failed (undone)
+#   1  refused (environment, context guard, preflight), a retagged rollout failed (undone),
+#      or another workload in the render did not become Ready (not undone, not certified)
 #   2  usage error, or VOID (missing tooling, a render that failed)
 
 set -uo pipefail
@@ -104,7 +110,7 @@ _st_render() {
 selftest() {
   local real_bash real_kubectl st fails=0 why t p fqdn arm
   local sha="0123456789abcdef0123456789abcdef01234567"
-  local arms="no-context employer-context stale-server image-tag preflight-refusal render-only rollout-failure rollout-failure-first rollout-failure-unchanged deployed-sha"
+  local arms="no-context employer-context stale-server image-tag preflight-refusal render-only rollout-failure rollout-failure-first rollout-failure-unchanged deployed-sha monitoring-bad-image statefulset-bad-image render-void"
   real_bash=$(type -P bash) || { echo "VOID: bash not found" >&2; return 2; }
   if ! real_kubectl=$(type -P kubectl); then
     for arm in $arms; do _st_result "FAIL $arm VOID: the selftest needs a real kubectl for the offline render and the guard's local config read"; done
@@ -117,8 +123,12 @@ selftest() {
   mkdir -p "$st/repo/scripts/lib" "$st/stub" "$st/tools" "$st/logs" "$st/home" "$st/tmp"
   cp "$SCRIPT_PATH" "$st/repo/scripts/deploy.sh"
   cp -R "$PROJECT_ROOT/k8s" "$st/repo/k8s"
+  cp -R "$PROJECT_ROOT/k8s" "$st/k8s.pristine"
   if [ -f "$PROJECT_ROOT/scripts/lib/staging-kube-guard.sh" ]; then
     cp "$PROJECT_ROOT/scripts/lib/staging-kube-guard.sh" "$st/repo/scripts/lib/"
+  fi
+  if [ -f "$PROJECT_ROOT/scripts/lib/wait-workloads.sh" ]; then
+    cp "$PROJECT_ROOT/scripts/lib/wait-workloads.sh" "$st/repo/scripts/lib/"
   fi
   # The stub preflight: logged, and its status is the arm's choice.
   printf 'printf "%%s\\n" "preflight $*" >> "$STUB_LOG_DIR/preflight.log"\nprintf "%%s\\n" "preflight" >> "$STUB_LOG_DIR/calls.log"\nexit "${STUB_PREFLIGHT_RC:-0}"\n' \
@@ -146,6 +156,17 @@ case " \$* " in
     if [ -f "\$STUB_LOG_DIR/applied" ] && case " \${STUB_UNCHANGED:-} " in *" \$svc "*) false ;; *) true ;; esac; then echo 2; else echo 1; fi
     exit 0 ;;
 esac
+case " \$* " in
+  *" rollout status "*)
+    # A workload whose image can never be pulled never becomes Ready: judge the rollout from the
+    # RENDER THAT WAS APPLIED, so a Deployment pinned to a bad image fails here exactly as it does
+    # on a cluster (ImagePullBackOff), with no per-arm switch naming the victim.
+    tgt=""
+    for a in "\$@"; do case "\$a" in deployment/*|statefulset/*) tgt="\$a" ;; esac; done
+    if [ -f "\$STUB_LOG_DIR/applied-render.yaml" ] && awk -v want="\$tgt" -f "\$STUB_BAD_IMAGE_AWK" "\$STUB_LOG_DIR/applied-render.yaml"; then
+      echo "stub: \$tgt never became Ready (ImagePullBackOff)" >&2; exit 1
+    fi ;;
+esac
 if [ -n "\${STUB_FAIL_ROLLOUT:-}" ]; then
   case " \$* " in *" rollout status deployment/\${STUB_FAIL_ROLLOUT} "*) echo "stub: rollout of \${STUB_FAIL_ROLLOUT} failed" >&2; exit 1 ;; esac
 fi
@@ -153,6 +174,15 @@ exit 0
 STUB
   printf '#!%s\nprintf "%%s\\n" "$*" >> "$STUB_LOG_DIR/kubelogin.log"\nexit 0\n' "$real_bash" > "$st/stub/kubelogin"
   chmod +x "$st/stub/kubectl" "$st/stub/kubelogin"
+  # Exit 0 when the workload named by -v want (kind/name, lower case) carries an image on the
+  # reserved .invalid TLD in the render it is handed; 1 when it does not.
+  cat > "$st/stub/bad-image.awk" <<'AWK'
+/^---[ \t]*$/ { k = ""; n = "" }
+/^kind: / { k = $2 }
+/^  name: / { if (n == "" && (k == "Deployment" || k == "StatefulSet")) n = tolower(k) "/" $2 }
+/^[ \t-]*image: / { if (n == want && $0 ~ /registry\.invalid\//) bad = 1 }
+END { exit(bad ? 0 : 1) }
+AWK
 
   fqdn=$(awk -F'"' '/^[[:space:]]*aks_api_server_fqdn[[:space:]]*:/ { print $2; exit }' "$st/repo/k8s/staging/azure-identity.yaml")
   if [ -z "$fqdn" ]; then
@@ -189,7 +219,7 @@ KCFG
     : > "$st/logs/kubectl.log"; : > "$st/logs/kubelogin.log"; : > "$st/logs/preflight.log"; : > "$st/logs/calls.log"
     rm -f "$st/logs/applied-render.yaml" "$st/logs/applied"
     command env -i PATH="$st/stub:$st/tools" HOME="$st/home" KUBECONFIG="$st/kubeconfig" TMPDIR="$st/tmp" \
-      STUB_LOG_DIR="$st/logs" REAL_KUBECTL="$real_kubectl" ${extra[@]+"${extra[@]}"} \
+      STUB_LOG_DIR="$st/logs" STUB_BAD_IMAGE_AWK="$st/stub/bad-image.awk" REAL_KUBECTL="$real_kubectl" ${extra[@]+"${extra[@]}"} \
       "$real_bash" "$st/repo/scripts/deploy.sh" "$@" > "$st/out" 2> "$st/err"; ST_RC=$?
     ST_OUT=$(cat "$st/out"); ST_ERR=$(cat "$st/err")
   }
@@ -332,10 +362,12 @@ KCFG
   why=""
   local last n_ctx n_all n_applied n_applied_off order
   last=$(tail -n 1 "$st/out")
-  n_all=$(_st_beyond_config)
+  # The offline render the wait list is read from is the one call that needs no cluster context.
+  n_all=$(( $(_st_beyond_config) - $(_st_kubectl_matching '^kustomize ') ))
   n_ctx=$(_st_kubectl_matching '^--context jtoye-stg-aks ')
-  n_applied=0; n_applied_off=-1
+  n_applied=0; n_applied_off=-1; n_wl=0
   if [ -f "$st/logs/applied-render.yaml" ]; then
+    n_wl=$(command grep -cE '^kind: (Deployment|StatefulSet)$' "$st/logs/applied-render.yaml" || true)
     n_applied=$(_st_app_at_tag < "$st/logs/applied-render.yaml"); n_applied_off=$(_st_app_off_tag < "$st/logs/applied-render.yaml")
   fi
   order=$(awk '/^preflight/ { printf "preflight," } /^kubectl .* apply -k / { printf "apply," }' "$st/logs/calls.log")
@@ -348,9 +380,73 @@ KCFG
   elif [ "$n_applied_off" -ne 0 ]; then why="the applied render holds $n_applied_off app image line(s) at another tag (want 0)"
   elif [ "$order" != "preflight,apply," ]; then why="call order '$order' (want the preflight before the apply)"
   elif [ "$(_st_kubectl_matching 'rollout status deployment/(core-java|edge-go|frontend)( |$)')" -ne 3 ]; then why="rollout status calls=$(_st_kubectl_matching 'rollout status deployment/(core-java|edge-go|frontend)( |$)') (want 3)"
+  elif [ "$n_wl" -lt 12 ]; then why="the applied render holds only $n_wl Deployments/StatefulSets (want the staging 12: the control that the monitoring set is in the render)"
+  elif [ "$(_st_kubectl_matching ' rollout status ')" -ne "$n_wl" ]; then why="rollout status calls=$(_st_kubectl_matching ' rollout status ') (want $n_wl: every Deployment and StatefulSet in the render, not only the three retagged)"
+  elif [ "$(_st_kubectl_matching ' rollout status deployment/(prometheus|alertmanager|grafana)( |$)')" -ne 3 ]; then why="the monitoring Deployments were not all waited on"
+  elif [ "$(_st_kubectl_matching ' rollout status .* --timeout=[0-9]+[sm]$')" -ne "$n_wl" ]; then why="a rollout status call carries no bounded --timeout"
+  elif [ "$(_st_kubectl_matching 'rollout undo')" -ne 0 ]; then why="a rollout undo on a green deploy"
   fi
-  if [ -z "$why" ]; then _st_result "PASS deployed-sha rc=0 last_line=DEPLOYED_SHA=$sha apply=1 applied_images_at_tag=3 rollouts=3 all_calls_via_context=$n_ctx/$n_all preflight_before_apply=yes"
+  if [ -z "$why" ]; then _st_result "PASS deployed-sha rc=0 last_line=DEPLOYED_SHA=$sha apply=1 applied_images_at_tag=3 rollouts=$n_wl(3 retagged + $((n_wl - 3)) others, all --timeout bounded) all_calls_via_context=$n_ctx/$n_all preflight_before_apply=yes"
   else _st_result "FAIL deployed-sha $why"; fails=$((fails + 1)); fi
+
+  # --- monitoring-bad-image: the three retagged rollouts are green, but a MONITORING Deployment
+  # (prometheus) is pinned to an image that can never be pulled. Issue #969: deploy.sh used to
+  # wait on core-java, edge-go and frontend only, print DEPLOYED_SHA and exit 0 over it. Now it
+  # waits on every Deployment and StatefulSet in the render, refuses to certify (no
+  # DEPLOYED_SHA, rc 1) and names the workload. It does NOT undo anything: the retagged apps
+  # are healthy and a broken Prometheus image is not a reason to roll them back.
+  local pf="$st/repo/k8s/components/monitoring/prometheus.yaml" h_pf_before h_pf_after n_wl_bad
+  h_pf_before=$(sha256sum "$st/k8s.pristine/components/monitoring/prometheus.yaml" | cut -d' ' -f1)
+  sed -i 's|image: prom/prometheus:[^[:space:]]*|image: registry.invalid/prometheus:does-not-exist|' "$pf"
+  _st_run -- staging --context jtoye-stg-aks --image-tag "$sha"
+  n_wl_bad=$(command grep -c 'registry.invalid/prometheus:does-not-exist' "$st/logs/applied-render.yaml" || true)
+  rm -rf "$st/repo/k8s" && cp -R "$st/k8s.pristine" "$st/repo/k8s"
+  h_pf_after=$(sha256sum "$pf" | cut -d' ' -f1)
+  why=""
+  if [ "$h_pf_before" != "$h_pf_after" ]; then why="the fixture was not restored by content: $h_pf_before -> $h_pf_after"
+  elif [ "$n_wl_bad" -ne 1 ]; then why="the bad image is in the applied render $n_wl_bad times (want 1: the fixture did not take)"
+  elif [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1) with prometheus on a bad image: $(_st_snip "$ST_ERR")"
+  elif command grep -q '^DEPLOYED_SHA=' <<<"$ST_OUT"; then why="a DEPLOYED_SHA line was certified over a Deployment that never became Ready"
+  elif [ "$(_st_kubectl_matching 'rollout status deployment/prometheus( |$)')" -ne 1 ]; then why="rollout status deployment/prometheus calls=$(_st_kubectl_matching 'rollout status deployment/prometheus( |$)') (want 1)"
+  elif ! command grep -qF 'deployment/prometheus' <<<"$ST_ERR"; then why="stderr does not name deployment/prometheus: $(_st_snip "$ST_ERR")"
+  elif [ "$(_st_kubectl_matching 'rollout status deployment/(core-java|edge-go|frontend)( |$)')" -ne 3 ]; then why="the retagged rollouts were not all waited on first"
+  elif [ "$(_st_kubectl_matching 'rollout status deployment/(grafana|alertmanager)( |$)')" -ne 2 ]; then why="the other monitoring Deployments were not still waited on after the first failure"
+  elif [ "$(_st_kubectl_matching 'rollout undo')" -ne 0 ]; then why="rollout undo called $(_st_kubectl_matching 'rollout undo') time(s); undo is scoped to the retagged apps and they were healthy"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS monitoring-bad-image rc=$ST_RC deployed_sha_lines=0 prometheus_waited=1 other_monitoring_still_waited=2 undo_calls=0"
+  else _st_result "FAIL monitoring-bad-image $why"; fails=$((fails + 1)); fi
+
+  # --- statefulset-bad-image: a StatefulSet in the render is waited on by kind, not skipped.
+  # The staging render carries none today; the fixture adds one so the kind cannot be forgotten.
+  printf 'apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: zz-fixture\nspec:\n  serviceName: zz-fixture\n  replicas: 1\n  selector:\n    matchLabels:\n      app: zz-fixture\n  template:\n    metadata:\n      labels:\n        app: zz-fixture\n    spec:\n      containers:\n        - name: c\n          image: registry.invalid/zz-fixture:none\n' \
+    > "$st/repo/k8s/staging/zz-fixture-sts.yaml"
+  sed -i 's|^resources:$|resources:\n  - zz-fixture-sts.yaml|' "$st/repo/k8s/staging/kustomization.yaml"
+  _st_run -- staging --context jtoye-stg-aks --image-tag "$sha"
+  rm -rf "$st/repo/k8s" && cp -R "$st/k8s.pristine" "$st/repo/k8s"
+  why=""
+  if [ -e "$st/repo/k8s/staging/zz-fixture-sts.yaml" ]; then why="the fixture file survived the restore"
+  elif [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1) with a StatefulSet on a bad image: $(_st_snip "$ST_ERR")"
+  elif command grep -q '^DEPLOYED_SHA=' <<<"$ST_OUT"; then why="a DEPLOYED_SHA line was certified over a StatefulSet that never became Ready"
+  elif [ "$(_st_kubectl_matching 'rollout status statefulset/zz-fixture( |$)')" -ne 1 ]; then why="rollout status statefulset/zz-fixture calls=$(_st_kubectl_matching 'rollout status statefulset/zz-fixture( |$)') (want 1)"
+  elif [ "$(_st_kubectl_matching 'rollout undo')" -ne 0 ]; then why="rollout undo called on a StatefulSet failure"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS statefulset-bad-image rc=$ST_RC statefulset_waited=1 deployed_sha_lines=0 undo_calls=0"
+  else _st_result "FAIL statefulset-bad-image $why"; fails=$((fails + 1)); fi
+
+  # --- render-void: a render that kustomize cannot build is VOID (rc 2) BEFORE the apply.
+  # The wait list is read from the render, so a render that fails must not fall back to the three
+  # hard-coded names and apply anyway.
+  sed -i 's|^resources:$|resources:\n  - zz-missing.yaml|' "$st/repo/k8s/staging/kustomization.yaml"
+  _st_run -- staging --context jtoye-stg-aks --image-tag "$sha"
+  rm -rf "$st/repo/k8s" && cp -R "$st/k8s.pristine" "$st/repo/k8s"
+  why=""
+  if [ "$ST_RC" -ne 2 ]; then why="rc=$ST_RC (want 2, VOID): $(_st_snip "$ST_ERR")"
+  elif ! command grep -qF 'VOID' <<<"$ST_ERR"; then why="stderr lacks VOID: $(_st_snip "$ST_ERR")"
+  elif [ "$(_st_kubectl_matching ' apply ')" -ne 0 ] || [ "$(_st_kubectl_matching ' rollout ')" -ne 0 ]; then why="apply/rollout called after a render that failed"
+  elif command grep -q '^DEPLOYED_SHA=' <<<"$ST_OUT"; then why="a DEPLOYED_SHA line after a failed render"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS render-void rc=$ST_RC apply_calls=0 rollout_calls=0 deployed_sha_lines=0"
+  else _st_result "FAIL render-void $why"; fails=$((fails + 1)); fi
 
   _st_render
   [ "$fails" -eq 0 ]
@@ -533,6 +629,37 @@ read_generation() { # read_generation <svc> -> generation on stdout; rc 1 when i
     [ "$rc" -eq 0 ] || return 1
     printf '%s\n' "${out:-0}"
 }
+# Every workload the render carries, read BEFORE the apply (issue #969). `apply -k` applies the whole
+# overlay, so a deploy is only certified once everything it applied is Ready, not just the three
+# images it retagged: on 2026-10-19 DEPLOYED_SHA was printed while the new alertmanager and grafana
+# pods were still ContainerCreating. Read from the render, not from a list kept here, so a
+# Deployment or StatefulSet the overlay gains is waited on without anyone remembering to add it.
+# The reader and the wait are scripts/lib/wait-workloads.sh, shared with the CI deploy-staging
+# job (scripts/wait-other-workloads.sh), so the two paths cannot drift.
+# shellcheck source=scripts/lib/wait-workloads.sh
+. "$PROJECT_ROOT/scripts/lib/wait-workloads.sh" || void "could not source scripts/lib/wait-workloads.sh"
+RENDER=$(kubectl kustomize "$WRAPPER" 2>"$WRAPPER/render.err"); rc=$?
+if [ "$rc" -ne 0 ] || [ -z "$RENDER" ]; then
+    cat "$WRAPPER/render.err" >&2
+    void "kubectl kustomize of the wrapper failed (rc=$rc) or rendered nothing; nothing was applied"
+fi
+mapfile -t WORKLOADS < <(workloads_in_render <<< "$RENDER")
+[ "${#WORKLOADS[@]}" -gt 0 ] || void "the render holds no Deployment or StatefulSet; nothing was applied"
+for svc in "${ROLLOUTS[@]}"; do
+    case " ${WORKLOADS[*]} " in
+        *" deployment/${svc} "*) ;;
+        *) void "the render does not carry deployment/${svc}, which this script retags; nothing was applied" ;;
+    esac
+done
+# Everything in the render that this apply did NOT retag. No rollback is scoped to these.
+OTHER_WORKLOADS=()
+for w in "${WORKLOADS[@]}"; do
+    case "$w" in
+        deployment/core-java|deployment/edge-go|deployment/frontend) ;;
+        *) OTHER_WORKLOADS+=("$w") ;;
+    esac
+done
+
 declare -A GEN_BEFORE=()
 for svc in "${ROLLOUTS[@]}"; do
     GEN_BEFORE[$svc]=$(read_generation "$svc") \
@@ -581,6 +708,26 @@ deploy_service() {
 for svc in "${ROLLOUTS[@]}"; do
     deploy_service "$svc" || { rollback_changed; exit 1; }
 done
+
+# The rest of the render: monitoring, Keycloak, Redis, the mail trap, the secret sync and anything
+# else the overlay carries (issue #969). They share ONE bounded budget rather than a timeout each,
+# so twelve broken workloads cost ten minutes, not two hours; once it is spent the remaining
+# workloads get a one-second look, which a Ready one passes at once. Every workload is checked and
+# every failure is named, instead of stopping at the first.
+#
+# NO `rollout undo` here, on purpose: the undo above is scoped to the Deployments this apply
+# RETAGGED (core-java, edge-go, frontend), and they are Ready at this point. Rolling healthy
+# application pods back to an older sha because Prometheus will not pull its image would trade a
+# monitoring fault for an application one. The deploy is simply not certified: rc 1, no
+# DEPLOYED_SHA, and the operator is told which workload to look at.
+EXTRA_WAIT_BUDGET_SECONDS=600
+if [ "${#OTHER_WORKLOADS[@]}" -gt 0 ]; then
+    echo -e "\n${BLUE}Waiting for the other ${#OTHER_WORKLOADS[@]} workload(s) in the render (shared budget ${EXTRA_WAIT_BUDGET_SECONDS}s)...${NC}"
+    if ! wait_workloads "$NAMESPACE" "$EXTRA_WAIT_BUDGET_SECONDS" kubectl --context "$KUBE_CONTEXT" -- "${OTHER_WORKLOADS[@]}"; then
+        echo -e "${RED}NOT CERTIFIED: ${WAIT_NOT_READY[*]} did not become Ready. ${ROLLOUTS[*]} are Ready at ${IMAGE_TAG} and were left there (nothing retagged failed, so nothing is undone); no DEPLOYED_SHA is recorded.${NC}" >&2
+        exit 1
+    fi
+fi
 
 # Informational read-outs; a failure here does not unmake a green rollout.
 echo -e "\n${BLUE}Current Pod Status:${NC}"
