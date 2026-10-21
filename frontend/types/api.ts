@@ -288,6 +288,8 @@ export interface CreateProductRequest {
   shelfLifeDays?: number
   /** #960: omitted keeps the stored value on a PUT. */
   durabilityType?: DurabilityType
+  /** #960 (review F3): PUT only. true removes the stored shelfLifeDays and durabilityType; send it alone, not beside either. */
+  clearDurability?: boolean
 }
 
 /** One per-row CSV import error (core-java RowError). field "row" means the row as a whole. */

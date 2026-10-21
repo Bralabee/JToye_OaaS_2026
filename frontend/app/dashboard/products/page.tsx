@@ -531,6 +531,13 @@ export default function ProductsPage() {
       document.getElementById(shelfLifeText.trim() === "" ? "shelfLifeDays" : "durabilityType")?.focus()
       return
     }
+    const clearsStoredDurability =
+      durabilityTouched &&
+      durability.ok &&
+      durability.shelfLifeDays === undefined &&
+      durability.durabilityType === undefined &&
+      editingProduct != null &&
+      (editingProduct.shelfLifeDays != null || editingProduct.durabilityType != null)
     try {
       setSubmitting(true)
 
@@ -566,6 +573,9 @@ export default function ProductsPage() {
         // #960: omitted when blank, so an edit keeps what is stored and a create stores nothing.
         shelfLifeDays: durability.shelfLifeDays,
         durabilityType: durability.durabilityType,
+        // Review F3: emptying inputs that held values is a stated clear. Omitting both would leave the
+        // server keeping them while the toast said "updated".
+        clearDurability: clearsStoredDurability ? true : undefined,
         // UXT-016 (37-39): the tracking intent is stated, not inferred from a null. The server keeps the
         // stored stock when trackInventory is absent, so without it unticking would no longer stop tracking.
         trackInventory,

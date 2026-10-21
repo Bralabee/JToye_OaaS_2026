@@ -252,6 +252,76 @@ describe("#960 review F2: untouched stored durability values round-trip", () => 
   })
 })
 
+/**
+ * Review round 1, F3: clearing both inputs ("Not set") on a product that stores them used to send neither,
+ * the server kept them, and the toast said "updated". The clear is now stated (clearDurability), the way
+ * trackInventory false states "stop tracking".
+ */
+describe("#960 review F3: clearing the durability inputs is sent, not dropped", () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockedApiClient.put.mockResolvedValue({ data: { ...product } })
+  })
+
+  async function openEdit(stored: Record<string, unknown>) {
+    mockedApiClient.get.mockImplementation(api([{ ...product, ...stored }]) as jest.Mock)
+    render(<ProductsPage />)
+    fireEvent.click(await screen.findByRole("button", { name: "Edit product Jollof Rice" }))
+    await screen.findByText("Edit Product")
+  }
+
+  it("emptying both inputs of a stored pair sends clearDurability true and neither value", async () => {
+    await openEdit({ shelfLifeDays: 3, durabilityType: "USE_BY" })
+    fireEvent.change(shelfInput(), { target: { value: "" } })
+    fireEvent.change(durabilitySelect(), { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: /update product/i }))
+
+    await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))
+    const body = mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>
+    expect(body.clearDurability).toBe(true)
+    expect(body.shelfLifeDays).toBeUndefined()
+    expect(body.durabilityType).toBeUndefined()
+  })
+
+  it("emptying the one input a product stores also clears", async () => {
+    await openEdit({ shelfLifeDays: 3 })
+    fireEvent.change(shelfInput(), { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: /update product/i }))
+
+    await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))
+    expect((mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>).clearDurability).toBe(true)
+  })
+
+  it("emptying only one input of a stored pair is refused as a half-pair, not sent as a clear", async () => {
+    await openEdit({ shelfLifeDays: 3, durabilityType: "USE_BY" })
+    fireEvent.change(durabilitySelect(), { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: /update product/i }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(DURABILITY_PAIR_COPY)
+    expect(mockedApiClient.put).not.toHaveBeenCalled()
+  })
+
+  it("a product that stores nothing and is left blank sends no clear", async () => {
+    await openEdit({})
+    fireEvent.click(screen.getByRole("button", { name: /update product/i }))
+
+    await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))
+    expect((mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>).clearDurability).toBeUndefined()
+  })
+
+  it("setting new values on a stored pair sends them and no clear", async () => {
+    await openEdit({ shelfLifeDays: 3, durabilityType: "USE_BY" })
+    fireEvent.change(shelfInput(), { target: { value: "6" } })
+    fireEvent.click(screen.getByRole("button", { name: /update product/i }))
+
+    await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))
+    const body = mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>
+    expect(body.shelfLifeDays).toBe(6)
+    expect(body.durabilityType).toBe("USE_BY")
+    expect(body.clearDurability).toBeUndefined()
+  })
+})
+
 describe("#960: the label dialog on a product with no shelf life", () => {
   const PDF = new Blob(["%PDF-1.4"], { type: "application/pdf" })
   const createObjectURL = jest.fn(() => "blob:label")

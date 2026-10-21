@@ -59,6 +59,9 @@ line at print time:
 - `shelfLifeDays` — an integer number of days (e.g. `3`).
 - `durabilityType` — `USE_BY` or `BEST_BEFORE`.
 
+On an edit, omitting both keeps what is stored; to remove them send `clearDurability: true` and neither value
+(sending a value beside it is a 400).
+
 The label prints `Use by: <generation date + shelfLifeDays>` (or
 `Best before: …`), formatted like `8 Jul 2026`.
 

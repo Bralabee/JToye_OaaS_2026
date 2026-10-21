@@ -165,6 +165,53 @@ class ProductLabelPlainProblemIntegrationTest {
                 .andExpect(jsonPath("$.durabilityType").value("USE_BY"));
     }
 
+    /**
+     * Review round 1, F3: "Not set" in the form must actually clear. An edit that omits the two fields keeps
+     * them (above); clearDurability true is the stated way to remove them. RED on the previous commit: the
+     * flag is ignored, the PUT answers 200 and both values are still stored.
+     */
+    @Test
+    void clearDurabilityOnAnEditRemovesBothStoredValues() throws Exception {
+        Fixture f = seed();
+        UUID id = createProduct(f, "CLEAR-" + f.tag, 4, "USE_BY");
+        assertThat(durabilityRow(id)).containsEntry("shelf_life_days", 4).containsEntry("durability_type", "USE_BY");
+
+        mockMvc.perform(put("/api/v1/products/" + id).with(adminJwt(f.tenant))
+                        .contentType("application/json")
+                        .content(productJson("CLEAR-" + f.tag, f.shop, null, null).replaceFirst("}$", ",\"clearDurability\":true}")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.shelfLifeDays").doesNotExist())
+                .andExpect(jsonPath("$.durabilityType").doesNotExist());
+
+        assertThat(durabilityRow(id)).containsEntry("shelf_life_days", null).containsEntry("durability_type", null);
+        // And the label is honest about it again: 422 naming both.
+        mockMvc.perform(get("/api/v1/products/" + id + "/label").with(adminJwt(f.tenant)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.missingFields[0]").value("shelfLifeDays"))
+                .andExpect(jsonPath("$.missingFields[1]").value("durabilityType"));
+    }
+
+    /** clearDurability false (or absent) clears nothing; a clear that also sends a value contradicts itself (400). */
+    @Test
+    void clearDurabilityFalseKeepsAndAContradictoryClearIsRefusedUnchanged() throws Exception {
+        Fixture f = seed();
+        UUID id = createProduct(f, "KEEP2-" + f.tag, 4, "BEST_BEFORE");
+
+        mockMvc.perform(put("/api/v1/products/" + id).with(adminJwt(f.tenant))
+                        .contentType("application/json")
+                        .content(productJson("KEEP2-" + f.tag, f.shop, null, null).replaceFirst("}$", ",\"clearDurability\":false}")))
+                .andExpect(status().isOk());
+        assertThat(durabilityRow(id)).containsEntry("shelf_life_days", 4).containsEntry("durability_type", "BEST_BEFORE");
+
+        mockMvc.perform(put("/api/v1/products/" + id).with(adminJwt(f.tenant))
+                        .contentType("application/json")
+                        .content(productJson("KEEP2-" + f.tag, f.shop, 9, null).replaceFirst("}$", ",\"clearDurability\":true}")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.clearDurability").exists());
+        assertThat(durabilityRow(id)).as("a refused request changes nothing")
+                .containsEntry("shelf_life_days", 4).containsEntry("durability_type", "BEST_BEFORE");
+    }
+
     /** Validation: both fields are checked before anything is stored. 99999 days is RED on the unfixed tree. */
     @Test
     void shelfLifeAndDurabilityAreValidatedOnCreate() throws Exception {
@@ -218,6 +265,10 @@ class ProductLabelPlainProblemIntegrationTest {
                 .andExpect(status().isCreated()).andReturn();
         return UUID.fromString(tools.jackson.databind.json.JsonMapper.builder().build()
                 .readTree(res.getResponse().getContentAsString()).get("id").asString());
+    }
+
+    private Map<String, Object> durabilityRow(UUID id) {
+        return jdbc.queryForMap("SELECT shelf_life_days, durability_type FROM products WHERE id = ?", id);
     }
 
     private static String productJson(String sku, UUID shop, Integer shelfLifeDays, String durabilityType) {

@@ -411,11 +411,17 @@ public class ProductService {
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
         // 37-39 (UXT-016): refused before the mapper touches the entity, so a 400 changes nothing.
         validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
+        validateClearDurability(request);
 
         // Update all fields via mapper (handles both core and storefront fields). quantityInStock is
         // IGNORE-null like every other field; the explicit tracking switch is applied after it.
         productMapper.updateEntity(request, product);
         applyStockTracking(request.getTrackInventory(), product);
+        // Review F3 (#1013): the stated clear, after the null-ignoring mapping, like applyStockTracking.
+        if (Boolean.TRUE.equals(request.getClearDurability())) {
+            product.setShelfLifeDays(null);
+            product.setDurabilityType(null);
+        }
 
         // Re-parse the (possibly edited) ingredients_text and refresh the cached
         // allergen spans (PPDS, Issue #82) — keeps the persisted cache in step with
@@ -493,6 +499,19 @@ public class ProductService {
         if (Boolean.FALSE.equals(trackInventory) && quantityInStock != null) {
             throw new InvalidRequestFieldsException(Map.of("quantityInStock",
                     "quantityInStock must be omitted when trackInventory is false (stopping tracking clears it)"));
+        }
+    }
+
+    /**
+     * {@code clearDurability: true} removes both stored label fields, so sending a value beside it contradicts
+     * the request: a typed 400 naming {@code clearDurability}, raised before anything is changed.
+     */
+    static void validateClearDurability(CreateProductRequest request) {
+        if (Boolean.TRUE.equals(request.getClearDurability())
+                && (request.getShelfLifeDays() != null || request.getDurabilityType() != null)) {
+            throw new InvalidRequestFieldsException(Map.of("clearDurability",
+                    "clearDurability must not be combined with shelfLifeDays or durabilityType "
+                            + "(it removes both stored values)"));
         }
     }
 

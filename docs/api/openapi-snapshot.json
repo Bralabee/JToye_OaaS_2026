@@ -1295,6 +1295,11 @@
             "example" : "Mains",
             "type" : "string"
           },
+          "clearDurability" : {
+            "description" : "Edit only. true removes the stored shelfLifeDays AND durabilityType (the product then cannot print a PPDS label until both are set again); it must not be combined with either value (a 400 errors/validation naming clearDurability). Omitted, null or false keeps the stored values. Has no effect on create.",
+            "example" : true,
+            "type" : "boolean"
+          },
           "description" : {
             "description" : "Customer-facing product description",
             "maxLength" : 5000,

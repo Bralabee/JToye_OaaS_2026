@@ -138,6 +138,15 @@ public class CreateProductRequest {
             + "absent).", example = "USE_BY", allowableValues = {"USE_BY", "BEST_BEFORE"})
     private String durabilityType;
 
+    // Review round 1 (F3) of #1013: the explicit clear. updateEntity ignores nulls (so a partial PUT never
+    // wipes the label fields, API-1), which left no way to remove a stored shelf life / durability type.
+    // As with trackInventory (UXT-016) the intent is its own field rather than a meaning for null.
+    @Schema(description = "Edit only. true removes the stored shelfLifeDays AND durabilityType (the product "
+            + "then cannot print a PPDS label until both are set again); it must not be combined with "
+            + "either value (a 400 errors/validation naming clearDurability). Omitted, null or false "
+            + "keeps the stored values. Has no effect on create.", example = "true")
+    private Boolean clearDurability;
+
     public String getSku() { return sku; }
     public void setSku(String sku) { this.sku = sku; }
     public String getTitle() { return title; }
@@ -176,6 +185,8 @@ public class CreateProductRequest {
     public void setTrackInventory(Boolean trackInventory) { this.trackInventory = trackInventory; }
     public Integer getShelfLifeDays() { return shelfLifeDays; }
     public void setShelfLifeDays(Integer shelfLifeDays) { this.shelfLifeDays = shelfLifeDays; }
+    public Boolean getClearDurability() { return clearDurability; }
+    public void setClearDurability(Boolean clearDurability) { this.clearDurability = clearDurability; }
     public String getDurabilityType() { return durabilityType; }
     public void setDurabilityType(String durabilityType) { this.durabilityType = durabilityType; }
 }
