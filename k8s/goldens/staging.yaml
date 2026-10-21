@@ -5005,7 +5005,28 @@ spec:
     spec:
       automountServiceAccountToken: false
       containers:
-      - env:
+      - command:
+        - sh
+        - -c
+        - |
+          fp() { sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY" 2>/dev/null; }
+          start=$(fp) || { echo "mailpit-cert-reload: cannot read $MP_SMTP_TLS_CERT / $MP_SMTP_TLS_KEY" >&2; exit 1; }
+          /mailpit &
+          pid=$!
+          trap 'kill -TERM "$pid" 2>/dev/null; wait "$pid"; exit 0' TERM INT
+          while kill -0 "$pid" 2>/dev/null; do
+            sleep 15 &
+            wait $!
+            now=$(fp) || continue
+            if [ "$now" != "$start" ]; then
+              echo "mailpit-cert-reload: certificate or key changed on disk; stopping Mailpit so the container restarts with the new one"
+              kill -TERM "$pid" 2>/dev/null
+              wait "$pid"
+              exit 0
+            fi
+          done
+          wait "$pid"
+        env:
         - name: MP_SMTP_TLS_CERT
           value: /tls/tls.crt
         - name: MP_SMTP_TLS_KEY

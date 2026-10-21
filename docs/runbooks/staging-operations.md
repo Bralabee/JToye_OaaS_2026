@@ -141,10 +141,14 @@ that is missing and never updates one that exists, so delete the synced Secret
 measured live). The worked example, including the refusal check for the superseded value, is
 `docs/runbooks/credential-rotation.md` sections 6.1 and 6.1a.
 
-**Mailpit reads its certificate only at start.** Its TLS certificate comes from the cert-manager
-internal CA. After a renewal, restart `deploy/mailpit` so it serves the new one; plan 29-22
-measured the expiry at 2027-01-17. A Mailpit serving an expired certificate fails the STARTTLS
-handshake core-java requires (section 6); this is tracked as #972.
+**Mailpit reads its certificate only at start, and restarts itself when it changes.** Its TLS
+certificate comes from the cert-manager internal CA (90 days, renewed 15 days early; the first one
+expires 2027-01-17). The `mailpit` container runs a supervisor that hashes the mounted certificate and
+key every 15 s and restarts the container when they change, so a renewal reaches the running Mailpit
+within about two minutes with no action (issue #972; INV-22 pins the supervisor in the render). The
+container restart count rising by one at each renewal is that working, and
+`kubectl ... logs deploy/mailpit -c mailpit --previous` shows `mailpit-cert-reload`. A Mailpit that
+served an expired certificate would fail the STARTTLS handshake core-java requires (section 6).
 
 **A deploy does not wait for the monitoring workloads.** `scripts/deploy.sh` prints
 `DEPLOYED_SHA` after `rollout status` of `core-java`, `edge-go` and `frontend` only, so after a

@@ -753,6 +753,14 @@ jobs:
       - name: Prove INV-21 catches planted Grafana edge-auth holes (--selftest-inv21)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv21
 
+      # Issue #972: INV-22 keeps Mailpit's certificate-reload supervisor in the render (Mailpit
+      # reads its TLS certificate only at start, so without it a cert-manager renewal leaves the
+      # running process serving the old certificate until it expires and every STARTTLS fails)
+      # and keeps MP_SMTP_REQUIRE_STARTTLS true. Six planted holes (no supervisor, an exec of
+      # Mailpit, a hash of the wrong file, no comparison, no stop, STARTTLS off).
+      - name: Prove INV-22 catches planted Mailpit cert-reload holes (--selftest-inv22)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv22
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,
