@@ -431,6 +431,20 @@ staging is off by default and only fires once the variable is enabled, exactly
 like the production `DEPLOY_ENABLED` gate. The CI job pins the full-sha image
 tag at deploy time via `kustomize edit set image`.
 
+A merge to `main` that changes only documentation does not rebuild images or
+redeploy staging, and it runs none of the Testcontainers integration steps (the job still
+runs and reports). The `changes` job diffs a push against the last commit whose
+`Deploy to Staging` job succeeded, not against the previous push, and runs
+`scripts/ci-docs-only.sh` (read from the base commit, never from the change) over that
+diff; only when every path is an allow-listed documentation path are the expensive steps
+and `build-and-push` (and so both deploys) skipped. So staging always runs the newest code
+commit on `main`: a code merge whose build or deploy failed is picked up by the next merge,
+documentation-only or not. If the last deploy cannot be found, is not an ancestor, or the
+API fails, the full pipeline runs. With `DEPLOY_STAGING_ENABLED` unset nothing deploys, so
+the search finds an older deploy (or none) and later documentation-only merges run the full
+pipeline; that is intentional and fail-safe. The cheap gates, including the ones that parse
+docs, always run.
+
 For a manual deploy, follow the same steps as production but use `k8s/staging`:
 ```bash
 # Deploy to staging

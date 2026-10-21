@@ -248,6 +248,8 @@ Two Key Vault objects in `jtoye-stg-kv` hold it:
 This is NOT Grafana's own admin login (`grafana-admin-credentials--admin-password`, class
 "random, admin logins" in section 6.2): that one sits behind this gate and rotates separately.
 
+**Never set a value a person chose.** The new password must be machine-generated: use the 32-character `openssl rand` step below, never a memorable password. This route does not rate-limit failed guesses, because basic auth runs before `limit-rps`. The owner accepted that only on the condition that the credential is generated (R-3 in `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-SECURITY.md`). A human-chosen value voids that acceptance.
+
 Rotate when an operator leaves, or when the password may have been seen anywhere it should not
 be. **Never use `scripts/staging-secrets.sh` for this** (write-once; it refuses an object that
 exists). Rotation writes a NEW VERSION of both objects, the password first:
