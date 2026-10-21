@@ -756,8 +756,9 @@ jobs:
       # Issue #972: INV-22 keeps Mailpit's certificate-reload supervisor in the render (Mailpit
       # reads its TLS certificate only at start, so without it a cert-manager renewal leaves the
       # running process serving the old certificate until it expires and every STARTTLS fails)
-      # and keeps MP_SMTP_REQUIRE_STARTTLS true. Six planted holes (no supervisor, an exec of
-      # Mailpit, a hash of the wrong file, no comparison, no stop, STARTTLS off).
+      # and keeps MP_SMTP_REQUIRE_STARTTLS true. Eight planted holes (no supervisor, an exec of
+      # Mailpit, a hash of the wrong file, no comparison, no stop, STARTTLS off, the markers in a
+      # sidecar only, a quoted exec).
       - name: Prove INV-22 catches planted Mailpit cert-reload holes (--selftest-inv22)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv22
 

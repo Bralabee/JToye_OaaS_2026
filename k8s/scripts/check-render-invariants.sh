@@ -510,12 +510,13 @@
 #            a. container `mailpit` sets MP_SMTP_REQUIRE_STARTTLS to the literal true and
 #               MP_SMTP_TLS_CERT / MP_SMTP_TLS_KEY to literal paths (the files the supervisor
 #               hashes are named by exactly these variables);
-#            b. its `containers:` text (kustomize drops comments, so only live script is read)
+#            b. the text of THAT container alone (not the whole `containers:` section, so a sidecar
+#               cannot satisfy the markers; kustomize drops comments, so only live script is read)
 #               contains every marker of the supervisor: the hash of BOTH files named by those
 #               variables (`sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY"`), Mailpit run in
 #               the background (`/mailpit &`), the comparison against the start hash
 #               (`[ "$now" != "$start" ]`), the stop (`kill -TERM "$pid"`) and a `trap`, and it
-#               never `exec`s Mailpit, which would replace the supervisor with the process
+#               never `exec`s Mailpit (any quoting), which would replace the supervisor with the process
 #               that cannot see a renewal.
 #          A mailpit Deployment whose containers text cannot be read is a PARSE ERROR (a blind
 #          reader never passes). Production and local print "not applicable". Shown catching
@@ -1865,6 +1866,10 @@ fi
 #   no-compare      the comparison is replaced by `[ false ]` (it hashes but never reacts)
 #   no-stop         the stop (`kill -TERM "$pid"`) is replaced by `true`
 #   starttls-off    MP_SMTP_REQUIRE_STARTTLS becomes "false"
+#   sidecar-markers a SIDECAR container carries every supervisor marker (hash, background run,
+#                   comparison, stops, trap) while the mailpit container has no command at all:
+#                   the markers must be read from the mailpit container only
+#   exec-quoted     the supervisor ends in `exec "/mailpit"` (quoted) instead of running it as a child
 # INV22_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
 # ===========================================================================
 inv22_plant() {
@@ -1889,6 +1894,27 @@ inv22_plant() {
             awk '{ if ($0 ~ /^              kill -TERM "\$pid" 2>\/dev\/null$/) $0 = "              true"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
         starttls-off)
             awk '/^        - name: MP_SMTP_REQUIRE_STARTTLS$/ { print; getline; print "          value: \"false\""; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        exec-quoted)
+            awk '{ if ($0 ~ /^          \/mailpit &$/) $0 = "          exec \"/mailpit\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        sidecar-markers)
+            # drop the mailpit container's command block (as no-supervisor) and put every marker in a
+            # sidecar listed BEFORE the mailpit container
+            awk '/^        command:$/ { n++; if (n == 2) { skip = 1; next } }
+                 skip { if ($0 ~ /^        - / || $0 ~ /^          /) next; skip = 0 }
+                 /^      - name: mailpit$/ && !done {
+                     print "      - name: sidecar"
+                     print "        image: axllent/mailpit:v1.31.6"
+                     print "        command:"
+                     print "        - sh"
+                     print "        - -c"
+                     print "        - |"
+                     print "          fp() { sha256sum \"$MP_SMTP_TLS_CERT\" \"$MP_SMTP_TLS_KEY\" 2>/dev/null; }"
+                     print "          /mailpit &"
+                     print "          trap '\''kill -TERM \"$pid\"'\'' TERM"
+                     print "          if [ \"$now\" != \"$start\" ]; then kill -TERM \"$pid\"; fi"
+                     done = 1
+                 }
+                 { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
         *) return 1 ;;
     esac
     [[ "$(sha256sum "$f")" != "$before" ]]
@@ -1900,7 +1926,7 @@ inv22_selftest() {
     # shellcheck disable=SC2064
     trap "rm -rf '$st'" EXIT
     cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv22 could not copy $K8S_DIR" >&2; exit 2; }
-    local -a ARMS=(no-supervisor exec-direct wrong-file no-compare no-stop starttls-off)
+    local -a ARMS=(no-supervisor exec-direct wrong-file no-compare no-stop starttls-off sidecar-markers exec-quoted)
     declare -A WANT=(
         [no-supervisor]="INV-22: Deployment mailpit container 'mailpit' has no certificate-reload supervisor"
         [exec-direct]="INV-22: Deployment mailpit container 'mailpit' execs Mailpit"
@@ -1908,6 +1934,8 @@ inv22_selftest() {
         [no-compare]="INV-22: Deployment mailpit container 'mailpit' never compares the current hash with the start hash"
         [no-stop]="INV-22: Deployment mailpit container 'mailpit' never stops Mailpit on a change"
         [starttls-off]="INV-22: Deployment mailpit container 'mailpit' MP_SMTP_REQUIRE_STARTTLS is not the literal true"
+        [sidecar-markers]="INV-22: Deployment mailpit container 'mailpit' has no certificate-reload supervisor"
+        [exec-quoted]="INV-22: Deployment mailpit container 'mailpit' execs Mailpit"
     )
     for arm in "${ARMS[@]}"; do
         n=$((n + 1))
@@ -4098,16 +4126,19 @@ for dir in "${TARGETS[@]}"; do
                 inv22_bad=1
             fi
         done
-        # the live (comment-free) text of the Deployment's `containers:` section only: the
-        # init container's own script and the rest of the pod spec are not read
-        awk '/^---[[:space:]]*$/ { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc; doc = ""; next } { doc = doc "\n" $0 } END { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc }' "$render" | awk '/^      containers:$/ { on = 1; next } on && /^      [^ -]/ { on = 0 } on { print }' > "$TMP/inv22_containers.txt"
+        # the live (comment-free) text of the Deployment's `mailpit` CONTAINER only: not the whole
+        # `containers:` section (a sidecar carrying the same tokens must not satisfy the markers),
+        # not the init container's script, not the rest of the pod spec. Each list item of
+        # `containers:` starts at indent 6 with `- `; the item is kept when its `name:` is mailpit.
+        awk '/^---[[:space:]]*$/ { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc; doc = ""; next } { doc = doc "\n" $0 } END { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc }' "$render" | awk '/^      containers:$/ { on = 1; next } on && /^      [^ -]/ { on = 0; flush() } on { if ($0 ~ /^      - /) flush(); buf = buf $0 "\n"; if ($0 ~ /^(      - |        )name: mailpit$/) hit = 1 } END { flush() } function flush() { if (hit) printf "%s", buf; buf = ""; hit = 0 }' > "$TMP/inv22_containers.txt"
         [[ -s "$TMP/inv22_containers.txt" ]] || parse_fail "[$rel] INV-22 could not read the containers section of Deployment mailpit from the render; the supervisor markers would pass vacuously."
-        if ! grep -qF -e 'sha256sum' -e 'trap ' -e 'kill -TERM' "$TMP/inv22_containers.txt"; then
+        if ! grep -qE '^(      - |        )command:$' "$TMP/inv22_containers.txt" \
+           || ! grep -qF -e 'sha256sum' -e 'trap ' -e 'kill -TERM' "$TMP/inv22_containers.txt"; then
             echo "  FAIL [$rel] INV-22: Deployment mailpit container 'mailpit' has no certificate-reload supervisor. Mailpit reads its certificate only at start, so a cert-manager renewal would leave it serving the old certificate until it expires (issue #972)." >&2
             inv22_bad=1
         fi
         if (( inv22_bad == 0 )); then
-            if grep -qE '(^|[;&|[:space:]])exec[[:space:]]+/mailpit' "$TMP/inv22_containers.txt"; then
+            if grep -qE "(^|[;&|[:space:]])exec[[:space:]]+[\"']?/?mailpit" "$TMP/inv22_containers.txt"; then
                 echo "  FAIL [$rel] INV-22: Deployment mailpit container 'mailpit' execs Mailpit, replacing the supervisor with the process that only reads its certificate at start (issue #972)." >&2
                 inv22_bad=1
             fi
