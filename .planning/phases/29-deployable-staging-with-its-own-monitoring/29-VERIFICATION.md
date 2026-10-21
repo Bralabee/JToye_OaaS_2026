@@ -116,7 +116,7 @@ Method: SUMMARY.md claims were not trusted. Each success criterion was re-measur
 2. #112 closed as a minimal close with two acceptance criteria deliberately unmet (first-response runbook entries, SLOs), carried by #982.
 3. NoOrdersCreated is muted by design on staging (alertname-only matcher, proven both directions with amtool in 29-25), so even when the counter exists a quiet staging never pages for it.
 
-**Verdict: PARTIAL, a gap.** Override suggestion if the owner accepts #973 as a standing caveat:
+**Verdict as of 02:20Z (superseded by the re-verification verdict below): PARTIAL, a gap.** Override suggestion if the owner accepts #973 as a standing caveat:
 
 ```yaml
 overrides:
@@ -144,7 +144,7 @@ I have not added it. The owner has not accepted this deviation in anything I can
 | break arm | same, `$1` = scratch copy of `alerts.yml` with `jtoye_orders_total` renamed to `jtoye_orders_created_total` (7 substitutions, counted) | **1** | `FAIL: M-1 rule 'NoOrdersCreated' selector matches ZERO series`, `FAILED: 1 live alert-metric violation(s).` |
 | clean again | real rules | **0** | same PASS line |
 
-Scratch file: `/tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/6841668e-832c-45b4-ad41-3eed6939c6b4/scratchpad/alerts-break.yml`. The break is the realistic regression (someone "corrects" the name), and the gate caught exactly that rule and no other, so the tunnel and the selector extraction are not vacuous.
+Scratch file: not kept (the scratchpad is session-local). Reproduce it with `sed 's/jtoye_orders_total/jtoye_orders_created_total/g' infra/monitoring/prometheus/alerts.yml > <scratch>` and pass that file as `$1`. The break is the realistic regression (someone "corrects" the name), and the gate caught exactly that rule and no other, so the tunnel and the selector extraction are not vacuous.
 
 **Static half, both directions** (jtoye-ops env): `check-alert-rules.sh` rc 0 (`promtool` 19 rules, `unit tests: rc=0 (7 alert_rule_test assertion(s))`). Break arm: a scratch rules dir with the `sum(...)` dropped (the per-pod fire-for-every-pod regression the unit test exists for) and the real test file beside it: **rc 1**, `FAIL: S-6 promtool test rules failed`. Real file again: rc 0.
 
@@ -200,7 +200,7 @@ Scratch file: `/tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/6841668
 | `scripts/check-deploy-digest-parity.sh` | pod digests vs built images | VERIFIED | run today, pass and wrong-tag control |
 | `scripts/check-staging-edge.sh` | edge fidelity | VERIFIED | 4/4, burst arm not run |
 | `scripts/check-dply02-dispositions.sh` | DPLY-02 gate | VERIFIED | three modes rc 0, selftest 64/64 |
-| `scripts/check-alert-metrics.sh`, `check-alert-liveness.sh` | DPLY-03 gates | VERIFIED (after #1000) | metrics gate rc 0 live with a break arm at 05:21Z; it was red at 02:20Z (#973); liveness dated 2026-10-19 |
+| `scripts/check-alert-metrics.sh`, `check-alert-liveness.sh` | DPLY-03 gates | VERIFIED (after #1000) | metrics gate rc 0 live with a break arm, re-run by the verifier at 05:26Z (the orchestrator's earlier run was 05:21Z); it was red at 02:20Z (#973); liveness dated 2026-10-19 |
 | `scripts/check-networkpolicy-enforcement.sh` | DPLY-05 probe | VERIFIED | raw run, not re-run today |
 | `scripts/staging-pitr-drill.sh` | DPLY-04 drill | VERIFIED | raw run, not re-run today |
 | `scripts/staging-grafana-edge.sh` | Grafana edge gate | VERIFIED | probe 4/4, selftest 18/18 |
@@ -257,7 +257,7 @@ No `probe-*.sh` scripts are declared for this phase; its gates are the `scripts/
 | DPLY-04 | 29-07, 29-09, 29-20 | PITR restore by row count, two-arm | SATISFIED | SC4 |
 | DPLY-05 | 29-01, 29-02, 29-09, 29-17 | NetworkPolicies enforced, denied connection captured | SATISFIED (dated evidence) | SC5 |
 
-Orphaned requirements: none. REQUIREMENTS.md lists exactly DPLY-01..05 for Phase 29 and all five are claimed by plans. The five rows are marked Complete "pending phase verification": The initial run confirmed DPLY-01, 02, 04 and 05 but not DPLY-03 as written. The verifier's own 05:26Z re-verification after #1000 confirms DPLY-03.
+Orphaned requirements: none. REQUIREMENTS.md lists exactly DPLY-01..05 for Phase 29 and all five are claimed by plans. The five rows are marked Complete and now cite this passed verification (this PR): The initial run confirmed DPLY-01, 02, 04 and 05 but not DPLY-03 as written. The verifier's own 05:26Z re-verification after #1000 confirms DPLY-03.
 
 ## Anti-Patterns Found
 
@@ -280,7 +280,7 @@ Four of the five success criteria hold on today's live estate, and the headline 
 
 **Closed, and re-measured by the verifier at 05:26Z.** The paragraph below is the 02:20Z state. #1000 fixed it, and SC3's re-verification has the live proof (rc 0, break arm rc 1, clean again rc 0, served rules md5 = committed md5, running images = `4f3f3e14` by digest).
 
-One gap blocks a clean pass. DPLY-03's second clause, both alert gates exit 0 against staging, is **not true now**: `check-alert-metrics.sh` returns 1 against the live staging Prometheus because core-java rolled 11 minutes earlier and the order counter behind `NoOrdersCreated` is gone. It was green on 2026-10-19 and the cause is a ticketed, owner-aware defect (#973), but with `DEPLOY_STAGING_ENABLED=true` it will be the standing state after every merge. The monitoring itself (targets, rules, Alertmanager, Grafana, the delivery path to a human) is intact; the gate is correctly reporting that one alert is blind. Either fix #973 (register the counter at zero on startup, a small core-java change) or have the owner record the override above. `check-alert-liveness.sh` was not re-run today and is expected to red L-2 for the same reason.
+As of 02:20Z (closed since by #1000, see the re-verification above), one gap blocked a clean pass. DPLY-03's second clause, both alert gates exit 0 against staging, is **not true now**: `check-alert-metrics.sh` returns 1 against the live staging Prometheus because core-java rolled 11 minutes earlier and the order counter behind `NoOrdersCreated` is gone. It was green on 2026-10-19 and the cause is a ticketed, owner-aware defect (#973), but with `DEPLOY_STAGING_ENABLED=true` it will be the standing state after every merge. The monitoring itself (targets, rules, Alertmanager, Grafana, the delivery path to a human) is intact; the gate is correctly reporting that one alert is blind. Either fix issue #973 (register the counter at zero on startup, a small core-java change) or have the owner record the override above. `check-alert-liveness.sh` was not re-run today and is expected to red L-2 for the same reason.
 
 Warnings that do not change the status: #98 and #112 are closed or deferred below their full scope by owner-approved dispositions; #301's receiving phase does not list it; the SC5 denied connection is dated 2026-10-19 and the later monitoring policies have no denied-arm of their own in that file; the DPLY-04 stored dumps were never restored (only the PITR server and a fresh dump from it were); `29-VALIDATION.md` is outstanding housekeeping (`29-SECURITY.md` was written later the same day).
 

@@ -168,6 +168,7 @@ Steps 1 to 4 of the evening block are DONE.
 - the owner's confirmation of R-3 (Grafana edge failed guesses not throttled, accepted by analogy with the mail UI);
 - `29-VALIDATION.md` is still `draft` / `nyquist_compliant: false` (`/gsd-validate-phase 29` never run);
 - the Grafana 24 h restart watch after #987;
-- follow-up issues #999 (staging metrics labelled `environment="production"`), #992, #971.
+- follow-up issues #999 (staging metrics labelled `environment="production"`), #992, #971;
+- issue #973 is fixed by #1000 and is still OPEN, because #1000 only referenced it. The orchestrator closes it with an evidence comment after #1002 merges.
 
 `DEPLOY_STAGING_ENABLED` stays `true`.
