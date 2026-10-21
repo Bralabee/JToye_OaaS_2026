@@ -498,8 +498,9 @@
 #          scripts/staging-grafana-edge.sh --probe (G-1..G-4). That the SPC is MOUNTED
 #          by secret-sync is k8s/scripts/check-keyvault-chain.sh's rule, not this one's.
 #
-#   INV-22 #999, RENDER level, EVERY target; judged where INV22_EXPECTED names the
-#          target (k8s/staging -> staging, k8s/production -> production). k8s runs the prod
+#   INV-22 #999, RENDER level, EVERY target; each must be named in INV22_EXPECTED (an
+#          unlisted target FAILS, review round 1 F3): k8s/staging -> staging, k8s/local ->
+#          local, k8s/production and k8s/base -> production. k8s runs the prod
 #          Spring profile in every environment (D-10), and application-prod.yml sets the
 #          Micrometer common tag management.metrics.tags.environment to `production`, so a
 #          staging core-java that does not override it labels every series it exports
@@ -1866,6 +1867,10 @@ fi
 #   unreadable-source the value comes from a Secret the render cannot read
 #   production-bleed  base sets it to `staging`, which production inherits (a production
 #                     core-java may leave the profile's value, never override it with another)
+#   unlisted-overlay  a new overlay (k8s/zz-extra, on base) that INV22_EXPECTED does not name
+#                     (review round 1 F3: it ran the prod profile with no override and passed as
+#                     "not applicable")
+#   local-env-removed k8s/local stops patching the env in
 #   prod-key-moved    application-prod.yml no longer sets the tag it overrides (PARSE ERROR, rc 2)
 # A plant that does not change its file is reported caught=no.
 # INV22_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
@@ -1877,11 +1882,15 @@ inv22_plant() {
         wrong-value|empty-value|misspelt-name|set-twice|unreadable-source) f="$root/k8s/staging/core-java-metrics-env-patch.yaml" ;;
         production-bleed) f="$root/k8s/base/core-java-deployment.yaml" ;;
         prod-key-moved) f="$root/core-java/src/main/resources/application-prod.yml" ;;
+        local-env-removed) f="$root/k8s/local/kustomization.yaml" ;;
+        unlisted-overlay) mkdir -p "$root/k8s/zz-extra" && printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../base\n' > "$root/k8s/zz-extra/kustomization.yaml"; return 0 ;;
         *) return 1 ;;
     esac
     [[ -f "$f" ]] || return 1
     before="$(sha256sum "$f")"
     case "$arm" in
+        local-env-removed)
+            awk '!/^  - path: core-java-metrics-env-patch\.yaml$/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
         env-removed)
             awk '!/^  - path: core-java-metrics-env-patch\.yaml$/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
         wrong-value)
@@ -1908,7 +1917,7 @@ inv22_selftest() {
     # shellcheck disable=SC2064
     trap "rm -rf '$st'" EXIT
     cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv22 could not copy $K8S_DIR" >&2; exit 2; }
-    local -a ARMS=(env-removed wrong-value empty-value misspelt-name set-twice unreadable-source production-bleed prod-key-moved)
+    local -a ARMS=(env-removed wrong-value empty-value misspelt-name set-twice unreadable-source production-bleed prod-key-moved unlisted-overlay local-env-removed)
     declare -A WANT=(
         [env-removed]="INV-22: Deployment core-java container 'core-java' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT"
         [wrong-value]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to 'production', not 'staging'"
@@ -1917,6 +1926,8 @@ inv22_selftest() {
         [set-twice]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT 2 times"
         [unreadable-source]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT from a source the render cannot read"
         [production-bleed]="FAIL [k8s/production] INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to 'staging', not 'production'"
+        [unlisted-overlay]="INV-22: target k8s/zz-extra is not declared in INV22_EXPECTED"
+        [local-env-removed]="FAIL [k8s/local] INV-22: Deployment core-java container 'core-java' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT"
         [prod-key-moved]="INV-22: core-java/src/main/resources/application-prod.yml no longer sets management.metrics.tags.environment"
     )
     declare -A WANT_RC=([prod-key-moved]=2)
@@ -2338,9 +2349,15 @@ PROBE_JVM_OPTS_ENV_NORM_RE='^(javaopts|javatooloptions|jdkjavaoptions)$'
 # profile (every k8s environment runs it, D-10) says `production`; staging must say otherwise.
 # "<label> <required>": required=1 means the env MUST be set (the profile's value is wrong
 # there); 0 means the profile's value is right, so unset is fine and only a wrong value fails.
+# EVERY discovered target must be listed (review round 1 on #1005, F3): all of them run the prod
+# profile, so an overlay not named here (k8s/local was one) exported environment="production".
+# k8s/base carries the production values and no overlay, so it is labelled production like
+# k8s/production. An unlisted target FAILS: add it here, with its own label, in the same change.
 declare -A INV22_EXPECTED=(
   ["k8s/staging"]="staging 1"
+  ["k8s/local"]="local 1"
   ["k8s/production"]="production 0"
+  ["k8s/base"]="production 0"
 )
 declare -A INV22_TARGET_SEEN=()
 INV22_ENV_NORM='managementmetricstagsenvironment'
@@ -4311,8 +4328,11 @@ for dir in "${TARGETS[@]}"; do
     # The Micrometer `environment` tag a target's core-java exports. The prod profile (every k8s
     # environment runs it) says `production`; INV22_EXPECTED names what each deployed target
     # must say instead, and a staging that loses its override is labelled production again.
-    inv22_msg="not applicable (not in INV22_EXPECTED)"
-    if [[ -n "${INV22_EXPECTED[$rel]:-}" ]]; then
+    inv22_msg="FAIL"
+    if [[ -z "${INV22_EXPECTED[$rel]:-}" ]]; then
+        echo "  FAIL [$rel] INV-22: target $rel is not declared in INV22_EXPECTED. Every rendered target runs the prod profile (D-10), whose application-prod.yml tags every series environment=\"production\", so a target nobody declared exports metrics labelled as production unless it overrides MANAGEMENT_METRICS_TAGS_ENVIRONMENT. Declare its environment label in INV22_EXPECTED and set the env in the overlay (#999)." >&2
+        FAILED=1
+    else
         INV22_TARGET_SEEN["$rel"]=1
         read -r inv22_label inv22_required <<< "${INV22_EXPECTED[$rel]}"
         inv22_bad=0; inv22_ctr_n=0; inv22_set=0
