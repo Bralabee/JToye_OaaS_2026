@@ -1,0 +1,39 @@
+# 29-28 dispositions apply log
+#
+# Source: /tmp/claude-29-28/apply.log, copied byte for byte below this header on 2026-10-20 (the original path is ephemeral, which is why this copy is committed).
+# Lines starting with a timestamp are the apply script's own output (UTC).
+# Lines starting with "✓ Closed issue" are gh's own output: gh prints no timestamp, so each one is read together with the script's timestamped
+# readback line that follows it ("#N comment=equal readback; state OPEN -> CLOSED (want CLOSED)"), which fixes when that close was read back.
+# Quoted in evidence/29-28-merge-deploy.txt ("Dispositions applied") and in 29-28-SUMMARY.md.
+#
+2026-10-20T19:36:44+00:00 --verify-approval rc=0 :: SUMMARY verify-approval approved=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 manifest=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 pinned=19 findings=0
+2026-10-20T19:36:53+00:00 --pre-close rc=0 :: SUMMARY pre-close rows=20 findings=0
+2026-10-20T19:36:56+00:00 #98 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#99 ([P2-8] CI/CD deploy half is theatre: dead staging gate, image drift, self-reverting smoke test)
+2026-10-20T19:37:00+00:00 #99 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#100 ([P2-9] Sealed Secrets half-landed: plaintext Secret template still a live kustomize resource)
+2026-10-20T19:37:03+00:00 #100 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#101 ([P2-10] No PITR (RPO 24h) while SYSTEM_DESIGN_V2 falsely claims WAL-G; no DB HA)
+2026-10-20T19:37:08+00:00 #101 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#112 ([P3-10] Ops readiness: runbook stubs, no paging path, no SLOs)
+2026-10-20T19:37:12+00:00 #112 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:14+00:00 #271 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:17+00:00 #292 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:19+00:00 #293 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:22+00:00 #294 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#296 (If an in-cluster Keycloak is ever deployed, restore the auth.jtoye.co.uk ingress rule and TLS SAN with its Service and Deployment)
+2026-10-20T19:37:25+00:00 #296 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#297 (Install Calico on the local minikube profile to actually enforce NetworkPolicies (prerequisite now cleared))
+2026-10-20T19:37:29+00:00 #297 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#299 (Customer-storefront realm is unconfigured in EVERY k8s environment — base, staging, production and local)
+2026-10-20T19:37:32+00:00 #299 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#300 (Work Order H: sealed-secrets / external-secrets for the local secrets path)
+2026-10-20T19:37:36+00:00 #300 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:38+00:00 #301 comment=equal readback; state OPEN -> OPEN (want OPEN)
+2026-10-20T19:37:41+00:00 #302 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:43+00:00 #304 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#592 (One-click unsubscribe (RFC 8058) is unwired in k8s — the List-Unsubscribe header degrades to RFC 2369 in every deployed environment)
+2026-10-20T19:37:47+00:00 #592 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#859 (Nothing asserts at deploy time that customer email verification is on; dev runs with it off)
+2026-10-20T19:37:51+00:00 #859 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:59+00:00 --post-close rc=0 :: SUMMARY post-close rows=20 findings=0

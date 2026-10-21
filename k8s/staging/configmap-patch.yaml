@@ -46,6 +46,14 @@ data:
   # follows db.port by replacement; this URL is a separate string).
   keycloak.hostname: "https://auth-staging.olajay.co.uk"
   keycloak.db.url: "jdbc:postgresql://jtoye-stg-pg.postgres.database.azure.com:5432/keycloak?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory"
+  # Keycloak's KC_PROXY_TRUSTED_ADDRESSES (#976): the peers whose X-Forwarded-* it
+  # believes, the same ingress-path range as security.trusted-proxies below (read
+  # there for why the whole /16) but a SEPARATE key on purpose: "" means trust none
+  # to core-java and is a boot failure for Keycloak 26.8.1, so the two cannot share
+  # one line. Comma-separated, NO whitespace around entries (26.8.1 refuses it:
+  # "list value ' 10.0.0.0/8' should not have leading nor trailing whitespace").
+  # INV-20 refuses empty, spaced, /0, public and shorter-than-/8 values.
+  keycloak.proxy-trusted-addresses: "10.244.0.0/16"
   # Keycloak deprovisioning realm (issue #102 remainder) — staging realm.
   keycloak.admin.realms: "jtoye-staging"
   # 37-08: the vendor realm staff-invite accepts create users in (same realm as above).

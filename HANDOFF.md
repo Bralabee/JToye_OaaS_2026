@@ -2,7 +2,24 @@
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-19 delta (RESUME HERE; everything below is history).**
+**2026-10-21 delta (RESUME HERE; everything below is history).**
+- **Phase 29.** Merged to main as #984; all 29 plans have a SUMMARY. Still to do: phase verification (gsd-verifier) and `29-SECURITY.md`.
+- **Staging deploys from CI.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main runs "Deploy to Staging" (about 75 min of CI). Merges go one at a time, each deploy green before the next. If a deploy goes red: set the variable to `false`, read it back, stop.
+- **Since #984:**
+  - #986, digest parity waits for old replicas to drain;
+  - #987, Grafana memory 320Mi/512Mi;
+  - #991, 29-28 close-out records;
+  - #988, Keycloak `KC_PROXY_TRUSTED_ADDRESSES=10.244.0.0/16` plus render invariant INV-20, proven live 2026-10-21: a spoofed `X-Forwarded-Host` from an untrusted peer no longer moves `token_endpoint`, and the staging-login spec passed 2/2.
+- **Queue after this block:**
+  - Grafana edge basic auth (INV-21), whose Key Vault objects were already written from its branch;
+  - the CI-hardening batch (selftests wired, action pins, the `staging-edge-probe` job).
+- **Resume document:** `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md`.
+- **Unchanged:**
+  - kube context `jtoye-stg-aks` only;
+  - Python gates under `conda activate jtoye-ops`;
+  - Azure always with `--subscription c483d353-5f61-4587-a790-addb9ab5fb94`.
+
+**2026-10-19 delta (history; superseded by the 2026-10-21 block above).**
 - Phase 29 is executing on branch `phase-29-deployable-staging`, pushed, NOT merged to main. 25/29 plans have a SUMMARY.
 - A NEW live Azure staging estate exists: AKS `jtoye-stg-aks` (4×B2s), PG `jtoye-stg-pg`, KV `jtoye-stg-kv`.
 - Staging is persona-ready at https://app-staging.olajay.co.uk, and its monitoring pages ola.ibitoye@olajay.co.uk.
