@@ -58,11 +58,61 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELF_PATH="$REPO_ROOT/scripts/$(basename "${BASH_SOURCE[0]}")"
 WF_DIR="$REPO_ROOT/.github/workflows"
 CONF="$REPO_ROOT/scripts/gates/gate-enforcement.conf"
 RUNTIME_BINARIES='docker|curl|psql|kubectl|minikube|rabbitmqctl|redis-cli|wget|nc'
 
 void() { echo "VOID: $*" >&2; exit 2; }
+
+# --- --selftest: this gate against planted trees ------------------------------------
+#
+# A meta-gate nothing has ever seen fail is the thing it polices. Each arm builds a
+# minimal repo layout in a mktemp -d, runs a COPY of this script inside it (REPO_ROOT is
+# derived from the script's own location, so the copy reads only the planted tree) and
+# judges the exit code and the output. The clean arm is the control: every red arm below
+# differs from it by one line.
+selftest() {
+    local t fails=0 arm want why out rc
+    t=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/jtoye-gate-enf-st.XXXXXXXX") || { echo "VOID: mktemp -d failed" >&2; return 2; }
+    # shellcheck disable=SC2064
+    trap "rm -rf '$t'" RETURN
+    mkdir -p "$t/scripts/gates" "$t/.github/workflows"
+    cp "$SELF_PATH" "$t/scripts/check-gate-enforcement.sh"
+    printf '# planted: no exemptions\n' > "$t/scripts/gates/gate-enforcement.conf"
+    printf '#!/usr/bin/env bash\necho static gate\n' > "$t/scripts/check-a.sh"
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = "--selftest" ] && { echo selftest; exit 0; }\necho apply\n' > "$t/scripts/foo.sh"
+    printf '#!/usr/bin/env bash\necho no selftest here\n' > "$t/scripts/bar.sh"
+
+    # _arm NAME WANT_RC "WHY-IF-WRONG-TEXT-TO-FIND" WORKFLOW-BODY — WANT_RC 0|1|2; the text is
+    # looked for in the output when WANT_RC is not 0 ("-" = none).
+    _arm() {
+        arm=$1; want=$2; why=$3
+        # The planted tree holds a copy of this very gate, which pass 1 requires a workflow to name.
+        printf '%s\n      - run: bash scripts/check-gate-enforcement.sh\n' "$4" > "$t/.github/workflows/ci.yml"
+        out=$(bash "$t/scripts/check-gate-enforcement.sh" 2>&1); rc=$?
+        if [ "$rc" -ne "$want" ]; then
+            echo "FAIL $arm rc=$rc (want $want): $(head -c 200 <<<"$out" | tr '\n' ' ')"; fails=$((fails + 1))
+        elif [ "$why" != "-" ] && ! grep -qF -- "$why" <<<"$out"; then
+            echo "FAIL $arm rc=$rc but the output does not name '$why': $(head -c 200 <<<"$out" | tr '\n' ' ')"; fails=$((fails + 1))
+        else
+            echo "PASS $arm rc=$rc"
+        fi
+    }
+    local wired_gate='      - run: bash scripts/check-a.sh'
+    local wired_st='      - run: bash scripts/foo.sh --selftest'
+    _arm clean 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    _arm selftest-unwired 1 foo.sh "$wired_gate"
+    _arm selftest-comment-only 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      # run: bash scripts/foo.sh --selftest')"
+    _arm script-wired-without-selftest 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/foo.sh apply')"
+    _arm name-suffix-collision 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/xfoo.sh --selftest')"
+    _arm static-gate-unwired 1 check-a.sh "$wired_st"
+    rm -f "$t/scripts/foo.sh"
+    _arm no-selftest-script-in-tree 2 "no scripts" "$wired_gate"
+    [ "$fails" -eq 0 ]
+}
+
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 
 command -v grep >/dev/null 2>&1 || void "grep not found"
 command -v find >/dev/null 2>&1 || void "find not found"
