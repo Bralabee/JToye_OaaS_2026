@@ -81,6 +81,22 @@
 #   The selftest feeds POD_JQ real pod-list JSON (DIR/<svc>.pods.<poll>.json), so the filter
 #   that decides what counts as running is the code under test, not a stand-in for it.
 #
+#   A CONTAINER WITHOUT A DIGEST IS VOID (C-9). A container whose imageID is non-empty but
+#   carries no @sha256:<64 hex> (a bare "sha256:<id>"), or that reports state.running or
+#   ready: true with no imageID at all, used to fall out of the digest set silently, so a
+#   wrong image could run beside a matching one and the gate still passed. The state does not
+#   matter: a container in CrashLoopBackOff (state.waiting, ready: false) or a terminated one
+#   has already pulled and run its image, so its imageID is filled in and a bare one is a wrong
+#   image the gate cannot compare. The ONLY container ignored is one with an EMPTY imageID that
+#   is neither running nor ready: a Pending or ContainerCreating container legitimately has no
+#   imageID until the pull finishes.
+#
+#   The VOID is COLLECTED, not raised on sight. Every service is still compared, every
+#   unresolved container, mismatch and stuck pod is printed, and only then does the gate exit.
+#   Precedence is VOID (2) if any container was unresolved, else FAIL (1) if anything
+#   mismatched or was stuck, else PASS (0): a VOID never hides a wrong frontend image, and the
+#   FAIL summary never replaces the VOID.
+#
 # FAIL CLOSED — "could not check" is NEVER "clean"
 #
 #   An unreadable digest, an EMPTY actual set, an EMPTY expected set, or ZERO services
@@ -207,6 +223,52 @@ if [ "$SELFTEST" -eq 1 ]; then
   # The stuck pod alone, every live digest matching: only the STUCK check can fail this one.
   printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuckonly/core-java.pods.1.json"
   printf '{"items":[%s,%s]}' "$new" "$(pod core-java-old "$d2" 0)" > "$st/oldlive/core-java.pods.1.json"
+  # C-9, as pod-list JSON. cpod NAME CONTAINER IMAGEID STATE(running|ready|waiting|crashloop|
+  # terminated): a pod whose one container reports the given state and imageID. "running" =
+  # state.running set; "ready" = ready:true with no state.running; "waiting" = ContainerCreating,
+  # ready:false; "crashloop" = CrashLoopBackOff, ready:false; "terminated" = state.terminated.
+  cpod() {
+    local st
+    case "$4" in
+      running) st='"ready":false,"state":{"running":{"startedAt":"2026-10-20T16:00:00Z"}}' ;;
+      ready)   st='"ready":true,"state":{}' ;;
+      waiting) st='"ready":false,"state":{"waiting":{"reason":"ContainerCreating"}}' ;;
+      crashloop) st='"ready":false,"state":{"waiting":{"reason":"CrashLoopBackOff"}}' ;;
+      terminated) st='"ready":false,"state":{"terminated":{"exitCode":1,"reason":"Error"}}' ;;
+    esac
+    printf '{"metadata":{"name":"%s"},"status":{"containerStatuses":[{"name":"%s",%s,"imageID":"%s"}]}}' "$1" "$2" "$st" "$3"
+  }
+  mkdir -p "$st/unres-running" "$st/unres-ready" "$st/unres-short" "$st/pending-ok" "$st/crashloop-bare" \
+    "$st/terminated-bare" "$st/unres-and-wrong" "$st/wrong-then-unres" "$st/stuck-then-unres"
+  for x in unres-running unres-ready unres-short pending-ok crashloop-bare terminated-bare unres-and-wrong wrong-then-unres stuck-then-unres; do
+    for s in core-java edge-go frontend; do
+      printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"
+    done
+  done
+  # A live container that has a digest-less imageID next to a correct one: the correct one used to
+  # carry the gate to a PASS and the other was dropped unseen.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-bare sidecar "sha256:$(printf c | sha256sum | awk '{print $1}')" running)" > "$st/unres-running/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-nodigest core-java "" ready)" > "$st/unres-ready/core-java.pods.1.json"
+  # An @sha256: with a truncated digest is not comparable either.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-short core-java "ghcr.io/bralabee/jtoye-core-java@sha256:abcd" running)" > "$st/unres-short/core-java.pods.1.json"
+  # The control: a Pending pod (ContainerCreating, empty imageID) beside the live one is NOT VOID.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-pending core-java "" waiting)" > "$st/pending-ok/core-java.pods.1.json"
+  # A container that is NOT running and NOT ready but has already pulled and run its image: its
+  # imageID is filled in, bare. Only an EMPTY imageID may be ignored, so both are VOID.
+  bare="sha256:$(printf c | sha256sum | awk '{print $1}')"
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-crash core-java "$bare" crashloop)" > "$st/crashloop-bare/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-exited sidecar "$bare" terminated)" > "$st/terminated-bare/core-java.pods.1.json"
+  # VOID must not hide the other services (round 1, F3). core-java has an unresolved container,
+  # edge-go is right and frontend runs a WRONG image: all three are reported, and the rc is 2.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-bare sidecar "$bare" running)" > "$st/unres-and-wrong/core-java.pods.1.json"
+  printf '%s\n' "$d2" > "$st/unres-and-wrong/frontend.actual"
+  # ... and in the other order: core-java's mismatch (counted BEFORE frontend's unresolved
+  # container) is still printed, not replaced by the VOID.
+  printf '%s\n' "$d2" > "$st/wrong-then-unres/core-java.actual"
+  printf '{"items":[%s]}' "$(cpod fe-bare frontend "$bare" running)" > "$st/wrong-then-unres/frontend.pods.1.json"
+  # ... and a stuck pod (drain-loop finding) is printed too.
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuck-then-unres/core-java.pods.1.json"
+  printf '{"items":[%s]}' "$(cpod fe-bare frontend "$bare" running)" > "$st/stuck-then-unres/frontend.pods.1.json"
   # The stuck arm also plants a wrong frontend image: one stuck pod must not hide it.
   printf '%s\n' "$d2" > "$st/stuck/frontend.actual"
   printf '%s\n' "$d2" > "$st/mismatch/frontend.actual"
@@ -232,6 +294,15 @@ if [ "$SELFTEST" -eq 1 ]; then
   arm old-pod-stuck   1 --fixture "$st/stuck" --drain-timeout 1
   arm old-pod-live    1 --fixture "$st/oldlive"
   arm stuck-only      1 --fixture "$st/stuckonly" --drain-timeout 1
+  arm unres-running   2 --fixture "$st/unres-running"
+  arm unres-ready     2 --fixture "$st/unres-ready"
+  arm unres-short     2 --fixture "$st/unres-short"
+  arm pending-ok      0 --fixture "$st/pending-ok"
+  arm crashloop-bare  2 --fixture "$st/crashloop-bare"
+  arm terminated-bare 2 --fixture "$st/terminated-bare"
+  arm unres-and-wrong 2 --fixture "$st/unres-and-wrong"
+  arm wrong-then-unres 2 --fixture "$st/wrong-then-unres"
+  arm stuck-then-unres 2 --fixture "$st/stuck-then-unres" --drain-timeout 1
   arm drain-zero      2 --fixture "$st/match" --drain-timeout 0
   arm drain-word      2 --fixture "$st/match" --drain-timeout soon
   # A value-taking flag as the LAST argument: VOID (2), not a hang (124).
@@ -250,6 +321,25 @@ if [ "$SELFTEST" -eq 1 ]; then
   want_line old-pod-stuck  "frontend +$d2 +NOT IN THE EXPECTED SET"
   want_line old-pod-live   "core-java +$d2 +NOT IN THE EXPECTED SET"
   want_line stuck-only     "FAIL: 1 pod\\(s\\) were still terminating"
+  # C-9: VOID names the pod AND the container; the Pending control compares the live pod only.
+  want_line unres-running  "UNRESOLVED .*core-java-bare/sidecar imageID=sha256:"
+  want_line unres-running  "^VOID: [0-9]+ container\\(s\\) in 1 service\\(s\\) \\(core-java\\) report"
+  want_line unres-ready    "UNRESOLVED .*core-java-nodigest/core-java imageID="
+  want_line unres-short    "UNRESOLVED .*core-java-short/core-java imageID="
+  want_line pending-ok     "core-java +$d1 +MATCH"
+  want_line crashloop-bare  "UNRESOLVED .*core-java-crash/core-java imageID=sha256:"
+  want_line terminated-bare "UNRESOLVED .*core-java-exited/sidecar imageID=sha256:"
+  # F3: VOID is raised AFTER every service is compared. The unresolved container, the services
+  # compared after it and the wrong image are ALL in the output, and the VOID line is last.
+  want_line unres-and-wrong "UNRESOLVED .*core-java-bare/sidecar imageID=sha256:"
+  want_line unres-and-wrong "edge-go +$d1 +MATCH"
+  want_line unres-and-wrong "frontend +$d2 +NOT IN THE EXPECTED SET"
+  want_line unres-and-wrong "^VOID: 1 container\\(s\\) in 1 service\\(s\\) \\(core-java\\)"
+  want_line unres-and-wrong "Alongside it: 1 wrong image digest\\(s\\) and 0 stuck"
+  want_line wrong-then-unres "core-java +$d2 +NOT IN THE EXPECTED SET"
+  want_line wrong-then-unres "UNRESOLVED .*fe-bare/frontend imageID=sha256:"
+  want_line stuck-then-unres "core-java-old +STILL TERMINATING"
+  want_line stuck-then-unres "UNRESOLVED .*fe-bare/frontend imageID=sha256:"
   [ "$fails" -eq 0 ] || exit 1
   exit 0
 fi
@@ -322,9 +412,15 @@ echo
 # ---- 2. digest readers -----------------------------------------------------------------
 # Both go through a single function each, so fixture mode is total rather than best-effort.
 
-# POD_JQ: one line per LIVE container ("live <imageID>") and one per TERMINATING pod
-# ("terminating <pod name>"). This program is the filter; the selftest runs it on pod JSON.
-POD_JQ='.items[] | if .metadata.deletionTimestamp then "terminating \(.metadata.name)" else ((.status.containerStatuses // [])[] | "live \(.imageID)") end'
+# POD_JQ: one line per LIVE container ("live <imageID>"), one per TERMINATING pod
+# ("terminating <pod name>"), and one per container that is RUNNING or READY yet reports no
+# usable @sha256:<64 hex> imageID ("unresolved <pod>/<container> imageID=<what it reported>").
+# Unresolved is: ANY non-empty imageID without the digest, whatever the container state
+# (running, waiting/CrashLoopBackOff, terminated), or an empty imageID on a container that is
+# running or ready. The one container that emits nothing has an EMPTY imageID and is neither
+# (Pending, ContainerCreating: the pull has not finished). This program is the filter; the
+# selftest runs it on pod JSON.
+POD_JQ='.items[] | if .metadata.deletionTimestamp then "terminating \(.metadata.name)" else (.metadata.name as $p | (.status.containerStatuses // [])[] | if ((.imageID // "") | test("@sha256:[0-9a-f]{64}")) then "live \(.imageID)" elif ((.imageID // "") != "") or (.state.running != null) or (.ready == true) then "unresolved \($p)/\(.name) imageID=\(.imageID // "")" else empty end) end'
 
 classify() { # classify <svc> <poll> -> POD_JQ lines on stdout; rc 2 = the pods could not be read
   local svc="$1" poll="$2" f json rc
@@ -343,8 +439,9 @@ classify() { # classify <svc> <poll> -> POD_JQ lines on stdout; rc 2 = the pods 
 }
 
 # imageID is reported per container as e.g. ghcr.io/bralabee/jtoye-core-java@sha256:abcd...
-# Take the digest portion only; a bare image id with no @sha256 is unusable and surfaces as an
-# empty set, which is VOID.
+# Take the digest portion only. A container whose imageID carries no digest is never dropped
+# silently: POD_JQ emits it as "unresolved" and the loop below collects it for the final VOID
+# (C-9). A not-yet-started container (empty imageID, not running, not ready) is correctly ignored.
 live_digests() { sed -n 's/^live .*@\(sha256:[0-9a-f]\{64\}\).*/\1/p' | sort -u; }
 
 read_expected() { # read_expected <svc> -> newline-separated digests on stdout
@@ -364,6 +461,8 @@ read_expected() { # read_expected <svc> -> newline-separated digests on stdout
 MISMATCHES=0
 STUCK=0
 CHECKED=0
+UNRESOLVED_N=0
+UNRESOLVED_SVCS=""
 DRAIN_END=$(( $(date +%s) + DRAIN_TIMEOUT ))
 
 for svc in $SERVICES; do
@@ -385,12 +484,29 @@ for svc in $SERVICES; do
     poll=$((poll + 1))
   done
   STUCK=$((STUCK + svc_stuck))
+  # A container with no usable digest is a container this gate cannot compare. Dropping it would
+  # let a wrong image run unseen next to a matching one, so it makes the run VOID, naming
+  # pod/container. The VOID is COLLECTED and raised after the loop: exiting here would hide the
+  # mismatches, stuck pods and wrong images of every other service.
+  unresolved="$(sed -n 's/^unresolved //p' <<<"$pods")"
+  svc_unres=0
+  if [ -n "$unresolved" ]; then
+    while IFS= read -r u; do
+      printf '  %-12s UNRESOLVED (imageID has no @sha256 digest): %s\n' "$svc" "$u"
+      svc_unres=$((svc_unres + 1))
+    done <<<"$unresolved"
+    UNRESOLVED_N=$((UNRESOLVED_N + svc_unres))
+    UNRESOLVED_SVCS="${UNRESOLVED_SVCS:+$UNRESOLVED_SVCS }$svc"
+  fi
   actual="$(live_digests <<<"$pods")"
   expected="$(read_expected "$svc")"
   if [ "$PLANT_STALE" -eq 1 ] && [ -n "$expected" ]; then
     expected="$STALE_DIGEST"
   fi
 
+  # A service whose only containers are unresolved has no live digest to compare: its VOID is
+  # already collected above, so move on rather than exit and hide the services after it.
+  if [ -z "$actual" ] && [ "$svc_unres" -gt 0 ]; then CHECKED=$((CHECKED + 1)); continue; fi
   [ -n "$actual" ] || void "could not read a single image digest for '$svc' in namespace '$NAMESPACE'.
        An empty ACTUAL set means the gate is blind, and a blind gate that exits 0 is exactly
        the shape that let a stale runtime past four green gates. VOID, never clean."
@@ -422,6 +538,15 @@ done
 
 echo
 [ "$CHECKED" -gt 0 ] || void "no service was actually compared despite a non-empty service list — VOID, never clean."
+
+# Exit precedence: VOID (2) if any container was unresolved, else FAIL (1), else PASS (0).
+# Everything above has already been printed, so a VOID never hides a mismatch or a stuck pod.
+if [ "$UNRESOLVED_N" -gt 0 ]; then
+  void "$UNRESOLVED_N container(s) in $(wc -w <<<"$UNRESOLVED_SVCS" | tr -d ' ') service(s) ($UNRESOLVED_SVCS) report an imageID with no @sha256:<digest> (UNRESOLVED lines above).
+       The image they run cannot be compared, and a container skipped here is a wrong image the
+       gate never saw. Alongside it: $MISMATCHES wrong image digest(s) and $STUCK stuck terminating pod(s)
+       across the other comparisons (named above). VOID outranks FAIL: could not check is never clean."
+fi
 
 if [ "$STUCK" -gt 0 ]; then
   fail "$STUCK pod(s) were still terminating at the ${DRAIN_TIMEOUT}s deadline (named above), and $MISMATCHES

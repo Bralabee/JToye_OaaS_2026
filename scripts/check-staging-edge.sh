@@ -68,13 +68,24 @@
 #
 # USAGE
 #
-#   scripts/check-staging-edge.sh --context jtoye-stg-aks [--fail-arms]
+#   scripts/check-staging-edge.sh [--skip-burst]                       read-only, no cluster access
+#   scripts/check-staging-edge.sh --context jtoye-stg-aks --fail-arms  writes to the cluster
 #   EDGE_FORMAT=tap scripts/check-staging-edge.sh ...   (TAP 13 output, one test per arm)
 #
-#   --context is REQUIRED, with no default, and passes scripts/lib/staging-kube-guard.sh
+#   The read-only run (default, or --skip-burst) only curls the public hosts. It needs no
+#   kubeconfig, no kubelogin and no --context (one given is ignored), so a CI job can run it
+#   holding no cluster credential. --fail-arms is the only mode that writes to the cluster:
+#   it REQUIRES --context, with no default, which passes scripts/lib/staging-kube-guard.sh
 #   (the employer's sipbihs2aks is refused by name; the context must point at the staging
-#   API server recorded in k8s/staging/azure-identity.yaml). The normal run only reads the
-#   public hosts; --fail-arms is the only mode that writes to the cluster.
+#   API server recorded in k8s/staging/azure-identity.yaml).
+#
+#   --skip-burst  run the four read-only arms (headers, csp, cors, admin) and NOT the burst arm.
+#                 The burst arm fires 1500 requests at concurrency 40 and passes only above
+#                 ~150 rps, so its verdict is a statement about the client's bandwidth and the
+#                 backend's CPU as much as about the edge: timing-sensitive, and wrong for a
+#                 shared hosted runner. A run with the flag says so on its PASS line, so it can
+#                 never be read as the full five-arm result. Refused together with --fail-arms
+#                 (that mode exists to show EVERY arm can fail, the burst arm included).
 #
 # EXIT
 #
@@ -83,8 +94,16 @@
 #   2  VOID: a tool is missing, a host does not resolve, a request did not complete, or a
 #      probe route never answered. "Could not evaluate" is never reported as a pass.
 #
-# Runs nowhere in CI on its own: scripts/gates/gate-enforcement.conf records why (a hosted
-# runner has no public staging to call); plan 29-21 runs it from the deploy job.
+# WHERE IT RUNS
+#
+#   The `staging-edge-probe` job in .github/workflows/ci-cd.yaml runs the four read-only arms
+#   with --skip-burst after every successful staging deploy. It is a SEPARATE job (needs:
+#   deploy-staging), not a step of the deploy job, so a red here never triggers the deploy's
+#   rollback of a correct deploy. The script needs only curl, jq and getent, all on a hosted
+#   runner image, and the job holds `contents: read` and nothing else: no Azure login, no
+#   kubeconfig, no OIDC token, no environment.
+#   NOT in CI, by design: the burst arm (timing-sensitive) and --fail-arms (creates and deletes
+#   a scratch Ingress in jtoye-staging). Both stay operator-run.
 
 set -uo pipefail
 
@@ -119,6 +138,7 @@ usage() {
 
 CONTEXT=""
 FAIL_ARMS=0
+SKIP_BURST=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --context)
@@ -126,21 +146,34 @@ while [ $# -gt 0 ]; do
       CONTEXT="$2"; shift 2 ;;
     --context=*) CONTEXT="${1#--context=}"; shift ;;
     --fail-arms) FAIL_ARMS=1; shift ;;
+    --skip-burst) SKIP_BURST=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "USAGE ERROR: unknown argument \"$1\"" >&2; exit 2 ;;
   esac
 done
 
+if [ "$FAIL_ARMS" -eq 1 ] && [ "$SKIP_BURST" -eq 1 ]; then
+  echo "USAGE ERROR: --skip-burst cannot be combined with --fail-arms (that mode must show every arm, burst included, can fail)" >&2
+  exit 2
+fi
+
 case "$FORMAT" in text|tap) ;; *) echo "USAGE ERROR: EDGE_FORMAT must be text or tap, got '$FORMAT'" >&2; exit 2 ;; esac
 
 # ---- the context guard (the same implementation every staging script uses) -------------
-# shellcheck source=lib/staging-kube-guard.sh
-if ! source "$ROOT/scripts/lib/staging-kube-guard.sh"; then
-  echo "VOID: could not source scripts/lib/staging-kube-guard.sh" >&2
-  exit 2
+# Applied ONLY to --fail-arms, the one mode that writes to the cluster. The read-only run
+# (default, --skip-burst) only curls the public hosts: it makes no cluster call, so it needs
+# no kubeconfig, no kubelogin and no --context, and a CI job running it holds no cluster
+# credential at all (review of #989: the probe job was minting a cluster-write token only to
+# satisfy this guard).
+if [ "$FAIL_ARMS" -eq 1 ]; then
+  # shellcheck source=lib/staging-kube-guard.sh
+  if ! source "$ROOT/scripts/lib/staging-kube-guard.sh"; then
+    echo "VOID: could not source scripts/lib/staging-kube-guard.sh" >&2
+    exit 2
+  fi
+  staging_kube_guard "$CONTEXT" "$IDENTITY_FILE"; guard_rc=$?
+  if [ "$guard_rc" -ne 0 ]; then exit "$guard_rc"; fi
 fi
-staging_kube_guard "$CONTEXT" "$IDENTITY_FILE"; guard_rc=$?
-if [ "$guard_rc" -ne 0 ]; then exit "$guard_rc"; fi
 
 for tool in curl jq getent; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -630,12 +663,14 @@ wait_route() {
 # ---- run ----------------------------------------------------------------------------------
 STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MODE="normal"; [ "$FAIL_ARMS" -eq 1 ] && MODE="fail-arms"
+CTX_LABEL="$CONTEXT"; [ "$FAIL_ARMS" -eq 0 ] && CTX_LABEL="none (read-only: public hosts only, no cluster call)"
+[ "$SKIP_BURST" -eq 1 ] && MODE="normal,skip-burst"
 if [ "$FORMAT" = "tap" ]; then
   echo "TAP version 13"
-  if [ "$FAIL_ARMS" -eq 1 ]; then echo "1..6"; else echo "1..5"; fi
-  echo "# check-staging-edge ${STAMP} mode=${MODE} context=${CONTEXT}"
+  if [ "$FAIL_ARMS" -eq 1 ]; then echo "1..6"; elif [ "$SKIP_BURST" -eq 1 ]; then echo "1..4"; else echo "1..5"; fi
+  echo "# check-staging-edge ${STAMP} mode=${MODE} context=${CTX_LABEL}"
 else
-  echo "check-staging-edge  (${STAMP})  mode=${MODE}  context=${CONTEXT}"
+  echo "check-staging-edge  (${STAMP})  mode=${MODE}  context=${CTX_LABEL}"
 fi
 
 # run_arm NAME FN ARGS... — normal mode: the arm's own verdict
@@ -667,7 +702,9 @@ if [ "$FAIL_ARMS" -eq 0 ]; then
   run_arm csp arm_csp "https://${APP_HOST}/"
   run_arm cors arm_cors "https://${API_HOST}/api/v1/products"
   run_arm admin arm_admin "https://${AUTH_HOST}/admin/"
-  run_arm burst arm_burst "https://${API_HOST}/api/v1/edge-burst-probe"
+  if [ "$SKIP_BURST" -eq 0 ]; then
+    run_arm burst arm_burst "https://${API_HOST}/api/v1/edge-burst-probe"
+  fi
 else
   if ! command -v kubectl >/dev/null 2>&1; then echo "VOID: kubectl not on PATH" >&2; exit 2; fi
   PROBE_CREATED=1
@@ -712,5 +749,6 @@ if [ "$N_FAIL" -gt 0 ]; then
   [ "$FORMAT" = "tap" ] && echo "# FAIL: ${N_FAIL} of ${REPORT_N}" || echo "FAIL: ${N_FAIL} of ${REPORT_N} check(s) failed"
   exit 1
 fi
-[ "$FORMAT" = "tap" ] && echo "# PASS: ${REPORT_N} of ${REPORT_N}" || echo "PASS: ${REPORT_N} of ${REPORT_N} check(s) hold on the live edge (mode=${MODE})"
+SKIP_NOTE=""; [ "$SKIP_BURST" -eq 1 ] && SKIP_NOTE="; the burst arm was NOT RUN (--skip-burst), so the rate limit is unproven by this run"
+[ "$FORMAT" = "tap" ] && echo "# PASS: ${REPORT_N} of ${REPORT_N}${SKIP_NOTE}" || echo "PASS: ${REPORT_N} of ${REPORT_N} check(s) hold on the live edge (mode=${MODE})${SKIP_NOTE}"
 exit 0

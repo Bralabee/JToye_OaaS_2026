@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 29 CI Hardening: Selftests Wired, an Edge Probe Job, Digest-less Containers VOID, Action Sha Pins (#989) — 2026-10-20
+
+Four changes to what CI proves, each shown failing on a planted break before it was trusted.
+
+- **Digest parity (C-9).**
+  - A container with a non-empty imageID that has no `@sha256:<64 hex>` used to drop out of the compared set, whatever its state (running, CrashLoopBackOff, terminated). So did a running or ready container with no imageID. `check-deploy-digest-parity.sh` now exits 2 (VOID) naming the pod and container. Only a container with an EMPTY imageID that is neither running nor ready (Pending, ContainerCreating) is ignored.
+  - The VOID is collected, not raised mid-loop: every service is still compared and every mismatch, stuck pod and unresolved container is printed before the exit. Precedence is VOID (2), then FAIL (1), then PASS (0).
+  - The selftest gains 8 VOID arms, 1 control arm and 16 content checks (33 to 58 PASS lines).
+  - `deploy-staging` passes the literal `--context jtoye-stg-aks` to the gate instead of the ambient current-context.
+- **Selftests in CI (C-1).**
+  - `staging-secrets.sh`, `staging-secrets-preflight.sh`, `staging-pitr-drill.sh` and `check-networkpolicy-enforcement.sh` run `--selftest` in `k8s-validate`.
+  - `staging-db-bootstrap.sh --selftest` runs in `ops-contracts`, because it pulls `postgres:18` and that job is not on the deploy path. The image is now pinned by index digest (`PG_IMAGE`, tag kept in a comment), so a republished tag cannot change the result.
+  - `ops-contracts` is not added to `deploy-staging.needs` (27-06 section 5).
+- **Edge probe (C-2).**
+  - `check-staging-edge.sh --skip-burst` runs the four read-only arms and not the timing-sensitive 429 burst. The kube context guard now applies only to `--fail-arms`, the one mode that writes to the cluster; the read-only run needs no kubeconfig and no `--context`.
+  - The new `staging-edge-probe` job (`needs: deploy-staging`) runs it after each staging deploy. It holds `contents: read` and nothing else: no Azure login, no kubeconfig, no `id-token`, no `environment:`. It is a separate job so its red cannot trigger the deploy rollback.
+  - `deploy-staging` and `staging-edge-probe` share the concurrency group `staging-deploy` (`cancel-in-progress: false`), so a probe cannot overlap a later run's rollout.
+  - The false "plan 29-21 runs it from the deploy job" text is gone from the script and from `gate-enforcement.conf`.
+- **Action pins (M2).** All 41 remaining `uses:` refs that pointed at a tag are pinned to the full 40-hex commit with a `# <tag>` comment, third-party ones included. Dependabot's `github-actions` entry stays and now moves the pins.
+- **Docs.** No metrics change: no `@Test`, `it`, `test()` or Go `Test*` block is added.
+
 ### Staging Grafana Gets a Basic-Auth Gate at the Traefik Edge (#990) — 2026-10-20
 
 Grafana's login page on `grafana-staging.olajay.co.uk` was open to the internet, so anyone could guess its admin password (issue #968 item 3, owner approval 2026-10-20, option A). Traefik now answers `401` before Grafana sees a request, by the same chain as the testers' mail UI (plan 29-22, D-33).

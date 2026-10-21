@@ -159,7 +159,11 @@ usage() {
   sed -n '/^# USAGE/,/^# SELFTEST ARMS/p' "$SELF" | sed '$d' | sed 's/^# \{0,1\}//'
 }
 
-PG_IMAGE="postgres:18"
+# Pinned by the INDEX digest of the tag as resolved 2026-10-20 (`docker buildx imagetools inspect
+# postgres:18`, 18.6 on trixie), so a republished tag cannot change the --selftest's role-model
+# result, or the psql client a real stage runs, with no change in this repo. Tag: postgres:18.
+# To move it: re-run that command, read the top-level Digest, and re-run --selftest.
+PG_IMAGE="postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
 DEFAULT_HOST="jtoye-stg-pg.postgres.database.azure.com"
 KV_NAME="jtoye-stg-kv"
 HOST_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
