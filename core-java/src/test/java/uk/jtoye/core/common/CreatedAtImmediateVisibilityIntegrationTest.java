@@ -105,6 +105,7 @@ class CreatedAtImmediateVisibilityIntegrationTest {
         req.setIngredientsText("Water");
         req.setAllergenMask(0);
         req.setPricePennies(500L);
+        req.setShopId(seedShop()); // #959: a product belongs to a shop
 
         ProductDto dto = productService.createProduct(req);
 

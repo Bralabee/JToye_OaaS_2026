@@ -85,6 +85,7 @@ class ProductImageCrossTenantBlobDeleteIntegrationTest {
 
     private UUID tenantA;
     private UUID tenantB;
+    private UUID shopA;
     private byte[] bBytes;
     private String bUrl;
     private String aUrl;
@@ -104,6 +105,14 @@ class ProductImageCrossTenantBlobDeleteIntegrationTest {
         bBytes = webpBytes();
         bUrl = storageService.putBytes(tenantB + "/products/" + UUID.randomUUID() + "/b.webp", bBytes, "image/webp");
         aUrl = storageService.putBytes(tenantA + "/products/" + UUID.randomUUID() + "/a.webp", webpBytes(), "image/webp");
+
+        // #959: a product belongs to a shop, so tenant A's probe products need one (seeded while the role is
+        // still a superuser, like the tenants above).
+        shopA = UUID.randomUUID();
+        jdbc.update("INSERT INTO shops (id, tenant_id, created_at, name, slug, published, "
+                        + "delivery_fee_pennies, minimum_order_pennies, version) "
+                        + "VALUES (?, ?, now(), 'D-09 shop', ?, true, 0, 0, 0)",
+                shopA, tenantA, "d09-" + tenantA.toString().substring(0, 8));
 
         // Downgrade inside the test transaction (rolled back after each test): from here on FORCE
         // RLS applies to every statement the services issue.
@@ -192,6 +201,7 @@ class ProductImageCrossTenantBlobDeleteIntegrationTest {
         request.setAllergenMask(0);
         request.setPricePennies(100L);
         request.setImageUrl(imageUrl);
+        request.setShopId(shopA);
         return productService.createProduct(request).getId();
     }
 

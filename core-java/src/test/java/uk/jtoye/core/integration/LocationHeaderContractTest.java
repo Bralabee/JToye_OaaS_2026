@@ -209,6 +209,7 @@ class LocationHeaderContractTest {
         request.setIngredientsText("Yam");
         request.setAllergenMask(0);
         request.setPricePennies(999L);
+        request.setShopId(createShop()); // #959: a product belongs to a shop
 
         assertLocationDereferences("/api/v1/products", request, "/api/v1/products");
     }
