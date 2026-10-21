@@ -3056,7 +3056,7 @@ data:
           # WHAT IT DOES NOT COVER. It reads the Certificate's EXPIRY as cert-manager sees it, i.e.
           # the Secret. It cannot tell that a workload is still serving an OLD certificate from before
           # a renewal; for Mailpit, which reads its certificate only at start, that is closed by the
-          # supervisor in k8s/components/mailpit/mailpit.yaml (INV-22), and in kubectl terms by a
+          # supervisor in k8s/components/mailpit/mailpit.yaml (INV-23), and in kubectl terms by a
           # container restart count that rises at each renewal.
           - alert: CertificateExpiringSoon
             expr: (certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 7 * 86400
@@ -3076,7 +3076,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
-  name: prometheus-alerts-75cgfd4dt5
+  name: prometheus-alerts-t6b8mfh99d
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -5395,7 +5395,7 @@ spec:
           - configMap:
               name: prometheus-config-db96d5tfkf
           - configMap:
-              name: prometheus-alerts-75cgfd4dt5
+              name: prometheus-alerts-t6b8mfh99d
       - name: data
         persistentVolumeClaim:
           claimName: prometheus-data

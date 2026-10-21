@@ -614,7 +614,7 @@ groups:
       # WHAT IT DOES NOT COVER. It reads the Certificate's EXPIRY as cert-manager sees it, i.e.
       # the Secret. It cannot tell that a workload is still serving an OLD certificate from before
       # a renewal; for Mailpit, which reads its certificate only at start, that is closed by the
-      # supervisor in k8s/components/mailpit/mailpit.yaml (INV-22), and in kubectl terms by a
+      # supervisor in k8s/components/mailpit/mailpit.yaml (INV-23), and in kubectl terms by a
       # container restart count that rises at each renewal.
       - alert: CertificateExpiringSoon
         expr: (certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 7 * 86400

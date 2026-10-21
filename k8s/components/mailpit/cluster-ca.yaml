@@ -27,7 +27,7 @@
 # anchors on the CA's name and key, not on its validity dates). mailpit-tls rotates
 # normally (90 days, renewed 15 days early) and Mailpit reads it only at start: a renewed
 # leaf reaches it when the container restarts, which the supervisor in mailpit.yaml does by
-# itself within about two minutes of the Secret changing (issue #972, INV-22); the old leaf stays
+# itself within about two minutes of the Secret changing (issue #972, INV-23); the old leaf stays
 # valid until then.
 ---
 apiVersion: cert-manager.io/v1

@@ -130,7 +130,7 @@ spec:
         #     at once and Mailpit is stopped cleanly inside the grace period.
         #   * STARTTLS stays REQUIRED: MP_SMTP_REQUIRE_STARTTLS below is untouched, and the
         #     files hashed are the ones MP_SMTP_TLS_CERT/KEY name, so the two cannot drift apart.
-        # INV-22 (k8s/scripts/check-render-invariants.sh) pins this block in the render.
+        # INV-23 (k8s/scripts/check-render-invariants.sh) pins this block in the render.
         command:
         - sh
         - -c

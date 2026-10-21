@@ -731,7 +731,7 @@ renewed 15 days early).
    `acme-http01-solver-allow` policy), an Let's Encrypt rate limit, or the CA Secret missing for the
    internal issuer.
 3. **`mailpit-tls` specifically.** Mailpit reads its certificate only at process start. The
-   `mailpit` container runs a supervisor (`k8s/components/mailpit/mailpit.yaml`, INV-22) that hashes
+   `mailpit` container runs a supervisor (`k8s/components/mailpit/mailpit.yaml`, INV-23) that hashes
    the mounted certificate and key every 15 s and restarts the container when they change, so a
    renewal reaches Mailpit within about two minutes without anyone acting. Check it did:
    `kubectl ... logs deploy/mailpit -c mailpit --previous` shows

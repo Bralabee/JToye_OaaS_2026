@@ -145,7 +145,7 @@ measured live). The worked example, including the refusal check for the supersed
 certificate comes from the cert-manager internal CA (90 days, renewed 15 days early; the first one
 expires 2027-01-17). The `mailpit` container runs a supervisor that hashes the mounted certificate and
 key every 15 s and restarts the container when they change, so a renewal reaches the running Mailpit
-within about two minutes with no action (issue #972; INV-22 pins the supervisor in the render). The
+within about two minutes with no action (issue #972; INV-23 pins the supervisor in the render). The
 container restart count rising by one at each renewal is that working, and
 `kubectl ... logs deploy/mailpit -c mailpit --previous` shows `mailpit-cert-reload`. A Mailpit that
 served an expired certificate would fail the STARTTLS handshake core-java requires (section 6).
