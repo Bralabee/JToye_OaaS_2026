@@ -21,7 +21,8 @@
 #   && ...` contains `!cancelled()` and is exactly the fail-open form.
 #
 #   W-1  a job `changes` exists, has no job-level `if:`, and outputs docs_only;
-#   W-2  EXACTLY the jobs in SKIPPING plus integration-tests reference docs_only outside
+#   W-2  EXACTLY the jobs in SKIPPING (build-and-push; the deploy jobs and the edge probe skip
+#        THROUGH it, by needs, and carry no docs_only term of their own) plus integration-tests reference docs_only outside
 #        comments (plus `changes`, which defines it). Any other job referencing it is a gate
 #        that can now be skipped; a missing one is a skip that no longer happens;
 #   W-3  each SKIPPING job lists `changes` in its needs and has needs.changes.outputs.docs_only
@@ -49,7 +50,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW="$REPO_ROOT/.github/workflows/ci-cd.yaml"
 SELFTEST=0
 
-SKIPPING="build-and-push deploy-staging deploy-production"
+SKIPPING="build-and-push"
 PROPAGATING="build-and-push deploy-staging deploy-production staging-edge-probe"
 MIN_GATED_STEPS=7
 TERM="needs.changes.outputs.docs_only != 'true'"
@@ -247,6 +248,15 @@ check_workflow() {
       echo "FAIL W-5: job '$j' if: '$cond' carries a status function - a skipped need would no longer skip it" >&2; bad=1
     fi
   done
+  # the chain the skip travels along: build-and-push -> deploy-* -> staging-edge-probe
+  for j in deploy-staging deploy-production; do
+    rec="$(rec_of "$j")"
+    [ -n "$rec" ] || continue
+    IFS=$'\t' read -r _ needs cond refs outdef <<< "$rec"
+    if ! needs_has "$needs" build-and-push; then
+      echo "FAIL W-5: $j no longer needs build-and-push (needs: $needs) - a docs-only change would no longer skip it" >&2; bad=1
+    fi
+  done
   rec="$(rec_of staging-edge-probe)"
   if [ -n "$rec" ]; then
     IFS=$'\t' read -r _ needs cond refs outdef <<< "$rec"
@@ -297,7 +307,8 @@ if [ "$SELFTEST" -eq 1 ]; then
   plant it-drops-needs           "$IT s/^    needs: changes\$/    needs: test/" "FAIL W-4: integration-tests does not list"
   # --- W-3 / W-5 / W-1 / W-2 ---------------------------------------------------------------
   plant gate-lint        "/^  lint:/,/^  [a-z0-9-]+:\$/ s/^(    runs-on: ubuntu-latest)\$/\\1\n    if: needs.changes.outputs.docs_only != 'true'/" "FAIL W-2: job 'lint'"
-  plant drop-deploy-term "/^  deploy-staging:/,/^  [a-z0-9-]+:\$/ s/ && needs\\.changes\\.outputs\\.docs_only != 'true'\$//" "FAIL W-3: job 'deploy-staging' job-level if"
+  plant deploy-gets-term "/^  deploy-staging:/,/^  [a-z0-9-]+:\$/ s/^(    if: github\\.ref == 'refs\/heads\/main' && vars\.DEPLOY_STAGING_ENABLED == 'true')\$/\\1 \&\& needs.changes.outputs.docs_only != 'true'/" "FAIL W-2: job 'deploy-staging'"
+  plant deploy-loses-bp  "/^  deploy-production:/,/^  [a-z0-9-]+:\$/ s/^    needs: \[build-and-push, k8s-validate\]\$/    needs: [k8s-validate]/" "FAIL W-5: deploy-production no longer needs build-and-push"
   plant drop-bp-need     "/^  build-and-push:/,/^  [a-z0-9-]+:\$/ s/^(    needs: \\[)changes, /\\1/" "FAIL W-3: job 'build-and-push' does not list 'changes'"
   plant bp-or-term       "/^  build-and-push:/,/^  [a-z0-9-]+:\$/ s/^    if: \\((github\\.event_name == 'push' \\|\\| github\\.event_name == 'release')\\) && /    if: \\1 || /" "FAIL W-3: job 'build-and-push' job-level if"
   plant probe-always     "/^  staging-edge-probe:/,/^  [a-z0-9-]+:\$/ s/^(    if: )github\\.ref/\\1always() \\&\\& github.ref/" "FAIL W-5: job 'staging-edge-probe' if"

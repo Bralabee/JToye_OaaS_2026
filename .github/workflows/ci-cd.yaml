@@ -19,9 +19,9 @@ jobs:
   # Testcontainers suite, four image builds and a staging redeploy (#1002 and #1003 changed
   # only .planning/** and markdown and each still cost ~72 minutes plus a redeploy). This job
   # computes the changed paths and asks scripts/ci-docs-only.sh whether EVERY one is an
-  # allow-listed documentation path. Its single output, docs_only, gates ONLY the four
-  # expensive jobs below: integration-tests, build-and-push, deploy-staging (and, through
-  # needs, staging-edge-probe) and deploy-production. Every other job in this file, and every
+  # allow-listed documentation path. Its single output, docs_only, gates ONLY the expensive
+  # work: the heavy STEPS of integration-tests, and the job build-and-push, through which
+  # deploy-staging, deploy-production and staging-edge-probe skip by needs. Every other job in this file, and every
   # separate workflow (docs-freshness, gitleaks, pii-guard, review-record), runs on every
   # change exactly as before - including the gates that PARSE docs (check-doc-metrics,
   # check-doc-citations, check-changelog-contract), so a doc edit that breaks one still reds.
@@ -1315,8 +1315,8 @@ jobs:
       # it can answer both true and false, fails closed on an empty list, a mixed list, a
       # traversal, openapi-snapshot.json, any src/** file and a workflow or script change, and
       # that every Dockerfile directory and every doc a test reads is classified as code. The
-      # wiring check proves the skip reaches exactly the four expensive jobs and that the
-      # Integration Tests condition still runs the suite when `changes` itself fails.
+      # wiring check proves the skip reaches exactly those places and that the
+      # Integration Tests job still runs the suite when `changes` itself fails.
       - name: Prove the doc-only classifier can say both answers and fails closed (--selftest)
         run: bash scripts/ci-docs-only.sh --selftest
 
@@ -2098,17 +2098,19 @@ jobs:
   # the workflow has no path filter, so it cannot skip and cannot cascade a skip.
   deploy-staging:
     name: Deploy to Staging
-    needs: [changes, build-and-push, k8s-validate]
+    needs: [build-and-push, k8s-validate]
     runs-on: ubuntu-latest
     # Gated OFF by default, mirroring the deploy-production DEPLOY_ENABLED gate
     # below. Runs only on main AND when the repo variable DEPLOY_STAGING_ENABLED
     # is set to 'true' (the old branch-name gate could never fire — that branch
     # does not exist on the remote).
     #
-    # DOC-ONLY SKIP: a documentation-only merge neither rebuilds nor redeploys staging.
-    # build-and-push is skipped for it, which already skips this job; the explicit
-    # docs_only term says so where a reader will look and survives a change to the graph.
-    if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true' && needs.changes.outputs.docs_only != 'true'
+    # DOC-ONLY SKIP: a documentation-only merge neither rebuilds nor redeploys staging. There
+    # is deliberately NO docs_only term here: build-and-push is skipped for it, and a skipped
+    # `needs:` entry skips this job (this `if:` has no status function, so GitHub applies an
+    # implicit success()). One gate, one place to edit; scripts/check-ci-docs-skip-wiring.sh
+    # (W-5) pins that this job still needs build-and-push and carries no status function.
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
     # One staging deploy-or-probe at a time, across runs. The staging-edge-probe job below
     # joins this SAME group, so a probe of run N cannot overlap run N+1's rollout or rollback
     # and report (or sign off) a transient revision. cancel-in-progress is false: a rollout
@@ -2485,10 +2487,11 @@ jobs:
   # bare `needs:` on it cannot skip-cascade.
   deploy-production:
     name: Deploy to Production
-    needs: [changes, build-and-push, k8s-validate]
+    needs: [build-and-push, k8s-validate]
     runs-on: ubuntu-latest
-    # DOC-ONLY SKIP: as deploy-staging. A `release` event always classifies as not docs-only.
-    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true' && needs.changes.outputs.docs_only != 'true'
+    # DOC-ONLY SKIP: as deploy-staging, through build-and-push. A `release` event always
+    # classifies as not docs-only.
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true'
     environment:
       name: production
       url: https://app.olajay.co.uk
