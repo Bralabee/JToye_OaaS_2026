@@ -74,3 +74,9 @@ images (Phase 32).
 - `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md` "2026-10-21 — PHASE CLOSE"
 - GitHub issues #957, #958, #61, #102, #108, #461, #462
 </canonical_refs>
+
+<approval>
+## Plan approval
+
+**2026-10-21 — the owner approved the Phase 30 plan (30-01..30-32)**, together with these session rulings: the #1006 NetworkPolicy egress rule, #959's "a product must name a shop", #1017 option (a) (assign shop-less products only for single-shop tenants by a tenant-looped migration; banner for multi-shop tenants; seed fixed), and SHOP_MANAGER as the onboarding floor (#1014).
+</approval>

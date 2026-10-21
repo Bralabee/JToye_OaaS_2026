@@ -5,7 +5,7 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: planning
-stopped_at: Phase 30 planned (32 plans, checker passed), awaiting owner plan approval
+stopped_at: Phase 30 plan APPROVED by the owner 2026-10-21; ready to execute (30-01 first)
 last_updated: "2026-10-21T09:04:40.849Z"
 last_activity: 2026-10-21
 last_activity_desc: Phase 30 planned, 32 plans in 8 serial PRs; owner approval pending (owner accepted R-3 after the Phase 29 close)
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 ## Current Position
 
-Phase: 30 — The Money Path, Executed (PLANNED, awaiting owner approval)
-Status: Planned — 32 plans (30-01..30-32), checker passed; execution waits on owner plan approval
+Phase: 30 — The Money Path, Executed (PLANNED, owner-approved 2026-10-21)
+Status: Ready to execute — 32 plans (30-01..30-32), checker passed, owner-approved 2026-10-21
 Last activity: 2026-10-21 — Phase 30 planned (research, UI-SPEC, 32 plans)
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 planning is next.
