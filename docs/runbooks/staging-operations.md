@@ -57,7 +57,13 @@ kubectl --context jtoye-stg-aks get pods -A --field-selector=status.phase!=Runni
 ```
 
 CI reaches the same cluster the same way, as the `jtoye-ci` identity through OIDC
-(`.github/workflows/ci-cd.yaml`, job `deploy-staging`).
+(`.github/workflows/ci-cd.yaml`, job `deploy-staging`). A merge that changes only
+documentation does not redeploy staging, so it is never the explanation for a new revision.
+The skip is decided against the last commit whose `Deploy to Staging` job succeeded, not the
+previous merge, so the live revision after any merge is the newest code commit on `main`
+that deployed: a code merge whose deploy failed is redeployed by the next merge, even a
+documentation-only one. If you set `DEPLOY_STAGING_ENABLED` to anything but `true`, nothing
+deploys and later documentation-only merges run the full pipeline.
 
 ## 2. Read Grafana
 
