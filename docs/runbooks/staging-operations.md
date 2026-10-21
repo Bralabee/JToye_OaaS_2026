@@ -265,5 +265,8 @@ with `DEPLOY_TAG`), never a fresh `git rev-parse HEAD`: a docs commit moves `HEA
 whose images were never built. For each gate, exit 0 is a pass, 1 is a failure, and 2 is VOID
 ("could not evaluate"). A VOID is never a pass. After a change to monitoring, also run
 `scripts/check-alert-metrics.sh` (every alert selector matches a live series; point `PROM_URL` at
-the port-forwarded Prometheus, because its default is the local compose one) and the liveness
+the port-forwarded Prometheus, because its default is the local compose one, and set
+`ALERT_RUNTIME=k8s`: `ALERT_RUNTIME=k8s PROM_URL=http://localhost:19090 bash scripts/check-alert-metrics.sh`.
+Without it the gate refuses (exit 2) rather than guess, because the cluster-only
+`CertificateExpiringSoon` rule is skipped on compose and must be judged here) and the liveness
 command in section 5.

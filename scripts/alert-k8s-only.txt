@@ -11,7 +11,7 @@
 # check-alert-metrics.sh, as for its KNOWN_DATALESS): the name must be a LIVE rule, reason and
 # owner may not be empty, no duplicates.
 #
-# HOW THE GATES USE IT. ALERT_RUNTIME=compose (the default) skips the series check for these rules
+# HOW THE GATES USE IT. ALERT_RUNTIME=compose (implicit in check-alert-metrics.sh only when PROM_URL is unset) skips the series check for these rules
 # and says so on a line of its own; ALERT_RUNTIME=k8s (set it when the gate points at the staging
 # Prometheus) applies NO exemption, so on the cluster the rule must have data like any other. In
 # check-alert-liveness.sh the runtime is k8s whenever PROM_EXEC drives kubectl.

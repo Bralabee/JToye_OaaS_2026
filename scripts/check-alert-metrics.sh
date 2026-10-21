@@ -56,19 +56,36 @@
 #
 # USAGE
 #   bash scripts/check-alert-metrics.sh [path/to/alerts.yml]
-#   PROM_URL=http://host:9090 bash scripts/check-alert-metrics.sh
+#   ALERT_RUNTIME=compose PROM_URL=http://host:9090 bash scripts/check-alert-metrics.sh
+#   ALERT_RUNTIME=k8s PROM_URL=http://localhost:19090 bash scripts/check-alert-metrics.sh   # staging
+#   (ALERT_RUNTIME is required whenever PROM_URL is set; see below)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RULES_FILE="${1:-$REPO_ROOT/infra/monitoring/prometheus/alerts.yml}"
+PROM_URL_GIVEN="${PROM_URL:-}"   # before the default: ALERT_RUNTIME below is implicit only without it
 PROM_URL="${PROM_URL:-http://localhost:9091}"
 
-# ALERT_RUNTIME (issue #972): `compose` (default) or `k8s`. Rules listed in scripts/alert-k8s-only.txt
-# read series only the cluster produces; against compose their empty selector is expected and is
-# NOT a violation. Against the staging Prometheus (ALERT_RUNTIME=k8s) no exemption applies.
-ALERT_RUNTIME="${ALERT_RUNTIME:-compose}"
+# ALERT_RUNTIME (issue #972): `compose` or `k8s`. Rules listed in scripts/alert-k8s-only.txt read
+# series only the cluster produces; against compose their empty selector is expected and is NOT a
+# violation. Against the staging Prometheus (ALERT_RUNTIME=k8s) no exemption applies, so a broken
+# cert-manager scrape (wrong port, a NetworkPolicy drop) is a violation there.
+#
+# THE RUNTIME IS NEVER GUESSED. A port-forwarded staging Prometheus is just as much a
+# `localhost:<port>` as the compose one, so the URL cannot say which it is, and a wrong guess of
+# `compose` would skip the very rule the cluster run exists to judge and PASS. So it is implicit
+# ONLY for the compose default (PROM_URL unset, i.e. http://localhost:9091); any other PROM_URL
+# with ALERT_RUNTIME unset is a VOID (rc 2) naming the fix.
+if [ -z "${ALERT_RUNTIME:-}" ]; then
+  if [ -z "$PROM_URL_GIVEN" ]; then
+    ALERT_RUNTIME=compose
+  else
+    echo "VOID: PROM_URL is set (${PROM_URL_GIVEN}) but ALERT_RUNTIME is not. This gate cannot tell a staging Prometheus from a compose one by its URL, and judging a cluster as compose silently skips the k8s-only rules (scripts/alert-k8s-only.txt). Set ALERT_RUNTIME=k8s (the port-forwarded staging Prometheus) or ALERT_RUNTIME=compose. Nothing was checked." >&2
+    exit 2
+  fi
+fi
 K8S_ONLY_FILE="${K8S_ONLY_FILE:-$SCRIPT_DIR/alert-k8s-only.txt}"
 case "$ALERT_RUNTIME" in
   compose|k8s) ;;
