@@ -1,0 +1,115 @@
+973 - NoOrdersCreated reads jtoye_orders_total (registered at startup). Evidence, 2026-10-21. All cluster access read-only, kube context jtoye-stg-aks, namespace jtoye-staging.
+
+== 1. Pod exposition (kubectl exec deploy/core-java -- curl -s http://localhost:9091/actuator/prometheus), rc=0, pod core-java-77b8bf655c-r82c2 (started 2026-10-21T01:57:01Z, restarts 0)
+# HELP jtoye_orders_total Total orders created
+# TYPE jtoye_orders_total counter
+jtoye_orders_total{application="core-java",environment="production"} 0.0
+   (no jtoye_orders_created_total exists: the exporter strips the reserved _created suffix)
+
+== 2. Scraped by staging Prometheus (port-forward svc/prometheus), 2026-10-21T02:23:04Z
+query jtoye_orders_total -> {job="core-java",instance="10.244.0.83:9091",...} value 0
+query old selector http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"} -> 0 series
+query increase(jtoye_orders_total[30m]) -> 2 series (the current pod 10.244.0.83 AND the pre-restart pod 10.244.3.18), both 0
+query process_start_time_seconds{job="core-java"} -> 1792547846.84 (2026-10-21T01:57:26Z): zero orders since this restart
+
+== 3. promtool (prom/prometheus:v3.13.4, --entrypoint=promtool)
+-- promtool check rules, image prom/prometheus:v3.13.4
+k8s/components/monitoring/prometheus/alerts.yml rc=0
+Checking /rules/alerts.yml
+  SUCCESS: 19 rules found
+infra/monitoring/prometheus/alerts.yml rc=0
+Checking /rules/alerts.yml
+  SUCCESS: 19 rules found
+-- FAIL direction: planted syntax break (expr with unbalanced paren) in a scratch copy
+broken rc=1
+Checking /rules/alerts.yml
+  FAILED:
+/rules/alerts.yml: 201:15: group "business_alerts", rule 1, "NoOrdersCreated": could not parse expression: 4:1: parse error: unclosed left parenthesis
+
+-- promtool test rules (new rule): quiet-after-restart fires, restart+one order does not
+rc=0
+  SUCCESS
+-- FAIL direction: same test against the OLD rule file (series absent => alert cannot fire)
+rc=1
+
+
+  FAILED:
+    alertname: NoOrdersCreated, time: 1h15m, 
+        exp:[
+            0:
+              Labels:{alertname="NoOrdersCreated", application="core-java", component="business", service="core-java", severity="info"}
+              Annotations:{description="No successful order creation detected. This may indicate a business issue.", summary="No orders created in last 30 minutes"}
+            ], 
+        got:[]
+
+== 4. scripts/check-alert-metrics.sh against live staging Prometheus (PROM_URL=http://localhost:19973 via port-forward), core-java at zero orders since restart
+-- ambient current-context is not used; every kubectl call above passed --context jtoye-stg-aks
+-- PASS direction: NEW rules file (k8s/components/monitoring/prometheus/alerts.yml) vs live staging Prometheus
+check-alert-metrics  (2026-10-21T02:23:15Z)
+  rules      : k8s/components/monitoring/prometheus/alerts.yml
+  prometheus : http://localhost:19973
+  live rules : 19
+  selectors  : 25 extracted, 28 queried (incl. 3 dormant)
+  self-heal  : 0 rule(s) empty-but-self-healing (#384), 1 declared
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+   rc=0
+-- PASS direction: NEW infra/monitoring/prometheus/alerts.yml (compose copy)
+check-alert-metrics  (2026-10-21T02:23:19Z)
+  rules      : infra/monitoring/prometheus/alerts.yml
+  prometheus : http://localhost:19973
+  live rules : 19
+  selectors  : 25 extracted, 28 queried (incl. 3 dormant)
+  self-heal  : 0 rule(s) empty-but-self-healing (#384), 1 declared
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+   rc=0
+-- FAIL direction: OLD rules file (origin/main alerts.yml, sha256 53ab2602a0ff976b) vs same live Prometheus
+check-alert-metrics  (2026-10-21T02:23:22Z)
+  rules      : /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/6841668e-832c-45b4-ad41-3eed6939c6b4/scratchpad/p973/alerts.OLD.yml
+  prometheus : http://localhost:19973
+FAIL: M-1 rule 'NoOrdersCreated' selector matches ZERO series — this rule can never fire: http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}
+       CAUSE: NoOrdersCreated reads jtoye_orders_total (the jtoye.orders.created counter, registered at core-java startup and exposed at 0.0 from the first scrape; the exporter strips the _created suffix, so the name is NOT jtoye_orders_created_total). Zero series means core-java is not being scraped, or the rule file was reverted to the old http_server_requests_seconds_count POST 201 selector.
+       FIX:   check the core-java scrape target and run `curl -s <core-java>/actuator/prometheus` for jtoye_orders_total; seeding an order is NOT the remedy any more.
+  live rules : 19
+  selectors  : 25 extracted, 28 queried (incl. 3 dormant)
+  self-heal  : 0 rule(s) empty-but-self-healing (#384), 1 declared
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+FAILED: 1 live alert-metric violation(s).
+   rc=1
+
+== 5. Static gates on the final tree (rc): render-golden.sh rc=0 (staging golden regenerated by --write, production UNCHANGED), k8s/scripts/check-render-invariants.sh rc=0, scripts/check-alert-rules.sh rc=0 (promtool 19 rules),
+   check-alert-mute.sh rc=0 (M-6 muted NoOrdersCreated -> mute-null), check-alertmanager-render.sh rc=0 (10/10) and --selftest rc=0 (6/6), docs-freshness.sh rc=0, check-doc-metrics.sh rc=0, check-claims.sh rc=0,
+   check-doc-citations.sh rc=0 (after fixing docs/ops/terminal-states.yaml:265 RedisDown locator 302 -> 315; it went rc=1 when the rule comment grew), check-gate-enforcement.sh rc=0, check-handoff-contract.sh rc=0 (H-3: 1 behind, budget 3),
+   check-changelog-contract.sh rc=0, check-changelog-cites-pr.sh --pr 1000 rc=0
+
+== 6. promtool unit-test file used in section 3 (promtool test rules, evaluation_interval 30s)
+rule_files: [alerts.yml]
+evaluation_interval: 30s
+tests:
+  # Quiet after a restart: the counter exists at 0 from the first scrape, no order ever.
+  # The alert must FIRE (for: 30m after the 30m window has data).
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java"}'
+        values: '0+0x180'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: NoOrdersCreated
+        exp_alerts:
+          - exp_labels: {severity: info, component: business, service: core-java, application: core-java}
+            exp_annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."
+  # Restart then ONE order: the first 0 -> 1 step is seen (series existed at 0), no alert.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java"}'
+        values: '0x20 1+0x160'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NoOrdersCreated
+        exp_alerts: []

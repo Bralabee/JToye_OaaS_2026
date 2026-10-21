@@ -116,17 +116,19 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 # All three removals came from the STALE arm rather than from review, which is the point
 # of writing the trigger INTO the entry: the exemption cannot outlive its reason.
 #
-# CONSEQUENCE, RECORDED RATHER THAN HIDDEN: NoOrdersCreated is now covered by M-1 on its
-# own merits, so a stack on which no order has been placed SINCE CORE-JAVA LAST STARTED
-# will fail M-1 for it. That is the intended trade — this gate grades a LIVE runtime, and
-# a blind order alert is a fact about that runtime worth surfacing rather than exempting
-# in perpetuity. Re-adding an entry is the wrong fix; placing an order is the right one.
+# NoOrdersCreated NO LONGER GOES BLIND AFTER A RESTART (issue #973). It used to read the
+# http_server_requests_seconds_count POST 201 series, which Micrometer creates on the FIRST
+# matching request and which dies with the JVM, so M-1 went red after every core-java
+# restart until `scripts/seed-order-metric.sh` placed a real order. The rule now reads
+# `jtoye_orders_total` (the `jtoye.orders.created` counter, registered in the
+# BusinessMetricsService constructor, so it is exposed at 0.0 from the first scrape). Do NOT
+# rename it to jtoye_orders_created_total: the exporter strips the reserved `_created`
+# suffix and that name does not exist. M-1 covers the rule on its own merits and a fresh
+# stack passes it with zero orders. Re-adding an exemption is still the wrong fix.
 #
-# That fix is now committed rather than retyped: `scripts/seed-order-metric.sh` places one
-# real guest order through the public storefront path and waits for the scrape. The M-1
-# failure message names it, because the underlying cause is not guessable from the red —
-# the series is a *request* counter that does not survive a restart, so the alert is blind
-# after every rebuild until the first order, which is precisely when you would want it.
+# `scripts/seed-order-metric.sh` is kept: it proves the order path end to end (and, with
+# FORCE=1, clears a FIRING NoOrdersCreated), but it is no longer needed to make this gate
+# green.
 # ---------------------------------------------------------------------------------
 KNOWN_DATALESS=()
 
@@ -337,10 +339,12 @@ done
 #                  The instant a 5xx is served the series is created, the expression
 #                  evaluates, and the rule fires on its own. It is not blind; it is
 #                  quiet, and it wakes itself.
-#   ABSENCE-DETECTOR  NoOrdersCreated. Fires on `< 1`, i.e. on the ABSENCE of data. With
-#                  the series gone it yields 0 samples forever, so the one condition it
-#                  exists to detect is exactly the one it cannot see. GENUINELY blind,
-#                  and it needs seeding (scripts/seed-order-metric.sh).
+#   ABSENCE-DETECTOR  A rule that fires on `< 1`, i.e. on the ABSENCE of data. With its
+#                  series gone it yields 0 samples forever, so the one condition it exists
+#                  to detect is exactly the one it cannot see: GENUINELY blind. The class
+#                  is why S-1 exists. NoOrdersCreated was the live example until #973
+#                  pointed it at a counter registered at startup (jtoye_orders_total), so
+#                  its series now exists from the first scrape and it is evaluable.
 #   DEAD           StompBrokerLag's class: a label that exists on no series of the metric
 #                  family, so the filter can never match no matter what happens.
 #
@@ -450,7 +454,7 @@ while IFS=$'\t' read -r rule sel; do
       # KNOWN_DATALESS header explicitly calls the wrong fix).
       case "$rule" in
         NoOrdersCreated)
-          hint=$'\n       CAUSE: http_server_requests_seconds_count is created on the FIRST matching request and is destroyed when core-java restarts — so this is expected on a freshly rebuilt stack, and it means the alert is currently blind.\n       FIX:   bash scripts/seed-order-metric.sh   (places one real guest order and waits for the scrape)' ;;
+          hint=$'\n       CAUSE: NoOrdersCreated reads jtoye_orders_total (the jtoye.orders.created counter, registered at core-java startup and exposed at 0.0 from the first scrape; the exporter strips the _created suffix, so the name is NOT jtoye_orders_created_total). Zero series means core-java is not being scraped, or the rule file was reverted to the old http_server_requests_seconds_count POST 201 selector.\n       FIX:   check the core-java scrape target and run `curl -s <core-java>/actuator/prometheus` for jtoye_orders_total; seeding an order is NOT the remedy any more.' ;;
       esac
       violation "M-1 rule '$rule' selector matches ZERO series — this rule can never fire: $sel$hint"
     fi

@@ -174,35 +174,42 @@ alert reports the JVM it measured rather than the one someone assumed.
 
 ## NoOrdersCreated
 
-**Expression:** `increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1`
+**Expression:** `increase(jtoye_orders_total[30m]) < 1`
 · **for:** 30m · **severity:** info
 
 ### What it means
 
-No order was successfully created in the last 30 minutes. This is a **business** signal, not an
+No order was placed in the last 30 minutes. This is a **business** signal, not an
 outage — nothing is down, and no page is warranted on its own.
 
-### The trap: this is a REQUEST counter, not a database fact
+### What the series is (changed in #973)
 
-`http_server_requests_seconds_count` is a Micrometer request counter. It is **created on the first
-matching request and destroyed when core-java restarts.** Two consequences that have each cost time
-already:
+`jtoye_orders_total` is the Micrometer counter `jtoye.orders.created`, registered in the
+`BusinessMetricsService` constructor, so core-java exposes it at `0.0` from its first scrape and
+every restart re-creates it. The rule is therefore **evaluable from startup**: it no longer goes
+blind after a rebuild, and `scripts/check-alert-metrics.sh` M-1 passes on a fresh stack with zero
+orders. No seeding is needed.
 
-- **Seeding an order row in the database does not create the series.** Neither does any read
-  endpoint. Only a real `POST` that returns `201` does.
-- **This project mandates rebuilding all containers after any code change**, so after every rebuild
-  the alert is *blind* until the first order — precisely when you would most want it.
+- **Do not rename it to `jtoye_orders_created_total`.** The Prometheus exporter strips the reserved
+  `_created` suffix from a counter name, so the meter `jtoye.orders.created` is exposed as
+  `jtoye_orders_total`. The longer name does not exist and the rule would go blind again.
+- **It counts orders placed, not HTTP 201s.** `OrderStateChangeListener.sendEmailForState`
+  increments it on a deduplicated `ORDER_STATE_CHANGED` event whose new status is `PENDING`: a cash
+  storefront order at creation, a card order once the payment confirms, and a vendor/API/MCP order
+  on `DRAFT` to `PENDING`. An unpaid card checkout does not count.
+- **It also goes quiet if the outbox/AMQP path stalls**, because the increment happens in the
+  consumer. That is a real signal, so when this fires with orders visibly being placed, check
+  `payment_event_outbox` and the order-event queue before blaming trade.
 
 ### Two different symptoms, two different fixes — do not confuse them
 
 | symptom | what it means | fix |
 |---|---|---|
-| `scripts/check-alert-metrics.sh` fails on it | the stack was rebuilt, the counter is gone, the alert is **blind** | `bash scripts/seed-order-metric.sh` |
-| the alert is **firing** in Prometheus | the counter exists, no order landed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` |
+| `scripts/check-alert-metrics.sh` fails on it | `jtoye_orders_total` has no series: core-java is not being scraped, or the rule file was reverted to the old `http_server_requests_seconds_count` selector | check the core-java scrape target and `curl -s <core-java>/actuator/prometheus` for `jtoye_orders_total`; **seeding an order is not the remedy** |
+| the alert is **firing** in Prometheus | the counter exists, no order was placed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` (writes a real order) or the local mute below |
 
-The gate asks *does the series exist*; the alert asks *was there a recent order*. Both can be true at
-once, which is why the plain invocation exits early and places no order — it cannot silence a firing
-alert, and it says so itself.
+`scripts/seed-order-metric.sh` is kept because it proves the order path end to end, but it is no
+longer needed to make the metric gate green.
 
 **Do not add a `KNOWN_DATALESS` entry for this.** That gate's own header calls it the wrong fix.
 

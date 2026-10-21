@@ -116,7 +116,7 @@ docker exec jtoye-postgres psql -U jtoye -d jtoye -v ON_ERROR_STOP=1 \
   -c "ALTER ROLE jtoye_runtime PASSWORD '$P_NEW'"        # embed the hex; :'var' does NOT interpolate in -c
 sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${P_NEW}|" .env    # DB_MIGRATION_PASSWORD (jtoye_app) is out of scope
 docker compose -f docker-compose.full-stack.yml up -d --force-recreate --no-deps core-java
-bash scripts/seed-order-metric.sh   # a core-java recreate resets NoOrdersCreated; this is expected
+bash scripts/seed-order-metric.sh   # optional end-to-end order probe; no longer needed for NoOrdersCreated (#973)
 ```
 
 **Acceptance arm (real scram, host → published port):**

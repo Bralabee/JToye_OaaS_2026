@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### NoOrdersCreated Reads a Counter That Exists From Startup, So a Restart No Longer Blinds It (#1000) — 2026-10-21
+
+Issue #973. After every core-java restart `NoOrdersCreated` had no series and `check-alert-metrics.sh` M-1 went red until a real order row was written (`seed-order-metric.sh`, a business write the owner had to approve on staging). The rule now reads a series that exists from the first scrape.
+
+- **Rule.** `increase(jtoye_orders_total[30m]) < 1` in `k8s/components/monitoring/prometheus/alerts.yml` and `infra/monitoring/prometheus/alerts.yml` (still byte-identical). It replaces the `http_server_requests_seconds_count` POST 201 selector, a series Micrometer creates on the first matching request.
+- **Naming.** `jtoye_orders_total` is the `jtoye.orders.created` counter registered in the `BusinessMetricsService` constructor. The Prometheus exporter strips the reserved `_created` suffix, so there is no `jtoye_orders_created_total`; the rule comment says so, so nobody renames it.
+- **Semantics changed on purpose.**
+  - It counts orders placed (the deduplicated ORDER_STATE_CHANGED event whose new status is PENDING), not HTTP 201s. A cash storefront order counts at creation, a card order once the payment confirms, a vendor/API/MCP order on DRAFT to PENDING.
+  - It also goes quiet if the outbox or AMQP consumer stalls, which is a real signal.
+  - It now sees the first 0 to 1 step after a restart, which the lazily created series never showed.
+- **Staging.** Alertmanager still mutes `NoOrdersCreated` there, so a quiet staging, which will now evaluate and fire the rule in Prometheus, emails nobody.
+- **Gate and scripts.** `check-alert-metrics.sh`: header, the absence-detector note and the M-1 hint no longer say a restart blinds the rule or that seeding is the fix. `seed-order-metric.sh` follows the new series and rule match, and is kept as an end-to-end order probe and for `FORCE=1`; it is no longer a post-deploy step.
+- **Docs.** `docs/runbooks/alerts.md`, `docs/runbooks/staging-operations.md`, `docs/runbooks/credential-rotation.md`, `docs/HOW_IT_WORKS.md`, `docs/FAILURE_MODES.md` (F-2.4 marked resolved) and `infra/monitoring/README.md`.
+- **Proof.** `promtool check rules` on both files; a `promtool test rules` case (quiet after restart fires, restart plus one order does not) green on the new rule and red on the old; `check-alert-metrics.sh` against live staging Prometheus, with core-java at zero orders since its restart, rc 0 on the new rules file and rc 1 on the old. Staging golden regenerated; production is byte-unchanged. No `@Test`, `it`, `test()` or Go `Test*` block is added.
+
 ### Phase 29 CI Hardening: Selftests Wired, an Edge Probe Job, Digest-less Containers VOID, Action Sha Pins (#989) — 2026-10-20
 
 Four changes to what CI proves, each shown failing on a planted break before it was trusted.

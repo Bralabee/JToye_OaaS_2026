@@ -150,9 +150,11 @@ handshake core-java requires (section 6); this is tracked as #972.
 `DEPLOYED_SHA` after `rollout status` of `core-java`, `edge-go` and `frontend` only, so after a
 deploy check `alertmanager`, `grafana` and `prometheus` yourself with `rollout status` (#969).
 
-Do not restart `core-java` for convenience. Its order counter (`NoOrdersCreated`) is in memory
-and resets on every restart, so a quiet staging re-arms that alert; `scripts/seed-order-metric.sh`
-places one order to re-create the counter and is a write the owner approves.
+Do not restart `core-java` for convenience. Its order counter (`jtoye_orders_total`, what
+`NoOrdersCreated` reads) is in memory and resets to 0 on every restart. Since #973 the series is
+registered at startup, so the alert stays evaluable and the metric gate stays green after a restart
+with no order placed; staging mutes `NoOrdersCreated` at Alertmanager anyway. `scripts/seed-order-metric.sh`
+is no longer needed after a deploy. It remains a write the owner approves, for proving the order path.
 
 ## 4. Run the restore drill
 

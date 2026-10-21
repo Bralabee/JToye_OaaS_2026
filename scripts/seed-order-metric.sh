@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------------
-# seed-order-metric.sh — materialise the counter that NoOrdersCreated alerts on.
+# seed-order-metric.sh — place one real order through the public storefront path and
+# confirm the order counter NoOrdersCreated reads moved.
 #
-# WHY THIS EXISTS
-#   `NoOrdersCreated` fires on
-#     increase(http_server_requests_seconds_count{uri=~".../orders",method="POST",status="201"}[30m]) < 1
-#   and `increase()` needs the series to EXIST. That series is a Micrometer *request*
-#   counter: created the first time such a request is served, destroyed when core-java
-#   restarts. It is NOT a database fact — seeding an order row does not create it, and
-#   no read endpoint does either. Measured 2026-07-30: the series was present
-#   10:00:10–11:35:10Z, vanished when core-java was rebuilt at ~11:38Z, and one
-#   GET /api/v1/shops then took the total series count 3 -> 4, confirming that counters
-#   materialise only on the first matching request.
+# WHAT CHANGED IN #973 — READ THIS BEFORE USING IT AS A DEPLOY STEP
+#   `NoOrdersCreated` now fires on
+#     increase(jtoye_orders_total[30m]) < 1
+#   `jtoye_orders_total` is the `jtoye.orders.created` counter, registered in the
+#   BusinessMetricsService constructor, so it exists at 0.0 from core-java's first scrape.
+#   (The exporter strips the reserved `_created` suffix; there is no
+#   jtoye_orders_created_total.) The rule used to read a Micrometer *request* counter
+#   (http_server_requests_seconds_count, POST 201) that was created by the first matching
+#   request and destroyed on restart, so a rebuilt stack had no series, the alert was
+#   blind and check-alert-metrics.sh M-1 went red until this script placed an order.
+#   That is no longer true: M-1 is green on a fresh stack with zero orders, and this
+#   script is NOT needed after a deploy.
 #
-#   So on a stack that has been rebuilt — which this project mandates after any code
-#   change — the alert that would tell you orders have stopped cannot fire at all, and
-#   check-alert-metrics.sh M-1 correctly goes red. That gate's header says the right fix
-#   is to place an order rather than re-add an exemption. This script is that fix in
-#   committed, repeatable form: the ritual was previously retyped by hand, which is
-#   exactly how the inline merge guard came to be wrong twelve times unnoticed.
+#   It is kept because it proves the ORDER PATH end to end (storefront POST -> outbox ->
+#   AMQP consumer -> counter -> scrape), and because FORCE=1 is still the way to clear a
+#   FIRING NoOrdersCreated. The counter moves only when the order reaches PENDING through
+#   the outbox and the consumer, so the confirmation below also fails if that path stalls.
+#   Each run writes a real order row, which on staging is a write the owner approves.
 #
 # WHAT IT DOES NOT DO
 #   It does not touch the alert rule and it does not weaken any gate. It places one real
@@ -38,8 +40,9 @@
 # TWO JOBS, AND THEY ARE NOT THE SAME — this distinction has already produced a wrong
 # claim, so it is stated here rather than left to be rediscovered:
 #
-#   default (FORCE=0)  satisfies `check-alert-metrics` M-1, which asks only whether the
-#                      series EXISTS. If it does, this exits immediately without ordering.
+#   default (FORCE=0)  asks only whether the series EXISTS (the old check-alert-metrics
+#                      M-1 question). Since #973 it always does, so this exits immediately
+#                      without ordering. Only FORCE=1 places an order.
 #   FORCE=1            clears a FIRING `NoOrdersCreated`, which is a different condition:
 #                      `increase(...[30m]) < 1` needs a RECENT order. Measured 2026-07-30,
 #                      both true at once: series=1 (gate green) and increase[30m]=0 (alert
@@ -63,9 +66,9 @@ FORCE="${FORCE:-0}"
 ALERT_WINDOW="${ALERT_WINDOW:-30m}"   # must match NoOrdersCreated's increase() range
 RULES_FILE="${RULES_FILE:-infra/monitoring/prometheus/alerts.yml}"
 
-# Kept character-identical to the matcher in the alert rule. If they drift, this script
+# Kept identical to the series the alert rule reads. If they drift, this script
 # would happily create a series the rule does not watch — so §0 below asserts it.
-SELECTOR='http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}'
+SELECTOR='jtoye_orders_total'
 
 void()      { echo "VOID: $*" >&2; exit 2; }
 violation() { echo "FAIL: $*" >&2; exit 1; }
@@ -81,8 +84,8 @@ done
 # --- 0. the selector must still match the rule -------------------------------------
 # Silent drift here would make every later assertion measure the wrong series.
 if [ -f "$RULES_FILE" ]; then
-  if ! grep -q 'uri=~"/api/v\[0-9\]+/orders|/public/shops/\[^/\]+/orders"' "$RULES_FILE"; then
-    void "cannot find the NoOrdersCreated uri matcher in $RULES_FILE — the rule moved or changed. Update SELECTOR in this script before trusting it."
+  if ! grep -qF 'increase(jtoye_orders_total[' "$RULES_FILE"; then
+    void "cannot find the NoOrdersCreated jtoye_orders_total selector in $RULES_FILE — the rule moved or changed. Update SELECTOR in this script before trusting it."
   fi
 else
   echo "  NOTE: $RULES_FILE not found — selector/rule agreement NOT checked."
@@ -244,6 +247,6 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 done
 
 if [ "$FORCE" = "1" ]; then
-  violation "order ${order_no:-<unknown>} was accepted (201) but 'increase(...[$ALERT_WINDOW]) >= 1' still matches nothing after ${SERIES_TIMEOUT}s, so NoOrdersCreated would keep firing. increase() needs at least two scrapes inside the window to show a rise — if the counter was created by THIS order, allow a scrape interval and re-check before treating it as a fault."
+  violation "order ${order_no:-<unknown>} was accepted (201) but 'increase(...[$ALERT_WINDOW]) >= 1' still matches nothing after ${SERIES_TIMEOUT}s, so NoOrdersCreated would keep firing. increase() needs at least two scrapes inside the window to show a rise, and the counter moves only after the outbox and the AMQP consumer have processed the PENDING event — allow a scrape interval, then check the outbox flusher and the order-event consumer."
 fi
 violation "order ${order_no:-<unknown>} was accepted (201) but the selector still matches ZERO series after ${SERIES_TIMEOUT}s. The order path works and the metric does not, so the alert stays blind — check Prometheus' scrape of core-java (target up, scrape_interval, metric_relabel_configs)."
