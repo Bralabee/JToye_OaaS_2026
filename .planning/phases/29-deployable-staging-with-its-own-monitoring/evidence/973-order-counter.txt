@@ -1,0 +1,190 @@
+973 - NoOrdersCreated reads sum(increase(jtoye_orders_total[30m])) (counter registered at startup, summed across pods). Evidence, 2026-10-21, after review round 1.
+Cluster access read-only: kube context jtoye-stg-aks, namespace jtoye-staging (get / exec curl / port-forward only).
+
+== 1. Pod exposition (kubectl exec deploy/core-java -- curl -s http://localhost:9091/actuator/prometheus), core-java-77b8bf655c-r82c2, started 2026-10-21T01:57:01Z, restarts 0
+# HELP jtoye_orders_total Total orders created
+# TYPE jtoye_orders_total counter
+jtoye_orders_total{application="core-java",environment="production"} 0.0
+   (no jtoye_orders_created_total exists: the exporter strips the reserved _created suffix)
+
+== 2. promtool check rules (prom/prometheus:v3.13.4)
+k8s/components/monitoring/prometheus/alerts.yml rc=0: Checking /rules/alerts.yml   SUCCESS: 19 rules found 
+infra/monitoring/prometheus/alerts.yml rc=0: Checking /rules/alerts.yml   SUCCESS: 19 rules found 
+FAIL direction, planted unbalanced paren: rc=1: /rules/alerts.yml: 214:15: group "business_alerts", rule 1, "NoOrdersCreated": could not parse expression: 4:1: parse error: unclosed left parenthesis
+
+== 3. promtool test rules infra/monitoring/prometheus/tests/alerts.test.yml (4 cases: restart zero orders; TWO pods one order; steady trade over three pods; dead pod + restarted pod)
+NEW rule (sum): rc=0  SUCCESS 
+UN-SUMMED rule (the pre-review form): rc=1
+8:    alertname: NoOrdersCreated, time: 1h15m, 
+16:               got instance="pod-a", service="core-java"
+19:    alertname: NoOrdersCreated, time: 40m, 
+23:               got instance="pod-b", service="core-java"
+26:    alertname: NoOrdersCreated, time: 1h, 
+30:               got instance="pod-b", service="core-java"
+33:    alertname: NoOrdersCreated, time: 1h20m, 
+37:               got instance="pod-a", service="core-java"
+40:    alertname: NoOrdersCreated, time: 1h40m, 
+48:               got instance="new-pod", service="core-java"
+OLD rule (origin/main, http_server_requests selector): rc=1; failing assertions: 2
+
+== 4. scripts/check-alert-rules.sh S-6 (promtool unit tests inside the CI-run gate)
+repo tree: rc=0
+  promtool: rc=0, 19 rules found; unit tests: rc=0 (7 alert_rule_test assertion(s))
+PASS: 19 live rule(s) valid, labelled, annotated and documented; 3 dormant rule(s) documented; 3 commented block(s) correctly skipped.
+un-summed rules file: rc=1
+FAIL: S-6 promtool test rules failed (rc=1):
+  promtool: rc=0, 19 rules found; unit tests: FAILED rc=1
+FAILED: 1 static alert-rule violation(s).
+tests file removed: rc=1
+FAIL: S-6 /home/sanmi/IdeaProjects/JToye_OaaS_2026-973/infra/monitoring/prometheus/tests/alerts.test.yml is missing — the repo's own rules file must ship its promtool unit tests
+FAILED: 1 static alert-rule violation(s).
+
+== 5. scripts/seed-order-metric.sh --selftest (stubbed curl)
+seed-order-metric --selftest  (2026-10-21T02:35:15Z)
+  PASS  cash-force-places-and-clears (rc=0, POSTed=1)
+  PASS  card-shop-refused-before-ordering (rc=2, POSTed=0)
+  PASS  card-seen-only-in-201-body-is-void (rc=2, POSTed=1)
+  PASS  series-missing-force-is-scrape-void (rc=2, POSTed=0)
+  PASS  series-missing-default-is-scrape-void (rc=2, POSTed=0)
+  PASS  default-never-writes (rc=0, POSTed=0)
+  PASS  per-pod-rise-but-aggregate-unmet-fails (rc=1, POSTed=1)
+PASS: 7/7 selftest arm(s)
+   rc=0
+BREAK ARM [verify asks the per-pod expression (no sum)]: selftest rc=1; 2 red arm(s):  FAIL per-pod-rise-but-aggregate-unmet-fails; FAIL the verification did not ask the summed question;
+BREAK ARM [card-shop refusal removed]: selftest rc=1; 1 red arm(s):  FAIL card-shop-refused-before-ordering;
+BREAK ARM [clientSecret detection removed]: selftest rc=1; 1 red arm(s):  FAIL card-seen-only-in-201-body-is-void;
+BREAK ARM [absent series no longer VOIDs]: selftest rc=1; 2 red arm(s):  FAIL series-missing-force-is-scrape-void; FAIL series-missing-default-is-scrape-void;
+
+== 6. Live staging: shop reports acceptsCardPayments (kubectl exec -c core-java deploy/core-java -- curl -s http://localhost:9090/public/shops)
+{"slug":"staging-test-kitchen","acceptsCardPayments":true}   => the probe would exit VOID(2) before ordering on staging
+
+== 7. check-alert-metrics.sh against live staging Prometheus (port-forward svc/prometheus; core-java 0 orders since restart)
+-- 2026-10-21T02:34:15Z staging Prometheus via port-forward, kube context jtoye-stg-aks, namespace jtoye-staging, read-only
+-- sum(increase(jtoye_orders_total[30m])) (the rule's aggregate) and the full expression:
+"success"
+[{"metric":{},"value":[1792550055.685,"0"]}]
+"success"
+[{"metric":{},"value":[1792550055.775,"0"]}]
+1
+-- PASS direction: NEW k8s rules file
+check-alert-metrics  (2026-10-21T02:34:15Z)
+  rules      : k8s/components/monitoring/prometheus/alerts.yml
+  prometheus : http://localhost:19973
+  live rules : 19
+  selectors  : 25 extracted, 28 queried (incl. 3 dormant)
+  self-heal  : 0 rule(s) empty-but-self-healing (#384), 1 declared
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+   rc=0
+-- PASS direction: NEW compose rules file
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+   rc=0
+-- FAIL direction: OLD (origin/main) rules file
+FAIL: M-1 rule 'NoOrdersCreated' selector matches ZERO series — this rule can never fire: http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}
+FAILED: 1 live alert-metric violation(s).
+   rc=1
+
+== 8. Other gates on the final tree, all rc=0: k8s/scripts/render-golden.sh (check mode; staging golden regenerated with --write, production byte-unchanged),
+   k8s/scripts/check-render-invariants.sh, scripts/check-alert-rules.sh, check-alert-mute.sh (M-6 muted NoOrdersCreated -> mute-null), check-alertmanager-render.sh (10/10) and --selftest (6/6),
+   seed-order-metric.sh --selftest (7/7), docs-freshness.sh, check-doc-metrics.sh, check-claims.sh, check-doc-citations.sh (docs/ops/terminal-states.yaml:265 RedisDown locator 302 -> 328
+   because the rule comment grew; it goes rc=1 otherwise), check-gate-enforcement.sh, check-handoff-contract.sh, check-changelog-contract.sh, check-terminal-states.sh, check-k8s-copy-parity.sh (9 pairs byte-equal),
+   check-changelog-cites-pr.sh --pr 1000.
+
+== 9. promtool unit-test file
+# Unit tests for infra/monitoring/prometheus/alerts.yml (and, by copy parity, the byte-identical
+# k8s/components/monitoring/prometheus/alerts.yml). Run by scripts/check-alert-rules.sh (S-6):
+#   promtool test rules infra/monitoring/prometheus/tests/alerts.test.yml
+#
+# NoOrdersCreated (issue #973). jtoye_orders_total is a PER-POD counter, incremented by the
+# competing-consumer OrderStateChangeListener, so at N replicas one pod counts each order and
+# the others stay at 0. The rule must therefore AGGREGATE (sum) across pods. Every case below
+# is one the un-summed form `increase(jtoye_orders_total[30m]) < 1` gets wrong or cannot see;
+# the two-pod case is the one that goes red on it.
+#
+# Timing: 30s samples; the 30m increase window plus `for: 30m`.
+rule_files:
+  - ../alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # 1. Restart, then zero orders. The series exists at 0 from the first scrape, so the rule can
+  #    fire (the whole point of #973). Quiet at 10m (window not yet pending for 30m), firing at 75m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: NoOrdersCreated
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: business
+              service: core-java
+            exp_annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."
+
+  # 2. TWO PODS, one order. Pod A consumes an order at ~10m (0 -> 1), pod B stays at 0 for the
+  #    whole run. Orders ARE flowing, so NOTHING may fire at 40m. Per-series, pod B's own
+  #    `increase < 1` would be true and fire after `for: 30m`; later the order leaves the
+  #    30m window and the aggregate legitimately fires; that is not asserted here.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x20 1x160'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-b"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+
+  # 3. Steady trade across three pods: an order every 25 minutes, rotating pod A, B, C (A at 10m
+  #    and 85m, B at 35m, C at 60m). Every 30m window holds an order, so the aggregate never fires;
+  #    each pod on its own sees an order only every 75m, so its own `< 1` holds for 45m and the
+  #    un-summed rule fires for pod A. Evaluated at 80m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x20 1x150'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-b"}'
+        values: '0x70 1x100'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-c"}'
+        values: '0x120 1x50'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+
+  # 4. A pod dies and its replacement starts at 0 (a restart under a new instance label). The
+  #    dead pod's last order still counts while it sits in the window, then the aggregate fires
+  #    once no pod has counted an order for 30m (+ `for: 30m`). Quiet at 45m, firing at 100m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="old-pod"}'
+        values: '0x10 1x10 stale'
+      - series: 'jtoye_orders_total{application="core-java", instance="new-pod"}'
+        values: '_x30 0x170'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: NoOrdersCreated
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: business
+              service: core-java
+            exp_annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."

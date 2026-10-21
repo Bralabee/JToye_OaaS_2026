@@ -2598,38 +2598,64 @@ data:
       - name: business_alerts
         interval: 30s
         rules:
-          # No orders created recently (potential issue)
+          # No orders placed recently (potential issue)
           #
-          # THE SELECTOR MUST NAME BOTH CREATE PATHS, AND IT DID NOT (issue #342).
-          # Measured 2026-07-29: the old selector `uri=~"/orders|/api/v[0-9]+/orders"`
-          # matched ZERO series while the same metric without labels matched 78.
-          # Prometheus `=~` is FULLY ANCHORED, so `/orders` matches only the exact
-          # string `/orders`, and neither alternative matches a `/public/...` path.
-          # Every URI that actually returns POST 201 was:
-          #   /api/v1/admin/tenants  /api/v1/customers  /api/v1/products
-          #   /api/v1/shops          /public/shops/{slug}/orders   <-- orders
-          # Orders are created by the STOREFRONT CHECKOUT
-          # (PublicStorefrontController:99), and by the vendor-side
-          # OrderController:63 (`POST /api/v1/orders`) which simply had no traffic in
-          # the measured environment. Both are legitimate; both are matched now.
+          # THE SERIES THIS RULE READS EXISTS FROM STARTUP (issue #973).
+          # `jtoye_orders_total` is the Micrometer counter `jtoye.orders.created`, registered
+          # in the BusinessMetricsService CONSTRUCTOR, so core-java exposes it at 0.0 from its
+          # first scrape and every restart re-creates it. This rule previously read
+          # `http_server_requests_seconds_count{uri=~".../orders",method="POST",status="201"}`,
+          # a series Micrometer creates lazily on the FIRST matching request: after every
+          # core-java restart the rule had no series at all, `check-alert-metrics.sh` M-1 went
+          # red, and only a real order row (scripts/seed-order-metric.sh) turned it green.
           #
-          # WHY THIS WAS WORSE THAN "DATALESS": the expression fires when orders STOP
-          # (`< 1`). Over an EMPTY selector it returns the empty vector, so a total
-          # outage of order creation produced NO alert — the exact inverse of intent.
+          # NAMING QUIRK, DO NOT "CORRECT" IT: the name is `jtoye_orders_total`, NOT
+          # `jtoye_orders_created_total`. The Prometheus exporter strips the reserved `_created`
+          # suffix from a counter's name (it is the OpenMetrics sample suffix), so the meter
+          # `jtoye.orders.created` is exposed as `jtoye_orders_total` (HELP "Total orders
+          # created"). Measured on the live staging pod, 2026-10-21:
+          # `jtoye_orders_total{application="core-java",environment="production"} 0.0`; there is
+          # no `jtoye_orders_created_total`. Renaming the selector would make the rule blind
+          # again, and check-alert-metrics.sh M-1 would say so.
           #
-          # `[^/]+` not `.*` for the slug: Micrometer emits the URI TEMPLATE, so the
-          # literal text is `{slug}`, which contains no `/`. Braces are regex
-          # metacharacters and would need escaping; a negated character class avoids
-          # that entirely and cannot over-match across path segments.
+          # SEMANTICS CHANGED, DELIBERATELY. The rule used to count HTTP 201 responses on the
+          # two create endpoints. It now counts orders PLACED: OrderStateChangeListener.
+          # sendEmailForState increments the counter on a deduplicated ORDER_STATE_CHANGED
+          # event whose new status is PENDING, which is a cash storefront order at creation, a
+          # card order once the payment confirms (not at the 201), and a vendor/API/MCP order
+          # on DRAFT -> PENDING. That is closer to what the alert says ("no orders") than a 201
+          # was, because an unpaid card checkout is not an order. The counter is driven by the
+          # outbox and the AMQP consumer, so the rule also goes quiet when no order EVENT
+          # reaches the consumer (a broker or outbox stall). It does NOT detect a consumer that
+          # fails AFTER counting: the increment runs inside the listener's transaction and is
+          # not undone on rollback, so a poison-message redelivery loop keeps the counter
+          # rising. That failure is the job of DeadLetterQueueNonEmpty, OutboxDeadLetterRising,
+          # DomainQueueBacklog and MessagingConsumerMissing.
           #
-          # RESIDUAL LIMIT, stated rather than hidden: `increase()` needs the series to
-          # EXIST. On a deployment where no order has ever been created the series is
-          # absent and this rule still cannot fire. Covering that needs an `absent()`
-          # arm, which would page on every fresh environment — deliberately not added.
+          # AGGREGATED ACROSS PODS ON PURPOSE. The counter is per pod and the listener is a
+          # competing consumer: at N replicas each event is handled by exactly ONE pod (k8s
+          # production runs three), so an un-summed `increase(...) < 1` fires for every pod
+          # that did not happen to consume an order, and for a dead pod's series that stays in
+          # the 30m window after a restart. `sum()` asks the business question: did ANY pod
+          # count an order. It drops all series labels, which is safe because the labels and
+          # annotations below are static (no `$labels` templating). Proven by
+          # infra/monitoring/prometheus/tests/alerts.test.yml, run by check-alert-rules.sh.
+          #
+          # The rule still fires on `< 1`, i.e. on the ABSENCE of an increase, so it needs a
+          # series to evaluate; a series that exists at 0 from startup is what provides it. The
+          # old selector's history (issue #342: the URI alternatives had to name BOTH create
+          # paths, anchored `=~`, `[^/]+` for the slug template) is moot, the rule no longer
+          # reads a URI. A counter that exists at 0 also fixes a second blind spot: `increase()`
+          # over a series first created BY the event it should count never sees the 0 -> 1
+          # step, so the first order after a restart used to be invisible to the rule.
+          #
+          # Staging mutes this alert at Alertmanager (k8s/components/monitoring/alertmanager.yaml,
+          # scripts/check-alert-mute.sh) because a quiet staging has no orders; the series
+          # existing from startup does not change that, it only makes the rule evaluable.
           - alert: NoOrdersCreated
             expr: |
               (
-                increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1
+                sum(increase(jtoye_orders_total[30m])) < 1
               )
             for: 30m
             labels:
@@ -3013,7 +3039,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
-  name: prometheus-alerts-k24fddf4kk
+  name: prometheus-alerts-c68h75d7t5
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -5296,7 +5322,7 @@ spec:
           - configMap:
               name: prometheus-config-98kbm688hm
           - configMap:
-              name: prometheus-alerts-k24fddf4kk
+              name: prometheus-alerts-c68h75d7t5
       - name: data
         persistentVolumeClaim:
           claimName: prometheus-data

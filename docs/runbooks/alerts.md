@@ -174,35 +174,57 @@ alert reports the JVM it measured rather than the one someone assumed.
 
 ## NoOrdersCreated
 
-**Expression:** `increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1`
+**Expression:** `sum(increase(jtoye_orders_total[30m])) < 1`
 · **for:** 30m · **severity:** info
 
 ### What it means
 
-No order was successfully created in the last 30 minutes. This is a **business** signal, not an
+No order was placed in the last 30 minutes. This is a **business** signal, not an
 outage — nothing is down, and no page is warranted on its own.
 
-### The trap: this is a REQUEST counter, not a database fact
+### What the series is (changed in #973)
 
-`http_server_requests_seconds_count` is a Micrometer request counter. It is **created on the first
-matching request and destroyed when core-java restarts.** Two consequences that have each cost time
-already:
+`jtoye_orders_total` is the Micrometer counter `jtoye.orders.created`, registered in the
+`BusinessMetricsService` constructor, so core-java exposes it at `0.0` from its first scrape and
+every restart re-creates it. The rule is therefore **evaluable from startup**: it no longer goes
+blind after a rebuild, and `scripts/check-alert-metrics.sh` M-1 passes on a fresh stack with zero
+orders. No seeding is needed.
 
-- **Seeding an order row in the database does not create the series.** Neither does any read
-  endpoint. Only a real `POST` that returns `201` does.
-- **This project mandates rebuilding all containers after any code change**, so after every rebuild
-  the alert is *blind* until the first order — precisely when you would most want it.
+- **Do not rename it to `jtoye_orders_created_total`.** The Prometheus exporter strips the reserved
+  `_created` suffix from a counter name, so the meter `jtoye.orders.created` is exposed as
+  `jtoye_orders_total`. The longer name does not exist and the rule would go blind again.
+- **It counts orders placed, not HTTP 201s.** `OrderStateChangeListener.sendEmailForState`
+  increments it on a deduplicated `ORDER_STATE_CHANGED` event whose new status is `PENDING`: a cash
+  storefront order at creation, a card order once the payment confirms, and a vendor/API/MCP order
+  on `DRAFT` to `PENDING`. An unpaid card checkout does not count.
+- **It is summed across pods.** The counter is per pod and the listener is a competing consumer,
+  so at N replicas one pod counts each order and the others stay at 0. An un-summed rule would
+  fire for every idle pod and for a dead pod's series left in the 30m window. `sum()` asks whether
+  ANY pod counted an order; the rule's labels and annotations are static, so nothing is lost by
+  dropping the series labels. `infra/monitoring/prometheus/tests/alerts.test.yml` proves it, and
+  `scripts/check-alert-rules.sh` (S-6) runs it.
+- **What a firing means beyond "no trade":** the increment happens in the consumer, so the rule
+  detects no order EVENT reaching the consumer (a broker or outbox stall). When this fires with
+  orders visibly being placed, check `payment_event_outbox` and the order-event queue first. It does
+  NOT detect a consumer that fails AFTER counting: the increment runs inside the listener's
+  transaction and is not undone on rollback, so a poison-message redelivery loop keeps the counter
+  rising and this alert quiet. That failure is covered by `DeadLetterQueueNonEmpty`,
+  `OutboxDeadLetterRising`, `DomainQueueBacklog` and `MessagingConsumerMissing`.
 
 ### Two different symptoms, two different fixes — do not confuse them
 
 | symptom | what it means | fix |
 |---|---|---|
-| `scripts/check-alert-metrics.sh` fails on it | the stack was rebuilt, the counter is gone, the alert is **blind** | `bash scripts/seed-order-metric.sh` |
-| the alert is **firing** in Prometheus | the counter exists, no order landed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` |
+| `scripts/check-alert-metrics.sh` fails on it | `jtoye_orders_total` has no series: core-java is not being scraped, or the rule file was reverted to the old `http_server_requests_seconds_count` selector | check the core-java scrape target and `curl -s <core-java>/actuator/prometheus` for `jtoye_orders_total`; **seeding an order is not the remedy** |
+| the alert is **firing** in Prometheus | the counter exists, no order was placed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` (writes a real order; cash stacks only) or the local mute below |
 
-The gate asks *does the series exist*; the alert asks *was there a recent order*. Both can be true at
-once, which is why the plain invocation exits early and places no order — it cannot silence a firing
-alert, and it says so itself.
+`scripts/seed-order-metric.sh` is kept because it proves the order path end to end, but it is no
+longer needed to make the metric gate green. It works only where Stripe is not configured: with
+card payments on (staging has test keys) a storefront order stays DRAFT awaiting the payment
+webhook and never publishes PENDING, so the counter cannot move. The script reads
+`acceptsCardPayments` from the public shop and exits VOID before placing anything; its
+`--selftest` covers the cash and card branches. With the series absent it also exits VOID without
+ordering, because that is a scrape problem.
 
 **Do not add a `KNOWN_DATALESS` entry for this.** That gate's own header calls it the wrong fix.
 

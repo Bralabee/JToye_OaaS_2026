@@ -1,24 +1,36 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------------
-# seed-order-metric.sh — materialise the counter that NoOrdersCreated alerts on.
+# seed-order-metric.sh — place one real order through the public storefront path and
+# confirm the order counter NoOrdersCreated reads moved.
 #
-# WHY THIS EXISTS
-#   `NoOrdersCreated` fires on
-#     increase(http_server_requests_seconds_count{uri=~".../orders",method="POST",status="201"}[30m]) < 1
-#   and `increase()` needs the series to EXIST. That series is a Micrometer *request*
-#   counter: created the first time such a request is served, destroyed when core-java
-#   restarts. It is NOT a database fact — seeding an order row does not create it, and
-#   no read endpoint does either. Measured 2026-07-30: the series was present
-#   10:00:10–11:35:10Z, vanished when core-java was rebuilt at ~11:38Z, and one
-#   GET /api/v1/shops then took the total series count 3 -> 4, confirming that counters
-#   materialise only on the first matching request.
+# WHAT CHANGED IN #973 — READ THIS BEFORE USING IT AS A DEPLOY STEP
+#   `NoOrdersCreated` now fires on
+#     sum(increase(jtoye_orders_total[30m])) < 1
+#   (summed across pods: the counter is per pod and a competing consumer, so one pod counts
+#   each order and the others stay at 0).
+#   `jtoye_orders_total` is the `jtoye.orders.created` counter, registered in the
+#   BusinessMetricsService constructor, so it exists at 0.0 from core-java's first scrape.
+#   (The exporter strips the reserved `_created` suffix; there is no
+#   jtoye_orders_created_total.) The rule used to read a Micrometer *request* counter
+#   (http_server_requests_seconds_count, POST 201) that was created by the first matching
+#   request and destroyed on restart, so a rebuilt stack had no series, the alert was
+#   blind and check-alert-metrics.sh M-1 went red until this script placed an order.
+#   That is no longer true: M-1 is green on a fresh stack with zero orders, and this
+#   script is NOT needed after a deploy.
 #
-#   So on a stack that has been rebuilt — which this project mandates after any code
-#   change — the alert that would tell you orders have stopped cannot fire at all, and
-#   check-alert-metrics.sh M-1 correctly goes red. That gate's header says the right fix
-#   is to place an order rather than re-add an exemption. This script is that fix in
-#   committed, repeatable form: the ritual was previously retyped by hand, which is
-#   exactly how the inline merge guard came to be wrong twelve times unnoticed.
+#   It is kept because it proves the ORDER PATH end to end (storefront POST -> outbox ->
+#   AMQP consumer -> counter -> scrape), and because FORCE=1 is still the way to clear a
+#   FIRING NoOrdersCreated. The counter moves only when the order reaches PENDING through
+#   the outbox and the consumer, so the confirmation below also fails if that path stalls.
+#   Each FORCE=1 run writes a real order row, which on staging is a write the owner approves.
+#
+# IT ONLY WORKS ON A CASH (COD) STACK. When Stripe is configured (acceptsCardPayments is
+#   true on the public shop, which staging with test keys is) a storefront order gets a
+#   clientSecret and stays DRAFT until the Stripe webhook confirms payment; it publishes
+#   no PENDING event, so the counter never moves and the probe cannot succeed. The script
+#   reads acceptsCardPayments from the public shop BEFORE writing anything and exits VOID
+#   (2) when it is true; if the flag is absent or wrong and the 201 body carries a
+#   clientSecret it exits VOID too, and says that a DRAFT order was left behind.
 #
 # WHAT IT DOES NOT DO
 #   It does not touch the alert rule and it does not weaken any gate. It places one real
@@ -34,22 +46,33 @@
 #   MAX_QTY         default 50                      refuse absurd orders (see below)
 #   FORCE           default 0                       1 = place an order even if the series exists
 #   ALERT_WINDOW    default 30m                     must match NoOrdersCreated's increase() range
+#   POLL_INTERVAL   default 5                       seconds between Prometheus polls
 #
 # TWO JOBS, AND THEY ARE NOT THE SAME — this distinction has already produced a wrong
 # claim, so it is stated here rather than left to be rediscovered:
 #
-#   default (FORCE=0)  satisfies `check-alert-metrics` M-1, which asks only whether the
-#                      series EXISTS. If it does, this exits immediately without ordering.
+#   default (FORCE=0)  asks only whether the series EXISTS (the old check-alert-metrics
+#                      M-1 question) and never writes. The series is registered at core-java
+#                      startup, so if it is ABSENT the cause is the scrape (target down, wrong
+#                      job, relabelling), not a missing order: this exits VOID with that
+#                      diagnosis and places nothing. Only FORCE=1 places an order.
 #   FORCE=1            clears a FIRING `NoOrdersCreated`, which is a different condition:
-#                      `increase(...[30m]) < 1` needs a RECENT order. Measured 2026-07-30,
-#                      both true at once: series=1 (gate green) and increase[30m]=0 (alert
-#                      firing). FORCE=1 asserts the ALERT's condition, not the gate's.
+#                      `sum(increase(...[30m])) < 1` needs a RECENT order. FORCE=1 asserts
+#                      the ALERT's own aggregated condition, `sum(increase(...)) >= 1`, not
+#                      that some single pod's series moved.
+#
+# SELFTEST
+#   bash scripts/seed-order-metric.sh --selftest   runs this script against a stubbed curl
+#   (cash shop, card shop, card detected only in the 201 body, absent series, FORCE=0, and
+#   a stub where only the per-pod query would pass) and needs no stack. Wired into CI.
 #
 # EXIT CODES — uniform with this repo's other gates
-#   0 = the counter series exists (already, or because this run created it)
-#   1 = the order was accepted but the series did not appear within the timeout
-#   2 = VOID, could not evaluate: missing tooling, unreachable core/Prometheus, no
-#       published shop, no purchasable product, or a non-201 from the order endpoint.
+#   0 = FORCE=0: the counter series exists. FORCE=1: an order was placed and the alert's
+#       own condition (the summed increase over ALERT_WINDOW) is now met.
+#   1 = the order was accepted but the counter did not move within the timeout
+#   2 = VOID, could not evaluate: missing tooling, unreachable core/Prometheus, the series
+#       absent (scrape problem), a card-payment (Stripe) stack, no published shop, no
+#       purchasable product, or a non-201 from the order endpoint.
 #       "Could not tell" is never reported as success.
 # ---------------------------------------------------------------------------------
 set -uo pipefail
@@ -61,14 +84,104 @@ SERIES_TIMEOUT="${SERIES_TIMEOUT:-90}"
 MAX_QTY="${MAX_QTY:-50}"
 FORCE="${FORCE:-0}"
 ALERT_WINDOW="${ALERT_WINDOW:-30m}"   # must match NoOrdersCreated's increase() range
+POLL_INTERVAL="${POLL_INTERVAL:-5}"
 RULES_FILE="${RULES_FILE:-infra/monitoring/prometheus/alerts.yml}"
 
-# Kept character-identical to the matcher in the alert rule. If they drift, this script
+# Kept identical to the series the alert rule reads. If they drift, this script
 # would happily create a series the rule does not watch — so §0 below asserts it.
-SELECTOR='http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}'
+SELECTOR='jtoye_orders_total'
 
 void()      { echo "VOID: $*" >&2; exit 2; }
 violation() { echo "FAIL: $*" >&2; exit 1; }
+
+# =================================================================================
+# --selftest — run THIS script against a stubbed curl. No stack, no Prometheus, no writes.
+#
+# The stub serves canned core-java and Prometheus responses from files and logs every call, so
+# each arm can assert both the exit code AND whether an order was POSTed. It tells the per-pod
+# query from the summed one by the leading `sum(`: the "per-pod-only" arm returns a rise for the
+# un-summed expression and nothing for the summed one, so a script that asks the wrong question
+# passes it and a script that asks the rule's question fails it. Every arm is an EXPECTED
+# outcome; a harness that could not fail would show all PASS, so the arms deliberately mix
+# rc 0, 1 and 2.
+# =================================================================================
+selftest() {
+  local self d fails=0 n=0
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  [ -n "${SEED_SELFTEST_SCRIPT:-}" ] && self="$SEED_SELFTEST_SCRIPT"
+  d="$(mktemp -d)" || { echo "VOID: mktemp failed" >&2; return 2; }
+  mkdir -p "$d/bin"
+  cat > "$d/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+# stub curl for seed-order-metric --selftest: STUB_DIR holds the canned responses.
+url=""; method=GET; out=""; query=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift ;;
+    -o) out="$2"; shift ;;
+    --data-urlencode) query="${2#query=}"; shift ;;
+    http*) url="$1" ;;
+  esac
+  shift
+done
+if [ "$method" = POST ]; then
+  echo "POST $url" >> "$STUB_DIR/calls.log"
+  [ -n "$out" ] && cp "$STUB_DIR/order-resp.json" "$out"
+  cat "$STUB_DIR/order-code"; exit 0
+fi
+case "$url" in
+  */api/v1/query)
+    echo "QUERY $query" >> "$STUB_DIR/calls.log"
+    case "$query" in sum\(*) f=prom-sum.json ;; *'>= 1'*|*'< 1'*) f=prom-cond.json ;; *) f=prom-series.json ;; esac
+    [ -r "$STUB_DIR/$f" ] || exit 22; cat "$STUB_DIR/$f" ;;
+  */products) cat "$STUB_DIR/products.json" ;;
+  */public/shops/*) cat "$STUB_DIR/shop.json" ;;
+  */public/shops) cat "$STUB_DIR/shops.json" ;;
+  *) exit 22 ;;
+esac
+STUB
+  chmod +x "$d/bin/curl"
+  local one='{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[0,"1"]}]}}'
+  local none='{"status":"success","data":{"resultType":"vector","result":[]}}'
+  printf '%s\n' 'sum(increase(jtoye_orders_total[30m])) < 1' > "$d/rules.yml"
+  printf '%s' '{"content":[{"slug":"shop-a"}]}' > "$d/shops.json"
+  printf '%s' '{"all":[{"id":"p1","pricePennies":500,"allergenMask":0,"available":true}]}' > "$d/products.json"
+
+  # arm NAME FORCE cards series sum cond order-body EXPECT-RC EXPECT-POST(0/1) EXPECT-TEXT
+  arm() {
+    local name="$1" force="$2" cards="$3" series="$4" sumr="$5" cond="$6" body="$7" erc="$8" epost="$9" etext="${10}"
+    local out rc posted ok=1 why=""
+    : > "$d/calls.log"
+    printf '{"minimumOrderPennies":0,"acceptsCardPayments":%s}' "$cards" > "$d/shop.json"
+    [ "$cards" = absent ] && printf '%s' '{"minimumOrderPennies":0}' > "$d/shop.json"
+    printf '%s' "$series" > "$d/prom-series.json"; printf '%s' "$sumr" > "$d/prom-sum.json"; printf '%s' "$cond" > "$d/prom-cond.json"
+    printf '%s' "$body" > "$d/order-resp.json"; printf '201' > "$d/order-code"
+    out=$(STUB_DIR="$d" PATH="$d/bin:$PATH" CORE_URL=http://core PROM_URL=http://prom RULES_FILE="$d/rules.yml" \
+          FORCE="$force" SERIES_TIMEOUT=1 POLL_INTERVAL=1 bash "$self" 2>&1); rc=$?
+    posted=0; grep -q '^POST ' "$d/calls.log" && posted=1
+    n=$((n+1))
+    [ "$rc" = "$erc" ] || { ok=0; why="rc=$rc want $erc; "; }
+    [ "$posted" = "$epost" ] || { ok=0; why="${why}order POSTed=$posted want $epost; "; }
+    grep -qF -- "$etext" <<<"$out" || { ok=0; why="${why}output lacks '$etext'; "; }
+    if [ "$ok" = 1 ]; then echo "  PASS  $name (rc=$rc, POSTed=$posted)"; else echo "  FAIL  $name — $why"; echo "$out" | sed 's/^/        | /' | head -12; fails=$((fails+1)); fi
+  }
+  echo "seed-order-metric --selftest  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+  arm cash-force-places-and-clears            1 false "$one"  "$one"  "$one"  '{"orderNumber":"ORD-1"}'                         0 1 "PASS: an order reached PENDING"
+  arm card-shop-refused-before-ordering       1 true  "$one"  "$one"  "$one"  '{"orderNumber":"ORD-1"}'                         2 0 "acceptsCardPayments=true"
+  arm card-seen-only-in-201-body-is-void      1 absent "$one" "$one"  "$one"  '{"orderNumber":"ORD-1","clientSecret":"pi_x"}'   2 1 "LEFT BEHIND"
+  arm series-missing-force-is-scrape-void     1 false "$none" "$one"  "$one"  '{"orderNumber":"ORD-1"}'                         2 0 "scrape/target problem"
+  arm series-missing-default-is-scrape-void   0 false "$none" "$one"  "$one"  '{"orderNumber":"ORD-1"}'                         2 0 "Nothing was ordered"
+  arm default-never-writes                    0 false "$one"  "$one"  "$one"  '{"orderNumber":"ORD-1"}'                         0 0 "no order was placed"
+  # the summed query returns nothing while the un-summed one would pass: only the rule's own question fails it
+  arm per-pod-rise-but-aggregate-unmet-fails  1 false "$one"  "$none" "$one"  '{"orderNumber":"ORD-1"}'                         1 1 "still matches nothing"
+  grep -q 'QUERY sum(increase(jtoye_orders_total\[30m\])) >= 1' "$d/calls.log" \
+    || { echo "  FAIL  the verification did not ask the summed question"; fails=$((fails+1)); }
+  rm -rf "$d"
+  if [ "$fails" -gt 0 ]; then echo "FAILED: $fails of $n selftest arm(s)"; return 1; fi
+  echo "PASS: $n/$n selftest arm(s)"
+  return 0
+}
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 
 echo "seed-order-metric  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 echo "  core       : $CORE_URL"
@@ -81,8 +194,8 @@ done
 # --- 0. the selector must still match the rule -------------------------------------
 # Silent drift here would make every later assertion measure the wrong series.
 if [ -f "$RULES_FILE" ]; then
-  if ! grep -q 'uri=~"/api/v\[0-9\]+/orders|/public/shops/\[^/\]+/orders"' "$RULES_FILE"; then
-    void "cannot find the NoOrdersCreated uri matcher in $RULES_FILE — the rule moved or changed. Update SELECTOR in this script before trusting it."
+  if ! grep -qF 'sum(increase(jtoye_orders_total[' "$RULES_FILE"; then
+    void "cannot find the summed NoOrdersCreated expression sum(increase(jtoye_orders_total[...])) in $RULES_FILE — the rule moved or changed. Update SELECTOR/ALERT_CLEARED in this script before trusting it."
   fi
 else
   echo "  NOTE: $RULES_FILE not found — selector/rule agreement NOT checked."
@@ -109,21 +222,23 @@ expr_count() {
 
 before=$(series_count) || void "cannot query Prometheus at $PROM_URL — an unreachable or unparseable Prometheus is a VOID, not a pass"
 echo "  series before : $before"
-if [ "$before" -gt 0 ] && [ "$FORCE" != "1" ]; then
-  # DEFAULT PATH — satisfying check-alert-metrics M-1, which asks only "does the series
-  # EXIST". Exiting here is correct and cheap: the counter is there, the rule can fire.
-  #
-  # IT DOES NOT SILENCE THE ALERT, AND THE DIFFERENCE HAS ALREADY CAUSED A WRONG CLAIM.
-  # NoOrdersCreated fires on `increase(...[30m]) < 1` — it needs a RECENT order, not an
-  # existing series. Measured 2026-07-30: series=1 (gate green) while increase[30m]=0
-  # (alert firing) — both correct, simultaneously. Use FORCE=1 for that.
-  echo "PASS: the counter already exists ($before series) — nothing to seed."
-  echo "NOTE: this does NOT clear a firing NoOrdersCreated. That alert needs a RECENT"
-  echo "      order (increase over 30m >= 1), not merely an existing series."
-  echo "      To place one anyway:  FORCE=1 bash scripts/seed-order-metric.sh"
+if [ "$before" -eq 0 ]; then
+  # jtoye_orders_total is registered in the BusinessMetricsService constructor, so core-java
+  # exposes it at 0.0 from its first scrape. Absent means Prometheus is not getting core-java's
+  # /actuator/prometheus, and an order cannot fix that (it would also write a business row
+  # for nothing). Say what to look at and place nothing, in either mode.
+  void "Prometheus has NO jtoye_orders_total series. core-java registers it at startup, so this is a scrape/target problem, not a missing order: check up{job=\"core-java\"}, the scrape config and relabelling, and 'curl <core-java>/actuator/prometheus' for jtoye_orders_total. Nothing was ordered."
+fi
+if [ "$FORCE" != "1" ]; then
+  # DEFAULT PATH — the series exists, so check-alert-metrics M-1 is satisfied. This does NOT
+  # silence a firing NoOrdersCreated: that needs a RECENT order (summed increase over 30m >= 1),
+  # not merely an existing series. Use FORCE=1 for that (cash stacks only).
+  echo "PASS: the counter series exists ($before series) — nothing to seed; no order was placed."
+  echo "NOTE: this does NOT clear a firing NoOrdersCreated. That alert needs a RECENT order"
+  echo "      (summed increase over $ALERT_WINDOW >= 1). To place one:  FORCE=1 bash scripts/seed-order-metric.sh"
   exit 0
 fi
-[ "$FORCE" = "1" ] && echo "  FORCE=1       : placing an order even though the series exists (target: clear NoOrdersCreated)"
+echo "  FORCE=1       : placing an order (target: clear a firing NoOrdersCreated)"
 
 # --- 2. find a published shop with a purchasable product ----------------------------
 shops=$(curl -sf --max-time 15 "$CORE_URL/public/shops") \
@@ -141,6 +256,13 @@ while read -r s; do
   # A missing/null minimum means "no minimum", not "unknown" — the storefront treats it
   # as 0, so mirroring that is correct rather than defensive.
   min=$(jq -r '.minimumOrderPennies // 0' <<< "$shop"); [ "$min" = "null" ] && min=0
+  # CARD STACK: refuse BEFORE writing anything. With Stripe configured the order stays DRAFT and
+  # publishes no PENDING event, so the counter this probe waits for can never move.
+  cards=$(jq -r '.acceptsCardPayments // "unknown"' <<< "$shop" 2>/dev/null)
+  if [ "$cards" = "true" ]; then
+    void "shop $s reports acceptsCardPayments=true: Stripe is configured, so a storefront order would get a clientSecret and stay DRAFT until the payment webhook, publishing no PENDING event. jtoye_orders_total would not move and an unpaid DRAFT order would be left behind. This probe only works on a cash (COD) stack. Nothing was ordered."
+  fi
+  [ "$cards" = "unknown" ] && echo "  NOTE: shop $s does not report acceptsCardPayments — the 201 body is checked for a clientSecret instead."
 
   prods=$(curl -sf --max-time 15 "$CORE_URL/public/shops/$s/products") || continue
   # Pick the DEAREST available product: it reaches the minimum in the fewest units, so
@@ -187,7 +309,7 @@ body=$(jq -n --arg k "$key" --arg p "$product" --argjson q "$qty" --argjson m "$
   customerName:   "Metric Seed Probe",
   customerEmail:  "metric-seed@jtoye.local",
   customerPhone:  "+441234567890",
-  notes:          "Synthetic order from scripts/seed-order-metric.sh to materialise the NoOrdersCreated counter. Safe to delete.",
+  notes:          "Synthetic order from scripts/seed-order-metric.sh to probe the order path and the NoOrdersCreated counter. Safe to delete.",
   idempotencyKey: $k,
   fulfilmentType: "COLLECTION",
   acknowledgedAllergenMask: $m,
@@ -205,45 +327,38 @@ payload=$(cat "$tmp" 2>/dev/null); rm -f "$tmp"
 
 [ "$rc" -ne 0 ] && void "the order POST itself failed (curl rc=$rc) — no verdict"
 if [ "$code" != "201" ]; then
-  void "order endpoint returned HTTP $code, not 201. The alert counts status=\"201\" only, so a non-201 seeds nothing. Body: $(head -c 400 <<< "$payload")"
+  void "order endpoint returned HTTP $code, not 201, so no order was placed and nothing was probed. Body: $(head -c 400 <<< "$payload")"
 fi
 
 order_no=$(jq -r '.orderNumber // empty' <<< "$payload" 2>/dev/null)
 echo "  placed     : HTTP 201  ${order_no:-<no orderNumber in body>}"
+# The shop did not say it takes cards but the server answered with a payment intent: this is the
+# card branch after all. The order is a DRAFT awaiting payment and the counter will not move.
+if [ -n "$(jq -r '.clientSecret // empty' <<< "$payload" 2>/dev/null)" ]; then
+  void "order ${order_no:-<unknown>} was accepted with a clientSecret: this is a card-payment (Stripe) stack, so it is a DRAFT awaiting payment and publishes no PENDING event; jtoye_orders_total will not move and this probe cannot succeed. The DRAFT order was LEFT BEHIND — cancel or delete it."
+fi
 
-# --- 4. prove the counter actually appeared -----------------------------------------
-# The 201 is not the deliverable; the SERIES is. Prometheus must scrape first, so wait.
+# --- 4. prove the counter actually moved --------------------------------------------
+# The 201 is not the deliverable; the ALERT's own condition is. The rule is aggregated across
+# pods (one pod counts each order, the others stay at 0), so assert the AGGREGATE, the same
+# expression the rule evaluates, not that some single series moved. Prometheus must scrape first.
 if [ "$VERIFY" != "1" ]; then
-  echo "NOTE: VERIFY=0 — order placed but the series was NOT confirmed. This is not a pass."
+  echo "NOTE: VERIFY=0 — order placed but the counter was NOT confirmed. This is not a pass."
   exit 0
 fi
 
-# Under FORCE the deliverable is not the series — it already existed — but the ALERT's
-# own condition. Assert that, or the run would "pass" while NoOrdersCreated kept firing,
-# which is exactly the wrong claim this option was added to stop.
-ALERT_CLEARED="increase($SELECTOR[$ALERT_WINDOW]) >= 1"
+ALERT_CLEARED="sum(increase($SELECTOR[$ALERT_WINDOW])) >= 1"
 
 deadline=$(( $(date +%s) + SERIES_TIMEOUT ))
-while [ "$(date +%s)" -lt "$deadline" ]; do
-  now=$(series_count) || void "Prometheus became unreadable while waiting for the series"
-  if [ "$now" -gt 0 ]; then
-    if [ "$FORCE" != "1" ]; then
-      echo "  series after  : $now"
-      echo "PASS: the NoOrdersCreated counter now exists — the rule can fire."
-      exit 0
-    fi
-    cleared=$(expr_count "$ALERT_CLEARED") || void "Prometheus became unreadable while waiting for the alert condition"
-    if [ "$cleared" -gt 0 ]; then
-      echo "  series after  : $now"
-      echo "  increase[$ALERT_WINDOW]  : >= 1 — NoOrdersCreated's condition is no longer met"
-      echo "PASS: an order was recorded inside the alert window; NoOrdersCreated will resolve."
-      exit 0
-    fi
+while :; do
+  cleared=$(expr_count "$ALERT_CLEARED") || void "Prometheus became unreadable while waiting for the alert condition"
+  if [ "$cleared" -gt 0 ]; then
+    echo "  $ALERT_CLEARED : met"
+    echo "PASS: an order reached PENDING and was counted inside the alert window; NoOrdersCreated will resolve."
+    exit 0
   fi
-  sleep 5
+  [ "$(date +%s)" -ge "$deadline" ] && break
+  sleep "$POLL_INTERVAL"
 done
 
-if [ "$FORCE" = "1" ]; then
-  violation "order ${order_no:-<unknown>} was accepted (201) but 'increase(...[$ALERT_WINDOW]) >= 1' still matches nothing after ${SERIES_TIMEOUT}s, so NoOrdersCreated would keep firing. increase() needs at least two scrapes inside the window to show a rise — if the counter was created by THIS order, allow a scrape interval and re-check before treating it as a fault."
-fi
-violation "order ${order_no:-<unknown>} was accepted (201) but the selector still matches ZERO series after ${SERIES_TIMEOUT}s. The order path works and the metric does not, so the alert stays blind — check Prometheus' scrape of core-java (target up, scrape_interval, metric_relabel_configs)."
+violation "order ${order_no:-<unknown>} was accepted (201) but '$ALERT_CLEARED' still matches nothing after ${SERIES_TIMEOUT}s, so NoOrdersCreated would keep firing. The counter moves only after the outbox and the AMQP consumer have processed the PENDING event, and increase() needs two scrapes inside the window to show a rise — allow a scrape interval, then check the outbox flusher and the order-event consumer. A DRAFT order left by a card path would explain it too (that path is refused up front when the shop reports acceptsCardPayments)."

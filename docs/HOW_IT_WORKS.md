@@ -212,8 +212,9 @@ bash scripts/check-runtime-freshness.sh     # expect rc=0, "N/N services match"
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
-# check-alert-metrics rc=1 after a core-java rebuild is EXPECTED (counter dies on restart):
-bash scripts/seed-order-metric.sh
+# check-alert-metrics no longer reds after a core-java rebuild (#973: NoOrdersCreated reads
+# jtoye_orders_total, registered at startup). Optional end-to-end order probe:
+# bash scripts/seed-order-metric.sh
 ```
 
 Compose XOR minikube locally — never both (shared dev DB). Ports: frontend 3000, core 9090,
