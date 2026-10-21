@@ -275,7 +275,7 @@ connected account. So:
 | Referrer-Policy | `next.config.mjs` `headers()`: add `{ source: '/pay/:path*', headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }] }` **after** the `'/:path*'` default (Next applies the last match; order is load-bearing). Extend `__tests__/header-snapshot.test.ts` the same way as its `/invite` arm. `/pay/:path*` also matches `/pay`, as `/invite/:path*` matches `/invite`. `[ASSUMED: Stripe.js needs no Referer; the staging E2E paying through /pay under no-referrer is the proof.]` |
 | Token in the address bar | The island reads `params.token`. **After** a successful redeem it calls `history.replaceState(null, "", "/pay")` before loading Stripe Elements, so the token is not in the iframe's view of the page URL or in a screenshot. **Before** the press it stays, so a reload of an unused link still works |
 | SSR gate | Add to `scripts/gates/ssr-routes.conf`: `STATIC pay/[token]/page.tsx robots-noindex transactional page; the single-use token is read by the client island and redeemed only after a press`, and a `CLIENT pay/page.tsx` line ("reads Stripe's redirect query and the PaymentIntent status in the browser") |
-| Storage | The island writes nothing to local or session storage (the `/invite` rule). Client-persisted identity lifecycle: **N/A** |
+| Storage | The island writes nothing to local or session storage (the `/invite` rule). Client-persisted identity lifecycle: **N/A**. *Amended 2026-10-21 (PR #1018 review, plan 30-18):* after a successful redeem the `replaceState` to `/pay` carries a `jtoyePayResume` entry in `history.state` (client secret, account id, shop, purpose, amount, order number; never the token), so a reload before paying remounts the form instead of stranding the customer; it is removed on payment received, already paid and a failed retrieve. Tab-scoped history state, not storage |
 | Token in path vs fragment: **OWNER DECISION, open, not resolved here** | A path token still appears in the ingress request line and access logs. The project's own rule (V75 / V77) puts bearer tokens in the URL **fragment**. Moving PAY-04's issued URL to `/pay#token=…` is a backend change to `OrderPaymentLinkService.java:200`. Until the owner rules, this contract builds `/pay/{token}` as D-03 names it |
 
 ### Focal point and heading structure
@@ -308,7 +308,7 @@ connected account. So:
    - a. If `publishableKey()` is null, go to the *unavailable — link not used* state. **Do not redeem.**
    - b. Otherwise `await loadStripeOnce()`. On reject or `null`, go to *unavailable — link not used*. **Do not redeem.** This proves Stripe.js loads before the single-use link is spent.
    - c. POST redeem. On 409, 410 or 404, go to the matching dead-link state. On 502 or another 5xx, go to *unavailable — link opened*.
-   - d. `replaceState` to `/pay`, then `loadStripeOnce(stripeAccountId ?? undefined)`, then `stripe.retrievePaymentIntent(clientSecret)`:
+   - d. `replaceState` to `/pay` (with the resume entry, see Storage), then `loadStripeOnce(stripeAccountId ?? undefined)`, then `stripe.retrievePaymentIntent(clientSecret)`:
      - `succeeded` → *already paid*
      - `processing` → *processing*
      - otherwise → mount `Elements` + `CardPaymentForm` (`returnUrl = origin + "/pay?acct=" + (stripeAccountId ?? "")`; `onSucceeded` → *payment received*; `onLoadError` → *unavailable — link opened*)
@@ -398,7 +398,8 @@ Applicable state considerations resolved: 27 covered, 3 backstop, 0 unresolved.
 | populated | `/pay` PaymentIntent processing | ✅ covered | The "Payment processing" state |
 | populated | `/pay` payment succeeded (no redirect) | ✅ covered | The "Payment received" state, with focus on its `h1` |
 | error | `/pay` preview 429 / network | ✅ covered | The "We couldn't check this link just now" alert plus "Try again", which re-GETs the preview |
-| empty | `/pay` with no token and no redirect query (reload after redeem) | ✅ covered | The "Open your payment link" state |
+| empty | `/pay` with no token, no redirect query and no resume entry | ✅ covered | The "Open your payment link" state |
+| populated | `/pay` reloaded after redeem, resume entry present, intent unpaid | ✅ covered | The card form mounts again (amended 2026-10-21, PR #1018 review) |
 | populated | `/pay` return from a redirect method | ✅ covered | `redirect_status` + PaymentIntent retrieve show received, processing or "didn't go through" |
 | long-text | `/pay` shop name, order number; badge in a narrow KDS card | ✅ covered | `[overflow-wrap:anywhere]` on `/pay` text, and badges sit in the existing `flex flex-wrap` header rows |
 | overflow | `/pay` at 360px with the Payment Element tabs | 🧪 backstop | Screenshot at a 360px **phone profile** (`pointer: coarse`, `maxTouchPoints > 0`, checked via `matchMedia` in the test) after the iframe has mounted. No horizontal scroll |
