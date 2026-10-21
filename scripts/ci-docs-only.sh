@@ -260,7 +260,10 @@ selftest() {
   st_case "tab in path -> false"                     "docs_only=false" 0 'docs/a\tb.md\n'
   st_case "space in path -> false"                   "docs_only=false" 0 'docs/a b.md\n'
   st_case "non-ASCII path -> false"                  "docs_only=false" 0 'docs/caf\303\251.md\n'
-  st_case "NUL byte in list -> false"                "docs_only=false" 0 'docs/a.md\0core-java/A.java\n'
+  # bash's read silently DROPS a NUL, so 'docs/a<NUL>.md' reads back as the perfectly good
+  # 'docs/a.md'. Only the explicit NUL check refuses it (the old arm joined two paths into
+  # nonsense that failed for other reasons, and stayed green with the check deleted).
+  st_case "NUL byte that would vanish into a valid path -> false" "docs_only=false" 0 'docs/a\0.md\n'
   st_case "directory path with slash -> false"       "docs_only=false" 0 'docs/\n'
   st_case "bare .planning (not a file inside) -> false" "docs_only=false" 0 '.planning\n'
 
