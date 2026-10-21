@@ -76,12 +76,16 @@
 #
 # KEEPING THE EXCLUSIONS HONEST
 #
-#   A doc a test starts to read silently becomes a "docs only" edit that can break that test
-#   without running it. --selftest therefore scans the test trees for docs/*.md and .planning/
-#   paths that sit on a line with a file-read API and asserts each classifies as NOT docs-only,
-#   and asserts every tracked Dockerfile's directory is in DOCKER_CONTEXT_DIRS. The scan is a
-#   heuristic (it sees a literal path on a read line, not a path assembled from segments), so
-#   it narrows the gap rather than closing it: the exclusion list is the authority.
+#   A file a test starts to read silently becomes a "docs only" edit that can break that test
+#   without running it. --selftest therefore scans the test trees for literal paths of EVERY
+#   class the allow-list admits - docs/**/*.md, top-level *.md (AGENTS.md, CLAUDE.md ...),
+#   a README.md at any depth, .planning/** - that sit on a line with a file-read API, normalises
+#   a leading ./ or ../ (a Gradle test runs in core-java/ and names the repo root as ../), and
+#   asserts every one that is a tracked file classifies as NOT docs-only. It also asserts every
+#   tracked Dockerfile's directory is in DOCKER_CONTEXT_DIRS. The scan is a heuristic (it sees a
+#   literal path on a read line, not a path assembled from segments), each class has a control
+#   arm proving the scanner flags it, and it narrows the gap rather than closing it: the
+#   exclusion list is the authority.
 #
 # Exit codes: 0 = answered / selftest passed, 1 = selftest failed, 2 = VOID / usage.
 
@@ -199,15 +203,36 @@ st_check() { # NAME CONDITION-RESULT(0=holds) DETAIL
   if [ "$2" = 0 ]; then echo "  ok   $1"; else echo "  FAIL $1  ($3)" >&2; ST_FAILS=$((ST_FAILS + 1)); fi
 }
 
-# scan_read_sites: stdin = `git grep -n` output (file:line:text). Emits each docs/*.md or
-# .planning/ path that appears on a line which also carries a file-read API.
+# scan_read_sites: stdin = `git grep -n` output (file:line:text). Emits, normalised to a
+# repo-relative form (leading ./ and ../ removed, because a Gradle test runs in core-java/ and
+# names the repo root as ../), every literal path that appears on a line which also carries a
+# file-read API and that could be on the allow-list: any `*.md` literal (docs/**/*.md, a
+# README.md at any depth, a top-level AGENTS.md / CLAUDE.md ...) and any `.planning/` literal.
 scan_read_sites() {
-  local line text
+  local line text cand
   while IFS= read -r line; do
     text="${line#*:}"; text="${text#*:}"
     if [[ "$text" =~ (resolve|Path\.of|Paths\.get|readFile|ReadFile|readFileSync|readdirSync|existsSync|path\.join|filepath\.Join|os\.Open|Files\.) ]]; then
-      grep -o -E '(docs/[A-Za-z0-9_./-]+\.md|\.planning/[A-Za-z0-9_./-]+)' <<< "$text"
+      while IFS= read -r cand; do
+        [ -n "$cand" ] || continue
+        while :; do
+          case "$cand" in ./*) cand="${cand#./}" ;; ../*) cand="${cand#../}" ;; *) break ;; esac
+        done
+        printf '%s\n' "$cand"
+      done < <(grep -o -E '([A-Za-z0-9_./-]+\.md|\.planning/[A-Za-z0-9_./-]+)' <<< "$text")
     fi
+  done
+}
+
+# read_violations TRACKED_FILE: stdin = scan_read_sites output. Prints each candidate that is a
+# TRACKED file (a bare name that is not a repo file, such as a test resource named SOURCE.md
+# under src/, is not the repo-root file of that name) AND that the allow-list would call
+# docs-only: those are the reads that would let an edit skip the suite that reads them.
+read_violations() {
+  local c
+  sort -u | while IFS= read -r c; do
+    grep -qxF -- "$c" "$1" || continue
+    is_doc_path "$c" && printf '%s\n' "$c"
   done
 }
 
@@ -329,25 +354,37 @@ selftest() {
   done
   st_check "README.md in every build-context directory classifies as code" "$([ -z "$bad_ctx" ]; echo $?)" "docs-only for:$bad_ctx"
 
-  # 6. Tests that read a doc by literal path: the read-site scanner first proves it can see one
-  # (a control on the instrument), then every path it finds in the real tree must be code.
+  # 6. Tests that read an allow-listed file by literal path. The scanner covers EVERY class the
+  # allow-list admits (docs/**/*.md, top-level *.md, **/README.md, .planning/**). Each control
+  # below feeds it a synthetic read line and proves it flags (or ignores) it, so the real-tree
+  # result at the end is a measurement by an instrument that has been seen to fire.
+  git -C "$REPO_ROOT" ls-files > "$ST_TMP/tracked.txt"
   local ctl
   ctl=$(printf '%s\n' 'core-java/src/test/X.java:7:        Path doc = repoRoot().resolve("docs/webhooks.md");' | scan_read_sites)
-  st_check "read-site scanner control: sees a resolve(\"docs/...md\") line" "$([ "$ctl" = "docs/webhooks.md" ]; echo $?)" "got '$ctl'"
+  st_check "scanner control: sees a resolve(\"docs/...md\") line" "$([ "$ctl" = "docs/webhooks.md" ]; echo $?)" "got '$ctl'"
   ctl=$(printf '%s\n' 'core-java/src/test/X.java:7:        // see docs/webhooks.md for the vectors' | scan_read_sites)
-  st_check "read-site scanner control: ignores a comment-only mention" "$([ -z "$ctl" ]; echo $?)" "got '$ctl'"
+  st_check "scanner control: ignores a comment-only mention" "$([ -z "$ctl" ]; echo $?)" "got '$ctl'"
+  ctl=$(printf '%s\n' 'core-java/src/test/X.java:9:        String t = Files.readString(Path.of("../AGENTS.md"));' | scan_read_sites | read_violations "$ST_TMP/tracked.txt")
+  st_check "scanner control: a test reading ../AGENTS.md (top-level md) is FLAGGED" "$([ "$ctl" = "AGENTS.md" ]; echo $?)" "got '$ctl'"
+  ctl=$(printf '%s\n' 'frontend/__tests__/x.test.ts:3:  const t = fs.readFileSync(path.join(ROOT, "README.md"), "utf8")' | scan_read_sites | read_violations "$ST_TMP/tracked.txt")
+  st_check "scanner control: a test reading README.md at the root is FLAGGED" "$([ "$ctl" = "README.md" ]; echo $?)" "got '$ctl'"
+  ctl=$(printf '%s\n' 'core-java/src/test/X.java:9:        Path p = repoRoot().resolve("qa/README.md");' | scan_read_sites | read_violations "$ST_TMP/tracked.txt")
+  st_check "scanner control: a test reading qa/README.md (README anywhere) is FLAGGED" "$([ "$ctl" = "qa/README.md" ]; echo $?)" "got '$ctl'"
+  ctl=$(printf '%s\n' 'core-java/src/test/X.java:9:        Path p = repoRoot().resolve(".planning/STATE.md");' | scan_read_sites | read_violations "$ST_TMP/tracked.txt")
+  st_check "scanner control: a test reading .planning/STATE.md is FLAGGED" "$([ "$ctl" = ".planning/STATE.md" ]; echo $?)" "got '$ctl'"
+  ctl=$(printf '%s\n' 'core-java/src/test/X.java:9:        Path p = Path.of("fixture-SOURCE.md");' | scan_read_sites | read_violations "$ST_TMP/tracked.txt")
+  st_check "scanner control: a bare name that is not a repo-root file is NOT flagged" "$([ -z "$ctl" ]; echo $?)" "got '$ctl'"
+  ctl=$(printf '%s\n' 'core-java/src/test/X.java:7:        Path doc = repoRoot().resolve("docs/webhooks.md");' | scan_read_sites | read_violations "$ST_TMP/tracked.txt")
+  st_check "scanner control: an already-excluded read (docs/webhooks.md) is not a violation" "$([ -z "$ctl" ]; echo $?)" "got '$ctl'"
 
-  local hits="" hit unclassified=""
-  hits=$(git -C "$REPO_ROOT" grep -I -n -E '(docs/[A-Za-z0-9_./-]+\.md|\.planning/[A-Za-z0-9_./-]+)' -- \
+  local n_sites violations
+  n_sites=$(git -C "$REPO_ROOT" grep -I -n -E '(\.md|\.planning/)' -- \
     ':(glob)**/src/test/**' ':(glob)**/__tests__/**' ':(glob)**/e2e/**' ':(glob)**/*_test.go' \
-    ':(glob)**/*.test.ts' ':(glob)**/*.test.tsx' ':(glob)**/*.spec.ts' ':(glob)**/*.test.mjs' 2>/dev/null | scan_read_sites | sort -u)
-  local n_hits=0
-  while IFS= read -r hit; do
-    [ -n "$hit" ] || continue
-    n_hits=$((n_hits + 1))
-    is_doc_path "$hit" && unclassified="$unclassified $hit"
-  done <<< "$hits"
-  st_check "every doc a test reads by literal path classifies as code ($n_hits found)" "$([ -z "$unclassified" ]; echo $?)" "read by a test yet docs-only, add to EXCLUDED_EXACT:$unclassified"
+    ':(glob)**/*.test.ts' ':(glob)**/*.test.tsx' ':(glob)**/*.spec.ts' ':(glob)**/*.test.mjs' 2>/dev/null | scan_read_sites | sort -u | wc -l)
+  violations=$(git -C "$REPO_ROOT" grep -I -n -E '(\.md|\.planning/)' -- \
+    ':(glob)**/src/test/**' ':(glob)**/__tests__/**' ':(glob)**/e2e/**' ':(glob)**/*_test.go' \
+    ':(glob)**/*.test.ts' ':(glob)**/*.test.tsx' ':(glob)**/*.spec.ts' ':(glob)**/*.test.mjs' 2>/dev/null | scan_read_sites | read_violations "$ST_TMP/tracked.txt" | tr '\n' ' ')
+  st_check "no allow-listed file is read by a test by literal path ($n_sites read-site literal(s) seen)" "$([ -z "$violations" ]; echo $?)" "read by a test yet docs-only, add to EXCLUDED_EXACT: $violations"
 
   echo
   if [ "$ST_FAILS" -eq 0 ]; then
