@@ -2,19 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
-current_phase: 29
-current_phase_name: Deployable Staging, With Its Own Monitoring
-status: executing
-stopped_at: "Completed 29-28-PLAN.md: Phase 29 is at 29/29 plans, pending phase verification and security sign-off. Merged PR #984 (squash bffd2f74) after a four-finding D3 round 1 and a zero-admissible round 2; the first CI deploy-staging run (39440780472) FAILED at digest parity on a terminating pod and the rollback rule was applied (DEPLOY_STAGING_ENABLED false, read back); fixed via issue #985 / PR #986 (4 review rounds, merge 33585b23); the second run (39471893302) was green end to end, operator-host parity rc 0 on 33585b23, staging-login spec 2 passed. The 29-27 dispositions are applied: 18 comments, 10 closed (99 100 101 112 296 297 299 300 592 859), 4 already closed, 4 open as approved (98 294 301 304), --post-close rc 0. DEPLOY_STAGING_ENABLED is true, deliberately left on (owner-delegated): every merge to main redeploys staging. Next, in order: PR 988 review then merge; PR 990 merge from main, re-review, write its Key Vault objects, merge, probe; PR 989 merge from main, re-review, merge; PR 991 (this closing docs PR) review then merge; then /gsd-verify-work 29 and /gsd-secure-phase 29. Resume block: the 2026-10-20 evening block of 29-ORCHESTRATOR-LEDGER.md"
-last_updated: "2026-10-20T19:55:00.000Z"
-last_activity: 2026-10-20
-state_head: 1db60c70ada0d51a660f84086f2eb4c9d68f6809
+current_phase: 30
+current_phase_name: The Money Path, Executed
+status: planning
+stopped_at: Phase 29 complete, ready to plan Phase 30
+last_updated: "2026-10-21T05:30:48.707Z"
+last_activity: 2026-10-21
+last_activity_desc: Phase 29 complete, transitioned to Phase 30
+state_head: 01cc7037bd8473ef6df49ba75d8754e654c8d566
 progress:
   total_phases: 20
-  completed_phases: 17
-  total_plans: 282
-  completed_plans: 271
-  percent: 85
+  completed_phases: 18
+  total_plans: 283
+  completed_plans: 283
+  percent: 90
 ---
 
 # Project State
@@ -24,16 +25,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-17)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 29 — Deployable Staging, With Its Own Monitoring
+**Current focus:** Phase 30 — The Money Path, Executed
 
 ## Current Position
 
-Phase: 29 (Deployable Staging, With Its Own Monitoring) — 29/29 PLANS EXECUTED, pending phase verification and security sign-off
-- RESUMED 2026-10-20. 29/29 plans have a SUMMARY (29-28 closed the same day). Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md`, its "2026-10-20 evening — RESUME HERE" block (the same file Session Continuity names).
-  The "do not deploy while the owner's persona swarm is running" constraint is LIFTED: the owner confirmed the swarm complete, ledger line 131 ("END OF SESSION 2026-10-20"). It is not in force.
-  Rulings D-33 and D-34 are in 29-CONTEXT.md.
-  The phase branch was merged as PR 984 (bffd2f74). Open follow-up PRs: 988, 989, 990 and 991 (this closing docs PR). DEPLOY_STAGING_ENABLED is true (left on deliberately, owner-delegated): each merge to main redeploys staging, so follow-up merges are serial and watched.
-  Staging (read 2026-10-20T19:52:06Z, kubectl read-only): core-java, edge-go and frontend run 33585b230a95e37100c3f4e0b19dcacf4e37123e (the PR 986 merge). PR 987 merged as 1db60c70 at 19:38:28Z and its deploy run 39485184302 was still in progress at 19:53:44Z, so staging may have moved by the time this is read.
+Phase: 30 — The Money Path, Executed
+Status: Ready to plan Phase 30
+Last activity: 2026-10-21 — Phase 29 complete
+
+- Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 pending owner confirmation). Phase 30 planning is next.
+  The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
+  Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md`, its "2026-10-21 — PHASE CLOSE" block (it supersedes every RESUME block above it).
+  Rulings D-33 and D-34 are in 29-CONTEXT.md. DEPLOY_STAGING_ENABLED is true (left on deliberately, owner-delegated): each merge to main redeploys staging, so merges stay serial and watched.
+  Still open, none blocking: the owner confirmation of R-3, `29-VALIDATION.md` still `draft`, the Grafana 24 h restart watch, issue #973 (fixed by #1000, closed after #1002 merges), and follow-up issues #999, #992, #971.
 - 29-28 DONE 2026-10-20 (13 plan commits across two PRs: 54d28e86 06271fef b1d28243 c6547bc4 da31c859 40595f82 in PR 984, e6542927 3b32b3ca ac867be2 97282566 e6a6c539 449deb57 bf85ae46 in PR 986; SUMMARY 29-28-SUMMARY.md; evidence/29-28-merge-deploy.txt is the #99 closing evidence). PR 984 "Phase 29: deployable staging, with its own monitoring" merged as bffd2f74 (2026-10-20T14:36:23Z) after D3 round 1 (admissible 4, all fixed: staging rollback only once the apply was reached + new gate check-deploy-rollback-guard.sh, deploy.sh undoes every Deployment whose generation moved, k8s/local mail under required STARTTLS, parity gate VOIDs on a value flag with no value, HANDOFF count 57) and round 2 (admissible 0, Review-Record posted); the owner had said the agent could run the checkpoint on their behalf. Deploy attempt 1 (run 39440780472) FAILED at digest parity: the gate counted a terminating previous-revision core-java pod; rollback rule applied (DEPLOY_STAGING_ENABLED false at 16:22:01Z, read back false; no issue touched; estate back on 6e95ee6c). Fix: issue 985, PR 986 merged as 33585b23 at 18:06:34Z (the gate waits up to a shared 180 s deadline for terminating pods, one jq program sorts the pods and the selftest feeds it, 33 arms; admissible per round 1, 1, 0, 0). Attempt 2 (run 39471893302): Deploy to Staging success at 19:35Z, steps 1-17 success, rollback skipped; operator-host parity on 33585b23 rc 0 (core-java 53c33c05, edge-go 4c46f907, frontend 353af9e7 MATCH); staging-login spec 2 passed. Dispositions applied at 19:36:44Z-19:37:59Z (--verify-approval and --pre-close rc 0 before the first comment): 18 comments read back equal, 10 issues closed (99 100 101 112 296 297 299 300 592 859), 271 292 293 302 already closed, 98 294 301 304 open as approved, --post-close rc 0 on 20 rows. Follow-ups owner-approved 2026-10-20: PR 987 Grafana memory (merged 1db60c70), PR 988 Keycloak trusted proxies, PR 989 CI hardening, PR 990 Grafana edge basic auth; the Keycloak in-cluster forwarded-header residual is recorded as accepted (Traefik overwrites client forwarded headers, measured). DPLY-02 marked complete in the SUMMARY (the five DPLY rows in REQUIREMENTS.md reconciled in PR 991). NOT DONE: phase verification and security sign-off.
 - 29-19 DONE 2026-10-20 (commits 4dfb6ae2 cost record + evidence, then the decision/ADR/SUMMARY commit; SUMMARY 29-19-SUMMARY.md): 24 h measured cost-meter checkpoint (D-03). Measured estate cost £156.00 per month against the ceiling D-34 raised; owner decision option-raise to £178/month (owner, 2026-10-20) (recorded in 29-COST-CHECKPOINT.md, evidence/29-19-cost.txt). 4 x B2s nodes £104.03, PG £45.03, 2 IPs £5.51; the LB is still on its free meter and FreeTierInfrastructureCost has no usage line; snackpass-pg £3.40 shown apart. The ADR-0002 D-24 amendment (in-cluster Redis by measurement) quotes it.
 - 29-27 DONE 2026-10-20 (commits 0c9b2e9d RED, 06a6a7e5 GREEN, d3ca4b04 table + comments + manifest + CI step, f49a015d citations baseline, fe74d1fb runbook, 9dcf2cb4 rotation, fe2742f8 supersede notes, 40a41b93 known faults, 7a8b6a80 readiness record, 2d512c30 Phase 32 inputs, f926c535 follow-up issue cites + manifest re-pin, 2d32870d owner approval, 0d77f624 HANDOFF 48 -> 56, 652ac77d residue allowlist renumber; SUMMARY 29-27-SUMMARY.md): scripts/check-dply02-dispositions.sh derives the required list from the ROADMAP's Phase 29 section (+ #101 #296 #297 #859) and holds 29-DPLY02-DISPOSITIONS.md to set equality (derived=20 table=20: 18 issues + merged PRs #953 #954); selftest RED 2/52 against a row-counting stub (RED_EVIDENCE_OK), GREEN 64/64; the public-text rule refuses a closing keyword next to any issue reference and any attribution line. Expected end states: 10 CLOSED by 29-28 (#99 #100 #101 #112 #296 #297 #299 #300 #592 #859), 4 already closed and recorded (#271 #292 #293 #302), 4 deferred and left OPEN (#98 #294 #301 #304). Owner approved at 2026-10-20T05:01:09Z with "approve 1d50dd2c89e8" (manifest re-pinned once before approval, 2e574e5e -> 1d50dd2c); --verify-approval rc 0. Docs: docs/runbooks/staging-operations.md (D-18 page), a staging section in credential-rotation.md, superseded notes on sealed-secrets / DEPLOYMENT / QUICK_START / LOCAL, an appended 2026-10 record in PRODUCTION_READINESS_REPORT.md, Phase 32 inputs in deferred-items.md. NO ISSUE HAS CHANGED STATE: that is 29-28. Deviations: the docs lane did not run the object-store residue gate and its LOCAL.md insert (+12 lines at :46) broke scripts/gates/object-store-residue-allowlist.conf (rc 1; renumbered +12, rc 0); the HANDOFF gate count was stale (48 -> 56, later 57 in 29-28 round 1); the ADR-0002 D-24 amendment written late, after 29-19 measured the estate. DPLY-02 not marked complete until 29-28 applies the dispositions.
@@ -831,7 +835,7 @@ Status: Executing Phase 29
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
 Last activity: 2026-10-18
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 90%
 
 ## Milestone v2.3 Phase Map
 
@@ -864,7 +868,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 176 (phase 23) + 12 (phases 21-22) = 29
+- Total plans completed: 176 (phase 23) + 12 (phases 21-22) = 29 (not updated at Phase 29 close)
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -883,6 +887,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 38 | 19 | - | - |
 | 31.1 | 30 | - | - |
 | 37 | 59 | - | - |
+| 29 | 29 | - | - |
 
 *Updated after each plan completion*
 | Phase 24 P01 | ~20min | 3 tasks | 10 files |
@@ -1519,8 +1524,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 ## Session Continuity
 
 Last session: 2026-10-20T19:55:00.000Z
-Stopped at: Completed 29-28-PLAN.md: Phase 29 is at 29/29 plans, pending phase verification and security sign-off. Merged PR #984 (squash bffd2f74) after a four-finding D3 round 1 and a zero-admissible round 2; the first CI deploy-staging run (39440780472) FAILED at digest parity on a terminating pod and the rollback rule was applied (DEPLOY_STAGING_ENABLED false, read back); fixed via issue #985 / PR #986 (4 review rounds, merge 33585b23); the second run (39471893302) was green end to end, operator-host parity rc 0 on 33585b23, staging-login spec 2 passed. The 29-27 dispositions are applied: 18 comments, 10 closed (99 100 101 112 296 297 299 300 592 859), 4 already closed, 4 open as approved (98 294 301 304), --post-close rc 0. DEPLOY_STAGING_ENABLED is true, deliberately left on (owner-delegated): every merge to main redeploys staging. Next, in order: PR 988 review then merge; PR 990 merge from main, re-review, write its Key Vault objects, merge, probe; PR 989 merge from main, re-review, merge; PR 991 (this closing docs PR) review then merge; then /gsd-verify-work 29 and /gsd-secure-phase 29. Resume block: the 2026-10-20 evening block of 29-ORCHESTRATOR-LEDGER.md
-Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md` (the "2026-10-20 evening — RESUME HERE" block at its end)
+Stopped at: Phase 29 complete, ready to plan Phase 30
+Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md` (the "2026-10-21 — PHASE CLOSE" block at its end)
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
