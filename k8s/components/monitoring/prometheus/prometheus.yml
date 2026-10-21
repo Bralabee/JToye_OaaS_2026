@@ -6,7 +6,8 @@
 # metrics_path, params and metric_relabel_configs). The alert corpus beside this file IS a byte
 # copy (the `alerts.yml` pair in the same list).
 #
-# THE EIGHT JOB NAMES ARE A CONTRACT. scripts/check-alert-liveness.sh maps rules to jobs through
+# THE EIGHT SHARED JOB NAMES ARE A CONTRACT (plus one k8s-only job, cert-manager, declared as such
+# in k8s/copy-parity.conf: compose has no cert-manager). scripts/check-alert-liveness.sh maps rules to jobs through
 # EXPORTER_GAUGES, DIRECT_JOBS and SERVICE_JOB_MAP and VOIDs on a job it does not know, so a
 # renamed or added job here stops that gate. Keep the names; change only where a job points.
 #
@@ -130,3 +131,17 @@ scrape_configs:
       - source_labels: [queue]
         regex: 'order[.]state-changes[.]sse[.].*'
         action: drop
+
+  # cert-manager's own metrics (issue #972): certmanager_certificate_expiration_timestamp_seconds
+  # and friends, read by the CertificateExpiringSoon rule. K8S-ONLY: compose has no cert-manager,
+  # so this job is declared in k8s/copy-parity.conf (`k8s-only-job`) and absent from
+  # infra/monitoring/prometheus/prometheus.yml.tmpl. The Service lives in the cert-manager
+  # namespace (ClusterIP, port 9402, the controller's http-metrics); prometheus-allow admits that
+  # one egress (an escalated NetworkPolicy row, INV-7) and cert-manager's namespace has no policy
+  # of its own. No `service` label on purpose: the rule sets service: platform, and a series
+  # label of the same name would be silently overwritten.
+  - job_name: 'cert-manager'
+    static_configs:
+      - targets: ['cert-manager.cert-manager.svc.cluster.local:9402']
+        labels:
+          component: 'platform'

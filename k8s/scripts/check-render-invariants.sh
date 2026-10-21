@@ -498,6 +498,54 @@
 #          scripts/staging-grafana-edge.sh --probe (G-1..G-4). That the SPC is MOUNTED
 #          by secret-sync is k8s/scripts/check-keyvault-chain.sh's rule, not this one's.
 #
+#   INV-22 #999, RENDER level, EVERY target; each must be named in INV22_EXPECTED (an
+#          unlisted target FAILS, review round 1 F3): k8s/staging -> staging, k8s/local ->
+#          local, k8s/production and k8s/base -> production. k8s runs the prod
+#          Spring profile in every environment (D-10), and application-prod.yml sets the
+#          Micrometer common tag management.metrics.tags.environment to `production`, so a
+#          staging core-java that does not override it labels every series it exports
+#          environment="production" (observed on live staging 2026-10-21): a dashboard,
+#          federation or production Prometheus filtering on the label would read staging
+#          traffic as production. So:
+#            a. the prod profile still sets that key (the reader finds the line: if the key
+#               moved, the override below binds nothing and this rule would pass over it);
+#            b. every core-java-image APP container (containers, not initContainers) of
+#               Deployment core-java sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT (any spelling
+#               whose lower-cased alphanumerics are managementmetricstagsenvironment) once, to
+#               the target's label, as a literal or an app-config configMapKeyRef read by its
+#               RENDERED value. A target whose label is `production` may leave it unset (the
+#               profile's own value is right) but may not set it to anything else; any other
+#               target in the table MUST set it.
+#            c. a container that sets it from a source the render cannot read, or twice,
+#               fails: which value wins cannot be shown.
+#          Shown catching each hole by --selftest-inv22; the live proof is
+#          curl -s localhost:9091/actuator/prometheus | grep environment= in the core-java pod.
+#   INV-23 ISSUE #972, RENDER level, every target that renders the mailpit component
+#          (a Deployment named mailpit). Mailpit reads its SMTP certificate ONLY at process
+#          start, cert-manager renews mailpit-tls 15 days before expiry and kubelet rewrites the
+#          mounted Secret in place, so without a restart the running Mailpit serves the OLD leaf
+#          until it expires: every STARTTLS then fails, core-java's mail health goes DOWN and the
+#          deploy-staging health step turns red like a code regression (dated 2027-01-17). The
+#          container therefore runs a supervisor that hashes the cert and key it started with and
+#          stops Mailpit when they change, so the kubelet restarts the container with the new
+#          ones. The render must keep that, and must keep STARTTLS required:
+#            a. container `mailpit` sets MP_SMTP_REQUIRE_STARTTLS to the literal true and
+#               MP_SMTP_TLS_CERT / MP_SMTP_TLS_KEY to literal paths (the files the supervisor
+#               hashes are named by exactly these variables);
+#            b. the text of THAT container alone (not the whole `containers:` section, so a sidecar
+#               cannot satisfy the markers; kustomize drops comments, so only live script is read)
+#               contains every marker of the supervisor: the hash of BOTH files named by those
+#               variables (`sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY"`), Mailpit run in
+#               the background (`/mailpit &`), the comparison against the start hash
+#               (`[ "$now" != "$start" ]`), the stop (`kill -TERM "$pid"`) and a `trap`, and it
+#               never `exec`s Mailpit (any quoting), which would replace the supervisor with the process
+#               that cannot see a renewal.
+#          A mailpit Deployment whose containers text cannot be read is a PARSE ERROR (a blind
+#          reader never passes). Production and local print "not applicable". Shown catching
+#          each hole by --selftest-inv23; the live proof is the rotation test in the PR for
+#          issue #972 (a Mailpit serving the old certificate after the Secret changed, then the
+#          new one with the supervisor).
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -595,7 +643,7 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21|--selftest-inv22|--selftest-inv23]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
@@ -605,6 +653,8 @@
 #   --selftest-inv18 the same for INV-18 (inv18_selftest)
 #   --selftest-inv20 the same for INV-20 (inv20_selftest)
 #   --selftest-inv21 the same for INV-21 (inv21_selftest)
+#   --selftest-inv22 the same for INV-22 (inv22_selftest)
+#   --selftest-inv23 the same for INV-23 (inv23_selftest)
 
 set -euo pipefail
 
@@ -1828,6 +1878,253 @@ if [[ "${1:-}" == "--selftest-inv21" ]]; then
     inv21_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv22 (#999): INV-22 shown CATCHING planted holes. Same harness shape as
+# --selftest-inv17/-inv21: the k8s/ tree and core-java's application*.yml are copied
+# (selftest_stage), ONE hole is planted per arm, and the COPY's own gate must exit with the
+# arm's rc AND print the message that names the hole. The unmodified copy must exit 0.
+# Arms:
+#   env-removed       the staging overlay stops patching the env in (the regression the
+#                     issue describes: staging is labelled production again)
+#   wrong-value       the env is set to `production`
+#   empty-value       the env is set to ""
+#   misspelt-name     MANAGEMENT_METRICS_TAG_ENVIRONMENT: binds nothing, so it counts as unset
+#   set-twice         two spellings of the same env on one container
+#   unreadable-source the value comes from a Secret the render cannot read
+#   production-bleed  base sets it to `staging`, which production inherits (a production
+#                     core-java may leave the profile's value, never override it with another)
+#   unlisted-overlay  a new overlay (k8s/zz-extra, on base) that INV22_EXPECTED does not name
+#                     (review round 1 F3: it ran the prod profile with no override and passed as
+#                     "not applicable")
+#   local-env-removed k8s/local stops patching the env in
+#   prod-key-moved    application-prod.yml no longer sets the tag it overrides (PARSE ERROR, rc 2)
+# A plant that does not change its file is reported caught=no.
+# INV22_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv22_plant() {
+    local arm="$1" root="$2" f before
+    case "$arm" in
+        env-removed) f="$root/k8s/staging/kustomization.yaml" ;;
+        wrong-value|empty-value|misspelt-name|set-twice|unreadable-source) f="$root/k8s/staging/core-java-metrics-env-patch.yaml" ;;
+        production-bleed) f="$root/k8s/base/core-java-deployment.yaml" ;;
+        prod-key-moved) f="$root/core-java/src/main/resources/application-prod.yml" ;;
+        local-env-removed) f="$root/k8s/local/kustomization.yaml" ;;
+        unlisted-overlay) mkdir -p "$root/k8s/zz-extra" && printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../base\n' > "$root/k8s/zz-extra/kustomization.yaml"; return 0 ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        local-env-removed)
+            awk '!/^  - path: core-java-metrics-env-patch\.yaml$/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        env-removed)
+            awk '!/^  - path: core-java-metrics-env-patch\.yaml$/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        wrong-value)
+            awk '{ sub(/value: "staging"/, "value: \"production\""); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        empty-value)
+            awk '{ sub(/value: "staging"/, "value: \"\""); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        misspelt-name)
+            awk '{ sub(/MANAGEMENT_METRICS_TAGS_ENVIRONMENT/, "MANAGEMENT_METRICS_TAG_ENVIRONMENT"); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        set-twice)
+            awk '{ print } /value: "staging"$/ { print "            - name: management-metrics-tags-environment"; print "              value: \"staging\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        unreadable-source)
+            awk '/value: "staging"$/ { print "              valueFrom:"; print "                secretKeyRef:"; print "                  name: planted"; print "                  key: planted"; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        production-bleed)
+            awk '{ print } !done && /^          value: "prod"$/ { print "        - name: MANAGEMENT_METRICS_TAGS_ENVIRONMENT"; print "          value: \"staging\""; done = 1 }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        prod-key-moved)
+            awk '{ sub(/^      environment: production$/, "      env: production"); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv22_selftest() {
+    local fmt="${INV22_SELFTEST_FORMAT:-plain}" st arm want wrc out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv22 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(env-removed wrong-value empty-value misspelt-name set-twice unreadable-source production-bleed prod-key-moved unlisted-overlay local-env-removed)
+    declare -A WANT=(
+        [env-removed]="INV-22: Deployment core-java container 'core-java' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT"
+        [wrong-value]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to 'production', not 'staging'"
+        [empty-value]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to '', not 'staging'"
+        [misspelt-name]="INV-22: Deployment core-java container 'core-java' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT"
+        [set-twice]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT 2 times"
+        [unreadable-source]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT from a source the render cannot read"
+        [production-bleed]="FAIL [k8s/production] INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to 'staging', not 'production'"
+        [unlisted-overlay]="INV-22: target k8s/zz-extra is not declared in INV22_EXPECTED"
+        [local-env-removed]="FAIL [k8s/local] INV-22: Deployment core-java container 'core-java' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT"
+        [prod-key-moved]="INV-22: core-java/src/main/resources/application-prod.yml no longer sets management.metrics.tags.environment"
+    )
+    declare -A WANT_RC=([prod-key-moved]=2)
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv22_plant "$arm" "$st/arm"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"; wrc="${WANT_RC[$arm]:-1}"
+            if (( rc == wrc )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=$rc"
+            else
+                caught=no
+                line="expected rc $wrc and '$want'; got rc=$rc: $(awk '/INV-22|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv22" ]]; then
+    inv22_selftest; exit $?
+fi
+
+# ===========================================================================
+# --selftest-inv23 (issue #972): INV-23 shown CATCHING planted holes in Mailpit's
+# certificate-reload supervisor. Same harness shape as -inv18. Arms (each in the copy's
+# k8s/components/mailpit/mailpit.yaml):
+#   no-supervisor   the mailpit container's whole `command:` block is deleted (Mailpit runs
+#                   as the image entrypoint and never sees a renewal)
+#   exec-direct     the supervisor ends in `exec /mailpit` instead of running it as a child
+#   wrong-file      the hash covers /etc/hostname, not the files MP_SMTP_TLS_CERT/KEY name
+#   no-compare      the comparison is replaced by `[ false ]` (it hashes but never reacts)
+#   no-stop         the stop (`kill -TERM "$pid"`) is replaced by `true`
+#   starttls-off    MP_SMTP_REQUIRE_STARTTLS becomes "false"
+#   sidecar-markers a SIDECAR container carries every supervisor marker (hash, background run,
+#                   comparison, stops, trap) while the mailpit container has no command at all:
+#                   the markers must be read from the mailpit container only
+#   exec-quoted     the supervisor ends in `exec "/mailpit"` (quoted) instead of running it as a child
+# INV23_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv23_plant() {
+    local arm="$1" root="$2" f before
+    f="$root/components/mailpit/mailpit.yaml"
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        no-supervisor)
+            # the SECOND `        command:` (the first is the send-api-lock init container): drop it
+            # and its block scalar (every following line indented deeper than the key)
+            awk '/^        command:$/ { n++; if (n == 2) { skip = 1; next } }
+                 skip { if ($0 ~ /^        - / || $0 ~ /^          /) next; skip = 0 }
+                 { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        exec-direct)
+            awk '{ if ($0 ~ /^          \/mailpit &$/) $0 = "          exec /mailpit"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        wrong-file)
+            awk '{ if ($0 ~ /^          fp\(\) \{ sha256sum /) $0 = "          fp() { sha256sum /etc/hostname 2>/dev/null; }"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        no-compare)
+            awk '{ if ($0 ~ /^            if \[ "\$now" != "\$start" \]; then$/) $0 = "            if [ false ]; then"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        no-stop)
+            awk '{ if ($0 ~ /^              kill -TERM "\$pid" 2>\/dev\/null$/) $0 = "              true"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        starttls-off)
+            awk '/^        - name: MP_SMTP_REQUIRE_STARTTLS$/ { print; getline; print "          value: \"false\""; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        exec-quoted)
+            awk '{ if ($0 ~ /^          \/mailpit &$/) $0 = "          exec \"/mailpit\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        sidecar-markers)
+            # drop the mailpit container's command block (as no-supervisor) and put every marker in a
+            # sidecar listed BEFORE the mailpit container
+            awk '/^        command:$/ { n++; if (n == 2) { skip = 1; next } }
+                 skip { if ($0 ~ /^        - / || $0 ~ /^          /) next; skip = 0 }
+                 /^      - name: mailpit$/ && !done {
+                     print "      - name: sidecar"
+                     print "        image: axllent/mailpit:v1.31.6"
+                     print "        command:"
+                     print "        - sh"
+                     print "        - -c"
+                     print "        - |"
+                     print "          fp() { sha256sum \"$MP_SMTP_TLS_CERT\" \"$MP_SMTP_TLS_KEY\" 2>/dev/null; }"
+                     print "          /mailpit &"
+                     print "          trap '\''kill -TERM \"$pid\"'\'' TERM"
+                     print "          if [ \"$now\" != \"$start\" ]; then kill -TERM \"$pid\"; fi"
+                     done = 1
+                 }
+                 { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        *) return 1 ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv23_selftest() {
+    local fmt="${INV23_SELFTEST_FORMAT:-plain}" st arm want out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv23 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(no-supervisor exec-direct wrong-file no-compare no-stop starttls-off sidecar-markers exec-quoted)
+    declare -A WANT=(
+        [no-supervisor]="INV-23: Deployment mailpit container 'mailpit' has no certificate-reload supervisor"
+        [exec-direct]="INV-23: Deployment mailpit container 'mailpit' execs Mailpit"
+        [wrong-file]="INV-23: Deployment mailpit container 'mailpit' does not hash the files MP_SMTP_TLS_CERT and MP_SMTP_TLS_KEY name"
+        [no-compare]="INV-23: Deployment mailpit container 'mailpit' never compares the current hash with the start hash"
+        [no-stop]="INV-23: Deployment mailpit container 'mailpit' never stops Mailpit on a change"
+        [starttls-off]="INV-23: Deployment mailpit container 'mailpit' MP_SMTP_REQUIRE_STARTTLS is not the literal true"
+        [sidecar-markers]="INV-23: Deployment mailpit container 'mailpit' has no certificate-reload supervisor"
+        [exec-quoted]="INV-23: Deployment mailpit container 'mailpit' execs Mailpit"
+    )
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv23_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"
+            if (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=1"
+            else
+                caught=no
+                line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-23|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv23" ]]; then
+    inv23_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
@@ -1965,7 +2262,8 @@ declare -A NETPOL_RULES_EXPECTED=(
       in:pod=app=grafana:9090
       $NETPOL_DNS_EG eg:pod=app=core-java:9091 eg:pod=app=edge-go:8080 eg:pod=app=keycloak:9000
       eg:pod=app.kubernetes.io/name=rabbitmq:15692 eg:pod=app=postgres-exporter:9187
-      eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093"
+      eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093
+      eg:nspod=cert-manager/app.kubernetes.io/name=cert-manager:9402"
   # The two exporters: scraped only by Prometheus. postgres-exporter's egress.1 is the
   # managed server on db.port (the staging replacement, #271); redis-exporter reaches only
   # the in-cluster Redis.
@@ -2198,6 +2496,39 @@ PROBE_SWITCH_RE='validate[-_.]?on[-_.]?startup'
 CORE_JAVA_IMAGE_RE='/jtoye-core-java(:|@|$)'
 PROBE_JSON_ENV_NORM='springapplicationjson'
 PROBE_JVM_OPTS_ENV_NORM_RE='^(javaopts|javatooloptions|jdkjavaoptions)$'
+
+# INV-22 (#999): the environment label each deployed target's core-java must export. The prod
+# profile (every k8s environment runs it, D-10) says `production`; staging must say otherwise.
+# "<label> <required>": required=1 means the env MUST be set (the profile's value is wrong
+# there); 0 means the profile's value is right, so unset is fine and only a wrong value fails.
+# EVERY discovered target must be listed (review round 1 on #1005, F3): all of them run the prod
+# profile, so an overlay not named here (k8s/local was one) exported environment="production".
+# k8s/base carries the production values and no overlay, so it is labelled production like
+# k8s/production. An unlisted target FAILS: add it here, with its own label, in the same change.
+declare -A INV22_EXPECTED=(
+  ["k8s/staging"]="staging 1"
+  ["k8s/local"]="local 1"
+  ["k8s/production"]="production 0"
+  ["k8s/base"]="production 0"
+)
+declare -A INV22_TARGET_SEEN=()
+INV22_ENV_NORM='managementmetricstagsenvironment'
+INV22_PROFILE_YML="$APP_RESOURCES/application-prod.yml"
+# inv22_yml_tag <file> — the value of management.metrics.tags.environment in <file>, found by
+# walking the YAML nesting by indentation (the key may be written nested or as a dotted path);
+# "(ABSENT)" when no line gives that path.
+inv22_yml_tag() {
+    awk '
+        { line = $0; sub(/[ \t]+#.*$/, "", line); if (line ~ /^[ \t]*(#.*)?$/) next
+          match(line, /^ */); ind = RLENGTH; key = line; sub(/^ */, "", key)
+          if (key !~ /^[A-Za-z0-9_.-]+:/) next
+          name = key; sub(/:.*/, "", name); val = key; sub(/^[^:]*:[ \t]*/, "", val)
+          while (depth > 0 && ind <= indent[depth]) depth--
+          depth++; indent[depth] = ind; path[depth] = name
+          p = path[1]; for (i = 2; i <= depth; i++) p = p "." path[i]
+          if (p == "management.metrics.tags.environment") { print val; found = 1; exit } }
+        END { if (!found) print "(ABSENT)" }' "$1"
+}
 
 command -v kubectl > /dev/null \
     || parse_fail "kubectl not on PATH (client-side 'kubectl kustomize' is required)."
@@ -3944,6 +4275,81 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-23 (issue #972) ----------------
+    # Every target that renders the mailpit component: Mailpit's container supervises the
+    # process and restarts it when its certificate or key changes on disk, and STARTTLS stays
+    # required. See the header for the markers read.
+    inv23_bad=0
+    if (( inv18_dep == 0 )); then
+        inv23_msg="not applicable (no mailpit component in this render)"
+    else
+        inv23_c=$(awk -F'\t' '$1 == "Deployment" && $2 == "mailpit" && $3 ~ /^spec::template::spec::containers::\[[0-9]+\]::name$/ && $4 == "mailpit" { p = $3; sub(/::name$/, "", p); print p; exit }' "$TMP/inv11_paths.tsv")
+        [[ -n "$inv23_c" ]] || parse_fail "[$rel] INV-23 found no container named mailpit in Deployment mailpit by path."
+        inv23_env=$(awk -F'\t' -v c="$inv23_c::env::" '$1 == "Deployment" && $2 == "mailpit" && index($3, c) == 1 && $3 ~ /::name$/ { print $3 "\t" $4 }' "$TMP/inv11_paths.tsv")
+        for inv23_v in MP_SMTP_REQUIRE_STARTTLS MP_SMTP_TLS_CERT MP_SMTP_TLS_KEY; do
+            inv23_p=$(awk -F'\t' -v v="$inv23_v" '$2 == v { print $1; exit }' <<< "$inv23_env")
+            if [[ -z "$inv23_p" ]]; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' does not set $inv23_v." >&2
+                inv23_bad=1; continue
+            fi
+            inv23_val=$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "${inv23_p%::name}::value")
+            unq "$inv23_val"
+            if [[ "$inv23_v" == MP_SMTP_REQUIRE_STARTTLS ]]; then
+                if [[ "$UNQ" != true ]]; then
+                    echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' MP_SMTP_REQUIRE_STARTTLS is not the literal true (got '$inv23_val'). STARTTLS is required on both ends (D-20)." >&2
+                    inv23_bad=1
+                fi
+            elif [[ "$inv23_val" == "(ABSENT)" || -z "$UNQ" ]]; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' $inv23_v is not a literal path; the supervisor hashes exactly the files these variables name." >&2
+                inv23_bad=1
+            fi
+        done
+        # the live (comment-free) text of the Deployment's `mailpit` CONTAINER only: not the whole
+        # `containers:` section (a sidecar carrying the same tokens must not satisfy the markers),
+        # not the init container's script, not the rest of the pod spec. Each list item of
+        # `containers:` starts at indent 6 with `- `; the item is kept when its `name:` is mailpit.
+        awk '/^---[[:space:]]*$/ { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc; doc = ""; next } { doc = doc "\n" $0 } END { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc }' "$render" | awk '/^      containers:$/ { on = 1; next } on && /^      [^ -]/ { on = 0; flush() } on { if ($0 ~ /^      - /) flush(); buf = buf $0 "\n"; if ($0 ~ /^(      - |        )name: mailpit$/) hit = 1 } END { flush() } function flush() { if (hit) printf "%s", buf; buf = ""; hit = 0 }' > "$TMP/inv23_containers.txt"
+        [[ -s "$TMP/inv23_containers.txt" ]] || parse_fail "[$rel] INV-23 could not read the containers section of Deployment mailpit from the render; the supervisor markers would pass vacuously."
+        if ! grep -qE '^(      - |        )command:$' "$TMP/inv23_containers.txt" \
+           || ! grep -qF -e 'sha256sum' -e 'trap ' -e 'kill -TERM' "$TMP/inv23_containers.txt"; then
+            echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' has no certificate-reload supervisor. Mailpit reads its certificate only at start, so a cert-manager renewal would leave it serving the old certificate until it expires (issue #972)." >&2
+            inv23_bad=1
+        fi
+        if (( inv23_bad == 0 )); then
+            if grep -qE "(^|[;&|[:space:]])exec[[:space:]]+[\"']?/?mailpit" "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' execs Mailpit, replacing the supervisor with the process that only reads its certificate at start (issue #972)." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e 'sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY"' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' does not hash the files MP_SMTP_TLS_CERT and MP_SMTP_TLS_KEY name (expected: sha256sum \"\$MP_SMTP_TLS_CERT\" \"\$MP_SMTP_TLS_KEY\")." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e '/mailpit &' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' does not run Mailpit in the background under the supervisor (expected: /mailpit &)." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e '[ "$now" != "$start" ]' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' never compares the current hash with the start hash (expected: [ \"\$now\" != \"\$start\" ])." >&2
+                inv23_bad=1
+            fi
+            # two stops: the SIGTERM trap's and the one taken when the hash changes
+            if (( $(grep -cF -e 'kill -TERM "$pid"' "$TMP/inv23_containers.txt") < 2 )); then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' never stops Mailpit on a change (expected: kill -TERM \"\$pid\" in the change branch as well as in the trap)." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e 'trap ' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' installs no trap, so a rollout's SIGTERM would not reach Mailpit." >&2
+                inv23_bad=1
+            fi
+        fi
+        if (( inv23_bad != 0 )); then
+            FAILED=1
+            inv23_msg="FAIL"
+        else
+            inv23_msg="OK (mailpit supervisor hashes MP_SMTP_TLS_CERT/KEY and restarts the container on a change; MP_SMTP_REQUIRE_STARTTLS true)"
+        fi
+    fi
+
     # ---------------- INV-20 (#976) ----------------
     # Every Keycloak container with proxy headers on, in ANY spelling, must say WHICH
     # peers it believes them from, once, as a private CIDR list it can start on. See
@@ -4145,14 +4551,78 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-22 (#999) ----------------
+    # The Micrometer `environment` tag a target's core-java exports. The prod profile (every k8s
+    # environment runs it) says `production`; INV22_EXPECTED names what each deployed target
+    # must say instead, and a staging that loses its override is labelled production again.
+    inv22_msg="FAIL"
+    if [[ -z "${INV22_EXPECTED[$rel]:-}" ]]; then
+        echo "  FAIL [$rel] INV-22: target $rel is not declared in INV22_EXPECTED. Every rendered target runs the prod profile (D-10), whose application-prod.yml tags every series environment=\"production\", so a target nobody declared exports metrics labelled as production unless it overrides MANAGEMENT_METRICS_TAGS_ENVIRONMENT. Declare its environment label in INV22_EXPECTED and set the env in the overlay (#999)." >&2
+        FAILED=1
+    else
+        INV22_TARGET_SEEN["$rel"]=1
+        read -r inv22_label inv22_required <<< "${INV22_EXPECTED[$rel]}"
+        inv22_bad=0; inv22_ctr_n=0; inv22_set=0
+        if [[ ! -f "$INV22_PROFILE_YML" ]]; then
+            parse_fail "[$rel] INV-22: $INV22_PROFILE_YML not found, so the profile's own environment tag cannot be read. A reader that finds nothing never passes."
+        fi
+        inv22_prof="$(inv22_yml_tag "$INV22_PROFILE_YML")"
+        if [[ "$inv22_prof" == "(ABSENT)" ]]; then
+            parse_fail "[$rel] INV-22: core-java/src/main/resources/application-prod.yml no longer sets management.metrics.tags.environment, so MANAGEMENT_METRICS_TAGS_ENVIRONMENT would bind a key nothing documents, or the reader is blind. Re-point INV-22 at the new key in the SAME change that moves it; do not delete the invariant."
+        fi
+        while IFS=$'\t' read -r ck cn cpath; do
+            [[ -n "$cpath" && "$ck" == Deployment && "$cn" == core-java && "$cpath" == *"::containers::["* ]] || continue
+            inv22_ctr_n=$((inv22_ctr_n + 1))
+            cname="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$cpath::name")"
+            inv22_vals=()
+            while IFS=$'\t' read -r epath ename; do
+                norm="$(tr -cd '[:alnum:]' <<< "$ename" | tr '[:upper:]' '[:lower:]')"
+                [[ "$norm" == "$INV22_ENV_NORM" ]] || continue
+                ev="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::value")"
+                cmn="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::valueFrom::configMapKeyRef::name")"
+                cmk="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::valueFrom::configMapKeyRef::key")"
+                if [[ "$ev" != "(ABSENT)" ]]; then
+                    unq "$ev"; ev="$UNQ"
+                elif [[ "$cmn" == "app-config" && "$cmk" != "(ABSENT)" ]]; then
+                    ev="$(cfg_get "$TMP/cfg.tsv" "$cmk")"
+                else
+                    echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' sets $ename from a source the render cannot read ($epath: neither a literal value nor an app-config configMapKeyRef), so the environment label cannot be shown." >&2
+                    inv22_bad=1; continue
+                fi
+                inv22_vals+=("$ev"); inv22_set=$((inv22_set + 1))
+            done < <(awk -F'\t' -v k="$ck" -v n="$cn" -v c="$cpath::env::" '$1 == k && $2 == n && index($3, c) == 1 && $3 ~ /::env::\[[0-9]+\]::name$/ { e = $3; sub(/::name$/, "", e); print e "\t" $4 }' "$TMP/inv11_paths.tsv")
+            if (( ${#inv22_vals[@]} > 1 )); then
+                echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT ${#inv22_vals[@]} times (${inv22_vals[*]}), so which value wins cannot be shown here. Set it once." >&2
+                inv22_bad=1
+            elif (( ${#inv22_vals[@]} == 1 )); then
+                if [[ "${inv22_vals[0]}" != "$inv22_label" ]]; then
+                    echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to '${inv22_vals[0]}', not '$inv22_label'. Every core-java series this target exports would carry environment=\"${inv22_vals[0]}\" (#999)." >&2
+                    inv22_bad=1
+                fi
+            elif (( inv22_required == 1 )); then
+                echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT. It runs the prod profile, whose application-prod.yml tags every series environment=\"$inv22_prof\", so $rel would export metrics labelled as production (#999). Set it to '$inv22_label' in the overlay." >&2
+                inv22_bad=1
+            fi
+        done < <(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" '$3 ~ /::containers::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' "$TMP/inv11_paths.tsv")
+        (( inv22_ctr_n > 0 )) || parse_fail "[$rel] INV-22: found no core-java-image app container in Deployment core-java — the render lost it or the container reader is blind."
+        if (( inv22_bad != 0 )); then
+            FAILED=1
+            inv22_msg="FAIL"
+        elif (( inv22_set > 0 )); then
+            inv22_msg="OK ($inv22_ctr_n core-java container(s) export environment=\"$inv22_label\" via MANAGEMENT_METRICS_TAGS_ENVIRONMENT; the prod profile alone would say \"$inv22_prof\")"
+        else
+            inv22_msg="OK ($inv22_ctr_n core-java container(s) leave the prod profile's environment=\"$inv22_prof\" in force, which is this target's label)"
+        fi
+    fi
+
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* || "$inv22_msg" == FAIL* || "$inv23_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg"
     fi
 done
 
@@ -4160,6 +4630,10 @@ done
 # silently stop running. Every listed target must have been rendered and checked.
 for t in "${WI_TARGETS[@]}"; do
     [[ -n "${WI_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-8..INV-10: WI_TARGETS names '$t', but no kustomize target at that path was discovered, so its storage invariants never ran. Update WI_TARGETS in the SAME change that renames an overlay."
+done
+
+for t in "${!INV22_EXPECTED[@]}"; do
+    [[ -n "${INV22_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-22: INV22_EXPECTED names '$t', but no kustomize target at that path was discovered, so INV-22 never ran there. Update INV22_EXPECTED in the SAME change that renames an overlay."
 done
 
 for t in "${KEYCLOAK_TARGETS[@]}"; do
@@ -4644,4 +5118,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); INV-21 holds wherever the grafana component renders; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); INV-21 holds wherever the grafana component renders; INV-23 holds wherever the mailpit component renders; $LOCAL_SECTION."

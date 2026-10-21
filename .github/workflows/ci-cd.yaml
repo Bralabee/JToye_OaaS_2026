@@ -972,6 +972,25 @@ jobs:
       - name: Prove INV-21 catches planted Grafana edge-auth holes (--selftest-inv21)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv21
 
+      # #999: INV-22 keeps staging core-java's metrics labelled environment="staging" (the prod
+      # profile it runs says "production"): the overlay must set MANAGEMENT_METRICS_TAGS_ENVIRONMENT
+      # to its label, once, from a source the render can read, and production may not override it.
+      # Ten planted holes (the override removed, a wrong value, an empty one, a misspelt name
+      # that binds nothing, two spellings, an unreadable Secret source, base bleeding "staging"
+      # into production, application-prod.yml losing the key, which is a PARSE ERROR, rc 2, an
+      # overlay INV22_EXPECTED does not name, and k8s/local losing its override).
+      - name: Prove INV-22 catches planted environment-label holes (--selftest-inv22)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv22
+
+      # Issue #972: INV-23 keeps Mailpit's certificate-reload supervisor in the render (Mailpit
+      # reads its TLS certificate only at start, so without it a cert-manager renewal leaves the
+      # running process serving the old certificate until it expires and every STARTTLS fails)
+      # and keeps MP_SMTP_REQUIRE_STARTTLS true. Eight planted holes (no supervisor, an exec of
+      # Mailpit, a hash of the wrong file, no comparison, no stop, STARTTLS off, the markers in a
+      # sidecar only, a quoted exec).
+      - name: Prove INV-23 catches planted Mailpit cert-reload holes (--selftest-inv23)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv23
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,
@@ -1046,6 +1065,13 @@ jobs:
       # kubectl/kubelogin and a stub preflight: no cluster, no Azure).
       - name: Prove the deploy script's guards and DEPLOYED_SHA record (29-14 --selftest)
         run: bash scripts/deploy.sh --selftest
+
+      # Issue #969: the CI deploy-staging job's wait on every workload it did not retag. The same
+      # library deploy.sh uses; a prometheus Deployment on an unpullable image exits 1 (the
+      # three-app wait it replaces certifies the same render), nothing is undone, a render that
+      # fails or lacks a retagged name is VOID (rc 2).
+      - name: Prove the other-workloads wait can fail (#969 --selftest)
+        run: bash scripts/wait-other-workloads.sh --selftest
 
       # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
       # mismatch, plant-stale, empty actual, zero services, no context, employer
@@ -1783,6 +1809,19 @@ jobs:
       #      runtime binaries, because the script necessarily names every one it looks
       #      for. Fixed by stripping the definition line; the trap is documented in the
       #      script, since this repo has hit it before with doc-lint rules.)
+      # Review round 1 on #1005 (F2): scripts/gates/review-record-check.sh has a --selftest
+      # (80 arms, 48 more skipped by design outside the canonical dotfiles context) that no
+      # workflow ran; review-record.yml runs only --status-verdict. Needs only bash and jq.
+      - name: Prove the review-record gate's arms (--selftest)
+        run: bash scripts/gates/review-record-check.sh --selftest
+
+      # Issue #970: pass 2 of the same gate. Every non-check script that dispatches a --selftest
+      # (staging-secrets, staging-secrets-preflight, staging-db-bootstrap and the rest) must be
+      # invoked as `<name>.sh --selftest` on a non-comment line of a workflow; #989 wired the
+      # three, this is what keeps them wired. The gate's own --selftest plants the holes first.
+      - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
+        run: bash scripts/check-gate-enforcement.sh --selftest
+
       - name: Assert every gate either runs in CI or says why it cannot
         run: |
           chmod +x ./scripts/check-gate-enforcement.sh
@@ -2496,13 +2535,37 @@ jobs:
           chmod +x ./scripts/smoke-test.sh
           EXPECT_SWAGGER=false ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 
+      # Issue #969: `kubectl apply -k k8s/staging` applies the whole overlay, so the job is only
+      # green once everything it applied is Ready, not just the three retagged images (a merge
+      # that broke prometheus, alertmanager or grafana used to deploy through here green).
+      # Every other Deployment and StatefulSet in the render is waited on by the same library
+      # scripts/deploy.sh uses (scripts/lib/wait-workloads.sh): one 600 s budget, every failure
+      # named, the job fails. It undoes NOTHING: the three apps are Ready here, and the Rollback
+      # step below excludes this step's failure (steps.wait_other.outcome) because rolling healthy
+      # apps back for a monitoring fault trades one fault for another.
+      #
+      # IT RUNS LAST, after the digest-parity, health and smoke steps, on purpose: placed before
+      # them, a monitoring fault would fail it first, skip those app checks and (through the
+      # exclusion) disable the rollback, so apps that fail their health or smoke check would stay
+      # on staging. Here an app-check failure skips this step (outcome `skipped`, so the rollback
+      # still fires) and a failure of THIS step alone is the only thing the exclusion covers.
+      # scripts/check-deploy-rollback-guard.sh R-5 pins the ordering and both halves.
+      - name: Wait for the other workloads in the render (monitoring, Keycloak, Redis, ... #969)
+        id: wait_other
+        run: |
+          bash scripts/wait-other-workloads.sh --overlay k8s/staging --namespace jtoye-staging \
+            --retagged core-java,edge-go,frontend
+
       - name: Rollback on failure
         # failure() alone is true when ANY earlier step failed, including the ones that run
         # BEFORE the apply (baked-origin guard, logout pre-flight, subscription check,
         # kubelogin, can-i, Key Vault pre-flight). Nothing is deployed then, and an undo would
         # roll healthy live staging back a revision. So it also needs the `applied` output of
-        # the apply step. scripts/check-deploy-rollback-guard.sh pins this shape (R-1..R-4).
-        if: failure() && steps.deploy.outputs.applied == 'true'
+        # the apply step. A failure of the wait_other step (a workload this job did NOT retag
+        # never became Ready, #969) is excluded too: the apps are Ready and stay. This step and
+        # the three-app "Wait for rollout" above stay the only things it undoes.
+        # scripts/check-deploy-rollback-guard.sh pins this shape (R-1..R-5).
+        if: failure() && steps.deploy.outputs.applied == 'true' && steps.wait_other.outcome != 'failure'
         run: |
           kubectl rollout undo deployment/core-java -n jtoye-staging
           kubectl rollout undo deployment/edge-go -n jtoye-staging
