@@ -57,7 +57,9 @@ kubectl --context jtoye-stg-aks get pods -A --field-selector=status.phase!=Runni
 ```
 
 CI reaches the same cluster the same way, as the `jtoye-ci` identity through OIDC
-(`.github/workflows/ci-cd.yaml`, job `deploy-staging`).
+(`.github/workflows/ci-cd.yaml`, job `deploy-staging`). A merge that changes only
+documentation does not redeploy staging, so a doc-only merge is never the explanation
+for a new revision, and the live revision after one is the previous code merge's.
 
 ## 2. Read Grafana
 

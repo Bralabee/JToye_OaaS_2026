@@ -431,6 +431,14 @@ staging is off by default and only fires once the variable is enabled, exactly
 like the production `DEPLOY_ENABLED` gate. The CI job pins the full-sha image
 tag at deploy time via `kustomize edit set image`.
 
+A merge to `main` that changes only documentation does not rebuild images or
+redeploy staging, and it skips the Testcontainers integration suite: the `changes`
+job runs `scripts/ci-docs-only.sh` over the pushed paths and the expensive jobs
+(`integration-tests`, `build-and-push`, `deploy-staging`, `deploy-production`) are
+skipped only when every path is an allow-listed documentation path. Anything else,
+or any doubt, runs the full pipeline. The cheap gates, including the ones that parse
+docs, still run.
+
 For a manual deploy, follow the same steps as production but use `k8s/staging`:
 ```bash
 # Deploy to staging

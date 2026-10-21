@@ -13,6 +13,103 @@ env:
   IMAGE_PREFIX: ${{ github.repository_owner }}/jtoye
 
 jobs:
+  # Job 0: classify the change (doc-only skip).
+  #
+  # A push or pull request that touches ONLY documentation must not cost the ~55-minute
+  # Testcontainers suite, four image builds and a staging redeploy (#1002 and #1003 changed
+  # only .planning/** and markdown and each still cost ~72 minutes plus a redeploy). This job
+  # computes the changed paths and asks scripts/ci-docs-only.sh whether EVERY one is an
+  # allow-listed documentation path. Its single output, docs_only, gates ONLY the four
+  # expensive jobs below: integration-tests, build-and-push, deploy-staging (and, through
+  # needs, staging-edge-probe) and deploy-production. Every other job in this file, and every
+  # separate workflow (docs-freshness, gitleaks, pii-guard, review-record), runs on every
+  # change exactly as before - including the gates that PARSE docs (check-doc-metrics,
+  # check-doc-citations, check-changelog-contract), so a doc edit that breaks one still reds.
+  #
+  # FAIL CLOSED. docs_only is `true` in exactly one situation: the diff was computed, was not
+  # empty, and every path in it matched the allow-list. An all-zero `before` (a new branch), a
+  # `before` that is not in the clone (a force-push), a diff that errors or is empty, an
+  # unknown event (release, workflow_dispatch, anything added later), an unreadable
+  # classifier, a classifier that exits non-zero - each outputs `false`, i.e. the full
+  # pipeline. A trap on EXIT writes `false` if the step dies before it has written anything.
+  # The downstream gates are also written so that this job FAILING (a runner fault before the
+  # step even starts) runs the integration suite rather than skipping it - see integration-tests.
+  changes:
+    name: Classify Changes (doc-only skip)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Full history: the diff needs the push's `before` commit, or the PR's merge base,
+          # neither of which a depth-1 clone contains.
+          fetch-depth: 0
+
+      - name: Classify the changed paths (docs_only is true only if EVERY path is documentation)
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # The default Actions shell is `bash -e`; every failure below is handled by reading
+          # its exit code on the same statement, so errexit is turned OFF for this step.
+          set +e
+          set -u
+          out="${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
+          emitted=0
+          emit() { echo "docs_only=$1" >> "$out"; emitted=1; echo "docs_only=$1  ($2)"; }
+          # Whatever happens after this line, an unwritten output becomes `false`.
+          trap 'if [ "$emitted" = 0 ]; then echo "docs_only=false" >> "$out"; echo "docs_only=false  (step ended before deciding)"; fi' EXIT
+
+          case "$EVENT_NAME" in
+            push)
+              base="$PUSH_BEFORE"; head="$PUSH_AFTER"; range="$PUSH_BEFORE..$PUSH_AFTER" ;;
+            pull_request)
+              base="$PR_BASE"; head="$PR_HEAD"; range="$PR_BASE...$PR_HEAD" ;;
+            *)
+              emit false "event '$EVENT_NAME' is not push or pull_request: run everything"; exit 0 ;;
+          esac
+
+          sha_re='^[0-9a-f]{40}$'
+          if ! [[ "$base" =~ $sha_re && "$head" =~ $sha_re ]]; then
+            emit false "no usable commit range (base='$base' head='$head'): run everything"; exit 0
+          fi
+          if [[ "$base" =~ ^0+$ ]]; then
+            emit false "all-zero base (new branch): run everything"; exit 0
+          fi
+          for c in "$base" "$head"; do
+            git cat-file -e "$c^{commit}" 2>/dev/null; rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "commit $c is not in the clone (force-push?): run everything"; exit 0
+            fi
+          done
+
+          # --no-renames: with rename detection a code file moved to docs/ lists only its NEW
+          # path and would read as documentation. quotePath=false keeps UTF-8 names raw; any
+          # path git still has to quote starts with a double quote and fails the classifier.
+          changed="${RUNNER_TEMP:-/tmp}/changed-paths.txt"
+          git -c core.quotePath=false diff --name-only --no-renames "$range" > "$changed"; rc=$?
+          if [ "$rc" -ne 0 ]; then
+            emit false "git diff $range failed (rc=$rc): run everything"; exit 0
+          fi
+          echo "Changed paths ($range):"; sed 's/^/  /' "$changed"
+
+          [ -f scripts/ci-docs-only.sh ] || { emit false "scripts/ci-docs-only.sh missing: run everything"; exit 0; }
+          verdict=$(bash scripts/ci-docs-only.sh --file "$changed"); rc=$?
+          if [ "$rc" -eq 0 ] && [ "$verdict" = "docs_only=true" ]; then
+            emit true "every changed path is documentation: skipping integration tests, images and deploys"
+          else
+            emit false "classifier said '$verdict' (rc=$rc): run everything"
+          fi
+
   # Job 1: Run tests
   test:
     name: Run Tests
@@ -277,6 +374,30 @@ jobs:
   # context brokerless (RabbitMQ dead-port) and cache-less.
   integration-tests:
     name: Integration Tests (Testcontainers RLS)
+    needs: changes
+    # DOC-ONLY SKIP. This is the one job-level `if:` on a required check, and it is deliberate.
+    # GitHub's documentation is explicit that a job skipped by a conditional REPORTS SUCCESS
+    # and satisfies a required status check ("Handling skipped but required checks" in
+    # "Troubleshooting required status checks": "A job is skipped by a conditional -> The job
+    # reports Success"; and "Required status checks must have a successful, skipped, or
+    # neutral status" in "About protected branches"). What does NOT satisfy a required check
+    # is a whole WORKFLOW skipped by `paths:`/`branches:` filters (it stays Pending forever),
+    # which is why this file has no such filter and must not grow one.
+    #
+    # The same documentation names the opposite hazard: "A job depends on a failed job -> the
+    # dependent job is skipped and may not block merging". If `changes` itself failed and this
+    # condition were a bare `needs.changes.outputs.docs_only != 'true'` with the implicit
+    # success(), the required Integration Tests check would report SKIPPED-as-success on a
+    # CODE change, and the failure would be a red job that is not itself required. Hence
+    # `!cancelled()`: it overrides the implicit success(), and a failed or skipped `changes`
+    # has an empty output, which is `!= 'true'`, so the suite RUNS. Only an explicit,
+    # successfully computed `true` skips it. A cancelled run is skipped, as any run is.
+    #
+    # This is in ADDITION to the in-job path filter below, which still narrows pull_request
+    # runs (frontend-only, k8s-only ...) with step-level gating. The two answer different
+    # questions: the filter says "no Java can have changed"; docs_only says "nothing but
+    # documentation changed", on push as well as pull_request.
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     # Explicit because the repo's default GITHUB_TOKEN is restricted (contents +
     # packages read only): dorny/paths-filter lists the PR's changed files via
@@ -1176,6 +1297,21 @@ jobs:
           chmod +x ./scripts/check-doc-citations.sh
           ./scripts/check-doc-citations.sh
 
+      # Doc-only skip (the `changes` job at the top of this file). Both steps run on EVERY change,
+      # docs-only included - they are what makes the skip safe. The classifier's selftest proves
+      # it can answer both true and false, fails closed on an empty list, a mixed list, a
+      # traversal, openapi-snapshot.json, any src/** file and a workflow or script change, and
+      # that every Dockerfile directory and every doc a test reads is classified as code. The
+      # wiring check proves the skip reaches exactly the four expensive jobs and that the
+      # Integration Tests condition still runs the suite when `changes` itself fails.
+      - name: Prove the doc-only classifier can say both answers and fails closed (--selftest)
+        run: bash scripts/ci-docs-only.sh --selftest
+
+      - name: Assert the doc-only skip is wired to exactly the expensive jobs and fails closed
+        run: |
+          bash scripts/check-ci-docs-skip-wiring.sh
+          bash scripts/check-ci-docs-skip-wiring.sh --selftest
+
       - name: Assert logout preflights preserve advisory and enforced exits under Actions errexit
         run: python3 scripts/check-logout-preflight.py
 
@@ -1689,11 +1825,23 @@ jobs:
   # that always reports SUCCESS. That is the pattern any future conditional gate
   # must follow; a job-level `if:` on any job listed below would turn this gate
   # into a deploy blocker.
+  #
+  # DOC-ONLY SKIP (the one deliberate exception to the paragraph above). integration-tests
+  # now carries a job-level `if:` driven by the `changes` job, so on a documentation-only
+  # change it is SKIPPED, and a skipped `needs:` entry skips this job - which is exactly the
+  # intent: no images are built or pushed for a change that cannot alter one. It is not an
+  # accident of the needs graph, so the condition is stated here too, explicitly, and the
+  # deploy jobs below skip through this job. The other six needs still cannot skip, so on any
+  # change the classifier does not call docs-only this job is gated exactly as before.
+  # `changes` is in `needs:` only so its output is readable; if `changes` FAILS this job is
+  # skipped (implicit success()) - nothing is built or deployed without a successful
+  # classification, and a re-run of the one cheap job fixes it. The integration suite, by
+  # contrast, runs in that case (see its `if:`), so no change ever merges untested.
   build-and-push:
     name: Build and Push Images
-    needs: [test, integration-tests, security-scan, k8s-validate, lint, openapi-compat, mcp-server-tests]
+    needs: [changes, test, integration-tests, security-scan, k8s-validate, lint, openapi-compat, mcp-server-tests]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
+    if: (github.event_name == 'push' || github.event_name == 'release') && needs.changes.outputs.docs_only != 'true'
     permissions:
       contents: read
       packages: write
@@ -1935,13 +2083,17 @@ jobs:
   # the workflow has no path filter, so it cannot skip and cannot cascade a skip.
   deploy-staging:
     name: Deploy to Staging
-    needs: [build-and-push, k8s-validate]
+    needs: [changes, build-and-push, k8s-validate]
     runs-on: ubuntu-latest
     # Gated OFF by default, mirroring the deploy-production DEPLOY_ENABLED gate
     # below. Runs only on main AND when the repo variable DEPLOY_STAGING_ENABLED
     # is set to 'true' (the old branch-name gate could never fire — that branch
     # does not exist on the remote).
-    if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    #
+    # DOC-ONLY SKIP: a documentation-only merge neither rebuilds nor redeploys staging.
+    # build-and-push is skipped for it, which already skips this job; the explicit
+    # docs_only term says so where a reader will look and survives a change to the graph.
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true' && needs.changes.outputs.docs_only != 'true'
     # One staging deploy-or-probe at a time, across runs. The staging-edge-probe job below
     # joins this SAME group, so a probe of run N cannot overlap run N+1's rollout or rollback
     # and report (or sign off) a transient revision. cancel-in-progress is false: a rollout
@@ -2286,6 +2438,11 @@ jobs:
   #
   # Same `if:` as deploy-staging and the SAME `concurrency:` group, so a probe never overlaps a
   # later run's rollout.
+  #
+  # DOC-ONLY SKIP, by needs: this job names no `changes` term because it does not need one. Its
+  # `if:` carries no status function, so GitHub applies an implicit success(), and a skipped
+  # `needs: deploy-staging` skips it. A documentation-only merge does not redeploy staging, so
+  # there is no new rollout to probe; the last probed revision is still the live one.
   staging-edge-probe:
     name: Staging Edge Probe
     needs: deploy-staging
@@ -2313,9 +2470,10 @@ jobs:
   # bare `needs:` on it cannot skip-cascade.
   deploy-production:
     name: Deploy to Production
-    needs: [build-and-push, k8s-validate]
+    needs: [changes, build-and-push, k8s-validate]
     runs-on: ubuntu-latest
-    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true'
+    # DOC-ONLY SKIP: as deploy-staging. A `release` event always classifies as not docs-only.
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true' && needs.changes.outputs.docs_only != 'true'
     environment:
       name: production
       url: https://app.olajay.co.uk
