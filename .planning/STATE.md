@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: planning
-stopped_at: Phase 29 complete, ready to plan Phase 30
-last_updated: "2026-10-21T05:56:58.000Z"
+stopped_at: Phase 30 plan APPROVED by the owner 2026-10-21; ready to execute (30-01 first)
+last_updated: "2026-10-21T09:04:40.849Z"
 last_activity: 2026-10-21
-last_activity_desc: Phase 29 complete, transitioned to Phase 30; owner accepted R-3 after the close
-state_head: 01cc7037bd8473ef6df49ba75d8754e654c8d566
+last_activity_desc: Phase 30 planned, 32 plans in 8 serial PRs; plan approved by the owner 2026-10-21 (owner also accepted R-3 after the Phase 29 close)
+state_head: 92d057aa6cc85b2af48dbce77282e15106a7bfe3
 progress:
   total_phases: 20
   completed_phases: 18
-  total_plans: 283
+  total_plans: 315
   completed_plans: 283
   percent: 90
 ---
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 ## Current Position
 
-Phase: 30 — The Money Path, Executed
-Status: Ready to plan Phase 30
-Last activity: 2026-10-21 — Phase 29 complete
+Phase: 30 — The Money Path, Executed (PLANNED, owner-approved 2026-10-21)
+Status: Ready to execute — 32 plans (30-01..30-32), checker passed, owner-approved 2026-10-21
+Last activity: 2026-10-21 — Phase 30 planned (research, UI-SPEC, 32 plans)
 
-- Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 planning is next.
+- Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
   Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md`, its "2026-10-21 — PHASE CLOSE" block (it supersedes every RESUME block above it).
   Rulings D-33 and D-34 are in 29-CONTEXT.md. DEPLOY_STAGING_ENABLED is true (left on deliberately, owner-delegated): each merge to main redeploys staging, so merges stay serial and watched.
