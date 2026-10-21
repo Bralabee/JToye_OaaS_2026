@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### follow-redirects 1.16.1: Two HIGH Advisories Had Stopped Every Staging Deploy (#1001) — 2026-10-21
+
+Trivy began failing the Security Scan on main (run 39531194956, #989's merge) on CVE-2026-111755 and CVE-2026-111756 in `follow-redirects` 1.16.0, reached only through axios. The tree had not changed, the advisory data had, and Security Scan gates build-and-push and so the staging deploy. The lock entry moves to 1.16.1 inside axios's existing `^1.16.0` range, with the integrity recomputed from the registry tarball. Trivy on main's lockfile: rc 1 naming both CVEs; on this one: rc 0, and the whole-tree scan is clean.
+
 ### Phase 29 CI Hardening: Selftests Wired, an Edge Probe Job, Digest-less Containers VOID, Action Sha Pins (#989) — 2026-10-20
 
 Four changes to what CI proves, each shown failing on a planted break before it was trusted.
