@@ -108,7 +108,7 @@ selftest() {
     _arm name-suffix-collision 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/xfoo.sh --selftest')"
     _arm static-gate-unwired 1 check-a.sh "$wired_st"
     rm -f "$t/scripts/foo.sh"
-    _arm no-selftest-script-in-tree 2 "no scripts" "$wired_gate"
+    _arm no-selftest-script-in-tree 2 "no non-check" "$wired_gate"
     [ "$fails" -eq 0 ]
 }
 
@@ -199,6 +199,41 @@ for g in "${GATES[@]}"; do
     FAILED=1
 done
 
+# --- pass 2: a --selftest that runs nowhere is a check nobody ever asks (issue #970) ---
+#
+# Pass 1 reads scripts/check-*.sh only. The staging operator scripts (staging-secrets.sh,
+# staging-secrets-preflight.sh, staging-db-bootstrap.sh and their siblings, deploy.sh,
+# seed-order-metric.sh) are not named check-*, carry their proof in a --selftest, and were
+# invoked by no workflow: staging-secrets-preflight sat at 8/16 for a plan and nobody saw it,
+# because nothing ran it. So every other scripts/*.sh that DISPATCHES a --selftest (the word on
+# a non-comment line) must be INVOKED with it by a workflow, as `<name>.sh --selftest`, on a
+# non-comment workflow line. Default-deny, like pass 1; no exemption table: a selftest that
+# cannot run on a hosted runner is a selftest that proves nothing in CI, and the script should
+# say so by being rewritten, not by being listed.
+#
+# What the match refuses, each one planted in --selftest: a workflow COMMENT that names the line
+# (the C-1 comment in ci-cd.yaml names two of them in prose), a workflow that runs the script
+# without --selftest (that is the real thing, not its proof), and a longer name that merely ends
+# in this one (xfoo.sh --selftest is not foo.sh --selftest).
+WF_CODE=""
+for wf in "${WF_FILES[@]}"; do
+    WF_CODE+="$(grep -vE '^[[:space:]]*#' "$wf" </dev/null || true)"$'\n'
+done
+SELFTEST_SCRIPTS=0
+UNRUN_SELFTESTS=()
+while IFS= read -r f; do
+    base="$(basename "$f")"
+    n="$(grep -vE '^[[:space:]]*#' "$f" </dev/null | grep -cF -- '--selftest' || true)"
+    [ "${n:-0}" -gt 0 ] || continue
+    SELFTEST_SCRIPTS=$((SELFTEST_SCRIPTS + 1))
+    pat="(^|[[:space:]/])${base//./\\.}[[:space:]]+--selftest([[:space:]]|\$)"
+    if ! grep -qE -- "$pat" <<<"$WF_CODE"; then
+        UNRUN_SELFTESTS+=("$base")
+        FAILED=1
+    fi
+done < <(find "$REPO_ROOT/scripts" -maxdepth 1 -type f -name '*.sh' ! -name 'check-*.sh' | sort)
+[ "$SELFTEST_SCRIPTS" -gt 0 ] || void "no non-check scripts/*.sh dispatches a --selftest — a scan with no inputs proves nothing"
+
 # --- an exemption naming a gate that does not exist is a broken table ----------------
 for name in "${!EXEMPT_REASON[@]}"; do
     [ -n "${SEEN[$name]+set}" ] || void "$CONF exempts '$name', which is not a scripts/check-*.sh — a table that names nothing cannot be trusted to name the right things"
@@ -208,6 +243,7 @@ echo "check-gate-enforcement  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 echo "  gates     : ${#GATES[@]}"
 echo "  workflows : ${#WF_FILES[@]}"
 echo "  exempt    : ${#EXEMPT_REASON[@]} declared"
+echo "  selftests : $SELFTEST_SCRIPTS non-check scripts dispatch a --selftest"
 
 if [ "${#UNWIRED[@]}" -gt 0 ]; then
     echo "FAIL: ${#UNWIRED[@]} gate(s) are referenced by no workflow and carry no exemption:" >&2
@@ -217,13 +253,19 @@ if [ "${#UNWIRED[@]}" -gt 0 ]; then
     echo "      it cannot run on a hosted runner." >&2
 fi
 
+if [ "${#UNRUN_SELFTESTS[@]}" -gt 0 ]; then
+    echo "FAIL: ${#UNRUN_SELFTESTS[@]} script(s) carry a --selftest that no workflow runs:" >&2
+    for u in "${UNRUN_SELFTESTS[@]}"; do echo "        $u" >&2; done
+    echo "      Wire \`bash scripts/<name> --selftest\` into a job (a comment naming it does not count)." >&2
+fi
+
 if [ "${#STALE_EXEMPT[@]}" -gt 0 ]; then
     echo "FAIL: ${#STALE_EXEMPT[@]} exemption(s) look stale:" >&2
     for s in "${STALE_EXEMPT[@]}"; do echo "        $s" >&2; done
 fi
 
 if [ "$FAILED" -eq 0 ]; then
-    echo "PASS: every gate either runs in CI or has a declared reason it cannot."
+    echo "PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run."
 fi
 
 exit "$FAILED"
