@@ -3,6 +3,7 @@ package uk.jtoye.core.security.access.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import uk.jtoye.core.security.access.ShopRole;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,6 +33,13 @@ import java.util.UUID;
  * <p>{@code tenantWideRole} (37-05, additive) names the role a tenant-wide STAFF/SHOP_MANAGER
  * grant confers on every shop; {@code grantedShopIds} then holds every current shop of the tenant.
  * It is null for a GROUP_ADMIN and for a caller without such a grant.
+ *
+ * <p>{@code shopRoles} (#961, additive) names the role the caller holds on EACH shop in
+ * {@code grantedShopIds}: the higher of that shop's own grant and the tenant-wide role, exactly
+ * {@code Membership.roleOn}. Null for a GROUP_ADMIN (unrestricted, like {@code grantedShopIds}). It exists so
+ * the dashboard can stop offering a STAFF member the shop controls the server refuses them (edit, delete,
+ * scheduled slots); it is a hint to hide controls, never an authorization input: the gates in
+ * {@code ShopAccessService} decide, from the same membership.
  *
  * <p>{@code userId} is the caller's OWN Keycloak {@code sub}, so the client can identify
  * itself (e.g. the staff-page "you are removing your own access" check) without an
@@ -66,5 +74,11 @@ public record MyAccessDto(
 
         @Schema(description = "The name of the caller's own business (the tenant the token is pinned "
                 + "to). Null only when the tenant record cannot be read.", nullable = true)
-        String businessName) {
+        String businessName,
+
+        @Schema(description = "The role the caller holds on each shop in grantedShopIds (the higher of the "
+                + "shop's own grant and the tenant-wide role). Null for a GROUP_ADMIN (unrestricted). A hint "
+                + "for hiding controls the server would refuse; the server still decides every request.",
+                nullable = true)
+        Map<UUID, ShopRole> shopRoles) {
 }

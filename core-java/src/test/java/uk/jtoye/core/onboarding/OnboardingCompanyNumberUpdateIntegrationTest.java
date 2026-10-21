@@ -8,7 +8,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -17,6 +16,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.TenantJwts;
 
 import java.util.UUID;
 
@@ -85,11 +85,11 @@ class OnboardingCompanyNumberUpdateIntegrationTest {
     // --- Update succeeds in DRAFT / ACTION_REQUIRED (normalised) ----------------------
 
     @Test
-    @WithMockUser
     void updateInDraft_200AndNormalisedPersisted() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.DRAFT, null);
 
         mockMvc.perform(post("/api/v1/onboarding/company-number")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"companyNumber\":\"  ab123456  \"}"))
@@ -100,11 +100,11 @@ class OnboardingCompanyNumberUpdateIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void updateInActionRequired_200AndPersisted() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED, "OLD00001");
 
         mockMvc.perform(post("/api/v1/onboarding/company-number")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"companyNumber\":\"cd654321\"}"))
@@ -120,11 +120,11 @@ class OnboardingCompanyNumberUpdateIntegrationTest {
      * later looked up — as {@code 00445790}; letter-prefixed numbers are never padded.
      */
     @Test
-    @WithMockUser
     void purelyNumericNumberIsPersistedZeroPaddedToEight() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED, null);
 
         mockMvc.perform(post("/api/v1/onboarding/company-number")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"companyNumber\":\" 445790 \"}"))
@@ -137,11 +137,11 @@ class OnboardingCompanyNumberUpdateIntegrationTest {
     // --- Blank = sole trader (persists null) -----------------------------------------
 
     @Test
-    @WithMockUser
     void blankCompanyNumberInDraftPersistsNull() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.DRAFT, "SC999999");
 
         mockMvc.perform(post("/api/v1/onboarding/company-number")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"companyNumber\":\"   \"}"))
@@ -153,11 +153,11 @@ class OnboardingCompanyNumberUpdateIntegrationTest {
     // --- Out-of-window state is rejected (RFC 7807), value unchanged -----------------
 
     @Test
-    @WithMockUser
     void updateInVerifyingIs400AndUnchanged() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.VERIFYING, "SC111111");
 
         mockMvc.perform(post("/api/v1/onboarding/company-number")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"companyNumber\":\"NW000002\"}"))
@@ -170,11 +170,11 @@ class OnboardingCompanyNumberUpdateIntegrationTest {
     // --- Malformed value is a clean 400 before the service ---------------------------
 
     @Test
-    @WithMockUser
     void malformedCompanyNumberIs400BeforeService() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.DRAFT, "SC000001");
 
         mockMvc.perform(post("/api/v1/onboarding/company-number")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"companyNumber\":\"!!not-valid!!\"}"))

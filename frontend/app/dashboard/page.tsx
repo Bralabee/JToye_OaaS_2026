@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
 import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import { shopAdminCapabilities } from "@/lib/shop-admin-capabilities"
 import {
   CHOOSE_SHOP_HEADING,
   FinanceScopeText,
@@ -152,6 +153,7 @@ export default function DashboardPage() {
   // tenant totals at all; it is asked to choose a shop instead.
   const switcher = useOptionalShopSwitcherData()
   const financeTileGate = financeGate(contextShopId, switcher)
+  const hoursCaps = shopAdminCapabilities(switcher)
 
   // Non-critical: a failed /me fetch must never break the dashboard render.
   async function fetchOnboardingStatus() {
@@ -382,7 +384,10 @@ export default function DashboardPage() {
         })()}
 
       {/* 37-21 (UI-SPEC K4): shops whose hours were never set or could not be read, from hoursSource. */}
-      <HoursNoticeCard shops={hoursNoticeShops} />
+      {/* #961: the card's button opens the shop editor, which the API refuses a STAFF member. */}
+      <HoursNoticeCard
+        shops={hoursNoticeShops ? hoursNoticeShops.filter((s) => hoursCaps.canEditShop(s.id)) : null}
+      />
 
       {/*
         A11Y-6: every section below this point is a `CardTitle`, which is

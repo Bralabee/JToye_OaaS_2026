@@ -3455,6 +3455,21 @@
             "description" : "True if the caller has unrestricted (tenant-wide GROUP_ADMIN) access.",
             "type" : "boolean"
           },
+          "shopRoles" : {
+            "additionalProperties" : {
+              "enum" : [
+                "STAFF",
+                "SHOP_MANAGER",
+                "GROUP_ADMIN"
+              ],
+              "type" : "string"
+            },
+            "description" : "The role the caller holds on each shop in grantedShopIds (the higher of the shop's own grant and the tenant-wide role). Null for a GROUP_ADMIN (unrestricted). A hint for hiding controls the server would refuse; the server still decides every request.",
+            "type" : [
+              "object",
+              "null"
+            ]
+          },
           "tenantWideRole" : {
             "description" : "The role a tenant-wide STAFF or SHOP_MANAGER grant gives the caller on EVERY shop of the tenant; grantedShopIds then lists every current shop. Null when the caller holds no such grant, and always null for a GROUP_ADMIN.",
             "enum" : [
@@ -9487,6 +9502,16 @@
             },
             "description" : "Validation error or missing tenant"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "409" : {
             "content" : {
               "application/problem+json" : {
@@ -9889,6 +9914,16 @@
             },
             "description" : "Invalid state (not DRAFT/ACTION_REQUIRED) or malformed company number"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "404" : {
             "content" : {
               "application/problem+json" : {
@@ -9938,6 +9973,16 @@
               }
             },
             "description" : "Gates not satisfied or illegal transition (not in APPROVED)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
           },
           "404" : {
             "content" : {
@@ -10029,6 +10074,16 @@
             },
             "description" : "Illegal transition (not in ACTION_REQUIRED)"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "404" : {
             "content" : {
               "application/problem+json" : {
@@ -10079,6 +10134,16 @@
             },
             "description" : "Illegal transition (not in DRAFT)"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "404" : {
             "content" : {
               "application/problem+json" : {
@@ -10128,6 +10193,16 @@
               }
             },
             "description" : "Illegal transition (already terminal / LIVE / SUSPENDED)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
           },
           "404" : {
             "content" : {

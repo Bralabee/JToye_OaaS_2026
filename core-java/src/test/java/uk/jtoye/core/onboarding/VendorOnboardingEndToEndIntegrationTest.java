@@ -12,7 +12,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -26,6 +25,7 @@ import uk.jtoye.core.onboarding.client.FhrsClient;
 import uk.jtoye.core.onboarding.client.FhrsEstablishment;
 import uk.jtoye.core.onboarding.dto.CreateOnboardingRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.TenantJwts;
 
 import java.util.HashMap;
 import java.util.List;
@@ -134,7 +134,6 @@ class VendorOnboardingEndToEndIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void fullyAutomaticPath_allGatesGreen_autoApprovesThenGoLivePublishes() throws Exception {
         // Headline "go live without manual review": auto-approve ON.
         when(onboardingProperties.isAutoApprove()).thenReturn(true);
@@ -156,6 +155,7 @@ class VendorOnboardingEndToEndIntegrationTest {
 
         // Vendor go-live -> LIVE, and the shop is published.
         mockMvc.perform(post("/api/v1/onboarding/go-live")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("LIVE"));
@@ -165,7 +165,6 @@ class VendorOnboardingEndToEndIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void autoApproveFalse_sameGreenOnboardingHaltsAtPendingApproval_goLiveRejected() throws Exception {
         // Same fully-green onboarding, but auto-approve OFF: there is no admin-approve
         // endpoint in this slice, so the onboarding must halt at PENDING_APPROVAL and
@@ -182,6 +181,7 @@ class VendorOnboardingEndToEndIntegrationTest {
         // go-live is only valid from APPROVED; from PENDING_APPROVAL it is an illegal
         // transition -> 400, and the shop stays unpublished.
         mockMvc.perform(post("/api/v1/onboarding/go-live")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isBadRequest());
 
@@ -192,6 +192,7 @@ class VendorOnboardingEndToEndIntegrationTest {
     /** create (DRAFT) → submit (VERIFYING); returns the onboarding id. */
     private UUID createAndSubmit() throws Exception {
         String created = mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody()))
@@ -201,6 +202,7 @@ class VendorOnboardingEndToEndIntegrationTest {
         UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asString());
 
         mockMvc.perform(post("/api/v1/onboarding/submit")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("VERIFYING"));
@@ -233,6 +235,7 @@ class VendorOnboardingEndToEndIntegrationTest {
 
     private JsonNode getMe() throws Exception {
         String body = mockMvc.perform(get("/api/v1/onboarding/me")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();

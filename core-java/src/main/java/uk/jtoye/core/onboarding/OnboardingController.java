@@ -48,6 +48,7 @@ public class OnboardingController {
     @Operation(summary = "Create onboarding",
             description = "Creates a DRAFT onboarding for the authenticated tenant")
     @ApiResponses(value = {
+            @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"),
             @ApiResponse(responseCode = "201", description = "Onboarding created (DRAFT)"),
             @ApiResponse(responseCode = "400", description = "Validation error or missing tenant"),
             @ApiResponse(responseCode = "409", description = "An onboarding already exists for this tenant")
@@ -71,6 +72,7 @@ public class OnboardingController {
     @Operation(summary = "Submit onboarding",
             description = "Submits the caller's onboarding (DRAFT -> VERIFYING) and kicks off the gate chain")
     @ApiResponses(value = {
+            @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"),
             @ApiResponse(responseCode = "200", description = "Onboarding submitted (VERIFYING)"),
             @ApiResponse(responseCode = "400", description = "Illegal transition (not in DRAFT)"),
             @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
@@ -88,6 +90,7 @@ public class OnboardingController {
             description = "Resets the flagged (FAILED/MANUAL_REVIEW) gates and re-runs the gate chain "
                     + "(ACTION_REQUIRED -> VERIFYING)")
     @ApiResponses(value = {
+            @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"),
             @ApiResponse(responseCode = "200", description = "Onboarding resubmitted (VERIFYING)"),
             @ApiResponse(responseCode = "400", description = "Illegal transition (not in ACTION_REQUIRED)"),
             @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
@@ -106,6 +109,7 @@ public class OnboardingController {
                     + "(DRAFT/VERIFYING/ACTION_REQUIRED/PENDING_APPROVAL/APPROVED -> WITHDRAWN). "
                     + "Terminal — restarting requires a new application.")
     @ApiResponses(value = {
+            @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"),
             @ApiResponse(responseCode = "200", description = "Onboarding withdrawn (WITHDRAWN)"),
             @ApiResponse(responseCode = "400", description = "Illegal transition (already terminal / LIVE / SUSPENDED)"),
             @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
@@ -123,6 +127,7 @@ public class OnboardingController {
             description = "Fires GO_LIVE for the caller's onboarding, publishing the shop. Rejected (400) "
                     + "unless every mandatory gate and the allergen-completeness gate are PASSED/WAIVED.")
     @ApiResponses(value = {
+            @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"),
             @ApiResponse(responseCode = "200", description = "Onboarding live; shop published"),
             @ApiResponse(responseCode = "400", description = "Gates not satisfied or illegal transition (not in APPROVED)"),
             @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")
@@ -147,6 +152,7 @@ public class OnboardingController {
                     + "Permitted only in DRAFT or ACTION_REQUIRED; re-validated exactly like create. "
                     + "Fires no state-machine event — the state machine stays the sole writer of published.")
     @ApiResponses(value = {
+            @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"),
             @ApiResponse(responseCode = "200", description = "Company number updated"),
             @ApiResponse(responseCode = "400", description = "Invalid state (not DRAFT/ACTION_REQUIRED) or malformed company number"),
             @ApiResponse(responseCode = "404", description = "No onboarding for this tenant")

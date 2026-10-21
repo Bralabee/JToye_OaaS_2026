@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -16,6 +15,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.TenantJwts;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -86,11 +86,11 @@ class OnboardingWithdrawIntegrationTest {
     // --- Withdraw succeeds from a pre-live state ------------------------------------
 
     @Test
-    @WithMockUser
     void withdrawFromDraft_200AndStatusWithdrawn() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.DRAFT);
 
         mockMvc.perform(post("/api/v1/onboarding/withdraw")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("WITHDRAWN"));
@@ -99,11 +99,11 @@ class OnboardingWithdrawIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void withdrawFromActionRequired_200AndStatusWithdrawn() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED);
 
         mockMvc.perform(post("/api/v1/onboarding/withdraw")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("WITHDRAWN"));
@@ -114,11 +114,11 @@ class OnboardingWithdrawIntegrationTest {
     // --- Withdraw from a terminal source is rejected (RFC 7807) ----------------------
 
     @Test
-    @WithMockUser
     void withdrawFromTerminalRejected_400ProblemJsonAndStateUnchanged() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.REJECTED);
 
         mockMvc.perform(post("/api/v1/onboarding/withdraw")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
@@ -130,7 +130,6 @@ class OnboardingWithdrawIntegrationTest {
     // --- Withdraw is a no-side-effect status change (sole-writer invariant) ----------
 
     @Test
-    @WithMockUser
     void withdrawDoesNotFlipShopPublished() throws Exception {
         // A shop that is already published=true: withdraw must NOT write published
         // (WITHDRAW falls into the transition default arm; only GO_LIVE/SUSPEND/
@@ -139,6 +138,7 @@ class OnboardingWithdrawIntegrationTest {
         UUID onboardingId = seedOnboarding(OnboardingState.APPROVED);
 
         mockMvc.perform(post("/api/v1/onboarding/withdraw")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("WITHDRAWN"));
