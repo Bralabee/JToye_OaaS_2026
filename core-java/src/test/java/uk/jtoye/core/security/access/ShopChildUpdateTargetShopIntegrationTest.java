@@ -8,7 +8,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -41,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -101,6 +104,8 @@ class ShopChildUpdateTargetShopIntegrationTest {
         }
     }
 
+    private static final String TRUTH_ROLE = "shop_child_truth_reader";
+
     @Autowired private MockMvc mockMvc;
     @Autowired private JsonMapper jsonMapper;
     @Autowired private JdbcTemplate jdbc;
@@ -119,6 +124,8 @@ class ShopChildUpdateTargetShopIntegrationTest {
     private UUID foreignUnpublished;
     private UUID managerOfA1A2;
     private UUID groupAdminA;
+    private UUID tenantWideManagerA;
+    private UUID realmAdminA;
     private String suffix;
 
     @BeforeEach
@@ -145,11 +152,27 @@ class ShopChildUpdateTargetShopIntegrationTest {
         grant(tenantA, managerOfA1A2, shopAStaffOnly, "STAFF");
         groupAdminA = UUID.randomUUID();
         grant(tenantA, groupAdminA, null, "GROUP_ADMIN");
+        // A tenant-wide (NULL-shop) SHOP_MANAGER: "a role plus all shops" of THIS tenant, through the branch of
+        // ShopAccessService.require that binds the shop to the caller's tenant.
+        tenantWideManagerA = UUID.randomUUID();
+        grant(tenantA, tenantWideManagerA, null, "SHOP_MANAGER");
+        // A realm admin holds no shop_staff row at all; the realm role is an implicit Group admin.
+        realmAdminA = UUID.randomUUID();
+
+        // The ground-truth reader (see truth()), created and granted while still a superuser; rolled back with the test.
+        jdbc.execute("CREATE ROLE " + TRUTH_ROLE + " NOLOGIN BYPASSRLS");
+        jdbc.execute("GRANT SELECT ON products, shop_promotions, shop_announcements, shops TO " + TRUTH_ROLE);
+        jdbc.execute("GRANT " + TRUTH_ROLE + " TO \"" + postgres.getUsername() + "\"");
 
         // From here every statement runs under FORCE RLS (rolled back with the test transaction).
         jdbc.execute("ALTER ROLE \"" + postgres.getUsername() + "\" NOSUPERUSER");
         assertThat(jdbc.queryForObject("SELECT rolsuper FROM pg_roles WHERE rolname = current_user", Boolean.class))
                 .as("the connection role is NOSUPERUSER, so FORCE RLS applies").isFalse();
+        assertThat(truth(() -> jdbc.queryForObject("SELECT count(DISTINCT tenant_id) FROM shops WHERE id IN (?, ?, ?)",
+                Integer.class, shopA1, foreignPublished, foreignUnpublished)))
+                .as("the ground-truth role sees both tenants").isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM shops WHERE id = ?", Integer.class, foreignUnpublished))
+                .as("the plain role with no tenant pinned cannot see an unpublished shop").isZero();
     }
 
     @AfterEach
@@ -174,7 +197,7 @@ class ShopChildUpdateTargetShopIntegrationTest {
 
         assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(403);
         assertThat(shopOf(kind, row, tenantA)).as("the row was not re-pointed: %s", text(result)).isEqualTo(shopA1);
-        assertForeignShopCanBeDeleted(foreignPublished, tenantB);
+        assertForeignShopUntouched(kind, foreignPublished, tenantB);
     }
 
     @ParameterizedTest
@@ -187,7 +210,7 @@ class ShopChildUpdateTargetShopIntegrationTest {
 
         assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(403);
         assertThat(shopOf(kind, row, tenantA)).as(text(result)).isEqualTo(shopA1);
-        assertForeignShopCanBeDeleted(foreignUnpublished, tenantB);
+        assertForeignShopUntouched(kind, foreignUnpublished, tenantB);
     }
 
     @ParameterizedTest
@@ -227,7 +250,7 @@ class ShopChildUpdateTargetShopIntegrationTest {
         MvcResult unpublished = putRow(kind, groupAdminA, tenantA, row, foreignUnpublished);
         assertThat(unpublished.getResponse().getStatus()).as(text(unpublished)).isEqualTo(404);
         assertThat(shopOf(kind, row, tenantA)).as(text(unpublished)).isEqualTo(shopA1);
-        assertForeignShopCanBeDeleted(foreignPublished, tenantB);
+        assertForeignShopUntouched(kind, foreignPublished, tenantB);
     }
 
     // ------------------------------------------------------------------
@@ -292,7 +315,7 @@ class ShopChildUpdateTargetShopIntegrationTest {
 
         assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(404);
         assertThat(shopOf(Kind.PRODUCT, row, tenantA)).as(text(result)).isNull();
-        assertForeignShopCanBeDeleted(foreignPublished, tenantB);
+        assertForeignShopUntouched(Kind.PRODUCT, foreignPublished, tenantB);
     }
 
     @Test
@@ -308,11 +331,74 @@ class ShopChildUpdateTargetShopIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // Tenant-wide SHOP_MANAGER and realm admin: "all shops" means all shops of THIS tenant
+    // ------------------------------------------------------------------
+
+    static Stream<Arguments> kindsAndWideCallers() {
+        return Stream.of(Kind.values()).flatMap(kind ->
+                Stream.of(Arguments.of(kind, "TENANT_WIDE_MANAGER"), Arguments.of(kind, "REALM_ADMIN")));
+    }
+
+    private RequestPostProcessor wideCaller(String caller) {
+        return switch (caller) {
+            case "TENANT_WIDE_MANAGER" -> userJwt(tenantWideManagerA, tenantA);
+            case "REALM_ADMIN" -> jwt().jwt(j -> j.subject(realmAdminA.toString()).claim("tenant_id", tenantA.toString()))
+                    .authorities(new SimpleGrantedAuthority("ROLE_admin"), new SimpleGrantedAuthority("SCOPE_catalog:write"));
+            default -> throw new IllegalArgumentException(caller);
+        };
+    }
+
+    @ParameterizedTest(name = "{0} / {1}")
+    @MethodSource("kindsAndWideCallers")
+    @DisplayName("a tenant-wide manager or realm admin cannot name another tenant's shop (published or not); the row is unchanged")
+    void wideCallerCannotNameForeignShop(Kind kind, String caller) throws Exception {
+        UUID row = seedRow(kind, shopA1);
+
+        MvcResult published = putRowAs(kind, wideCaller(caller), row, foreignPublished);
+        assertThat(published.getResponse().getStatus()).as(text(published)).isEqualTo(404);
+        assertThat(shopOf(kind, row, tenantA)).as(text(published)).isEqualTo(shopA1);
+
+        MvcResult unpublished = putRowAs(kind, wideCaller(caller), row, foreignUnpublished);
+        assertThat(unpublished.getResponse().getStatus()).as(text(unpublished)).isEqualTo(404);
+        assertThat(shopOf(kind, row, tenantA)).as(text(unpublished)).isEqualTo(shopA1);
+
+        assertForeignShopUntouched(kind, foreignPublished, tenantB);
+        assertForeignShopUntouched(kind, foreignUnpublished, tenantB);
+    }
+
+    @ParameterizedTest(name = "{0} / {1}")
+    @MethodSource("kindsAndWideCallers")
+    @DisplayName("control: a tenant-wide manager or realm admin can move a row to any shop of their own tenant")
+    void wideCallerCanMoveWithinOwnTenant(Kind kind, String caller) throws Exception {
+        UUID row = seedRow(kind, shopA1);
+
+        MvcResult result = putRowAs(kind, wideCaller(caller), row, shopA3);
+
+        assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(200);
+        assertThat(shopOf(kind, row, tenantA)).as(text(result)).isEqualTo(shopA3);
+    }
+
+    // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
 
+    /**
+     * After a refusal: nothing of the kind references the other tenant's shop (ground-truth read, no tenant GUC),
+     * and, for the kinds whose foreign key would block it, the owner can still delete the shop. The delete probe
+     * proves nothing for PRODUCT (products.shop_id is ON DELETE SET NULL, so a re-pointed product never blocks the
+     * delete), so for products the ground-truth row read is the evidence.
+     */
+    private void assertForeignShopUntouched(Kind kind, UUID shop, UUID owner) {
+        assertThat(truth(() -> jdbc.queryForObject("SELECT count(*) FROM " + kind.table + " WHERE shop_id = ?",
+                Integer.class, shop)))
+                .as("no %s row references the other tenant's shop", kind).isZero();
+        if (kind != Kind.PRODUCT) {
+            assertOwnerCanDeleteShop(shop, owner);
+        }
+    }
+
     /** The other tenant deletes its shop (through the service, flushed): a row pointing at it would block this. */
-    private void assertForeignShopCanBeDeleted(UUID shop, UUID owner) {
+    private void assertOwnerCanDeleteShop(UUID shop, UUID owner) {
         Jwt token = Jwt.withTokenValue("test-token")
                 .header("alg", "none")
                 .subject(UUID.randomUUID().toString())
@@ -330,12 +416,16 @@ class ShopChildUpdateTargetShopIntegrationTest {
             SecurityContextHolder.clearContext();
             TenantContext.clear();
         }
-        assertThat(pinned(owner, () -> jdbc.queryForObject("SELECT count(*) FROM shops WHERE id = ?",
+        assertThat(truth(() -> jdbc.queryForObject("SELECT count(*) FROM shops WHERE id = ?",
                 Integer.class, shop))).as("the other tenant's shop delete went through").isZero();
     }
 
     private MvcResult putRow(Kind kind, UUID user, UUID tenant, UUID row, UUID shopId) throws Exception {
-        return mockMvc.perform(put(kind.path + row).with(userJwt(user, tenant))
+        return putRowAs(kind, userJwt(user, tenant), row, shopId);
+    }
+
+    private MvcResult putRowAs(Kind kind, RequestPostProcessor caller, UUID row, UUID shopId) throws Exception {
+        return mockMvc.perform(put(kind.path + row).with(caller)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonMapper.writeValueAsString(body(kind, shopId))))
                 .andReturn();
@@ -399,26 +489,28 @@ class ShopChildUpdateTargetShopIntegrationTest {
     }
 
     private UUID shopOf(Kind kind, UUID row, UUID tenant) {
-        return pinned(tenant, () -> jdbc.queryForObject(
+        return truth(() -> jdbc.queryForObject(
                 "SELECT shop_id FROM " + kind.table + " WHERE id = ?", UUID.class, row));
     }
 
     private String titleOf(Kind kind, UUID row, UUID tenant) {
         String column = kind == Kind.PROMOTION ? "label" : "title";
-        return pinned(tenant, () -> jdbc.queryForObject(
+        return truth(() -> jdbc.queryForObject(
                 "SELECT " + column + " FROM " + kind.table + " WHERE id = ?", String.class, row));
     }
 
     /**
-     * Reads under RLS need the tenant pinned (an unpinned read returns nothing and would make "unchanged" vacuous).
-     * JdbcTemplate calls re-apply the GUC from {@link TenantContext}, so that is what is set.
+     * Ground-truth read: a NOLOGIN BYPASSRLS role with SELECT only, entered with SET LOCAL ROLE, so the read does
+     * not depend on the tenant GUC (an unpinned read under RLS returns nothing and would make "unchanged" pass
+     * vacuously). setUp asserts this role sees both tenants before any result is trusted.
      */
-    private <T> T pinned(UUID tenant, java.util.function.Supplier<T> read) {
-        TenantContext.set(tenant);
+    private <T> T truth(java.util.function.Supplier<T> read) {
+        em.flush();
+        jdbc.execute("SET LOCAL ROLE " + TRUTH_ROLE);
         try {
             return read.get();
         } finally {
-            TenantContext.clear();
+            jdbc.execute("RESET ROLE");
         }
     }
 
