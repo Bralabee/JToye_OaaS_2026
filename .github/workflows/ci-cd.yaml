@@ -1549,6 +1549,13 @@ jobs:
       #      runtime binaries, because the script necessarily names every one it looks
       #      for. Fixed by stripping the definition line; the trap is documented in the
       #      script, since this repo has hit it before with doc-lint rules.)
+      # Issue #970: pass 2 of the same gate. Every non-check script that dispatches a --selftest
+      # (staging-secrets, staging-secrets-preflight, staging-db-bootstrap and the rest) must be
+      # invoked as `<name>.sh --selftest` on a non-comment line of a workflow; #989 wired the
+      # three, this is what keeps them wired. The gate's own --selftest plants the holes first.
+      - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
+        run: bash scripts/check-gate-enforcement.sh --selftest
+
       - name: Assert every gate either runs in CI or says why it cannot
         run: |
           chmod +x ./scripts/check-gate-enforcement.sh
