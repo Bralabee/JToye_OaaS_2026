@@ -30,7 +30,8 @@ jobs:
   # empty, and every path in it matched the allow-list. An all-zero `before` (a new branch), a
   # `before` that is not in the clone (a force-push), a diff that errors or is empty, an
   # unknown event (release, workflow_dispatch, anything added later), an unreadable
-  # classifier, a classifier that exits non-zero - each outputs `false`, i.e. the full
+  # classifier, a base commit with no classifier, a classifier that exits non-zero - each
+  # outputs `false`, i.e. the full
   # pipeline. A trap on EXIT writes `false` if the step dies before it has written anything.
   # The downstream gates are also written so that this job FAILING (a runner fault before the
   # step even starts) runs the integration suite rather than skipping it - see integration-tests.
@@ -102,8 +103,20 @@ jobs:
           fi
           echo "Changed paths ($range):"; sed 's/^/  /' "$changed"
 
-          [ -f scripts/ci-docs-only.sh ] || { emit false "scripts/ci-docs-only.sh missing: run everything"; exit 0; }
-          verdict=$(bash scripts/ci-docs-only.sh --file "$changed"); rc=$?
+          # THE CLASSIFIER COMES FROM THE BASE, NEVER FROM THE CHANGE UNDER TEST. On a
+          # pull_request the checkout is the PR's merge ref, so `bash scripts/ci-docs-only.sh`
+          # would be judged by the very edit being judged: a PR that widens the allow-list (or
+          # makes the script print `docs_only=true`) would skip the suite for itself, and its
+          # selftest could be edited in the same PR. So read the script out of the commit the
+          # change is measured FROM: the PR's base commit, or a push's `before`. If that commit
+          # has no classifier this is its first introduction and nothing vouches for it yet:
+          # `false`.
+          cls="${RUNNER_TEMP:-/tmp}/ci-docs-only.from-base.sh"
+          git show "$base:scripts/ci-docs-only.sh" > "$cls" 2>/dev/null; rc=$?
+          if [ "$rc" -ne 0 ] || [ ! -s "$cls" ]; then
+            emit false "$base has no scripts/ci-docs-only.sh (first introduction, or unreadable): run everything"; exit 0
+          fi
+          verdict=$(bash "$cls" --file "$changed"); rc=$?
           if [ "$rc" -eq 0 ] && [ "$verdict" = "docs_only=true" ]; then
             emit true "every changed path is documentation: skipping integration tests, images and deploys"
           else

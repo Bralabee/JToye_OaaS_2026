@@ -270,6 +270,71 @@ check_workflow() {
   return 0
 }
 
+# glue_extract FILE -> prints the `changes` job's classify step script (its first `run: |` block)
+glue_extract() {
+  awk '
+    /^  changes:[ \t]*$/ { inj = 1; next }
+    inj && /^  [A-Za-z0-9_-]+:/ { inj = 0 }
+    inj && !inrun && /^        run: \|[ \t]*$/ { inrun = 1; next }
+    inrun {
+      if ($0 ~ /^          / || $0 ~ /^[ \t]*$/) { sub(/^          /, ""); print } else { inrun = 0 }
+    }
+  ' "$1"
+}
+
+# glue_run GLUE_FILE REPO_DIR OUT_FILE EVENT BEFORE AFTER PRBASE PRHEAD [PATH-PREFIX]
+# Runs the extracted step exactly as Actions does (bash -e, only the step's env), in REPO_DIR.
+glue_run() {
+  local glue="$1" dir="$2" out="$3" ev="$4" b="$5" a="$6" pb="$7" ph="$8" pre="${9:-}"
+  : > "$out"
+  ( cd "$dir" && env -i PATH="${pre:+$pre:}$PATH" HOME="${HOME:-/tmp}" GITHUB_OUTPUT="$out" RUNNER_TEMP="$dir/.rt" \
+      GH_TOKEN=stub GITHUB_REPOSITORY=o/r EVENT_NAME="$ev" PUSH_BEFORE="$b" PUSH_AFTER="$a" PR_BASE="$pb" PR_HEAD="$ph" \
+      bash -e "$glue" >"$dir/.glue.log" 2>&1 )
+  return $?
+}
+
+# behaviour_arms WORKFLOW DIR -> runs the classify step of WORKFLOW against fixture repos under DIR,
+# prints PASS/FAIL lines, returns the number of failing arms.
+behaviour_arms() {
+  local WF="$1" st="$2" fails=0 glue r pre CLS_REAL
+  mkdir -p "$st"
+  glue="$st/glue.sh"
+  glue_extract "$WF" > "$glue"
+  if [ ! -s "$glue" ]; then
+    echo "FAIL glue-extract: could not extract the classify step's run block from $WF"; fails=$((fails + 1))
+  else
+    CLS_REAL="$REPO_ROOT/scripts/ci-docs-only.sh"
+    mkrepo() { # mkrepo DIR WITH_CLASSIFIER(1/0)
+      mkdir -p "$1/scripts" "$1/docs" "$1/core-java/src" "$1/.rt"
+      git -C "$1" init -q && git -C "$1" config user.email t@t && git -C "$1" config user.name t || return 1
+      [ "$2" = 1 ] && cp "$CLS_REAL" "$1/scripts/ci-docs-only.sh"
+      printf 'doc\n' > "$1/docs/a.md"; printf 'class A {}\n' > "$1/core-java/src/A.java"
+      git -C "$1" add -A >/dev/null && git -C "$1" commit -q -m base
+    }
+    verdict_of() { grep -h '^docs_only=' "$1" | tail -1; }
+    bsha() { git -C "$1" rev-parse "$2"; }
+    barm() { # barm NAME WANT_LINE OUTFILE
+      if [ "$(verdict_of "$3")" = "$2" ]; then echo "PASS $1 ($2)"; else echo "FAIL $1 (wanted $2, got '$(verdict_of "$3")'): $(tail -2 "$(dirname "$3")/.glue.log" 2>/dev/null | tr '\n' ' ')"; fails=$((fails + 1)); fi
+    }
+
+    # B1 control: an honest docs-only PR is judged true, so the arms below can fail by saying false.
+    r="$st/b1"; mkrepo "$r" 1; printf 'more\n' >> "$r/docs/a.md"; git -C "$r" commit -qam pr
+    glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)"; barm "B1 honest docs-only PR -> true" "docs_only=true" "$r/out"
+    # B2: the PR edits the classifier to print true AND changes code. Precondition: that edited
+    # classifier really would say true on this list; the base classifier must still say false.
+    r="$st/b2"; mkrepo "$r" 1
+    printf '#!/usr/bin/env bash\necho docs_only=true\n' > "$r/scripts/ci-docs-only.sh"; printf 'class A { int x; }\n' > "$r/core-java/src/A.java"; git -C "$r" commit -qam pr
+    pre="$(printf 'scripts/ci-docs-only.sh\ncore-java/src/A.java\n' | bash "$r/scripts/ci-docs-only.sh" --file -)"
+    if [ "$pre" = "docs_only=true" ]; then echo "PASS B2 precondition: the PR-edited classifier alone WOULD print true"; else echo "FAIL B2 precondition (got '$pre')"; fails=$((fails + 1)); fi
+    glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)"; barm "B2 PR-edited classifier printing true cannot flip a code PR (pull_request)" "docs_only=false" "$r/out"
+    glue_run "$glue" "$r" "$r/out" push "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)" "" ""; barm "B2 same on push (classifier read at before)" "docs_only=false" "$r/out"
+    # B3: the base has no classifier (first introduction): false, even though the change is docs + a classifier.
+    r="$st/b3"; mkrepo "$r" 0; cp "$CLS_REAL" "$r/scripts/ci-docs-only.sh"; printf 'more\n' >> "$r/docs/a.md"; git -C "$r" add -A >/dev/null; git -C "$r" commit -qm pr
+    glue_run "$glue" "$r" "$r/out" pull_request "" "" "$(bsha "$r" HEAD~1)" "$(bsha "$r" HEAD)"; barm "B3 base without a classifier -> false" "docs_only=false" "$r/out"
+  fi
+  return "$fails"
+}
+
 if [ "$SELFTEST" -eq 1 ]; then
   [ -f "$WORKFLOW" ] || void "workflow $WORKFLOW not found"
   st="$(mktemp -d)" || void "mktemp -d failed"
@@ -313,6 +378,19 @@ if [ "$SELFTEST" -eq 1 ]; then
   plant bp-or-term       "/^  build-and-push:/,/^  [a-z0-9-]+:\$/ s/^    if: \\((github\\.event_name == 'push' \\|\\| github\\.event_name == 'release')\\) && /    if: \\1 || /" "FAIL W-3: job 'build-and-push' job-level if"
   plant probe-always     "/^  staging-edge-probe:/,/^  [a-z0-9-]+:\$/ s/^(    if: )github\\.ref/\\1always() \\&\\& github.ref/" "FAIL W-5: job 'staging-edge-probe' if"
   plant changes-gated    "/^  changes:/,/^  [a-z0-9-]+:\$/ s/^(    runs-on: ubuntu-latest)\$/\\1\n    if: github.event_name == 'push'/" "FAIL W-1: job 'changes' has a job-level if"
+  # --- behavioural arms: run the REAL classify step against fixture repositories ------------
+  beh_out="$(behaviour_arms "$WORKFLOW" "$st/beh-real")"; beh_rc=$?
+  echo "$beh_out"
+  fails=$((fails + beh_rc))
+  # The same arms against a workflow whose step runs the PR's own copy must NOT all pass.
+  sed -E 's#verdict=\$\(bash "\$cls" --file "\$changed"\)#verdict=$(bash scripts/ci-docs-only.sh --file "$changed")#' "$WORKFLOW" > "$st/glue-uses-pr-copy.yaml"
+  if cmp -s "$WORKFLOW" "$st/glue-uses-pr-copy.yaml"; then
+    echo "FAIL glue-uses-pr-copy: the planting edit changed nothing"; fails=$((fails + 1))
+  else
+    beh_out="$(behaviour_arms "$st/glue-uses-pr-copy.yaml" "$st/beh-broken")"; beh_rc=$?
+    if [ "$beh_rc" -gt 0 ] && grep -q 'FAIL B2' <<< "$beh_out"; then echo "PASS glue-uses-pr-copy: running the PR's own classifier is caught by arm B2"
+    else echo "FAIL glue-uses-pr-copy: planting the PR-copy classifier was not caught (rc=$beh_rc)"; fails=$((fails + 1)); fi
+  fi
   # Blind extractor: a file that is not the workflow is VOID, never a pass.
   printf 'name: x\njobs:\n  a:\n    runs-on: x\n' > "$st/blind.yaml"
   arm blind-extractor 2 "$st/blind.yaml"
