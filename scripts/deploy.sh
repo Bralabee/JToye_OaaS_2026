@@ -39,10 +39,15 @@
 # ORDER, each refusal before anything after it: flags -> environment -> image tag
 # -> (render-only: render, exit) -> context guard -> staging preflight
 # (scripts/staging-secrets-preflight.sh, plan 29-13: any non-zero, a VOID 2
-# included, refuses) -> apply -k <wrapper> -> rollout status per Deployment; a failed
+# included, refuses) -> render the wrapper (a render that fails is VOID, before any
+# apply) -> apply -k <wrapper> -> rollout status per retagged Deployment; a failed
 # rollout undoes EVERY Deployment that apply changed (not only the failed one, and
-# not one it left alone) -> the final stdout line `DEPLOYED_SHA=<sha>`, printed
-# only after every rollout is green. That line is the record of what was applied;
+# not one it left alone) -> rollout status for every OTHER Deployment and StatefulSet
+# in the render (monitoring, Keycloak, Redis, the mail trap...), read from the render,
+# sharing one 600 s budget, every failure named, rc 1, and NO undo: those were not
+# retagged and the retagged apps are Ready (issue #969) -> the final stdout line
+# `DEPLOYED_SHA=<sha>`, printed only after every workload the apply touched is Ready.
+# That line is the record of what was applied;
 # plan 29-14's tracer and every digest-parity check read it back instead of
 # re-deriving a sha from HEAD.
 #
@@ -54,7 +59,8 @@
 #
 # EXIT CODES
 #   0  rendered (--render-only), or applied and every rollout green
-#   1  refused (environment, context guard, preflight) or a rollout failed (undone)
+#   1  refused (environment, context guard, preflight), a retagged rollout failed (undone),
+#      or another workload in the render did not become Ready (not undone, not certified)
 #   2  usage error, or VOID (missing tooling, a render that failed)
 
 set -uo pipefail
@@ -620,6 +626,38 @@ read_generation() { # read_generation <svc> -> generation on stdout; rc 1 when i
     [ "$rc" -eq 0 ] || return 1
     printf '%s\n' "${out:-0}"
 }
+# Every workload the render carries, read BEFORE the apply (issue #969). `apply -k` applies the whole
+# overlay, so a deploy is only certified once everything it applied is Ready, not just the three
+# images it retagged: on 2026-10-19 DEPLOYED_SHA was printed while the new alertmanager and grafana
+# pods were still ContainerCreating. Read from the render, not from a list kept here, so a
+# Deployment or StatefulSet the overlay gains is waited on without anyone remembering to add it.
+# kustomize emits keys in sorted order, so `kind` precedes `metadata` and the first two-space
+# `name:` of a Deployment/StatefulSet document is its metadata.name.
+RENDER=$(kubectl kustomize "$WRAPPER" 2>"$WRAPPER/render.err"); rc=$?
+if [ "$rc" -ne 0 ] || [ -z "$RENDER" ]; then
+    cat "$WRAPPER/render.err" >&2
+    void "kubectl kustomize of the wrapper failed (rc=$rc) or rendered nothing; nothing was applied"
+fi
+mapfile -t WORKLOADS < <(printf '%s\n' "$RENDER" | awk '
+    /^---[ \t]*$/ { k = ""; n = "" }
+    /^kind: / { k = $2 }
+    /^  name: / { if (n == "" && (k == "Deployment" || k == "StatefulSet")) { n = $2; gsub(/"/, "", n); print tolower(k) "/" n } }')
+[ "${#WORKLOADS[@]}" -gt 0 ] || void "the render holds no Deployment or StatefulSet; nothing was applied"
+for svc in "${ROLLOUTS[@]}"; do
+    case " ${WORKLOADS[*]} " in
+        *" deployment/${svc} "*) ;;
+        *) void "the render does not carry deployment/${svc}, which this script retags; nothing was applied" ;;
+    esac
+done
+# Everything in the render that this apply did NOT retag. No rollback is scoped to these.
+OTHER_WORKLOADS=()
+for w in "${WORKLOADS[@]}"; do
+    case "$w" in
+        deployment/core-java|deployment/edge-go|deployment/frontend) ;;
+        *) OTHER_WORKLOADS+=("$w") ;;
+    esac
+done
+
 declare -A GEN_BEFORE=()
 for svc in "${ROLLOUTS[@]}"; do
     GEN_BEFORE[$svc]=$(read_generation "$svc") \
@@ -668,6 +706,37 @@ deploy_service() {
 for svc in "${ROLLOUTS[@]}"; do
     deploy_service "$svc" || { rollback_changed; exit 1; }
 done
+
+# The rest of the render: monitoring, Keycloak, Redis, the mail trap, the secret sync and anything
+# else the overlay carries (issue #969). They share ONE bounded budget rather than a timeout each,
+# so twelve broken workloads cost ten minutes, not two hours; once it is spent the remaining
+# workloads get a one-second look, which a Ready one passes at once. Every workload is checked and
+# every failure is named, instead of stopping at the first.
+#
+# NO `rollout undo` here, on purpose: the undo above is scoped to the Deployments this apply
+# RETAGGED (core-java, edge-go, frontend), and they are Ready at this point. Rolling healthy
+# application pods back to an older sha because Prometheus will not pull its image would trade a
+# monitoring fault for an application one. The deploy is simply not certified: rc 1, no
+# DEPLOYED_SHA, and the operator is told which workload to look at.
+EXTRA_WAIT_BUDGET_SECONDS=600
+if [ "${#OTHER_WORKLOADS[@]}" -gt 0 ]; then
+    echo -e "\n${BLUE}Waiting for the other ${#OTHER_WORKLOADS[@]} workload(s) in the render (shared budget ${EXTRA_WAIT_BUDGET_SECONDS}s)...${NC}"
+    extra_deadline=$((SECONDS + EXTRA_WAIT_BUDGET_SECONDS))
+    NOT_READY=()
+    for w in "${OTHER_WORKLOADS[@]}"; do
+        remaining=$((extra_deadline - SECONDS)); [ "$remaining" -ge 1 ] || remaining=1
+        if kc -n "$NAMESPACE" rollout status "$w" --timeout="${remaining}s"; then
+            echo -e "${GREEN}✓ ${w} ready${NC}"
+        else
+            echo -e "${RED}Error: ${w} did not become Ready${NC}" >&2
+            NOT_READY+=("$w")
+        fi
+    done
+    if [ "${#NOT_READY[@]}" -gt 0 ]; then
+        echo -e "${RED}NOT CERTIFIED: ${NOT_READY[*]} did not become Ready. ${ROLLOUTS[*]} are Ready at ${IMAGE_TAG} and were left there (nothing retagged failed, so nothing is undone); no DEPLOYED_SHA is recorded.${NC}" >&2
+        exit 1
+    fi
+fi
 
 # Informational read-outs; a failure here does not unmake a green rollout.
 echo -e "\n${BLUE}Current Pod Status:${NC}"
