@@ -727,6 +727,105 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
 
+**Plans:** 32 plans (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+
+Plans:
+**Wave 1**
+- [ ] 30-01-PLAN.md — #957 PR 1: publishable key baked at build (Dockerfile ARG, compose), stripe-loader, served-chunk key gate, CI variable checks, production refuses a pk_test_ image (D-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 30-02-PLAN.md — #957 PR 1: fail-loud card checkout (loading/ready/failed payment step, card-unavailable notice, awaiting-payment copy)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 30-03-PLAN.md — #957 PR 1: staging card-checkout spec, RED vs today's staging, PR open; owner sets the staging pk_test_ variable
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 30-04-PLAN.md — #957 PR 1: merge, deploy watch, live GREEN card payment on staging
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 30-05-PLAN.md — #958 PR 2: typed 409 awaiting-payment gate on SUBMIT/CONFIRM/PREPARING; status-preserving payment webhook; vendor NONE orders untouched (D-01)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 30-06-PLAN.md — #958 PR 2: awaiting-payment badge, hidden actions, kitchen and KDS refusal messages
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 30-07-PLAN.md — #958 PR 2 / D-02: staging-seed list-drafts, order-transition, cancel-drafts, stripe-get stages
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 30-08-PLAN.md — #958 PR 2: merge, live 409 on an unpaid DRAFT with a paid control
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 30-09-PLAN.md — D-02: owner-confirmed manual cancellation of abandoned staging DRAFTs and their PaymentIntents, read back from Stripe
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 30-10-PLAN.md — #108 PR 3: Stripe client timeouts/retries from config, charge and refund circuit breakers, typed 503
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 30-11-PLAN.md — #108 PR 3: merge, live pod log line RED/GREEN, #108 record
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 30-12-PLAN.md — PR 4: Connect webhook route with its own secret, environment tag, Express capabilities + idempotency
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 30-13-PLAN.md — PR 4: Key Vault class, SPC, env and config wiring for the Connect secret and environment tag
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 30-14-PLAN.md — PR 4: API snapshot and counts, PR open; owner registers the Connect endpoint (pinned API version) and stores its secret
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 30-15-PLAN.md — PR 4: merge, secret mounted, forged/unsigned Connect events refused live
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [ ] 30-16-PLAN.md — PAY-04 PR 5 (D-03): owner decisions (token path vs fragment, staging OTP); payment-link preview endpoint
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [ ] 30-17-PLAN.md — PAY-04 PR 5: stripeAccountId on intent results, OTP production refusal keyed on the environment tag
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [ ] 30-18-PLAN.md — PAY-04 PR 5: the /pay page (all states) and connected-account Stripe initialisation in checkout
+
+**Wave 19** *(blocked on Wave 18 completion)*
+- [ ] 30-19-PLAN.md — PAY-04 PR 5: /pay robots/referrer/SSR hygiene, pay-link staging stage, account-aware staging specs
+
+**Wave 20** *(blocked on Wave 19 completion)*
+- [ ] 30-20-PLAN.md — PAY-04 PR 5: staging OTP setting per the owner's decision and API snapshot, merge, a real link paid through /pay on staging
+
+**Wave 21** *(blocked on Wave 20 completion)*
+- [ ] 30-21-PLAN.md — PAY-01 PR 6: skip-budget S-5 rule, selftest, lint, report union
+
+**Wave 22** *(blocked on Wave 21 completion)*
+- [ ] 30-22-PLAN.md — PAY-01 PR 6: own-order Stripe refund spec, nightly Stripe phase (pinned CLI), CI key checks
+
+**Wave 23** *(blocked on Wave 22 completion)*
+- [ ] 30-23-PLAN.md — PAY-01 PR 6: owner creates the CI sandbox keys; branch nightly; ALLOW retired with a measured budget
+
+**Wave 24** *(blocked on Wave 23 completion)*
+- [ ] 30-24-PLAN.md — PAY-01 PR 6: merge, main nightly green, #61 evidence
+
+**Wave 25** *(blocked on Wave 24 completion)*
+- [ ] 30-25-PLAN.md — PAY-02 PR 7 (D-04): owner quantity rule; per-location subscription quantity, idempotency keys, location sync
+
+**Wave 26** *(blocked on Wave 25 completion)*
+- [ ] 30-26-PLAN.md — PAY-02 PR 7: staging-seed billing and billing-sync-check stages
+
+**Wave 27** *(blocked on Wave 26 completion)*
+- [ ] 30-27-PLAN.md — PAY-02 PR 7: merge, live per-location billing with an invoice read by id
+
+**Wave 28** *(blocked on Wave 27 completion)*
+- [ ] 30-28-PLAN.md — PAY-03 PR 8: connect-onboard, settlement-mode, destination money loop with refund and evidence
+
+**Wave 29** *(blocked on Wave 28 completion)*
+- [ ] 30-29-PLAN.md — PAY-03 PR 8: direct-charge loop, payout and payout-read, run-id replay
+
+**Wave 30** *(blocked on Wave 29 completion)*
+- [ ] 30-30-PLAN.md — PAY-03 PR 8: RED refusal on today's staging, merge, onboarding link for the owner
+
+**Wave 31** *(blocked on Wave 30 completion)*
+- [ ] 30-31-PLAN.md — PAY-03: owner completes hosted onboarding; Connect positive arm; destination loop live
+
+**Wave 32** *(blocked on Wave 31 completion)*
+- [ ] 30-32-PLAN.md — PAY-03: direct loop and browser checkout live, payout, evidence and leak scans, known gaps (D-01, D-02) recorded
+
 **UI hint**: yes (billing/subscription surface, scheduled slot picker, and kitchen cook sheet)
 
 ### Phase 31: Consumer-Safety and Legal Floor

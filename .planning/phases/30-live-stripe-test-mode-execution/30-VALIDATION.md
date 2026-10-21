@@ -58,6 +58,31 @@ Local Node is v22; the project requires 24+. A local frontend run is trusted onl
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*. Plan/task IDs are filled in by the planner.
 
+### Task Map (planner, 2026-10-21)
+
+Each row above, mapped to the plan task that builds it (RED first) and the one that proves it live. Where a plan
+corrected the command in the row above, the correction is named; the plan's `<verify>` is authoritative.
+
+| Row | Built (RED → GREEN) | Proven live / in CI | Command correction |
+|-----|---------------------|---------------------|--------------------|
+| #957 card shop without a key → visible error, no POST | 30-02 T1 (fail-loud states, card-unavailable notice) | 30-04 T2 (staging run) | Jest runs as `npm --prefix frontend test -- --ci --runTestsByPath <paths>` |
+| #957 served chunks hold `pk_test_`, control ≥ 1 | 30-01 T1 (script + `--selftest`) | 30-03 T1 (RED vs today's staging), 30-04 T2 (GREEN) | — |
+| #957 4242 completes to CAPTURED on staging | 30-03 T1 (spec, RED arm) | 30-04 T2; direct-charge variant 30-32 T1 (account-aware read from 30-19 T3) | needs `STAGING_E2E=1` and `--project=desktop`: `(cd frontend && STAGING_E2E=1 PLAYWRIGHT_BASE_URL=https://app-staging.olajay.co.uk npx playwright test e2e/staging-card-checkout.spec.ts --project=desktop --reporter=line)` |
+| #957 deploy refuses an empty / non-`pk_test_` variable | 30-01 T2 (`check-stripe-pk-var.sh --selftest`, staging and production steps) | 30-03 T3 (owner sets the variable; read-back), 30-04 T1 | — |
+| #958 SUBMIT/CONFIRM/PREPARING of an unpaid card DRAFT refused 409, no outbox row; vendor NONE order unchanged (D-01) | 30-05 T1 (`OrderAwaitingPaymentGateIntegrationTest`) | 30-08 T3 (live 409 + paid control 200) | the integration test runs under `:core-java:integrationTest` (tag `testcontainers`), not `:core-java:test` |
+| #958 payment success keeps a confirmed link order's status | 30-05 T3 (`PaymentServiceTest`, WARN `payment_on_closed_order`) | 30-08 T3 | — |
+| #958 kitchen and orders surfaces show the problem detail | 30-06 T1 (badge, hidden actions), 30-06 T2 (kitchen toast "Order not updated", KDS) | 30-08 T3 (the live 409 these surfaces render) | — |
+| D-02 abandoned DRAFT cleanup | 30-07 T2 (`cancel-drafts`, `stripe-get` arms) | 30-09 T2–T3 (owner decision, run, Stripe read-back) | — |
+| #108 Stripe timeouts from config; refund behind a breaker | 30-10 T1 (`stripe.connect-timeout-ms` …), 30-10 T2 (`StripeChargeClient`, `CallNotPermittedException` → 503) | 30-11 T1 (old log line, RED), 30-11 T3 (configured timeouts, GREEN) | — |
+| PAY-03 Connect route verifies only with its own secret | 30-12 T1 (route, verify/dispatch split), 30-13 T1 (secret wiring) | 30-15 T2 (forged/unsigned 400, 0 rows), 30-31 T2 (positive arm) | the Connect test is a new integration test, run under `:core-java:integrationTest` |
+| PAY-04 `/pay` page (D-03) | 30-16 T3 (preview), 30-17 T1 (`stripeAccountId`), 30-18 T1 (`pay-client`), 30-19 T3 (staging spec) | 30-20 T3 (destination), 30-32 T1 (direct) | — |
+| PAY-01 skip-budget rules | 30-21 T1 (`check-e2e-skip-budget.sh --selftest`, S-5) | 30-23 T2 (the stale ALLOW turns the gate red), 30-23 T3 (ALLOW retired, measured MAX_SKIPS, S-5 refusal shown) | — |
+| PAY-01 refund spec in the keyed nightly phase | 30-22 T1 (`stripe-refund-flow.spec.ts`, `STRIPE-REFUND` line) | 30-23 T2 (branch nightly), 30-24 T2 (main nightly) | NOT `--grep @stripe` (a CLI grep replaces the projects' grepInvert); the spec is collected only with `STRIPE_E2E=1` (30-22 T1) |
+| PAY-02 per-location quantity (D-04) | 30-25 T3 (`BillingLocationSync`), 30-26 T2 (`billing-sync-check`) | 30-27 T3 (`evidence/30-pay02-billing.json`, invoice by id) | — |
+| PAY-03 loop verdict lines, both modes | 30-28 T1–T2 (destination), 30-29 T1–T2 (direct, payout, run-id) | 30-30 T1 (RED refusal), 30-31 T3 (destination), 30-32 T1–T2 (direct, payout) | a Refund object has no `livemode`; its charge is read instead (30-22, 30-28, 30-29) |
+| env/KV contract after the new secret and build arg | 30-01 T1 (env-contract row), 30-13 T1–T2 (KV class, SPC, env) | 30-14 T3 (endpoint, KV object, access), 30-15 T2 (pod mounts the secret) | — |
+| Known gaps record (D-01, D-02, refund routing, billing reconcile, phone delivery, #108 non-Stripe half, D-08) | — | 30-32 T3 (`## Known gaps (Phase 30 close)` in 30-VERIFICATION.md) | — |
+
 ---
 
 ## Wave 0 Requirements

@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: planning
-stopped_at: Phase 29 complete, ready to plan Phase 30
-last_updated: "2026-10-21T05:30:48.707Z"
+stopped_at: Phase 30 planned (32 plans, checker passed), awaiting owner plan approval
+last_updated: "2026-10-21T09:04:40.849Z"
 last_activity: 2026-10-21
-last_activity_desc: Phase 29 complete, transitioned to Phase 30
-state_head: 01cc7037bd8473ef6df49ba75d8754e654c8d566
+last_activity_desc: Phase 30 planned, 32 plans in 8 serial PRs; owner approval pending
+state_head: 92d057aa6cc85b2af48dbce77282e15106a7bfe3
 progress:
   total_phases: 20
   completed_phases: 18
-  total_plans: 283
+  total_plans: 315
   completed_plans: 283
   percent: 90
 ---
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 ## Current Position
 
-Phase: 30 — The Money Path, Executed
-Status: Ready to plan Phase 30
-Last activity: 2026-10-21 — Phase 29 complete
+Phase: 30 — The Money Path, Executed (PLANNED, awaiting owner approval)
+Status: Planned — 32 plans (30-01..30-32), checker passed; execution waits on owner plan approval
+Last activity: 2026-10-21 — Phase 30 planned (research, UI-SPEC, 32 plans)
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 pending owner confirmation). Phase 30 planning is next.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.

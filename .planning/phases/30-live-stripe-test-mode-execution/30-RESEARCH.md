@@ -252,6 +252,8 @@ Gaps the plan must at least surface (owner decides scope):
 3. **SMS/WhatsApp delivery is not configured on staging**: no `WHATSAPP*`/`SMS*`/`TWILIO*` env names on staging `core-java` [VERIFIED: kubectl names]; `WhatsAppProperties.enabled` defaults false (ROADMAP 7(c)). OTP and link delivery to a phone is unproven on the delivered estate (already recorded as "delivery to a real phone not shown").
 4. **`jtoye.phone-verification.expose-otp-for-test`** (`PhoneVerificationService.java:58`, default `false`, returns the OTP in the response when true, `:143`) has no prod-profile refusal. Add it to the SEC-03 family (`OpenApiProdProfileGatingTest`/`SecurityHeadersProdProfileTest` pattern).
 
+RESOLVED (scope set by 30-CONTEXT.md, 2026-10-21): gap 1 → D-03, the `/pay` page is built (plans 30-16..30-20). Gap 2 → D-01, vendor/REST/MCP `NONE` orders stay unguarded; that gap, and the storefront "Unpaid" fallback that only fires when Stripe is unconfigured server-side, are recorded with their route by plan 30-32. Gap 3 → recorded as a known gap by plan 30-32 (route: issue #461 / #208). Gap 4 → plan 30-17 adds the refusal, keyed on `stripe.environment-tag=production` because staging also runs the prod Spring profile.
+
 ## #108 — outbound timeouts (NOT done)
 
 - No Stripe timeout is set anywhere in `core-java` (`rg setConnectTimeout|setReadTimeout|maxNetworkRetries` → only a comment at `PaymentService.java:140`) [VERIFIED]. stripe-java 34.0.0 defaults: `DEFAULT_CONNECT_TIMEOUT = 30 * 1000`, `DEFAULT_READ_TIMEOUT = 80 * 1000`, `maxNetworkRetries = 2`; setters `Stripe.setConnectTimeout(int)`, `Stripe.setReadTimeout(int)`, `Stripe.setMaxNetworkRetries(int)`, per-request `RequestOptionsBuilder.setConnectTimeout(Integer)`/`setReadTimeout(Integer)` [VERIFIED: stripe-java-34.0.0-sources.jar `com/stripe/Stripe.java:9-35,111-169`, `com/stripe/net/RequestOptions.java:306,324`]. Worst case today: 80 s × 3 attempts on a request thread at checkout.
@@ -516,15 +518,24 @@ docker compose -f docker-compose.full-stack.yml up -d --no-deps --force-recreate
 | A12 | Stripe CLI reads `STRIPE_API_KEY` from env | Code Examples | Key on argv in CI process list |
 | A13 | Proposed names: `AwaitingPaymentException`, `.../errors/awaiting-payment`, `stripe.connect-webhook-secret`, `STRIPE_CONNECT_WEBHOOK_SECRET`, `/payments/webhook/connect`, `jtoye.payments.allow-unpaid-storefront-orders`, `stripe.connect-timeout-ms` etc. | several | Naming only |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All seven are resolved by 30-CONTEXT.md (2026-10-21). D-01..D-04 are owner rulings; D-08..D-10 are Claude's discretion taken as defaults, which the owner may override. Each item names the plans that carry it out.
 
 1. **Production and the pk_test-baked image.** What we know: one frontend image per commit; production deploy gated off. Unclear: whether Phase 30 should add the production refusal or per-environment images. Recommendation: refusal now, per-environment images in Phase 32.
+   RESOLVED: D-08 (Claude's discretion, owner may override) — production refuses a pk_test_ image now (plan 30-01); per-environment images in Phase 32 (recorded as a known gap by plan 30-32).
 2. **Which Stripe account for CI.** Recommendation: a dedicated sandbox; owner creates it and supplies `sk_test_`/`pk_test_` as GH secret/var.
+   RESOLVED: D-09 (Claude's discretion, owner may override) — dedicated CI sandbox; owner checkpoint in plan 30-23, key checks in plan 30-22.
 3. **Vendor-created unpaid orders (`paymentStatus=NONE`) and "an unpaid order cannot be produced".** The policy is settled (pay by link before service); the implementation scope is not: extending the PREPARING guard to NONE would require a link (and its payment) for every dashboard/MCP order. Owner decides whether that lands in Phase 30.
+   RESOLVED: D-01 (owner ruling 2026-10-21) — vendor-created orders are not guarded in Phase 30; the #958 gate covers card/link orders awaiting payment (plans 30-05..30-08) and the gap is recorded with its route by plan 30-32.
 4. **Abandoned card DRAFTs.** Keep (vendor cancels), or a sweeper that cancels the order and its PaymentIntent after N hours? Recommendation: cancel the swarm DRAFTs by hand now; sweeper deferred unless owner wants it.
+   RESOLVED: D-02 (owner ruling 2026-10-21) — no sweeper; manual cancellation with Stripe read-back (tooling plan 30-07, run plan 30-09); the missing sweeper is recorded as a gap by plan 30-32.
 5. **PAY-02 "per location".** Is £39 per tenant acceptable for acceptance, or must the subscription quantity follow active shops? Owner decision before ticking PAY-02.
+   RESOLVED: D-04 (owner ruling 2026-10-21) — per location: quantity follows active shops (plans 30-25..30-27; the exact counting rule is the owner's checkpoint in plan 30-25).
 6. **PAY-04 `/pay/{token}` page.** In Phase 30 (recommended — it reuses the #957 fix) or recorded as a gap?
+   RESOLVED: D-03 (owner ruling 2026-10-21) — in Phase 30, payable end-to-end on staging (plans 30-16..30-20).
 7. **#108 non-Stripe half** in this phase or left on the issue.
+   RESOLVED: D-10 (Claude's discretion, owner may override) — left on issue #108; the Stripe half ships in plans 30-10/30-11.
 
 ## Environment Availability
 
