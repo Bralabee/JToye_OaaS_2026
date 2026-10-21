@@ -50,7 +50,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 
 - [x] **Phase 28: Security Triage + the Dev/Prod Boundary** — The 11 findings in the untracked Strix pentest backlog triaged into the tracker or formally accepted; the dev-only tenant-header path no longer advertised or reachable under `prod`; the local stack stops publishing infrastructure to `0.0.0.0` (completed 2026-08-10)
 - [x] **Phase 36: Azure Blob Storage Throughout** — Object storage moves to Azure Blob (staging/prod) + Azurite (local/nightly); MinIO and the never-provisioned AWS S3 target retired (added 2026-09-28 by owner ruling; blocks Phase 29 plans 29-11 onward) (completed 2026-09-29)
-- [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
+- [x] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today (completed 2026-10-21)
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock *(code merged 2026-10-17 as PR #949, V88, with Stripe test-mode API proofs in `30-VERIFICATION.md`; NOT complete: PAY-01's refund E2E is still `ALLOW`-skipped and PAY-03's staging limb waits on Phase 29)*
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
 - [x] **Phase 31.1: Persona gap closure (INSERTED)** — The 17 persona-testing clusters (epic #880) on completed Phase 31: DSAR fulfilment, the allergen acknowledgement and display chain, seller identity, and privacy/cookie/accessibility statement truthfulness; 6 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request) (completed 2026-10-07)
@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | All plans executed 2026-10-20; pending phase verification and security sign-off | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
 | 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
@@ -592,7 +592,7 @@ and hosting-target decisions; DPLY-04's **ADR-0002 sign-off** blocker is RESOLVE
 | **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
 | **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
 
-**Plans:** 29/29 plans executed (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
+**Plans:** 29/29 plans complete (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
 
 Plans:
 - [x] 29-29-PLAN.md

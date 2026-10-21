@@ -2,19 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
-current_phase: 29
-current_phase_name: Deployable Staging, With Its Own Monitoring
-status: executing
-stopped_at: "Completed 29-28-PLAN.md: Phase 29 is at 29/29 plans, pending phase verification and security sign-off. Merged PR #984 (squash bffd2f74) after a four-finding D3 round 1 and a zero-admissible round 2; the first CI deploy-staging run (39440780472) FAILED at digest parity on a terminating pod and the rollback rule was applied (DEPLOY_STAGING_ENABLED false, read back); fixed via issue #985 / PR #986 (4 review rounds, merge 33585b23); the second run (39471893302) was green end to end, operator-host parity rc 0 on 33585b23, staging-login spec 2 passed. The 29-27 dispositions are applied: 18 comments, 10 closed (99 100 101 112 296 297 299 300 592 859), 4 already closed, 4 open as approved (98 294 301 304), --post-close rc 0. DEPLOY_STAGING_ENABLED is true, deliberately left on (owner-delegated): every merge to main redeploys staging. Next, in order: PR 988 review then merge; PR 990 merge from main, re-review, write its Key Vault objects, merge, probe; PR 989 merge from main, re-review, merge; PR 991 (this closing docs PR) review then merge; then /gsd-verify-work 29 and /gsd-secure-phase 29. Resume block: the 2026-10-20 evening block of 29-ORCHESTRATOR-LEDGER.md"
-last_updated: "2026-10-20T19:55:00.000Z"
-last_activity: 2026-10-20
-state_head: 1db60c70ada0d51a660f84086f2eb4c9d68f6809
+current_phase: 30
+current_phase_name: The Money Path, Executed
+status: planning
+stopped_at: Phase 29 complete, ready to plan Phase 30
+last_updated: "2026-10-21T05:30:48.707Z"
+last_activity: 2026-10-21
+last_activity_desc: Phase 29 complete, transitioned to Phase 30
+state_head: 01cc7037bd8473ef6df49ba75d8754e654c8d566
 progress:
   total_phases: 20
-  completed_phases: 17
-  total_plans: 282
-  completed_plans: 271
-  percent: 85
+  completed_phases: 18
+  total_plans: 283
+  completed_plans: 283
+  percent: 90
 ---
 
 # Project State
@@ -28,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 ## Current Position
 
-Phase: 29 (Deployable Staging, With Its Own Monitoring) — 29/29 PLANS EXECUTED, pending phase verification and security sign-off
+Phase: 30 — The Money Path, Executed
 - RESUMED 2026-10-20. 29/29 plans have a SUMMARY (29-28 closed the same day). Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md`, its "2026-10-20 evening — RESUME HERE" block (the same file Session Continuity names).
   The "do not deploy while the owner's persona swarm is running" constraint is LIFTED: the owner confirmed the swarm complete, ledger line 131 ("END OF SESSION 2026-10-20"). It is not in force.
   Rulings D-33 and D-34 are in 29-CONTEXT.md.
@@ -818,7 +819,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Executing Phase 29
+Status: Ready to plan
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -829,9 +830,9 @@ Status: Executing Phase 29
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-18
+Last activity: 2026-10-21 — Phase 29 complete, transitioned to Phase 30
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 90%
 
 ## Milestone v2.3 Phase Map
 
@@ -864,7 +865,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 176 (phase 23) + 12 (phases 21-22) = 29
+- Total plans completed: 205 (phase 23) + 12 (phases 21-22) = 29
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -883,6 +884,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 38 | 19 | - | - |
 | 31.1 | 30 | - | - |
 | 37 | 59 | - | - |
+| 29 | 29 | - | - |
 
 *Updated after each plan completion*
 | Phase 24 P01 | ~20min | 3 tasks | 10 files |
@@ -1519,7 +1521,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 ## Session Continuity
 
 Last session: 2026-10-20T19:55:00.000Z
-Stopped at: Completed 29-28-PLAN.md: Phase 29 is at 29/29 plans, pending phase verification and security sign-off. Merged PR #984 (squash bffd2f74) after a four-finding D3 round 1 and a zero-admissible round 2; the first CI deploy-staging run (39440780472) FAILED at digest parity on a terminating pod and the rollback rule was applied (DEPLOY_STAGING_ENABLED false, read back); fixed via issue #985 / PR #986 (4 review rounds, merge 33585b23); the second run (39471893302) was green end to end, operator-host parity rc 0 on 33585b23, staging-login spec 2 passed. The 29-27 dispositions are applied: 18 comments, 10 closed (99 100 101 112 296 297 299 300 592 859), 4 already closed, 4 open as approved (98 294 301 304), --post-close rc 0. DEPLOY_STAGING_ENABLED is true, deliberately left on (owner-delegated): every merge to main redeploys staging. Next, in order: PR 988 review then merge; PR 990 merge from main, re-review, write its Key Vault objects, merge, probe; PR 989 merge from main, re-review, merge; PR 991 (this closing docs PR) review then merge; then /gsd-verify-work 29 and /gsd-secure-phase 29. Resume block: the 2026-10-20 evening block of 29-ORCHESTRATOR-LEDGER.md
+Stopped at: Phase 29 complete, ready to plan Phase 30
 Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md` (the "2026-10-20 evening — RESUME HERE" block at its end)
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
