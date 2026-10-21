@@ -473,6 +473,31 @@
 #          callers that keycloak-allow admits on 8080 are inside it. Traefik has no
 #          narrower stable range. Shown catching each hole by --selftest-inv20.
 #
+#   INV-21 #968 item 3 (owner approval 2026-10-20, option A), RENDER level, every
+#          target that renders the Grafana component (a Deployment named grafana or
+#          an Ingress route to Service grafana). Grafana's public login page was open
+#          to the internet; it is now behind the same Traefik basic-auth chain as the
+#          testers' mail UI (INV-18), so its render must keep it there:
+#            a. every Ingress path whose backend is Service grafana sits on an
+#               Ingress that carries auth-type basic, a non-empty auth-secret with no
+#               `/` (a same-namespace Secret: Traefik's cross-namespace resources are
+#               off) and auth-secret-type absent or auth-file;
+#            b. that auth-secret names a Secret that a SecretProviderClass in the
+#               render syncs as key `auth` (the key Traefik reads). An auth-secret
+#               nothing produces makes Traefik skip the route (fail closed, but a
+#               Grafana nobody can reach); a missing auth-type serves the page open;
+#            c. every Service that reaches Grafana's pod (selector app=grafana, or
+#               named grafana) is ClusterIP, as INV-18 does for mailpit, and the
+#               routes in (a) are found by ANY such Service, through
+#               spec.rules[].http.paths[] AND spec.defaultBackend, not by the name
+#               `grafana` alone.
+#          A target with a grafana Deployment but zero Ingress backends to it, or a
+#          grafana route but no grafana Deployment, is a PARSE ERROR (a blind reader
+#          never passes). Production and local print "not applicable" (neither renders
+#          monitoring). Shown catching each hole by --selftest-inv21; the live proof is
+#          scripts/staging-grafana-edge.sh --probe (G-1..G-4). That the SPC is MOUNTED
+#          by secret-sync is k8s/scripts/check-keyvault-chain.sh's rule, not this one's.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -570,7 +595,7 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
@@ -579,6 +604,7 @@
 #   --selftest-inv17 the same for INV-17 (inv17_selftest)
 #   --selftest-inv18 the same for INV-18 (inv18_selftest)
 #   --selftest-inv20 the same for INV-20 (inv20_selftest)
+#   --selftest-inv21 the same for INV-21 (inv21_selftest)
 
 set -euo pipefail
 
@@ -1606,6 +1632,200 @@ inv20_selftest() {
 
 if [[ "${1:-}" == "--selftest-inv20" ]]; then
     inv20_selftest; exit $?
+fi
+
+# ===========================================================================
+# --selftest-inv21 (#968 item 3): INV-21 shown CATCHING planted holes in the
+# Grafana edge gate's render. Same harness shape as -inv18. Arms:
+#   no-auth            Ingress grafana-public loses auth-type (an open Grafana)
+#   cross-ns-secret    its auth-secret becomes traefik/x (a cross-namespace Secret)
+#   secret-type        its auth-secret-type becomes auth-map
+#   unsynced-secret    its auth-secret is renamed to a Secret no SPC syncs
+#   wrong-key          the SPC syncs grafana-edge-credentials under key htpasswd, not auth
+#   open-twin          a second Ingress routes another host to Service grafana, no auth
+#   no-ingress         the Ingress is deleted (PARSE ERROR, rc 2: a blind reader never passes)
+#   svc-lb             Service grafana becomes type LoadBalancer (published with no Ingress at all)
+#   lb-twin            a second Service grafana-lb (selector app=grafana) sits behind an
+#                      un-annotated Ingress: a route found only by the Service NAME grafana misses it
+#   default-backend    an Ingress with no rules reaches Service grafana through
+#                      spec.defaultBackend, un-annotated
+# INV21_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv21_plant() {
+    local arm="$1" root="$2" f before
+    case "$arm" in
+        no-auth|cross-ns-secret|secret-type|unsynced-secret|open-twin|no-ingress|svc-lb|lb-twin|default-backend) f="$root/components/monitoring/grafana.yaml" ;;
+        wrong-key) f="$root/components/azure-keyvault/secretproviderclasses.yaml" ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        no-auth)
+            awk '!/^    nginx\.ingress\.kubernetes\.io\/auth-type:/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        cross-ns-secret)
+            awk '{ if ($0 ~ /^    nginx\.ingress\.kubernetes\.io\/auth-secret: /) $0 = "    nginx.ingress.kubernetes.io/auth-secret: \"traefik/x\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        secret-type)
+            awk '{ if ($0 ~ /^    nginx\.ingress\.kubernetes\.io\/auth-secret-type: /) $0 = "    nginx.ingress.kubernetes.io/auth-secret-type: \"auth-map\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        unsynced-secret)
+            awk '{ if ($0 ~ /^    nginx\.ingress\.kubernetes\.io\/auth-secret: /) $0 = "    nginx.ingress.kubernetes.io/auth-secret: \"grafana-edge-planted\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        wrong-key)
+            # inside the grafana-edge-kv document only: the first `- key: auth` becomes `- key: htpasswd`
+            awk '/^---$/ { inkv = 0 } /^  name: grafana-edge-kv$/ { inkv = 1 } { if (inkv && !done && $0 == "    - key: auth") { $0 = "    - key: htpasswd"; done = 1 } print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        open-twin)
+            cat >> "$f" <<'TWIN'
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-open
+  labels:
+    app: grafana
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: grafana-open.olajay.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+TWIN
+            ;;
+        no-ingress)
+            # drop the whole `kind: Ingress` document named grafana-public
+            awk 'function flush() { if (buf != "" && !(buf ~ /\n  name: grafana-public\n/ && buf ~ /\nkind: Ingress\n/)) printf "%s", buf; buf = "" }
+                 /^---$/ { flush() } { buf = buf "\n" $0 "\n"; sub(/^\n/, "", buf) } END { flush() }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        svc-lb)
+            # inside the Service document only: type ClusterIP becomes LoadBalancer
+            awk '/^---$/ { insvc = 0 } /^kind: Service$/ { insvc = 1 } { if (insvc && $0 == "  type: ClusterIP") $0 = "  type: LoadBalancer"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        lb-twin)
+            cat >> "$f" <<'TWIN'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-lb
+  labels:
+    app: grafana
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: http
+    protocol: TCP
+    name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-lb-open
+  labels:
+    app: grafana
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: grafana-lb.olajay.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-lb
+            port:
+              number: 3000
+TWIN
+            ;;
+        default-backend)
+            cat >> "$f" <<'TWIN'
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-default
+  labels:
+    app: grafana
+spec:
+  ingressClassName: nginx
+  defaultBackend:
+    service:
+      name: grafana
+      port:
+        number: 3000
+TWIN
+            ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv21_selftest() {
+    local fmt="${INV21_SELFTEST_FORMAT:-plain}" st arm want wrc out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv21 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(no-auth cross-ns-secret secret-type unsynced-secret wrong-key open-twin no-ingress svc-lb lb-twin default-backend)
+    declare -A WANT=(
+        [no-auth]="INV-21: Ingress 'grafana-public' routes host 'grafana-staging.olajay.co.uk' to Service grafana without basic auth"
+        [cross-ns-secret]="INV-21: Ingress 'grafana-public' auth-secret 'traefik/x'"
+        [secret-type]="INV-21: Ingress 'grafana-public' auth-secret-type 'auth-map'"
+        [unsynced-secret]="INV-21: Ingress 'grafana-public' auth-secret 'grafana-edge-planted' is not synced as key 'auth' by any SecretProviderClass"
+        [wrong-key]="INV-21: Ingress 'grafana-public' auth-secret 'grafana-edge-credentials' is not synced as key 'auth' by any SecretProviderClass"
+        [open-twin]="INV-21: Ingress 'grafana-open' routes host 'grafana-open.olajay.co.uk' to Service grafana without basic auth"
+        [no-ingress]="PARSE ERROR: [k8s/staging] INV-21 found 0 Ingress backends to Service grafana"
+        [svc-lb]="INV-21: Service 'grafana' reaches Grafana's pod and is type LoadBalancer"
+        [lb-twin]="INV-21: Ingress 'grafana-lb-open' routes host 'grafana-lb.olajay.co.uk' to Service grafana-lb without basic auth"
+        [default-backend]="INV-21: Ingress 'grafana-default' routes host '(defaultBackend: every host)' to Service grafana without basic auth"
+    )
+    declare -A WANT_RC=([no-ingress]=2)
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv21_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"; wrc="${WANT_RC[$arm]:-1}"
+            if (( rc == wrc )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=$rc"
+            else
+                caught=no
+                line="expected rc $wrc and '$want'; got rc=$rc: $(awk '/INV-21|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv21" ]]; then
+    inv21_selftest; exit $?
 fi
 
 # ---------------------------------------------------------------------------
@@ -3840,14 +4060,99 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-21 (#968 item 3) ----------------
+    # Every target that renders the Grafana component: each Ingress route to Service grafana
+    # carries basic auth from a same-namespace auth-file Secret that a SecretProviderClass syncs
+    # as key `auth` (the same chain as the mail UI, INV-18).
+    inv21_bad=0
+    inv21_dep=$(awk -F'\t' '$1 == "Deployment" && $2 == "grafana" && $3 == "kind" { f = 1 } END { print f + 0 }' "$TMP/inv11_paths.tsv")
+    # EVERY Service that can reach Grafana's pod: any Service selecting app=grafana, plus the one
+    # named grafana (whatever its selector). A route is found by the Service it names, not by the
+    # name `grafana` alone: a second Service `grafana-lb` behind an Ingress serves the same page.
+    inv21_svc=$({ awk -F'\t' '$1 == "Service" && $3 == "spec::selector::app" && $4 == "grafana" { print $2 }' "$TMP/inv11_paths.tsv"
+                  awk -F'\t' '$1 == "Service" && $2 == "grafana" && $3 == "kind" { print $2 }' "$TMP/inv11_paths.tsv"; } | sort -u)
+    # Ingress backends to one of those Services, through spec.rules[].http.paths[] OR through
+    # spec.defaultBackend (a catch-all route Traefik serves the same way):
+    # <ingress> TAB <path prefix> TAB <service>
+    inv21_routes=$(awk -F'\t' -v svcs="$inv21_svc" 'BEGIN { n = split(svcs, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") s[a[i]] = 1 }
+        $1 == "Ingress" && ($4 in s) && ($3 ~ /^spec::rules::\[[0-9]+\]::http::paths::\[[0-9]+\]::backend::service::name$/ || $3 == "spec::defaultBackend::service::name") {
+        p = $3; sub(/::backend::service::name$/, "", p); sub(/::service::name$/, "", p); print $2 "\t" p "\t" $4 }' "$TMP/inv11_paths.tsv")
+    if (( inv21_dep == 0 )) && [[ -z "$inv21_routes" && -z "$inv21_svc" ]]; then
+        # Not guarded with a staging-only parse error: staging cannot render WITHOUT Grafana (the
+        # azure-keyvault component patches the monitoring Deployments, and `kubectl kustomize`
+        # fails on a patch with no target; shown 2026-10-20 by dropping ../components/monitoring: "no
+        # resource matches strategic merge patch Deployment.v1.apps/postgres-exporter"), so such a
+        # guard could never fire and would be an assertion nobody had seen fail.
+        inv21_msg="not applicable (no grafana component in this render)"
+    else
+        (( inv21_dep == 1 )) || parse_fail "[$rel] INV-21: the render has a Service or Ingress route for Grafana but no Deployment grafana (by path). Either the component lost its workload or the path walker is blind; the auth rules would pass vacuously."
+        [[ -n "$inv21_routes" ]] || parse_fail "[$rel] INV-21 found 0 Ingress backends to Service grafana in a render that runs Deployment grafana. The edge-gated Grafana route is part of the component, so either it vanished or the path walker is blind; the auth rules would pass vacuously."
+        while IFS=$'\t' read -r ing pfx isvc; do
+            [[ -n "$ing" ]] || continue
+            if [[ "$pfx" == "spec::defaultBackend" ]]; then
+                ihost="(defaultBackend: every host)"
+            else
+                host_pfx="${pfx%%::http::*}"
+                ihost="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "$host_pfx::host")"
+            fi
+            atype="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "metadata::annotations::nginx.ingress.kubernetes.io/auth-type")"; atype="${atype//\"/}"
+            asec="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "metadata::annotations::nginx.ingress.kubernetes.io/auth-secret")"; asec="${asec//\"/}"
+            astype="$(path_get "$TMP/inv11_paths.tsv" Ingress "$ing" "metadata::annotations::nginx.ingress.kubernetes.io/auth-secret-type")"; astype="${astype//\"/}"
+            if [[ "$atype" != "basic" ]]; then
+                echo "  FAIL [$rel] INV-21: Ingress '$ing' routes host '$ihost' to Service $isvc without basic auth (auth-type '$atype'). Anyone on the internet could reach Grafana's login page and guess its admin password (#968 item 3)." >&2
+                inv21_bad=1
+            fi
+            if [[ "$asec" == "(ABSENT)" || -z "$asec" || "$asec" == */* ]]; then
+                echo "  FAIL [$rel] INV-21: Ingress '$ing' auth-secret '$asec' is not a same-namespace Secret name. Traefik resolves auth-secret in the Ingress's own namespace (cross-namespace resources are off); an unresolvable Secret skips the route." >&2
+                inv21_bad=1
+            elif ! awk -F'\t' -v s="$asec" '
+                    $1 == "SecretProviderClass" && $3 ~ /^spec::secretObjects::\[[0-9]+\]::secretName$/ && $4 == s { p = $3; sub(/::secretName$/, "", p); pfx[$2 "\t" p] = 1 }
+                    { rows[NR] = $0 }
+                    END {
+                        for (i = 1; i <= NR; i++) {
+                            split(rows[i], f, "\t")
+                            if (f[1] != "SecretProviderClass" || f[3] !~ /::data::\[[0-9]+\]::key$/ || f[4] != "auth") continue
+                            q = f[3]; sub(/::data::\[[0-9]+\]::key$/, "", q)
+                            if ((f[2] "\t" q) in pfx) found = 1
+                        }
+                        exit !found
+                    }' "$TMP/inv11_paths.tsv"; then
+                echo "  FAIL [$rel] INV-21: Ingress '$ing' auth-secret '$asec' is not synced as key 'auth' by any SecretProviderClass in the render. Traefik reads key 'auth' of that Secret; with nothing producing it the route is skipped and Grafana is unreachable (or, if the Secret is hand-made, unmanaged by Key Vault)." >&2
+                inv21_bad=1
+            fi
+            if [[ "$astype" != "(ABSENT)" && "$astype" != "auth-file" ]]; then
+                echo "  FAIL [$rel] INV-21: Ingress '$ing' auth-secret-type '$astype', expected auth-file (key 'auth' as htpasswd lines, the shape scripts/staging-secrets.sh writes)." >&2
+                inv21_bad=1
+            fi
+        done <<< "$inv21_routes"
+        # (c) every Service reaching Grafana's pod (selector app=grafana, or named grafana) is
+        # ClusterIP, as INV-18 (b) does for mailpit: a LoadBalancer or NodePort publishes
+        # Grafana's login page with no Ingress, so no edge auth, in front of it at all.
+        while IFS= read -r sv; do
+            [[ -n "$sv" ]] || continue
+            st_type="$(path_get "$TMP/inv11_paths.tsv" Service "$sv" spec::type)"
+            [[ "$st_type" == "(ABSENT)" ]] && st_type=ClusterIP
+            if [[ "$st_type" != "ClusterIP" ]]; then
+                echo "  FAIL [$rel] INV-21: Service '$sv' reaches Grafana's pod and is type $st_type. A LoadBalancer or NodePort publishes Grafana's login page with no basic auth in front of it (#968 item 3, as INV-18 for T-29-109)." >&2
+                inv21_bad=1
+            fi
+        done <<< "$inv21_svc"
+        if (( inv21_bad != 0 )); then
+            FAILED=1
+            inv21_msg="FAIL"
+        else
+            inv21_msg="OK ($(grep -c . <<< "$inv21_routes") route(s) to grafana behind basic auth from a same-namespace auth-file Secret that a SecretProviderClass syncs as key auth; $(grep -c . <<< "$inv21_svc") ClusterIP Service(s))"
+        fi
+    fi
+
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg"
     fi
 done
 
@@ -4339,4 +4644,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); INV-21 holds wherever the grafana component renders; $LOCAL_SECTION."

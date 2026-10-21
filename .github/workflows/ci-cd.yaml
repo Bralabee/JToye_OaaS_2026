@@ -743,6 +743,16 @@ jobs:
       - name: Prove INV-20 catches planted Keycloak proxy-trust holes (--selftest-inv20)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv20
 
+      # #968 item 3: INV-21 keeps staging Grafana behind the same Traefik basic-auth chain as
+      # the mail UI: every Ingress route to Service grafana carries auth-type basic and an
+      # auth-secret that a SecretProviderClass syncs as key `auth`, and every Service reaching Grafana's
+      # pod is ClusterIP. Ten planted holes (an open route, a cross-namespace secret, the wrong
+      # secret type, an unsynced secret, the wrong synced key, a second open route, no route at
+      # all, which is a PARSE ERROR, rc 2, a LoadBalancer Service, a second Service behind an
+      # open Ingress, and an open spec.defaultBackend).
+      - name: Prove INV-21 catches planted Grafana edge-auth holes (--selftest-inv21)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv21
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,
@@ -845,6 +855,13 @@ jobs:
       # kubectl/az and TCP connect: no cluster, no Azure, no network.
       - name: Prove the mail-UI probe's arms can fail (29-22 --selftest)
         run: bash scripts/staging-mail-ui.sh --selftest
+
+      # #968 item 3: the same for the Grafana edge gate's probe (G-1..G-4): an open page, no
+      # Basic challenge, a page leaked in the 401 body, a wrong password accepted, the
+      # credential refused, a title-only or other-app 200, http serving the page, a redirect to
+      # http, and a DNS mismatch (VOID) each FAIL alone; stubbed curl/dig/kubectl/az.
+      - name: Prove the Grafana edge probe's arms can fail (#968 --selftest)
+        run: bash scripts/staging-grafana-edge.sh --selftest
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |

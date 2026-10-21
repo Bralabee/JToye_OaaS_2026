@@ -292,6 +292,12 @@ replacements:
           name: mailpit-ui-kv
         fieldPaths:
           - spec.parameters.clientID
+      # The Grafana edge gate credential (#968 item 3): the same pod, so the same identity.
+      - select:
+          kind: SecretProviderClass
+          name: grafana-edge-kv
+        fieldPaths:
+          - spec.parameters.clientID
       - select:
           kind: ServiceAccount
           name: secret-sync
