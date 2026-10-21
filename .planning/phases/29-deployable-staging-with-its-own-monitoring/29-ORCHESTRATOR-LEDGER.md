@@ -148,3 +148,26 @@ Next, in order (each merge redeploys staging: wait for its deploy run and read t
 3. #989: merge main into the branch, re-review, merge.
 4. `/gsd-verify-work 29` (the gsd-verifier), then `/gsd-secure-phase 29` to write `29-SECURITY.md`. The five DPLY requirement rows are already marked Complete "pending phase verification" in REQUIREMENTS.md; the verifier confirms or reverses them.
 Still true from before: owner-run commands start with `source ~/miniconda3/etc/profile.d/conda.sh && conda activate jtoye-ops`; check `.env` and memory before asking the owner for a value; PR bodies carry no attribution line and are read back after posting; #98, #294, #301 and #304 stay open as the approved dispositions table says. phase-29-research is the canonical paused body: never clean up.
+
+## 2026-10-21 — PHASE CLOSE (supersedes every RESUME block above)
+Steps 1 to 4 of the evening block are DONE.
+
+**Merges, each followed by a green deploy:**
+- #988 (87ff46d4)
+- #990 (d887f27d): Grafana edge probe G-1..G-4 4/4 after deploy run 39524500078
+- #989 (8499fdf8): its main run was red at Security Scan on a new follow-redirects advisory, so nothing deployed; staging stayed healthy on d887f27d
+- #1000 (4f3f3e14): integration of the #973 alert fix and the follow-redirects 1.16.1 bump, under the owner's bundle ruling B; #1001 was closed unmerged as shipped inside #1000
+
+**#1000's main run 39542329063:** Security Scan, Build and Push, Deploy to Staging (digest parity 3/3 MATCH) and Staging Edge Probe (4/4, its first CI run) all success.
+
+**Phase records:**
+- `29-VERIFICATION.md` is `passed` 5/5. The DPLY-03 gap (#973) was closed by a live re-run at 05:21Z: rc 0, renamed-selector break arm rc 1, clean again rc 0.
+- `29-SECURITY.md`: register 133/133 closed, `threats_open: 0`, `unregistered_open: 0`; the addendum at 4f3f3e14 closes U-1 and C-10.
+
+**Still open, none blocking:**
+- the owner's confirmation of R-3 (Grafana edge failed guesses not throttled, accepted by analogy with the mail UI);
+- `29-VALIDATION.md` is still `draft` / `nyquist_compliant: false` (`/gsd-validate-phase 29` never run);
+- the Grafana 24 h restart watch after #987;
+- follow-up issues #999 (staging metrics labelled `environment="production"`), #992, #971.
+
+`DEPLOY_STAGING_ENABLED` stays `true`.
