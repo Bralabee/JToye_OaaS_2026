@@ -227,6 +227,7 @@ Phase 32 inherits it; none of it is a defect in staging.
   `10.244.0.0/16`, measured in plan 29-15 because Traefik pods move on reschedule and the node
   `podCIDR` is not populated under Azure CNI overlay. Production must measure its own, and
   `KC_PROXY_TRUSTED_ADDRESSES` for Keycloak is still unset (#976).
+- **Grafana edge throttling (R-3, production).** On staging the owner accepted R-3 on 2026-10-21: failed basic-auth guesses on `grafana-public` are not rate-limited, because the Ingress-NGINX provider orders basic auth before `limit-rps`. The acceptance is staging-only and holds only while the credential is machine-generated (`29-SECURITY.md`, Accepted Risks Log). Production shares the `grafana-public` Ingress through `k8s/components/monitoring`, so Phase 32 must rule on it for production. The two choices are to accept it on the same conditions, or to move the route to a Traefik-native Middleware chain (a rate limit, then basic auth) and update INV-21.
 - **Key Vault for production (D-23 repeats).** Production's secrets path is not Sealed Secrets by default
   any more: D-23's Key Vault + CSI chain, its write-once writer and its preflight are the staging pattern,
   and Phase 32 repeats the decision for its own vault, identities and grants.

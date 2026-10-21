@@ -167,12 +167,11 @@ Steps 1 to 4 of the evening block are DONE.
 **Still open, none blocking:**
 - `29-VALIDATION.md` is still `draft` / `nyquist_compliant: false` (`/gsd-validate-phase 29` never run);
 - the Grafana 24 h restart watch after #987;
-- follow-up issues #999 (staging metrics labelled `environment="production"`), #992, #971;
-- issue #973 is fixed by #1000 and is still OPEN, because #1000 only referenced it. The orchestrator closes it with an evidence comment after #1002 merges.
+- follow-up issues #999 (staging metrics labelled `environment="production"`), #992, #971.
 
 `DEPLOY_STAGING_ENABLED` stays `true`.
 
 **After the close (2026-10-21):**
 - #1002 merged as d289cec9.
-- issue #973 was closed as completed, with an evidence comment.
+- issue #973 was closed as completed, with an evidence comment, at 2026-10-21T05:48Z. #1000 had only referenced it, so it had stayed open. Do not close it or re-post the evidence again.
 - The owner accepted R-3 ("I accept"). The acceptance is staging-only and holds only while the Grafana edge credential is the generated one; it is recorded in `29-SECURITY.md`'s Accepted Risks Log. No owner ruling is outstanding on Phase 29.
