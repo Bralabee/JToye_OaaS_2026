@@ -1565,6 +1565,12 @@ jobs:
       #      runtime binaries, because the script necessarily names every one it looks
       #      for. Fixed by stripping the definition line; the trap is documented in the
       #      script, since this repo has hit it before with doc-lint rules.)
+      # Review round 1 on #1005 (F2): scripts/gates/review-record-check.sh has a --selftest
+      # (80 arms, 48 more skipped by design outside the canonical dotfiles context) that no
+      # workflow ran; review-record.yml runs only --status-verdict. Needs only bash and jq.
+      - name: Prove the review-record gate's arms (--selftest)
+        run: bash scripts/gates/review-record-check.sh --selftest
+
       # Issue #970: pass 2 of the same gate. Every non-check script that dispatches a --selftest
       # (staging-secrets, staging-secrets-preflight, staging-db-bootstrap and the rest) must be
       # invoked as `<name>.sh --selftest` on a non-comment line of a workflow; #989 wired the
