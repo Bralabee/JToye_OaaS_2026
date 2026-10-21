@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Mailpit Restarts Itself When Its Certificate Changes, and a Certificate-Expiry Alert (#1006) — 2026-10-21
+
+Issue #972. Mailpit reads its SMTP certificate only at process start, so after cert-manager renewed `mailpit-tls` the running Mailpit kept serving the old one until it expired (2027-01-17 for the first), after which STARTTLS failed, core-java's mail health went DOWN and the deploy-staging health step went red like a code regression. Measured in a scratch namespace: after a rotation the unfixed manifest still served the old certificate; with the fix it serves the new one within about two minutes. (The issue calls the certificate Let's Encrypt; it is `mailpit-tls` from the cluster-internal CA.)
+
+- **Reload.** The `mailpit` container runs a small supervisor that hashes the files `MP_SMTP_TLS_CERT/KEY` name, polls them every 15 s and, on a change, stops Mailpit so the kubelet restarts the container with the new certificate. No RBAC, no new image, no NetworkPolicy; the mailbox emptyDir survives; STARTTLS stays required.
+- **INV-22.** A new render invariant pins the supervisor and `MP_SMTP_REQUIRE_STARTTLS=true`, with `--selftest-inv22` (6 arms) in `k8s-validate`.
+- **Alert.** `CertificateExpiringSoon` (warning): any cert-manager Certificate with under 7 days left for 10 minutes, so renewal is failing. A new k8s-only scrape job `cert-manager` feeds it; the `k8s-only-job` directive in `k8s/copy-parity.conf` declares it and `check-k8s-copy-parity.sh` checks the declaration both ways. `scripts/alert-k8s-only.txt` lets `check-alert-metrics.sh` and `check-alert-liveness.sh` treat an empty selector against compose as expected while still judging it on the cluster. Shown firing on a deliberately expired and a 3-day certificate and quiet on a good one, and covered by promtool cases.
+- **NetworkPolicy.** `prometheus-allow` gains one egress rule to the cert-manager controller on TCP 9402 (INV-7 row, flow-matrix row). Owner approval required before merge; commit 2 reverts whole if declined.
+- **Staging golden** regenerated; production is byte-unchanged. Runbooks: `docs/runbooks/alerts.md` (`CertificateExpiringSoon`) and `docs/runbooks/staging-operations.md`.
+
 ### follow-redirects 1.16.1: Two HIGH Advisories Had Stopped Every Staging Deploy (#1001) — 2026-10-21
 
 Trivy began failing the Security Scan on main (run 39531194956, #989's merge) on CVE-2026-111755 and CVE-2026-111756 in `follow-redirects` 1.16.0, reached only through axios. The tree had not changed, the advisory data had, and Security Scan gates build-and-push and so the staging deploy. The lock entry moves to 1.16.1 inside axios's existing `^1.16.0` range, with the integrity recomputed from the registry tarball. Trivy on main's lockfile: rc 1 naming both CVEs; on this one: rc 0, and the whole-tree scan is clean.
