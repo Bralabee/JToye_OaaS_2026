@@ -374,30 +374,30 @@ jobs:
   # context brokerless (RabbitMQ dead-port) and cache-less.
   integration-tests:
     name: Integration Tests (Testcontainers RLS)
+    # DOC-ONLY SKIP, done at STEP level. This job ALWAYS RUNS and ALWAYS REPORTS SUCCESS (or a
+    # real failure); a documentation-only change simply runs none of the expensive steps below,
+    # exactly as the path filter already does for a pull_request that touches no Java. It is a
+    # REQUIRED check, and this file's rule stands: gate in-job, never skip the job on
+    # `docs_only`.
+    #
+    # The one job-level `if:` below is NOT a skip condition and must stay constant. With
+    # `needs: changes` and no `if:`, a FAILED `changes` job makes GitHub skip this job (implicit
+    # success()), and GitHub reports a skipped job as Success for a required check - the
+    # documentation says so twice, "A job depends on a failed job -> the dependent job is
+    # skipped and may not block merging" (Troubleshooting required status checks) and
+    # "Required status checks must have a successful, skipped, or neutral status" (About
+    # protected branches). That would merge a CODE change with no integration run. `!cancelled()`
+    # is a conditional that makes the job continue regardless of `changes`; then every
+    # expensive step is gated on `needs.changes.outputs.docs_only != 'true'`, which is TRUE for
+    # a failed or skipped `changes` (empty output), so the suite runs. Only a successfully
+    # computed `true` skips the steps.
+    #
+    # scripts/check-ci-docs-skip-wiring.sh pins this by structure (W-4): the job-level `if:` is
+    # exactly `!cancelled()` - not `success() && !cancelled() && ...`, not a docs_only term - and
+    # every step gated on the path filter carries the docs_only term as its own top-level `&&`
+    # conjunct (parenthesise the existing `a || b`, or `&&` binds tighter and a push runs anyway).
     needs: changes
-    # DOC-ONLY SKIP. This is the one job-level `if:` on a required check, and it is deliberate.
-    # GitHub's documentation is explicit that a job skipped by a conditional REPORTS SUCCESS
-    # and satisfies a required status check ("Handling skipped but required checks" in
-    # "Troubleshooting required status checks": "A job is skipped by a conditional -> The job
-    # reports Success"; and "Required status checks must have a successful, skipped, or
-    # neutral status" in "About protected branches"). What does NOT satisfy a required check
-    # is a whole WORKFLOW skipped by `paths:`/`branches:` filters (it stays Pending forever),
-    # which is why this file has no such filter and must not grow one.
-    #
-    # The same documentation names the opposite hazard: "A job depends on a failed job -> the
-    # dependent job is skipped and may not block merging". If `changes` itself failed and this
-    # condition were a bare `needs.changes.outputs.docs_only != 'true'` with the implicit
-    # success(), the required Integration Tests check would report SKIPPED-as-success on a
-    # CODE change, and the failure would be a red job that is not itself required. Hence
-    # `!cancelled()`: it overrides the implicit success(), and a failed or skipped `changes`
-    # has an empty output, which is `!= 'true'`, so the suite RUNS. Only an explicit,
-    # successfully computed `true` skips it. A cancelled run is skipped, as any run is.
-    #
-    # This is in ADDITION to the in-job path filter below, which still narrows pull_request
-    # runs (frontend-only, k8s-only ...) with step-level gating. The two answer different
-    # questions: the filter says "no Java can have changed"; docs_only says "nothing but
-    # documentation changed", on push as well as pull_request.
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Explicit because the repo's default GITHUB_TOKEN is restricted (contents +
     # packages read only): dorny/paths-filter lists the PR's changed files via
@@ -412,8 +412,10 @@ jobs:
       # Path-filter the ~24.5-min Gradle integrationTest work: on pull_request runs
       # whose diff cannot affect the Java integration suite (docs-only / frontend-only
       # / edge-go-only / k8s-only PRs) the suite is skipped, but the job still reports
-      # SUCCESS (in-job STEP gating, never a job-level `if:`) so it stays a satisfiable
-      # required check. push/release bypass the filter (see the reusable gate below).
+      # SUCCESS (in-job STEP gating; the only job-level `if:` is the constant `!cancelled()`
+      # explained above, never a skip condition) so it stays a satisfiable required check.
+      # push/release bypass THIS filter (see the reusable gate below) but not the docs_only
+      # term: a push that changed only documentation runs none of the heavy steps either.
       - name: Filter paths affecting the Java integration suite
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -435,7 +437,8 @@ jobs:
           echo "Integration suite skipped: this pull_request's diff touches none of the trigger paths"
           echo "  (core-java/**, build.gradle.kts, settings.gradle.kts, gradle.properties, gradle/**, gradlew, gradlew.bat, .github/workflows/ci-cd.yaml)"
           echo "so ./gradlew :core-java:integrationTest cannot be affected. This job reports SUCCESS on purpose"
-          echo "so it stays a satisfiable required check. push/release runs always execute the full suite."
+          echo "so it stays a satisfiable required check. A push or release whose diff is not documentation-only"
+          echo "always executes the full suite."
           echo ""
           echo "JAVA COVERAGE WAS NOT EVALUATED ON THIS RUN."
           echo "  The Java coverage floor is enforced over the AGGREGATE of the unit suite and this"
@@ -445,8 +448,18 @@ jobs:
           echo "  COVERAGE — do not read it as a coverage result, and do not quote a number from it."
           echo "  Could not measure is not measured and fine."
 
+      - name: Skip notice (documentation-only change)
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          echo "Integration suite skipped: the changes job found every changed path to be allow-listed"
+          echo "documentation (scripts/ci-docs-only.sh). This job reports SUCCESS on purpose so it stays"
+          echo "a satisfiable required check."
+          echo ""
+          echo "JAVA COVERAGE WAS NOT EVALUATED ON THIS RUN. THIS JOB'S SUCCESS SAYS NOTHING ABOUT"
+          echo "COVERAGE - do not read it as a coverage result, and do not quote a number from it."
+
       - name: Set up JDK 25
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version: '25'
@@ -459,14 +472,14 @@ jobs:
       # divisor was inert on CI for exactly that reason and nobody noticed, because
       # nothing ever printed the number it resolved to.
       - name: Runner shape (input to the integrationTest fork count)
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: |
           echo "nproc            : $(nproc)"
           echo "memory           : $(free -h | awk '/^Mem:/ {print $2 " total, " $7 " available"}')"
           echo "disk (workspace) : $(df -h . | awk 'NR==2 {print $4 " available"}')"
 
       - name: Run Testcontainers integration suite
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: ./gradlew :core-java:integrationTest --no-daemon
 
       # Plan 34-09 (TRUTH-02, #110). Java coverage is measured over BOTH suites and
@@ -492,7 +505,7 @@ jobs:
       # gate's own VOID naming the missing suite, not an opaque "unable to find any
       # artifacts" error — and under no ordering does a missing half produce a PASS.
       - name: Download the unit suite's JaCoCo execution data
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -508,7 +521,7 @@ jobs:
       # its test task with mustRunAfter, never dependsOn). It re-reports the downloaded
       # .exec and nothing else.
       - name: Generate the unit-only and aggregate JaCoCo reports
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: ./gradlew :core-java:jacocoTestReport :core-java:jacocoAggregateReport --no-daemon
 
       # Shown to FAIL before being trusted, then restored and verified by
@@ -530,13 +543,13 @@ jobs:
       # unit-only report and exits 2 instead. Clean tree: rc=0 at 88.06 / 71.88 / 87.55
       # / 87.53.
       - name: Enforce the aggregate Java coverage floor (#110)
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: |
           chmod +x ./scripts/check-jacoco-coverage.sh
           ./scripts/check-jacoco-coverage.sh
 
       - name: Upload integration test results
-        if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true')
+        if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: integration-test-results
@@ -1824,19 +1837,21 @@ jobs:
   # "never a job-level `if:`" precisely so it stays a satisfiable required check
   # that always reports SUCCESS. That is the pattern any future conditional gate
   # must follow; a job-level `if:` on any job listed below would turn this gate
-  # into a deploy blocker.
+  # into a deploy blocker. (integration-tests' constant `if: ${{ !cancelled() }}` is not a
+  # skip condition - it exists so a failed `changes` cannot skip it - and the doc-only skip
+  # is step-level there too.)
   #
-  # DOC-ONLY SKIP (the one deliberate exception to the paragraph above). integration-tests
-  # now carries a job-level `if:` driven by the `changes` job, so on a documentation-only
-  # change it is SKIPPED, and a skipped `needs:` entry skips this job - which is exactly the
-  # intent: no images are built or pushed for a change that cannot alter one. It is not an
-  # accident of the needs graph, so the condition is stated here too, explicitly, and the
-  # deploy jobs below skip through this job. The other six needs still cannot skip, so on any
-  # change the classifier does not call docs-only this job is gated exactly as before.
-  # `changes` is in `needs:` only so its output is readable; if `changes` FAILS this job is
-  # skipped (implicit success()) - nothing is built or deployed without a successful
+  # DOC-ONLY SKIP. integration-tests ALWAYS RUNS (it gates its steps on docs_only, see its
+  # comment), so it no longer skips this job through the needs graph; this job is therefore
+  # the one place that skips images on a documentation-only change, EXPLICITLY, with
+  # `needs.changes.outputs.docs_only != 'true'` in its own `if:`. Its deploy jobs
+  # (deploy-staging, deploy-production, staging-edge-probe) skip through it: an implicit
+  # success() and a skipped need. `changes` is in `needs:` so the output is readable; if
+  # `changes` FAILS this job is skipped - nothing is built or deployed without a successful
   # classification, and a re-run of the one cheap job fixes it. The integration suite, by
-  # contrast, runs in that case (see its `if:`), so no change ever merges untested.
+  # contrast, runs in that case, so no change ever merges untested. The other six needs still
+  # cannot skip, so on any change the classifier does not call docs-only this job is gated
+  # exactly as before.
   build-and-push:
     name: Build and Push Images
     needs: [changes, test, integration-tests, security-scan, k8s-validate, lint, openapi-compat, mcp-server-tests]
