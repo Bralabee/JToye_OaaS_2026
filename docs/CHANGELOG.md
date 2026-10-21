@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Shop-Child Updates Authorise a Changed shopId (#1021) — 2026-10-21
+
+`PUT /products/{id}`, `PUT /promotions/{id}` and `PUT /announcements/{id}` required SHOP_MANAGER on the row's current shop only, while the update mappers also copied the request's `shopId` onto the row, so the shop named in the body was never itself authorised. The create paths already did that check.
+
+- **Change.** `ShopAccessService.requireForShopChange` requires SHOP_MANAGER on the target shop (through `require()`, so the same-tenant check applies) whenever the body names a shop other than the row's current one. It runs before anything is applied. The three `updateEntity` mappings no longer copy `shopId`; each service assigns the checked shop explicitly.
+- **Unchanged.** An omitted `shopId` on a product PUT keeps the stored shop; moving a row between shops the caller manages, a Group admin moving a row within their own business, and assigning a shop to a shop-less product all still work.
+- **Other paths checked.** Product PATCH, sync upsert, CSV import, product copy, culinary-pack seed, customer and order updates and the MCP tools have no request-supplied shop on update or already authorise it; the sync update goes through `updateProduct` and so gets the new check.
+- **Tests.** `ShopChildUpdateTargetShopIntegrationTest` (27 tests, real Postgres, NOSUPERUSER so FORCE RLS applies, strict scoping on, JWTs through the filter chain; 16 refusal arms failed on the unfixed code, the 11 control arms passed on both) and six service unit tests.
+- **Not done.** A composite `(shop_id, tenant_id)` foreign key: it needs a unique index on `shops` and a constraint per shop-child table, and finding rows that already violate it is a separate data audit.
+
 ### follow-redirects 1.16.1: Two HIGH Advisories Had Stopped Every Staging Deploy (#1001) — 2026-10-21
 
 Trivy began failing the Security Scan on main (run 39531194956, #989's merge) on CVE-2026-111755 and CVE-2026-111756 in `follow-redirects` 1.16.0, reached only through axios. The tree had not changed, the advisory data had, and Security Scan gates build-and-push and so the staging deploy. The lock entry moves to 1.16.1 inside axios's existing `^1.16.0` range, with the integrity recomputed from the registry tarball. Trivy on main's lockfile: rc 1 naming both CVEs; on this one: rc 0, and the whole-tree scan is clean.
