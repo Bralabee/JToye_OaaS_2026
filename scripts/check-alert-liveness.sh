@@ -144,8 +144,19 @@ case "$host" in
       /-/healthy) echo ok ;;
       /api/v1/targets) echo '{"data":{"activeTargets":[{"labels":{"job":"prometheus"},"health":"up","scrapeUrl":"http://p/metrics","lastError":""}]}}' ;;
       /api/v1/query) echo '{"status":"success","data":{"result":[{"value":[0,"1"]}]}}' ;;
-      /api/v1/rules) echo '{"data":{"groups":[{"rules":[{"type":"alerting","name":"ServiceDown","labels":{"service":"platform"},"query":"up == 0"}]}]}}' ;;
-      /api/v1/series) echo '{"data":[{"__name__":"up","job":"prometheus"}]}' ;;
+      /api/v1/rules)
+        # STUB_RULE_CERT=1 adds the k8s-only rule (issue #972) to the rules the stub serves.
+        if [ -n "${STUB_RULE_CERT:-}" ]; then
+          echo '{"data":{"groups":[{"rules":[{"type":"alerting","name":"ServiceDown","labels":{"service":"platform"},"query":"up == 0"},{"type":"alerting","name":"CertificateExpiringSoon","labels":{"service":"platform"},"query":"certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400"}]}]}}'
+        else
+          echo '{"data":{"groups":[{"rules":[{"type":"alerting","name":"ServiceDown","labels":{"service":"platform"},"query":"up == 0"}]}]}}'
+        fi ;;
+      /api/v1/series)
+        # certmanager_* series exist only when STUB_CERT_SERIES is set (the cluster has them, compose does not)
+        case "${data[*]}" in
+          *certmanager_*) if [ -n "${STUB_CERT_SERIES:-}" ]; then echo '{"data":[{"__name__":"certmanager_certificate_expiration_timestamp_seconds","job":"cert-manager"}]}'; else echo '{"data":[]}'; fi ;;
+          *) echo '{"data":[{"__name__":"up","job":"prometheus"}]}' ;;
+        esac ;;
       *) exit 22 ;;
     esac ;;
   am.stub) case "$path" in
@@ -203,7 +214,7 @@ STUB
     local name="$1" want="$2" check="$3" out rc log why=""; shift 3
     n=$((n + 1))
     log="$st/$name.log"; : > "$log"
-    out=$(env PATH="$st/bin:$PATH" STUB_LOG="$log" STUB_SUM="$sum" \
+    out=$(env -u ALERT_RUNTIME PATH="$st/bin:$PATH" STUB_LOG="$log" STUB_SUM="$sum" \
           ALERTS="$fixture" PROM_URL=http://prom.stub ALERTMANAGER_URL=http://am.stub \
           MAILHOG_URL=http://mailhog.stub MAILPIT_URL=http://mailpit.stub \
           LIVENESS_L3_TRIES=2 LIVENESS_L3_SLEEP=0 LIVENESS_L3_SETTLE_MARGIN=0 "$@" "$BASH" "$SELF" 2>&1); rc=$?
@@ -224,6 +235,30 @@ STUB
   arm k8s-prom-exec-kubectl 0 \
     'command grep -qxF "kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus -- md5sum /etc/prometheus/alerts.yml" "$log" && ! command grep -q "^docker " "$log" && ! command grep -qE "(^| )cp( |$)" "$log" && command grep -q "^L-0 OK: served md5=$sum == .* (via kubectl)$" <<<"$out"' \
     PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
+  # Issue #972: a rule whose series only the cluster produces. Against compose (PROM_EXEC docker)
+  # its empty selector is skipped out loud; against the cluster (PROM_EXEC kubectl) it is judged
+  # like any other rule and an empty selector is a violation; with the series present it passes.
+  arm k8s-only-rule-skipped-on-compose 0 \
+    'command grep -q "^L-2   .CertificateExpiringSoon. skipped: K8S-ONLY rule" <<<"$out" && ! command grep -q "certmanager_" "$log" && command grep -q "^  L-2k  k8s-only rules skipped=1 (runtime=compose)" <<<"$out"' \
+    STUB_RULE_CERT=1
+  arm k8s-only-rule-enforced-on-k8s 1 \
+    'command grep -q "^FAIL: L-2 rule .CertificateExpiringSoon. selector .certmanager_certificate_expiration_timestamp_seconds. matches 0 series" <<<"$out"' \
+    STUB_RULE_CERT=1 PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
+  # F3 (review round 1): an exported ALERT_RUNTIME is honoured, whatever PROM_EXEC looks like, so
+  # the two gates share one switch. k8s with a non-kubectl PROM_EXEC (a wrapper, an alias) must NOT
+  # skip; compose with a kubectl PROM_EXEC must skip.
+  arm k8s-only-rule-env-k8s-overrides-docker-exec 1 \
+    'command grep -q "^FAIL: L-2 rule .CertificateExpiringSoon. selector" <<<"$out" && ! command grep -q "skipped: K8S-ONLY" <<<"$out"' \
+    STUB_RULE_CERT=1 ALERT_RUNTIME=k8s
+  arm k8s-only-rule-env-compose-overrides-kubectl 0 \
+    'command grep -q "skipped: K8S-ONLY" <<<"$out" && command grep -q "(runtime=compose)" <<<"$out"' \
+    STUB_RULE_CERT=1 ALERT_RUNTIME=compose PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
+  arm bogus-alert-runtime-usage 2 \
+    'command grep -q "^USAGE ERROR: ALERT_RUNTIME" <<<"$out" && ! [ -s "$log" ]' \
+    ALERT_RUNTIME=bogus
+  arm k8s-only-rule-live-on-k8s 0 \
+    'command grep -q "^curl GET http://prom.stub/api/v1/series .*certmanager_" "$log" && ! command grep -q "skipped: K8S-ONLY" <<<"$out"' \
+    STUB_RULE_CERT=1 STUB_CERT_SERIES=1 PROM_EXEC='kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/prometheus --'
   arm mailhog-sink-calls 0 \
     'command grep -q "^curl GET http://mailhog.stub/api/v2/messages" "$log" && command grep -q "^curl GET http://mailhog.stub/api/v2/search" "$log" && ! command grep -q "mailpit.stub" "$log"' \
     SINK=mailhog
@@ -302,6 +337,11 @@ esac
 case "$L3_TRIES$L3_SLEEP" in
   *[!0-9]*|'') echo "USAGE ERROR: LIVENESS_L3_TRIES and LIVENESS_L3_SLEEP must be non-negative integers" >&2; exit 2 ;;
 esac
+case "${ALERT_RUNTIME:-}" in
+  compose|k8s) ;;
+  '') case "$PROM_EXEC" in *kubectl*) ALERT_RUNTIME=k8s ;; *) ALERT_RUNTIME=compose ;; esac ;;
+  *) echo "USAGE ERROR: ALERT_RUNTIME must be 'compose' or 'k8s' (got '$ALERT_RUNTIME'); nothing was checked" >&2; exit 2 ;;
+esac
 [ "$L3_TRIES" -ge 1 ] || { echo "USAGE ERROR: LIVENESS_L3_TRIES must be at least 1" >&2; exit 2; }
 
 # ---- data block: exporter job -> its self-reported upstream-health gauge ------
@@ -330,7 +370,21 @@ EXPORTER_GAUGES=(
 # not recognise. Do NOT "fix" a future VOID by teaching L-1b to ignore unknown jobs — that would
 # be strictly worse than the red, because the whole point is that a new exporter cannot slip in
 # unmapped.
-DIRECT_JOBS=("prometheus" "core-java" "edge-go" "keycloak" "rabbitmq" "rabbitmq-queues")
+# `cert-manager` (issue #972) is DIRECT too: cert-manager's own /metrics, a k8s-only job (compose has
+# no cert-manager, so it is only ever among the discovered jobs on the staging Prometheus).
+DIRECT_JOBS=("prometheus" "core-java" "edge-go" "keycloak" "rabbitmq" "rabbitmq-queues" "cert-manager")
+
+# ---- rules whose series exist only in the cluster (issue #972) ----------------
+# scripts/alert-k8s-only.txt, read here only for the NAMES. Against compose an empty selector on
+# one of these is expected (the runtime cannot produce it) and is skipped out loud; when PROM_EXEC
+# drives kubectl the gate is looking at the cluster and no exemption applies. Hygiene (a live
+# name, a reason, an owner) is check-alert-metrics.sh's. The runtime is decided up top, beside the
+# other usage checks: an exported ALERT_RUNTIME wins (the one switch shared with
+# check-alert-metrics.sh), else it is inferred from PROM_EXEC.
+K8S_ONLY_FILE="${K8S_ONLY_FILE:-$SCRIPT_DIR/alert-k8s-only.txt}"
+[ -r "$K8S_ONLY_FILE" ] || void "k8s-only list not readable: $K8S_ONLY_FILE"
+K8S_ONLY_RULES=" $(awk -F'|' '!/^[[:space:]]*#/ && NF { printf "%s ", $1 }' "$K8S_ONLY_FILE")"
+K8S_ONLY_SKIPPED=0
 
 # ---- data block: rule `service:` label -> Prometheus `job` --------------------
 # RULE-LABEL -> JOB, never label -> label. prometheus.yml labels the core-java
@@ -567,6 +621,12 @@ while IFS=$'\t' read -r name service query; do
   mapped=$(lookup "$service" "${SERVICE_JOB_MAP[@]}") \
     || void "L-2b rule '$name' carries service='$service', which has no job mapping — add a row rather than letting a new label silently skip the check"
 
+  if [ "$ALERT_RUNTIME" != k8s ] && [[ "$K8S_ONLY_RULES" == *" $name "* ]]; then
+    K8S_ONLY_SKIPPED=$((K8S_ONLY_SKIPPED + 1))
+    echo "L-2   '$name' skipped: K8S-ONLY rule (scripts/alert-k8s-only.txt) and PROM_EXEC is not kubectl (runtime=$ALERT_RUNTIME)"
+    continue
+  fi
+
   sels=$(selectors_of "$query")
   [ -n "$sels" ] || void "L-2 could not extract any metric selector from rule '$name' expr: $query"
 
@@ -790,6 +850,7 @@ echo "  L-0   $L0_NOTE"
 echo "  L-1   targets=$TARGET_N  down=$L1_DOWN"
 echo "  L-1b  exporter-jobs=${#EXPORTER_GAUGES[@]}  blind=$L1B_BLIND  gauge-read-by-no-rule=$L1B_UNREAD"
 echo "  L-2   rules=$RULE_N  selectors-matching-0-series=$L2_EMPTY"
+echo "  L-2k  k8s-only rules skipped=$K8S_ONLY_SKIPPED (runtime=$ALERT_RUNTIME)"
 echo "  L-2b  wrong-subject=$L2B_WRONG"
 echo "  L-3   probe delivered=$FOUND  sink=$(sink_name)  attempts{email} $SENT_BEFORE -> $SENT_AFTER  failed{email} $FAILED_BEFORE -> $FAILED_AFTER -> $FAILED_SETTLED after ${SETTLED_FOR}s (retry horizon ${L3_SETTLE}s = group_interval $AM_GROUP_INTERVAL + ${L3_SETTLE_MARGIN}s)"
 echo "  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink."

@@ -147,10 +147,17 @@ that is missing and never updates one that exists, so delete the synced Secret
 measured live). The worked example, including the refusal check for the superseded value, is
 `docs/runbooks/credential-rotation.md` sections 6.1 and 6.1a.
 
-**Mailpit reads its certificate only at start.** Its TLS certificate comes from the cert-manager
-internal CA. After a renewal, restart `deploy/mailpit` so it serves the new one; plan 29-22
-measured the expiry at 2027-01-17. A Mailpit serving an expired certificate fails the STARTTLS
-handshake core-java requires (section 6); this is tracked as #972.
+**Mailpit reads its certificate only at start, and restarts itself when it changes.** Its TLS
+certificate comes from the cert-manager internal CA (90 days, renewed 15 days early; the first one
+expires 2027-01-17). The `mailpit` container runs a supervisor that hashes the mounted certificate and
+key every 15 s and restarts the container when they change, so a renewal reaches the running Mailpit
+within about two minutes with no action (issue #972; INV-23 pins the supervisor in the render). The
+container restart count rising by one at each renewal is that working, and
+`kubectl ... logs deploy/mailpit -c mailpit --previous` shows `mailpit-cert-reload`. A Mailpit that
+served an expired certificate would fail the STARTTLS handshake core-java requires (section 6).
+The `CertificateExpiringSoon` alert fires when cert-manager has not renewed any certificate by 7 days
+before expiry (docs/runbooks/alerts.md); to compare what Mailpit serves with the Secret by hand see
+the steps there.
 
 **`scripts/deploy.sh` waits on every workload in the render (#969).** After the three retagged
 rollouts (`core-java`, `edge-go`, `frontend`, undone together if one fails) it runs `rollout status`
@@ -272,5 +279,8 @@ with `DEPLOY_TAG`), never a fresh `git rev-parse HEAD`: a docs commit moves `HEA
 whose images were never built. For each gate, exit 0 is a pass, 1 is a failure, and 2 is VOID
 ("could not evaluate"). A VOID is never a pass. After a change to monitoring, also run
 `scripts/check-alert-metrics.sh` (every alert selector matches a live series; point `PROM_URL` at
-the port-forwarded Prometheus, because its default is the local compose one) and the liveness
+the port-forwarded Prometheus, because its default is the local compose one, and set
+`ALERT_RUNTIME=k8s`: `ALERT_RUNTIME=k8s PROM_URL=http://localhost:19090 bash scripts/check-alert-metrics.sh`.
+Without it the gate refuses (exit 2) rather than guess, because the cluster-only
+`CertificateExpiringSoon` rule is skipped on compose and must be judged here) and the liveness
 command in section 5.

@@ -114,6 +114,7 @@ render none of them.
 | `prometheus-allow` | egress | pod `app=postgres-exporter` | TCP 9187 |
 | `prometheus-allow` | egress | pod `app=redis-exporter` | TCP 9121 |
 | `prometheus-allow` | egress | pod `app=alertmanager` (plan 29-24) | TCP 9093 |
+| `prometheus-allow` | egress | `cert-manager` namespace pods `app.kubernetes.io/name=cert-manager` (issue #972: the controller's certificate-expiry metrics; that namespace has no policy of its own) | TCP 9402 |
 | `postgres-exporter-allow` | ingress | pod `app=prometheus` | TCP 9187 |
 | `postgres-exporter-allow` | egress | `kube-system` pods `k8s-app=kube-dns` | UDP 53, TCP 53 |
 | `postgres-exporter-allow` | egress | public (managed Postgres, role `jtoye_monitor`) | TCP `<db.port>` |

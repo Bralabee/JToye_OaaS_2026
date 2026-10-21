@@ -112,6 +112,46 @@ spec:
       - name: mailpit
         image: axllent/mailpit:v1.31.6   # horizon row axllent-mailpit
         imagePullPolicy: IfNotPresent
+        # CERTIFICATE RELOAD (issue #972). Mailpit reads MP_SMTP_TLS_CERT/KEY once, at process
+        # start, and cert-manager renews mailpit-tls 15 days before it expires (cluster-ca.yaml):
+        # kubelet then rewrites the mounted Secret volume in place (about a minute later) but the
+        # running process keeps serving the OLD leaf until it expires, after which every STARTTLS
+        # fails, core-java's mail health indicator goes DOWN and the deploy-staging health step
+        # (aggregate /actuator/health) turns red like a code regression. So this container runs a
+        # small supervisor instead of exec'ing /mailpit directly: it hashes the cert and key files
+        # Mailpit was started with, polls them every 15 s, and on ANY change stops Mailpit and
+        # exits 0, whereupon the kubelet restarts THIS CONTAINER (not the pod) and the new process
+        # reads the new files. No API access, no RBAC, no extra image, no extra NetworkPolicy; the
+        # /data emptyDir survives a container restart, so the captured mailbox does too.
+        #   * The hash is taken BEFORE Mailpit starts: a renewal landing in between costs one
+        #     harmless extra restart, never a stale process that looks current.
+        #   * A failed read (a file missing mid-swap) skips that tick; it never counts as a change.
+        #   * sleep runs in the background and is `wait`ed, so SIGTERM (a rollout) reaches the trap
+        #     at once and Mailpit is stopped cleanly inside the grace period.
+        #   * STARTTLS stays REQUIRED: MP_SMTP_REQUIRE_STARTTLS below is untouched, and the
+        #     files hashed are the ones MP_SMTP_TLS_CERT/KEY name, so the two cannot drift apart.
+        # INV-23 (k8s/scripts/check-render-invariants.sh) pins this block in the render.
+        command:
+        - sh
+        - -c
+        - |
+          fp() { sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY" 2>/dev/null; }
+          start=$(fp) || { echo "mailpit-cert-reload: cannot read $MP_SMTP_TLS_CERT / $MP_SMTP_TLS_KEY" >&2; exit 1; }
+          /mailpit &
+          pid=$!
+          trap 'kill -TERM "$pid" 2>/dev/null; wait "$pid"; exit 0' TERM INT
+          while kill -0 "$pid" 2>/dev/null; do
+            sleep 15 &
+            wait $!
+            now=$(fp) || continue
+            if [ "$now" != "$start" ]; then
+              echo "mailpit-cert-reload: certificate or key changed on disk; stopping Mailpit so the container restarts with the new one"
+              kill -TERM "$pid" 2>/dev/null
+              wait "$pid"
+              exit 0
+            fi
+          done
+          wait "$pid"
         env:
         - name: MP_SMTP_TLS_CERT
           value: /tls/tls.crt

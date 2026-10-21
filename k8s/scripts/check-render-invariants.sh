@@ -520,6 +520,31 @@
 #               fails: which value wins cannot be shown.
 #          Shown catching each hole by --selftest-inv22; the live proof is
 #          curl -s localhost:9091/actuator/prometheus | grep environment= in the core-java pod.
+#   INV-23 ISSUE #972, RENDER level, every target that renders the mailpit component
+#          (a Deployment named mailpit). Mailpit reads its SMTP certificate ONLY at process
+#          start, cert-manager renews mailpit-tls 15 days before expiry and kubelet rewrites the
+#          mounted Secret in place, so without a restart the running Mailpit serves the OLD leaf
+#          until it expires: every STARTTLS then fails, core-java's mail health goes DOWN and the
+#          deploy-staging health step turns red like a code regression (dated 2027-01-17). The
+#          container therefore runs a supervisor that hashes the cert and key it started with and
+#          stops Mailpit when they change, so the kubelet restarts the container with the new
+#          ones. The render must keep that, and must keep STARTTLS required:
+#            a. container `mailpit` sets MP_SMTP_REQUIRE_STARTTLS to the literal true and
+#               MP_SMTP_TLS_CERT / MP_SMTP_TLS_KEY to literal paths (the files the supervisor
+#               hashes are named by exactly these variables);
+#            b. the text of THAT container alone (not the whole `containers:` section, so a sidecar
+#               cannot satisfy the markers; kustomize drops comments, so only live script is read)
+#               contains every marker of the supervisor: the hash of BOTH files named by those
+#               variables (`sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY"`), Mailpit run in
+#               the background (`/mailpit &`), the comparison against the start hash
+#               (`[ "$now" != "$start" ]`), the stop (`kill -TERM "$pid"`) and a `trap`, and it
+#               never `exec`s Mailpit (any quoting), which would replace the supervisor with the process
+#               that cannot see a renewal.
+#          A mailpit Deployment whose containers text cannot be read is a PARSE ERROR (a blind
+#          reader never passes). Production and local print "not applicable". Shown catching
+#          each hole by --selftest-inv23; the live proof is the rotation test in the PR for
+#          issue #972 (a Mailpit serving the old certificate after the Secret changed, then the
+#          new one with the supervisor).
 #
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
@@ -618,7 +643,7 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21|--selftest-inv22]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21|--selftest-inv22|--selftest-inv23]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
@@ -629,6 +654,7 @@
 #   --selftest-inv20 the same for INV-20 (inv20_selftest)
 #   --selftest-inv21 the same for INV-21 (inv21_selftest)
 #   --selftest-inv22 the same for INV-22 (inv22_selftest)
+#   --selftest-inv23 the same for INV-23 (inv23_selftest)
 
 set -euo pipefail
 
@@ -1974,6 +2000,131 @@ if [[ "${1:-}" == "--selftest-inv22" ]]; then
     inv22_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv23 (issue #972): INV-23 shown CATCHING planted holes in Mailpit's
+# certificate-reload supervisor. Same harness shape as -inv18. Arms (each in the copy's
+# k8s/components/mailpit/mailpit.yaml):
+#   no-supervisor   the mailpit container's whole `command:` block is deleted (Mailpit runs
+#                   as the image entrypoint and never sees a renewal)
+#   exec-direct     the supervisor ends in `exec /mailpit` instead of running it as a child
+#   wrong-file      the hash covers /etc/hostname, not the files MP_SMTP_TLS_CERT/KEY name
+#   no-compare      the comparison is replaced by `[ false ]` (it hashes but never reacts)
+#   no-stop         the stop (`kill -TERM "$pid"`) is replaced by `true`
+#   starttls-off    MP_SMTP_REQUIRE_STARTTLS becomes "false"
+#   sidecar-markers a SIDECAR container carries every supervisor marker (hash, background run,
+#                   comparison, stops, trap) while the mailpit container has no command at all:
+#                   the markers must be read from the mailpit container only
+#   exec-quoted     the supervisor ends in `exec "/mailpit"` (quoted) instead of running it as a child
+# INV23_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv23_plant() {
+    local arm="$1" root="$2" f before
+    f="$root/components/mailpit/mailpit.yaml"
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        no-supervisor)
+            # the SECOND `        command:` (the first is the send-api-lock init container): drop it
+            # and its block scalar (every following line indented deeper than the key)
+            awk '/^        command:$/ { n++; if (n == 2) { skip = 1; next } }
+                 skip { if ($0 ~ /^        - / || $0 ~ /^          /) next; skip = 0 }
+                 { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        exec-direct)
+            awk '{ if ($0 ~ /^          \/mailpit &$/) $0 = "          exec /mailpit"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        wrong-file)
+            awk '{ if ($0 ~ /^          fp\(\) \{ sha256sum /) $0 = "          fp() { sha256sum /etc/hostname 2>/dev/null; }"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        no-compare)
+            awk '{ if ($0 ~ /^            if \[ "\$now" != "\$start" \]; then$/) $0 = "            if [ false ]; then"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        no-stop)
+            awk '{ if ($0 ~ /^              kill -TERM "\$pid" 2>\/dev\/null$/) $0 = "              true"; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        starttls-off)
+            awk '/^        - name: MP_SMTP_REQUIRE_STARTTLS$/ { print; getline; print "          value: \"false\""; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        exec-quoted)
+            awk '{ if ($0 ~ /^          \/mailpit &$/) $0 = "          exec \"/mailpit\""; print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        sidecar-markers)
+            # drop the mailpit container's command block (as no-supervisor) and put every marker in a
+            # sidecar listed BEFORE the mailpit container
+            awk '/^        command:$/ { n++; if (n == 2) { skip = 1; next } }
+                 skip { if ($0 ~ /^        - / || $0 ~ /^          /) next; skip = 0 }
+                 /^      - name: mailpit$/ && !done {
+                     print "      - name: sidecar"
+                     print "        image: axllent/mailpit:v1.31.6"
+                     print "        command:"
+                     print "        - sh"
+                     print "        - -c"
+                     print "        - |"
+                     print "          fp() { sha256sum \"$MP_SMTP_TLS_CERT\" \"$MP_SMTP_TLS_KEY\" 2>/dev/null; }"
+                     print "          /mailpit &"
+                     print "          trap '\''kill -TERM \"$pid\"'\'' TERM"
+                     print "          if [ \"$now\" != \"$start\" ]; then kill -TERM \"$pid\"; fi"
+                     done = 1
+                 }
+                 { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        *) return 1 ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv23_selftest() {
+    local fmt="${INV23_SELFTEST_FORMAT:-plain}" st arm want out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv23 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(no-supervisor exec-direct wrong-file no-compare no-stop starttls-off sidecar-markers exec-quoted)
+    declare -A WANT=(
+        [no-supervisor]="INV-23: Deployment mailpit container 'mailpit' has no certificate-reload supervisor"
+        [exec-direct]="INV-23: Deployment mailpit container 'mailpit' execs Mailpit"
+        [wrong-file]="INV-23: Deployment mailpit container 'mailpit' does not hash the files MP_SMTP_TLS_CERT and MP_SMTP_TLS_KEY name"
+        [no-compare]="INV-23: Deployment mailpit container 'mailpit' never compares the current hash with the start hash"
+        [no-stop]="INV-23: Deployment mailpit container 'mailpit' never stops Mailpit on a change"
+        [starttls-off]="INV-23: Deployment mailpit container 'mailpit' MP_SMTP_REQUIRE_STARTTLS is not the literal true"
+        [sidecar-markers]="INV-23: Deployment mailpit container 'mailpit' has no certificate-reload supervisor"
+        [exec-quoted]="INV-23: Deployment mailpit container 'mailpit' execs Mailpit"
+    )
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv23_plant "$arm" "$st/arm/k8s"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"
+            if (( rc == 1 )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=1"
+            else
+                caught=no
+                line="expected rc 1 and '$want'; got rc=$rc: $(awk '/INV-23|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv23" ]]; then
+    inv23_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
@@ -2111,7 +2262,8 @@ declare -A NETPOL_RULES_EXPECTED=(
       in:pod=app=grafana:9090
       $NETPOL_DNS_EG eg:pod=app=core-java:9091 eg:pod=app=edge-go:8080 eg:pod=app=keycloak:9000
       eg:pod=app.kubernetes.io/name=rabbitmq:15692 eg:pod=app=postgres-exporter:9187
-      eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093"
+      eg:pod=app=redis-exporter:9121 eg:pod=app=alertmanager:9093
+      eg:nspod=cert-manager/app.kubernetes.io/name=cert-manager:9402"
   # The two exporters: scraped only by Prometheus. postgres-exporter's egress.1 is the
   # managed server on db.port (the staging replacement, #271); redis-exporter reaches only
   # the in-cluster Redis.
@@ -4123,6 +4275,81 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-23 (issue #972) ----------------
+    # Every target that renders the mailpit component: Mailpit's container supervises the
+    # process and restarts it when its certificate or key changes on disk, and STARTTLS stays
+    # required. See the header for the markers read.
+    inv23_bad=0
+    if (( inv18_dep == 0 )); then
+        inv23_msg="not applicable (no mailpit component in this render)"
+    else
+        inv23_c=$(awk -F'\t' '$1 == "Deployment" && $2 == "mailpit" && $3 ~ /^spec::template::spec::containers::\[[0-9]+\]::name$/ && $4 == "mailpit" { p = $3; sub(/::name$/, "", p); print p; exit }' "$TMP/inv11_paths.tsv")
+        [[ -n "$inv23_c" ]] || parse_fail "[$rel] INV-23 found no container named mailpit in Deployment mailpit by path."
+        inv23_env=$(awk -F'\t' -v c="$inv23_c::env::" '$1 == "Deployment" && $2 == "mailpit" && index($3, c) == 1 && $3 ~ /::name$/ { print $3 "\t" $4 }' "$TMP/inv11_paths.tsv")
+        for inv23_v in MP_SMTP_REQUIRE_STARTTLS MP_SMTP_TLS_CERT MP_SMTP_TLS_KEY; do
+            inv23_p=$(awk -F'\t' -v v="$inv23_v" '$2 == v { print $1; exit }' <<< "$inv23_env")
+            if [[ -z "$inv23_p" ]]; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' does not set $inv23_v." >&2
+                inv23_bad=1; continue
+            fi
+            inv23_val=$(path_get "$TMP/inv11_paths.tsv" Deployment mailpit "${inv23_p%::name}::value")
+            unq "$inv23_val"
+            if [[ "$inv23_v" == MP_SMTP_REQUIRE_STARTTLS ]]; then
+                if [[ "$UNQ" != true ]]; then
+                    echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' MP_SMTP_REQUIRE_STARTTLS is not the literal true (got '$inv23_val'). STARTTLS is required on both ends (D-20)." >&2
+                    inv23_bad=1
+                fi
+            elif [[ "$inv23_val" == "(ABSENT)" || -z "$UNQ" ]]; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' $inv23_v is not a literal path; the supervisor hashes exactly the files these variables name." >&2
+                inv23_bad=1
+            fi
+        done
+        # the live (comment-free) text of the Deployment's `mailpit` CONTAINER only: not the whole
+        # `containers:` section (a sidecar carrying the same tokens must not satisfy the markers),
+        # not the init container's script, not the rest of the pod spec. Each list item of
+        # `containers:` starts at indent 6 with `- `; the item is kept when its `name:` is mailpit.
+        awk '/^---[[:space:]]*$/ { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc; doc = ""; next } { doc = doc "\n" $0 } END { if (doc ~ /\nkind: Deployment\n/ && doc ~ /\n  name: mailpit\n/) printf "%s", doc }' "$render" | awk '/^      containers:$/ { on = 1; next } on && /^      [^ -]/ { on = 0; flush() } on { if ($0 ~ /^      - /) flush(); buf = buf $0 "\n"; if ($0 ~ /^(      - |        )name: mailpit$/) hit = 1 } END { flush() } function flush() { if (hit) printf "%s", buf; buf = ""; hit = 0 }' > "$TMP/inv23_containers.txt"
+        [[ -s "$TMP/inv23_containers.txt" ]] || parse_fail "[$rel] INV-23 could not read the containers section of Deployment mailpit from the render; the supervisor markers would pass vacuously."
+        if ! grep -qE '^(      - |        )command:$' "$TMP/inv23_containers.txt" \
+           || ! grep -qF -e 'sha256sum' -e 'trap ' -e 'kill -TERM' "$TMP/inv23_containers.txt"; then
+            echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' has no certificate-reload supervisor. Mailpit reads its certificate only at start, so a cert-manager renewal would leave it serving the old certificate until it expires (issue #972)." >&2
+            inv23_bad=1
+        fi
+        if (( inv23_bad == 0 )); then
+            if grep -qE "(^|[;&|[:space:]])exec[[:space:]]+[\"']?/?mailpit" "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' execs Mailpit, replacing the supervisor with the process that only reads its certificate at start (issue #972)." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e 'sha256sum "$MP_SMTP_TLS_CERT" "$MP_SMTP_TLS_KEY"' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' does not hash the files MP_SMTP_TLS_CERT and MP_SMTP_TLS_KEY name (expected: sha256sum \"\$MP_SMTP_TLS_CERT\" \"\$MP_SMTP_TLS_KEY\")." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e '/mailpit &' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' does not run Mailpit in the background under the supervisor (expected: /mailpit &)." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e '[ "$now" != "$start" ]' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' never compares the current hash with the start hash (expected: [ \"\$now\" != \"\$start\" ])." >&2
+                inv23_bad=1
+            fi
+            # two stops: the SIGTERM trap's and the one taken when the hash changes
+            if (( $(grep -cF -e 'kill -TERM "$pid"' "$TMP/inv23_containers.txt") < 2 )); then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' never stops Mailpit on a change (expected: kill -TERM \"\$pid\" in the change branch as well as in the trap)." >&2
+                inv23_bad=1
+            fi
+            if ! grep -qF -e 'trap ' "$TMP/inv23_containers.txt"; then
+                echo "  FAIL [$rel] INV-23: Deployment mailpit container 'mailpit' installs no trap, so a rollout's SIGTERM would not reach Mailpit." >&2
+                inv23_bad=1
+            fi
+        fi
+        if (( inv23_bad != 0 )); then
+            FAILED=1
+            inv23_msg="FAIL"
+        else
+            inv23_msg="OK (mailpit supervisor hashes MP_SMTP_TLS_CERT/KEY and restarts the container on a change; MP_SMTP_REQUIRE_STARTTLS true)"
+        fi
+    fi
+
     # ---------------- INV-20 (#976) ----------------
     # Every Keycloak container with proxy headers on, in ANY spelling, must say WHICH
     # peers it believes them from, once, as a private CIDR list it can start on. See
@@ -4392,10 +4619,10 @@ for dir in "${TARGETS[@]}"; do
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* || "$inv22_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* || "$inv22_msg" == FAIL* || "$inv23_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg"
     fi
 done
 
@@ -4891,4 +5118,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); INV-21 holds wherever the grafana component renders; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); INV-21 holds wherever the grafana component renders; INV-23 holds wherever the mailpit component renders; $LOCAL_SECTION."
