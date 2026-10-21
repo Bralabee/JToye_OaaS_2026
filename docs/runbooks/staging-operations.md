@@ -147,14 +147,30 @@ that is missing and never updates one that exists, so delete the synced Secret
 measured live). The worked example, including the refusal check for the superseded value, is
 `docs/runbooks/credential-rotation.md` sections 6.1 and 6.1a.
 
-**Mailpit reads its certificate only at start.** Its TLS certificate comes from the cert-manager
-internal CA. After a renewal, restart `deploy/mailpit` so it serves the new one; plan 29-22
-measured the expiry at 2027-01-17. A Mailpit serving an expired certificate fails the STARTTLS
-handshake core-java requires (section 6); this is tracked as #972.
+**Mailpit reads its certificate only at start, and restarts itself when it changes.** Its TLS
+certificate comes from the cert-manager internal CA (90 days, renewed 15 days early; the first one
+expires 2027-01-17). The `mailpit` container runs a supervisor that hashes the mounted certificate and
+key every 15 s and restarts the container when they change, so a renewal reaches the running Mailpit
+within about two minutes with no action (issue #972; INV-23 pins the supervisor in the render). The
+container restart count rising by one at each renewal is that working, and
+`kubectl ... logs deploy/mailpit -c mailpit --previous` shows `mailpit-cert-reload`. A Mailpit that
+served an expired certificate would fail the STARTTLS handshake core-java requires (section 6).
+The `CertificateExpiringSoon` alert fires when cert-manager has not renewed any certificate by 7 days
+before expiry (docs/runbooks/alerts.md); to compare what Mailpit serves with the Secret by hand see
+the steps there.
 
-**A deploy does not wait for the monitoring workloads.** `scripts/deploy.sh` prints
-`DEPLOYED_SHA` after `rollout status` of `core-java`, `edge-go` and `frontend` only, so after a
-deploy check `alertmanager`, `grafana` and `prometheus` yourself with `rollout status` (#969).
+**`scripts/deploy.sh` waits on every workload in the render (#969).** After the three retagged
+rollouts (`core-java`, `edge-go`, `frontend`, undone together if one fails) it runs `rollout status`
+on every other Deployment and StatefulSet the render carries (monitoring, Keycloak, Redis, Mailpit,
+`secret-sync`), read from the render so a new one is waited on without a list to update, under one
+600 s budget. If any is not Ready it names each one, exits 1 and prints no `DEPLOYED_SHA`. It does
+**not** undo anything then: the retagged apps are Ready, and a monitoring fault is not a reason to
+roll them back. Look at the named workload (`kubectl describe pod`, `kubectl logs`). The CI
+`deploy-staging` job does the same through `scripts/wait-other-workloads.sh` (step `wait_other`,
+same library `scripts/lib/wait-workloads.sh`), placed LAST, after the digest-parity, health and smoke
+steps, so an app-check failure still rolls the apps back; its own failure fails the job but is excluded from the
+`Rollback on failure` condition, which stays scoped to the three retagged apps
+(`scripts/check-deploy-rollback-guard.sh` R-5).
 
 Do not restart `core-java` for convenience. Its order counter (`jtoye_orders_total`, what
 `NoOrdersCreated` reads) is in memory and resets to 0 on every restart. Since #973 the series is
@@ -264,5 +280,8 @@ with `DEPLOY_TAG`), never a fresh `git rev-parse HEAD`: a docs commit moves `HEA
 whose images were never built. For each gate, exit 0 is a pass, 1 is a failure, and 2 is VOID
 ("could not evaluate"). A VOID is never a pass. After a change to monitoring, also run
 `scripts/check-alert-metrics.sh` (every alert selector matches a live series; point `PROM_URL` at
-the port-forwarded Prometheus, because its default is the local compose one) and the liveness
+the port-forwarded Prometheus, because its default is the local compose one, and set
+`ALERT_RUNTIME=k8s`: `ALERT_RUNTIME=k8s PROM_URL=http://localhost:19090 bash scripts/check-alert-metrics.sh`.
+Without it the gate refuses (exit 2) rather than guess, because the cluster-only
+`CertificateExpiringSoon` rule is skipped on compose and must be judged here) and the liveness
 command in section 5.

@@ -1,0 +1,23 @@
+# =============================================================================
+# LOCAL core-java: label its metrics environment="local" (issue #999, review F3)
+#
+# k8s/local keeps the base SPRING_PROFILES_ACTIVE=prod (D-10), and application-prod.yml tags every
+# Micrometer series environment="production", so a local (minikube) core-java was labelled as
+# production exactly as staging was. Spring's relaxed binding reads
+# MANAGEMENT_METRICS_TAGS_ENVIRONMENT as management.metrics.tags.environment and an environment
+# variable outranks application-prod.yml, so only that one tag changes.
+# k8s/scripts/check-render-invariants.sh INV-22 fails if this env is lost or if a target is not
+# declared there.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-java
+spec:
+  template:
+    spec:
+      containers:
+        - name: core-java
+          env:
+            - name: MANAGEMENT_METRICS_TAGS_ENVIRONMENT
+              value: "local"

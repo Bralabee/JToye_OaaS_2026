@@ -106,6 +106,9 @@ patches:
   # HPA floors 1 and drain-safe PDBs (Pitfall 1, plan 29-08). The HPA owns the
   # replica count; see scale-patch.yaml for why each value is what it is.
   - path: scale-patch.yaml
+  # core-java exports metrics labelled environment="staging", not the prod profile's
+  # "production" (issue #999). Held by INV-22 in k8s/scripts/check-render-invariants.sh.
+  - path: core-java-metrics-env-patch.yaml
 
 # Deployment spec.replicas, set EQUAL to the HPA floor above (plan 29-08).
 # The old count 2 was misleading: the base HPA floor (3/5/3) won at runtime, so
