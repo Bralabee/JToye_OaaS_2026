@@ -127,6 +127,9 @@ selftest() {
   if [ -f "$PROJECT_ROOT/scripts/lib/staging-kube-guard.sh" ]; then
     cp "$PROJECT_ROOT/scripts/lib/staging-kube-guard.sh" "$st/repo/scripts/lib/"
   fi
+  if [ -f "$PROJECT_ROOT/scripts/lib/wait-workloads.sh" ]; then
+    cp "$PROJECT_ROOT/scripts/lib/wait-workloads.sh" "$st/repo/scripts/lib/"
+  fi
   # The stub preflight: logged, and its status is the arm's choice.
   printf 'printf "%%s\\n" "preflight $*" >> "$STUB_LOG_DIR/preflight.log"\nprintf "%%s\\n" "preflight" >> "$STUB_LOG_DIR/calls.log"\nexit "${STUB_PREFLIGHT_RC:-0}"\n' \
     > "$st/repo/scripts/staging-secrets-preflight.sh"
@@ -631,17 +634,16 @@ read_generation() { # read_generation <svc> -> generation on stdout; rc 1 when i
 # images it retagged: on 2026-10-19 DEPLOYED_SHA was printed while the new alertmanager and grafana
 # pods were still ContainerCreating. Read from the render, not from a list kept here, so a
 # Deployment or StatefulSet the overlay gains is waited on without anyone remembering to add it.
-# kustomize emits keys in sorted order, so `kind` precedes `metadata` and the first two-space
-# `name:` of a Deployment/StatefulSet document is its metadata.name.
+# The reader and the wait are scripts/lib/wait-workloads.sh, shared with the CI deploy-staging
+# job (scripts/wait-other-workloads.sh), so the two paths cannot drift.
+# shellcheck source=scripts/lib/wait-workloads.sh
+. "$PROJECT_ROOT/scripts/lib/wait-workloads.sh" || void "could not source scripts/lib/wait-workloads.sh"
 RENDER=$(kubectl kustomize "$WRAPPER" 2>"$WRAPPER/render.err"); rc=$?
 if [ "$rc" -ne 0 ] || [ -z "$RENDER" ]; then
     cat "$WRAPPER/render.err" >&2
     void "kubectl kustomize of the wrapper failed (rc=$rc) or rendered nothing; nothing was applied"
 fi
-mapfile -t WORKLOADS < <(printf '%s\n' "$RENDER" | awk '
-    /^---[ \t]*$/ { k = ""; n = "" }
-    /^kind: / { k = $2 }
-    /^  name: / { if (n == "" && (k == "Deployment" || k == "StatefulSet")) { n = $2; gsub(/"/, "", n); print tolower(k) "/" n } }')
+mapfile -t WORKLOADS < <(workloads_in_render <<< "$RENDER")
 [ "${#WORKLOADS[@]}" -gt 0 ] || void "the render holds no Deployment or StatefulSet; nothing was applied"
 for svc in "${ROLLOUTS[@]}"; do
     case " ${WORKLOADS[*]} " in
@@ -721,19 +723,8 @@ done
 EXTRA_WAIT_BUDGET_SECONDS=600
 if [ "${#OTHER_WORKLOADS[@]}" -gt 0 ]; then
     echo -e "\n${BLUE}Waiting for the other ${#OTHER_WORKLOADS[@]} workload(s) in the render (shared budget ${EXTRA_WAIT_BUDGET_SECONDS}s)...${NC}"
-    extra_deadline=$((SECONDS + EXTRA_WAIT_BUDGET_SECONDS))
-    NOT_READY=()
-    for w in "${OTHER_WORKLOADS[@]}"; do
-        remaining=$((extra_deadline - SECONDS)); [ "$remaining" -ge 1 ] || remaining=1
-        if kc -n "$NAMESPACE" rollout status "$w" --timeout="${remaining}s"; then
-            echo -e "${GREEN}✓ ${w} ready${NC}"
-        else
-            echo -e "${RED}Error: ${w} did not become Ready${NC}" >&2
-            NOT_READY+=("$w")
-        fi
-    done
-    if [ "${#NOT_READY[@]}" -gt 0 ]; then
-        echo -e "${RED}NOT CERTIFIED: ${NOT_READY[*]} did not become Ready. ${ROLLOUTS[*]} are Ready at ${IMAGE_TAG} and were left there (nothing retagged failed, so nothing is undone); no DEPLOYED_SHA is recorded.${NC}" >&2
+    if ! wait_workloads "$NAMESPACE" "$EXTRA_WAIT_BUDGET_SECONDS" kubectl --context "$KUBE_CONTEXT" -- "${OTHER_WORKLOADS[@]}"; then
+        echo -e "${RED}NOT CERTIFIED: ${WAIT_NOT_READY[*]} did not become Ready. ${ROLLOUTS[*]} are Ready at ${IMAGE_TAG} and were left there (nothing retagged failed, so nothing is undone); no DEPLOYED_SHA is recorded.${NC}" >&2
         exit 1
     fi
 fi

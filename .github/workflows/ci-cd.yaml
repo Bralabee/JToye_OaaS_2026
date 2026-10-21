@@ -837,6 +837,13 @@ jobs:
       - name: Prove the deploy script's guards and DEPLOYED_SHA record (29-14 --selftest)
         run: bash scripts/deploy.sh --selftest
 
+      # Issue #969: the CI deploy-staging job's wait on every workload it did not retag. The same
+      # library deploy.sh uses; a prometheus Deployment on an unpullable image exits 1 (the
+      # three-app wait it replaces certifies the same render), nothing is undone, a render that
+      # fails or lacks a retagged name is VOID (rc 2).
+      - name: Prove the other-workloads wait can fail (#969 --selftest)
+        run: bash scripts/wait-other-workloads.sh --selftest
+
       # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
       # mismatch, plant-stale, empty actual, zero services, no context, employer
       # context, short tag, fixture-with-context) against fixtures: no cluster.
@@ -2226,6 +2233,21 @@ jobs:
           kubectl rollout status deployment/edge-go -n jtoye-staging --timeout=3m
           kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
 
+      # Issue #969: `kubectl apply -k k8s/staging` applies the whole overlay, so the job is only
+      # green once everything it applied is Ready, not just the three retagged images (a merge
+      # that broke prometheus, alertmanager or grafana used to deploy through here green).
+      # Every other Deployment and StatefulSet in the render is waited on by the same library
+      # scripts/deploy.sh uses (scripts/lib/wait-workloads.sh): one 600 s budget, every failure
+      # named, the job fails. It undoes NOTHING: the three apps are Ready here, and the Rollback
+      # step below excludes this step's failure (steps.wait_other.outcome) because rolling healthy
+      # apps back for a monitoring fault trades one fault for another.
+      # scripts/check-deploy-rollback-guard.sh R-5 pins both halves.
+      - name: Wait for the other workloads in the render (monitoring, Keycloak, Redis, ... #969)
+        id: wait_other
+        run: |
+          bash scripts/wait-other-workloads.sh --overlay k8s/staging --namespace jtoye-staging \
+            --retagged core-java,edge-go,frontend
+
       - name: Digest parity — the running pods are the images pushed for DEPLOY_TAG (29-14)
         # The Kubernetes half of runtime parity: every running core-java, edge-go and
         # frontend container's imageID must be in the digest set GHCR holds for the tag
@@ -2263,8 +2285,11 @@ jobs:
         # BEFORE the apply (baked-origin guard, logout pre-flight, subscription check,
         # kubelogin, can-i, Key Vault pre-flight). Nothing is deployed then, and an undo would
         # roll healthy live staging back a revision. So it also needs the `applied` output of
-        # the apply step. scripts/check-deploy-rollback-guard.sh pins this shape (R-1..R-4).
-        if: failure() && steps.deploy.outputs.applied == 'true'
+        # the apply step. A failure of the wait_other step (a workload this job did NOT retag
+        # never became Ready, #969) is excluded too: the apps are Ready and stay. This step and
+        # the three-app "Wait for rollout" above stay the only things it undoes.
+        # scripts/check-deploy-rollback-guard.sh pins this shape (R-1..R-5).
+        if: failure() && steps.deploy.outputs.applied == 'true' && steps.wait_other.outcome != 'failure'
         run: |
           kubectl rollout undo deployment/core-java -n jtoye-staging
           kubectl rollout undo deployment/edge-go -n jtoye-staging

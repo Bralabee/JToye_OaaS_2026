@@ -153,7 +153,10 @@ on every other Deployment and StatefulSet the render carries (monitoring, Keyclo
 600 s budget. If any is not Ready it names each one, exits 1 and prints no `DEPLOYED_SHA`. It does
 **not** undo anything then: the retagged apps are Ready, and a monitoring fault is not a reason to
 roll them back. Look at the named workload (`kubectl describe pod`, `kubectl logs`). The CI
-`deploy-staging` job has its own "Wait for rollout" step and still waits on the three apps only.
+`deploy-staging` job does the same through `scripts/wait-other-workloads.sh` (step `wait_other`,
+same library `scripts/lib/wait-workloads.sh`): its failure fails the job but is excluded from the
+`Rollback on failure` condition, which stays scoped to the three retagged apps
+(`scripts/check-deploy-rollback-guard.sh` R-5).
 
 Do not restart `core-java` for convenience. Its order counter (`jtoye_orders_total`, what
 `NoOrdersCreated` reads) is in memory and resets to 0 on every restart. Since #973 the series is

@@ -155,7 +155,7 @@ if [ "$SELFTEST" -eq 1 ]; then
   arm real 0 "$WORKFLOW"
   # Each plant edits ONE line of a copy, inside the job under test.
   # bare-failure: the reviewed defect — the rollback runs on any failure.
-  sed -E "/^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/^(        if: failure\(\)) && steps\.[A-Za-z0-9_.-]+ == 'true'\$/\1/; /^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/^(        if: failure\(\)) && steps\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_]+ == 'true'\$/\1/" "$WORKFLOW" > "$st/bare.yaml"
+  sed -E "/^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/^(        if: failure\(\)) && steps\.[A-Za-z0-9_.-]+ == 'true'( \&\& steps\.wait_other\.outcome != 'failure')?\$/\1/; /^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/^(        if: failure\(\)) && steps\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_]+ == 'true'( \&\& steps\.wait_other\.outcome != 'failure')?\$/\1/" "$WORKFLOW" > "$st/bare.yaml"
   arm bare-failure 1 "$st/bare.yaml"
   # wrong-output: the if: names an output the step never writes.
   sed -E "/^  ${JOB}:/,/^  [A-Za-z0-9_-]+:\$/ s/(steps\.[A-Za-z0-9_-]+\.outputs\.)[A-Za-z0-9_]+( == 'true')/\1nonexistent\2/" "$WORKFLOW" > "$st/wrongout.yaml"
