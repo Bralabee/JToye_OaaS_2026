@@ -234,6 +234,12 @@ selftest() {
   st_case "docs/webhooks.md (read by a test) -> false" "docs_only=false" 0 'docs/webhooks.md\n'
   st_case "src md (packaged SOURCE.md) -> false"     "docs_only=false" 0 'core-java/src/main/resources/geo/SOURCE.md\n'
   st_case "src README -> false"                      "docs_only=false" 0 'core-java/src/test/resources/geo/README.md\n'
+  # The two arms above are ALSO refused by other rules (not on the allow-list; a Docker-context
+  # directory), so they would stay green if the src exclusion were deleted. These three are
+  # refused by NOTHING but the src rule: each is otherwise a path the allow-list accepts.
+  st_case "README in a src tree outside any context -> false" "docs_only=false" 0 'qa/src/README.md\n'
+  st_case "docs md in a src dir -> false"            "docs_only=false" 0 'docs/guides/src/x.md\n'
+  st_case ".planning file in a src dir -> false"     "docs_only=false" 0 '.planning/phases/x/src/y.txt\n'
   st_case "workflow change -> false"                 "docs_only=false" 0 '.github/workflows/ci-cd.yaml\n'
   st_case "workflow next to docs -> false"           "docs_only=false" 0 'docs/x.md\n.github/workflows/ci-cd.yaml\n'
   st_case "script change -> false"                   "docs_only=false" 0 'scripts/check-doc-metrics.sh\n'
