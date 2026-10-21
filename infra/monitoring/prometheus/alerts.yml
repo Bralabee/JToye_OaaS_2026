@@ -605,13 +605,19 @@ groups:
       # Covers every Certificate cert-manager manages in the cluster: the Let's Encrypt edge
       # certificates, the internal CA and mailpit-tls.
       #
+      # `> 0` EXCLUDES A CERTIFICATE THAT WAS NEVER ISSUED: cert-manager emits expiration 0 when the
+      # Certificate's Status.NotAfter is nil (a first issuance still pending, a stuck HTTP-01
+      # challenge, a missing CA Secret), and without the filter that reads as "expired in 1970" and
+      # blames a renewal that never existed. Never-issued is a different fault (the Certificate is
+      # not Ready) with a different response; this rule is only about renewal.
+      #
       # WHAT IT DOES NOT COVER. It reads the Certificate's EXPIRY as cert-manager sees it, i.e.
       # the Secret. It cannot tell that a workload is still serving an OLD certificate from before
       # a renewal; for Mailpit, which reads its certificate only at start, that is closed by the
       # supervisor in k8s/components/mailpit/mailpit.yaml (INV-22), and in kubectl terms by a
       # container restart count that rises at each renewal.
       - alert: CertificateExpiringSoon
-        expr: certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400
+        expr: (certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 7 * 86400
         for: 10m
         labels:
           severity: warning

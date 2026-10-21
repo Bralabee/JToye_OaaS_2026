@@ -190,3 +190,19 @@ tests:
       - eval_time: 55m
         alertname: CertificateExpiringSoon
         exp_alerts: []
+
+  # 9. A Certificate that was NEVER issued (a stuck first HTTP-01 challenge, a missing CA Secret).
+  #    cert-manager v1.21.2 emits expiration 0 when Status.NotAfter is nil, so without the `> 0`
+  #    filter the rule reads "0 - now" and fires with "has not renewed" for a certificate that was
+  #    never issued. It must stay quiet (a not-ready alert is a separate rule, out of scope).
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="never-issued", namespace="jtoye-staging"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 55m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []

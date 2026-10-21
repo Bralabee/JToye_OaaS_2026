@@ -706,7 +706,7 @@ different:**
 ## CertificateExpiringSoon
 
 **Expression:**
-`certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400`
+`(certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 7 * 86400`
 · **for:** 10m · **severity:** warning · **k8s only** (cert-manager exists only in the cluster; the
 rule is listed in `scripts/alert-k8s-only.txt` so the compose gates do not call it dataless)
 
@@ -744,6 +744,8 @@ renewed 15 days early).
    (`kubectl ... rollout restart deploy/mailpit`).
 
 ### What this alert does NOT tell you
+
+A Certificate that was never issued (first issuance stuck) reports expiry 0 and is excluded by the `> 0` filter: it is not a renewal failure, and it is not this alert. Find it with `kubectl ... get certificate` (READY False).
 
 That a workload is serving an old certificate after a successful renewal. It reads the Certificate as
 cert-manager sees it (the Secret). Mailpit is the one workload here that needs a restart to pick up a
