@@ -2503,21 +2503,6 @@ jobs:
           kubectl rollout status deployment/edge-go -n jtoye-staging --timeout=3m
           kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
 
-      # Issue #969: `kubectl apply -k k8s/staging` applies the whole overlay, so the job is only
-      # green once everything it applied is Ready, not just the three retagged images (a merge
-      # that broke prometheus, alertmanager or grafana used to deploy through here green).
-      # Every other Deployment and StatefulSet in the render is waited on by the same library
-      # scripts/deploy.sh uses (scripts/lib/wait-workloads.sh): one 600 s budget, every failure
-      # named, the job fails. It undoes NOTHING: the three apps are Ready here, and the Rollback
-      # step below excludes this step's failure (steps.wait_other.outcome) because rolling healthy
-      # apps back for a monitoring fault trades one fault for another.
-      # scripts/check-deploy-rollback-guard.sh R-5 pins both halves.
-      - name: Wait for the other workloads in the render (monitoring, Keycloak, Redis, ... #969)
-        id: wait_other
-        run: |
-          bash scripts/wait-other-workloads.sh --overlay k8s/staging --namespace jtoye-staging \
-            --retagged core-java,edge-go,frontend
-
       - name: Digest parity — the running pods are the images pushed for DEPLOY_TAG (29-14)
         # The Kubernetes half of runtime parity: every running core-java, edge-go and
         # frontend container's imageID must be in the digest set GHCR holds for the tag
@@ -2549,6 +2534,27 @@ jobs:
         run: |
           chmod +x ./scripts/smoke-test.sh
           EXPECT_SWAGGER=false ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
+
+      # Issue #969: `kubectl apply -k k8s/staging` applies the whole overlay, so the job is only
+      # green once everything it applied is Ready, not just the three retagged images (a merge
+      # that broke prometheus, alertmanager or grafana used to deploy through here green).
+      # Every other Deployment and StatefulSet in the render is waited on by the same library
+      # scripts/deploy.sh uses (scripts/lib/wait-workloads.sh): one 600 s budget, every failure
+      # named, the job fails. It undoes NOTHING: the three apps are Ready here, and the Rollback
+      # step below excludes this step's failure (steps.wait_other.outcome) because rolling healthy
+      # apps back for a monitoring fault trades one fault for another.
+      #
+      # IT RUNS LAST, after the digest-parity, health and smoke steps, on purpose: placed before
+      # them, a monitoring fault would fail it first, skip those app checks and (through the
+      # exclusion) disable the rollback, so apps that fail their health or smoke check would stay
+      # on staging. Here an app-check failure skips this step (outcome `skipped`, so the rollback
+      # still fires) and a failure of THIS step alone is the only thing the exclusion covers.
+      # scripts/check-deploy-rollback-guard.sh R-5 pins the ordering and both halves.
+      - name: Wait for the other workloads in the render (monitoring, Keycloak, Redis, ... #969)
+        id: wait_other
+        run: |
+          bash scripts/wait-other-workloads.sh --overlay k8s/staging --namespace jtoye-staging \
+            --retagged core-java,edge-go,frontend
 
       - name: Rollback on failure
         # failure() alone is true when ANY earlier step failed, including the ones that run

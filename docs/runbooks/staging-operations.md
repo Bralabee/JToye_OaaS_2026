@@ -167,7 +167,8 @@ on every other Deployment and StatefulSet the render carries (monitoring, Keyclo
 **not** undo anything then: the retagged apps are Ready, and a monitoring fault is not a reason to
 roll them back. Look at the named workload (`kubectl describe pod`, `kubectl logs`). The CI
 `deploy-staging` job does the same through `scripts/wait-other-workloads.sh` (step `wait_other`,
-same library `scripts/lib/wait-workloads.sh`): its failure fails the job but is excluded from the
+same library `scripts/lib/wait-workloads.sh`), placed LAST, after the digest-parity, health and smoke
+steps, so an app-check failure still rolls the apps back; its own failure fails the job but is excluded from the
 `Rollback on failure` condition, which stays scoped to the three retagged apps
 (`scripts/check-deploy-rollback-guard.sh` R-5).
 
