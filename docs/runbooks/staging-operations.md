@@ -146,9 +146,14 @@ internal CA. After a renewal, restart `deploy/mailpit` so it serves the new one;
 measured the expiry at 2027-01-17. A Mailpit serving an expired certificate fails the STARTTLS
 handshake core-java requires (section 6); this is tracked as #972.
 
-**A deploy does not wait for the monitoring workloads.** `scripts/deploy.sh` prints
-`DEPLOYED_SHA` after `rollout status` of `core-java`, `edge-go` and `frontend` only, so after a
-deploy check `alertmanager`, `grafana` and `prometheus` yourself with `rollout status` (#969).
+**`scripts/deploy.sh` waits on every workload in the render (#969).** After the three retagged
+rollouts (`core-java`, `edge-go`, `frontend`, undone together if one fails) it runs `rollout status`
+on every other Deployment and StatefulSet the render carries (monitoring, Keycloak, Redis, Mailpit,
+`secret-sync`), read from the render so a new one is waited on without a list to update, under one
+600 s budget. If any is not Ready it names each one, exits 1 and prints no `DEPLOYED_SHA`. It does
+**not** undo anything then: the retagged apps are Ready, and a monitoring fault is not a reason to
+roll them back. Look at the named workload (`kubectl describe pod`, `kubectl logs`). The CI
+`deploy-staging` job has its own "Wait for rollout" step and still waits on the three apps only.
 
 Do not restart `core-java` for convenience. Its order counter (`jtoye_orders_total`, what
 `NoOrdersCreated` reads) is in memory and resets to 0 on every restart. Since #973 the series is

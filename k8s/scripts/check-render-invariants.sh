@@ -498,7 +498,7 @@
 #          scripts/staging-grafana-edge.sh --probe (G-1..G-4). That the SPC is MOUNTED
 #          by secret-sync is k8s/scripts/check-keyvault-chain.sh's rule, not this one's.
 #
-#   INV-22 #999, RENDER level, EVERY target; judged where INV22_EXPECTED_LABEL names the
+#   INV-22 #999, RENDER level, EVERY target; judged where INV22_EXPECTED names the
 #          target (k8s/staging -> staging, k8s/production -> production). k8s runs the prod
 #          Spring profile in every environment (D-10), and application-prod.yml sets the
 #          Micrometer common tag management.metrics.tags.environment to `production`, so a
