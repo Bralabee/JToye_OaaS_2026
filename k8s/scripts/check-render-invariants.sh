@@ -498,6 +498,28 @@
 #          scripts/staging-grafana-edge.sh --probe (G-1..G-4). That the SPC is MOUNTED
 #          by secret-sync is k8s/scripts/check-keyvault-chain.sh's rule, not this one's.
 #
+#   INV-22 #999, RENDER level, EVERY target; judged where INV22_EXPECTED_LABEL names the
+#          target (k8s/staging -> staging, k8s/production -> production). k8s runs the prod
+#          Spring profile in every environment (D-10), and application-prod.yml sets the
+#          Micrometer common tag management.metrics.tags.environment to `production`, so a
+#          staging core-java that does not override it labels every series it exports
+#          environment="production" (observed on live staging 2026-10-21): a dashboard,
+#          federation or production Prometheus filtering on the label would read staging
+#          traffic as production. So:
+#            a. the prod profile still sets that key (the reader finds the line: if the key
+#               moved, the override below binds nothing and this rule would pass over it);
+#            b. every core-java-image APP container (containers, not initContainers) of
+#               Deployment core-java sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT (any spelling
+#               whose lower-cased alphanumerics are managementmetricstagsenvironment) once, to
+#               the target's label, as a literal or an app-config configMapKeyRef read by its
+#               RENDERED value. A target whose label is `production` may leave it unset (the
+#               profile's own value is right) but may not set it to anything else; any other
+#               target in the table MUST set it.
+#            c. a container that sets it from a source the render cannot read, or twice,
+#               fails: which value wins cannot be shown.
+#          Shown catching each hole by --selftest-inv22; the live proof is
+#          curl -s localhost:9091/actuator/prometheus | grep environment= in the core-java pod.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -595,7 +617,7 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21|--selftest-inv22]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
@@ -605,6 +627,7 @@
 #   --selftest-inv18 the same for INV-18 (inv18_selftest)
 #   --selftest-inv20 the same for INV-20 (inv20_selftest)
 #   --selftest-inv21 the same for INV-21 (inv21_selftest)
+#   --selftest-inv22 the same for INV-22 (inv22_selftest)
 
 set -euo pipefail
 
@@ -2198,6 +2221,33 @@ PROBE_SWITCH_RE='validate[-_.]?on[-_.]?startup'
 CORE_JAVA_IMAGE_RE='/jtoye-core-java(:|@|$)'
 PROBE_JSON_ENV_NORM='springapplicationjson'
 PROBE_JVM_OPTS_ENV_NORM_RE='^(javaopts|javatooloptions|jdkjavaoptions)$'
+
+# INV-22 (#999): the environment label each deployed target's core-java must export. The prod
+# profile (every k8s environment runs it, D-10) says `production`; staging must say otherwise.
+# "<label> <required>": required=1 means the env MUST be set (the profile's value is wrong
+# there); 0 means the profile's value is right, so unset is fine and only a wrong value fails.
+declare -A INV22_EXPECTED=(
+  ["k8s/staging"]="staging 1"
+  ["k8s/production"]="production 0"
+)
+declare -A INV22_TARGET_SEEN=()
+INV22_ENV_NORM='managementmetricstagsenvironment'
+INV22_PROFILE_YML="$APP_RESOURCES/application-prod.yml"
+# inv22_yml_tag <file> — the value of management.metrics.tags.environment in <file>, found by
+# walking the YAML nesting by indentation (the key may be written nested or as a dotted path);
+# "(ABSENT)" when no line gives that path.
+inv22_yml_tag() {
+    awk '
+        { line = $0; sub(/[ \t]+#.*$/, "", line); if (line ~ /^[ \t]*(#.*)?$/) next
+          match(line, /^ */); ind = RLENGTH; key = line; sub(/^ */, "", key)
+          if (key !~ /^[A-Za-z0-9_.-]+:/) next
+          name = key; sub(/:.*/, "", name); val = key; sub(/^[^:]*:[ \t]*/, "", val)
+          while (depth > 0 && ind <= indent[depth]) depth--
+          depth++; indent[depth] = ind; path[depth] = name
+          p = path[1]; for (i = 2; i <= depth; i++) p = p "." path[i]
+          if (p == "management.metrics.tags.environment") { print val; found = 1; exit } }
+        END { if (!found) print "(ABSENT)" }' "$1"
+}
 
 command -v kubectl > /dev/null \
     || parse_fail "kubectl not on PATH (client-side 'kubectl kustomize' is required)."
@@ -4145,14 +4195,75 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-22 (#999) ----------------
+    # The Micrometer `environment` tag a target's core-java exports. The prod profile (every k8s
+    # environment runs it) says `production`; INV22_EXPECTED names what each deployed target
+    # must say instead, and a staging that loses its override is labelled production again.
+    inv22_msg="not applicable (not in INV22_EXPECTED)"
+    if [[ -n "${INV22_EXPECTED[$rel]:-}" ]]; then
+        INV22_TARGET_SEEN["$rel"]=1
+        read -r inv22_label inv22_required <<< "${INV22_EXPECTED[$rel]}"
+        inv22_bad=0; inv22_ctr_n=0; inv22_set=0
+        if [[ ! -f "$INV22_PROFILE_YML" ]]; then
+            parse_fail "[$rel] INV-22: $INV22_PROFILE_YML not found, so the profile's own environment tag cannot be read. A reader that finds nothing never passes."
+        fi
+        inv22_prof="$(inv22_yml_tag "$INV22_PROFILE_YML")"
+        if [[ "$inv22_prof" == "(ABSENT)" ]]; then
+            parse_fail "[$rel] INV-22: core-java/src/main/resources/application-prod.yml no longer sets management.metrics.tags.environment, so MANAGEMENT_METRICS_TAGS_ENVIRONMENT would bind a key nothing documents, or the reader is blind. Re-point INV-22 at the new key in the SAME change that moves it; do not delete the invariant."
+        fi
+        while IFS=$'\t' read -r ck cn cpath; do
+            [[ -n "$cpath" && "$ck" == Deployment && "$cn" == core-java && "$cpath" == *"::containers::["* ]] || continue
+            inv22_ctr_n=$((inv22_ctr_n + 1))
+            cname="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$cpath::name")"
+            inv22_vals=()
+            while IFS=$'\t' read -r epath ename; do
+                norm="$(tr -cd '[:alnum:]' <<< "$ename" | tr '[:upper:]' '[:lower:]')"
+                [[ "$norm" == "$INV22_ENV_NORM" ]] || continue
+                ev="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::value")"
+                cmn="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::valueFrom::configMapKeyRef::name")"
+                cmk="$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$epath::valueFrom::configMapKeyRef::key")"
+                if [[ "$ev" != "(ABSENT)" ]]; then
+                    unq "$ev"; ev="$UNQ"
+                elif [[ "$cmn" == "app-config" && "$cmk" != "(ABSENT)" ]]; then
+                    ev="$(cfg_get "$TMP/cfg.tsv" "$cmk")"
+                else
+                    echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' sets $ename from a source the render cannot read ($epath: neither a literal value nor an app-config configMapKeyRef), so the environment label cannot be shown." >&2
+                    inv22_bad=1; continue
+                fi
+                inv22_vals+=("$ev"); inv22_set=$((inv22_set + 1))
+            done < <(awk -F'\t' -v k="$ck" -v n="$cn" -v c="$cpath::env::" '$1 == k && $2 == n && index($3, c) == 1 && $3 ~ /::env::\[[0-9]+\]::name$/ { e = $3; sub(/::name$/, "", e); print e "\t" $4 }' "$TMP/inv11_paths.tsv")
+            if (( ${#inv22_vals[@]} > 1 )); then
+                echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT ${#inv22_vals[@]} times (${inv22_vals[*]}), so which value wins cannot be shown here. Set it once." >&2
+                inv22_bad=1
+            elif (( ${#inv22_vals[@]} == 1 )); then
+                if [[ "${inv22_vals[0]}" != "$inv22_label" ]]; then
+                    echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to '${inv22_vals[0]}', not '$inv22_label'. Every core-java series this target exports would carry environment=\"${inv22_vals[0]}\" (#999)." >&2
+                    inv22_bad=1
+                fi
+            elif (( inv22_required == 1 )); then
+                echo "  FAIL [$rel] INV-22: $ck $cn container '$cname' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT. It runs the prod profile, whose application-prod.yml tags every series environment=\"$inv22_prof\", so $rel would export metrics labelled as production (#999). Set it to '$inv22_label' in the overlay." >&2
+                inv22_bad=1
+            fi
+        done < <(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" '$3 ~ /::containers::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' "$TMP/inv11_paths.tsv")
+        (( inv22_ctr_n > 0 )) || parse_fail "[$rel] INV-22: found no core-java-image app container in Deployment core-java — the render lost it or the container reader is blind."
+        if (( inv22_bad != 0 )); then
+            FAILED=1
+            inv22_msg="FAIL"
+        elif (( inv22_set > 0 )); then
+            inv22_msg="OK ($inv22_ctr_n core-java container(s) export environment=\"$inv22_label\" via MANAGEMENT_METRICS_TAGS_ENVIRONMENT; the prod profile alone would say \"$inv22_prof\")"
+        else
+            inv22_msg="OK ($inv22_ctr_n core-java container(s) leave the prod profile's environment=\"$inv22_prof\" in force, which is this target's label)"
+        fi
+    fi
+
     if [[ "$inv1_msg" == FAIL*|| "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* || "$inv22_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg"
     fi
 done
 
@@ -4160,6 +4271,10 @@ done
 # silently stop running. Every listed target must have been rendered and checked.
 for t in "${WI_TARGETS[@]}"; do
     [[ -n "${WI_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-8..INV-10: WI_TARGETS names '$t', but no kustomize target at that path was discovered, so its storage invariants never ran. Update WI_TARGETS in the SAME change that renames an overlay."
+done
+
+for t in "${!INV22_EXPECTED[@]}"; do
+    [[ -n "${INV22_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-22: INV22_EXPECTED names '$t', but no kustomize target at that path was discovered, so INV-22 never ran there. Update INV22_EXPECTED in the SAME change that renames an overlay."
 done
 
 for t in "${KEYCLOAK_TARGETS[@]}"; do
