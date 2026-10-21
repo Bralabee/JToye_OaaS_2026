@@ -11,6 +11,8 @@ import apiClient from "@/lib/api-client"
 import { cn } from "@/lib/utils"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { fetchAllMyShops } from "@/lib/shops-api"
+import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import { shopAdminCapabilities } from "@/lib/shop-admin-capabilities"
 import { useToast } from "@/hooks/use-toast"
 import { describeLoadError } from "@/lib/human-error"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
@@ -271,8 +273,19 @@ function checkedAtLabel(checkedAt: string | null): string {
   return `Last checked ${formatDistanceToNow(new Date(checkedAt), { addSuffix: true })}`
 }
 
+/**
+ * #961: a refusal (403 shop-access-denied) carries the server's own explanation; say it rather than a
+ * generic line or the axios "Request failed with status code 403". Any other failure keeps the caller's text.
+ */
+function refusalDetail(err: unknown, fallback: string): string {
+  if (httpStatus(err) === 403) return describeLoadError(err, fallback).message
+  return fallback
+}
+
 export default function OnboardingPage() {
   const { toast } = useToast()
+  // #961: the lifecycle needs SHOP_MANAGER on the onboarded shop; offer it only to a caller who has it.
+  const caps = shopAdminCapabilities(useOptionalShopSwitcherData())
 
   const [onboarding, setOnboarding] = useState<OnboardingDto | null>(null)
   const [loading, setLoading] = useState(true)
@@ -423,7 +436,12 @@ export default function OnboardingPage() {
         toast({
           variant: "destructive",
           title: "Couldn't create your application",
-          description: err instanceof Error ? err.message : "Please try again.",
+          description:
+            httpStatus(err) === 403
+              ? refusalDetail(err, "You don't have permission to do that.")
+              : err instanceof Error
+                ? err.message
+                : "Please try again.",
         })
       }
     } finally {
@@ -440,7 +458,12 @@ export default function OnboardingPage() {
       toast({
         variant: "destructive",
         title: "Couldn't submit for verification",
-        description: err instanceof Error ? err.message : "Please try again.",
+        description:
+          httpStatus(err) === 403
+            ? refusalDetail(err, "You don't have permission to do that.")
+            : err instanceof Error
+              ? err.message
+              : "Please try again.",
       })
     } finally {
       setSubmitting(false)
@@ -463,7 +486,9 @@ export default function OnboardingPage() {
         variant: "destructive",
         title: "Couldn't re-run your checks",
         description:
-          "Update the flagged information on your products, then try again or contact support.",
+          httpStatus(err) === 403
+            ? refusalDetail(err, "You don't have permission to do that.")
+            : "Update the flagged information on your products, then try again or contact support.",
       })
     } finally {
       setSubmitting(false)
@@ -493,7 +518,12 @@ export default function OnboardingPage() {
         toast({
           variant: "destructive",
           title: "Couldn't take your storefront live",
-          description: err instanceof Error ? err.message : "Please try again.",
+          description:
+            httpStatus(err) === 403
+              ? refusalDetail(err, "You don't have permission to do that.")
+              : err instanceof Error
+                ? err.message
+                : "Please try again.",
         })
       }
       setGoLiveOpen(false)
@@ -514,7 +544,12 @@ export default function OnboardingPage() {
       toast({
         variant: "destructive",
         title: "Couldn't withdraw your application",
-        description: err instanceof Error ? err.message : "Please try again.",
+        description:
+          httpStatus(err) === 403
+            ? refusalDetail(err, "You don't have permission to do that.")
+            : err instanceof Error
+              ? err.message
+              : "Please try again.",
       })
       setWithdrawOpen(false)
     } finally {
@@ -548,7 +583,9 @@ export default function OnboardingPage() {
         description:
           httpStatus(err) === 400
             ? "That doesn't look like a valid Companies House number. Enter 2–10 letters or digits, or leave it blank if you're a sole trader."
-            : err instanceof Error
+            : httpStatus(err) === 403
+              ? refusalDetail(err, "You don't have permission to do that.")
+              : err instanceof Error
               ? err.message
               : "Please try again.",
       })
@@ -771,9 +808,11 @@ export default function OnboardingPage() {
       Boolean(REMEDIATION[`${g.gateType}:${g.status}` as `${GateType}:${GateStatus}`])
   )
 
-  const canWithdraw = WITHDRAWABLE_STATES.includes(onboarding.status)
+  // #961 F1: every lifecycle control below is the API's SHOP_MANAGER-on-the-onboarded-shop gate.
+  const mayDrive = caps.canDriveOnboarding(onboarding.shopId)
+  const canWithdraw = mayDrive && WITHDRAWABLE_STATES.includes(onboarding.status)
   const canEditCompanyNumber =
-    onboarding.status === "DRAFT" || onboarding.status === "ACTION_REQUIRED"
+    mayDrive && (onboarding.status === "DRAFT" || onboarding.status === "ACTION_REQUIRED")
 
   const milestones: { label: string; at: string | null }[] = [
     { label: "Submitted", at: onboarding.submittedAt },
@@ -957,17 +996,17 @@ export default function OnboardingPage() {
       {/* State-driven primary CTA */}
       <div className="space-y-3">
         <div>
-          {onboarding.status === "DRAFT" && (
+          {mayDrive && onboarding.status === "DRAFT" && (
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting ? "Submitting…" : "Submit for verification"}
             </Button>
           )}
-          {onboarding.status === "ACTION_REQUIRED" && (
+          {mayDrive && onboarding.status === "ACTION_REQUIRED" && (
             <Button onClick={handleResubmit} disabled={submitting}>
               {submitting ? "Re-running…" : "Re-run checks"}
             </Button>
           )}
-          {onboarding.status === "APPROVED" && (
+          {mayDrive && onboarding.status === "APPROVED" && (
             <Button onClick={() => setGoLiveOpen(true)}>Go live</Button>
           )}
           {onboarding.status === "LIVE" && (

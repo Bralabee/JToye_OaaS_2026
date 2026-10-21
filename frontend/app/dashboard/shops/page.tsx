@@ -9,6 +9,8 @@ import apiClient from "@/lib/api-client"
 import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
+import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import { shopAdminCapabilities } from "@/lib/shop-admin-capabilities"
 import {
   Card,
   CardContent,
@@ -216,6 +218,8 @@ export default function ShopsPage() {
   const [loadFailed, setLoadFailed] = useState(false)
   const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const { toast } = useToast()
+  // #961: offer only the shop controls the API will let this caller use (see shop-admin-capabilities).
+  const shopCaps = shopAdminCapabilities(useOptionalShopSwitcherData())
 
   const {
     register,
@@ -349,7 +353,9 @@ export default function ShopsPage() {
   // notice. Handled once, after the first list load; the shop is read by id when it is not on the
   // page that loaded. The parameters are dropped so a reload does not reopen the dialog.
   useEffect(() => {
-    if (loading || deepLinkHandled.current) return
+    // #961: wait for the caller's access, then honour the link only for a shop they may edit (the edit
+    // button is hidden from a STAFF member, so a link must not open the dialog the button no longer offers).
+    if (loading || shopCaps.pending || deepLinkHandled.current) return
     deepLinkHandled.current = true
     const params = new URLSearchParams(window.location.search)
     const id = params.get("edit")
@@ -363,6 +369,7 @@ export default function ShopsPage() {
       "",
       window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash
     )
+    if (!shopCaps.canEditShop(id)) return
     const open = (target: Shop) => {
       setFocusHoursOnOpen(atHours)
       openEditDialog(target)
@@ -385,7 +392,7 @@ export default function ShopsPage() {
         })
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, shops])
+  }, [loading, shops, shopCaps.pending])
 
   const openDeleteDialog = (shop: Shop) => {
     setDeletingShop(shop)
@@ -554,10 +561,12 @@ export default function ShopsPage() {
           <h1 className="text-4xl font-bold text-slate-900">Shops</h1>
           <p className="mt-2 text-slate-600">Manage your shop locations</p>
         </div>
-        <Button onClick={openCreateDialog} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Shop
-        </Button>
+        {shopCaps.canCreateShop && (
+          <Button onClick={openCreateDialog} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Shop
+          </Button>
+        )}
       </m.div>
 
       {/* Shops Table */}
@@ -601,12 +610,16 @@ export default function ShopsPage() {
                   No shops yet
                 </h3>
                 <p className="mb-4 text-sm text-slate-500">
-                  Get started by creating your first shop
+                  {shopCaps.canCreateShop
+                    ? "Get started by creating your first shop"
+                    : "Ask your administrator to add a shop."}
                 </p>
-                <Button onClick={openCreateDialog} variant="outline">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Shop
-                </Button>
+                {shopCaps.canCreateShop && (
+                  <Button onClick={openCreateDialog} variant="outline">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Shop
+                  </Button>
+                )}
               </div>
             ) : (
               <Table containerLabel="Shops table">
@@ -699,17 +712,21 @@ export default function ShopsPage() {
                             label={`Scheduled slots and WhatsApp link for ${shop.name}`}
                             icon={<Calendar className="h-4 w-4" />}
                           />
-                          <IconButton
-                            onClick={() => openEditDialog(shop)}
-                            label={`Edit shop ${shop.name}`}
-                            icon={<Pencil className="h-4 w-4" />}
-                          />
-                          <IconButton
-                            onClick={() => openDeleteDialog(shop)}
-                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                            label={`Delete shop ${shop.name}`}
-                            icon={<Trash2 className="h-4 w-4" />}
-                          />
+                          {shopCaps.canEditShop(shop.id) && (
+                            <IconButton
+                              onClick={() => openEditDialog(shop)}
+                              label={`Edit shop ${shop.name}`}
+                              icon={<Pencil className="h-4 w-4" />}
+                            />
+                          )}
+                          {shopCaps.canDeleteShop && (
+                            <IconButton
+                              onClick={() => openDeleteDialog(shop)}
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              label={`Delete shop ${shop.name}`}
+                              icon={<Trash2 className="h-4 w-4" />}
+                            />
+                          )}
                         </div>
                       </TableCell>
                     </m.tr>
@@ -1095,6 +1112,7 @@ export default function ShopsPage() {
           if (!next) setSlotsShop(null)
         }}
         shop={slotsShop}
+        canManage={slotsShop === null || shopCaps.canManageSlots(slotsShop.id)}
       />
 
       {/* Delete Confirmation Dialog */}

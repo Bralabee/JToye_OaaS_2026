@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.ResourceInUseException;
+import uk.jtoye.core.exception.ProductShopRequiredException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.finance.VatRate;
@@ -135,6 +136,14 @@ public class ProductService {
         // (body shopId). Additive to the controller's @PreAuthorize SCOPE_catalog:write.
         // STAFF is read + order-state only — a STAFF caller is denied here.
         shopAccessService.require(request.getShopId(), ShopRole.SHOP_MANAGER);
+        // #959 (SW-ADE-01): a product belongs to exactly one shop (UIX-05). The dashboard's "All Shops"
+        // default used to store shop_id NULL, which no storefront lists, no checkout accepts (CR-01,
+        // 37-40) and the PPDS label cannot source a business identity from. Refused, typed, nothing
+        // stored. After the access gate, so who may write is decided exactly as before. Existing
+        // shop-less rows are untouched: they stay listable and become sellable once given a shop.
+        if (request.getShopId() == null) {
+            throw new ProductShopRequiredException();
+        }
         // 37-39 (UXT-016): refuse a contradictory trackInventory/quantityInStock pair before anything is built.
         validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
 
@@ -405,6 +414,7 @@ public class ProductService {
         shopAccessService.requireForShopChange(product.getShopId(), request.getShopId());
         // 37-39 (UXT-016): refused before the mapper touches the entity, so a 400 changes nothing.
         validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
+        validateClearDurability(request);
 
         // Update all fields via mapper (handles both core and storefront fields). quantityInStock is
         // IGNORE-null like every other field; the explicit tracking switch is applied after it. The mapper
@@ -414,6 +424,11 @@ public class ProductService {
             product.setShopId(request.getShopId());
         }
         applyStockTracking(request.getTrackInventory(), product);
+        // Review F3 (#1013): the stated clear, after the null-ignoring mapping, like applyStockTracking.
+        if (Boolean.TRUE.equals(request.getClearDurability())) {
+            product.setShelfLifeDays(null);
+            product.setDurabilityType(null);
+        }
 
         // Re-parse the (possibly edited) ingredients_text and refresh the cached
         // allergen spans (PPDS, Issue #82) — keeps the persisted cache in step with
@@ -491,6 +506,19 @@ public class ProductService {
         if (Boolean.FALSE.equals(trackInventory) && quantityInStock != null) {
             throw new InvalidRequestFieldsException(Map.of("quantityInStock",
                     "quantityInStock must be omitted when trackInventory is false (stopping tracking clears it)"));
+        }
+    }
+
+    /**
+     * {@code clearDurability: true} removes both stored label fields, so sending a value beside it contradicts
+     * the request: a typed 400 naming {@code clearDurability}, raised before anything is changed.
+     */
+    static void validateClearDurability(CreateProductRequest request) {
+        if (Boolean.TRUE.equals(request.getClearDurability())
+                && (request.getShelfLifeDays() != null || request.getDurabilityType() != null)) {
+            throw new InvalidRequestFieldsException(Map.of("clearDurability",
+                    "clearDurability must not be combined with shelfLifeDays or durabilityType "
+                            + "(it removes both stored values)"));
         }
     }
 

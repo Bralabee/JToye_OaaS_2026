@@ -27,6 +27,7 @@ import uk.jtoye.core.onboarding.dto.CreateOnboardingRequest;
 import uk.jtoye.core.security.KeycloakRealmRoleConverter;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.util.List;
 import java.util.Map;
@@ -126,12 +127,16 @@ class OnboardingSubmitterResolverIntegrationTest {
     }
 
     private static RequestPostProcessor vendorJwt(UUID tenant, UUID subject, String email) {
+        return vendorJwt(tenant, subject, email, "user");
+    }
+
+    private static RequestPostProcessor vendorJwt(UUID tenant, UUID subject, String email, String realmRole) {
         return jwt()
                 .jwt(j -> j.subject(subject.toString())
                         .claim("tenant_id", tenant.toString())
                         .claim("email", email)
                         .claim("preferred_username", "owner-" + subject.toString().substring(0, 8))
-                        .claim("realm_access", Map.of("roles", List.of("user"))))
+                        .claim("realm_access", Map.of("roles", List.of(realmRole))))
                 .authorities(new KeycloakRealmRoleConverter());
     }
 
@@ -146,19 +151,31 @@ class OnboardingSubmitterResolverIntegrationTest {
     }
 
     private UUID createAndSubmit(UUID subject, String email) throws Exception {
+        // #961: the onboarding lifecycle needs SHOP_MANAGER on the shop. The grant records a DIFFERENT address
+        // than the token's, so the "submit refreshed the caller's directory row from the JWT" assertions below
+        // still prove the refresh (the row would otherwise already hold the token's address).
+        ShopGrants.grantOperator(jdbc, tenantA, subject, shopA, "SHOP_MANAGER", "granted-" + subject + "@stale.test");
+        return createAndSubmit(subject, email, "user");
+    }
+
+    /**
+     * {@code realmRole = "admin"} is the owner bridge (an implicit Group admin with NO shop_staff row and no
+     * directory row), for the arm whose point is that the directory holds nothing for the submitter.
+     */
+    private UUID createAndSubmit(UUID subject, String email, String realmRole) throws Exception {
         CreateOnboardingRequest req = new CreateOnboardingRequest();
         req.setModel(OnboardingModel.MARKETPLACE);
         req.setShopId(shopA);
         req.setCompanyNumber("12345678");
         String created = mockMvc.perform(post("/api/v1/onboarding")
-                        .with(vendorJwt(tenantA, subject, email))
+                        .with(vendorJwt(tenantA, subject, email, realmRole))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asString());
 
-        mockMvc.perform(post("/api/v1/onboarding/submit").with(vendorJwt(tenantA, subject, email)))
+        mockMvc.perform(post("/api/v1/onboarding/submit").with(vendorJwt(tenantA, subject, email, realmRole)))
                 .andExpect(status().isOk());
         return onboardingId;
     }
@@ -230,7 +247,7 @@ class OnboardingSubmitterResolverIntegrationTest {
                     tenantA, subject, email)))
                     .hasMessageContaining("test_directory_failure");
 
-            UUID onboardingId = createAndSubmit(subject, email);
+            UUID onboardingId = createAndSubmit(subject, email, "admin");
             assertThat(inTenantTx(tenantA, () -> jdbc.queryForObject(
                     "SELECT count(*) FROM vendor_onboarding_aud WHERE id = ? AND status = 'VERIFYING'",
                     Integer.class, onboardingId))).isEqualTo(1);

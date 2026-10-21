@@ -161,4 +161,29 @@ describe("ShopFulfilmentSlotsDialog (ADR-0007 / GAP-GTM-02 & GAP-GTM-06)", () =>
       expect(mockDelete).toHaveBeenCalledWith("/api/v1/shops/shop-peckham/slots/slot-fri")
     })
   })
+
+  describe("#961: a STAFF member reads slots and shares the WhatsApp link but cannot create or close them", () => {
+    function openWith(canManage: boolean) {
+      mockGet.mockImplementation((url: string) =>
+        url === "/api/v1/shops/shop-peckham/slots" ? Promise.resolve({ data: [existingSlot] }) : Promise.reject(new Error(url))
+      )
+      return render(
+        <ShopFulfilmentSlotsDialog open onOpenChange={() => {}} shop={sampleShop} canManage={canManage} />
+      )
+    }
+
+    it("CONTROL: with canManage the Close slot button and the Add Scheduled Slot form are offered", async () => {
+      openWith(true)
+      expect(await screen.findByTestId("slot-deactivate-btn-slot-fri")).toBeInTheDocument()
+      expect(screen.getByText("Add Scheduled Fulfilment Slot")).toBeInTheDocument()
+    })
+
+    it("without canManage the slot and its WhatsApp link stay, and the close button and create form go", async () => {
+      openWith(false)
+      expect(await screen.findByTestId("slot-whatsapp-btn-slot-fri")).toBeInTheDocument()
+      expect(screen.queryByTestId("slot-deactivate-btn-slot-fri")).not.toBeInTheDocument()
+      expect(screen.queryByText("Add Scheduled Fulfilment Slot")).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: /add scheduled slot/i })).not.toBeInTheDocument()
+    })
+  })
 })

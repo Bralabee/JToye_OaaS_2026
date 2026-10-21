@@ -37,6 +37,12 @@ export interface MyAccess {
    * server could not read it, or is older than 37-09; never guessed client-side.
    */
   businessName: string | null
+  /**
+   * The role the caller holds on each granted shop (#961): the higher of that shop's own grant and the
+   * tenant-wide role. Null for a GROUP_ADMIN (unrestricted); absent from a server older than #961. A hint for
+   * hiding controls the server refuses a STAFF member (edit, delete, slots), never an authorization input.
+   */
+  shopRoles?: Record<string, ShopRole> | null
 }
 
 /**
@@ -71,6 +77,7 @@ export async function fetchMyAccess(): Promise<MyAccess> {
       typeof res.data?.businessName === "string" && res.data.businessName.trim()
         ? res.data.businessName
         : null,
+    shopRoles: res.data?.shopRoles ?? null,
   }
 }
 

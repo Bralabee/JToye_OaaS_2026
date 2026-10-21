@@ -10,7 +10,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -20,6 +19,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.onboarding.dto.CreateOnboardingRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.TenantJwts;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -98,7 +98,6 @@ class OnboardingResubmitIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void resubmitFromActionRequired_reEvaluatesFlaggedGate_andAdvances() throws Exception {
         // ACTION_REQUIRED onboarding: the two client gates already PASSED; only the
         // allergen gate FAILED (the product data has since been fixed above).
@@ -109,6 +108,7 @@ class OnboardingResubmitIntegrationTest {
 
         // Re-run the checks -> RESUBMIT (ACTION_REQUIRED -> VERIFYING).
         mockMvc.perform(post("/api/v1/onboarding/resubmit")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("VERIFYING"));
@@ -132,7 +132,6 @@ class OnboardingResubmitIntegrationTest {
      * as a stall in VERIFYING, not as a coincidental re-waive.
      */
     @Test
-    @WithMockUser
     void resubmitNeverResetsAWaivedGate_soAnExistingWaiverSurvivesTheRerun() throws Exception {
         UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED, "12345678");
         seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.WAIVED);
@@ -140,6 +139,7 @@ class OnboardingResubmitIntegrationTest {
         seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.FAILED);
 
         mockMvc.perform(post("/api/v1/onboarding/resubmit")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("VERIFYING"));
@@ -155,7 +155,6 @@ class OnboardingResubmitIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void resubmitFromDraftIsIllegalTransition_returns400() throws Exception {
         // Create leaves the onboarding in DRAFT; RESUBMIT is only legal from
         // ACTION_REQUIRED, so the state machine vetoes it -> 400.
@@ -164,12 +163,14 @@ class OnboardingResubmitIntegrationTest {
         req.setShopId(shopId);
         req.setCompanyNumber("12345678");
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(post("/api/v1/onboarding/resubmit")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isBadRequest());
     }
@@ -221,6 +222,7 @@ class OnboardingResubmitIntegrationTest {
 
     private JsonNode getMe() throws Exception {
         String body = mockMvc.perform(get("/api/v1/onboarding/me")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();

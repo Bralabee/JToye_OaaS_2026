@@ -9,7 +9,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -19,6 +18,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.onboarding.dto.CreateOnboardingRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.TenantJwts;
 
 import java.util.UUID;
 
@@ -83,10 +83,10 @@ class OnboardingCompanyNumberValidationIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void overLengthCompanyNumberIsRejected400NotDuplicate409() throws Exception {
         String tooLong = "A".repeat(40); // > V43 VARCHAR(32) and > the 2-10 pattern bound
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody(tooLong)))
@@ -94,9 +94,9 @@ class OnboardingCompanyNumberValidationIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void companyNumberIsNormalisedTrimAndUppercaseOnPersist() throws Exception {
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody("  sc123456  ")))
@@ -108,9 +108,9 @@ class OnboardingCompanyNumberValidationIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void blankCompanyNumberPersistsAsNull() throws Exception {
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody("   ")))

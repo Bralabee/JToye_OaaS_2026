@@ -433,6 +433,7 @@ class ProductPartialUpdateIntegrationTest {
     @Test
     void createWithoutVatRateDefaultsToStandard() {
         CreateProductRequest create = requiredFieldsOnly("PU-SKU-5");
+        create.setShopId(shopA); // #959: a create names its shop
         // vatRate deliberately left unset on a CREATE (not an edit) — must still default.
 
         ProductDto created = asGroupAdmin(() -> productService.createProduct(create));
@@ -516,6 +517,7 @@ class ProductPartialUpdateIntegrationTest {
             boolean available, boolean featured, Integer quantityInStock, Integer shelfLifeDays,
             String durabilityType) {
         CreateProductRequest req = requiredFieldsOnly(sku);
+        req.setShopId(shopA); // #959: a create names its shop (the edit builder deliberately does not)
         req.setVatRate(vatRate);
         req.setDisplayOrder(displayOrder);
         req.setAvailable(available);
