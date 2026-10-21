@@ -115,6 +115,12 @@ describe("Shops page: shop-admin controls follow the caller's role (#961)", () =
     expect(screen.getByRole("button", { name: "Edit shop Kitchen A" })).toBeInTheDocument()
   })
 
+  it("F2: a caller whose shopRoles map names no role on a listed shop is offered no Edit shop there", async () => {
+    await renderPage({ loading: false, access: access({ grantedShopIds: [], shopRoles: {} }) })
+
+    expect(screen.queryByRole("button", { name: /edit shop/i })).not.toBeInTheDocument()
+  })
+
   it("a STAFF member sees an 'ask your administrator' empty state instead of an Add Shop button", async () => {
     mockSwitcher = { loading: false, access: access({}) }
     mockedApiClient.get.mockResolvedValue({ data: { content: [], totalElements: 0, totalPages: 0 } })

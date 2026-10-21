@@ -24,12 +24,24 @@ export interface ShopAdminCapabilities {
   canDeleteShop: boolean
   canEditShop: (shopId: string) => boolean
   canManageSlots: (shopId: string) => boolean
+  /**
+   * The onboarding lifecycle (create, submit, resubmit, withdraw, go-live, company number) needs
+   * SHOP_MANAGER on the onboarded shop; an onboarding with no shop is Group-admin only (#961 review F1).
+   */
+  canDriveOnboarding: (shopId: string | null) => boolean
 }
 
 const RANK: Record<ShopRole, number> = { STAFF: 0, SHOP_MANAGER: 1, GROUP_ADMIN: 2 }
 
-function roleOn(access: MyAccess, shopId: string): ShopRole | null {
-  return access.shopRoles?.[shopId] ?? access.tenantWideRole ?? null
+/**
+ * The caller's role on a shop, or null when it cannot be told.
+ * A PRESENT shopRoles map is the server's complete answer for every shop the caller can reach, so a shop
+ * missing from it means NO role there (#961 review F2) and is reported as `"none"`. Only a server older
+ * than #961 sends no map at all; then the tenant-wide role is all there is, and null means "unknown".
+ */
+function roleOn(access: MyAccess, shopId: string): ShopRole | "none" | null {
+  if (access.shopRoles) return access.shopRoles[shopId] ?? "none"
+  return access.tenantWideRole ?? null
 }
 
 export function shopAdminCapabilities(
@@ -41,6 +53,7 @@ export function shopAdminCapabilities(
     canDeleteShop: true,
     canEditShop: () => true,
     canManageSlots: () => true,
+    canDriveOnboarding: () => true,
   }
   if (!switcher) return offerAll
   if (switcher.loading) {
@@ -50,12 +63,14 @@ export function shopAdminCapabilities(
       canDeleteShop: false,
       canEditShop: () => false,
       canManageSlots: () => false,
+      canDriveOnboarding: () => false,
     }
   }
   const access = switcher.access
   if (!access || access.groupAdmin) return offerAll
   const atLeastManager = (shopId: string): boolean => {
     const role = roleOn(access, shopId)
+    if (role === "none") return false
     return role === null ? true : RANK[role] >= RANK.SHOP_MANAGER
   }
   return {
@@ -64,5 +79,7 @@ export function shopAdminCapabilities(
     canDeleteShop: false,
     canEditShop: atLeastManager,
     canManageSlots: atLeastManager,
+    // No shop on the onboarding: only a Group admin (handled above) may drive it.
+    canDriveOnboarding: (shopId) => shopId !== null && atLeastManager(shopId),
   }
 }

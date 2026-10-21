@@ -65,4 +65,35 @@ describe("shopAdminCapabilities (#961)", () => {
     expect(c.canCreateShop).toBe(false)
     expect(c.canDeleteShop).toBe(false)
   })
+
+  it("F2: a PRESENT shopRoles map with no entry for a shop means no role there, so nothing is offered on it", () => {
+    const c = shopAdminCapabilities({
+      loading: false,
+      access: access({ grantedShopIds: [], shopRoles: {} }),
+    })
+    expect(c.canEditShop("a")).toBe(false)
+    expect(c.canManageSlots("a")).toBe(false)
+    expect(c.canDriveOnboarding("a")).toBe(false)
+  })
+
+  it("F2: the old-server fallback applies only when shopRoles itself is null or absent", () => {
+    for (const shopRoles of [null, undefined]) {
+      const c = shopAdminCapabilities({ loading: false, access: access({ shopRoles }) })
+      expect(c.canEditShop("a")).toBe(true)
+    }
+  })
+
+  it("F1: driving the onboarding needs SHOP_MANAGER on the onboarded shop; an onboarding with no shop is Group-admin only", () => {
+    const c = shopAdminCapabilities({ loading: false, access: access({}) })
+    expect(c.canDriveOnboarding("a")).toBe(false) // STAFF on a
+    expect(c.canDriveOnboarding("b")).toBe(true) // SHOP_MANAGER on b
+    expect(c.canDriveOnboarding(null)).toBe(false)
+    const admin = shopAdminCapabilities({
+      loading: false,
+      access: access({ groupAdmin: true, grantedShopIds: null, shopRoles: null }),
+    })
+    expect(admin.canDriveOnboarding(null)).toBe(true)
+    expect(shopAdminCapabilities(null).canDriveOnboarding(null)).toBe(true)
+    expect(shopAdminCapabilities({ loading: true, access: null }).canDriveOnboarding("b")).toBe(false)
+  })
 })
