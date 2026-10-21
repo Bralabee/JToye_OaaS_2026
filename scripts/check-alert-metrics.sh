@@ -98,10 +98,12 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 #                     series. #343 fixed the data and left the exemption, so this gate
 #                     was red on main from the moment it merged. It is NOT in CI (it
 #                     needs a live Prometheus), so nothing in the pipeline noticed.
-#   NoOrdersCreated   #343 corrected the selector to include /public/shops/{slug}/orders
-#                     — the reason text above still quoted the OLD selector, which no
-#                     longer existed in the file — and a guest order was then placed
-#                     (ORD-00000000-20260729-63EB83BC), so the series is live.
+#   NoOrdersCreated   (historical; the selector it describes is RETIRED, see the #973
+#                     note below.) #343 corrected the then-selector, the POST 201
+#                     http_server_requests_seconds_count series, to include
+#                     /public/shops/{slug}/orders, and a guest order was then placed
+#                     (ORD-00000000-20260729-63EB83BC), so that series was live. Since
+#                     #973 the rule reads jtoye_orders_total, which needs no order.
 #
 # A THIRD WAS REMOVED ON 2026-07-30, by its own written trigger:
 #
@@ -126,9 +128,9 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 # suffix and that name does not exist. M-1 covers the rule on its own merits and a fresh
 # stack passes it with zero orders. Re-adding an exemption is still the wrong fix.
 #
-# `scripts/seed-order-metric.sh` is kept: it proves the order path end to end (and, with
-# FORCE=1, clears a FIRING NoOrdersCreated), but it is no longer needed to make this gate
-# green.
+# `scripts/seed-order-metric.sh` is kept: it proves the order path end to end on a cash
+# stack (and, with FORCE=1, clears a FIRING NoOrdersCreated), but it is no longer needed to
+# make this gate green.
 # ---------------------------------------------------------------------------------
 KNOWN_DATALESS=()
 
@@ -405,7 +407,7 @@ for entry in "${SELF_HEALING[@]}"; do
     violation "SELF_HEALING '$sh_name': could not read its expression from $RULES_FILE — refusing to certify a rule whose shape cannot be inspected"
     sh_ok=0
   elif grep -qE '(<=|<|==[[:space:]]*0|absent\()' <<<"$sh_expr"; then
-    violation "S-1 SELF_HEALING '$sh_name' fires on ABSENCE (its expression contains <, <=, ==0 or absent()). An absence-detector CANNOT be self-healing: the empty case is precisely what it must detect. This is the NoOrdersCreated class — it needs a seed, not an exemption."
+    violation "S-1 SELF_HEALING '$sh_name' fires on ABSENCE (its expression contains <, <=, ==0 or absent()). An absence-detector CANNOT be self-healing: the empty case is precisely what it must detect. This is the absence-detector class (a series that does not exist cannot signal its own absence): point the rule at a series that exists from startup, as #973 did for NoOrdersCreated, rather than exempting it or seeding data."
     sh_ok=0
   fi
   # Granted ONLY when every assertion above passed. A rejected entry must fall through

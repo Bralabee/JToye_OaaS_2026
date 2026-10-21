@@ -183,8 +183,21 @@ groups:
       # card order once the payment confirms (not at the 201), and a vendor/API/MCP order
       # on DRAFT -> PENDING. That is closer to what the alert says ("no orders") than a 201
       # was, because an unpaid card checkout is not an order. The counter is driven by the
-      # outbox and the AMQP consumer, so the rule also goes quiet when that path stalls;
-      # that is a real signal for a business alert, not a false one.
+      # outbox and the AMQP consumer, so the rule also goes quiet when no order EVENT
+      # reaches the consumer (a broker or outbox stall). It does NOT detect a consumer that
+      # fails AFTER counting: the increment runs inside the listener's transaction and is
+      # not undone on rollback, so a poison-message redelivery loop keeps the counter
+      # rising. That failure is the job of DeadLetterQueueNonEmpty, OutboxDeadLetterRising,
+      # DomainQueueBacklog and MessagingConsumerMissing.
+      #
+      # AGGREGATED ACROSS PODS ON PURPOSE. The counter is per pod and the listener is a
+      # competing consumer: at N replicas each event is handled by exactly ONE pod (k8s
+      # production runs three), so an un-summed `increase(...) < 1` fires for every pod
+      # that did not happen to consume an order, and for a dead pod's series that stays in
+      # the 30m window after a restart. `sum()` asks the business question: did ANY pod
+      # count an order. It drops all series labels, which is safe because the labels and
+      # annotations below are static (no `$labels` templating). Proven by
+      # infra/monitoring/prometheus/tests/alerts.test.yml, run by check-alert-rules.sh.
       #
       # The rule still fires on `< 1`, i.e. on the ABSENCE of an increase, so it needs a
       # series to evaluate; a series that exists at 0 from startup is what provides it. The
@@ -200,7 +213,7 @@ groups:
       - alert: NoOrdersCreated
         expr: |
           (
-            increase(jtoye_orders_total[30m]) < 1
+            sum(increase(jtoye_orders_total[30m])) < 1
           )
         for: 30m
         labels:

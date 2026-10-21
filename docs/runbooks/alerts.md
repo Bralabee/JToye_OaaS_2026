@@ -174,7 +174,7 @@ alert reports the JVM it measured rather than the one someone assumed.
 
 ## NoOrdersCreated
 
-**Expression:** `increase(jtoye_orders_total[30m]) < 1`
+**Expression:** `sum(increase(jtoye_orders_total[30m])) < 1`
 · **for:** 30m · **severity:** info
 
 ### What it means
@@ -197,19 +197,34 @@ orders. No seeding is needed.
   increments it on a deduplicated `ORDER_STATE_CHANGED` event whose new status is `PENDING`: a cash
   storefront order at creation, a card order once the payment confirms, and a vendor/API/MCP order
   on `DRAFT` to `PENDING`. An unpaid card checkout does not count.
-- **It also goes quiet if the outbox/AMQP path stalls**, because the increment happens in the
-  consumer. That is a real signal, so when this fires with orders visibly being placed, check
-  `payment_event_outbox` and the order-event queue before blaming trade.
+- **It is summed across pods.** The counter is per pod and the listener is a competing consumer,
+  so at N replicas one pod counts each order and the others stay at 0. An un-summed rule would
+  fire for every idle pod and for a dead pod's series left in the 30m window. `sum()` asks whether
+  ANY pod counted an order; the rule's labels and annotations are static, so nothing is lost by
+  dropping the series labels. `infra/monitoring/prometheus/tests/alerts.test.yml` proves it, and
+  `scripts/check-alert-rules.sh` (S-6) runs it.
+- **What a firing means beyond "no trade":** the increment happens in the consumer, so the rule
+  detects no order EVENT reaching the consumer (a broker or outbox stall). When this fires with
+  orders visibly being placed, check `payment_event_outbox` and the order-event queue first. It does
+  NOT detect a consumer that fails AFTER counting: the increment runs inside the listener's
+  transaction and is not undone on rollback, so a poison-message redelivery loop keeps the counter
+  rising and this alert quiet. That failure is covered by `DeadLetterQueueNonEmpty`,
+  `OutboxDeadLetterRising`, `DomainQueueBacklog` and `MessagingConsumerMissing`.
 
 ### Two different symptoms, two different fixes — do not confuse them
 
 | symptom | what it means | fix |
 |---|---|---|
 | `scripts/check-alert-metrics.sh` fails on it | `jtoye_orders_total` has no series: core-java is not being scraped, or the rule file was reverted to the old `http_server_requests_seconds_count` selector | check the core-java scrape target and `curl -s <core-java>/actuator/prometheus` for `jtoye_orders_total`; **seeding an order is not the remedy** |
-| the alert is **firing** in Prometheus | the counter exists, no order was placed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` (writes a real order) or the local mute below |
+| the alert is **firing** in Prometheus | the counter exists, no order was placed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` (writes a real order; cash stacks only) or the local mute below |
 
 `scripts/seed-order-metric.sh` is kept because it proves the order path end to end, but it is no
-longer needed to make the metric gate green.
+longer needed to make the metric gate green. It works only where Stripe is not configured: with
+card payments on (staging has test keys) a storefront order stays DRAFT awaiting the payment
+webhook and never publishes PENDING, so the counter cannot move. The script reads
+`acceptsCardPayments` from the public shop and exits VOID before placing anything; its
+`--selftest` covers the cash and card branches. With the series absent it also exits VOID without
+ordering, because that is a scrape problem.
 
 **Do not add a `KNOWN_DATALESS` entry for this.** That gate's own header calls it the wrong fix.
 

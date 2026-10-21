@@ -154,7 +154,7 @@ Do not restart `core-java` for convenience. Its order counter (`jtoye_orders_tot
 `NoOrdersCreated` reads) is in memory and resets to 0 on every restart. Since #973 the series is
 registered at startup, so the alert stays evaluable and the metric gate stays green after a restart
 with no order placed; staging mutes `NoOrdersCreated` at Alertmanager anyway. `scripts/seed-order-metric.sh`
-is no longer needed after a deploy. It remains a write the owner approves, for proving the order path.
+is no longer needed after a deploy. With Stripe test keys configured, as on staging, it exits VOID before placing anything (a card order stays DRAFT and never moves the counter), so it cannot be used there.
 
 ## 4. Run the restore drill
 

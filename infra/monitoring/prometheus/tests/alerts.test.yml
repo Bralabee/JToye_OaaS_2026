@@ -1,0 +1,96 @@
+# Unit tests for infra/monitoring/prometheus/alerts.yml (and, by copy parity, the byte-identical
+# k8s/components/monitoring/prometheus/alerts.yml). Run by scripts/check-alert-rules.sh (S-6):
+#   promtool test rules infra/monitoring/prometheus/tests/alerts.test.yml
+#
+# NoOrdersCreated (issue #973). jtoye_orders_total is a PER-POD counter, incremented by the
+# competing-consumer OrderStateChangeListener, so at N replicas one pod counts each order and
+# the others stay at 0. The rule must therefore AGGREGATE (sum) across pods. Every case below
+# is one the un-summed form `increase(jtoye_orders_total[30m]) < 1` gets wrong or cannot see;
+# the two-pod case is the one that goes red on it.
+#
+# Timing: 30s samples; the 30m increase window plus `for: 30m`.
+rule_files:
+  - ../alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # 1. Restart, then zero orders. The series exists at 0 from the first scrape, so the rule can
+  #    fire (the whole point of #973). Quiet at 10m (window not yet pending for 30m), firing at 75m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: NoOrdersCreated
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: business
+              service: core-java
+            exp_annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."
+
+  # 2. TWO PODS, one order. Pod A consumes an order at ~10m (0 -> 1), pod B stays at 0 for the
+  #    whole run. Orders ARE flowing, so NOTHING may fire at 40m. Per-series, pod B's own
+  #    `increase < 1` would be true and fire after `for: 30m`; later the order leaves the
+  #    30m window and the aggregate legitimately fires; that is not asserted here.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x20 1x160'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-b"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+
+  # 3. Steady trade across three pods: an order every 25 minutes, rotating pod A, B, C (A at 10m
+  #    and 85m, B at 35m, C at 60m). Every 30m window holds an order, so the aggregate never fires;
+  #    each pod on its own sees an order only every 75m, so its own `< 1` holds for 45m and the
+  #    un-summed rule fires for pod A. Evaluated at 80m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x20 1x150'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-b"}'
+        values: '0x70 1x100'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-c"}'
+        values: '0x120 1x50'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+
+  # 4. A pod dies and its replacement starts at 0 (a restart under a new instance label). The
+  #    dead pod's last order still counts while it sits in the window, then the aggregate fires
+  #    once no pod has counted an order for 30m (+ `for: 30m`). Quiet at 45m, firing at 100m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="old-pod"}'
+        values: '0x10 1x10 stale'
+      - series: 'jtoye_orders_total{application="core-java", instance="new-pod"}'
+        values: '_x30 0x170'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: NoOrdersCreated
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: business
+              service: core-java
+            exp_annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."

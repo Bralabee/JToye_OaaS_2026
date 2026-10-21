@@ -1168,6 +1168,9 @@ jobs:
           chmod +x ./scripts/check-alert-rules.sh
           ./scripts/check-alert-rules.sh
 
+      - name: Prove the order-metric probe refuses card stacks and a missing series (973 --selftest)
+        run: bash scripts/seed-order-metric.sh --selftest
+
       - name: Assert every doc citation resolves to what it claims
         run: |
           chmod +x ./scripts/check-doc-citations.sh
