@@ -78,6 +78,7 @@ import {
   parseDurabilityInputs,
   productSchema,
   toPricePennies,
+  type DurabilityInputs,
   type ProductFormData,
 } from "./product-form-schema"
 
@@ -514,8 +515,17 @@ export default function ProductsPage() {
       document.getElementById("shopId")?.focus()
       return
     }
-    // #960: shelf life and use-by / best-before go together, in range, or are both left blank.
-    const durability = parseDurabilityInputs(shelfLifeText, durabilityType)
+    // #960: shelf life and use-by / best-before go together, in range, or are both left blank. That rule
+    // judges what the vendor TYPED: on an edit where neither input was touched, the stored values (which
+    // may be a lone half, or from before the bound existed) are not re-validated and not re-sent, so the
+    // server keeps them and an unrelated edit, like a new price, still saves (review round 1, F2).
+    const durabilityTouched =
+      !editingProduct ||
+      shelfLifeText !== (editingProduct.shelfLifeDays != null ? String(editingProduct.shelfLifeDays) : "") ||
+      durabilityType !== (editingProduct.durabilityType ?? "")
+    const durability: DurabilityInputs = durabilityTouched
+      ? parseDurabilityInputs(shelfLifeText, durabilityType)
+      : { ok: true }
     if (!durability.ok) {
       setDurabilityError(durability.error)
       document.getElementById(shelfLifeText.trim() === "" ? "shelfLifeDays" : "durabilityType")?.focus()

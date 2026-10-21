@@ -169,7 +169,7 @@ describe("#960: the product form has the label's dating inputs", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 
-  it("editing a product shows its stored values and saves them", async () => {
+  it("editing a product shows its stored values; saved untouched they are not re-sent (the server keeps them)", async () => {
     mockedApiClient.get.mockImplementation(
       api([{ ...product, shelfLifeDays: 5, durabilityType: "BEST_BEFORE" }]) as jest.Mock
     )
@@ -182,8 +182,9 @@ describe("#960: the product form has the label's dating inputs", () => {
     fireEvent.click(screen.getByRole("button", { name: /update product/i }))
     await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))
     const body = mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>
-    expect(body.shelfLifeDays).toBe(5)
-    expect(body.durabilityType).toBe("BEST_BEFORE")
+    // Untouched (review F2): omitted, so a lone half or an out-of-bound legacy value cannot block the save.
+    expect(body.shelfLifeDays).toBeUndefined()
+    expect(body.durabilityType).toBeUndefined()
   })
 
   it("editing a product with nothing recorded shows blanks and sends neither (the server keeps what it has)", async () => {
@@ -199,6 +200,55 @@ describe("#960: the product form has the label's dating inputs", () => {
     const body = mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>
     expect(body.shelfLifeDays).toBeUndefined()
     expect(body.durabilityType).toBeUndefined()
+  })
+})
+
+/**
+ * Review round 1, F2: the pair rule is for what the vendor TYPED. A product that already stores one of the
+ * two (or a shelf life above today's bound) must still save when the vendor only changes something else.
+ */
+describe("#960 review F2: untouched stored durability values round-trip", () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockedApiClient.put.mockResolvedValue({ data: { ...product } })
+  })
+
+  async function editOnlyThePrice(stored: Record<string, unknown>) {
+    mockedApiClient.get.mockImplementation(api([{ ...product, ...stored }]) as jest.Mock)
+    render(<ProductsPage />)
+    fireEvent.click(await screen.findByRole("button", { name: "Edit product Jollof Rice" }))
+    await screen.findByText("Edit Product")
+    fireEvent.change(screen.getByLabelText(/^Price/), { target: { value: "12.00" } })
+    fireEvent.click(screen.getByRole("button", { name: /update product/i }))
+  }
+
+  it.each([
+    ["a shelf life with no use-by / best-before", { shelfLifeDays: 3 }],
+    ["a use-by / best-before with no shelf life", { durabilityType: "USE_BY" }],
+    ["a shelf life above the bound the form now enforces", { shelfLifeDays: 5000, durabilityType: "USE_BY" }],
+  ])("saves a price change on a product storing %s", async (_name, stored) => {
+    await editOnlyThePrice(stored)
+
+    await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(DURABILITY_PAIR_COPY)).not.toBeInTheDocument()
+    const body = mockedApiClient.put.mock.calls[0][1] as Record<string, unknown>
+    expect(body.pricePennies).toBe(1200)
+    // Untouched: nothing is sent, so the server keeps exactly what it holds.
+    expect(body.shelfLifeDays).toBeUndefined()
+    expect(body.durabilityType).toBeUndefined()
+    expect(body.clearDurability).toBeUndefined()
+  })
+
+  it("still enforces the pair once the vendor touches either input", async () => {
+    mockedApiClient.get.mockImplementation(api([{ ...product, shelfLifeDays: 3 }]) as jest.Mock)
+    render(<ProductsPage />)
+    fireEvent.click(await screen.findByRole("button", { name: "Edit product Jollof Rice" }))
+    await screen.findByText("Edit Product")
+    fireEvent.change(shelfInput(), { target: { value: "4" } })
+    fireEvent.click(screen.getByRole("button", { name: /update product/i }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(DURABILITY_PAIR_COPY)
+    expect(mockedApiClient.put).not.toHaveBeenCalled()
   })
 })
 
