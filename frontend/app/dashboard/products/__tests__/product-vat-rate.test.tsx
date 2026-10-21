@@ -13,6 +13,7 @@
  */
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import ProductsPage from "../page"
+import { chooseTestShop, getWithShop } from "@/test-utils/shop-assignment"
 import apiClient from "@/lib/api-client"
 
 jest.mock("@/lib/api-client")
@@ -67,6 +68,7 @@ async function openCreate() {
   fireEvent.change(screen.getByLabelText("Product Title"), { target: { value: "Zobo Drink" } })
   fireEvent.change(screen.getByLabelText("Ingredients"), { target: { value: "hibiscus, ginger" } })
   fireEvent.change(screen.getByLabelText(/^Price/), { target: { value: "2.50" } })
+  await chooseTestShop()
 }
 
 async function openEditOf(p: Record<string, unknown>) {
@@ -86,7 +88,7 @@ async function choose(optionName: string) {
 describe("UXT-046: the VAT rate Select in the product form (UI-SPEC § B6)", () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockedApiClient.get.mockResolvedValue(listOf([]))
+    mockedApiClient.get.mockImplementation(getWithShop([]) as jest.Mock)
     mockedApiClient.post.mockResolvedValue({ data: { ...product, allergenWarnings: [] } })
     mockedApiClient.put.mockResolvedValue({ data: { ...product, allergenWarnings: [] } })
   })

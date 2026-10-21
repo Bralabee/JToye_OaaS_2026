@@ -1375,7 +1375,7 @@
             "type" : "integer"
           },
           "shopId" : {
-            "description" : "Shop this product belongs to (null = available on all tenant shops)",
+            "description" : "Shop this product belongs to. Required on create: a product with no shop is on no storefront and cannot be ordered, so a create without one is a 400 errors/shop-required. On an edit, omitting it keeps the stored shop.",
             "format" : "uuid",
             "type" : "string"
           },
@@ -11839,7 +11839,7 @@
                 }
               }
             },
-            "description" : "Validation error - missing required fields or invalid price"
+            "description" : "Validation error - missing required fields or invalid price, or no shop named (errors/shop-required, field shopId)"
           },
           "401" : {
             "content" : {

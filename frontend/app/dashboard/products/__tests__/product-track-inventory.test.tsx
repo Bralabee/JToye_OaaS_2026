@@ -11,6 +11,7 @@
  */
 import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 import ProductsPage from "../page"
+import { chooseTestShop, getWithShop } from "@/test-utils/shop-assignment"
 import apiClient from "@/lib/api-client"
 
 jest.mock("@/lib/api-client")
@@ -62,6 +63,7 @@ async function openCreate() {
   fireEvent.change(screen.getByLabelText("Product Title"), { target: { value: "Suya" } })
   fireEvent.change(screen.getByLabelText("Ingredients"), { target: { value: "beef, yaji spice" } })
   fireEvent.change(screen.getByLabelText(/^Price/), { target: { value: "9.00" } })
+  await chooseTestShop()
 }
 
 async function openEditOf(p: Record<string, unknown>) {
@@ -86,7 +88,7 @@ async function submittedCreate(): Promise<Record<string, unknown>> {
 describe("UXT-016: the product form sends trackInventory explicitly", () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockedApiClient.get.mockResolvedValue(listOf([]))
+    mockedApiClient.get.mockImplementation(getWithShop([]) as jest.Mock)
     mockedApiClient.post.mockResolvedValue({ data: { ...product } })
     mockedApiClient.put.mockResolvedValue({ data: { ...product } })
   })

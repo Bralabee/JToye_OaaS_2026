@@ -10,6 +10,7 @@
  */
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import ProductsPage from "../page"
+import { chooseTestShop, getWithShop } from "@/test-utils/shop-assignment"
 import apiClient from "@/lib/api-client"
 import { MAY_CONTAIN_HELP_COPY } from "@/lib/allergen-copy"
 import { MAY_CONTAIN_MASK_MAX, mayContainMaskSchema } from "../product-form-schema"
@@ -68,6 +69,7 @@ async function openCreate() {
     target: { value: "rice, butter (MILK), pepper" },
   })
   fireEvent.change(screen.getByLabelText(/^Price/), { target: { value: "4.50" } })
+  await chooseTestShop()
 }
 
 async function openEditOf(p: Record<string, unknown>) {
@@ -80,7 +82,7 @@ async function openEditOf(p: Record<string, unknown>) {
 describe("D-16: the separate 'May contain' checkboxes", () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockedApiClient.get.mockResolvedValue(listOf([]))
+    mockedApiClient.get.mockImplementation(getWithShop([]) as jest.Mock)
     mockedApiClient.post.mockResolvedValue({ data: { ...product, allergenWarnings: [] } })
     mockedApiClient.put.mockResolvedValue({ data: { ...product, allergenWarnings: [] } })
   })

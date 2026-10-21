@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.InvalidRequestFieldsException;
 import uk.jtoye.core.exception.ResourceInUseException;
+import uk.jtoye.core.exception.ProductShopRequiredException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.finance.VatRate;
@@ -135,6 +136,14 @@ public class ProductService {
         // (body shopId). Additive to the controller's @PreAuthorize SCOPE_catalog:write.
         // STAFF is read + order-state only — a STAFF caller is denied here.
         shopAccessService.require(request.getShopId(), ShopRole.SHOP_MANAGER);
+        // #959 (SW-ADE-01): a product belongs to exactly one shop (UIX-05). The dashboard's "All Shops"
+        // default used to store shop_id NULL, which no storefront lists, no checkout accepts (CR-01,
+        // 37-40) and the PPDS label cannot source a business identity from. Refused, typed, nothing
+        // stored. After the access gate, so who may write is decided exactly as before. Existing
+        // shop-less rows are untouched: they stay listable and become sellable once given a shop.
+        if (request.getShopId() == null) {
+            throw new ProductShopRequiredException();
+        }
         // 37-39 (UXT-016): refuse a contradictory trackInventory/quantityInStock pair before anything is built.
         validateStockTracking(request.getTrackInventory(), request.getQuantityInStock());
 

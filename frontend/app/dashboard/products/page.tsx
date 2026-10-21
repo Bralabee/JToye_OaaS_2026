@@ -172,6 +172,10 @@ async function readProblem(error: unknown): Promise<{ status?: number; detail?: 
   return { status: response.status, detail: typeof detail === "string" ? detail : undefined }
 }
 
+/** #959: shown under Shop Assignment when a new product is saved without a shop. */
+const SHOP_REQUIRED_COPY =
+  "Choose which shop sells this product. A product with no shop does not appear on any storefront."
+
 const LABEL_DATE_REQUIRED_COPY = "Enter the date the food was made."
 const LABEL_DATE_FUTURE_COPY = "The production date cannot be in the future."
 const LABEL_DATE_REFUSED_COPY = "This production date cannot be used for a label."
@@ -219,6 +223,8 @@ export default function ProductsPage() {
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
   const [shops, setShops] = useState<Shop[]>([])
   const [selectedShopId, setSelectedShopId] = useState<string>("")
+  // #959: a new product must name its shop. Set when a create is submitted without one.
+  const [shopError, setShopError] = useState(false)
   const [trackInventory, setTrackInventory] = useState(false)
   const [quantityInStock, setQuantityInStock] = useState<number>(0)
   // F2 (FEB-1): a 429/network failure must render an error panel, never the
@@ -376,7 +382,11 @@ export default function ProductsPage() {
     setFeatured(false)
     // D-08: outside the All-shops context a create is a single-shop write —
     // default the assignment to the selected shop (the select is pinned below).
-    setSelectedShopId(contextShopId ?? "")
+    // #959: outside a shop context there is no "All Shops" any more — a product belongs to one shop.
+    // A vendor with exactly one shop has nothing to choose, so it is pre-selected; with several, the
+    // select starts on "Choose a shop…" and the form refuses to save until one is picked.
+    setSelectedShopId(contextShopId ?? (shops.length === 1 ? shops[0].id : ""))
+    setShopError(false)
     setTrackInventory(false)
     setQuantityInStock(0)
     setAiSuggestions(null)
@@ -396,6 +406,7 @@ export default function ProductsPage() {
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
     setSelectedShopId(product.shopId || "")
+    setShopError(false)
     setTrackInventory(product.quantityInStock != null)
     setQuantityInStock(product.quantityInStock ?? 0)
     setAiSuggestions(null)
@@ -468,6 +479,15 @@ export default function ProductsPage() {
    * before the tick.
    */
   const saveProduct = async (data: ProductFormData, mask: number = allergenMask) => {
+    // #959 (SW-ADE-01): a new product with no shop is on no storefront and cannot be ordered, so it is
+    // refused here, in words, instead of being saved and never seen. (The server refuses it too:
+    // 400 errors/shop-required.) An edit of an older shop-less product may still be saved as it is;
+    // the form tells the vendor it is off the menu and offers the choice.
+    if (!editingProduct && !selectedShopId) {
+      setShopError(true)
+      document.getElementById("shopId")?.focus()
+      return
+    }
     try {
       setSubmitting(true)
 
@@ -538,7 +558,12 @@ export default function ProductsPage() {
 
       closeFormAfterSave()
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to ${editingProduct ? "update" : "create"} product`
+      // The server's RFC 7807 detail is written for the vendor (e.g. errors/shop-required); the axios
+      // message is only "Request failed with status code 400".
+      const problem = await readProblem(error)
+      const errorMessage =
+        problem.detail ??
+        (error instanceof Error ? error.message : `Failed to ${editingProduct ? "update" : "create"} product`)
       toast({
         variant: "destructive",
         title: editingProduct ? "Error updating product" : "Error creating product",
@@ -823,6 +848,15 @@ export default function ProductsPage() {
                                   two lines (a title is the row's identifier), break-words so an
                                   unbreakable token wraps instead of overflowing the table. */}
                               <div className="font-medium line-clamp-2 break-words">{product.title}</div>
+                              {!product.shopId && (
+                                <span
+                                  data-testid="shop-less-badge"
+                                  className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-amber-800"
+                                >
+                                  <AlertCircle className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
+                                  No shop: not on any storefront
+                                </span>
+                              )}
                               <IngredientText
                                 text={product.ingredientsText}
                                 className="line-clamp-1 block text-xs text-slate-500"
@@ -1284,13 +1318,22 @@ export default function ProductsPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="shopId">Shop Assignment</Label>
                 {/* D-08: a single-shop context does single-shop writes only — the
-                    assignment is pinned to the selected shop (no cross-shop swap,
-                    no "All Shops"). The All-shops context keeps the full list. */}
+                    assignment is pinned to the selected shop (no cross-shop swap).
+                    #959: the All-shops context lists the shops and nothing else. There is no
+                    "All Shops" choice: a product belongs to one shop, and one saved with none was on
+                    no storefront. A new product must pick a shop; an older shop-less product shows
+                    that it has none. */}
                 <select
                   id="shopId"
                   value={selectedShopId}
-                  onChange={(e) => setSelectedShopId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedShopId(e.target.value)
+                    setShopError(false)
+                  }}
                   disabled={!!contextShopId}
+                  aria-required={!editingProduct}
+                  aria-invalid={shopError || undefined}
+                  aria-describedby={shopError ? "shopId-error" : undefined}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {contextShopId ? (
@@ -1299,16 +1342,35 @@ export default function ProductsPage() {
                     </option>
                   ) : (
                     <>
-                      <option value="">All Shops</option>
+                      {(!editingProduct || !editingProduct.shopId) && (
+                        <option value="">
+                          {editingProduct ? "No shop (not on any storefront)" : "Choose a shop…"}
+                        </option>
+                      )}
                       {shops.map((shop) => (
                         <option key={shop.id} value={shop.id}>{shop.name}</option>
                       ))}
                     </>
                   )}
                 </select>
+                {shopError && (
+                  <p id="shopId-error" role="alert" className="text-sm text-red-600">
+                    {SHOP_REQUIRED_COPY}
+                  </p>
+                )}
                 {contextShopId && (
                   <p className="text-xs text-slate-500">
                     Creating in your selected shop context. Switch to “All shops” to choose a different shop.
+                  </p>
+                )}
+                {!contextShopId && !editingProduct && (
+                  <p className="text-xs text-slate-500">
+                    The product goes on sale at this shop only. To sell it at another shop too, copy it from the products list.
+                  </p>
+                )}
+                {!contextShopId && editingProduct && !editingProduct.shopId && (
+                  <p className="text-xs font-medium text-amber-800" data-testid="shop-less-note">
+                    This product has no shop, so it is not on any storefront and cannot be ordered. Choose a shop to put it on sale.
                   </p>
                 )}
               </div>

@@ -99,7 +99,9 @@ public class CreateProductRequest {
     @Schema(description = "Comma-separated dietary tags", example = "Vegan, Gluten-Free")
     private String dietaryTags;
 
-    @Schema(description = "Shop this product belongs to (null = available on all tenant shops)")
+    @Schema(description = "Shop this product belongs to. Required on create: a product with no shop is on no "
+            + "storefront and cannot be ordered, so a create without one is a 400 errors/shop-required. "
+            + "On an edit, omitting it keeps the stored shop.")
     private UUID shopId;
 
     @Min(value = 0, message = "Stock quantity must be non-negative")

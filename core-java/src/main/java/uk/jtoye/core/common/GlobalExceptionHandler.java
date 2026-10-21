@@ -43,6 +43,7 @@ import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderCapExceededException;
+import uk.jtoye.core.exception.ProductShopRequiredException;
 import uk.jtoye.core.exception.BulkCancelTooLargeException;
 import uk.jtoye.core.exception.CredentialClientMissingException;
 import uk.jtoye.core.exception.CredentialRevokedException;
@@ -301,6 +302,20 @@ public class GlobalExceptionHandler {
         if (ex.getAvailable() != null) {
             problem.setProperty("available", ex.getAvailable());
         }
+        return problem;
+    }
+
+    /**
+     * Issue #959 (SW-ADE-01): a product create names no shop. 400 with its own type and a typed
+     * {@code field} member, so the dashboard can point at the Shop Assignment field and an integrator
+     * can branch without parsing prose. Nothing is stored.
+     */
+    @ExceptionHandler(ProductShopRequiredException.class)
+    public ProblemDetail handleProductShopRequired(ProductShopRequiredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Shop Required");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-required"));
+        problem.setProperty("field", ProductShopRequiredException.FIELD);
         return problem;
     }
 

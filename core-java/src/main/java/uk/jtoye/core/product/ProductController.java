@@ -316,7 +316,7 @@ public class ProductController {
     @Operation(summary = "Create product", description = "Creates a new product. Requires ingredients_text, allergen_mask, and price per Natasha's Law (UK) and business requirements.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Product created successfully"),
-            @ApiResponse(responseCode = "400", description = "Validation error - missing required fields or invalid price"),
+            @ApiResponse(responseCode = "400", description = "Validation error - missing required fields or invalid price, or no shop named (errors/shop-required, field shopId)"),
             // API-5: the scope gate above and the shop-grant check in ProductService both
             // answer 403 live, and neither was declared.
             @ApiResponse(responseCode = "401",
