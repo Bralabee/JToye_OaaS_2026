@@ -201,7 +201,7 @@ describe("VSA-03 — shop-context scoping on Products & Orders", () => {
       expect(productsCalls().every((url) => !url.includes("shopId="))).toBe(true)
     })
 
-    it("keeps the full shop dropdown on the product create-form", async () => {
+    it("keeps the full shop dropdown on the product create-form, with no 'All Shops' choice (#959)", async () => {
       render(<ProductsPage />)
       await waitFor(() => expect(screen.getByText("Jollof Rice")).toBeInTheDocument())
 
@@ -209,7 +209,12 @@ describe("VSA-03 — shop-context scoping on Products & Orders", () => {
 
       const shopSelect = await screen.findByLabelText(/shop assignment/i)
       expect(shopSelect).not.toBeDisabled()
-      expect(screen.getByRole("option", { name: /all shops/i })).toBeInTheDocument()
+      // Every shop the caller holds is offered ...
+      expect(await screen.findByRole("option", { name: "Peckham Kitchen" })).toBeInTheDocument()
+      expect(screen.getByRole("option", { name: "Brixton Bakery" })).toBeInTheDocument()
+      // ... and "All Shops" is gone: a product saved with it was on no storefront (#959).
+      expect(screen.queryByRole("option", { name: /all shops/i })).not.toBeInTheDocument()
+      expect(screen.getByRole("option", { name: "Choose a shop…" })).toBeInTheDocument()
     })
 
     it("requests orders without a shopId param (today's cross-shop behaviour)", async () => {

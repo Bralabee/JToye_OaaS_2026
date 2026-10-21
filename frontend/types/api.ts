@@ -234,6 +234,12 @@ export interface Product {
    * backend; absent means "not returned", which the form never turns into a value of its own.
    */
   vatRate?: VatRate
+  /**
+   * #960: the PPDS / Natasha's Law label is dated from these two (core-java V41). Null/absent = not
+   * recorded; the label endpoint answers 422 until both are set.
+   */
+  shelfLifeDays?: number | null
+  durabilityType?: DurabilityType | null
   createdAt: string
   updatedAt: string
 }
@@ -278,6 +284,12 @@ export interface CreateProductRequest {
    * it keeps the stored rate.
    */
   vatRate?: VatRate
+  /** #960: omitted keeps the stored value on a PUT. 0..3650 days; needed with durabilityType for the label. */
+  shelfLifeDays?: number
+  /** #960: omitted keeps the stored value on a PUT. */
+  durabilityType?: DurabilityType
+  /** #960 (review F3): PUT only. true removes the stored shelfLifeDays and durabilityType; send it alone, not beside either. */
+  clearDurability?: boolean
 }
 
 /** One per-row CSV import error (core-java RowError). field "row" means the row as a whole. */
@@ -694,6 +706,9 @@ export interface CreateCustomerRequest {
 
 // Financial Transaction Types
 export type VatRate = "ZERO" | "REDUCED" | "STANDARD" | "EXEMPT"
+
+/** #960: which date the PPDS label prints (core-java products.durability_type, V41). */
+export type DurabilityType = "USE_BY" | "BEST_BEFORE"
 
 /**
  * What a ledger row is (37-10): SALE settles an order, REVERSAL takes a voided order's

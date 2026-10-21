@@ -99,7 +99,9 @@ public class CreateProductRequest {
     @Schema(description = "Comma-separated dietary tags", example = "Vegan, Gluten-Free")
     private String dietaryTags;
 
-    @Schema(description = "Shop this product belongs to (null = available on all tenant shops)")
+    @Schema(description = "Shop this product belongs to. Required on create: a product with no shop is on no "
+            + "storefront and cannot be ordered, so a create without one is a 400 errors/shop-required. "
+            + "On an edit, omitting it keeps the stored shop.")
     private UUID shopId;
 
     @Min(value = 0, message = "Stock quantity must be non-negative")
@@ -124,7 +126,8 @@ public class CreateProductRequest {
     // type (alongside a missing shop address). See docs/ppds-label-markup.md.
 
     @Min(value = 0, message = "Shelf life days must be non-negative")
-    @Schema(description = "Per-product shelf life in days. The PPDS label prints a durability date "
+    @Max(value = 3650, message = "Shelf life must not exceed 3650 days (ten years)")
+    @Schema(description = "Per-product shelf life in days (0 to 3650). The PPDS label prints a durability date "
             + "computed as generationDate + shelfLifeDays. Required for a compliant label (the "
             + "label 422s when absent).", example = "3")
     private Integer shelfLifeDays;
@@ -134,6 +137,15 @@ public class CreateProductRequest {
             + "BEST_BEFORE ('Best before:'). Required for a compliant label (the label 422s when "
             + "absent).", example = "USE_BY", allowableValues = {"USE_BY", "BEST_BEFORE"})
     private String durabilityType;
+
+    // Review round 1 (F3) of #1013: the explicit clear. updateEntity ignores nulls (so a partial PUT never
+    // wipes the label fields, API-1), which left no way to remove a stored shelf life / durability type.
+    // As with trackInventory (UXT-016) the intent is its own field rather than a meaning for null.
+    @Schema(description = "Edit only. true removes the stored shelfLifeDays AND durabilityType (the product "
+            + "then cannot print a PPDS label until both are set again); it must not be combined with "
+            + "either value (a 400 errors/validation naming clearDurability). Omitted, null or false "
+            + "keeps the stored values. Has no effect on create.", example = "true")
+    private Boolean clearDurability;
 
     public String getSku() { return sku; }
     public void setSku(String sku) { this.sku = sku; }
@@ -173,6 +185,8 @@ public class CreateProductRequest {
     public void setTrackInventory(Boolean trackInventory) { this.trackInventory = trackInventory; }
     public Integer getShelfLifeDays() { return shelfLifeDays; }
     public void setShelfLifeDays(Integer shelfLifeDays) { this.shelfLifeDays = shelfLifeDays; }
+    public Boolean getClearDurability() { return clearDurability; }
+    public void setClearDurability(Boolean clearDurability) { this.clearDurability = clearDurability; }
     public String getDurabilityType() { return durabilityType; }
     public void setDurabilityType(String durabilityType) { this.durabilityType = durabilityType; }
 }

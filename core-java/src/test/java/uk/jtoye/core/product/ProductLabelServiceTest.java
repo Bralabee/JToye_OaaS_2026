@@ -441,7 +441,55 @@ class ProductLabelServiceTest {
         assertThatThrownBy(() -> productLabelService.generateLabel(productId))
                 .isInstanceOf(IncompleteLabelDataException.class)
                 .hasMessageContaining("shelf life")
-                .hasMessageContaining("durability type");
+                .hasMessageContaining("use-by or best-before");
+    }
+
+    /**
+     * Issue #960 (SW-ADE-03): the 422 detail is for the vendor reading it in a dialog. RED on the unfixed
+     * tree: "Cannot generate PPDS label for product ea66e02b-...: missing shelf life (shelf_life_days),
+     * durability type (durability_type)". The machine-readable twin is the field list, in the names the
+     * product form and CreateProductRequest use.
+     */
+    @Test
+    @DisplayName("generateLabel - 422 detail is plain words: no UUID, no column names; fields listed separately")
+    void generateLabelMessageIsPlainWords() {
+        Product product = compliantProduct();
+        product.setShelfLifeDays(null);
+        product.setDurabilityType(null);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                .thenReturn(Optional.of(compliantShop()));
+
+        assertThatThrownBy(() -> productLabelService.generateLabel(productId))
+                .isInstanceOfSatisfying(IncompleteLabelDataException.class, ex -> {
+                    assertThat(ex.getMessage())
+                            .doesNotContain(productId.toString())
+                            .doesNotContain("shelf_life_days")
+                            .doesNotContain("durability_type")
+                            .doesNotContain("shop_id")
+                            .doesNotContain("PPDS")
+                            .doesNotContainPattern("[0-9a-f]{8}-[0-9a-f]{4}-")
+                            .contains("Add a shelf life (in days) and choose use-by or best-before on the product");
+                    assertThat(ex.getMissingFields()).containsExactly("shelfLifeDays", "durabilityType");
+                    assertThat(ex.getProductId()).isEqualTo(productId);
+                });
+    }
+
+    @Test
+    @DisplayName("generateLabel - 422 names ONE missing durability item alone, in plain words")
+    void generateLabelNamesOnlyTheMissingDurabilityItem() {
+        Product product = compliantProduct();
+        product.setDurabilityType(null);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                .thenReturn(Optional.of(compliantShop()));
+
+        assertThatThrownBy(() -> productLabelService.generateLabel(productId))
+                .isInstanceOfSatisfying(IncompleteLabelDataException.class, ex -> {
+                    assertThat(ex.getMessage()).contains("Choose use-by or best-before on the product")
+                            .doesNotContain("shelf life");
+                    assertThat(ex.getMissingFields()).containsExactly("durabilityType");
+                });
     }
 
     @Test
@@ -454,8 +502,10 @@ class ProductLabelServiceTest {
         when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> productLabelService.generateLabel(productId))
-                .isInstanceOf(IncompleteLabelDataException.class)
-                .hasMessageContaining("business identity");
+                .isInstanceOfSatisfying(IncompleteLabelDataException.class, ex -> {
+                    assertThat(ex.getMessage()).contains("Choose a shop for the product");
+                    assertThat(ex.getMissingFields()).containsExactly("shopId");
+                });
     }
 
     @Test

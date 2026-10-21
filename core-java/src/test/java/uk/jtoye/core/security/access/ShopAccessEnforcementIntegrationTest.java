@@ -524,9 +524,18 @@ class ShopAccessEnforcementIntegrationTest {
         return asRealmAdmin(tenant, () -> productService.createProduct(productRequest(shopId, sku)).getId());
     }
 
-    /** Seed a legacy tenant-wide product (shop_id IS NULL) as a realm-admin (WR-08 fixtures). */
+    /**
+     * Seed a legacy tenant-wide product (shop_id IS NULL) for the WR-08 fixtures. Straight into the table:
+     * since #959 the create route refuses a product with no shop, so a shop-less row can only exist as
+     * the legacy data these tests are about (the test role is a superuser, so RLS does not intervene).
+     */
     private UUID seedNullShopProduct(UUID tenant, String sku) {
-        return asRealmAdmin(tenant, () -> productService.createProduct(productRequest(null, sku)).getId());
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO products (id, tenant_id, sku, title, ingredients_text, allergen_mask, "
+                        + "price_pennies, vat_rate, available, shop_id) "
+                        + "VALUES (?, ?, ?, ?, 'Water', 0, 500, 'STANDARD', true, NULL)",
+                id, tenant, sku, "Legacy " + sku);
+        return id;
     }
 
     private UUID seedDraftOrder(UUID tenant, UUID shopId, UUID productId) {

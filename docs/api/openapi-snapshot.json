@@ -1295,6 +1295,11 @@
             "example" : "Mains",
             "type" : "string"
           },
+          "clearDurability" : {
+            "description" : "Edit only. true removes the stored shelfLifeDays AND durabilityType (the product then cannot print a PPDS label until both are set again); it must not be combined with either value (a 400 errors/validation naming clearDurability). Omitted, null or false keeps the stored values. Has no effect on create.",
+            "example" : true,
+            "type" : "boolean"
+          },
           "description" : {
             "description" : "Customer-facing product description",
             "maxLength" : 5000,
@@ -1368,14 +1373,15 @@
             "type" : "integer"
           },
           "shelfLifeDays" : {
-            "description" : "Per-product shelf life in days. The PPDS label prints a durability date computed as generationDate + shelfLifeDays. Required for a compliant label (the label 422s when absent).",
+            "description" : "Per-product shelf life in days (0 to 3650). The PPDS label prints a durability date computed as generationDate + shelfLifeDays. Required for a compliant label (the label 422s when absent).",
             "example" : 3,
             "format" : "int32",
+            "maximum" : 3650,
             "minimum" : 0,
             "type" : "integer"
           },
           "shopId" : {
-            "description" : "Shop this product belongs to (null = available on all tenant shops)",
+            "description" : "Shop this product belongs to. Required on create: a product with no shop is on no storefront and cannot be ordered, so a create without one is a 400 errors/shop-required. On an edit, omitting it keeps the stored shop.",
             "format" : "uuid",
             "type" : "string"
           },
@@ -11839,7 +11845,7 @@
                 }
               }
             },
-            "description" : "Validation error - missing required fields or invalid price"
+            "description" : "Validation error - missing required fields or invalid price, or no shop named (errors/shop-required, field shopId)"
           },
           "401" : {
             "content" : {
@@ -13062,7 +13068,7 @@
                 }
               }
             },
-            "description" : "The product lacks required label data (errors/incomplete-label-data), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
+            "description" : "The product lacks required label data (errors/incomplete-label-data: a plain-words detail plus a missingFields member naming shelfLifeDays, durabilityType, shopId, shopName and/or shopAddress), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
           }
         },
         "security" : [

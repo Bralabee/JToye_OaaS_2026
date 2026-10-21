@@ -134,6 +134,8 @@ class ProductServiceTest {
         validRequest.setIngredientsText("Yam (100%)");
         validRequest.setAllergenMask(0);
         validRequest.setPricePennies(999L);
+        // #959: a product belongs to exactly one shop, so a valid create names one.
+        validRequest.setShopId(UUID.randomUUID());
 
         // Mock ProductMapper behavior to mimic actual MapStruct implementation
         // Use lenient() to avoid UnnecessaryStubbingException in tests that don't use the mapper
@@ -434,6 +436,19 @@ class ProductServiceTest {
         assertEquals(testProduct.getAllergenMask(), dto.getAllergenMask());
         assertEquals(testProduct.getPricePennies(), dto.getPricePennies());
         assertEquals(testProduct.getCreatedAt(), dto.getCreatedAt());
+    }
+
+    @Test
+    @DisplayName("createProduct - #959: no shop is refused before anything is built or stored")
+    void testCreateProduct_NoShopIsRefused() {
+        validRequest.setShopId(null);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                uk.jtoye.core.exception.ProductShopRequiredException.class,
+                () -> productService.createProduct(validRequest));
+
+        verify(productRepository, org.mockito.Mockito.never()).saveAndFlush(any(Product.class));
+        verify(productRepository, org.mockito.Mockito.never()).save(any(Product.class));
     }
 
     @Test

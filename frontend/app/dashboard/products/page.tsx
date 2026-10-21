@@ -75,8 +75,10 @@ import {
 // App Router page.tsx may not export non-route symbols (A11Y-8 / A11Y-11).
 import {
   mayContainMaskSchema,
+  parseDurabilityInputs,
   productSchema,
   toPricePennies,
+  type DurabilityInputs,
   type ProductFormData,
 } from "./product-form-schema"
 
@@ -157,7 +159,9 @@ function blobText(blob: Blob): Promise<string> {
  * The status and RFC 7807 detail of a failed request. A blob request (the label PDF) delivers
  * its error body as a Blob too, so the problem JSON is read out of it.
  */
-async function readProblem(error: unknown): Promise<{ status?: number; detail?: string }> {
+async function readProblem(
+  error: unknown
+): Promise<{ status?: number; detail?: string; type?: string; missingFields?: string[] }> {
   const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response
   if (!response) return {}
   let body: unknown = response.data
@@ -168,9 +172,24 @@ async function readProblem(error: unknown): Promise<{ status?: number; detail?: 
       body = undefined
     }
   }
-  const detail = (body as { detail?: unknown } | undefined)?.detail
-  return { status: response.status, detail: typeof detail === "string" ? detail : undefined }
+  const problem = body as { detail?: unknown; type?: unknown; missingFields?: unknown } | undefined
+  return {
+    status: response.status,
+    detail: typeof problem?.detail === "string" ? problem.detail : undefined,
+    type: typeof problem?.type === "string" ? problem.type : undefined,
+    missingFields: Array.isArray(problem?.missingFields)
+      ? problem.missingFields.filter((f): f is string => typeof f === "string")
+      : undefined,
+  }
 }
+
+/** #959: shown under Shop Assignment when a new product is saved without a shop. */
+const SHOP_REQUIRED_COPY =
+  "Choose which shop sells this product. A product with no shop does not appear on any storefront."
+
+/** #960: shown if the server's incomplete-label answer carries no detail. */
+const LABEL_INCOMPLETE_COPY =
+  "This allergen label cannot be printed yet. Add a shelf life and choose use-by or best-before on the product."
 
 const LABEL_DATE_REQUIRED_COPY = "Enter the date the food was made."
 const LABEL_DATE_FUTURE_COPY = "The production date cannot be in the future."
@@ -212,6 +231,8 @@ export default function ProductsPage() {
   const [labelMaxDate, setLabelMaxDate] = useState("")
   const [labelFormat, setLabelFormat] = useState<LabelFormat>("STANDARD_100X60MM")
   const [labelError, setLabelError] = useState<string | null>(null)
+  // #960: the label endpoint's plain-words 422 (errors/incomplete-label-data): what to add on the product.
+  const [labelIncomplete, setLabelIncomplete] = useState<string | null>(null)
   const [labelDownloading, setLabelDownloading] = useState(false)
   const [seedDialogOpen, setSeedDialogOpen] = useState(false)
   const [featured, setFeatured] = useState(false)
@@ -219,6 +240,12 @@ export default function ProductsPage() {
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
   const [shops, setShops] = useState<Shop[]>([])
   const [selectedShopId, setSelectedShopId] = useState<string>("")
+  // #959: a new product must name its shop. Set when a create is submitted without one.
+  const [shopError, setShopError] = useState(false)
+  // #960: the two inputs the allergen label is dated from. Held as typed; parsed at save.
+  const [shelfLifeText, setShelfLifeText] = useState("")
+  const [durabilityType, setDurabilityType] = useState("")
+  const [durabilityError, setDurabilityError] = useState<string | null>(null)
   const [trackInventory, setTrackInventory] = useState(false)
   const [quantityInStock, setQuantityInStock] = useState<number>(0)
   // F2 (FEB-1): a 429/network failure must render an error panel, never the
@@ -376,7 +403,14 @@ export default function ProductsPage() {
     setFeatured(false)
     // D-08: outside the All-shops context a create is a single-shop write —
     // default the assignment to the selected shop (the select is pinned below).
-    setSelectedShopId(contextShopId ?? "")
+    // #959: outside a shop context there is no "All Shops" any more — a product belongs to one shop.
+    // A vendor with exactly one shop has nothing to choose, so it is pre-selected; with several, the
+    // select starts on "Choose a shop…" and the form refuses to save until one is picked.
+    setSelectedShopId(contextShopId ?? (shops.length === 1 ? shops[0].id : ""))
+    setShopError(false)
+    setShelfLifeText("")
+    setDurabilityType("")
+    setDurabilityError(null)
     setTrackInventory(false)
     setQuantityInStock(0)
     setAiSuggestions(null)
@@ -396,6 +430,10 @@ export default function ProductsPage() {
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
     setSelectedShopId(product.shopId || "")
+    setShopError(false)
+    setShelfLifeText(product.shelfLifeDays != null ? String(product.shelfLifeDays) : "")
+    setDurabilityType(product.durabilityType ?? "")
+    setDurabilityError(null)
     setTrackInventory(product.quantityInStock != null)
     setQuantityInStock(product.quantityInStock ?? 0)
     setAiSuggestions(null)
@@ -468,6 +506,38 @@ export default function ProductsPage() {
    * before the tick.
    */
   const saveProduct = async (data: ProductFormData, mask: number = allergenMask) => {
+    // #959 (SW-ADE-01): a new product with no shop is on no storefront and cannot be ordered, so it is
+    // refused here, in words, instead of being saved and never seen. (The server refuses it too:
+    // 400 errors/shop-required.) An edit of an older shop-less product may still be saved as it is;
+    // the form tells the vendor it is off the menu and offers the choice.
+    if (!editingProduct && !selectedShopId) {
+      setShopError(true)
+      document.getElementById("shopId")?.focus()
+      return
+    }
+    // #960: shelf life and use-by / best-before go together, in range, or are both left blank. That rule
+    // judges what the vendor TYPED: on an edit where neither input was touched, the stored values (which
+    // may be a lone half, or from before the bound existed) are not re-validated and not re-sent, so the
+    // server keeps them and an unrelated edit, like a new price, still saves (review round 1, F2).
+    const durabilityTouched =
+      !editingProduct ||
+      shelfLifeText !== (editingProduct.shelfLifeDays != null ? String(editingProduct.shelfLifeDays) : "") ||
+      durabilityType !== (editingProduct.durabilityType ?? "")
+    const durability: DurabilityInputs = durabilityTouched
+      ? parseDurabilityInputs(shelfLifeText, durabilityType)
+      : { ok: true }
+    if (!durability.ok) {
+      setDurabilityError(durability.error)
+      document.getElementById(shelfLifeText.trim() === "" ? "shelfLifeDays" : "durabilityType")?.focus()
+      return
+    }
+    const clearsStoredDurability =
+      durabilityTouched &&
+      durability.ok &&
+      durability.shelfLifeDays === undefined &&
+      durability.durabilityType === undefined &&
+      editingProduct != null &&
+      (editingProduct.shelfLifeDays != null || editingProduct.durabilityType != null)
     try {
       setSubmitting(true)
 
@@ -500,6 +570,12 @@ export default function ProductsPage() {
         preparationTimeMinutes: prepTimeEl?.value ? parseInt(prepTimeEl.value) : undefined,
         dietaryTags: dietaryTagsEl?.value || undefined,
         shopId: selectedShopId || undefined,
+        // #960: omitted when blank, so an edit keeps what is stored and a create stores nothing.
+        shelfLifeDays: durability.shelfLifeDays,
+        durabilityType: durability.durabilityType,
+        // Review F3: emptying inputs that held values is a stated clear. Omitting both would leave the
+        // server keeping them while the toast said "updated".
+        clearDurability: clearsStoredDurability ? true : undefined,
         // UXT-016 (37-39): the tracking intent is stated, not inferred from a null. The server keeps the
         // stored stock when trackInventory is absent, so without it unticking would no longer stop tracking.
         trackInventory,
@@ -538,7 +614,12 @@ export default function ProductsPage() {
 
       closeFormAfterSave()
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to ${editingProduct ? "update" : "create"} product`
+      // The server's RFC 7807 detail is written for the vendor (e.g. errors/shop-required); the axios
+      // message is only "Request failed with status code 400".
+      const problem = await readProblem(error)
+      const errorMessage =
+        problem.detail ??
+        (error instanceof Error ? error.message : `Failed to ${editingProduct ? "update" : "create"} product`)
       toast({
         variant: "destructive",
         title: editingProduct ? "Error updating product" : "Error creating product",
@@ -571,12 +652,22 @@ export default function ProductsPage() {
     setLabelMaxDate(today)
     setLabelFormat("STANDARD_100X60MM")
     setLabelError(null)
+    setLabelIncomplete(null)
     setLabelProduct(product)
   }
 
   const closeLabelDialog = () => {
     setLabelProduct(null)
     setLabelError(null)
+    setLabelIncomplete(null)
+  }
+
+  // #960: the label dialog's way out of the dead end — straight to the product's edit form, where the
+  // shelf life and use-by / best-before inputs are.
+  const editProductFromLabelDialog = () => {
+    const target = labelProduct
+    closeLabelDialog()
+    if (target) openEditDialog(target)
   }
 
   const downloadLabel = async (event: FormEvent<HTMLFormElement>) => {
@@ -592,6 +683,7 @@ export default function ProductsPage() {
       return
     }
     setLabelError(null)
+    setLabelIncomplete(null)
     setLabelDownloading(true)
     try {
       const formatParam = labelFormat === "THERMAL_62MM" ? "&format=THERMAL_62MM" : ""
@@ -611,7 +703,11 @@ export default function ProductsPage() {
       closeLabelDialog()
     } catch (error: unknown) {
       const problem = await readProblem(error)
-      if (problem.status === 422) {
+      if (problem.status === 422 && problem.type?.endsWith("/incomplete-label-data")) {
+        // #960: the product lacks what the label is made from. The server's detail says what to add
+        // in plain words; it is not about the date, so it is not shown under the date field.
+        setLabelIncomplete(problem.detail ?? LABEL_INCOMPLETE_COPY)
+      } else if (problem.status === 422) {
         // 31.1-14: errors/invalid-production-date, field productionDate — a future date, or
         // one whose use-by has already passed. Said under the field it is about.
         setLabelError(problem.detail ?? LABEL_DATE_REFUSED_COPY)
@@ -823,6 +919,15 @@ export default function ProductsPage() {
                                   two lines (a title is the row's identifier), break-words so an
                                   unbreakable token wraps instead of overflowing the table. */}
                               <div className="font-medium line-clamp-2 break-words">{product.title}</div>
+                              {!product.shopId && (
+                                <span
+                                  data-testid="shop-less-badge"
+                                  className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-amber-800"
+                                >
+                                  <AlertCircle className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
+                                  No shop: not on any storefront
+                                </span>
+                              )}
                               <IngredientText
                                 text={product.ingredientsText}
                                 className="line-clamp-1 block text-xs text-slate-500"
@@ -1284,13 +1389,22 @@ export default function ProductsPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="shopId">Shop Assignment</Label>
                 {/* D-08: a single-shop context does single-shop writes only — the
-                    assignment is pinned to the selected shop (no cross-shop swap,
-                    no "All Shops"). The All-shops context keeps the full list. */}
+                    assignment is pinned to the selected shop (no cross-shop swap).
+                    #959: the All-shops context lists the shops and nothing else. There is no
+                    "All Shops" choice: a product belongs to one shop, and one saved with none was on
+                    no storefront. A new product must pick a shop; an older shop-less product shows
+                    that it has none. */}
                 <select
                   id="shopId"
                   value={selectedShopId}
-                  onChange={(e) => setSelectedShopId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedShopId(e.target.value)
+                    setShopError(false)
+                  }}
                   disabled={!!contextShopId}
+                  aria-required={!editingProduct}
+                  aria-invalid={shopError || undefined}
+                  aria-describedby={shopError ? "shopId-error" : undefined}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {contextShopId ? (
@@ -1299,16 +1413,35 @@ export default function ProductsPage() {
                     </option>
                   ) : (
                     <>
-                      <option value="">All Shops</option>
+                      {(!editingProduct || !editingProduct.shopId) && (
+                        <option value="">
+                          {editingProduct ? "No shop (not on any storefront)" : "Choose a shop…"}
+                        </option>
+                      )}
                       {shops.map((shop) => (
                         <option key={shop.id} value={shop.id}>{shop.name}</option>
                       ))}
                     </>
                   )}
                 </select>
+                {shopError && (
+                  <p id="shopId-error" role="alert" className="text-sm text-red-600">
+                    {SHOP_REQUIRED_COPY}
+                  </p>
+                )}
                 {contextShopId && (
                   <p className="text-xs text-slate-500">
                     Creating in your selected shop context. Switch to “All shops” to choose a different shop.
+                  </p>
+                )}
+                {!contextShopId && !editingProduct && (
+                  <p className="text-xs text-slate-500">
+                    The product goes on sale at this shop only. To sell it at another shop too, copy it from the products list.
+                  </p>
+                )}
+                {!contextShopId && editingProduct && !editingProduct.shopId && (
+                  <p className="text-xs font-medium text-amber-800" data-testid="shop-less-note">
+                    This product has no shop, so it is not on any storefront and cannot be ordered. Choose a shop to put it on sale.
                   </p>
                 )}
               </div>
@@ -1349,6 +1482,58 @@ export default function ProductsPage() {
                   <Input id="dietaryTags" name="dietaryTags" placeholder="Vegan, GF" defaultValue={editingProduct?.dietaryTags || ""} />
                 </div>
               </div>
+              {/* #960: what the allergen (PPDS / Natasha's Law) label is dated from. Optional here, but the
+                  label cannot be printed without both. */}
+              <fieldset className="space-y-1.5" aria-describedby="durability-help">
+                <legend className="text-sm font-medium">Allergen label dating</legend>
+                <p id="durability-help" className="text-xs text-slate-500">
+                  Needed to print this product&apos;s allergen label: the label shows a use-by or
+                  best-before date counted from the day the food is made.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="shelfLifeDays">Shelf life (days)</Label>
+                    <Input
+                      id="shelfLifeDays"
+                      name="shelfLifeDays"
+                      type="number"
+                      inputMode="numeric"
+                      placeholder="3"
+                      value={shelfLifeText}
+                      onChange={(e) => {
+                        setShelfLifeText(e.target.value)
+                        setDurabilityError(null)
+                      }}
+                      aria-invalid={durabilityError ? "true" : undefined}
+                      aria-describedby={durabilityError ? "durability-error" : undefined}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="durabilityType">Use by or best before</Label>
+                    <select
+                      id="durabilityType"
+                      name="durabilityType"
+                      value={durabilityType}
+                      onChange={(e) => {
+                        setDurabilityType(e.target.value)
+                        setDurabilityError(null)
+                      }}
+                      aria-invalid={durabilityError ? "true" : undefined}
+                      aria-describedby={durabilityError ? "durability-error" : undefined}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="">Not set</option>
+                      <option value="USE_BY">Use by</option>
+                      <option value="BEST_BEFORE">Best before</option>
+                    </select>
+                  </div>
+                </div>
+                {durabilityError && (
+                  <p id="durability-error" role="alert" className="text-sm text-red-600">
+                    {durabilityError}
+                  </p>
+                )}
+              </fieldset>
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={available} onChange={(e) => setAvailable(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
@@ -1455,6 +1640,18 @@ export default function ProductsPage() {
               food was made.
             </DialogDescription>
           </DialogHeader>
+          {labelIncomplete && (
+            <div
+              role="alert"
+              data-testid="label-incomplete"
+              className="space-y-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            >
+              <p>{labelIncomplete}</p>
+              <Button type="button" size="sm" variant="outline" onClick={editProductFromLabelDialog}>
+                Edit this product
+              </Button>
+            </div>
+          )}
           <form onSubmit={downloadLabel} noValidate className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="label-production-date">Production date</Label>
