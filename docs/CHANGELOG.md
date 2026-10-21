@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A New Product Must Name Its Shop, and the Allergen Label's 422 Says What to Add (#959, #960) — 2026-10-21
+### A New Product Must Name Its Shop, and the Allergen Label's 422 Says What to Add (#959, #960) (#1013) — 2026-10-21
 
 Found by the 2026-10-19 staging swarm (SW-ADE-01, SW-ADE-03). Two vendor dead ends, one change each.
 
