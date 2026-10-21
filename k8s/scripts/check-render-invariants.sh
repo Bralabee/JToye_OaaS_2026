@@ -1851,6 +1851,118 @@ if [[ "${1:-}" == "--selftest-inv21" ]]; then
     inv21_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv22 (#999): INV-22 shown CATCHING planted holes. Same harness shape as
+# --selftest-inv17/-inv21: the k8s/ tree and core-java's application*.yml are copied
+# (selftest_stage), ONE hole is planted per arm, and the COPY's own gate must exit with the
+# arm's rc AND print the message that names the hole. The unmodified copy must exit 0.
+# Arms:
+#   env-removed       the staging overlay stops patching the env in (the regression the
+#                     issue describes: staging is labelled production again)
+#   wrong-value       the env is set to `production`
+#   empty-value       the env is set to ""
+#   misspelt-name     MANAGEMENT_METRICS_TAG_ENVIRONMENT: binds nothing, so it counts as unset
+#   set-twice         two spellings of the same env on one container
+#   unreadable-source the value comes from a Secret the render cannot read
+#   production-bleed  base sets it to `staging`, which production inherits (a production
+#                     core-java may leave the profile's value, never override it with another)
+#   prod-key-moved    application-prod.yml no longer sets the tag it overrides (PARSE ERROR, rc 2)
+# A plant that does not change its file is reported caught=no.
+# INV22_SELFTEST_FORMAT=tap renders TAP 13 (for the RED-evidence classifier).
+# ===========================================================================
+inv22_plant() {
+    local arm="$1" root="$2" f before
+    case "$arm" in
+        env-removed) f="$root/k8s/staging/kustomization.yaml" ;;
+        wrong-value|empty-value|misspelt-name|set-twice|unreadable-source) f="$root/k8s/staging/core-java-metrics-env-patch.yaml" ;;
+        production-bleed) f="$root/k8s/base/core-java-deployment.yaml" ;;
+        prod-key-moved) f="$root/core-java/src/main/resources/application-prod.yml" ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$f" ]] || return 1
+    before="$(sha256sum "$f")"
+    case "$arm" in
+        env-removed)
+            awk '!/^  - path: core-java-metrics-env-patch\.yaml$/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        wrong-value)
+            awk '{ sub(/value: "staging"/, "value: \"production\""); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        empty-value)
+            awk '{ sub(/value: "staging"/, "value: \"\""); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        misspelt-name)
+            awk '{ sub(/MANAGEMENT_METRICS_TAGS_ENVIRONMENT/, "MANAGEMENT_METRICS_TAG_ENVIRONMENT"); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        set-twice)
+            awk '{ print } /value: "staging"$/ { print "            - name: management-metrics-tags-environment"; print "              value: \"staging\"" }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        unreadable-source)
+            awk '/value: "staging"$/ { print "              valueFrom:"; print "                secretKeyRef:"; print "                  name: planted"; print "                  key: planted"; next } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        production-bleed)
+            awk '{ print } !done && /^          value: "prod"$/ { print "        - name: MANAGEMENT_METRICS_TAGS_ENVIRONMENT"; print "          value: \"staging\""; done = 1 }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        prod-key-moved)
+            awk '{ sub(/^      environment: production$/, "      env: production"); print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+    esac
+    [[ "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv22_selftest() {
+    local fmt="${INV22_SELFTEST_FORMAT:-plain}" st arm want wrc out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv22 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(env-removed wrong-value empty-value misspelt-name set-twice unreadable-source production-bleed prod-key-moved)
+    declare -A WANT=(
+        [env-removed]="INV-22: Deployment core-java container 'core-java' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT"
+        [wrong-value]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to 'production', not 'staging'"
+        [empty-value]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to '', not 'staging'"
+        [misspelt-name]="INV-22: Deployment core-java container 'core-java' does not set MANAGEMENT_METRICS_TAGS_ENVIRONMENT"
+        [set-twice]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT 2 times"
+        [unreadable-source]="INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT from a source the render cannot read"
+        [production-bleed]="FAIL [k8s/production] INV-22: Deployment core-java container 'core-java' sets MANAGEMENT_METRICS_TAGS_ENVIRONMENT to 'staging', not 'production'"
+        [prod-key-moved]="INV-22: core-java/src/main/resources/application-prod.yml no longer sets management.metrics.tags.environment"
+    )
+    declare -A WANT_RC=([prod-key-moved]=2)
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv22_plant "$arm" "$st/arm"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"; wrc="${WANT_RC[$arm]:-1}"
+            if (( rc == wrc )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=$rc"
+            else
+                caught=no
+                line="expected rc $wrc and '$want'; got rc=$rc: $(awk '/INV-22|PARSE ERROR/ && c < 2 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught"
+            [[ "$caught" == yes ]] || echo "  ($line)" >&2
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv22" ]]; then
+    inv22_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #

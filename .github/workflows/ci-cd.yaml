@@ -753,6 +753,15 @@ jobs:
       - name: Prove INV-21 catches planted Grafana edge-auth holes (--selftest-inv21)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv21
 
+      # #999: INV-22 keeps staging core-java's metrics labelled environment="staging" (the prod
+      # profile it runs says "production"): the overlay must set MANAGEMENT_METRICS_TAGS_ENVIRONMENT
+      # to its label, once, from a source the render can read, and production may not override it.
+      # Eight planted holes (the override removed, a wrong value, an empty one, a misspelt name
+      # that binds nothing, two spellings, an unreadable Secret source, base bleeding "staging"
+      # into production, and application-prod.yml losing the key, which is a PARSE ERROR, rc 2).
+      - name: Prove INV-22 catches planted environment-label holes (--selftest-inv22)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv22
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,

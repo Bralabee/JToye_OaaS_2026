@@ -1,0 +1,43 @@
+# =============================================================================
+# STAGING core-java: label its metrics environment="staging" (issue #999)
+#
+# WHY THIS FILE EXISTS
+#   Every k8s environment runs the `prod` Spring profile on purpose (decision
+#   D-10: STARTTLS and the hardened settings are what production runs, so
+#   staging proves them). application-prod.yml sets the Micrometer common tag
+#   management.metrics.tags.environment to `production`, and
+#   application-staging.yml (which says `staging`) is never loaded. So every
+#   core-java series scraped on staging carried environment="production"
+#   (jtoye_orders_total{application="core-java",environment="production"} 0.0,
+#   read from the staging pod 2026-10-21). Nothing matches on that label today,
+#   so it misled rather than broke; a dashboard, a federation or a future
+#   production Prometheus that filters by `environment` would read staging
+#   traffic as production.
+#
+# WHY AN ENV VAR, NOT A PROFILE CHANGE
+#   The profile stays `prod`. Spring's relaxed binding reads
+#   MANAGEMENT_METRICS_TAGS_ENVIRONMENT as management.metrics.tags.environment,
+#   and an environment variable outranks application-prod.yml, so exactly this
+#   one tag changes; the `application` tag from the same map is untouched
+#   (map entries merge by key).
+#
+# WHAT HOLDS IT
+#   k8s/scripts/check-render-invariants.sh INV-22 fails if the staging render
+#   loses this env, sets it to anything but `staging`, or sets it twice, and it
+#   reads application-prod.yml to confirm the key it overrides still exists.
+#   The live check, after a deploy:
+#     kubectl --context jtoye-stg-aks -n jtoye-staging exec deploy/core-java -c core-java -- \
+#       curl -s localhost:9091/actuator/prometheus | grep environment=
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-java
+spec:
+  template:
+    spec:
+      containers:
+        - name: core-java
+          env:
+            - name: MANAGEMENT_METRICS_TAGS_ENVIRONMENT
+              value: "staging"

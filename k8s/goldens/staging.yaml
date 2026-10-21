@@ -3761,6 +3761,8 @@ spec:
             weight: 100
       containers:
       - env:
+        - name: MANAGEMENT_METRICS_TAGS_ENVIRONMENT
+          value: staging
         - name: JAVA_TOOL_OPTIONS
           value: -Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStoreType=PKCS12
         - name: SPRING_PROFILES_ACTIVE
