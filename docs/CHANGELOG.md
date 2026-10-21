@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### follow-redirects 1.16.1: Two HIGH Advisories Had Stopped Every Staging Deploy (#1001) — 2026-10-21
+
+Trivy began failing the Security Scan on main (run 39531194956, #989's merge) on CVE-2026-111755 and CVE-2026-111756 in `follow-redirects` 1.16.0, reached only through axios. The tree had not changed, the advisory data had, and Security Scan gates build-and-push and so the staging deploy. The lock entry moves to 1.16.1 inside axios's existing `^1.16.0` range, with the integrity recomputed from the registry tarball. Trivy on main's lockfile: rc 1 naming both CVEs; on this one: rc 0, and the whole-tree scan is clean.
+
 ### NoOrdersCreated Reads a Counter That Exists From Startup, So a Restart No Longer Blinds It (#1000) — 2026-10-21
 
 Issue #973. After every core-java restart `NoOrdersCreated` had no series and `check-alert-metrics.sh` M-1 went red until a real order row was written (`seed-order-metric.sh`, a business write the owner had to approve on staging). The rule now reads a series that exists from the first scrape.
