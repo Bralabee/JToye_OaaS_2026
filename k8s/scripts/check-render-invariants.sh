@@ -545,6 +545,31 @@
 #          each hole by --selftest-inv23; the live proof is the rotation test in the PR for
 #          issue #972 (a Mailpit serving the old certificate after the Secret changed, then the
 #          new one with the supervisor).
+#   INV-24 ISSUE #1025, RENDER level, EVERY target, every Ingress whose enable-cors is "true".
+#          The edge answers a CORS preflight from the Ingress's own cors-allow-headers list
+#          (Traefik's ingress-nginx provider echoes it verbatim and never consults core-java's
+#          CorsConfig, which allows any header). Base carried ingress-nginx's DEFAULT list, which
+#          has no Idempotency-Key, so on staging every browser request carrying that header failed
+#          its preflight and never reached core: every storefront order POST was dead. No gate saw
+#          it, because local compose has no ingress and no test sent a browser request through the
+#          edge. The browser header INVENTORY is derived from the frontend source on every run,
+#          never declared, so a header added to a browser-side request tomorrow is judged too:
+#            * read: frontend/{app,lib,components,hooks}/**/*.ts(x), minus tests (__tests__,
+#              *.test.*, *.spec.*), type declarations (*.d.ts) and SERVER-ONLY code (app/api/**,
+#              any route.ts, *-server.ts(x), a file that imports "server-only"): a Next server
+#              route calls core from the pod, not the browser, so no preflight is involved;
+#            * a header is a key of a `headers: {...}` / `headers = {...}` object literal or the
+#              first argument of headers.set(...) / headers.append(...) (INV24_SCAN_AWK);
+#            * the CORS-safelisted names (Accept, Accept-Language, Content-Language) never need
+#              listing and are dropped. Content-Type stays: application/json is not safelisted.
+#          Each such Ingress must:
+#            a. carry cors-allow-headers at all;
+#            b. not answer `*` (with credentials true a wildcard is invalid in the browser);
+#            c. name every inventory header (case-insensitive, comma-separated, trimmed).
+#          The scan finding no header, or missing Authorization or Idempotency-Key (each has known
+#          browser senders), is a PARSE ERROR: a blind scanner would pass any list. Shown catching
+#          each hole by --selftest-inv24; the live proof is scripts/check-cors-preflight.sh against
+#          the deployed api host.
 #
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
@@ -643,7 +668,7 @@
 # Exit codes: 0 = all invariants hold, 1 = violation, 2 = build/parse/tooling
 #             failure (including a blind assertion).
 #
-# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21|--selftest-inv22|--selftest-inv23]
+# Usage: ./k8s/scripts/check-render-invariants.sh [--selftest-inv7|--selftest-inv15|--selftest-inv16|--selftest-inv17|--selftest-inv18|--selftest-inv20|--selftest-inv21|--selftest-inv22|--selftest-inv23|--selftest-inv24]
 #   (run from anywhere; paths resolve relative to the repo root)
 #   --selftest-inv7  plant five holes in a copy of k8s/ and require INV-7 to
 #                    catch each (see inv7_selftest below)
@@ -655,6 +680,7 @@
 #   --selftest-inv21 the same for INV-21 (inv21_selftest)
 #   --selftest-inv22 the same for INV-22 (inv22_selftest)
 #   --selftest-inv23 the same for INV-23 (inv23_selftest)
+#   --selftest-inv24 the same for INV-24 (inv24_selftest)
 
 set -euo pipefail
 
@@ -708,6 +734,13 @@ selftest_stage() {
     # require-verified-email default and the per-profile overrides.
     cp "$REPO_ROOT"/core-java/src/main/resources/application*.yml "$2/core-java/src/main/resources/" \
         || { echo "PARSE ERROR: selftest could not copy core-java's application*.yml" >&2; exit 2; }
+    # INV-24 (#1025) derives the browser header inventory from these frontend dirs.
+    local d
+    mkdir -p "$2/frontend"
+    for d in app lib components hooks; do
+        cp -a "$REPO_ROOT/frontend/$d" "$2/frontend/" \
+            || { echo "PARSE ERROR: selftest could not copy frontend/$d" >&2; exit 2; }
+    done
 }
 
 inv7_plant() {
@@ -2125,6 +2158,131 @@ if [[ "${1:-}" == "--selftest-inv23" ]]; then
     inv23_selftest; exit $?
 fi
 
+# ===========================================================================
+# --selftest-inv24 (issue #1025): INV-24 shown CATCHING planted CORS allow-list holes, and
+# shown NOT firing on the server-only shapes it must ignore. Same harness shape as -inv23,
+# with an expected rc per arm. Arms:
+#   base-drop       base jtoye-ingress's cors-allow-headers loses Idempotency-Key       rc 1
+#   sse-drop        base jtoye-sse-ingress's list loses Idempotency-Key                 rc 1
+#   overlay-revert  a staging JSON6902 op puts ingress-nginx's default list back on
+#                   jtoye-ingress (base stays fixed, so only a RENDER read can see it)  rc 1
+#   wildcard        base jtoye-ingress's list becomes "*"                               rc 1
+#   absent          base jtoye-ingress loses the cors-allow-headers annotation          rc 1
+#   new-literal     a new browser-side file sends X-Planted-Literal in a headers object rc 1
+#   new-set         a new browser-side file sends X-Planted-Set via headers.set()       rc 1
+#   server-route    app/api/**/route.ts sends X-Planted-Server (server-side: ignored)   rc 0
+#   server-only     a lib file importing "server-only" sends X-Planted-Server-Only      rc 0
+#   blind           the frontend dirs are missing, so the scan reads nothing            rc 2
+# INV24_SELFTEST_FORMAT=tap renders TAP 13.
+# ===========================================================================
+inv24_plant() {
+    local arm="$1" root="$2" k f before
+    k="$root/k8s"
+    case "$arm" in
+        base-drop|wildcard|absent) f="$k/base/ingress.yaml" ;;
+        sse-drop) f="$k/base/sse-ingress.yaml" ;;
+        overlay-revert) f="$k/staging/ingress-hosts-patch.yaml" ;;
+        new-literal) f="$root/frontend/lib/planted-literal-api.ts" ;;
+        new-set) f="$root/frontend/components/planted-set.tsx" ;;
+        server-route) f="$root/frontend/app/api/planted/route.ts" ;;
+        server-only) f="$root/frontend/lib/planted-server-only.ts" ;;
+        blind) f="$root/frontend" ;;
+        *) return 1 ;;
+    esac
+    if [[ -f "$f" ]]; then before="$(sha256sum "$f")"; else before="absent"; fi
+    case "$arm" in
+        base-drop|sse-drop)
+            awk '/cors-allow-headers:/ { gsub(/,Idempotency-Key/, "") } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        wildcard)
+            awk '/cors-allow-headers:/ { sub(/cors-allow-headers:.*/, "cors-allow-headers: \"*\"") } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        absent)
+            awk '!/cors-allow-headers:/' "$f" > "$f.new" && mv "$f.new" "$f" ;;
+        overlay-revert)
+            printf '%s\n' '- op: replace' \
+                '  path: /metadata/annotations/nginx.ingress.kubernetes.io~1cors-allow-headers' \
+                '  value: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"' >> "$f" ;;
+        new-literal)
+            printf '%s\n' 'import apiClient from "@/lib/api-client"' \
+                'export const planted = (v: string) =>' \
+                '  apiClient.post("/api/v1/planted", undefined, { headers: { "X-Planted-Literal": v } })' > "$f" ;;
+        new-set)
+            printf '%s\n' 'export function plant(config: { headers: Headers }, v: string) {' \
+                '  config.headers.set("X-Planted-Set", v)' '}' > "$f" ;;
+        server-route)
+            mkdir -p "$(dirname "$f")"
+            printf '%s\n' 'export async function GET() {' \
+                '  return fetch("http://core-java/api/v1/planted", { headers: { "X-Planted-Server": "1" } })' '}' > "$f" ;;
+        server-only)
+            printf '%s\n' 'import "server-only"' \
+                'export const p = () => fetch("http://core-java/x", { headers: { "X-Planted-Server-Only": "1" } })' > "$f" ;;
+        blind)
+            rm -rf "$f"; [[ ! -e "$f" ]]; return ;;
+    esac
+    [[ -f "$f" && "$(sha256sum "$f")" != "$before" ]]
+}
+
+inv24_selftest() {
+    local fmt="${INV24_SELFTEST_FORMAT:-plain}" st arm want wrc out rc caught n=0 bad=0 tap=() line
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv24 could not copy $K8S_DIR" >&2; exit 2; }
+    local -a ARMS=(base-drop sse-drop overlay-revert wildcard absent new-literal new-set server-route server-only blind)
+    declare -A WANT=(
+        [base-drop]="INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key"
+        [sse-drop]="INV-24: Ingress jtoye-sse-ingress cors-allow-headers omits Idempotency-Key"
+        [overlay-revert]="[k8s/staging] INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key"
+        [wildcard]="INV-24: Ingress jtoye-ingress cors-allow-headers is a wildcard"
+        [absent]="INV-24: Ingress jtoye-ingress enables CORS but sets no cors-allow-headers"
+        [new-literal]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Literal"
+        [new-set]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Set"
+        [server-route]="PASS:"
+        [server-only]="PASS:"
+        [blind]="INV-24: the browser header scan"
+    )
+    declare -A WANT_RC=([server-route]=0 [server-only]=0 [blind]=2)
+    for arm in "${ARMS[@]}"; do
+        n=$((n + 1))
+        selftest_stage "$st/pristine" "$st/arm"
+        if ! inv24_plant "$arm" "$st/arm"; then
+            caught=no; line="plant did not apply"
+        else
+            if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+            want="${WANT[$arm]}"; wrc="${WANT_RC[$arm]:-1}"
+            if (( rc == wrc )) && grep -qF -- "$want" <<<"$out"; then
+                caught=yes; line="rc=$rc"
+            else
+                caught=no
+                line="expected rc $wrc and '$want'; got rc=$rc: $(awk '/INV-24|PARSE ERROR|FAIL/ && c < 3 { printf "%s ", $0; c++ }' <<<"$out")"
+            fi
+        fi
+        [[ "$caught" == yes ]] || bad=$((bad + 1))
+        if [[ "$fmt" == tap ]]; then
+            if [[ "$caught" == yes ]]; then tap+=("ok $n - $arm"); else
+                tap+=("not ok $n - $arm" "  ---" "  message: '${line//\'/}'" "  ..."); fi
+        else
+            echo "ARM $arm caught=$caught ($line)"
+        fi
+    done
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    n=$((n + 1))
+    (( rc == 0 )) || bad=$((bad + 1))
+    if [[ "$fmt" == tap ]]; then
+        if (( rc == 0 )); then tap+=("ok $n - clean"); else
+            tap+=("not ok $n - clean" "  ---" "  message: 'expected rc 0 on the unmodified copy, got rc=$rc'" "  ..."); fi
+        printf '%s\n' "TAP version 13" "1..$n" "${tap[@]}"
+    else
+        echo "CLEAN rc=$rc"
+        (( rc == 0 )) || awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-inv24" ]]; then
+    inv24_selftest; exit $?
+fi
+
 # ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
@@ -3329,6 +3487,69 @@ is_noindex_target() {
     return 1
 }
 
+# ---------------------------------------------------------------------------
+# INV-24 inputs (#1025). The browser header inventory, read once from the frontend
+# source (see the header for what is read and what is excluded). INV24_SCAN_AWK emits
+# <header name> TAB <file>:<line> per header a browser-side request sets.
+# ---------------------------------------------------------------------------
+INV24_SCAN_AWK='
+FNR == 1 { inobj = 0; depth = 0 }
+function grab(t,   m) {
+    while (match(t, /(^|[{,])[[:space:]]*("[A-Za-z][A-Za-z0-9-]*"|'"'"'[A-Za-z][A-Za-z0-9-]*'"'"'|[A-Za-z][A-Za-z0-9-]*)[[:space:]]*:/)) {
+        m = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
+        sub(/^[{,]/, "", m); gsub(/[[:space:]"'"'"':]/, "", m)
+        printf "%s\t%s:%d\n", m, FILENAME, FNR
+    }
+}
+# the part of t inside the object (depth > 0 from the carried depth); clears inobj at its close
+function walk(t,   i, c, seg) {
+    seg = ""
+    for (i = 1; i <= length(t); i++) {
+        c = substr(t, i, 1)
+        if (c == "{") depth++
+        else if (c == "}") { depth--; if (depth <= 0) { inobj = 0; return seg } }
+        seg = seg c
+    }
+    return seg
+}
+{
+    line = $0
+    if (line ~ /^[[:space:]]*(\/\/|\/\*|\*)/) next
+    while (match(line, /headers\.(set|append)\([[:space:]]*["'"'"'][A-Za-z][A-Za-z0-9-]*["'"'"']/)) {
+        m = substr(line, RSTART, RLENGTH); line = substr(line, RSTART + RLENGTH)
+        sub(/^headers\.(set|append)\([[:space:]]*["'"'"']/, "", m); sub(/["'"'"']$/, "", m)
+        printf "%s\t%s:%d\n", m, FILENAME, FNR
+    }
+    line = $0
+    if (inobj) { grab(walk(line)); next }
+    if (match(line, /(^|[^A-Za-z0-9_])headers[[:space:]]*[:=][[:space:]]*\{/)) {
+        depth = 0; inobj = 1
+        grab(walk(substr(line, RSTART + RLENGTH - 1)))
+    }
+}'
+INV24_FE="$REPO_ROOT/frontend"
+for d in app lib components hooks; do
+    [[ -d "$INV24_FE/$d" ]] || parse_fail "INV-24: the browser header scan cannot read $INV24_FE/$d; without it every cors-allow-headers list would pass. Restore the path or update INV-24's scan roots."
+done
+find "$INV24_FE/app" "$INV24_FE/lib" "$INV24_FE/components" "$INV24_FE/hooks" -type f \( -name '*.ts' -o -name '*.tsx' \) \
+    ! -path '*/__tests__/*' ! -name '*.test.*' ! -name '*.spec.*' ! -name '*.d.ts' \
+    ! -path "$INV24_FE/app/api/*" ! -name 'route.ts' ! -name '*-server.ts' ! -name '*-server.tsx' -print \
+    | sort > "$TMP/inv24_files"
+[[ -s "$TMP/inv24_files" ]] || parse_fail "INV-24: the browser header scan found no frontend source file."
+: > "$TMP/inv24_client_files"
+while IFS= read -r f; do
+    grep -qE "^[[:space:]]*import[[:space:]]+[\"']server-only[\"']" "$f" || printf '%s\n' "$f" >> "$TMP/inv24_client_files"
+done < "$TMP/inv24_files"
+tr '\n' '\0' < "$TMP/inv24_client_files" | xargs -0 awk "$INV24_SCAN_AWK" > "$TMP/inv24_scan.tsv" \
+    || parse_fail "INV-24: the browser header scan (awk) failed."
+# the inventory: one line per header (first spelling seen), safelisted names dropped
+awk -F'\t' '{ l = tolower($1) } l == "accept" || l == "accept-language" || l == "content-language" { next }
+            !(l in seen) { seen[l] = 1; print $1 }' "$TMP/inv24_scan.tsv" > "$TMP/inv24_headers"
+for h in authorization idempotency-key; do
+    grep -qixF "$h" "$TMP/inv24_headers" || parse_fail "INV-24: the browser header scan found no '$h' sender, though the frontend has known ones; the scanner is blind and would pass any list. Fix INV24_SCAN_AWK (or update this anchor if the frontend truly stopped sending it)."
+done
+mapfile -t INV24_HEADERS < "$TMP/inv24_headers"
+
 for dir in "${TARGETS[@]}"; do
     rel="${dir#"$REPO_ROOT"/}"
     render="$TMP/${rel//\//_}.yaml"
@@ -4350,6 +4571,44 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-24 (#1025) ----------------
+    # Every CORS-enabled Ingress must admit every header a browser-side request sends.
+    inv24_bad=0
+    inv24_n=0
+    while IFS= read -r inv24_ing; do
+        [[ -n "$inv24_ing" ]] || continue
+        inv24_n=$((inv24_n + 1))
+        inv24_val=$(path_get "$TMP/inv11_paths.tsv" Ingress "$inv24_ing" "metadata::annotations::nginx.ingress.kubernetes.io/cors-allow-headers")
+        if [[ "$inv24_val" == "(ABSENT)" ]]; then
+            echo "  FAIL [$rel] INV-24: Ingress $inv24_ing enables CORS but sets no cors-allow-headers, so the edge answers its provider's default list (issue #1025)." >&2
+            inv24_bad=1; continue
+        fi
+        unq "$inv24_val"
+        inv24_list=",$(tr -d ' ' <<< "${UNQ,,}"),"
+        if [[ "$inv24_list" == *",*,"* ]]; then
+            echo "  FAIL [$rel] INV-24: Ingress $inv24_ing cors-allow-headers is a wildcard; with cors-allow-credentials true a browser rejects it. List the headers." >&2
+            inv24_bad=1; continue
+        fi
+        for inv24_h in "${INV24_HEADERS[@]}"; do
+            if [[ "$inv24_list" != *",${inv24_h,,},"* ]]; then
+                inv24_src=$(awk -F'\t' -v h="${inv24_h,,}" 'tolower($1) == h { print $2; exit }' "$TMP/inv24_scan.tsv")
+                echo "  FAIL [$rel] INV-24: Ingress $inv24_ing cors-allow-headers omits $inv24_h, which the browser sends cross-origin (${inv24_src#"$REPO_ROOT"/}); its preflight fails and the request never reaches core (issue #1025)." >&2
+                inv24_bad=1
+            fi
+        done
+    done < <(awk -F'\t' '$1 == "Ingress" && $3 == "metadata::annotations::nginx.ingress.kubernetes.io/enable-cors" && ($4 == "\"true\"" || $4 == "true" || $4 == "'"'"'true'"'"'") { print $2 }' "$TMP/inv11_paths.tsv")
+    if (( inv24_bad != 0 )); then
+        FAILED=1
+        inv24_msg="FAIL"
+    elif (( inv24_n == 0 )); then
+        for t in "${WI_TARGETS[@]}"; do
+            [[ "$rel" == "$t" ]] && parse_fail "[$rel] INV-24 found no CORS-enabled Ingress in a deployed render: either the render lost them or the reader is blind, and the allow-list check would pass vacuously."
+        done
+        inv24_msg="not applicable (no CORS-enabled Ingress in this render)"
+    else
+        inv24_msg="OK ($inv24_n CORS-enabled Ingress(es) admit all ${#INV24_HEADERS[@]} browser headers: ${INV24_HEADERS[*]})"
+    fi
+
     # ---------------- INV-20 (#976) ----------------
     # Every Keycloak container with proxy headers on, in ANY spelling, must say WHICH
     # peers it believes them from, once, as a private CIDR list it can start on. See
@@ -4619,10 +4878,10 @@ for dir in "${TARGETS[@]}"; do
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
           || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
           || "$inv11_msg" == FAIL* || "$inv12_msg" == FAIL* || "$inv14_msg" == FAIL* || "$inv15_msg" == FAIL* \
-          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* || "$inv22_msg" == FAIL* || "$inv23_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg" >&2
+          || "$inv16_msg" == FAIL* || "$inv17_msg" == FAIL* || "$inv18_msg" == FAIL* || "$inv19_msg" == FAIL* || "$inv20_msg" == FAIL* || "$inv21_msg" == FAIL* || "$inv22_msg" == FAIL* || "$inv23_msg" == FAIL* || "$inv24_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg | INV-24 $inv24_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg | INV-12 $inv12_msg | INV-14 $inv14_msg | INV-15 $inv15_msg | INV-16 $inv16_msg | INV-17 $inv17_msg | INV-18 $inv18_msg | INV-19 $inv19_msg | INV-20 $inv20_msg | INV-21 $inv21_msg | INV-22 $inv22_msg | INV-23 $inv23_msg | INV-24 $inv24_msg"
     fi
 done
 
@@ -5118,4 +5377,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); INV-21 holds wherever the grafana component renders; INV-23 holds wherever the mailpit component renders; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7, INV-11 and INV-12 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on ${WI_TARGETS[*]}; INV-16 holds on ${TRUSTSTORE_TARGETS[*]} (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on ${KEYCLOAK_TARGETS[*]}); INV-21 holds wherever the grafana component renders; INV-23 holds wherever the mailpit component renders; INV-24 holds on every CORS-enabled Ingress (required on ${WI_TARGETS[*]}); $LOCAL_SECTION."
