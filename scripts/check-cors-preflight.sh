@@ -15,9 +15,15 @@
 #
 #   An OPTIONS preflight to URL from ORIGIN, asking for POST with REQUIRE as
 #   Access-Control-Request-Headers, is answered with:
-#     a. Access-Control-Allow-Origin equal to ORIGIN;
-#     b. Access-Control-Allow-Headers present, not "*" (invalid with credentials), and naming
+#     a. a 2xx status (a browser treats any other preflight status as a CORS failure);
+#     b. exactly ONE Access-Control-Allow-Origin, equal to ORIGIN;
+#     c. Access-Control-Allow-Credentials exactly `true` (the dashboard and storefront send
+#        credentials, and the browser refuses a credentialed response without it);
+#     d. Access-Control-Allow-Methods naming POST (the method asked for), or `*` is refused;
+#     e. exactly ONE Access-Control-Allow-Headers, not "*" (invalid with credentials), naming
 #        every header in REQUIRE (case-insensitive, comma-separated, trimmed).
+#   A repeated ACAO or ACAH line is a FAIL, not "last one wins": a browser joins repeated
+#   values into one list, which never equals a single origin (review round 1, finding 3).
 #
 # USAGE
 #
@@ -36,7 +42,8 @@
 # EXIT
 #
 #   0  the preflight admits every required header from ORIGIN
-#   1  it does not (a header missing, a wildcard, no allow-headers, the wrong or no ACAO)
+#   1  it does not (a non-2xx status, a header missing, a wildcard, no or repeated allow-headers,
+#      the wrong, no or repeated ACAO, no credentials true, POST not allowed)
 #   2  VOID: curl missing or failed, no HTTP status line, an unreadable --from-file, bad usage
 #
 # WHERE IT RUNS
@@ -53,32 +60,75 @@ REQUIRE="content-type,authorization,idempotency-key,x-tenant-id"
 FROM_FILE=""
 CURL_TIMEOUT=20
 
-# header_value NAME FILE — the last value of a response header, case-insensitive, CR stripped.
-header_value() {
+# header_values NAME FILE — every value of a response header, one per line, case-insensitive,
+# CR stripped. The caller decides what more than one means; nothing here picks one silently.
+header_values() {
   awk -v n="$(tr '[:upper:]' '[:lower:]' <<< "$1")" '
     { sub(/\r$/, "") }
     { i = index($0, ":"); if (i == 0) next
       k = tolower(substr($0, 1, i - 1)); v = substr($0, i + 1); sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
-      if (k == n) { val = v; found = 1 } }
-    END { if (found) print val; exit !found }' "$2"
+      if (k == n) print v }' "$2"
+}
+
+# single NAME FILE — sets SINGLE to the header's only value and returns 0; returns 1 (with
+# SINGLE empty) when it is absent and 3 when it is repeated.
+single() {
+  local vals n
+  vals=$(header_values "$1" "$2")
+  SINGLE=""
+  [[ -n "$vals" ]] || return 1
+  n=$(awk 'END { print NR }' <<< "$vals")
+  (( n == 1 )) || return 3
+  SINGLE="$vals"
 }
 
 # judge FILE ORIGIN REQUIRE — prints one line per finding; returns 0 / 1 / 2.
 judge() {
-  local file="$1" origin="$2" require="$3" status acao acah list h verdict=0
+  local file="$1" origin="$2" require="$3" status acao acac acam acah list h verdict=0 rc
   local -a req
   [[ -r "$file" ]] || { echo "VOID: cannot read $file"; return 2; }
   status=$(awk '{ sub(/\r$/, "") } /^HTTP\/[0-9.]+ [0-9]{3}/ { s = $2 } END { print s }' "$file")
   [[ -n "$status" ]] || { echo "VOID: no HTTP status line in the response"; return 2; }
-  echo "HTTP $status"
-  acao=$(header_value Access-Control-Allow-Origin "$file") || acao=""
-  if [[ "$acao" == "$origin" ]]; then
+  if [[ "$status" == 2[0-9][0-9] ]]; then
+    echo "OK   HTTP $status"
+  else
+    echo "FAIL HTTP $status: a non-2xx preflight fails CORS in the browser whatever its headers say"
+    verdict=1
+  fi
+
+  single Access-Control-Allow-Origin "$file"; rc=$?; acao="$SINGLE"
+  if (( rc == 3 )); then
+    echo "FAIL access-control-allow-origin is repeated ($(header_values Access-Control-Allow-Origin "$file" | paste -sd'|')): a browser rejects multiple values"
+    verdict=1
+  elif [[ "$acao" == "$origin" ]]; then
     echo "OK   access-control-allow-origin: $acao"
   else
     echo "FAIL access-control-allow-origin: '${acao:-<none>}' (want '$origin')"
     verdict=1
   fi
-  acah=$(header_value Access-Control-Allow-Headers "$file") || acah=""
+
+  single Access-Control-Allow-Credentials "$file"; rc=$?; acac="$SINGLE"
+  if (( rc == 0 )) && [[ "$acac" == "true" ]]; then
+    echo "OK   access-control-allow-credentials: true"
+  else
+    echo "FAIL access-control-allow-credentials: '${acac:-<none or repeated>}' (want exactly 'true'; a credentialed request is refused without it)"
+    verdict=1
+  fi
+
+  single Access-Control-Allow-Methods "$file"; rc=$?; acam="$SINGLE"
+  list=",$(tr -d ' ' <<< "${acam^^}"),"
+  if (( rc == 0 )) && [[ "$list" == *",POST,"* ]]; then
+    echo "OK   access-control-allow-methods: $acam (admits POST)"
+  else
+    echo "FAIL access-control-allow-methods: '${acam:-<none or repeated>}' does not name POST, the method the order request uses"
+    verdict=1
+  fi
+
+  single Access-Control-Allow-Headers "$file"; rc=$?; acah="$SINGLE"
+  if (( rc == 3 )); then
+    echo "FAIL access-control-allow-headers is repeated: a browser does not merge it reliably; the edge must send one list"
+    return 1
+  fi
   if [[ -z "$acah" ]]; then
     echo "FAIL access-control-allow-headers: <none>"
     return 1
@@ -110,17 +160,36 @@ selftest() {
   local o="https://app-staging.olajay.co.uk"
   local old="DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
   local new="$old,Idempotency-Key,X-Tenant-Id"
-  # arm name | expected rc | response header dump
-  printf 'HTTP/2 200\r\naccess-control-allow-headers: %s\r\naccess-control-allow-origin: %s\r\n\r\n' "$old" "$o" > "$t/today"
-  printf 'HTTP/2 200\r\nAccess-Control-Allow-Headers: %s\r\nAccess-Control-Allow-Origin: %s\r\n\r\n' "$new" "$o" > "$t/fixed"
-  printf 'HTTP/2 200\r\naccess-control-allow-headers: %s\r\naccess-control-allow-origin: %s\r\n\r\n' "content-type, idempotency-key , AUTHORIZATION,x-tenant-id" "$o" > "$t/spaced"
-  printf 'HTTP/2 200\r\naccess-control-allow-headers: *\r\naccess-control-allow-origin: %s\r\n\r\n' "$o" > "$t/wildcard"
-  printf 'HTTP/2 200\r\naccess-control-allow-origin: %s\r\n\r\n' "$o" > "$t/no-acah"
-  printf 'HTTP/2 200\r\naccess-control-allow-headers: %s\r\n\r\n' "$new" > "$t/no-acao"
-  printf 'HTTP/2 200\r\naccess-control-allow-headers: %s\r\naccess-control-allow-origin: https://evil.example\r\n\r\n' "$new" > "$t/wrong-acao"
-  printf 'HTTP/2 200\r\naccess-control-allow-headers: %s\r\naccess-control-allow-origin: %s\r\n\r\n' "Content-Type,Authorization,X-Idempotency-Key,X-Tenant-Id" "$o" > "$t/lookalike"
+  local m="GET,POST,PUT,DELETE,OPTIONS,PATCH"
+  # d STATUS ACAH ACAO [extra lines...] — a response dump with credentials true and methods $m
+  d() {
+    local st="$1" ah="$2" ao="$3"; shift 3
+    printf 'HTTP/2 %s \r\naccess-control-allow-credentials: true\r\naccess-control-allow-methods: %s\r\n' "$st" "$m"
+    [[ -n "$ah" ]] && printf 'access-control-allow-headers: %s\r\n' "$ah"
+    [[ -n "$ao" ]] && printf 'access-control-allow-origin: %s\r\n' "$ao"
+    local x; for x in "$@"; do printf '%s\r\n' "$x"; done
+    printf '\r\n'
+  }
+  d 200 "$old" "$o" > "$t/today"
+  d 200 "$new" "$o" | sed 's/^access-control-allow-headers/Access-Control-Allow-Headers/; s/^access-control-allow-origin/Access-Control-Allow-Origin/' > "$t/fixed"
+  d 204 "$new" "$o" > "$t/fixed-204"
+  d 200 "content-type, idempotency-key , AUTHORIZATION,x-tenant-id" "$o" > "$t/spaced"
+  d 200 "*" "$o" > "$t/wildcard"
+  d 200 "" "$o" > "$t/no-acah"
+  d 200 "$new" "" > "$t/no-acao"
+  d 200 "$new" "https://evil.example" > "$t/wrong-acao"
+  d 200 "Content-Type,Authorization,X-Idempotency-Key,X-Tenant-Id" "$o" > "$t/lookalike"
+  # review round 1: finding 1 (status), 2 (methods, credentials), 3 (repeated ACAO / ACAH)
+  d 403 "$new" "$o" > "$t/status-403"
+  d 302 "$new" "$o" > "$t/status-302"
+  d 200 "$new" "$o" | sed 's/^access-control-allow-methods: .*/access-control-allow-methods: GET,OPTIONS\r/' > "$t/no-post"
+  d 200 "$new" "$o" | grep -v '^access-control-allow-credentials' > "$t/no-credentials"
+  d 200 "$new" "$o" | sed 's/^access-control-allow-credentials: true/access-control-allow-credentials: false/' > "$t/credentials-false"
+  d 200 "$new" "*" "access-control-allow-origin: $o" > "$t/dup-acao"
+  d 200 "Content-Type" "$o" "access-control-allow-headers: $new" > "$t/dup-acah"
   : > "$t/empty"
-  for arm in today:1 fixed:0 spaced:0 wildcard:1 no-acah:1 no-acao:1 wrong-acao:1 lookalike:1 empty:2; do
+  for arm in today:1 fixed:0 fixed-204:0 spaced:0 wildcard:1 no-acah:1 no-acao:1 wrong-acao:1 lookalike:1 \
+             status-403:1 status-302:1 no-post:1 no-credentials:1 credentials-false:1 dup-acao:1 dup-acah:1 empty:2; do
     want="${arm##*:}"; arm="${arm%%:*}"
     out=$(judge "$t/$arm" "$o" "$REQUIRE"); rc=$?
     if [[ "$rc" == "$want" ]]; then
