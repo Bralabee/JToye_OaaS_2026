@@ -310,9 +310,12 @@ class StripeWebhookIdempotencyIntegrationTest {
                 .containsEntry("payment_status", "CAPTURED")
                 .containsEntry("payment_reference", "pi_958_cancelled");
         verify(orderEventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+        // At WARN, not merely present: the test profile logs uk.jtoye at DEBUG, so a plain "contains" also passed
+        // when the line was downgraded to debug (measured in the 30-05 break arm).
         assertThat(output.getOut() + output.getErr())
-                .as("T-30-22: a captured payment on a closed order is logged for a refund decision")
-                .contains("event=payment_on_closed_order order=" + cancelled.getOrderNumber()
+                .as("T-30-22: a captured payment on a closed order is logged at WARN for a refund decision")
+                .containsPattern("WARN\\s+\\S*PaymentService - event=payment_on_closed_order order="
+                        + java.util.regex.Pattern.quote(cancelled.getOrderNumber())
                         + " status=CANCELLED intent=pi_958_cancelled")
                 .doesNotContain("idempotency@test.local");
     }
