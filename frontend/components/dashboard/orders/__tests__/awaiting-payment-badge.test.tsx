@@ -61,4 +61,32 @@ describe("AwaitingPaymentBadge (UI-SPEC § S2)", () => {
     const authorized = render(<AwaitingPaymentBadge paymentStatus="AUTHORIZED" paymentReference="pi_2" />)
     expect(authorized.container).toBeEmptyDOMElement()
   })
+  // PR #1030 review round 1, finding 2: the payment rule says nothing about the ORDER's status, so a
+  // REFUNDED order (paymentStatus REFUNDED, its pi_ kept) and a CANCELLED card DRAFT both read as
+  // "awaiting payment". A closed order cannot be submitted, accepted or prepared at all, so the badge
+  // has nothing to warn about there and would tell staff a refunded customer "hasn't paid yet".
+  it("a closed order (COMPLETED, CANCELLED, REFUNDED) renders nothing, whatever its payment fields", () => {
+    for (const orderStatus of ["COMPLETED", "CANCELLED", "REFUNDED"] as const) {
+      const { container, unmount } = render(
+        <AwaitingPaymentBadge orderStatus={orderStatus} paymentStatus="REFUNDED" paymentReference="pi_r" />
+      )
+      expect(container).toBeEmptyDOMElement()
+      unmount()
+      const pending = render(
+        <AwaitingPaymentBadge orderStatus={orderStatus} paymentStatus="PENDING" paymentReference="pi_p" />
+      )
+      expect(pending.container).toBeEmptyDOMElement()
+      pending.unmount()
+    }
+  })
+
+  it("an open order awaiting payment still renders the badge when its status is given", () => {
+    for (const orderStatus of ["DRAFT", "PENDING", "CONFIRMED", "PREPARING", "READY"] as const) {
+      const { unmount } = render(
+        <AwaitingPaymentBadge orderStatus={orderStatus} paymentStatus="PENDING" paymentReference="pi_p" />
+      )
+      expect(screen.getByTestId("awaiting-payment")).toBeInTheDocument()
+      unmount()
+    }
+  })
 })
