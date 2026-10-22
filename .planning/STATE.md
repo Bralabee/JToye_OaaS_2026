@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: Phase 30 executing — 30-01 DONE (1/32) on fix/957-card-checkout-payment-step; next 30-02
-last_updated: "2026-10-22T03:50:42.000Z"
+stopped_at: Phase 30 executing — 30-02 DONE (2/32) on fix/957-card-checkout-payment-step; next 30-03 (PR 1 ship, owner checkpoint)
+last_updated: "2026-10-22T04:10:21.000Z"
 last_activity: 2026-10-22
-last_activity_desc: 30-01 done — publishable key baked at build, stripe-loader, served-chunk gate, deploy pk guard (#957 PR 1 part 1 of 4)
-state_head: 50fd5860632a4d3bb8b98593a6c5791145af3592
+last_activity_desc: 30-02 done — card step always reached (loading/ready/failed), keyless card shop refuses before send, DRAFT reads Awaiting payment (#957 PR 1 part 2 of 4)
+state_head: bf344d511ae5330d6fd3665c77a23e80d53a535a
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 284
+  completed_plans: 285
   percent: 90
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 1/32 plans done (30-01); next 30-02 on branch fix/957-card-checkout-payment-step (PR 1 = 30-01..30-03 + 30-04 gate)
-Last activity: 2026-10-22 — 30-01 complete (commits fe0f5eb9..50fd5860, SUMMARY 30-01-SUMMARY.md)
+Status: Executing — 2/32 plans done (30-01, 30-02); next 30-03 on branch fix/957-card-checkout-payment-step (PR 1 = 30-01..30-03 + 30-04 gate)
+Last activity: 2026-10-22 — 30-02 complete (commits 66846786..bf344d51, SUMMARY 30-02-SUMMARY.md); UI-SPEC S1 connected-account init is owned by 30-18
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1523,9 +1523,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-22T03:50:42.000Z
-Stopped at: Phase 30 — 30-01 done (1/32); next /gsd-execute-phase 30 resumes at 30-02
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-01-SUMMARY.md`
+Last session: 2026-10-22T04:10:21.000Z
+Stopped at: Phase 30 — 30-02 done (2/32); next /gsd-execute-phase 30 resumes at 30-03
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-02-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
