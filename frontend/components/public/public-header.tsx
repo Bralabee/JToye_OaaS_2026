@@ -123,13 +123,12 @@ export function PublicHeader() {
           {/* Wordmark -> the landing page, from every public surface. */}
           <Link
             href="/"
-            aria-label="J'Toye home"
             className="flex items-center gap-2 text-lg font-semibold tracking-tight text-oxblood"
           >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-oxblood text-sm font-bold text-white">
+            <span aria-hidden="true" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-oxblood text-sm font-bold text-white">
               J
             </span>
-            <span>J&apos;Toye</span>
+            <span>J&apos;Toye</span><span className="sr-only"> home</span>
           </Link>
 
           {/* Desktop nav (>=sm) */}
