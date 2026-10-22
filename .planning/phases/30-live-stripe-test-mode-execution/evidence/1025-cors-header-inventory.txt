@@ -1,0 +1,100 @@
+# issue #1025 — headers the BROWSER sends cross-origin to NEXT_PUBLIC_API_URL, 2026-10-22T06:38:25Z, tree 628911ed
+
+## A. hand search (rg -uu), non-test frontend source
+$ rg -uu -n --pcre2 "(?i)headers\s*[:=]\s*\{|headers\.(set|append)|Authorization|Content-Type" frontend/app frontend/lib frontend/components frontend/hooks --glob "!**/__tests__/**" --glob "!*.test.*"
+rc=0
+frontend/hooks/use-order-events.ts:95:              headers: { Authorization: `Bearer ${token}` },
+frontend/hooks/use-stomp.ts:60:        client.connectHeaders = { Authorization: `Bearer ${token}` }
+frontend/components/marketing/near-you-row.tsx:262:            headers: { Accept: "application/json" },
+frontend/lib/customer-idp-logout.ts:102:      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+frontend/lib/credentials-api.ts:130:    headers: { "Idempotency-Key": idempotencyKey },
+frontend/lib/products-api.ts:101:    { headers: { "Content-Type": "multipart/form-data" } }
+frontend/lib/public-api-client.ts:5:  headers: {
+frontend/lib/api-client.ts:31:  headers: {
+frontend/lib/api-client.ts:42:      config.headers.set("Authorization", `Bearer ${session.accessToken}`)
+frontend/lib/api-client.ts:48:      config.headers.set("X-Tenant-Id", tenantId)
+frontend/lib/customer-token-refresh.ts:76:      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+frontend/lib/media-api.ts:64:    { headers: { "Idempotency-Key": makeIdempotencyKey() } }
+frontend/components/ui/image-uploader.tsx:368:          headers: {
+frontend/lib/customer-auth.ts:387:      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+frontend/lib/customer-auth.ts:443:      headers: { "Content-Type": "application/json" },
+frontend/components/dashboard/orders/RefundDialog.tsx:165:        { headers: { "Idempotency-Key": idempotencyKey } }
+frontend/lib/webhooks-api.ts:273:      { headers: { "Idempotency-Key": idempotencyKey } }
+frontend/app/api/customer-orders/route.ts:57:        headers: { "X-Customer-Token": access },
+frontend/app/api/customer-orders/route.ts:117:    if (retryAfter) res.headers.set("Retry-After", retryAfter)
+frontend/lib/customer-orders-server.ts:68:      headers: { "X-Customer-Token": accessToken },
+frontend/app/api/vendor-auth/logout-complete/route.ts:80:const NO_STORE_HEADERS = {
+frontend/app/api/vendor-auth/logout-complete/route.ts:88:    headers: { Location: VENDOR_SIGNIN_PATH, ...NO_STORE_HEADERS },
+frontend/app/api/vendor-auth/logout-url/route.ts:78:const NO_STORE_HEADERS = {
+frontend/app/dashboard/products/import/page.tsx:328:        headers: { "Content-Type": "multipart/form-data" },
+frontend/app/shop/account/account-client.tsx:136:        { headers: { "Idempotency-Key": key } }
+frontend/app/api/customer-auth/logout-url/route.ts:26:const NO_STORE_HEADERS = {
+frontend/app/shop/[slug]/checkout/page.tsx:1038:        { headers: { "Idempotency-Key": idempotencyKey } }
+
+## B. the INV-24 scanner (same awk as k8s/scripts/check-render-invariants.sh, server-only code excluded)
+Content-Type	frontend/app/dashboard/products/import/page.tsx:328
+Idempotency-Key	frontend/app/shop/account/account-client.tsx:136
+Idempotency-Key	frontend/app/shop/[slug]/checkout/page.tsx:1038
+Idempotency-Key	frontend/components/dashboard/orders/RefundDialog.tsx:165
+Accept	frontend/components/marketing/near-you-row.tsx:262
+Content-Type	frontend/components/ui/image-uploader.tsx:369
+Idempotency-Key	frontend/components/ui/image-uploader.tsx:370
+Authorization	frontend/hooks/use-order-events.ts:95
+Content-Type	frontend/lib/api-client.ts:32
+Authorization	frontend/lib/api-client.ts:42
+X-Tenant-Id	frontend/lib/api-client.ts:48
+Idempotency-Key	frontend/lib/credentials-api.ts:130
+Content-Type	frontend/lib/customer-auth.ts:387
+Content-Type	frontend/lib/customer-auth.ts:443
+Content-Type	frontend/lib/customer-idp-logout.ts:102
+Content-Type	frontend/lib/customer-token-refresh.ts:76
+Idempotency-Key	frontend/lib/media-api.ts:64
+Content-Type	frontend/lib/products-api.ts:101
+Content-Type	frontend/lib/public-api-client.ts:6
+Idempotency-Key	frontend/lib/webhooks-api.ts:273
+
+## C. classification
+Browser -> core, cross-origin (preflighted unless safelisted):
+  Content-Type     lib/api-client.ts:32, lib/public-api-client.ts:6 (application/json: NOT safelisted)   already listed
+  Authorization    lib/api-client.ts:42, hooks/use-order-events.ts:95 (SSE via fetch-event-source)     already listed
+  Idempotency-Key  app/shop/[slug]/checkout/page.tsx:1038, app/shop/account/account-client.tsx:136,
+                   components/ui/image-uploader.tsx:370, components/dashboard/orders/RefundDialog.tsx:165,
+                   lib/media-api.ts:64, lib/credentials-api.ts:130, lib/webhooks-api.ts:273           MISSING -> added
+  X-Tenant-Id      lib/api-client.ts:48 (set when session.user.tenantId is present)                     MISSING -> added
+  Accept           components/marketing/near-you-row.tsx:262 (CORS-safelisted; never preflighted)       not needed
+Server-side only (Next route handler / server module -> core from the pod; no browser preflight):
+  X-Customer-Token, Idempotency-Key, X-Forwarded-For   app/api/customer-orders/route.ts:57,101-105
+  X-Customer-Token                                     lib/customer-orders-server.ts:68
+Library-internal, not sent today:
+  Last-Event-ID    @microsoft/fetch-event-source adds it on reconnect ONLY after an event carried an id;
+                   OrderSseService sends no id (searchcheck below), so it is never sent.
+
+## D. negatives confirmed with searchcheck
+$ searchcheck '[Tt]enant' frontend/lib/session-callback.ts
+  default search (what agents see)           0 files
+  including gitignored + hidden (-uu)        0 files
+  PASS  all search paths agree — 0 file(s), across two engines and with
+rc=0
+$ searchcheck 'tenantId' frontend/auth.ts
+  default search (what agents see)           0 files
+  including gitignored + hidden (-uu)        0 files
+  PASS  all search paths agree — 0 file(s), across two engines and with
+rc=0
+$ searchcheck '\.id\(' core-java/src/main/java/uk/jtoye/core/order/OrderSseService.java
+  default search (what agents see)           0 files
+  including gitignored + hidden (-uu)        0 files
+  PASS  all search paths agree — 0 file(s), across two engines and with
+rc=0
+$ searchcheck 'X-Customer-Token' frontend/components
+  default search (what agents see)           0 files
+  including gitignored + hidden (-uu)        0 files
+  PASS  all search paths agree — 0 file(s), across two engines and with
+rc=0
+
+## E. lower layers
+core-java CorsConfig.java:138  config.addAllowedHeader("*")  -> echoes any requested header; NOT the same defect
+$ rg -uu -n -i "cors|Access-Control" edge-go --glob "*.go"
+rc=1 (no CORS handling in edge-go; the browser never calls the edge)
+  default search (what agents see)           0 files
+  including gitignored + hidden (-uu)        0 files
+  PASS  all search paths agree — 0 file(s), across two engines and with

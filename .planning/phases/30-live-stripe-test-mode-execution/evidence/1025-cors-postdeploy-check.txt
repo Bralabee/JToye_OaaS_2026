@@ -1,0 +1,50 @@
+# issue #1025 — the post-deploy check, both directions, 2026-10-22T06:38:07Z
+## 1. against today's live staging (pre-merge): must FAIL rc 1
+$ bash scripts/check-cors-preflight.sh
+OPTIONS https://api-staging.olajay.co.uk/api/v1/public/shops/staging-test-kitchen/orders
+  Origin: https://app-staging.olajay.co.uk
+  Access-Control-Request-Method: POST
+  Access-Control-Request-Headers: content-type,authorization,idempotency-key,x-tenant-id
+HTTP 200
+OK   access-control-allow-origin: https://app-staging.olajay.co.uk
+     access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+OK   admits content-type
+OK   admits authorization
+FAIL omits idempotency-key: a browser request carrying it fails the preflight (issue #1025)
+FAIL omits x-tenant-id: a browser request carrying it fails the preflight (issue #1025)
+FAIL: the edge refuses at least one required header from https://app-staging.olajay.co.uk
+rc=1
+
+## 2. against a synthetic response carrying the fixed list: must PASS rc 0
+synthetic dump:
+    HTTP/2 200 
+    access-control-allow-credentials: true
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+$ bash scripts/check-cors-preflight.sh --from-file synthetic-fixed.txt
+judging /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/373451fd-6288-40c1-8b51-5301d013c3d6/scratchpad/synthetic-fixed.txt (origin https://app-staging.olajay.co.uk, require content-type,authorization,idempotency-key,x-tenant-id)
+HTTP 200
+OK   access-control-allow-origin: https://app-staging.olajay.co.uk
+     access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+OK   admits content-type
+OK   admits authorization
+OK   admits idempotency-key
+OK   admits x-tenant-id
+rc=0
+
+## 3. the judge's own arms
+$ bash scripts/check-cors-preflight.sh --selftest
+ok   today rc=1
+ok   fixed rc=0
+ok   spaced rc=0
+ok   wildcard rc=1
+ok   no-acah rc=1
+ok   no-acao rc=1
+ok   wrong-acao rc=1
+ok   lookalike rc=1
+ok   empty rc=2
+ok   today-idempotency-only rc=1
+ok   fixed-idempotency-only rc=0
+SELFTEST PASS: every arm judged as expected
+rc=0

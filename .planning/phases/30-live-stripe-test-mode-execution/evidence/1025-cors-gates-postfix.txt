@@ -1,0 +1,39 @@
+# issue #1025 — k8s gates on commit 628911ed (manifests fixed), 2026-10-22T06:35:21Z
+$ bash k8s/scripts/check-render-invariants.sh
+OK   [k8s/base]
+INV-24 OK (2 CORS-enabled Ingress(es) admit all 4 browser headers: Content-Type Idempotency-Key Authorization X-Tenant-Id)
+OK   [k8s/local]
+INV-24 OK (2 CORS-enabled Ingress(es) admit all 4 browser headers: Content-Type Idempotency-Key Authorization X-Tenant-Id)
+OK   [k8s/production]
+INV-24 OK (2 CORS-enabled Ingress(es) admit all 4 browser headers: Content-Type Idempotency-Key Authorization X-Tenant-Id)
+OK   [k8s/staging]
+INV-24 OK (2 CORS-enabled Ingress(es) admit all 4 browser headers: Content-Type Idempotency-Key Authorization X-Tenant-Id)
+INV-24 holds on every CORS-enabled Ingress (required on k8s/staging k8s/production); LOC-1..LOC-6, LOC-7, LOC-8 checked on k8s/local.
+PASS: INV-1..INV-7, INV-11 and INV-12 hold across 4 kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on k8s/staging k8s/production; INV-16 holds on k8s/staging (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on k8s/staging); INV-21 holds wherever the grafana component renders; INV-23 holds wherever the mailpit component renders; INV-24 holds on every CORS-enabled Ingress (required on k8s/staging k8s/production); LOC-1..LOC-6, LOC-7, LOC-8 checked on k8s/local.
+rc=0
+
+$ bash k8s/scripts/render-golden.sh   (check mode)
+OK   [staging]: render matches k8s/goldens/staging.yaml (7929 lines)
+OK   [production]: render matches k8s/goldens/production.yaml (1904 lines)
+All overlay renders match their committed goldens.
+rc=0
+
+$ bash k8s/scripts/check-env-contract.sh
+
+PASS: core-java 89 injected / 193 read; edge-go 9 injected / 17 read; frontend 13 injected / 7 build-arg / 32 read. Both directions hold for all three services, with 24 allowlisted omission(s), of which 0 are tracked OPEN DEFECTS listed above.
+rc=0
+
+$ bash k8s/scripts/check-no-plaintext-secrets.sh
+OK   [k8s/staging]: build succeeded, 93 resources, 0 plaintext Secrets
+All kustomize builds are free of plaintext Secret material.
+rc=0
+
+$ bash scripts/check-gate-enforcement.sh
+  selftests : 16 scripts dispatch a --selftest
+PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run.
+rc=0
+
+$ kubectl kustomize k8s/base > /dev/null   rc=0
+$ kubectl kustomize k8s/local > /dev/null   rc=0
+$ kubectl kustomize k8s/staging > /dev/null   rc=0
+$ kubectl kustomize k8s/production > /dev/null   rc=0
