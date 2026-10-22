@@ -14,9 +14,10 @@
   - #1019, an integration of #1005 (deploy.sh waits on every workload; issues 969, 970, 999) and #1006 (Mailpit cert reload; issue 972). Both source PRs are now CLOSED unmerged, because their reviewed heads are ancestors of #1019's head and #1019's tree is main's f858d5cc;
   - #1021, an authorization fix: shop-child updates now authorise a changed shopId;
   - #1022, an integration of the second swarm bundle (a product must name its shop, the allergen label's 422, STAFF refused the shop-admin controls; issues 959, 960, 961).
-- **Main CI/CD is green at 87a1f772 (#1022), so staging runs that commit.**
+- **At 87a1f772 (#1022), `ci-cd.yaml` passed, including Deploy to Staging and the Staging Edge Probe, so staging runs that commit.** `docs-freshness` FAILED at that sha (run 39669304589) on H-3 of `scripts/check-handoff-contract.sh`: HANDOFF.md was 4 merged commits behind main, over its budget of 3. Updating this file clears that.
 - **Still open, none blocking Phase 30:** follow-ups #992 and #971, the Grafana 24 h restart watch, `29-VALIDATION.md` still `draft`, and six Dependabot PRs (#993 to #998).
 - **Merge discipline for Phase 30.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main redeploys staging (about 75 to 95 min of CI). Merge one PR at a time and watch each deploy to green before the next. Never merge while the owner's persona swarm is running: ask the owner first. If a deploy goes red, set the variable to `false`, read it back, and stop.
+- **Keep this file current during Phase 30.** H-3 lets HANDOFF.md fall at most 3 merged commits behind main, and Phase 30 merges 8 PRs. It counts from the PR's own copy, so each Phase 30 PR should update this block (the plans done, the next plan). Otherwise `docs-freshness` goes red on the 4th merge.
 - **Unchanged:**
   - kube context `jtoye-stg-aks` only;
   - Python gates under `conda activate jtoye-ops`;
