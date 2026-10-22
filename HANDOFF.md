@@ -8,7 +8,7 @@
   - Start with `/gsd-execute-phase 30` from a checkout of a fresh `main`.
   - The single resume source is `.planning/STATE.md` on main.
 - issue #1025 CORS fix merged as #1026 (4208b08e, deployed to staging, live preflight PASS); it unblocked PR 1's staging proof.
-- **Phase 30 PR 1 (issue #957) is open on `fix/957-card-checkout-payment-step`: plans 30-01, 30-02 and 30-03 done.** The staging card-checkout spec is RED on today's keyless staging at the payment step (unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C, for 30-09 to cancel). The repository variable `FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set (pk_test_, the Key Vault secret's pair) and passes the staging deploy guard. Next: the review series, the merge, then 30-04 (the green arms on the merged image).
+- **Phase 30 PR 1 (issue #957) is #1029, open on `fix/957-card-checkout-payment-step`: plans 30-01, 30-02 and 30-03 done.** The staging card-checkout spec is RED on today's keyless staging at the payment step (unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C, for 30-09 to cancel). The repository variable `FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set (pk_test_, the Key Vault secret's pair) and passes the staging deploy guard. Next: the review series, the merge, then 30-04 (the green arms on the merged image).
 - **Merged since the 2026-10-21 block:**
   - #1002, the Phase 29 close;
   - #1004, CI skips integration tests, images and deploys for documentation-only changes;
