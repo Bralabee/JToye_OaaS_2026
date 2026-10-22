@@ -349,7 +349,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
-| 30. The Money Path, Executed | v2.3 | no plans (built outside GSD, PR #949) | Partial — PAY-02/04 evidenced, PAY-01/03 open | — |
+| 30. The Money Path, Executed | v2.3 | 1/32 | In progress — 30-01 done (2026-10-22) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -727,11 +727,11 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
 
-**Plans:** 32 plans (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+**Plans:** 1/32 plans complete (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
 
 Plans:
 **Wave 1**
-- [ ] 30-01-PLAN.md — #957 PR 1: publishable key baked at build (Dockerfile ARG, compose), stripe-loader, served-chunk key gate, CI variable checks, production refuses a pk_test_ image (D-08)
+- [x] 30-01-PLAN.md — #957 PR 1: publishable key baked at build (Dockerfile ARG, compose), stripe-loader, served-chunk key gate, CI variable checks, production refuses a pk_test_ image (D-08)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 30-02-PLAN.md — #957 PR 1: fail-loud card checkout (loading/ready/failed payment step, card-unavailable notice, awaiting-payment copy)
