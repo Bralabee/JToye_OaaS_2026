@@ -128,6 +128,83 @@ class OrderAwaitingPaymentGateIntegrationTest {
         assertThat(pendingEventsFor(orderId)).as("the DRAFT -> PENDING row, exactly as before").isEqualTo(1);
     }
 
+    // ---- CONFIRM (PENDING -> CONFIRMED) ----
+
+    @Test
+    @DisplayName("#958: accepting a PENDING order whose payment is PENDING is refused 409; no 'Confirmed' row, stock untouched")
+    void unpaidPendingConfirmIsRefusedAndStockIsUntouched() throws Exception {
+        UUID tracked = seedProduct(shop, 5);
+        UUID orderId = pendingOrder(tracked);
+        markCardAwaitingPayment(orderId, "PENDING");
+        assertThat(stockOf(tracked)).as("stock before").isEqualTo(5);
+
+        MvcResult result = transition(orderId, "confirm");
+
+        assertAwaitingPaymentProblem(result, orderId);
+        assertThat(statusOf(orderId)).isEqualTo("PENDING");
+        assertThat(eventsFor(orderId, "order.state.confirmed"))
+                .as("no outbox row, so no 'Confirmed' email")
+                .isZero();
+        assertThat(stockOf(tracked)).as("stock after: the refused accept decremented nothing").isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("#958: a PENDING order whose payment is CAPTURED is accepted as before (and its stock moves)")
+    void capturedPendingConfirmMoves() throws Exception {
+        UUID tracked = seedProduct(shop, 5);
+        UUID orderId = pendingOrder(tracked);
+        markCardAwaitingPayment(orderId, "CAPTURED");
+
+        MvcResult result = transition(orderId, "confirm");
+
+        assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(200);
+        assertThat(json(result).path("status").asString()).isEqualTo("CONFIRMED");
+        assertThat(statusOf(orderId)).isEqualTo("CONFIRMED");
+        assertThat(eventsFor(orderId, "order.state.confirmed")).isEqualTo(1);
+        assertThat(stockOf(tracked))
+                .as("positive control for the stock arm above: an accepted order of 2 takes 5 to 3")
+                .isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("D-01 regression: a vendor PENDING order (NONE, no reference) is accepted as before")
+    void vendorPendingConfirmStillMoves() throws Exception {
+        UUID orderId = pendingOrder(product);
+
+        MvcResult result = transition(orderId, "confirm");
+
+        assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(200);
+        assertThat(statusOf(orderId)).isEqualTo("CONFIRMED");
+        assertThat(eventsFor(orderId, "order.state.confirmed")).isEqualTo(1);
+    }
+
+    // ---- START_PREP (CONFIRMED -> PREPARING) ----
+
+    @Test
+    @DisplayName("#958: starting preparation of a CONFIRMED order whose payment FAILED is refused with the typed problem, no '#'")
+    void failedPaymentStartPrepIsRefused() throws Exception {
+        UUID orderId = confirmedOrder();
+        markCardAwaitingPayment(orderId, "FAILED");
+
+        MvcResult result = transition(orderId, "start-preparation");
+
+        assertAwaitingPaymentProblem(result, orderId);
+        assertThat(statusOf(orderId)).isEqualTo("CONFIRMED");
+        assertThat(eventsFor(orderId, "order.state.preparing")).isZero();
+    }
+
+    @Test
+    @DisplayName("D-01 regression: a vendor CONFIRMED order (NONE, no reference) starts preparation as before")
+    void vendorConfirmedStartPrepStillMoves() throws Exception {
+        UUID orderId = confirmedOrder();
+
+        MvcResult result = transition(orderId, "start-preparation");
+
+        assertThat(result.getResponse().getStatus()).as(text(result)).isEqualTo(200);
+        assertThat(statusOf(orderId)).isEqualTo("PREPARING");
+        assertThat(eventsFor(orderId, "order.state.preparing")).isEqualTo(1);
+    }
+
     // ---- CANCEL stays allowed (D-02 relies on it) ----
 
     @Test
@@ -162,11 +239,38 @@ class OrderAwaitingPaymentGateIntegrationTest {
     }
 
     private UUID draftOrder() throws Exception {
-        MvcResult created = vendorOrder("30-05-" + UUID.randomUUID());
+        return draftOrder(product);
+    }
+
+    private UUID draftOrder(UUID productId) throws Exception {
+        MvcResult created = vendorOrder(productId, "30-05-" + UUID.randomUUID());
         assertThat(created.getResponse().getStatus()).as(text(created)).isEqualTo(201);
         UUID orderId = UUID.fromString(json(created).path("id").asString());
         assertThat(statusOf(orderId)).isEqualTo("DRAFT");
         return orderId;
+    }
+
+    /** A vendor order moved DRAFT -> PENDING through the API while it is still NONE (D-01, allowed). */
+    private UUID pendingOrder(UUID productId) throws Exception {
+        UUID orderId = draftOrder(productId);
+        MvcResult submitted = transition(orderId, "submit");
+        assertThat(submitted.getResponse().getStatus()).as(text(submitted)).isEqualTo(200);
+        assertThat(statusOf(orderId)).isEqualTo("PENDING");
+        return orderId;
+    }
+
+    /** A vendor order moved on to CONFIRMED through the API while it is still NONE (D-01, allowed). */
+    private UUID confirmedOrder() throws Exception {
+        UUID orderId = pendingOrder(product);
+        MvcResult confirmed = transition(orderId, "confirm");
+        assertThat(confirmed.getResponse().getStatus()).as(text(confirmed)).isEqualTo(200);
+        assertThat(statusOf(orderId)).isEqualTo("CONFIRMED");
+        return orderId;
+    }
+
+    private Integer stockOf(UUID productId) {
+        return jdbc.queryForObject("SELECT quantity_in_stock FROM products WHERE tenant_id = ? AND id = ?",
+                Integer.class, tenant, productId);
     }
 
     /** The state a storefront card checkout leaves: a PaymentIntent exists, the money has not arrived. */
@@ -180,9 +284,9 @@ class OrderAwaitingPaymentGateIntegrationTest {
         return mockMvc.perform(post("/api/v1/orders/" + orderId + "/" + action).with(admin())).andReturn();
     }
 
-    private MvcResult vendorOrder(String idempotencyKey) throws Exception {
+    private MvcResult vendorOrder(UUID productId, String idempotencyKey) throws Exception {
         Map<String, Object> line = new LinkedHashMap<>();
-        line.put("productId", product);
+        line.put("productId", productId);
         line.put("quantity", 2);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("shopId", shop);

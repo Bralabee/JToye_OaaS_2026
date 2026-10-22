@@ -624,8 +624,163 @@ class OrderServiceTest {
                 AwaitingPaymentException.class,
                 () -> orderService.startPreparation(orderId)
         );
-        assertTrue(ex.getMessage().contains("is awaiting payment"));
+        assertEquals(AWAITING_PAYMENT_DETAIL, ex.getMessage());
+        assertFalse(ex.getMessage().contains("#"), "no issue number reaches staff");
+        assertEquals(OrderStatus.CONFIRMED, testOrder.getStatus(), "a refusal changes nothing");
         verify(orderRepository, never()).save(any(Order.class));
+        verifyNoInteractions(eventPublisher);
+    }
+
+    /** The 30-UI-SPEC staff sentence for the fixture order (issue #958). */
+    private static final String AWAITING_PAYMENT_DETAIL = "Order ORD-12345 is awaiting payment. It can't be submitted, "
+            + "accepted or prepared until the customer's payment completes.";
+
+    @Test
+    @DisplayName("#958: submitOrder refuses an unpaid card DRAFT - no save, no outbox event, status unchanged")
+    void testSubmitOrder_RefusesUnpaidCardDraft() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        testOrder.setPaymentStatus(PaymentStatus.PENDING);
+        testOrder.setPaymentReference("pi_unpaid_card_958");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.DRAFT, OrderEvent.SUBMIT))
+                .thenReturn(OrderStatus.PENDING);
+        // Lenient on purpose: on the guarded tree save is never reached; without the guard it lets the transition
+        // complete, so a missing refusal reads "nothing was thrown" rather than a downstream null.
+        lenient().when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AwaitingPaymentException ex = assertThrows(AwaitingPaymentException.class,
+                () -> orderService.submitOrder(orderId));
+
+        assertEquals(AWAITING_PAYMENT_DETAIL, ex.getMessage());
+        assertEquals(OrderStatus.DRAFT, testOrder.getStatus());
+        verify(orderRepository, never()).save(any(Order.class));
+        verifyNoInteractions(eventPublisher);
+        verifyNoInteractions(stockService);
+    }
+
+    @Test
+    @DisplayName("#958: confirmOrder refuses a PENDING order whose link payment FAILED - no save, no event, no stock decrement")
+    void testConfirmOrder_RefusesFailedLinkPayment() {
+        testOrder.setStatus(OrderStatus.PENDING);
+        testOrder.setPaymentStatus(PaymentStatus.FAILED);
+        testOrder.setPaymentReference("plink_failed_958");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.PENDING, OrderEvent.CONFIRM))
+                .thenReturn(OrderStatus.CONFIRMED);
+        // Lenient on purpose: on the guarded tree save is never reached; without the guard it lets the transition
+        // complete, so a missing refusal reads "nothing was thrown" rather than a downstream null.
+        lenient().when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AwaitingPaymentException ex = assertThrows(AwaitingPaymentException.class,
+                () -> orderService.confirmOrder(orderId));
+
+        assertEquals(AWAITING_PAYMENT_DETAIL, ex.getMessage());
+        assertEquals(OrderStatus.PENDING, testOrder.getStatus());
+        verify(orderRepository, never()).save(any(Order.class));
+        verifyNoInteractions(eventPublisher);
+        verifyNoInteractions(stockService);
+    }
+
+    @Test
+    @DisplayName("#958: a reference that is not yet CAPTURED/AUTHORIZED (NONE + pi_) is still awaiting payment on CONFIRM")
+    void testConfirmOrder_RefusesReferenceWithoutCapture() {
+        testOrder.setStatus(OrderStatus.PENDING);
+        testOrder.setPaymentStatus(PaymentStatus.NONE);
+        testOrder.setPaymentReference("pi_not_captured_958");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.PENDING, OrderEvent.CONFIRM))
+                .thenReturn(OrderStatus.CONFIRMED);
+        // Lenient on purpose: on the guarded tree save is never reached; without the guard it lets the transition
+        // complete, so a missing refusal reads "nothing was thrown" rather than a downstream null.
+        lenient().when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThrows(AwaitingPaymentException.class, () -> orderService.confirmOrder(orderId));
+        verify(orderRepository, never()).save(any(Order.class));
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    @DisplayName("#958: a CAPTURED card order submits and confirms as before")
+    void testCapturedOrderMovesNormally() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        testOrder.setPaymentStatus(PaymentStatus.CAPTURED);
+        testOrder.setPaymentReference("pi_captured_958");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.DRAFT, OrderEvent.SUBMIT))
+                .thenReturn(OrderStatus.PENDING);
+        when(stateMachineService.sendEvent(orderId, OrderStatus.PENDING, OrderEvent.CONFIRM))
+                .thenReturn(OrderStatus.CONFIRMED);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertEquals(OrderStatus.PENDING, orderService.submitOrder(orderId).getStatus());
+        assertEquals(OrderStatus.CONFIRMED, orderService.confirmOrder(orderId).getStatus());
+        verify(eventPublisher).publishStateChange(orderId, tenantId, shopId, "ORD-12345",
+                OrderStatus.DRAFT, OrderStatus.PENDING);
+        verify(eventPublisher).publishStateChange(orderId, tenantId, shopId, "ORD-12345",
+                OrderStatus.PENDING, OrderStatus.CONFIRMED);
+    }
+
+    @Test
+    @DisplayName("#958: an AUTHORIZED card order is confirmed as before")
+    void testAuthorizedOrderConfirms() {
+        testOrder.setStatus(OrderStatus.PENDING);
+        testOrder.setPaymentStatus(PaymentStatus.AUTHORIZED);
+        testOrder.setPaymentReference("pi_authorized_958");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.PENDING, OrderEvent.CONFIRM))
+                .thenReturn(OrderStatus.CONFIRMED);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertEquals(OrderStatus.CONFIRMED, orderService.confirmOrder(orderId).getStatus());
+        verify(orderRepository).save(testOrder);
+    }
+
+    @Test
+    @DisplayName("#958 / ADR-0007: a captured split DEPOSIT (balance still due) moves to PREPARING")
+    void testCapturedDepositWithBalanceDueStartsPreparation() {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setPaymentStatus(PaymentStatus.CAPTURED);
+        testOrder.setPaymentReference("pi_deposit_958");
+        testOrder.setDepositAmountPennies(1000L);
+        testOrder.setBalanceDuePennies(2000L);
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.CONFIRMED, OrderEvent.START_PREP))
+                .thenReturn(OrderStatus.PREPARING);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertEquals(OrderStatus.PREPARING, orderService.startPreparation(orderId).getStatus());
+    }
+
+    @Test
+    @DisplayName("D-01: a vendor order (NONE, no reference) submits and confirms with its events, exactly as before")
+    void testVendorOrderIsNotPaymentGated() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        assertEquals(PaymentStatus.NONE, testOrder.getPaymentStatus(), "precondition: a vendor order is NONE");
+        assertNull(testOrder.getPaymentReference(), "precondition: no payment reference");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.DRAFT, OrderEvent.SUBMIT))
+                .thenReturn(OrderStatus.PENDING);
+        when(stateMachineService.sendEvent(orderId, OrderStatus.PENDING, OrderEvent.CONFIRM))
+                .thenReturn(OrderStatus.CONFIRMED);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertEquals(OrderStatus.PENDING, orderService.submitOrder(orderId).getStatus());
+        assertEquals(OrderStatus.CONFIRMED, orderService.confirmOrder(orderId).getStatus());
+        verify(eventPublisher, times(2)).publishStateChange(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("D-02: an unpaid card DRAFT can still be cancelled")
+    void testCancelUnpaidCardDraftIsAllowed() {
+        testOrder.setStatus(OrderStatus.DRAFT);
+        testOrder.setPaymentStatus(PaymentStatus.PENDING);
+        testOrder.setPaymentReference("pi_abandoned_958");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.DRAFT, OrderEvent.CANCEL))
+                .thenReturn(OrderStatus.CANCELLED);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertEquals(OrderStatus.CANCELLED, orderService.cancelOrder(orderId).getStatus());
     }
 
     @Test
