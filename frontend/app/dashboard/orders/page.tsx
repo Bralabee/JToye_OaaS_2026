@@ -212,17 +212,19 @@ interface StateTransition {
 }
 
 /** Transition endpoints the server refuses while an order awaits its payment (plan 30-05, #958). */
-const PAYMENT_GATED_ENDPOINTS = new Set(["submit", "confirm"])
+const PAYMENT_GATED_ENDPOINTS = new Set(["submit", "confirm", "start-preparation"])
 
 /**
  * The row / detail-panel actions for an order.
  *
  * 30-06 (issue #958, UI-SPEC § S2): it takes the ORDER, not only its status. For an order awaiting
- * its card or link payment (`isAwaitingPayment`, the server rule) Submit and Confirm are not offered,
- * because the server refuses both with 409 awaiting-payment; the "Awaiting payment" badge takes their
- * place. Cancel stays on every non-terminal status, DRAFT included, so a vendor can clear an abandoned
- * unpaid DRAFT by hand (D-02; DRAFT -> CANCELLED is legal on the server). Display only: the server
- * stays authoritative (T-30-23).
+ * its card or link payment (`isAwaitingPayment`, the server rule) Submit, Confirm and Start Prep are not
+ * offered, because the server refuses all three with 409 awaiting-payment; the "Awaiting payment" badge
+ * takes their place. Cancel stays on every non-terminal status, DRAFT included, EXCEPT an unpaid card
+ * DRAFT: a one-tap cancel there leaves its PaymentIntent payable, and a customer still at checkout could
+ * then pay a cancelled order. Such a DRAFT is cleared by the D-02 tool, which cancels the intent first
+ * and refuses a paid one (PR #1030 review round 1, findings 1 and 5). Display only: the server stays
+ * authoritative (T-30-23).
  */
 const getAvailableTransitions = (order: {
   status: OrderStatus
@@ -307,9 +309,12 @@ const getAvailableTransitions = (order: {
     REFUNDED: [],
   }
   const available = transitions[order.status] || []
-  return isAwaitingPayment(order)
-    ? available.filter((t) => !PAYMENT_GATED_ENDPOINTS.has(t.endpoint))
-    : available
+  if (!isAwaitingPayment(order)) return available
+  return available.filter(
+    (t) =>
+      !PAYMENT_GATED_ENDPOINTS.has(t.endpoint) &&
+      !(order.status === "DRAFT" && t.endpoint === "cancel")
+  )
 }
 
 const PAGE_SIZE = 20
@@ -880,6 +885,7 @@ function OrdersPageInner() {
                               {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link orders, by the
                                   server's own rule; Submit/Confirm are not offered for them. */}
                               <AwaitingPaymentBadge
+                                orderStatus={order.status}
                                 paymentStatus={order.paymentStatus}
                                 paymentReference={order.paymentReference}
                               />

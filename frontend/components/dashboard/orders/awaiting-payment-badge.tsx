@@ -2,7 +2,7 @@ import { Hourglass } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { isAwaitingPayment } from "@/lib/awaiting-payment"
 import { cn } from "@/lib/utils"
-import type { PaymentStatus } from "@/types/api"
+import type { OrderStatus, PaymentStatus } from "@/types/api"
 
 /**
  * AwaitingPaymentBadge — 30-06 (issue #958, UI-SPEC § S2 "AwaitingPaymentBadge").
@@ -12,7 +12,10 @@ import type { PaymentStatus } from "@/types/api"
  * explains AFTER one. Shown on New-lane cards, grid cards and Orders-list rows.
  *
  * It renders exactly when `isAwaitingPayment` is true (the server rule, transcribed), and NOTHING for a
- * vendor order (NONE, no reference — D-01) or a paid one.
+ * vendor order (NONE, no reference — D-01) or a paid one. Given the order's status, it also renders
+ * NOTHING on a closed order (COMPLETED, CANCELLED, REFUNDED): such an order cannot be submitted, accepted
+ * or prepared at all, and a refunded card order keeps its pi_ reference with status REFUNDED, which the
+ * payment rule alone reads as unpaid (PR #1030 review round 1, finding 2).
  *
  * White with a heavy amber border and the Hourglass glyph, so it reads by word and shape, never by
  * colour alone (the VoidedBadge / UnverifiedContactBadge precedent).
@@ -22,15 +25,20 @@ export const AWAITING_PAYMENT_COPY = "Awaiting payment"
 export const AWAITING_PAYMENT_TITLE =
   "The customer hasn't paid yet. This order can't be accepted or prepared until they do."
 
+const CLOSED_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set(["COMPLETED", "CANCELLED", "REFUNDED"])
+
 export function AwaitingPaymentBadge({
+  orderStatus,
   paymentStatus,
   paymentReference,
   className,
 }: {
+  orderStatus?: OrderStatus | null
   paymentStatus?: PaymentStatus | null
   paymentReference?: string | null
   className?: string
 }) {
+  if (orderStatus != null && CLOSED_ORDER_STATUSES.has(orderStatus)) return null
   if (!isAwaitingPayment({ paymentStatus, paymentReference })) return null
   return (
     <Badge

@@ -404,6 +404,7 @@ function KdsNewCard({
           {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link order. Accept stays enabled: the badge
               warns before the tap and the server's refusal (the alert below) explains after it. */}
           <AwaitingPaymentBadge
+            orderStatus={order.status}
             paymentStatus={order.paymentStatus}
             paymentReference={order.paymentReference}
           />

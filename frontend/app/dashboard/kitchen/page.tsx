@@ -1183,6 +1183,7 @@ export default function KitchenPage() {
                             rule. Warns before the tap; Start Preparing stays enabled so the
                             server's refusal (toast) is always reachable. */}
                         <AwaitingPaymentBadge
+                          orderStatus={order.status}
                           paymentStatus={order.paymentStatus}
                           paymentReference={order.paymentReference}
                         />
