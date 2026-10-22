@@ -1318,15 +1318,28 @@ case "$method $base" in
   "GET /api/v1/public/orders/"*) key=tracking; code=200 ;;
   "POST /v1/payment_intents/"*"/confirm") key=pi-confirm; code=200; : > "$STUB_LOG_DIR/confirmed" ;;
   "GET /v1/payment_intents") key=pi-list; code=200 ;;
-  "GET /v1/payment_intents/"*) if [ -f "$STUB_LOG_DIR/confirmed" ]; then key=pi-after; else key=pi-before; fi; code=200 ;;
+  "GET /v1/payment_intents/"*)
+    pid="${base#/v1/payment_intents/}"
+    if [ -f "$STUB_RESP_DIR/pi-$pid.json" ]; then
+      if [ -f "$STUB_LOG_DIR/pi-canceled-$pid" ]; then key="pi-$pid-canceled"; else key="pi-$pid"; fi
+    elif [ -f "$STUB_LOG_DIR/confirmed" ]; then key=pi-after; else key=pi-before; fi; code=200 ;;
+  "POST /v1/payment_intents/"*"/cancel")
+    pid="${base#/v1/payment_intents/}"; pid="${pid%/cancel}"; key="pi-$pid-canceled"; code=200; : > "$STUB_LOG_DIR/pi-canceled-$pid" ;;
   "GET /v1/events") key=events; code=200 ;;
   # The hand tools (plan 30-07): the vendor's order lists and transitions.
   "GET /api/v1/orders/status/"*) key="orders-status-${base##*/}"; code=200 ;;
   "POST /api/v1/orders") key=vendor-order-out; code=201 ;;
+  "GET /api/v1/orders/"*"/detail")
+    oid="${base#/api/v1/orders/}"; oid="${oid%/detail}"
+    if [ -f "$STUB_LOG_DIR/order-cancelled-$oid" ]; then key="detail-$oid-after"; else key="detail-$oid"; fi; code=200 ;;
+  "POST /api/v1/orders/"*"/cancel")
+    oid="${base#/api/v1/orders/}"; oid="${oid%/cancel}"; key=empty; code=200; : > "$STUB_LOG_DIR/order-cancelled-$oid" ;;
   "POST /api/v1/orders/"*"/submit"|"POST /api/v1/orders/"*"/confirm"|"POST /api/v1/orders/"*"/start-preparation")
     key=transition; code="${STUB_TRANSITION_CODE:-200}" ;;
 esac
-if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then key=problem; code=500; fi
+if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then
+  key=problem; code=500; rm -f "$STUB_LOG_DIR/pi-canceled-${pid:-}" "$STUB_LOG_DIR/order-cancelled-${oid:-}"
+fi
 printf '%s %s -> %s\n' "$method" "$url" "$code" >> "$STUB_LOG_DIR/curl-flow.log"
 if [ -n "$out" ]; then
   if [ -n "$key" ] && [ -f "$STUB_RESP_DIR/$key.json" ]; then cat "$STUB_RESP_DIR/$key.json" > "$out"; else printf '{}' > "$out"; fi
@@ -1400,6 +1413,7 @@ IDF
     shift
     : > "$ast/logs/kubectl.log"; : > "$ast/logs/kubelogin.log"; : > "$ast/logs/curl.log"
     : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
+    rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -1854,6 +1868,153 @@ IDF
     if [ -z "$why" ]; then _st_result "PASS vendor-order-not-none rc=1 payment_status_PENDING=refused status_PENDING=refused"
     else _st_result "FAIL vendor-order-not-none $why"; fails=$((fails + 1)); fi
   fi
+  # ===== cancel-drafts (D-02): an explicit list, intent first, both read back ===
+  # _st_cancel_fx ID NUMBER PI(or "") ORDER_STATUS PAYMENT_STATUS PI_STATUS LIVEMODE
+  _st_cancel_fx() {
+    jq -n --arg id "$1" --arg n "$2" --arg pi "$3" --arg st "$4" --arg ps "$5" '{id: $id, orderNumber: $n, status: $st,
+        paymentStatus: $ps, paymentReference: (if $pi == "" then null else $pi end), totalAmountPennies: 950,
+        customerName: "Pii PIIZQ7 Name", customerEmail: "piizq7@example.invalid", customerPhone: "07700 900777",
+        addressLine1: "1 PIIZQ7 Road", allergyNote: "PIIZQ7 peanuts", items: []}' > "$ast/resp/detail-$1.json"
+    jq '.status = "CANCELLED"' "$ast/resp/detail-$1.json" > "$ast/resp/detail-$1-after.json"
+    if [ -n "$3" ]; then
+      jq -n --arg id "$3" --arg st "$6" --argjson lm "$7" --arg n "$2" --arg cs "${3}_secret_STUBCS77" '{id: $id,
+          object: "payment_intent", status: $st, livemode: $lm, amount: 950, currency: "gbp", client_secret: $cs,
+          receipt_email: "piizq7@example.invalid", metadata: {order_number: $n}}' > "$ast/resp/pi-$3.json"
+      jq '.status = "canceled" | .cancellation_reason = "abandoned"' "$ast/resp/pi-$3.json" > "$ast/resp/pi-$3-canceled.json"
+    fi
+  }
+  _st_flow() { command grep -cE "$1" "$ast/logs/curl-flow.log" || true; }
+  _st_line() { command grep -nE "$1" "$ast/logs/curl-flow.log" | head -n 1 | cut -d: -f1 || true; }
+  local re_stripe='^[A-Z]+ https://api\.stripe\.com/' re_scancel='^POST https://api\.stripe\.com/v1/payment_intents/[^ ]+/cancel -> ' \
+        re_vcancel='^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/[^ ]+/cancel -> ' \
+        cancel_re='^SEED-CANCEL order=ORD-STUB-D001 intent=pi_drafta intent_status=canceled order_status=CANCELLED livemode=false at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'
+  local cd_args=("${tool_args[@]}" --stage cancel-drafts)
+
+  # --- cancel-one: GET order, GET intent, cancel intent, read back, cancel order, read back
+  _st_cancel_fx "$oA" ORD-STUB-D001 pi_drafta DRAFT PENDING requires_payment_method false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders ORD-STUB-D001
+  why=""
+  local l_sc l_pi2 l_vc l_det2
+  l_sc=$(_st_line '^POST https://api\.stripe\.com/v1/payment_intents/pi_drafta/cancel -> 200$')
+  l_pi2=$(command grep -nE '^GET https://api\.stripe\.com/v1/payment_intents/pi_drafta -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  l_vc=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$oA/cancel -> 200$")
+  l_det2=$(command grep -nE "^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/$oA/detail -> 200$" "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$(command grep -E '^SEED-CANCEL ' <<<"$ST_OUT" || true)" =~ $cancel_re ]]; then why="no SEED-CANCEL verdict: $(command grep -E '^SEED-CANCEL ' <<<"$ST_OUT" || echo none)"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CANCEL-DRAFTS requested=1 cancelled=1 refused=0" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ -z "$l_sc" ] || [ -z "$l_pi2" ] || [ -z "$l_vc" ] || [ -z "$l_det2" ]; then why="a step is missing: stripe_cancel=${l_sc:-none} intent_readback=${l_pi2:-none} order_cancel=${l_vc:-none} order_readback=${l_det2:-none}"
+  elif ! { [ "$l_sc" -lt "$l_pi2" ] && [ "$l_pi2" -lt "$l_vc" ] && [ "$l_vc" -lt "$l_det2" ]; }; then why="out of order: stripe_cancel=$l_sc intent_readback=$l_pi2 order_cancel=$l_vc order_readback=$l_det2"
+  elif ! command grep -qF 'Idempotency-Key: d02-cancel-pi_drafta' "$ast/logs/curl.log" || ! command grep -qF 'cancellation_reason=abandoned' "$ast/logs/curl.log"; then
+    why="the Stripe cancel lacks Idempotency-Key d02-cancel-pi_drafta or cancellation_reason=abandoned"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a key or client secret was printed or put in argv"
+  elif [ "$(_st_pii)" -ne 0 ]; then why="a customer field was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS cancel-one rc=0 order=stripe_cancel:$l_sc<intent_readback:$l_pi2<order_cancel:$l_vc<order_readback:$l_det2 verdict=SEED-CANCEL"
+  else _st_result "FAIL cancel-one $why"; fails=$((fails + 1)); fi
+
+  # --- cancel-not-draft: a PENDING order, a vendor (NONE) DRAFT, an unlisted number
+  local sub
+  why=""
+  for sub in pending none unlisted; do
+    case "$sub" in
+      pending)  _st_cancel_fx "$oB" ORD-STUB-D002 pi_draftb PENDING PENDING requires_payment_method false; set -- ORD-STUB-D002 ;;
+      none)     _st_cancel_fx "$oC" ORD-STUB-D003 "" DRAFT NONE x false; set -- ORD-STUB-D003 ;;
+      unlisted) set -- ORD-STUB-D999 ;;
+    esac
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders "$1"
+    if [ "$ST_RC" -ne 1 ]; then why="$sub: rc=$ST_RC (want 1)"
+    elif ! command grep -qF 'REFUSED [not-draft]' <<<"$ST_ERR"; then why="$sub: stderr lacks 'REFUSED [not-draft]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_flow "$re_stripe")" -ne 0 ]; then why="$sub: Stripe calls=$(_st_flow "$re_stripe") (want 0)"
+    elif [ "$(_st_flow "$re_vcancel")" -ne 0 ]; then why="$sub: vendor cancel calls=$(_st_flow "$re_vcancel") (want 0)"
+    elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CANCEL-DRAFTS requested=1 cancelled=0 refused=1" ]; then why="$sub: the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+    fi
+    [ -z "$why" ] || break
+  done
+  set --
+  if [ -z "$why" ]; then _st_result "PASS cancel-not-draft rc=1 pending+none+unlisted=refused stripe_calls=0 vendor_cancels=0"
+  else _st_result "FAIL cancel-not-draft $why"; fails=$((fails + 1)); fi
+
+  # --- cancel-paid: succeeded, processing and requires_capture are never cancelled
+  why=""
+  for sub in succeeded processing requires_capture; do
+    _st_cancel_fx "$oA" ORD-STUB-D001 pi_drafta DRAFT PENDING "$sub" false
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders ORD-STUB-D001
+    if [ "$ST_RC" -ne 1 ]; then why="$sub: rc=$ST_RC (want 1)"
+    elif ! command grep -qF 'REFUSED [paid]' <<<"$ST_ERR"; then why="$sub: stderr lacks 'REFUSED [paid]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/payment_intents/pi_drafta -> 200$')" -lt 1 ]; then why="$sub: the intent was never read (the refusal cannot come from it)"
+    elif [ "$(_st_flow "$re_scancel")" -ne 0 ]; then why="$sub: Stripe cancel calls=$(_st_flow "$re_scancel") (want 0)"
+    elif [ "$(_st_flow "$re_vcancel")" -ne 0 ]; then why="$sub: vendor cancel calls=$(_st_flow "$re_vcancel") (want 0)"
+    fi
+    [ -z "$why" ] || break
+  done
+  if [ -z "$why" ]; then _st_result "PASS cancel-paid rc=1 succeeded+processing+requires_capture=refused stripe_cancels=0 vendor_cancels=0"
+  else _st_result "FAIL cancel-paid $why"; fails=$((fails + 1)); fi
+
+  # --- cancel-live: an intent that reads livemode true is refused ---------------
+  _st_cancel_fx "$oA" ORD-STUB-D001 pi_drafta DRAFT PENDING requires_payment_method true
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders ORD-STUB-D001
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+  elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow "$re_scancel")" -ne 0 ] || [ "$(_st_flow "$re_vcancel")" -ne 0 ]; then why="cancel calls: stripe=$(_st_flow "$re_scancel") vendor=$(_st_flow "$re_vcancel") (want 0, 0)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS cancel-live rc=1 stripe_cancels=0 vendor_cancels=0"
+  else _st_result "FAIL cancel-live $why"; fails=$((fails + 1)); fi
+
+  # --- cancel-stripe-fails: D001's Stripe cancel answers 500; D002 still goes ---
+  _st_cancel_fx "$oA" ORD-STUB-D001 pi_drafta DRAFT PENDING requires_payment_method false
+  _st_cancel_fx "$oB" ORD-STUB-D002 pi_draftb DRAFT FAILED requires_payment_method false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STUB_FAIL_ON='^POST /v1/payment_intents/pi_drafta/cancel$' \
+    -- "${cd_args[@]}" --orders ORD-STUB-D001,ORD-STUB-D002
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^POST https://api\.stripe\.com/v1/payment_intents/pi_drafta/cancel -> 500$')" -ne 1 ]; then why="the failing Stripe cancel was not observed"
+  elif [ "$(_st_flow "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$oA/cancel ")" -ne 0 ]; then why="the order whose intent did not cancel was cancelled anyway"
+  elif [ "$(_st_flow "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$oB/cancel -> 200$")" -ne 1 ]; then why="the next named order (D002) was not cancelled: the loop stopped at the failure"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "CANCEL-DRAFTS requested=2 cancelled=1 refused=1" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS cancel-stripe-fails rc=1 D001_vendor_cancels=0 D002_cancelled=1 summary=2/1/1"
+  else _st_result "FAIL cancel-stripe-fails $why"; fails=$((fails + 1)); fi
+
+  # --- cancel-already-canceled: no Stripe write, the order is still cancelled ---
+  _st_cancel_fx "$oA" ORD-STUB-D001 pi_drafta DRAFT PENDING canceled false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders ORD-STUB-D001
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^POST https://api\.stripe\.com/')" -ne 0 ]; then why="Stripe POSTs=$(_st_flow '^POST https://api\.stripe\.com/') on an already-canceled intent (want 0)"
+  elif [ "$(_st_flow "$re_vcancel")" -ne 1 ]; then why="vendor cancel calls=$(_st_flow "$re_vcancel") (want 1)"
+  elif ! [[ "$(command grep -E '^SEED-CANCEL ' <<<"$ST_OUT" || true)" =~ $cancel_re ]]; then why="no SEED-CANCEL verdict"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS cancel-already-canceled rc=0 stripe_posts=0 vendor_cancels=1"
+  else _st_result "FAIL cancel-already-canceled $why"; fails=$((fails + 1)); fi
+
+  # --- cancel-only-listed: three cancellable DRAFTs, one named, one touched -----
+  _st_cancel_fx "$oA" ORD-STUB-D001 pi_drafta DRAFT PENDING requires_payment_method false
+  _st_cancel_fx "$oB" ORD-STUB-D002 pi_draftb DRAFT FAILED requires_payment_method false
+  _st_cancel_fx "$oC" ORD-STUB-D003 pi_draftc DRAFT PENDING requires_payment_method false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders ORD-STUB-D001
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow "$re_vcancel")" -ne 1 ]; then why="vendor cancel calls=$(_st_flow "$re_vcancel") (want exactly 1)"
+  elif [ "$(_st_flow "/api/v1/orders/$oA/cancel -> 200$")" -ne 1 ]; then why="the one cancel was not the named order's"
+  elif [ "$(_st_flow "$oB|$oC|pi_draftb|pi_draftc")" -ne 0 ]; then why="an unnamed order or its intent was touched: $(command grep -E "$oB|$oC|pi_draftb|pi_draftc" "$ast/logs/curl-flow.log" | head -n 2 | tr '\n' '|')"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS cancel-only-listed rc=0 vendor_cancels=1 unnamed_touched=0"
+  else _st_result "FAIL cancel-only-listed $why"; fails=$((fails + 1)); fi
+
+  # --- cancel-empty-list: no list, an empty list, or a malformed entry ----------
+  why=""
+  for sub in absent empty malformed; do
+    case "$sub" in
+      absent)    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" ;;
+      empty)     _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders "" ;;
+      malformed) _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${cd_args[@]}" --orders 'ORD-STUB-D001,*' ;;
+    esac
+    why=$(_st_refusal 2 "USAGE ERROR: --stage cancel-drafts needs --orders" 0 0) || { why="$sub: $why"; break; }
+    why=""
+  done
+  if [ -z "$why" ]; then _st_result "PASS cancel-empty-list rc=2 absent+empty+malformed=usage-error az_calls=0 curl_calls=0"
+  else _st_result "FAIL cancel-empty-list $why"; fails=$((fails + 1)); fi
 
   _st_render
   [ "$fails" -eq 0 ]
