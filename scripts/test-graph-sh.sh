@@ -110,6 +110,16 @@ run env GRAPH_PATHSPEC="mcp-server" "$G" god-nodes --top 1
   && pass "(g) previous graph and stamp kept byte-identical" || fail "(g) previous graph or stamp changed"
 run "$G" affected TenantContext
 [ "$rc" -eq 0 ] && [ "$(rebuilds "$out")" -eq 0 ] && pass "(g) kept graph still answers" || fail "(g) kept graph: rc=$rc"
+# (g2) a REAL shrink has a way out: `rebuild --accept-shrink` takes it, and only that does
+grep -q 'rebuild --accept-shrink' <<< "$(env GRAPH_PATHSPEC="mcp-server" "$G" god-nodes --top 1 2>&1)" \
+  && pass "(g2) the shrink refusal names its way out" || fail "(g2) the shrink refusal does not name --accept-shrink"
+run env GRAPH_PATHSPEC="mcp-server" "$G" rebuild --accept-shrink
+[ "$rc" -eq 0 ] && pass "(g2) rebuild --accept-shrink takes the smaller graph (rc=0)" || fail "(g2) rebuild --accept-shrink -> rc=$rc: $(tail -1 <<< "$out")"
+run env GRAPH_PATHSPEC="mcp-server" "$G" god-nodes --top 1
+[ "$rc" -eq 0 ] && [ "$(rebuilds "$out")" -eq 0 ] && pass "(g2) the accepted graph then answers without rebuilding" \
+  || fail "(g2) after accepting: rc=$rc rebuilds=$(rebuilds "$out")"
+run "$G" rebuild --bogus
+[ "$rc" -eq 2 ] && pass "(g2) rebuild refuses an unknown flag (rc=2)" || fail "(g2) rebuild --bogus -> rc=$rc"
 
 echo "graphify $(graphify --version 2>/dev/null | awk '{print $2}') · wrapper $wrapper · failed arms: $fails"
 [ "$fails" -eq 0 ]

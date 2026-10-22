@@ -24,7 +24,8 @@
 #   scripts/graph.sh path     <A> <B> [--undirected]            shortest path, within one service
 #   scripts/graph.sh god-nodes [--top N]                        most-connected nodes
 #   scripts/graph.sh status                                     stamp + freshness, never builds
-#   scripts/graph.sh rebuild                                    force a rebuild now
+#   scripts/graph.sh rebuild [--accept-shrink]                  force a rebuild now; --accept-shrink
+#                                                                takes a graph under half the old size
 #
 #   The first line of every answer is the stamp: commit, graphify version, node count, and how
 #   many uncommitted files the graph does NOT contain (it is built from HEAD).
@@ -67,7 +68,7 @@ usage() {
 
 # ── argument validation first: a refused command must execute nothing ──
 cmd=${1:-}; [ $# -gt 0 ] && shift
-depth=1; top_n=10; undirected=0; args=()
+depth=1; top_n=10; undirected=0; args=(); accept_shrink=0
 case "$cmd" in
   affected|explain)
     [ $# -ge 1 ] || usage
@@ -89,14 +90,18 @@ case "$cmd" in
       else die 2 "unexpected argument for god-nodes: $1"; fi
     done
     [[ "$top_n" =~ ^[1-9][0-9]?$ ]] || die 2 "--top must be 1..99 (got: $top_n)" ;;
-  status|rebuild)
+  status)
     [ $# -eq 0 ] || die 2 "$cmd takes no arguments" ;;
+  rebuild)
+    accept_shrink=0
+    if [ "${1:-}" = --accept-shrink ]; then accept_shrink=1; shift; fi
+    [ $# -eq 0 ] || die 2 "rebuild takes only --accept-shrink" ;;
   ''|-h|--help|help) usage ;;
   *) die 2 "refused: '$cmd' is not an allowed subcommand (affected, explain, path, god-nodes, status, rebuild)" ;;
 esac
 
 # ── preconditions (exit 5) ──
-command -v git >/dev/null 2>&1 || die 5 "git not found"
+for t in git flock sha1sum tar; do command -v "$t" >/dev/null 2>&1 || die 5 "$t not found"; done
 top=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null) || die 5 "not inside a git checkout: $SCRIPT_DIR"
 gbin=$(type -P "$GRAPHIFY_BIN") || die 5 "graphify not found ($GRAPHIFY_BIN); install: uv tool install \"graphifyy[sql]\""
 # The [sql] extra: without tree-sitter-sql every .sql file yields zero nodes behind a warning at
@@ -104,7 +109,15 @@ gbin=$(type -P "$GRAPHIFY_BIN") || die 5 "graphify not found ($GRAPHIFY_BIN); in
 venv=$(head -1 "$(readlink -f "$gbin")" | sed -n 's|^#!\(.*\)/bin/python[0-9.]*$|\1|p')
 [ -n "$venv" ] && compgen -G "$venv/lib/python*/site-packages/tree_sitter_sql/__init__.py" >/dev/null \
   || die 5 "graphify's [sql] extra is missing (or its venv could not be located from $gbin); repair: uv tool install \"graphifyy[sql]\""
-ver=$("$gbin" --version 2>/dev/null | awk 'NR==1{print $2}')
+# graphify's environment: no credentials, so nothing can reach a paid backend. Built before
+# the first graphify call, so even `--version` never sees them.
+scrub=()
+while IFS= read -r v; do
+  case "$v" in *_API_KEY|*_AUTH_TOKEN|AWS_*|OLLAMA_*|AZURE_OPENAI_*) scrub+=(-u "$v") ;; esac
+done < <(compgen -e)
+gfy() { env "${scrub[@]}" "$gbin" "$@"; }
+
+ver=$(gfy --version 2>/dev/null | awk 'NR==1{print $2}')
 [ -n "$ver" ] || die 5 "could not read the graphify version from: $gbin --version"
 [ "$ver" = "$GRAPH_VALIDATED_VERSION" ] \
   || note "WARNING: graphify $ver is not the validated $GRAPH_VALIDATED_VERSION; answers are unproven until the acceptance arms are re-run on it"
@@ -112,16 +125,11 @@ ver=$("$gbin" --version 2>/dev/null | awk 'NR==1{print $2}')
 head_sha=$(git -C "$top" rev-parse HEAD 2>/dev/null) || die 5 "no HEAD commit in $top"
 read -r -a pathspec <<< "$GRAPH_PATHSPEC"
 spec_sha=$(printf '%s' "$GRAPH_PATHSPEC" | sha1sum | cut -c1-12)
-key="$GRAPH_CACHE_ROOT/$(basename "$top")-$(printf '%s' "$top" | sha1sum | cut -c1-8)"
+key_sfx=$(printf '%s' "$top" | sha1sum | cut -c1-8)
+[ ${#spec_sha} -eq 12 ] && [ ${#key_sfx} -eq 8 ] || die 5 "sha1sum produced no digest"
+key="$GRAPH_CACHE_ROOT/$(basename "$top")-$key_sfx"
 mkdir -p "$key" || die 5 "cannot create the graph cache: $key"
 graph="$key/graph/graph.json"
-
-# graphify's environment: no credentials, so nothing can reach a paid backend.
-scrub=()
-while IFS= read -r v; do
-  case "$v" in *_API_KEY|*_AUTH_TOKEN|AWS_*|OLLAMA_*|AZURE_OPENAI_*) scrub+=(-u "$v") ;; esac
-done < <(compgen -e)
-gfy() { env "${scrub[@]}" "$gbin" "$@"; }
 
 stamp_get() { [ -f "$key/stamp" ] && sed -n "s/^$1=//p" "$key/stamp" | head -1; }
 
@@ -162,9 +170,9 @@ rebuild() {
   [ -n "$nodes" ] && [ -f "$key/next/graph.json" ] \
     || die 6 "build reported no node count or wrote no graph.json; log: $key/build.log"
   old=$(stamp_get nodes); old=${old:-0}
-  if [ "$nodes" -eq 0 ] || { [ "$old" -gt 0 ] && [ $((nodes * 2)) -lt "$old" ]; }; then
+  if [ "$nodes" -eq 0 ] || { [ "$accept_shrink" -eq 0 ] && [ "$old" -gt 0 ] && [ $((nodes * 2)) -lt "$old" ]; }; then
     rm -rf "$key/next" "$key/src"
-    die 4 "SUSPICIOUS SHRINK: $nodes nodes against $old before; the previous graph is kept"
+    die 4 "SUSPICIOUS SHRINK: $nodes nodes against $old before; the previous graph is kept. If the shrink is real (code deleted, pathspec narrowed on purpose): scripts/graph.sh rebuild --accept-shrink"
   fi
   rm -rf "$key/prev"
   [ -d "$key/graph" ] && mv "$key/graph" "$key/prev"
@@ -178,7 +186,7 @@ rebuild() {
 
 print_stamp() {
   local dirty
-  dirty=$(git -C "$top" status --porcelain 2>/dev/null | grep -c .)
+  dirty=$(git -C "$top" status --porcelain -- "${pathspec[@]}" 2>/dev/null | grep -c .)
   printf 'graph: commit %s · graphify %s · %s nodes · built %s · %s uncommitted file(s) not in graph\n' \
     "$(stamp_get head | cut -c1-12)" "$(stamp_get version)" "$(stamp_get nodes)" "$(stamp_get built)" "$dirty"
 }
@@ -220,6 +228,10 @@ case "$cmd" in
 esac
 
 [ -z "$(stale_reason)" ] || rebuild 0
+# Readers share the lock a rebuild takes exclusively, so a concurrent rebuild cannot swap the
+# graph directory out from under a query that is reading it.
+exec 8>"$key/lock"
+flock -s 8 || die 6 "could not lock $key/lock"
 print_stamp
 case "$cmd" in
   affected)
