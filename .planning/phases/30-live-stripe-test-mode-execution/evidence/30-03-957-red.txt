@@ -1,26 +1,24 @@
 30-03 — issue #957 RED arms against the pre-merge staging runtime
 ==================================================================
-Branch: fix/957-card-checkout-payment-step (HEAD before this plan's commit: f137785e)
+Branch: fix/957-card-checkout-payment-step
 Operator host: the primary checkout. All times UTC. No key value, client secret or password appears below.
 
-RESULT IN ONE LINE
-  Both arms are RED on today's staging, but arm (b) went red EARLIER than planned: the browser's
-  order POST is refused at the CORS preflight, because the staging edge does not allow the
-  Idempotency-Key request header. No order was created, so there is no unpaid DRAFT to list for
-  plan 30-09, and the payment-step assertion (the #957 assertion proper) was never reached.
-  The PR was NOT opened: the executor stopped at a decision checkpoint (see "FINDING" below).
+RESULT IN ONE LINE (current, 2026-10-22T11:00Z)
+  Both arms are RED on today's staging, and arm (b) is RED exactly where #957 says it should be:
+  the order POST is accepted (201, so the #1025 CORS fix works) and the Stripe Payment Element
+  never appears. The run left ONE unpaid staging DRAFT, ORD-1AAC0CDE-20261022-0C094A2C, for plan
+  30-09 to cancel. The earlier run (04:14Z) that went red at the CORS preflight is kept below,
+  marked SUPERSEDED.
 
-RUNNING STAGING FRONTEND
-  2026-10-22T04:14:38Z  kubectl --context jtoye-stg-aks: frontend image
-    ghcr.io/bralabee/jtoye-frontend:87a1f7722ff66b6644a3b5f8ea1bac8e3d940c23
-  The plan named 4f3f3e14 (the research-time image). Staging has redeployed since. 87a1f772 is an
-  ancestor of origin/main (git merge-base --is-ancestor: true; "integ: product shop required +
-  allergen label (#959, #960) + shop-admin authorization (#961) (#1022)", 2026-10-21T21:19:26+01:00)
-  and does not contain 30-01, so it is keyless by construction. Arm (a) confirms that by reading
-  the served chunks.
+RUNNING STAGING (re-run, after #1026)
+  2026-10-22T10:58:47Z  kubectl --context jtoye-stg-aks -n jtoye-staging:
+    core-java, edge-go, frontend: ghcr.io/bralabee/jtoye-*:4208b08e0d1990a00543ce369b771d8ccc2bbf08
+    frontend pod frontend-7f8f5bc79c-vcspl Running ready=true, image ...:4208b08e (the pod, not only the spec)
+  4208b08e is main after #1026 (the CORS fix). It does not contain 30-01, so the frontend is
+  keyless by construction; arm (a) confirms that from the served chunks.
 
 ARM (a) — served checkout chunks carry no publishable key  [RED as planned]
-  2026-10-22T04:14:38Z
+  2026-10-22T10:58:47Z -> 10:58:52Z
   $ bash scripts/check-frontend-stripe-key-baked.sh --url https://app-staging.olajay.co.uk \
       --path /shop/staging-test-kitchen/checkout --expect-prefix pk_test_ --control api-staging.olajay.co.uk
   chunks=22 distinct_pk=0 keys=none expect_prefix=pk_test_ residues=1 secrets=0 control=1
@@ -30,84 +28,150 @@ ARM (a) — served checkout chunks carry no publishable key  [RED as planned]
   Non-vacuity: control=1 (the inlined API origin is visible to the same scan), so 0 keys is a
   measurement, not a blind scan. The green arm is plan 30-04's, on the merged image.
 
-ARM (b) — the staging card-checkout spec  [RED, at the order POST, not at the payment step]
+ARM (b) — the staging card-checkout spec  [RED at the payment-step expectation, the #957 assertion]
+  2026-10-22T10:59:11Z -> 10:59:49Z  rc=1
   Run shape: (cd frontend && STAGING_E2E=1 PLAYWRIGHT_BASE_URL=https://app-staging.olajay.co.uk
-    STAGING_STRIPE_PUBLISHABLE_KEY=pk_test_redarm00000000 npx playwright test e2e/staging-card-checkout.spec.ts
-    --project=desktop --reporter=line)
-  The key is a deliberate placeholder with the pk_test_ prefix: the run had to get past the spec's
-  test-mode guard, and the RED run stops before the Stripe read, so no real key was needed or sent.
-
-  Run 1  2026-10-22T04:14:51Z -> 04:15:27Z  rc=1
-    TimeoutError: page.waitForResponse: Timeout 30000ms exceeded while waiting for event "response"
-      at the order POST wait (spec l.172 at the time)
+    STAGING_STRIPE_PUBLISHABLE_KEY=<from .env STRIPE_PUBLISHABLE_KEY, through the environment only>
+    npx playwright test e2e/staging-card-checkout.spec.ts --project=desktop --reporter=line)
+  Key passed: prefix pk_test_, length 107 (the value never reached argv or the log).
+  Output (verbatim lines):
+    STAGING-CARD-ORDER-CREATED order=ORD-1AAC0CDE-20261022-0C094A2C
     PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen/checkout
-    Failure snapshot (error-context.md, read locally, not committed): Collection [pressed], the allergen
-    checkbox [checked], and   alert: "Failed to place order. Please try again."   above Place order · £9.50.
-    client-secret pattern count in the output: 0
+    PAGE_TEXT_ON_FAILURE ... Checkout 1 item · £9.50 Delivery Collection Your details Full name * Email
+      address * Phone number * ... Order summary 1 Pelau £9.50 Subtotal £9.50 Delivery Free
+    Error: #957: no Stripe payment step within 30 s after Place order (order ORD-1AAC0CDE-20261022-0C094A2C
+      is an unpaid DRAFT)
+    expect(locator).toBeVisible() failed
+    Locator: locator('iframe[src*="elements-inner-payment"]').or(locator('iframe[title="Secure payment input frame"]')).first()
+    Error: element(s) not found          (spec l.213)
+    1 failed
+  So: the POST answered 201 with an orderNumber and a clientSecret (the spec only reaches l.213
+  after both expectations at l.190-201 hold), and the page fell back to the order form. That
+  is the #957 defect: a keyless image cannot mount the Payment Element.
+  Leak checks over the full run output: occurrences of the key value = 0; client-secret pattern
+  (_secret_<alnum>) = 0.
 
-  Run 2 (spec with request-failure and redacted console-error diagnostics added)
-    2026-10-22T04:15:56Z -> 04:16:31Z  rc=1
-    CONSOLE_ERROR Access to XMLHttpRequest at 'https://api-staging.olajay.co.uk/public/shops/staging-test-kitchen/orders'
-      from origin 'https://app-staging.olajay.co.uk' has been blocked by CORS policy: Request header field
-      idempotency-key is not allowed by Access-Control-Allow-Headers in preflight response.
-    ORDER_REQUEST_FAILED POST api-staging.olajay.co.uk/public/shops/staging-test-kitchen/orders net::ERR_FAILED
-    TimeoutError: page.waitForResponse: Timeout 30000ms exceeded ...
-    client-secret pattern count in the output: 0
+  The DRAFT, read back from public tracking (the /track call, bound to the order's email):
+    2026-10-22T11:00Z  GET https://api-staging.olajay.co.uk/api/v1/public/orders/ORD-1AAC0CDE-20261022-0C094A2C?email=<the run's guest address>
+    http=200 status=DRAFT paymentStatus=PENDING fulfilmentType=COLLECTION createdAt=2026-10-22T10:59:18.560845Z
+    no key containing "secret" in the response
+  Unpaid staging DRAFT for plan 30-09's cancel list (D-02): ORD-1AAC0CDE-20261022-0C094A2C
+    (guest address guest.staging+957-20261022T105913Z@olajay.co.uk; its PaymentIntent id is not
+    recorded here: 30-09 reads it server-side)
 
-  Unpaid staging DRAFT created by these runs: NONE. A browser that fails the preflight never sends
-  the actual POST (net::ERR_FAILED, no response event, the page's own "Failed to place order"), so
-  core-java never saw an order. Plan 30-09's cancel list gains nothing from 30-03.
+PREREQUISITE THAT UNBLOCKED ARM (b): issue #1025 / PR #1026
+  The 04:14Z run below found that the staging ingress did not admit Idempotency-Key in the CORS
+  preflight, so no browser order could be POSTed. The owner chose to fix that in a separate PR
+  first (decision checkpoint, Option A):
+    issue #1025 filed for the ingress CORS defect;
+    PR #1026 "fix(k8s): ingress CORS admits Idempotency-Key (#1025)", 4-round review series
+      (admissible 5 -> 1 -> 0 -> 0), squash-merged to main as 4208b08e. It also admits X-Tenant-Id,
+      adds render invariant INV-24 and scripts/check-cors-preflight.sh;
+    main CI run 39753358868: Deploy to Staging success, Staging Edge Probe success;
+    scripts/check-cors-preflight.sh against live staging: rc 1 before the merge, rc 0 after
+      (authorization, idempotency-key and x-tenant-id admitted) — run by the orchestrator.
+  This branch merged origin/main at f53cd464 (one conflict in .github/workflows/ci-cd.yaml: both
+  sides added a read-only step to the staging-edge-probe job; both kept).
 
-FINDING — the staging edge refuses every browser request that carries Idempotency-Key
-  Direct preflight probes, 2026-10-22T04:17Z (curl -X OPTIONS .../public/shops/staging-test-kitchen/orders,
-  Origin https://app-staging.olajay.co.uk, Access-Control-Request-Method POST):
-    request-headers content-type                  -> 200, allow-headers DNT,Keep-Alive,User-Agent,X-Requested-With,
-                                                     If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
-    request-headers content-type,idempotency-key  -> the SAME static list (no Idempotency-Key)
-    request-headers content-type,x-customer-token -> the SAME static list
-    control: Origin https://evil.example          -> no access-control-allow-origin (the origin check works)
-  Source: k8s/base/ingress.yaml l.25 and k8s/base/sse-ingress.yaml l.33,
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
-  (the ingress-nginx default list), answered verbatim by Traefik's nginx provider
-  (k8s/platform/traefik/README.md row cors-allow-headers, "Kept as is"). The base is shared, so
-  k8s/goldens/production.yaml carries the same list.
-  Browser-side senders of Idempotency-Key in frontend/ (non-test): app/shop/[slug]/checkout/page.tsx,
-    app/shop/account/account-client.tsx, components/ui/image-uploader.tsx,
-    components/dashboard/orders/RefundDialog.tsx, lib/media-api.ts, lib/webhooks-api.ts, lib/credentials-api.ts.
-  lib/api-client.ts also sets X-Tenant-Id (not checked here whether it reaches the browser path).
-  Consequence for #957: merging PR 1 as planned bakes the key, but a staging card order still
-  cannot be POSTed, so plan 30-04's green arm would fail at the same place. No Phase 30 plan
-  mentions CORS (rg -uu -il cors over the phase dir: only 30-01-PLAN.md, about CI job names), and
-  the only CORS issue found (#412, closed) is about exposed RESPONSE headers.
+TASK 2 — the owner's repository variable (completed by the orchestrator with the owner present)
+  The local .env holds two Stripe pairs. The Key Vault secret stripe-credentials--api-key
+  (jtoye-stg-kv, subscription c483d353...) was hash-compared, never printed: it matches .env
+  STRIPE_SECRET_KEY and does NOT match STRIPE_API_KEY. The vault read was real: its hash differs
+  from the empty-string hash.
+  FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY was set from .env STRIPE_PUBLISHABLE_KEY (the same pair as
+  that secret), through stdin, never printed.
+  2026-10-22T11:02Z  gh variable list -R Bralabee/JToye_OaaS_2026 --json name: FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY listed (count 1)
+  The stored variable equals .env STRIPE_PUBLISHABLE_KEY (string comparison in-process; yes).
+  Arm (b) above used that same .env key.
 
-SPEC GUARD ARMS (no page opened, no order possible)  2026-10-22T04:14Z
-  base URL https://app-staging.olajay.co.uk.invalid -> rc=1 "PLAYWRIGHT_BASE_URL must be exactly https://app-staging.olajay.co.uk ..."
-  key pk_live_…                                      -> rc=1 "... must be a Stripe TEST publishable key (pk_test_…); got pk_live_…. Refusing before any page is opened"
-  key unset                                          -> rc=1 "... got <unset>. Refusing before any page is opened"
+TASK 3 — the stored variable through the staging deploy guard (value via the environment only)
+  2026-10-22T11:02:14Z
+  $ STRIPE_PK_VAR=$(gh variable get FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY -R Bralabee/JToye_OaaS_2026) \
+      bash scripts/check-stripe-pk-var.sh --environment staging
+  environment=staging prefix=pk_test_ length=107
+  OK: the baked publishable key is accepted for staging (prefix=pk_test_ length=107)
+  rc=0   (occurrences of the value past its prefix in the output: 0)
+  Fail arms, same stored value:
+    --environment production -> environment=production prefix=pk_test_ length=107, rc=1 (refused, D-08)
+    STRIPE_PK_VAR=""         -> environment=staging prefix=empty length=0, rc=1
+  (The orchestrator observed the same three results earlier: staging rc 0, production rc 1, empty rc 1.)
 
-LISTING (plan verify 1), both directions
-  STAGING_E2E=1 --list            -> rc=0 listed=2 mobile=0 ([desktop] only)  PASS
-  without STAGING_E2E             -> rc=1, 0 tests (D-27: not collected)
-  break: @desktop-only removed    -> mobile=1 (restored; sha256 identical before and after)
+LISTING (plan verify 1), re-run 2026-10-22T11:01Z
+  STAGING_E2E=1 --list -> rc=0 listed=2 mobile=0 ([desktop] only, 1 test)  PASS
+  (fail directions recorded below in the superseded run: without STAGING_E2E rc=1 / 0 tests;
+   @desktop-only removed -> mobile=1)
 
-PR BODY SCAN — positive and clean controls  2026-10-22T04:19:16Z
-  scratch "Co-Authored-By: x" + "Closes #957"       -> attribution=1 closing=1
-  scratch "issue #957 and issue #814 (frontend half)" -> attribution=0 closing=0
-  (the stored-body scan itself runs once the PR exists)
-
-PRE-PR GATES (run 2026-10-22T04:18Z, on the tree with the spec)
-  check-branch-behind-base.sh    rc=0  0 behind origin/main (19 ahead)
+PRE-PR GATES (re-run 2026-10-22T11:00Z on the merged tree f53cd464 + HANDOFF edit)
+  check-branch-behind-base.sh    rc=0  0 behind origin/main 4208b08e (21 ahead)
+                                 fail arm: the pre-merge head e8b6fa69 in a scratch worktree -> rc=1
+                                 "1 commit(s) behind origin/main (and 20 ahead)"
   check-env-contract.sh          rc=0
   check-gate-enforcement.sh      rc=0
   check-e2e-baseurl-contract.sh  rc=0
   check-test-block-counter.sh    rc=0
+  docs-freshness.sh              rc=0  (total logical invocations 6537)
+  check-doc-metrics.sh           rc=0  (37/37 prose claims)
+  check-render-invariants.sh     rc=0 under conda jtoye-ops (INV-24 OK on every target). Outside the
+                                 env it is rc=2 VOID: the python3 PATH shim refuses a bare python3,
+                                 and the script fails closed (an environment refusal, not a finding)
   npm --prefix frontend run lint rc=0  (0 errors, 28 pre-existing warnings)
-  docs-freshness.sh              rc=1 before --write (playwright 192/47 -> 193/48), rc=0 after
-  check-doc-metrics.sh           rc=1 before the prose edit (10 FAIL lines), rc=0 after (37/37)
-  tsc --noEmit                   5 errors, all lib/__tests__/layout-widths-css.test.ts (known baseline:
-                                 stale node_modules, tailwindcss 3.4.19 vs 4.3.3); 0 in the spec;
-                                 planted type error in the spec -> 1 error reported there
-  full jest                      not re-run in this plan: no file under its scope changed since 30-02's
-                                 run (3157/3172; the 15 known Tailwind-suite failures)
+  tsc --noEmit                   rc=2, 5 errors, all lib/__tests__/layout-widths-css.test.ts (known
+                                 baseline: stale node_modules, tailwindcss 3.4.19 vs locked 4.3.3);
+                                 0 in the spec
+  full jest (--ci)               rc=1  3157/3172 pass; 15 failures in the 3 known Tailwind suites
+                                 (layout-widths-css, contrast-literals, dashboard-pending-badge-contrast),
+                                 the 30-01/30-02 baseline; npm ci deliberately not run (shared checkout)
 
-PR: not opened (decision checkpoint). Variable FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY: not yet set (Task 2).
+PR BODY SCAN — positive and clean controls  2026-10-22T04:19:16Z
+  scratch "Co-Authored-By: x" + "Closes #957"         -> attribution=1 closing=1
+  scratch "issue #957 and issue #814 (frontend half)" -> attribution=0 closing=0
+  (the stored-body scan result is recorded under PR below)
+
+PR: <pending: recorded after gh pr create>
+
+------------------------------------------------------------------------------------------------
+SUPERSEDED — the first RED run, 2026-10-22T04:14Z, before #1026 (kept as history)
+------------------------------------------------------------------------------------------------
+  HEAD before that commit: f137785e. Running frontend image then:
+    ghcr.io/bralabee/jtoye-frontend:87a1f7722ff66b6644a3b5f8ea1bac8e3d940c23 (#1022), keyless.
+    (The plan named 4f3f3e14, the research-time image; staging had redeployed since.)
+
+  ARM (a) 2026-10-22T04:14:38Z
+    chunks=22 distinct_pk=0 keys=none expect_prefix=pk_test_ residues=1 secrets=0 control=1
+    FAIL: ... found 0; 1 un-inlined env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY lookup(s) (the build had no key)
+    rc=1
+
+  ARM (b) — RED at the order POST, not at the payment step
+    Key: a deliberate placeholder with the pk_test_ prefix (the run stopped before the Stripe read).
+    Run 1  04:14:51Z -> 04:15:27Z  rc=1
+      TimeoutError: page.waitForResponse: Timeout 30000ms exceeded (the order POST wait)
+      PAGE_URL_ON_FAILURE https://app-staging.olajay.co.uk/shop/staging-test-kitchen/checkout
+      snapshot: alert "Failed to place order. Please try again." above Place order · £9.50
+    Run 2 (request-failure and redacted console-error diagnostics added)  04:15:56Z -> 04:16:31Z  rc=1
+      CONSOLE_ERROR Access to XMLHttpRequest at 'https://api-staging.olajay.co.uk/public/shops/staging-test-kitchen/orders'
+        from origin 'https://app-staging.olajay.co.uk' has been blocked by CORS policy: Request header field
+        idempotency-key is not allowed by Access-Control-Allow-Headers in preflight response.
+      ORDER_REQUEST_FAILED POST api-staging.olajay.co.uk/public/shops/staging-test-kitchen/orders net::ERR_FAILED
+    client-secret pattern count in both outputs: 0
+    Unpaid DRAFT from these runs: NONE (a failed preflight never sends the POST).
+
+  FINDING then — the staging edge refused every browser request carrying Idempotency-Key
+    Preflight probes 04:17Z: content-type, content-type+idempotency-key and content-type+x-customer-token
+    all answered the same static allow-headers list (DNT,Keep-Alive,User-Agent,X-Requested-With,
+    If-Modified-Since,Cache-Control,Content-Type,Range,Authorization); control Origin
+    https://evil.example -> no access-control-allow-origin.
+    Source: k8s/base/ingress.yaml l.25 and k8s/base/sse-ingress.yaml l.33 (the ingress-nginx default
+    list, answered verbatim by Traefik's nginx provider). Fixed by #1026 (see above).
+
+  SPEC GUARD ARMS (no page opened)  04:14Z
+    base URL https://app-staging.olajay.co.uk.invalid -> rc=1 "PLAYWRIGHT_BASE_URL must be exactly ..."
+    key pk_live_…                                      -> rc=1 "... must be a Stripe TEST publishable key ..."
+    key unset                                          -> rc=1 "... got <unset>. Refusing before any page is opened"
+
+  LISTING then: STAGING_E2E=1 --list rc=0 listed=2 mobile=0; without STAGING_E2E rc=1, 0 tests;
+    break @desktop-only removed -> mobile=1 (restored; sha256 identical before and after)
+
+  GATES then (04:18Z): behind-base rc 0; env-contract 0; gate-enforcement 0; e2e-baseurl 0;
+    test-block-counter 0; lint 0; docs-freshness rc 1 before --write (playwright 192/47 -> 193/48),
+    rc 0 after; check-doc-metrics rc 1 before the prose edit (10 FAIL lines), rc 0 after (37/37);
+    tsc 5 baseline errors, a planted error in the spec reported there.
