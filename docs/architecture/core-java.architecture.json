@@ -3,15 +3,16 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "J'Toye Core — tenant isolation path",
-    "subtitle": "core-java · Spring Boot 3.5 · JDK 25",
+    "subtitle": "core-java · Spring Boot 4.1 · JDK 25",
     "quality_profile": "showcase",
+    "output": "docs/architecture/core-java.architecture.html",
     "viewBox": [
       1160,
       600
     ],
     "repository": {
       "url": "https://github.com/Bralabee/JToye_OaaS_2026",
-      "revision": "a990551e4b1f8a04eaa5778c48446c50a39151fa"
+      "revision": "43d047fb5514b19a0d24daff1e3ad940e6623d75"
     },
     "views": [
       {
@@ -73,7 +74,7 @@
       "sources": [
         {
           "path": "core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java",
-          "line": 32,
+          "line": 34,
           "label": "SecurityConfig"
         }
       ],
@@ -137,7 +138,7 @@
       "id": "controllers",
       "type": "backend",
       "label": "REST controllers",
-      "sublabel": "25 classes",
+      "sublabel": "33 classes",
       "sources": [
         {
           "path": "core-java/src/main/java/uk/jtoye/core/order/OrderController.java",
@@ -209,7 +210,7 @@
       "id": "services",
       "type": "backend",
       "label": "Domain services",
-      "sublabel": "41 classes · 25 repos",
+      "sublabel": "@Service → JpaRepository",
       "pos": [
         774,
         300
@@ -244,7 +245,7 @@
       "id": "postgres",
       "type": "database",
       "label": "PostgreSQL",
-      "sublabel": "RLS · 66 migrations",
+      "sublabel": "RLS · schema at V88",
       "brand": "postgresql",
       "sources": [
         {
@@ -442,8 +443,8 @@
       "dot": "emerald",
       "title": "Counted, not estimated",
       "items": [
-        "25 controllers · 41 services · 25 repositories",
-        "66 Flyway migrations; V2 installs the RLS policies"
+        "33 controllers",
+        "Schema at V88; V2 installs the RLS policies"
       ]
     }
   ]

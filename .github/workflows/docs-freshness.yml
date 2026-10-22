@@ -79,8 +79,9 @@ jobs:
       - name: Verify the OGL geo attribution matches the committed dataset
         if: always()
         run: bash scripts/check-geo-attribution.sh
-      # The generic claim-gate engine, running the SAME 43 assertions as the two
-      # steps above (37 + 6) from a declarative rule table instead of bespoke bash.
+      # The generic claim-gate engine: the SAME 43 assertions as the two steps above
+      # (37 + 6) from a declarative rule table instead of bespoke bash, plus rules those
+      # two never had (the retention manifest, the archify diagram card counts).
       # Deliberately additive for now: it cross-checks those two while the engine
       # earns trust in CI, and they carry documentation the manifest does not yet.
       # Consolidation is tracked as a real issue, not a comment that quietly rots —
@@ -89,6 +90,13 @@ jobs:
       - name: Verify documented claims match their sources (claim-gate engine)
         if: always()
         run: bash scripts/check-claims.sh
+      # A NOTICE, never a gate: lists every file an archify diagram cites that changed
+      # since the diagram's pinned revision, so someone re-reads its arrows. As a block it
+      # would fail ~1 PR in 14 that did nothing wrong (measured 2026-09-23). It always
+      # exits 0; "could not compute" is a ::warning, never silence. Needs fetch-depth: 0.
+      - name: Note archify diagrams whose cited evidence moved (notice only)
+        if: always()
+        run: bash scripts/check-diagram-evidence-drift.sh
       # docs/CHANGELOG.md was the one doc NOTHING read. The four steps above open
       # CLAUDE.md, AGENTS.md, README.md, the .planning/codebase docs, k8s/DEPLOYMENT.md
       # and terminal-states.yaml — and not it. So it drifted 24 PRs deep (last entry
