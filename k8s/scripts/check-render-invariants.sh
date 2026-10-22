@@ -555,11 +555,17 @@
 #          edge. The browser header INVENTORY is derived from the frontend source on every run,
 #          never declared, so a header added to a browser-side request tomorrow is judged too:
 #            * read: frontend/{app,lib,components,hooks}/**/*.ts(x), minus tests (__tests__,
-#              *.test.*, *.spec.*), type declarations (*.d.ts) and SERVER-ONLY code (app/api/**,
-#              any route.ts, *-server.ts(x), a file that imports "server-only"): a Next server
-#              route calls core from the pod, not the browser, so no preflight is involved;
-#            * a header is a key of a `headers: {...}` / `headers = {...}` object literal or the
-#              first argument of headers.set(...) / headers.append(...) (INV24_SCAN_AWK);
+#              *.test.*, *.spec.*), type declarations (*.d.ts) and SERVER-ONLY code, which is
+#              exactly two things: a Next Route Handler frontend/app/**/route.ts (server by
+#              framework contract) and a file that imports "server-only". A file NAME such as
+#              *-server.ts is never a ground (review round 1, finding 5);
+#            * a candidate header is found by k8s/scripts/inv24-browser-headers.awk, which
+#              over-includes on purpose (finding 4): headers objects, headers.set/append, any
+#              .set/.append with a header-shaped name, headers.Foo = / headers["Foo"] =,
+#              x["Header-Name"] =, new Headers([[..]]) / new Headers({..}), and a header-shaped
+#              quoted key in property position ANYWHERE (an object built first and passed later);
+#            * a hit that is not a request header is excluded by FILE AND NAME in INV24_ALLOW with
+#              its reason; an entry no hit needs is STALE and fails the run;
 #            * the CORS-safelisted names (Accept, Accept-Language, Content-Language) never need
 #              listing and are dropped. Content-Type stays: application/json is not safelisted.
 #          Each such Ingress must:
@@ -2173,6 +2179,16 @@ fi
 #   server-route    app/api/**/route.ts sends X-Planted-Server (server-side: ignored)   rc 0
 #   server-only     a lib file importing "server-only" sends X-Planted-Server-Only      rc 0
 #   blind           the frontend dirs are missing, so the scan reads nothing            rc 2
+# Review round 1 on PR #1026 (findings 4 and 5), each RED on ebf0e5e2:
+#   bracket-assign  h["X-Planted-Bracket"] = v on a plain object later sent as headers  rc 1
+#   indirect-object const extra = {"X-Planted-Indirect": v}; fetch(u, { headers: extra }) rc 1
+#   headers-bracket req.headers["X-Planted-Hb"] = v                                     rc 1
+#   headers-prop    req.headers.Prefer = v (property assignment)                        rc 1
+#   headers-pairs   new Headers([["X-Planted-Pair", v]])                                rc 1
+#   headers-multi   the same pair on its own line inside a multi-line new Headers([...]) rc 1
+#   server-by-name  lib/planted-server.ts sends X-Planted-Named with NO server-only import rc 1
+#   route-not-app   lib/route.ts (outside app/, so not a Route Handler) sends a header  rc 1
+#   stale-allow     an INV24_ALLOW entry's hit disappears (safe-image's aria-label)     rc 1
 # INV24_SELFTEST_FORMAT=tap renders TAP 13.
 # ===========================================================================
 inv24_plant() {
@@ -2187,6 +2203,11 @@ inv24_plant() {
         server-route) f="$root/frontend/app/api/planted/route.ts" ;;
         server-only) f="$root/frontend/lib/planted-server-only.ts" ;;
         blind) f="$root/frontend" ;;
+        bracket-assign|indirect-object|headers-bracket|headers-prop|headers-pairs|headers-multi)
+            f="$root/frontend/lib/planted-$arm.ts" ;;
+        server-by-name) f="$root/frontend/lib/planted-server.ts" ;;
+        route-not-app) f="$root/frontend/lib/route.ts" ;;
+        stale-allow) f="$root/frontend/components/ui/safe-image.tsx" ;;
         *) return 1 ;;
     esac
     if [[ -f "$f" ]]; then before="$(sha256sum "$f")"; else before="absent"; fi
@@ -2217,6 +2238,31 @@ inv24_plant() {
                 'export const p = () => fetch("http://core-java/x", { headers: { "X-Planted-Server-Only": "1" } })' > "$f" ;;
         blind)
             rm -rf "$f"; [[ ! -e "$f" ]]; return ;;
+        bracket-assign)
+            printf '%s\n' 'export function p(u: string, v: string) {' \
+                '  const h: Record<string, string> = {}' '  h["X-Planted-Bracket"] = v' \
+                '  return fetch(u, { headers: h })' '}' > "$f" ;;
+        indirect-object)
+            printf '%s\n' 'const extra = {"X-Planted-Indirect": "1"}' \
+                'export const p = (u: string) => fetch(u, {headers: extra})' > "$f" ;;
+        headers-bracket)
+            printf '%s\n' 'export function p(req: { headers: Record<string, string> }) {' \
+                '  req.headers["X-Planted-Hb"] = "1"' '}' > "$f" ;;
+        headers-prop)
+            printf '%s\n' 'export function p(req: { headers: Record<string, string> }) {' \
+                '  req.headers.Prefer = "respond-async"' '}' > "$f" ;;
+        headers-pairs)
+            printf '%s\n' 'export const p = (u: string) => fetch(u, { headers: new Headers([["X-Planted-Pair", "1"]]) })' > "$f" ;;
+        headers-multi)
+            printf '%s\n' 'export const p = (u: string) =>' '  fetch(u, {' '    headers: new Headers([' \
+                '      ["X-Planted-Multi", "1"],' '    ]),' '  })' > "$f" ;;
+        server-by-name)
+            printf '%s\n' 'export const p = (u: string) => fetch(u, { headers: { "X-Planted-Named": "1" } })' > "$f" ;;
+        route-not-app)
+            printf '%s\n' 'export const p = (u: string) => fetch(u, { headers: { "X-Planted-Route": "1" } })' > "$f" ;;
+        stale-allow)
+            [[ -f "$f" ]] || return 1
+            awk '{ gsub(/"aria-label": alt/, "title: alt") } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
     esac
     [[ -f "$f" && "$(sha256sum "$f")" != "$before" ]]
 }
@@ -2227,7 +2273,9 @@ inv24_selftest() {
     # shellcheck disable=SC2064
     trap "rm -rf '$st'" EXIT
     cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv24 could not copy $K8S_DIR" >&2; exit 2; }
-    local -a ARMS=(base-drop sse-drop overlay-revert wildcard absent new-literal new-set server-route server-only blind)
+    local -a ARMS=(base-drop sse-drop overlay-revert wildcard absent new-literal new-set server-route server-only blind
+                   bracket-assign indirect-object headers-bracket headers-prop headers-pairs headers-multi
+                   server-by-name route-not-app stale-allow)
     declare -A WANT=(
         [base-drop]="INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key"
         [sse-drop]="INV-24: Ingress jtoye-sse-ingress cors-allow-headers omits Idempotency-Key"
@@ -2239,6 +2287,15 @@ inv24_selftest() {
         [server-route]="PASS:"
         [server-only]="PASS:"
         [blind]="INV-24: the browser header scan"
+        [bracket-assign]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Bracket"
+        [indirect-object]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Indirect"
+        [headers-bracket]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Hb"
+        [headers-prop]="INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer"
+        [headers-pairs]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Pair"
+        [headers-multi]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Multi"
+        [server-by-name]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Named"
+        [route-not-app]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Route"
+        [stale-allow]="INV-24 allow-list entry 'frontend/components/ui/safe-image.tsx|aria-label' matches no scanner hit"
     )
     declare -A WANT_RC=([server-route]=0 [server-only]=0 [blind]=2)
     for arm in "${ARMS[@]}"; do
@@ -3489,64 +3546,77 @@ is_noindex_target() {
 
 # ---------------------------------------------------------------------------
 # INV-24 inputs (#1025). The browser header inventory, read once from the frontend
-# source (see the header for what is read and what is excluded). INV24_SCAN_AWK emits
-# <header name> TAB <file>:<line> per header a browser-side request sets.
+# source (see the header for what is read and what is excluded). The scanner is
+# k8s/scripts/inv24-browser-headers.awk; it emits <name> TAB <file>:<line> TAB <rule>
+# per candidate request header and over-includes on purpose (it fails closed).
 # ---------------------------------------------------------------------------
-INV24_SCAN_AWK='
-FNR == 1 { inobj = 0; depth = 0 }
-function grab(t,   m) {
-    while (match(t, /(^|[{,])[[:space:]]*("[A-Za-z][A-Za-z0-9-]*"|'"'"'[A-Za-z][A-Za-z0-9-]*'"'"'|[A-Za-z][A-Za-z0-9-]*)[[:space:]]*:/)) {
-        m = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
-        sub(/^[{,]/, "", m); gsub(/[[:space:]"'"'"':]/, "", m)
-        printf "%s\t%s:%d\n", m, FILENAME, FNR
-    }
-}
-# the part of t inside the object (depth > 0 from the carried depth); clears inobj at its close
-function walk(t,   i, c, seg) {
-    seg = ""
-    for (i = 1; i <= length(t); i++) {
-        c = substr(t, i, 1)
-        if (c == "{") depth++
-        else if (c == "}") { depth--; if (depth <= 0) { inobj = 0; return seg } }
-        seg = seg c
-    }
-    return seg
-}
-{
-    line = $0
-    if (line ~ /^[[:space:]]*(\/\/|\/\*|\*)/) next
-    while (match(line, /headers\.(set|append)\([[:space:]]*["'"'"'][A-Za-z][A-Za-z0-9-]*["'"'"']/)) {
-        m = substr(line, RSTART, RLENGTH); line = substr(line, RSTART + RLENGTH)
-        sub(/^headers\.(set|append)\([[:space:]]*["'"'"']/, "", m); sub(/["'"'"']$/, "", m)
-        printf "%s\t%s:%d\n", m, FILENAME, FNR
-    }
-    line = $0
-    if (inobj) { grab(walk(line)); next }
-    if (match(line, /(^|[^A-Za-z0-9_])headers[[:space:]]*[:=][[:space:]]*\{/)) {
-        depth = 0; inobj = 1
-        grab(walk(substr(line, RSTART + RLENGTH - 1)))
-    }
-}'
+# INV24_ALLOW: a scanner hit that is NOT a header the browser sends, excluded by
+# repo-relative FILE and NAME together, never by a pattern, each with its reason. An
+# entry that matches no hit is STALE and fails the run (the code moved or the header
+# went away; a standing excuse nobody needs must not stay). Format: file|name|reason
+INV24_ALLOW=(
+    "frontend/lib/customer-orders-server.ts|X-Customer-Token|Server module: read only by the server components app/shop/orders/page.tsx and app/shop/account/page.tsx and by the route handler app/api/customer-orders/route.ts; it calls core from the pod with the access token taken from an httpOnly cookie, so the browser never sends this header and no preflight is involved."
+    "frontend/components/dashboard/onboarding/trader-identity-form.tsx|aria-required|React ARIA props returned for a form field, spread onto JSX; not a request."
+    "frontend/components/dashboard/onboarding/trader-identity-form.tsx|aria-invalid|React ARIA props returned for a form field, spread onto JSX; not a request."
+    "frontend/components/dashboard/onboarding/trader-identity-form.tsx|aria-describedby|React ARIA props returned for a form field, spread onto JSX; not a request."
+    "frontend/components/ui/safe-image.tsx|aria-label|JSX prop spread for the image fallback's accessible name; not a request."
+    "frontend/components/ui/select.tsx|aria-label|A TypeScript prop type for the select trigger; not a request."
+    "frontend/components/ui/select.tsx|aria-labelledby|A TypeScript prop type for the select trigger; not a request."
+    "frontend/app/legal/accessibility/page.tsx|out-of-scope|A category-label lookup table for the accessibility statement; not a request."
+    "frontend/app/legal/accessibility/page.tsx|third-party|A category-label lookup table for the accessibility statement; not a request."
+    "frontend/app/legal/accessibility/page.tsx|known-defect|A category-label lookup table for the accessibility statement; not a request."
+    "frontend/app/legal/accessibility/page.tsx|published-information|A category-label lookup table for the accessibility statement; not a request."
+)
+INV24_SCAN="$SCRIPT_DIR/inv24-browser-headers.awk"
+[[ -f "$INV24_SCAN" ]] || parse_fail "INV-24: the browser header scanner is missing: $INV24_SCAN"
 INV24_FE="$REPO_ROOT/frontend"
 for d in app lib components hooks; do
     [[ -d "$INV24_FE/$d" ]] || parse_fail "INV-24: the browser header scan cannot read $INV24_FE/$d; without it every cors-allow-headers list would pass. Restore the path or update INV-24's scan roots."
 done
+# Server-only code is excluded on TWO grounds only (review round 1, finding 5: a file NAME
+# such as *-server.ts proves nothing, so a name is never a ground):
+#   1. a Next.js Route Handler, frontend/app/**/route.ts. The framework runs these only on the
+#      server (they export GET/POST handlers and are never part of a client bundle), so a header
+#      one sets goes from the pod to core, not from a browser. Scoped to app/ exactly: a route.ts
+#      anywhere else is an ordinary module and is scanned.
+#   2. a file that imports "server-only", which fails the build if a client component imports it.
 find "$INV24_FE/app" "$INV24_FE/lib" "$INV24_FE/components" "$INV24_FE/hooks" -type f \( -name '*.ts' -o -name '*.tsx' \) \
     ! -path '*/__tests__/*' ! -name '*.test.*' ! -name '*.spec.*' ! -name '*.d.ts' \
-    ! -path "$INV24_FE/app/api/*" ! -name 'route.ts' ! -name '*-server.ts' ! -name '*-server.tsx' -print \
+    ! \( -path "$INV24_FE/app/*" -name 'route.ts' \) -print \
     | sort > "$TMP/inv24_files"
 [[ -s "$TMP/inv24_files" ]] || parse_fail "INV-24: the browser header scan found no frontend source file."
 : > "$TMP/inv24_client_files"
 while IFS= read -r f; do
     grep -qE "^[[:space:]]*import[[:space:]]+[\"']server-only[\"']" "$f" || printf '%s\n' "$f" >> "$TMP/inv24_client_files"
 done < "$TMP/inv24_files"
-tr '\n' '\0' < "$TMP/inv24_client_files" | xargs -0 awk "$INV24_SCAN_AWK" > "$TMP/inv24_scan.tsv" \
+tr '\n' '\0' < "$TMP/inv24_client_files" | xargs -0 awk -f "$INV24_SCAN" > "$TMP/inv24_raw.tsv" \
     || parse_fail "INV-24: the browser header scan (awk) failed."
+# file paths repo-relative, then the allow-list applied by (file, lower(name)); stale entries reported
+awk -F'\t' -v root="$REPO_ROOT/" 'BEGIN { OFS = "\t" } { if (index($2, root) == 1) $2 = substr($2, length(root) + 1); print }' \
+    "$TMP/inv24_raw.tsv" > "$TMP/inv24_rel.tsv"
+: > "$TMP/inv24_allow.tsv"
+for e in "${INV24_ALLOW[@]}"; do
+    IFS='|' read -r a_file a_name a_reason <<< "$e"
+    [[ -n "$a_file" && -n "$a_name" && -n "${a_reason// /}" ]] || fail "INV-24 allow-list: malformed entry (file|name|reason, reason required): '$e'"
+    printf '%s\t%s\n' "$a_file" "${a_name,,}" >> "$TMP/inv24_allow.tsv"
+done
+inv24_stale=$(awk -F'\t' 'NR == FNR { want[$1 "\t" $2] = 1; next }
+    { f = $2; sub(/:[0-9]+$/, "", f); seen[f "\t" tolower($1)] = 1 }
+    END { for (k in want) if (!(k in seen)) print k }' "$TMP/inv24_allow.tsv" "$TMP/inv24_rel.tsv")
+if [[ -n "$inv24_stale" ]]; then
+    while IFS=$'\t' read -r a_file a_name; do
+        echo "FAIL: INV-24 allow-list entry '$a_file|$a_name' matches no scanner hit: it is stale. Delete it (or fix the path)." >&2
+    done <<< "$inv24_stale"
+    fail "INV-24: stale allow-list entr(y/ies) above."
+fi
+awk -F'\t' 'NR == FNR { allow[$1 "\t" $2] = 1; next }
+    { f = $2; sub(/:[0-9]+$/, "", f); if (!((f "\t" tolower($1)) in allow)) print }' \
+    "$TMP/inv24_allow.tsv" "$TMP/inv24_rel.tsv" > "$TMP/inv24_scan.tsv"
 # the inventory: one line per header (first spelling seen), safelisted names dropped
 awk -F'\t' '{ l = tolower($1) } l == "accept" || l == "accept-language" || l == "content-language" { next }
             !(l in seen) { seen[l] = 1; print $1 }' "$TMP/inv24_scan.tsv" > "$TMP/inv24_headers"
 for h in authorization idempotency-key; do
-    grep -qixF "$h" "$TMP/inv24_headers" || parse_fail "INV-24: the browser header scan found no '$h' sender, though the frontend has known ones; the scanner is blind and would pass any list. Fix INV24_SCAN_AWK (or update this anchor if the frontend truly stopped sending it)."
+    grep -qixF "$h" "$TMP/inv24_headers" || parse_fail "INV-24: the browser header scan found no '$h' sender, though the frontend has known ones; the scanner is blind and would pass any list. Fix the scanner (or update this anchor if the frontend truly stopped sending it)."
 done
 mapfile -t INV24_HEADERS < "$TMP/inv24_headers"
 

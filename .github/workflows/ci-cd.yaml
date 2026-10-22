@@ -994,16 +994,20 @@ jobs:
       # Issue #1025: INV-24 keeps every CORS-enabled Ingress admitting every header the browser
       # sends cross-origin (the inventory is scanned from frontend/ on each run; server-only code
       # is excluded). Base shipped ingress-nginx's default list, without Idempotency-Key, so every
-      # storefront order POST on staging died at the preflight. Seven planted holes (a base drop, an
-      # SSE drop, an overlay putting the old list back, a wildcard, the annotation removed, a new
-      # header in a headers object, a new header via headers.set), two server-only controls that
-      # must PASS, and a blind scan, which is a PARSE ERROR (rc 2).
+      # storefront order POST on staging died at the preflight. Sixteen planted holes (a base drop,
+      # an SSE drop, an overlay putting the old list back, a wildcard, the annotation removed, and a
+      # new browser header in each shape the scanner reads: headers object, headers.set, bracket
+      # assignment, an object built first and passed later, headers["X"] =, headers.X =, new
+      # Headers pairs on one line and across lines, a *-server.ts file with no server-only import, a
+      # route.ts outside app/, and a stale allow-list entry), two server-only controls that must
+      # PASS, and a blind scan, which is a PARSE ERROR (rc 2).
       - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
 
       # The live half of #1025 runs in staging-edge-probe after a deploy; its judge is proven
       # here on every change against synthetic preflight responses (today's staging list must
-      # fail, the fixed list pass, a wildcard / missing header / wrong origin fail, empty VOID).
+      # fail, the fixed list pass, a wildcard / missing header / wrong origin / non-2xx status /
+      # no POST in allow-methods / no credentials true / a repeated ACAO or ACAH fail, empty VOID).
       - name: Prove the CORS preflight probe can fail (check-cors-preflight.sh --selftest)
         run: bash scripts/check-cors-preflight.sh --selftest
 
