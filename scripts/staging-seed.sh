@@ -1384,7 +1384,8 @@ while [ "$#" -gt 0 ]; do
     -X) method="$2"; shift 2 ;;
     --data-binary) data=1; case "$2" in @*) jq -c . "${2#@}" >> "$STUB_LOG_DIR/bodies.log" 2>/dev/null || true ;; esac; shift 2 ;;
     --data-urlencode|-d) data=1; shift 2 ;;
-    -K|-H) shift 2 ;;
+    -K) command grep -ho 'Stripe-Account: [^"]*' "$2" >> "$STUB_LOG_DIR/stripe-account.log" 2>/dev/null || true; shift 2 ;;
+    -H) shift 2 ;;
     http://*|https://*) url="$1"; shift ;;
     *) shift ;;
   esac
@@ -1441,6 +1442,8 @@ case "$method $base" in
     oid="${base#/api/v1/orders/}"; oid="${oid%/cancel}"; key=empty; code=200; : > "$STUB_LOG_DIR/order-cancelled-$oid" ;;
   "POST /api/v1/orders/"*"/submit"|"POST /api/v1/orders/"*"/confirm"|"POST /api/v1/orders/"*"/start-preparation")
     key=transition; code="${STUB_TRANSITION_CODE:-200}" ;;
+  # stripe-get: any other Stripe read answers the one generic fixture.
+  "GET /v1/"*) key=stripe-get; code=200 ;;
 esac
 if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then
   key=problem; code=500; rm -f "$STUB_LOG_DIR/pi-canceled-${pid:-}" "$STUB_LOG_DIR/order-cancelled-${oid:-}"
@@ -1518,7 +1521,7 @@ IDF
     shift
     : > "$ast/logs/kubectl.log"; : > "$ast/logs/kubelogin.log"; : > "$ast/logs/curl.log"
     : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
-    rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*
+    rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*; : > "$ast/logs/stripe-account.log"
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -2120,6 +2123,112 @@ IDF
   done
   if [ -z "$why" ]; then _st_result "PASS cancel-empty-list rc=2 absent+empty+malformed=usage-error az_calls=0 curl_calls=0"
   else _st_result "FAIL cancel-empty-list $why"; fails=$((fails + 1)); fi
+  # ===== stripe-get: a sanitised, allowlisted, TEST-only Stripe read ==========
+  local sg_args=("${tool_args[@]}" --stage stripe-get)
+  jq -n '{id: "pi_sg1", object: "payment_intent", livemode: false, status: "requires_payment_method", amount: 950,
+      currency: "gbp", client_secret: "pi_sg1_secret_STUBCSsg1", receipt_email: "piizq7@example.invalid",
+      metadata: {order_number: "ORD-STUB-D001"},
+      shipping: {name: "Pii PIIZQ7", phone: "07700 900777", address: {line1: "1 PIIZQ7 Road"}},
+      latest_charge: {id: "ch_sg1", object: "charge", livemode: false, receipt_email: "piizq7@example.invalid",
+        billing_details: {name: "Pii PIIZQ7", email: "piizq7@example.invalid", phone: "07700 900777", address: {line1: "1 PIIZQ7 Road"}}}}' \
+    > "$ast/resp/pi-pi_sg1.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sg_args[@]}" --path /v1/payment_intents/pi_sg1
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF '"pi_sg1"' <<<"$ST_OUT" || ! command grep -qF '"ORD-STUB-D001"' <<<"$ST_OUT" || ! command grep -qF '"ch_sg1"' <<<"$ST_OUT"; then
+    why="the object was not printed (nothing to inspect): $(head -c 200 <<<"$ST_OUT" | tr '\n' ' ')"
+  elif command grep -qE '_secret_|"client_secret"|"receipt_email"|"billing_details"|"shipping"' <<<"$ST_OUT$ST_ERR"; then
+    why="a client secret or personal field survived: $(command grep -E '_secret_|client_secret|receipt_email|billing_details|shipping' <<<"$ST_OUT" | head -n 2 | tr '\n' '|')"
+  elif [ "$(_st_pii)" -ne 0 ] || command grep -qF '07700 900777' <<<"$ST_OUT$ST_ERR"; then why="personal data was printed"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a key or client secret marker was printed or put in argv"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/payment_intents/pi_sg1 -> 200$')" -ne 1 ] || [ "$(_st_flow '^(POST|DELETE|PUT) ')" -ne 1 ]; then
+    why="calls: want one Stripe GET and only the token grant beside it: $(tr '\n' '|' < "$ast/logs/curl-flow.log")"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS stripe-get-sanitized rc=0 printed=pi_sg1+ch_sg1 secrets=0 pii=0"
+  else _st_result "FAIL stripe-get-sanitized $why"; fails=$((fails + 1)); fi
+
+  # --- stripe-get-path-refused: a path off the allowlist, or a traversal --------
+  why=""
+  for sub in /v1/customers/cus_1 /v1/payment_intents/pi_1/../../customers /v1/payment_methods/pm_1; do
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sg_args[@]}" --path "$sub"
+    why=$(_st_refusal 1 "REFUSED [stripe-path]" 0 0) || { why="$sub: $why"; break; }
+    why=""
+  done
+  if [ -z "$why" ]; then _st_result "PASS stripe-get-path-refused rc=1 customers+traversal+payment_methods=refused curl_calls=0 az_calls=0"
+  else _st_result "FAIL stripe-get-path-refused $why"; fails=$((fails + 1)); fi
+
+  # --- stripe-get-live: a live object is refused and not printed ----------------
+  jq -n '{id: "pi_sg2", object: "payment_intent", livemode: true, status: "succeeded", amount: 950}' > "$ast/resp/pi-pi_sg2.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sg_args[@]}" --path /v1/payment_intents/pi_sg2
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+  elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -qF '"pi_sg2"' <<<"$ST_OUT"; then why="the live object was printed"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/payment_intents/pi_sg2 -> 200$')" -ne 1 ]; then why="the refusal did not come from the read object"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS stripe-get-live rc=1 printed=none"
+  else _st_result "FAIL stripe-get-live $why"; fails=$((fails + 1)); fi
+
+  # --- stripe-get-account-header: Stripe-Account only when --account is given ---
+  jq -n '{object: "balance", livemode: false, available: [{amount: 0, currency: "gbp"}], pending: []}' > "$ast/resp/stripe-get.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sg_args[@]}" --path /v1/balance --account acct_STUB1
+  why=""
+  local acct_with acct_without
+  acct_with=$(cat "$ast/logs/stripe-account.log")
+  if [ "$ST_RC" -ne 0 ]; then why="with --account: rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$acct_with" != "Stripe-Account: acct_STUB1" ]; then why="with --account the stub saw '$(tr '\n' '|' <<<"$acct_with")' (want exactly Stripe-Account: acct_STUB1)"
+  elif command grep -qF 'Stripe-Account' "$ast/logs/curl.log"; then why="the Stripe-Account header travelled in argv, not the config file"
+  else
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sg_args[@]}" --path /v1/balance
+    acct_without=$(cat "$ast/logs/stripe-account.log")
+    if [ "$ST_RC" -ne 0 ]; then why="without --account: rc=$ST_RC (want 0)"
+    elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/balance -> 200$')" -ne 1 ]; then why="without --account: the balance read was not made (the empty log would prove nothing)"
+    elif [ -n "$acct_without" ]; then why="without --account the stub saw '$acct_without'"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS stripe-get-account-header with=acct_STUB1 without=none argv=none"
+  else _st_result "FAIL stripe-get-account-header $why"; fails=$((fails + 1)); fi
+
+  # --- stripe-get-livemode-absent: refund and account objects carry no livemode
+  #     field (stripe-java 34.0.0 Refund, Account); any other object without one
+  #     is refused, never assumed TEST.
+  jq -n '{id: "re_sg3", object: "refund", amount: 950, status: "succeeded", payment_intent: "pi_sg1"}' > "$ast/resp/stripe-get.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sg_args[@]}" --path /v1/refunds/re_sg3
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="refund: rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF '"re_sg3"' <<<"$ST_OUT"; then why="refund: the object was not printed"
+  elif ! command grep -qE '^LIVEMODE n/a object=refund ' <<<"$ST_OUT"; then why="refund: no LIVEMODE n/a line"
+  else
+    jq -n '{id: "pi_sg4", object: "payment_intent", status: "succeeded", amount: 950}' > "$ast/resp/pi-pi_sg4.json"
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${sg_args[@]}" --path /v1/payment_intents/pi_sg4
+    if [ "$ST_RC" -ne 1 ]; then why="intent without livemode: rc=$ST_RC (want 1)"
+    elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="intent without livemode: stderr lacks 'REFUSED [stripe-mode]'"
+    elif command grep -qF '"pi_sg4"' <<<"$ST_OUT"; then why="intent without livemode: it was printed"
+    fi
+  fi
+  if [ -z "$why" ]; then _st_result "PASS stripe-get-livemode-absent refund=printed+n/a intent=refused"
+  else _st_result "FAIL stripe-get-livemode-absent $why"; fails=$((fails + 1)); fi
+
+  # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
+  why=""
+  for sub in list-drafts vendor-order order-transition cancel-drafts stripe-get; do
+    case "$sub" in
+      order-transition) set -- --orders ORD-STUB-D001 --event submit ;;
+      cancel-drafts)    set -- --orders ORD-STUB-D001,ORD-STUB-D002 ;;
+      stripe-get)       set -- --path /v1/balance ;;
+      *)                set -- ;;
+    esac
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage "$sub" "$@" --dry-run
+    if [ "$ST_RC" -ne 0 ]; then why="$sub: rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif [ "$(_st_lines az)" -ne 0 ] || [ "$(_st_lines curl)" -ne 0 ]; then why="$sub: az=$(_st_lines az) curl=$(_st_lines curl) (want 0, 0)"
+    elif [ "$(_st_pod_reads)" -ne 1 ]; then why="$sub: the guards did not run (pod reads=$(_st_pod_reads))"
+    elif ! command grep -qF "PLAN --stage $sub (dry-run" <<<"$ST_OUT"; then why="$sub: no plan printed"
+    fi
+    [ -z "$why" ] || break
+  done
+  set --
+  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=5 az_calls=0 curl_calls=0"
+  else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
   _st_render
   [ "$fails" -eq 0 ]
