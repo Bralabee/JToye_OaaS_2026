@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The Ingress CORS Allow-List Admits Idempotency-Key, So Browser Orders Reach Core on Staging (#1025) (#1026) — 2026-10-22
+
+Found by Phase 30 plan 30-03 (the staging card-checkout proof for #957). Staging's Traefik answers a CORS preflight from each Ingress's `cors-allow-headers` annotation and never asks core-java. Base carried ingress-nginx's default list, which has no `Idempotency-Key`, so every browser request carrying it failed the preflight on https://app-staging.olajay.co.uk and never reached core: every storefront order POST, plus the account DSAR request, image upload, refund, media reprocess, credential create and webhook replay.
+
+- **Change.** `jtoye-ingress` and `jtoye-sse-ingress` keep their list and gain `Idempotency-Key` and `X-Tenant-Id` (which the dashboard's api-client sets when the session carries a tenant id). No wildcard: credentials are on. core-java needs nothing (`CorsConfig` allows any header) and edge-go serves no browser CORS. Goldens regenerated: four lines.
+- **INV-24** in `k8s/scripts/check-render-invariants.sh` derives the browser header inventory from `frontend/` on every run (server-only code and CORS-safelisted names excluded) and fails any CORS-enabled Ingress in any render that omits one or answers `*`. It was RED on the tree before the manifest change and is GREEN after; `--selftest-inv24` plants seven holes, two server-only controls and a blind scan.
+- **Live check.** `scripts/check-cors-preflight.sh` sends the order POST's preflight to the api host and exits 1 when a browser header is refused. It runs read-only in `staging-edge-probe` after each staging deploy; against staging before this merge it exits 1 (`omits idempotency-key`).
+
 ### A New Product Must Name Its Shop, and the Allergen Label's 422 Says What to Add (#959, #960) (#1013) — 2026-10-21
 
 Found by the 2026-10-19 staging swarm (SW-ADE-01, SW-ADE-03). Two vendor dead ends, one change each.
