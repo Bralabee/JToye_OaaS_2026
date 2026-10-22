@@ -72,7 +72,7 @@ the run, not artifacts.
 ## Updating after the code moves
 
 The docs-freshness workflow posts a `::notice` naming every cited file that changed
-since a diagram's pin (`scripts/check-diagram-evidence-drift.sh`). It never blocks: most
+since a diagram's pin (`scripts/note-diagram-evidence-drift.sh`). It never blocks: most
 such changes are unrelated to what the diagram draws. It compares the pin with HEAD, so
 the same notices repeat on every PR until someone re-pins. When it fires for a change
 that does matter, re-pin.

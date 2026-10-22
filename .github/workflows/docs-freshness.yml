@@ -96,7 +96,7 @@ jobs:
       # exits 0; "could not compute" is a ::warning, never silence. Needs fetch-depth: 0.
       - name: Note archify diagrams whose cited evidence moved (notice only)
         if: always()
-        run: bash scripts/check-diagram-evidence-drift.sh
+        run: bash scripts/note-diagram-evidence-drift.sh
       # docs/CHANGELOG.md was the one doc NOTHING read. The four steps above open
       # CLAUDE.md, AGENTS.md, README.md, the .planning/codebase docs, k8s/DEPLOYMENT.md
       # and terminal-states.yaml — and not it. So it drifted 24 PRs deep (last entry

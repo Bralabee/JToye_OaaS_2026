@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# check-diagram-evidence-drift.sh — NOTICE (never a block) when a file an archify diagram cites
+# note-diagram-evidence-drift.sh — NOTICE (never a block) when a file an archify diagram cites
 # has changed since the revision the diagram is pinned to.
+#
+# Named note-, not check-: every scripts/check-*.sh is a gate that HANDOFF.md's resume block
+# runs and counts (check-handoff-contract.sh H-1), and this one never fails.
 #
 # WHY A NOTICE AND NOT A GATE
 #
@@ -25,8 +28,8 @@
 # of origin/main, re-run `archify validate --repo-root`, regenerate with `archify deliver`, and
 # have someone who knows the subsystem read the arrows.
 #
-#   scripts/check-diagram-evidence-drift.sh            check every committed diagram
-#   scripts/check-diagram-evidence-drift.sh FILE...    check these diagram JSON files
+#   scripts/note-diagram-evidence-drift.sh            check every committed diagram
+#   scripts/note-diagram-evidence-drift.sh FILE...    check these diagram JSON files
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
