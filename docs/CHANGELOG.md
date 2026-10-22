@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dependabot Rollup #993 to #998, the Wordmark Link Named by Its Content, axe Held at 4.13 (#1027) (#1028) — 2026-10-22
+
+Consolidates the six open Dependabot PRs the way 39-10 (#934) did: `actions/checkout` 4.4.0 -> 7.0.1 in every workflow, `gitleaks/gitleaks-action` 2.3.9 -> 3.0.0 (Node 24 runtime, no change to inputs, the exact `GITLEAKS_VERSION` pin stands), `github/codeql-action/upload-sarif` 4.38.3 -> 4.39.0, blobctl `azidentity` 1.14.1 -> 1.15.0, core-java `scrimage` 4.6.8 -> 4.6.9, and the frontend minor-and-patch group (`next` 16.4.2, `react` 19.3.1, `@playwright/test` 1.64.1, `framer-motion` 14.3.0, `@stripe/stripe-js` 10.1.0 and five more). Doc version claims follow in lockstep.
+
+- **Fixed (WCAG 2.5.3).** The wordmark link in the public header, the storefront layout and the sign-in page was named `aria-label="J'Toye home"` while its visible text was `J J'Toye`, so the visible "J" was not in its name. It is now named by its content: the monogram is `aria-hidden` and a visually hidden " home" keeps the name exactly `J'Toye home`. axe-core 4.14 surfaced it (`label-content-name-mismatch`, now on by default); measured on the production build, 32 failed before and only the `/shop` card after.
+- **Held.** `@axe-core/playwright` stays at 4.13.0 (exact): under 4.14 the `/shop` card link, named through `aria-labelledby` by design (37-52, UXT-082), fails the same rule on both viewports. That is a design decision, issue #1027. With 4.13 the public-surfaces a11y spec passes 42/42 on the same build.
+
 ### The Ingress CORS Allow-List Admits Idempotency-Key, So Browser Orders Reach Core on Staging (#1025) (#1026) — 2026-10-22
 
 Found by Phase 30 plan 30-03 (the staging card-checkout proof for #957). Staging's Traefik answers a CORS preflight from each Ingress's `cors-allow-headers` annotation and never asks core-java. Base carried ingress-nginx's default list, which has no `Idempotency-Key`, so every browser request carrying it failed the preflight on https://app-staging.olajay.co.uk and never reached core: every storefront order POST, plus the account DSAR request, image upload, refund, media reprocess, credential create and webhook replay.
