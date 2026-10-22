@@ -994,13 +994,14 @@ jobs:
       # Issue #1025: INV-24 keeps every CORS-enabled Ingress admitting every header the browser
       # sends cross-origin (the inventory is scanned from frontend/ on each run; server-only code
       # is excluded). Base shipped ingress-nginx's default list, without Idempotency-Key, so every
-      # storefront order POST on staging died at the preflight. Sixteen planted holes (a base drop,
+      # storefront order POST on staging died at the preflight. Seventeen planted holes (a base drop,
       # an SSE drop, an overlay putting the old list back, a wildcard, the annotation removed, and a
       # new browser header in each shape the scanner reads: headers object, headers.set, bracket
       # assignment, an object built first and passed later, headers["X"] =, headers.X =, new
       # Headers pairs on one line and across lines, a *-server.ts file with no server-only import, a
-      # route.ts outside app/, and a stale allow-list entry), two server-only controls that must
-      # PASS, and a blind scan, which is a PARSE ERROR (rc 2).
+      # route.ts outside app/, a stale allow-list entry, and an unquoted single-word header key such
+      # as { Prefer: v }), three controls that must PASS (two server-only files and an object of
+      # ordinary unquoted keys), and a blind scan, which is a PARSE ERROR (rc 2).
       - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
 

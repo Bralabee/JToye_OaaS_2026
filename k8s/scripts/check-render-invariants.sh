@@ -2189,6 +2189,10 @@ fi
 #   server-by-name  lib/planted-server.ts sends X-Planted-Named with NO server-only import rc 1
 #   route-not-app   lib/route.ts (outside app/, so not a Route Handler) sends a header  rc 1
 #   stale-allow     an INV24_ALLOW entry's hit disappears (safe-image's aria-label)     rc 1
+# Review round 2 (finding 4, unquoted keys), RED on 01fa0cad:
+#   bare-key        const extra = { Prefer: "respond-async" }; fetch(u, { headers: extra }) rc 1
+#   bare-key-plain  const extra = { method: "POST", cache: "no-store" } passed as headers:
+#                   ordinary unquoted keys are NOT headers (control)                    rc 0
 # INV24_SELFTEST_FORMAT=tap renders TAP 13.
 # ===========================================================================
 inv24_plant() {
@@ -2206,6 +2210,7 @@ inv24_plant() {
         bracket-assign|indirect-object|headers-bracket|headers-prop|headers-pairs|headers-multi)
             f="$root/frontend/lib/planted-$arm.ts" ;;
         server-by-name) f="$root/frontend/lib/planted-server.ts" ;;
+        bare-key|bare-key-plain) f="$root/frontend/lib/planted-$arm.ts" ;;
         route-not-app) f="$root/frontend/lib/route.ts" ;;
         stale-allow) f="$root/frontend/components/ui/safe-image.tsx" ;;
         *) return 1 ;;
@@ -2256,6 +2261,12 @@ inv24_plant() {
         headers-multi)
             printf '%s\n' 'export const p = (u: string) =>' '  fetch(u, {' '    headers: new Headers([' \
                 '      ["X-Planted-Multi", "1"],' '    ]),' '  })' > "$f" ;;
+        bare-key)
+            printf '%s\n' 'const extra = { Prefer: "respond-async" }' \
+                'export const p = (u: string) => fetch(u, { method: "POST", headers: extra })' > "$f" ;;
+        bare-key-plain)
+            printf '%s\n' 'const extra = { method: "POST", cache: "no-store" }' \
+                'export const p = (u: string) => fetch(u, { method: "POST", headers: extra })' > "$f" ;;
         server-by-name)
             printf '%s\n' 'export const p = (u: string) => fetch(u, { headers: { "X-Planted-Named": "1" } })' > "$f" ;;
         route-not-app)
@@ -2275,7 +2286,7 @@ inv24_selftest() {
     cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv24 could not copy $K8S_DIR" >&2; exit 2; }
     local -a ARMS=(base-drop sse-drop overlay-revert wildcard absent new-literal new-set server-route server-only blind
                    bracket-assign indirect-object headers-bracket headers-prop headers-pairs headers-multi
-                   server-by-name route-not-app stale-allow)
+                   server-by-name route-not-app stale-allow bare-key bare-key-plain)
     declare -A WANT=(
         [base-drop]="INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key"
         [sse-drop]="INV-24: Ingress jtoye-sse-ingress cors-allow-headers omits Idempotency-Key"
@@ -2295,9 +2306,11 @@ inv24_selftest() {
         [headers-multi]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Multi"
         [server-by-name]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Named"
         [route-not-app]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Route"
+        [bare-key]="INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer"
+        [bare-key-plain]="PASS:"
         [stale-allow]="INV-24 allow-list entry 'frontend/components/ui/safe-image.tsx|aria-label' matches no scanner hit"
     )
-    declare -A WANT_RC=([server-route]=0 [server-only]=0 [blind]=2)
+    declare -A WANT_RC=([server-route]=0 [server-only]=0 [blind]=2 [bare-key-plain]=0)
     for arm in "${ARMS[@]}"; do
         n=$((n + 1))
         selftest_stage "$st/pristine" "$st/arm"
@@ -3566,6 +3579,14 @@ INV24_ALLOW=(
     "frontend/app/legal/accessibility/page.tsx|third-party|A category-label lookup table for the accessibility statement; not a request."
     "frontend/app/legal/accessibility/page.tsx|known-defect|A category-label lookup table for the accessibility statement; not a request."
     "frontend/app/legal/accessibility/page.tsx|published-information|A category-label lookup table for the accessibility statement; not a request."
+    # bare-key hits (review round 2): unquoted keys whose name is also a HEADER_WORDS header
+    "frontend/app/dashboard/finance/page.tsx|from|The finance scope prop's first-day date ({ shopId, shopName, from, to }) passed to a component; not a request."
+    "frontend/app/dashboard/orders/page.tsx|origin|A Zod issue's origin field (ctx.addIssue({ code, origin: \"string\", ... })); not a request."
+    "frontend/app/sitemap.ts|priority|Sitemap entry priority in the Next sitemap metadata route (served as /sitemap.xml); not a request header."
+    "frontend/components/dashboard/secret-reveal-dialog.tsx|warning|A component prop type (the show-once warning copy); not a request."
+    "frontend/lib/finance-api.ts|from|The finance scope/query date-range field, sent as a query parameter, not a header."
+    "frontend/lib/structured-data.ts|origin|The public site origin used to build JSON-LD URLs (interface members and a function parameter); not a request."
+    "frontend/lib/webhooks-api.ts|warning|UI copy for the signing-secret reveal dialog; not a request."
 )
 INV24_SCAN="$SCRIPT_DIR/inv24-browser-headers.awk"
 [[ -f "$INV24_SCAN" ]] || parse_fail "INV-24: the browser header scanner is missing: $INV24_SCAN"

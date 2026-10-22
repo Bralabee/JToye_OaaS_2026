@@ -15,11 +15,23 @@
 #   new-headers-object  every key of an object passed to `new Headers({...})`
 #   string-key          a header-shaped quoted key in property position ANYWHERE
 #                       (`const extra = {"X-Foo": v}` passed later as `{ headers: extra }`)
-# Header-shaped = hyphenated (`[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)+`) or one of the standard
-# single-token request headers below. Comment lines (// /* *) are skipped.
+#   bare-key            an UNQUOTED key in property position anywhere whose name is in
+#                       HEADER_WORDS (`{ Prefer: "respond-async" }`; review round 2)
+# Header-shaped = hyphenated (`[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)+`) or a single word in
+# HEADER_WORDS (defined once, below). Comment lines (// /* *) are skipped.
 # <name> TAB <file>:<line> TAB <rule>
 function hy(s) { return s ~ /^[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)+$/ }
-function word(s) { return tolower(s) ~ /^(authorization|prefer|range|priority|traceparent|tracestate|baggage|pragma|forwarded)$/ }
+# HEADER_WORDS: the ONE list of single-word request header names that are not CORS-safelisted
+# (lower-case; compared case-insensitively). word() reads it, and every rule that asks "is this a
+# header-shaped single word" goes through word(), so the rules cannot drift apart. Some of these
+# are forbidden for scripts to set (cookie, origin, te, upgrade, via, expect...); they are listed
+# anyway because the point is to fail closed on anything that LOOKS like a request header.
+BEGIN {
+    HEADER_WORDS = "authorization|prefer|range|priority|traceparent|tracestate|baggage|pragma|forwarded" \
+                   "|origin|cookie|expect|from|te|upgrade|via|warning|dnt"
+    HEADER_WORDS_RE = "^(" HEADER_WORDS ")$"
+}
+function word(s) { return tolower(s) ~ HEADER_WORDS_RE }
 function emit(n, r) { printf "%s\t%s:%d\t%s\n", n, FILENAME, FNR, r }
 function grab(t, r,   m) {
     while (match(t, /(^|[{,])[[:space:]]*("[A-Za-z][A-Za-z0-9-]*"|'[A-Za-z][A-Za-z0-9-]*'|[A-Za-z][A-Za-z0-9-]*)[[:space:]]*:/)) {
@@ -90,5 +102,17 @@ FNR == 1 { mode = ""; depth = 0 }
         m = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
         sub(/^[{,]?[[:space:]]*["']/, "", m); sub(/["'][[:space:]]*:$/, "", m)
         if (hy(m) || word(m)) emit(m, "string-key")
+    }
+    # Prefer: in property position anywhere, UNQUOTED, only when the key is a word() header
+    # (review round 2 on PR #1026: { Prefer: "respond-async" } passed later as headers was
+    # missed). Every unquoted key is NOT a header ({ method: "POST" } is everywhere), so only the
+    # HEADER_WORDS list qualifies; a word that is a plain prop in a non-request context is excluded
+    # by file and name in INV24_ALLOW, never by pattern. `key?:` (an optional type member) has a
+    # `?` before the colon and does not match.
+    t = line
+    while (match(t, /(^|[{,])[[:space:]]*[A-Za-z][A-Za-z0-9]*[[:space:]]*:/)) {
+        m = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
+        sub(/^[{,]?[[:space:]]*/, "", m); sub(/[[:space:]]*:$/, "", m)
+        if (word(m)) emit(m, "bare-key")
     }
 }
