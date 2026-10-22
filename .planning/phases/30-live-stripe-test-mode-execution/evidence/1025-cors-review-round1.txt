@@ -246,3 +246,99 @@ rc=0
 --selftest-inv21 rc=0
 --selftest-inv22 rc=0
 --selftest-inv23 rc=0
+
+# ROUND 2 (/review-verify on 01fa0cade0fe158fb17d558592f6e26101e252af): finding 4, unquoted single-word header keys (2026-10-22T07:27:41Z)
+
+Harness: r2.sh <rev> (git archive <rev> k8s infra/keycloak core-java/src/main/resources frontend/{app,lib,components,hooks};
+plant frontend/lib/zz-probe.ts; run <archive>/k8s/scripts/check-render-invariants.sh). Probe bodies:
+    declare -A BODY=(
+     [r2-unquoted-prefer]=$'const extra = { Prefer: "respond-async" }\nexport const p = (u: string) => fetch(u, { method: "POST", headers: extra })'
+     [r2-quoted-prefer-control]=$'const extra = {"Prefer": "respond-async"}\nexport const p = (u: string) => fetch(u, { method: "POST", headers: extra })'
+     [r2-non-header-control]=$'const extra = { method: "POST", cache: "no-store" }\nexport const p = (u: string) => fetch(u, { method: "POST", headers: extra })'
+    )
+
+## on 01fa0cade0fe158fb17d558592f6e26101e252af
+r2-unquoted-prefer rc=0 (no INV-24 finding)
+r2-quoted-prefer-control rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer
+r2-non-header-control rc=0 (no INV-24 finding)
+
+## on a098abb4f1da04525055d92560c0cf09f6ffeb84
+r2-unquoted-prefer rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer
+r2-quoted-prefer-control rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer
+r2-non-header-control rc=0 (no INV-24 finding)
+
+## today's-tree bare-key hits, each inspected and allow-listed by file|name with its reason (INV24_ALLOW):
+   from (app/dashboard/finance/page.tsx, lib/finance-api.ts), origin (app/dashboard/orders/page.tsx, lib/structured-data.ts),
+   priority (app/sitemap.ts), warning (components/dashboard/secret-reveal-dialog.tsx, lib/webhooks-api.ts).
+   Authorization in hooks/use-stomp.ts:60 is left in: Authorization is already in the inventory.
+
+## bash k8s/scripts/check-render-invariants.sh --selftest-inv24   (on a098abb4f1da04525055d92560c0cf09f6ffeb84; run inside conda env jtoye-ops,
+## render_paths.py resolved its env python, so RENDER_PATHS_PYTHON=/usr/bin/python3 was NOT needed)
+ARM base-drop caught=yes (rc=1)
+ARM sse-drop caught=yes (rc=1)
+ARM overlay-revert caught=yes (rc=1)
+ARM wildcard caught=yes (rc=1)
+ARM absent caught=yes (rc=1)
+ARM new-literal caught=yes (rc=1)
+ARM new-set caught=yes (rc=1)
+ARM server-route caught=yes (rc=0)
+ARM server-only caught=yes (rc=0)
+ARM blind caught=yes (rc=2)
+ARM bracket-assign caught=yes (rc=1)
+ARM indirect-object caught=yes (rc=1)
+ARM headers-bracket caught=yes (rc=1)
+ARM headers-prop caught=yes (rc=1)
+ARM headers-pairs caught=yes (rc=1)
+ARM headers-multi caught=yes (rc=1)
+ARM server-by-name caught=yes (rc=1)
+ARM route-not-app caught=yes (rc=1)
+ARM stale-allow caught=yes (rc=1)
+ARM bare-key caught=yes (rc=1)
+ARM bare-key-plain caught=yes (rc=0)
+CLEAN rc=0
+rc=0
+
+## Gates on a098abb4f1da04525055d92560c0cf09f6ffeb84
+check-render-invariants.sh rc=0
+check-cors-preflight.sh --selftest rc=0
+render-golden.sh rc=0
+check-env-contract.sh rc=0
+check-no-plaintext-secrets.sh rc=0
+check-gate-enforcement.sh rc=0
+check-gate-enforcement.sh --selftest rc=0
+kubectl kustomize k8s/base rc=0
+kubectl kustomize k8s/local rc=0
+kubectl kustomize k8s/staging rc=0
+kubectl kustomize k8s/production rc=0
+docs-freshness.sh rc=0
+check-doc-metrics.sh rc=0
+check-doc-citations.sh rc=0
+check-changelog-contract.sh rc=0
+check-handoff-contract.sh rc=0
+check-branch-behind-base.sh rc=0
+
+## In-tree bracket: clean -> arms -> clean, restores verified by content
+### clean
+rc=0
+### arm A: frontend/lib/zz-probe.ts plants const extra = { Prefer: "respond-async" } passed as headers
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer, which the browser sends cross-origin (frontend/lib/zz-probe.ts:1); its preflight fails and the request never reaches core (issue #1025).
+rc=1
+restore A: frontend/lib/zz-probe.ts absent; untracked under frontend/: 0
+### arm B: Idempotency-Key removed from base jtoye-ingress
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key, which the browser sends cross-origin (frontend/app/shop/account/account-client.tsx:136); its preflight fails and the request never reaches core (issue #1025).
+rc=1
+restore B: blob 043e267646821ba1e0d2470b0aa763fe26f420a3 vs HEAD 043e267646821ba1e0d2470b0aa763fe26f420a3 -> MATCH
+### clean again
+rc=0
+tracked diff vs HEAD: 0 file(s)
+
+## Sibling render selftests on a098abb4f1da04525055d92560c0cf09f6ffeb84
+--selftest-inv7 rc=0
+--selftest-inv15 rc=0
+--selftest-inv16 rc=0
+--selftest-inv17 rc=0
+--selftest-inv18 rc=0
+--selftest-inv20 rc=0
+--selftest-inv21 rc=0
+--selftest-inv22 rc=0
+--selftest-inv23 rc=0
