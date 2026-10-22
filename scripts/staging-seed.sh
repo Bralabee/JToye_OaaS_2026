@@ -1145,6 +1145,11 @@ case "$method $base" in
   "GET /v1/payment_intents") key=pi-list; code=200 ;;
   "GET /v1/payment_intents/"*) if [ -f "$STUB_LOG_DIR/confirmed" ]; then key=pi-after; else key=pi-before; fi; code=200 ;;
   "GET /v1/events") key=events; code=200 ;;
+  # The hand tools (plan 30-07): the vendor's order lists and transitions.
+  "GET /api/v1/orders/status/"*) key="orders-status-${base##*/}"; code=200 ;;
+  "POST /api/v1/orders") key=vendor-order-out; code=201 ;;
+  "POST /api/v1/orders/"*"/submit"|"POST /api/v1/orders/"*"/confirm"|"POST /api/v1/orders/"*"/start-preparation")
+    key=transition; code="${STUB_TRANSITION_CODE:-200}" ;;
 esac
 if [ -n "${STUB_FAIL_ON:-}" ] && [[ "$method $base" =~ $STUB_FAIL_ON ]]; then key=problem; code=500; fi
 printf '%s %s -> %s\n' "$method" "$url" "$code" >> "$STUB_LOG_DIR/curl-flow.log"
@@ -1546,6 +1551,134 @@ IDF
   fi
   if [ -z "$why" ]; then _st_result "PASS stage-all rc=0 operator_delete_line=${ndel% } order_post_line=$n500 verdict=SEED-ORDER"
   else _st_result "FAIL stage-all $why"; fails=$((fails + 1)); fi
+
+  # ===== The hand tools (plan 30-07; D-01, D-02) ===============================
+  # Three staging DRAFTs: two card orders awaiting payment (PENDING, FAILED) and
+  # one vendor order (NONE). Every one carries customer fields holding the marker
+  # PIIZQ7, so a print of any of them is detectable.
+  local oA="bbbbbbbb-0000-4000-8000-00000000000a" oB="bbbbbbbb-0000-4000-8000-00000000000b" \
+        oC="bbbbbbbb-0000-4000-8000-00000000000c" tool_args pii_re='piizq7'
+  tool_args=(--context jtoye-stg-aks --identity-file "$ast/identity.yaml")
+  _st_draft() {   # ID NUMBER PAYMENT_STATUS PAYMENT_REFERENCE(or "") TOTAL CREATED
+    jq -n --arg id "$1" --arg n "$2" --arg ps "$3" --arg pr "$4" --argjson t "$5" --arg c "$6" --arg s "$sid" '{
+      id: $id, shopId: $s, orderNumber: $n, status: "DRAFT", paymentStatus: $ps,
+      paymentReference: (if $pr == "" then null else $pr end), totalAmountPennies: $t, createdAt: $c,
+      customerName: "Pii PIIZQ7 Name", customerEmail: "piizq7@example.invalid", customerPhone: "07700 900777",
+      notes: "PIIZQ7 ring the bell", addressLine1: "1 PIIZQ7 Road", allergyNote: "PIIZQ7 peanuts"}'
+  }
+  { _st_draft "$oA" ORD-STUB-D001 PENDING pi_drafta 950 2026-10-19T10:00:00Z
+    _st_draft "$oB" ORD-STUB-D002 FAILED pi_draftb 1200 2026-10-19T11:00:00Z
+    _st_draft "$oC" ORD-STUB-D003 NONE "" 700 2026-10-19T12:00:00Z
+  } | jq -s '{content: ., totalElements: (. | length), totalPages: 1, number: 0, last: true}' > "$ast/resp/orders-status-DRAFT.json"
+  _st_non_get() {   # curl calls that are not GETs, the token grant aside
+    if [ -s "$ast/logs/curl-flow.log" ]; then
+      command grep -vE '^GET |^POST https://auth-staging\.olajay\.co\.uk/realms/jtoye-staging/protocol/openid-connect/token -> ' \
+        "$ast/logs/curl-flow.log" | command grep -c '' || true
+    else echo 0; fi
+  }
+  _st_pii() { command grep -ciE "$pii_re" <<<"$ST_OUT$ST_ERR" || true; }
+
+  # --- list-drafts: one run, three arms -----------------------------------------
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage list-drafts
+  local ld_out="$ST_OUT" ld_err="$ST_ERR" ld_rc="$ST_RC" ld_last ld_want
+  ld_last=$(tail -n 1 <<<"$ld_out")
+  ld_want=$(printf '%s\n' \
+    'DRAFT-CANDIDATE order=ORD-STUB-D001 created=2026-10-19T10:00:00Z payment_status=PENDING intent=present total=950p' \
+    'DRAFT-CANDIDATE order=ORD-STUB-D002 created=2026-10-19T11:00:00Z payment_status=FAILED intent=present total=1200p' \
+    'DRAFT-CANDIDATE order=ORD-STUB-D003 created=2026-10-19T12:00:00Z payment_status=NONE intent=none total=700p')
+  why=""
+  if [ "$ld_rc" -ne 0 ]; then why="rc=$ld_rc (want 0): $(head -c 200 <<<"$ld_err" | tr '\n' ' ')"
+  elif [ "$(command grep -E '^DRAFT-CANDIDATE ' <<<"$ld_out" || true)" != "$ld_want" ]; then
+    why="the candidate lines are not the three projections: $(command grep -E '^DRAFT-CANDIDATE ' <<<"$ld_out" | tr '\n' '|' || true)"
+  elif ! [[ "$ld_last" =~ ^LIST-DRAFTS\ count=3\ card=2\ at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]]; then why="the last line is not the LIST-DRAFTS summary: '$ld_last'"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a secret marker was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS list-drafts-ok rc=0 candidates=3 card=2"
+  else _st_result "FAIL list-drafts-ok $why"; fails=$((fails + 1)); fi
+  why=""
+  local ld_gets
+  ld_gets=$(command grep -cE '^GET https://api-staging\.olajay\.co\.uk/api/v1/orders/status/DRAFT' "$ast/logs/curl-flow.log" || true)
+  if [ "$ld_rc" -ne 0 ]; then why="rc=$ld_rc (want 0)"
+  elif [ "$ld_gets" -lt 1 ]; then why="no GET of the DRAFT list (the read could not be observed)"
+  elif [ "$(_st_non_get)" -ne 0 ]; then why="non-GET calls: $(command grep -vE '^GET ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS list-drafts-readonly rc=0 draft_list_gets=$ld_gets non_get_calls=0"
+  else _st_result "FAIL list-drafts-readonly $why"; fails=$((fails + 1)); fi
+  why=""
+  local ld_pii
+  ld_pii=$(command grep -ciE "$pii_re|07700 900777" <<<"$ld_out$ld_err" || true)
+  if [ "$ld_rc" -ne 0 ]; then why="rc=$ld_rc (want 0)"
+  elif [ "$(command grep -c '^DRAFT-CANDIDATE ' <<<"$ld_out" || true)" -ne 3 ]; then why="no candidate lines to inspect (the arm would pass vacuously)"
+  elif [ "$ld_pii" -ne 0 ]; then why="$ld_pii line(s) carry a customer name, email, phone, address or note"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS list-drafts-no-pii rc=0 pii_lines=0 candidates=3"
+  else _st_result "FAIL list-drafts-no-pii $why"; fails=$((fails + 1)); fi
+
+  # --- transition-refused: the live #958 answer is read, not judged --------------
+  jq -n '{type: "https://jtoye.uk/errors/awaiting-payment", title: "Awaiting payment", status: 409,
+      detail: "Order ORD-STUB-D001 is awaiting payment. It can not be submitted, accepted or prepared until the customer payment completes."}' \
+    > "$ast/resp/transition.json"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STUB_TRANSITION_CODE=409 -- "${tool_args[@]}" --stage order-transition \
+    --orders ORD-STUB-D001 --event submit
+  why=""
+  local tr_line
+  tr_line=$(command grep -E '^TRANSITION ' <<<"$ST_OUT" || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$tr_line" != "TRANSITION order=ORD-STUB-D001 event=submit http=409 type=https://jtoye.uk/errors/awaiting-payment detail=Order ORD-STUB-D001 is awaiting payment. It can not be submitted, accepted or prepared until the customer payment completes." ]; then
+    why="the TRANSITION line is '$tr_line'"
+  elif [ "$(command grep -cE "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$oA/submit -> 409$" "$ast/logs/curl-flow.log" || true)" -ne 1 ]; then
+    why="the named order's submit was not called exactly once: $(command grep -E '^POST ' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_non_get)" -ne 1 ]; then why="non-GET calls=$(_st_non_get) (want exactly the one transition)"
+  elif [ "$(_st_pii)" -ne 0 ]; then why="a customer field was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS transition-refused rc=0 http=409 type=awaiting-payment transition_posts=1"
+  else _st_result "FAIL transition-refused $why"; fails=$((fails + 1)); fi
+
+  # --- transition-event-refused: cancel never goes through order-transition -----
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage order-transition --orders ORD-STUB-D001 --event cancel
+  if why=$(_st_refusal 2 "USAGE ERROR: --event must be submit, confirm or start-preparation" 0 0); then _st_result "PASS transition-event-refused rc=2 az_calls=0 curl_calls=0"
+  else _st_result "FAIL transition-event-refused $why"; fails=$((fails + 1)); fi
+
+  # --- vendor-order: the D-01 control, made the way the dashboard makes one ------
+  _st_vendor_order() {   # STATUS PAYMENT_STATUS
+    jq -n --arg st "$1" --arg ps "$2" --arg s "$sid" '{id: "cccccccc-0000-4000-8000-000000000001", shopId: $s,
+        orderNumber: "ORD-STUB-V001", status: $st, paymentStatus: $ps, paymentReference: null, totalAmountPennies: 950,
+        customerName: null, customerEmail: null}' > "$ast/resp/vendor-order-out.json"
+  }
+  _st_vendor_order DRAFT NONE
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage vendor-order
+  why=""
+  local vo_body
+  vo_body=$(command grep -F '"shopId"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "VENDOR-ORDER order=ORD-STUB-V001 status=DRAFT payment_status=NONE" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(jq -cS . <<<"${vo_body:-null}" 2>/dev/null)" != "$(jq -cnS --arg s "$sid" --arg p "$p1" '{shopId: $s, items: [{productId: $p, quantity: 1}]}')" ]; then
+    why="the order body is not {shopId, one item} alone: ${vo_body:-<none>}"
+  elif [ "$(command grep -cE '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders -> 201$' "$ast/logs/curl-flow.log" || true)" -ne 1 ]; then why="POST /api/v1/orders was not called exactly once"
+  elif ! command grep -qE 'Idempotency-Key: vendor-order-[0-9]{8}T[0-9]{6}Z( |$)' "$ast/logs/curl.log"; then why="the order POST carries no Idempotency-Key vendor-order-<UTC stamp>"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a secret marker was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS vendor-order-ok rc=0 body=shopId+1item idempotency_key=vendor-order-<stamp>"
+  else _st_result "FAIL vendor-order-ok $why"; fails=$((fails + 1)); fi
+
+  _st_vendor_order DRAFT PENDING
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage vendor-order
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1)"
+  elif ! command grep -qF 'paymentStatus' <<<"$ST_ERR"; then why="the failure does not name paymentStatus: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^VENDOR-ORDER ' <<<"$ST_OUT"; then why="a VENDOR-ORDER line was printed for a non-NONE order"
+  fi
+  if [ -n "$why" ]; then _st_result "FAIL vendor-order-not-none $why"; fails=$((fails + 1))
+  else
+    _st_vendor_order PENDING NONE
+    _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage vendor-order
+    if [ "$ST_RC" -ne 1 ]; then why="status PENDING: rc=$ST_RC (want 1)"
+    elif ! command grep -qE '(^|[^A-Za-z])status' <<<"$ST_ERR"; then why="status PENDING: the failure does not name status: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+    elif command grep -q '^VENDOR-ORDER ' <<<"$ST_OUT"; then why="status PENDING: a VENDOR-ORDER line was printed"
+    fi
+    if [ -z "$why" ]; then _st_result "PASS vendor-order-not-none rc=1 payment_status_PENDING=refused status_PENDING=refused"
+    else _st_result "FAIL vendor-order-not-none $why"; fails=$((fails + 1)); fi
+  fi
 
   _st_render
   [ "$fails" -eq 0 ]
