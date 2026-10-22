@@ -991,6 +991,29 @@ jobs:
       - name: Prove INV-23 catches planted Mailpit cert-reload holes (--selftest-inv23)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv23
 
+      # Issue #1025: INV-24 keeps every CORS-enabled Ingress admitting every header the browser
+      # sends cross-origin (the inventory is scanned from frontend/ on each run; server-only code
+      # is excluded). Base shipped ingress-nginx's default list, without Idempotency-Key, so every
+      # storefront order POST on staging died at the preflight. Seventeen planted holes (a base drop,
+      # an SSE drop, an overlay putting the old list back, a wildcard, the annotation removed, and a
+      # new browser header in each shape the scanner reads: headers object, headers.set, bracket
+      # assignment, an object built first and passed later, headers["X"] =, headers.X =, new
+      # Headers pairs on one line and across lines, a *-server.ts file with no server-only import, a
+      # route.ts outside app/, a stale allow-list entry, and an unquoted single-word header key such
+      # as { Prefer: v }), three controls that must PASS (two server-only files and an object of
+      # ordinary unquoted keys), and two PARSE ERRORs (rc 2): a blind scan, and a scanner regex
+      # that some awk refuses (the gawk-only break of run 39742059553; the gate runs the scanner
+      # under every awk on the machine and refuses disagreement).
+      - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
+
+      # The live half of #1025 runs in staging-edge-probe after a deploy; its judge is proven
+      # here on every change against synthetic preflight responses (today's staging list must
+      # fail, the fixed list pass, a wildcard / missing header / wrong origin / non-2xx status /
+      # no POST in allow-methods / no credentials true / a repeated ACAO or ACAH fail, empty VOID).
+      - name: Prove the CORS preflight probe can fail (check-cors-preflight.sh --selftest)
+        run: bash scripts/check-cors-preflight.sh --selftest
+
       # Plan 29-12 (D-23): the Key Vault chain of every target that includes
       # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
       # has exactly one producing SecretProviderClass that the consuming pod mounts,
@@ -2627,6 +2650,13 @@ jobs:
       # exit 2 = VOID (a host did not resolve, a request did not complete): both fail this job.
       - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin)
         run: bash scripts/check-staging-edge.sh --skip-burst
+
+      # Issue #1025: the order POST's preflight admits every header the browser sends
+      # (content-type, authorization, idempotency-key, x-tenant-id). One OPTIONS request to the
+      # public api host; exit 1 = a header refused, 2 = VOID. INV-24 holds the render; this holds
+      # what the live edge answers.
+      - name: Probe the live staging CORS preflight admits the browser's headers (#1025)
+        run: bash scripts/check-cors-preflight.sh
 
   # Job 5: Deploy to production
   #

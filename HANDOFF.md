@@ -7,6 +7,7 @@
 - **Phase 30 ("The Money Path, Executed") is next.** It has 32 plans in 8 serial PRs, planned in #1018 and approved by the owner on 2026-10-21. Execution starts with 30-01, which fixes the root cause of #957 (still OPEN): the publishable Stripe key is not baked into the frontend image, so the checkout never shows a payment step.
   - Start with `/gsd-execute-phase 30` from a checkout of a fresh `main`.
   - The single resume source is `.planning/STATE.md` on main.
+- issue #1025 CORS fix PR open, blocks PR 1's staging proof.
 - **Merged since the 2026-10-21 block:**
   - #1002, the Phase 29 close;
   - #1004, CI skips integration tests, images and deploys for documentation-only changes;
@@ -884,10 +885,13 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 58 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 59 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-22 (fix/1025-ingress-cors-idempotency-key): 58 -> 59. check-cors-preflight asks the
+# live staging api host whether the order POST's preflight admits the browser's headers
+# (issue #1025); it curls a public host, so from a laptop it needs network, not a stack.
 # 2026-10-21 (ci/doc-only-skip): 57 -> 58. check-ci-docs-skip-wiring fails a doc-only skip that
 # reaches a cheap gate, or an Integration Tests condition that no longer runs the suite when
 # the `changes` job itself fails.

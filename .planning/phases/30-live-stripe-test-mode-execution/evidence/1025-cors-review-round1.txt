@@ -1,0 +1,488 @@
+# issue #1025 — PR #1026 review round 1, findings 1-5: RED on ebf0e5e28968ca6548a4f50d100e6ca7421e6a18, GREEN on ca78c1727da7c89d05e374f0dd986034ff266864 (2026-10-22T07:01:52Z)
+
+## Findings 1-3: scripts/check-cors-preflight.sh --from-file <fixture>
+Fixtures (CR stripped for display):
+--- control-good.txt
+    HTTP/2 200 
+    access-control-allow-credentials: true
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+--- f1-status-403.txt
+    HTTP/2 403 
+    access-control-allow-credentials: true
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+--- f2-no-credentials.txt
+    HTTP/2 200 
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+--- f2-no-post-no-credentials.txt
+    HTTP/2 200 
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-methods: GET,OPTIONS
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+--- f2-no-post.txt
+    HTTP/2 200 
+    access-control-allow-credentials: true
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-methods: GET,OPTIONS
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+--- f3-duplicate-acah.txt
+    HTTP/2 200 
+    access-control-allow-credentials: true
+    access-control-allow-headers: Content-Type
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+--- f3-duplicate-acao.txt
+    HTTP/2 200 
+    access-control-allow-credentials: true
+    access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+    access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+    access-control-allow-origin: *
+    access-control-allow-origin: https://app-staging.olajay.co.uk
+    
+
+### on ebf0e5e28968ca6548a4f50d100e6ca7421e6a18:  git show ebf0e5e28968ca6548a4f50d100e6ca7421e6a18:scripts/check-cors-preflight.sh > preflight-old.sh; bash preflight-old.sh --from-file <fixture>
+f1-status-403 rc=0
+f2-no-post-no-credentials rc=0
+f2-no-post rc=0
+f2-no-credentials rc=0
+f3-duplicate-acao rc=0
+f3-duplicate-acah rc=0
+control-good rc=0
+
+### on ca78c1727da7c89d05e374f0dd986034ff266864:  bash scripts/check-cors-preflight.sh --from-file <fixture>
+f1-status-403 rc=1
+f2-no-post-no-credentials rc=1
+f2-no-post rc=1
+f2-no-credentials rc=1
+f3-duplicate-acao rc=1
+f3-duplicate-acah rc=1
+control-good rc=0
+
+### new judge, full output on two of them
+$ bash scripts/check-cors-preflight.sh --from-file f1-status-403.txt
+judging /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/373451fd-6288-40c1-8b51-5301d013c3d6/scratchpad/fx/f1-status-403.txt (origin https://app-staging.olajay.co.uk, require content-type,authorization,idempotency-key,x-tenant-id)
+FAIL HTTP 403: a non-2xx preflight fails CORS in the browser whatever its headers say
+OK   access-control-allow-origin: https://app-staging.olajay.co.uk
+OK   access-control-allow-credentials: true
+OK   access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH (admits POST)
+     access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+OK   admits content-type
+OK   admits authorization
+OK   admits idempotency-key
+OK   admits x-tenant-id
+rc=1
+$ bash scripts/check-cors-preflight.sh --from-file f3-duplicate-acao.txt
+judging /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/373451fd-6288-40c1-8b51-5301d013c3d6/scratchpad/fx/f3-duplicate-acao.txt (origin https://app-staging.olajay.co.uk, require content-type,authorization,idempotency-key,x-tenant-id)
+OK   HTTP 200
+FAIL access-control-allow-origin is repeated (*|https://app-staging.olajay.co.uk): a browser rejects multiple values
+OK   access-control-allow-credentials: true
+OK   access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH (admits POST)
+     access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
+OK   admits content-type
+OK   admits authorization
+OK   admits idempotency-key
+OK   admits x-tenant-id
+rc=1
+
+### bash scripts/check-cors-preflight.sh --selftest   (on ca78c1727da7c89d05e374f0dd986034ff266864)
+ok   today rc=1
+ok   fixed rc=0
+ok   fixed-204 rc=0
+ok   spaced rc=0
+ok   wildcard rc=1
+ok   no-acah rc=1
+ok   no-acao rc=1
+ok   wrong-acao rc=1
+ok   lookalike rc=1
+ok   status-403 rc=1
+ok   status-302 rc=1
+ok   no-post rc=1
+ok   no-credentials rc=1
+ok   credentials-false rc=1
+ok   dup-acao rc=1
+ok   dup-acah rc=1
+ok   empty rc=2
+ok   today-idempotency-only rc=1
+ok   fixed-idempotency-only rc=0
+SELFTEST PASS: every arm judged as expected
+rc=0
+
+### live staging, read-only (still pre-deploy: must be rc 1 on idempotency-key/x-tenant-id only)
+OPTIONS https://api-staging.olajay.co.uk/api/v1/public/shops/staging-test-kitchen/orders
+  Origin: https://app-staging.olajay.co.uk
+  Access-Control-Request-Method: POST
+  Access-Control-Request-Headers: content-type,authorization,idempotency-key,x-tenant-id
+OK   HTTP 200
+OK   access-control-allow-origin: https://app-staging.olajay.co.uk
+OK   access-control-allow-credentials: true
+OK   access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH (admits POST)
+     access-control-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+OK   admits content-type
+OK   admits authorization
+FAIL omits idempotency-key: a browser request carrying it fails the preflight (issue #1025)
+FAIL omits x-tenant-id: a browser request carrying it fails the preflight (issue #1025)
+FAIL: the edge refuses at least one required header from https://app-staging.olajay.co.uk
+rc=1
+
+## Findings 4-5: a probe file planted in a git archive of the rev, that rev's own gate run
+Harness: f45.sh <rev> (git archive <rev> k8s infra/keycloak core-java/src/main/resources frontend/{app,lib,components,hooks};
+plant ONE file per arm, default frontend/lib/zz-probe.ts; f5 arms at frontend/lib/zz-probe-server.ts and frontend/app/api/zz-probe/route.ts;
+run <archive>/k8s/scripts/check-render-invariants.sh). Probe bodies:
+    declare -A BODY=(
+     [f4-bracket-assign]='export function p(h: Record<string, string>) { h["X-Probe-One"] = "1"; return fetch("/x", { headers: h }) }'
+     [f4-indirect-object]='const extra = {"X-Probe-Two": "1"}; export const p = (u: string) => fetch(u, {headers: extra})'
+     [f4-control-headers-object]='export const p = (u: string) => fetch(u, { headers: {"X-Probe-Three": "1"} })'
+     [f4-headers-bracket]='export function p(req: { headers: Record<string, string> }) { req.headers["X-Probe-Five"] = "1" }'
+     [f4-headers-property]='export function p(req: { headers: Record<string, string> }) { req.headers.Prefer = "respond-async" }'
+     [f4-new-headers-pairs]='export const p = (u: string) => fetch(u, { headers: new Headers([["X-Probe-Six", "1"]]) })'
+     [f4-new-headers-multiline]=$'export const p = (u: string) => fetch(u, { headers: new Headers([\n  ["X-Probe-Seven", "1"],\n]) })'
+     [f5-server-by-name-only]='export const p = (u: string) => fetch(u, { headers: {"X-Probe-Four": "1"} })'
+     [f5-control-app-route]='export async function GET() { return fetch("http://core/x", { headers: {"X-Probe-Route": "1"} }) }'
+    )
+
+### on ebf0e5e28968ca6548a4f50d100e6ca7421e6a18
+f4-bracket-assign rc=0 (no INV-24 finding)
+f4-indirect-object rc=0 (no INV-24 finding)
+f4-control-headers-object rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-Three
+f4-headers-bracket rc=0 (no INV-24 finding)
+f4-headers-property rc=0 (no INV-24 finding)
+f4-new-headers-pairs rc=0 (no INV-24 finding)
+f4-new-headers-multiline rc=0 (no INV-24 finding)
+f5-server-by-name-only rc=0 (no INV-24 finding)
+f5-control-app-route rc=0 (no INV-24 finding)
+
+### on ca78c1727da7c89d05e374f0dd986034ff266864
+f4-bracket-assign rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-One
+f4-indirect-object rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-Two
+f4-control-headers-object rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-Three
+f4-headers-bracket rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-Five
+f4-headers-property rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer
+f4-new-headers-pairs rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-Six
+f4-new-headers-multiline rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-Seven
+f5-server-by-name-only rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Probe-Four
+f5-control-app-route rc=0 (no INV-24 finding)
+
+### bash k8s/scripts/check-render-invariants.sh --selftest-inv24   (on ca78c1727da7c89d05e374f0dd986034ff266864)
+ARM base-drop caught=yes (rc=1)
+ARM sse-drop caught=yes (rc=1)
+ARM overlay-revert caught=yes (rc=1)
+ARM wildcard caught=yes (rc=1)
+ARM absent caught=yes (rc=1)
+ARM new-literal caught=yes (rc=1)
+ARM new-set caught=yes (rc=1)
+ARM server-route caught=yes (rc=0)
+ARM server-only caught=yes (rc=0)
+ARM blind caught=yes (rc=2)
+ARM bracket-assign caught=yes (rc=1)
+ARM indirect-object caught=yes (rc=1)
+ARM headers-bracket caught=yes (rc=1)
+ARM headers-prop caught=yes (rc=1)
+ARM headers-pairs caught=yes (rc=1)
+ARM headers-multi caught=yes (rc=1)
+ARM server-by-name caught=yes (rc=1)
+ARM route-not-app caught=yes (rc=1)
+ARM stale-allow caught=yes (rc=1)
+CLEAN rc=0
+rc=0
+
+## Gates on ca78c1727da7c89d05e374f0dd986034ff266864 (round-1 fixes committed)
+check-render-invariants.sh rc=0
+check-render-invariants.sh --selftest-inv24 rc=0
+check-cors-preflight.sh --selftest rc=0
+render-golden.sh rc=0
+check-env-contract.sh rc=0
+check-no-plaintext-secrets.sh rc=0
+check-gate-enforcement.sh rc=0
+check-gate-enforcement.sh --selftest rc=0
+kubectl kustomize k8s/base rc=0
+kubectl kustomize k8s/local rc=0
+kubectl kustomize k8s/staging rc=0
+kubectl kustomize k8s/production rc=0
+docs-freshness.sh rc=0
+check-doc-metrics.sh rc=0
+check-doc-citations.sh rc=0
+check-changelog-contract.sh rc=0
+check-handoff-contract.sh rc=0
+check-branch-behind-base.sh rc=0
+
+## In-tree bracket: clean -> arms -> clean, restores verified by content
+### clean
+rc=0
+### arm A: Idempotency-Key removed from base jtoye-ingress
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key, which the browser sends cross-origin (frontend/app/shop/account/account-client.tsx:136); its preflight fails and the request never reaches core (issue #1025).
+FAIL [k8s/base]: INV-1 OK (2 DB_PORT EnvVar(s), all valueFrom, 0 literal) | INV-2 OK (121 EnvVars, DB_PORT present, 0 with both value+valueFrom) | INV-3 OK (4 kube-dns selector block(s), each exactly 1 key) | INV-4 OK (0 localhost / 127.0.0.1 / UseDevelopmentStorage / devstoreaccount1 / AccountKey= literals) | INV-6 OK (3 backend ref(s) -> 3 Service(s)) | INV-7 OK (7 policies, 46 rule tuples exact, db.port=5432, controller ns=traefik) | INV-8 SKIP (not in WI_TARGETS) | INV-9 SKIP (not in WI_TARGETS) | INV-10 SKIP (not in WI_TARGETS) | INV-11 OK (1 core-java container(s); 0 probe-switch spellings in the render; no SPRING_APPLICATION_JSON, no Secret-sourced JVM options, no envFrom) | INV-12 OK (empty = trust none) | INV-14 SKIP (not in WI_TARGETS) | INV-15 SKIP (not in WI_TARGETS) | INV-16 not applicable (no truststore component in this render) | INV-17 SKIP (not in WI_TARGETS) | INV-18 not applicable (no mailpit component in this render) | INV-19 SKIP (not in WI_TARGETS) | INV-20 not applicable (no Keycloak container in this render) | INV-21 not applicable (no grafana component in this render) | INV-22 OK (1 core-java container(s) leave the prod profile's environment="production" in force, which is this target's label) | INV-23 not applicable (no mailpit component in this render) | INV-24 FAIL
+rc=1
+restore A: blob 043e267646821ba1e0d2470b0aa763fe26f420a3 vs HEAD 043e267646821ba1e0d2470b0aa763fe26f420a3 -> MATCH
+### arm B: frontend/lib/zz-probe.ts plants h["X-Bracket-Probe"] = v (finding 4 shape)
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Bracket-Probe, which the browser sends cross-origin (frontend/lib/zz-probe.ts:1); its preflight fails and the request never reaches core (issue #1025).
+rc=1
+restore B: frontend/lib/zz-probe.ts absent; untracked under frontend/: 0
+### arm C: frontend/lib/zz-probe-server.ts, no server-only import (finding 5 shape)
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Named-Probe, which the browser sends cross-origin (frontend/lib/zz-probe-server.ts:1); its preflight fails and the request never reaches core (issue #1025).
+rc=1
+restore C: untracked under frontend/: 0; tracked diff vs HEAD: 0 file(s)
+### clean again
+rc=0
+
+## Sibling render selftests (selftest_stage copies k8s/, now including inv24-browser-headers.awk)
+--selftest-inv7 rc=0
+--selftest-inv15 rc=0
+--selftest-inv16 rc=0
+--selftest-inv17 rc=0
+--selftest-inv18 rc=0
+--selftest-inv20 rc=0
+--selftest-inv21 rc=0
+--selftest-inv22 rc=0
+--selftest-inv23 rc=0
+
+# ROUND 2 (/review-verify on 01fa0cade0fe158fb17d558592f6e26101e252af): finding 4, unquoted single-word header keys (2026-10-22T07:27:41Z)
+
+Harness: r2.sh <rev> (git archive <rev> k8s infra/keycloak core-java/src/main/resources frontend/{app,lib,components,hooks};
+plant frontend/lib/zz-probe.ts; run <archive>/k8s/scripts/check-render-invariants.sh). Probe bodies:
+    declare -A BODY=(
+     [r2-unquoted-prefer]=$'const extra = { Prefer: "respond-async" }\nexport const p = (u: string) => fetch(u, { method: "POST", headers: extra })'
+     [r2-quoted-prefer-control]=$'const extra = {"Prefer": "respond-async"}\nexport const p = (u: string) => fetch(u, { method: "POST", headers: extra })'
+     [r2-non-header-control]=$'const extra = { method: "POST", cache: "no-store" }\nexport const p = (u: string) => fetch(u, { method: "POST", headers: extra })'
+    )
+
+## on 01fa0cade0fe158fb17d558592f6e26101e252af
+r2-unquoted-prefer rc=0 (no INV-24 finding)
+r2-quoted-prefer-control rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer
+r2-non-header-control rc=0 (no INV-24 finding)
+
+## on a098abb4f1da04525055d92560c0cf09f6ffeb84
+r2-unquoted-prefer rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer
+r2-quoted-prefer-control rc=1 INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer
+r2-non-header-control rc=0 (no INV-24 finding)
+
+## today's-tree bare-key hits, each inspected and allow-listed by file|name with its reason (INV24_ALLOW):
+   from (app/dashboard/finance/page.tsx, lib/finance-api.ts), origin (app/dashboard/orders/page.tsx, lib/structured-data.ts),
+   priority (app/sitemap.ts), warning (components/dashboard/secret-reveal-dialog.tsx, lib/webhooks-api.ts).
+   Authorization in hooks/use-stomp.ts:60 is left in: Authorization is already in the inventory.
+
+## bash k8s/scripts/check-render-invariants.sh --selftest-inv24   (on a098abb4f1da04525055d92560c0cf09f6ffeb84; run inside conda env jtoye-ops,
+## render_paths.py resolved its env python, so RENDER_PATHS_PYTHON=/usr/bin/python3 was NOT needed)
+ARM base-drop caught=yes (rc=1)
+ARM sse-drop caught=yes (rc=1)
+ARM overlay-revert caught=yes (rc=1)
+ARM wildcard caught=yes (rc=1)
+ARM absent caught=yes (rc=1)
+ARM new-literal caught=yes (rc=1)
+ARM new-set caught=yes (rc=1)
+ARM server-route caught=yes (rc=0)
+ARM server-only caught=yes (rc=0)
+ARM blind caught=yes (rc=2)
+ARM bracket-assign caught=yes (rc=1)
+ARM indirect-object caught=yes (rc=1)
+ARM headers-bracket caught=yes (rc=1)
+ARM headers-prop caught=yes (rc=1)
+ARM headers-pairs caught=yes (rc=1)
+ARM headers-multi caught=yes (rc=1)
+ARM server-by-name caught=yes (rc=1)
+ARM route-not-app caught=yes (rc=1)
+ARM stale-allow caught=yes (rc=1)
+ARM bare-key caught=yes (rc=1)
+ARM bare-key-plain caught=yes (rc=0)
+CLEAN rc=0
+rc=0
+
+## Gates on a098abb4f1da04525055d92560c0cf09f6ffeb84
+check-render-invariants.sh rc=0
+check-cors-preflight.sh --selftest rc=0
+render-golden.sh rc=0
+check-env-contract.sh rc=0
+check-no-plaintext-secrets.sh rc=0
+check-gate-enforcement.sh rc=0
+check-gate-enforcement.sh --selftest rc=0
+kubectl kustomize k8s/base rc=0
+kubectl kustomize k8s/local rc=0
+kubectl kustomize k8s/staging rc=0
+kubectl kustomize k8s/production rc=0
+docs-freshness.sh rc=0
+check-doc-metrics.sh rc=0
+check-doc-citations.sh rc=0
+check-changelog-contract.sh rc=0
+check-handoff-contract.sh rc=0
+check-branch-behind-base.sh rc=0
+
+## In-tree bracket: clean -> arms -> clean, restores verified by content
+### clean
+rc=0
+### arm A: frontend/lib/zz-probe.ts plants const extra = { Prefer: "respond-async" } passed as headers
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer, which the browser sends cross-origin (frontend/lib/zz-probe.ts:1); its preflight fails and the request never reaches core (issue #1025).
+rc=1
+restore A: frontend/lib/zz-probe.ts absent; untracked under frontend/: 0
+### arm B: Idempotency-Key removed from base jtoye-ingress
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key, which the browser sends cross-origin (frontend/app/shop/account/account-client.tsx:136); its preflight fails and the request never reaches core (issue #1025).
+rc=1
+restore B: blob 043e267646821ba1e0d2470b0aa763fe26f420a3 vs HEAD 043e267646821ba1e0d2470b0aa763fe26f420a3 -> MATCH
+### clean again
+rc=0
+tracked diff vs HEAD: 0 file(s)
+
+## Sibling render selftests on a098abb4f1da04525055d92560c0cf09f6ffeb84
+--selftest-inv7 rc=0
+--selftest-inv15 rc=0
+--selftest-inv16 rc=0
+--selftest-inv17 rc=0
+--selftest-inv18 rc=0
+--selftest-inv20 rc=0
+--selftest-inv21 rc=0
+--selftest-inv22 rc=0
+--selftest-inv23 rc=0
+
+# CI gawk: K8s Kustomize Secret Guard red on f110ac33 (run 39742059553, job 119701430557) (2026-10-22T08:03:27Z)
+Cause: the runner's awk is gawk; this host's is mawk 1.3.4 20240123. gawk reads "[." inside a bracket
+expression as a collating-symbol opener. Two bracket expressions were non-portable:
+    line 89  gsub(/[][."'[:space:]]/, ...)            ->  gsub(/[]."'[:space:][]/, ...)   (] first, [ last)
+    line 78  /[A-Za-z0-9_$\]\)]*\.(set|append).../  ->  /[]A-Za-z0-9_$)]*\.(set|append).../   (no \] inside brackets)
+Audit: every other bracket expression in the file is a plain range/class ([A-Za-z0-9-], [{,], [:=], [^=>], ["'], [[:space:]]).
+
+## The fixture (scratchpad fixture.ts), covering quoted, unquoted, bracket, headers[...], headers.X, .set, Headers() and control shapes
+    // fixture: one line per shape INV-24 must read, plus controls it must not
+    export const a = (u: string) => fetch(u, { headers: { "X-Quoted-Obj": "1", Authorization: "Bearer t" } })
+    const extra = {"X-String-Key": "1"}
+    const bare = { Prefer: "respond-async" }
+    const plain = { method: "POST", cache: "no-store" }
+    export function b(h: Record<string, string>, req: { headers: Record<string, string> }) {
+      h["X-Bracket-Assign"] = "1"
+      req.headers["X-Headers-Bracket"] = "1"
+      req.headers.Traceparent = "00-abc"
+      config.headers.set("X-Headers-Set", "1")
+      params.set("X-Any-Set", "1")
+    }
+    export const c = (u: string) => fetch(u, { headers: new Headers([["X-Pair-One", "1"]]) })
+    export const d = (u: string) =>
+      fetch(u, {
+        headers: new Headers([
+          ["X-Pair-Multi", "1"],
+        ]),
+      })
+    const label = cond ? "text-red-500" : "text-green-500"
+    // headers: { "X-Comment": "1" }
+
+## Three awks, old (f110ac33) and fixed scanner: <awk> -f <scanner> fixture.ts
+mawk (mawk 1.3.4 20240123), busybox awk (BusyBox v1.36.1), gawk (GNU Awk 5.2.1 in a throwaway debian:stable-slim container)
+  old  mawk: rc=0, 14 records, sha256 8f2f91b6aac02506
+  new  mawk: rc=0, 14 records, sha256 8f2f91b6aac02506
+  old  busybox_awk: FAILED: awk: bad regex '[][."'[:space:]]': Unmatched [, [^, [:, [., or [=
+  new  busybox_awk: rc=0, 14 records, sha256 8f2f91b6aac02506
+  old  gawk: FAILED: gawk: scan-old.awk:89: error: Unmatched [, [^, [:, [., or [=: /[][."'[:space:]]/
+  new  gawk: rc=0, 14 records, sha256 8f2f91b6aac02506
+  new  gawk --posix: sha256 8f2f91b6aac02506
+  (old busybox and old gawk exit 1; the old mawk output equals the new mawk output, so the rewrite changed no match)
+
+## Fixed scanner output on the fixture (identical bytes under all three):
+    X-Quoted-Obj	fixture.ts:2	headers-object
+    Authorization	fixture.ts:2	headers-object
+    X-Quoted-Obj	fixture.ts:2	string-key
+    Authorization	fixture.ts:2	bare-key
+    X-String-Key	fixture.ts:3	string-key
+    Prefer	fixture.ts:4	bare-key
+    X-Bracket-Assign	fixture.ts:7	bracket-assign
+    X-Headers-Bracket	fixture.ts:8	headers-assign
+    X-Headers-Bracket	fixture.ts:8	bracket-assign
+    Traceparent	fixture.ts:9	headers-assign
+    X-Headers-Set	fixture.ts:10	headers-set
+    X-Any-Set	fixture.ts:11	set-header-shaped
+    X-Pair-One	fixture.ts:13	new-headers-pair
+    X-Pair-Multi	fixture.ts:17	new-headers-pair
+
+## Full gates under gawk in the container (kubectl = host static binary mounted read-only; python3-yaml, jq installed in the container only)
+    container: awk -> /usr/bin/gawk; GNU Awk 5.2.1, API 3.2, PMA Avon 8-g1, (GNU MPFR 4.2.2, GNU MP 6.3.0); mawk present: /usr/bin/mawk
+    == f110ac33 tree: bash k8s/scripts/check-render-invariants.sh (awk = gawk)
+    awk: /old/k8s/scripts/inv24-browser-headers.awk:89: error: Unmatched [, [^, [:, [., or [=: /[][."'[:space:]]/
+    PARSE ERROR: INV-24: the browser header scan (awk) failed.
+    rc=2
+    == a581168c tree: bash k8s/scripts/check-render-invariants.sh (awk = gawk, mawk cross-checked)
+    INV-24 portability: scanner output identical under awk (gawk, mawk)
+          4 INV-24 OK (2 CORS-enabled Ingress(es) admit all 4 browser headers: Content-Type Idempotency-Key Authorization X-Tenant-Id)
+    rc=0
+    == a581168c tree: --selftest-inv24 (awk = gawk)
+    ARM route-not-app caught=yes (rc=1)
+    ARM stale-allow caught=yes (rc=1)
+    ARM bare-key caught=yes (rc=1)
+    ARM bare-key-plain caught=yes (rc=0)
+    ARM awk-portability caught=yes (rc=2)
+    CLEAN rc=0
+    rc=0
+    == a581168c tree: check-cors-preflight.sh --selftest (awk = gawk)
+    SELFTEST PASS: every arm judged as expected
+    rc=0
+    gawk --selftest-inv7 rc=0
+    gawk --selftest-inv15 rc=0
+    gawk --selftest-inv16 rc=0
+    gawk --selftest-inv17 rc=0
+    gawk --selftest-inv18 rc=0
+    gawk --selftest-inv20 rc=0
+    gawk --selftest-inv21 rc=0
+    gawk --selftest-inv22 rc=0
+    gawk --selftest-inv23 rc=0
+
+## Step 3: what makes the gate fail the same way on THIS host
+Chosen: check-render-invariants.sh runs the scanner under every OTHER awk present (gawk, mawk, nawk, original-awk,
+busybox awk; de-duplicated by resolved binary) and makes a failure, or any byte difference from awk's output, a PARSE ERROR.
+Why not pin one interpreter: pinning gawk VOIDs on this host (no gawk installed); pinning mawk would still pass the
+gawk-only break. The cross-check costs nothing when only one awk exists (it says so) and, here, busybox awk refuses exactly
+what gawk refused (old busybox above). A selftest arm (awk-portability) plants the old regex and must exit 2.
+
+### old scanner dropped into today's tree, local gate (awk = mawk, busybox cross-check):
+PARSE ERROR: INV-24: the browser header scan failed under 'busybox awk' (awk: bad regex '[][."'[:space:]]': Unmatched [, [^, [:, [., or [=); the scanner must parse under every awk (CI runs gawk). Keep its bracket expressions portable: a literal ] first, a literal [ last, no [. [= [: except real classes.
+rc=2
+restore: blob ae38761f0f20adaeb8b52780c6dd2bb89e5f5121 vs HEAD ae38761f0f20adaeb8b52780c6dd2bb89e5f5121 -> MATCH
+
+## Gates on a581168c1579addbb8f336adfa3ce4ceb08b2e43 (local, jtoye-ops env)
+check-render-invariants.sh rc=0
+check-render-invariants.sh --selftest-inv24 rc=0
+check-cors-preflight.sh --selftest rc=0
+render-golden.sh rc=0
+check-env-contract.sh rc=0
+check-no-plaintext-secrets.sh rc=0
+check-gate-enforcement.sh rc=0
+check-gate-enforcement.sh --selftest rc=0
+kubectl kustomize k8s/base rc=0
+kubectl kustomize k8s/local rc=0
+kubectl kustomize k8s/staging rc=0
+kubectl kustomize k8s/production rc=0
+docs-freshness.sh rc=0
+check-doc-metrics.sh rc=0
+check-doc-citations.sh rc=0
+check-changelog-contract.sh rc=0
+check-handoff-contract.sh rc=0
+check-branch-behind-base.sh rc=0
+--selftest-inv7 rc=0
+--selftest-inv15 rc=0
+--selftest-inv16 rc=0
+--selftest-inv17 rc=0
+--selftest-inv18 rc=0
+--selftest-inv20 rc=0
+--selftest-inv21 rc=0
+--selftest-inv22 rc=0
+--selftest-inv23 rc=0
+
+## In-tree bracket: clean -> arms -> clean, restores verified by content
+### clean
+rc=0
+### arm A: the f110ac33 scanner regex put back
+PARSE ERROR: INV-24: the browser header scan failed under 'busybox awk' (awk: bad regex '[][."'[:space:]]': Unmatched [, [^, [:, [., or [=); the scanner must parse under every awk (CI runs gawk). Keep its bracket expressions portable: a literal ] first, a literal [ last, no [. [= [: except real classes.
+rc=2
+restore A: blob ae38761f0f20adaeb8b52780c6dd2bb89e5f5121 vs HEAD ae38761f0f20adaeb8b52780c6dd2bb89e5f5121 -> MATCH
+### arm B: Idempotency-Key removed from base jtoye-ingress
+  FAIL [k8s/base] INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key, which the browser sends cross-origin (frontend/app/shop/account/account-client.tsx:136); its preflight fails and the request never reaches core (issue #1025).
+rc=1
+restore B: blob 043e267646821ba1e0d2470b0aa763fe26f420a3 vs HEAD 043e267646821ba1e0d2470b0aa763fe26f420a3 -> MATCH
+### clean again
+rc=0
+tracked diff vs HEAD under k8s/ frontend/: 0 file(s)

@@ -1407,7 +1407,7 @@ metadata:
       more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
       more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
-    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
     nginx.ingress.kubernetes.io/cors-allow-methods: GET, POST, PUT, DELETE, OPTIONS,
       PATCH
     nginx.ingress.kubernetes.io/cors-allow-origin: https://app.olajay.co.uk
@@ -1469,7 +1469,7 @@ metadata:
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
-    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
     nginx.ingress.kubernetes.io/cors-allow-methods: GET, OPTIONS
     nginx.ingress.kubernetes.io/cors-allow-origin: https://app.olajay.co.uk
     nginx.ingress.kubernetes.io/cors-max-age: "86400"
