@@ -408,3 +408,77 @@ describe("KDS New card: Reject order (single, through RejectOrdersDialog — 37-
     )
   })
 })
+
+/**
+ * Phase 30-06 (issue #958, UI-SPEC § S2 "New lane Accept").
+ *
+ * An Accept refused because the customer has not paid used to fall through to "Check your
+ * connection": the re-read still says PENDING, so `movedElsewhere` knows nothing. The new FIRST branch
+ * shows the server's `detail` in the card's existing inline alert. The stock, moved-elsewhere and
+ * generic branches are unchanged (their arms above stay green). Accept stays enabled on an unpaid
+ * card, which carries the "Awaiting payment" badge.
+ */
+describe("KDS New card: an unpaid order (issue #958)", () => {
+  const DETAIL =
+    "Order ORD-new-1 is awaiting payment. It can't be submitted, accepted or prepared until the customer's payment completes."
+
+  it("a 409 awaiting-payment refusal shows the server detail in the card's alert, not 'Check your connection'", async () => {
+    stubRefusal(
+      {
+        response: {
+          status: 409,
+          data: {
+            type: "https://jtoye.uk/errors/awaiting-payment",
+            title: "Awaiting payment",
+            status: 409,
+            detail: DETAIL,
+          },
+        },
+      },
+      // The re-read still says PENDING — exactly why the old code said "Check your connection".
+      orderFixture("new-1", "PENDING", { paymentStatus: "PENDING", paymentReference: "pi_unpaid" })
+    )
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await pressAccept(card)
+
+    const alert = await within(card).findByRole("alert")
+    expect(alert).toHaveTextContent(DETAIL)
+    expect(alert).not.toHaveTextContent("Check your connection")
+    expectCardStaysUsable(card)
+  })
+
+  it("an awaiting-payment problem with an empty detail falls through to the existing branches", async () => {
+    stubRefusal(
+      { response: { status: 409, data: { type: "https://jtoye.uk/errors/awaiting-payment", detail: "  " } } },
+      orderFixture("new-1", "PENDING")
+    )
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await pressAccept(card)
+
+    expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "Couldn't accept this order. Check your connection and try again."
+    )
+  })
+
+  it("an unpaid New card carries the 'Awaiting payment' badge in its header, and Accept stays enabled", async () => {
+    stubBoard([orderFixture("new-1", "PENDING", { paymentStatus: "PENDING", paymentReference: "pi_unpaid" })])
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    const header = within(card).getByTestId("kds-card-header")
+    expect(within(header).getByTestId("awaiting-payment")).toHaveTextContent("Awaiting payment")
+    expect(within(card).getByRole("button", { name: /^Accept order/ })).toBeEnabled()
+  })
+
+  it("a vendor New card (NONE, no reference) carries no badge", async () => {
+    stubBoard([orderFixture("new-1", "PENDING", { paymentStatus: "NONE", paymentReference: null })])
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    expect(within(card).queryByTestId("awaiting-payment")).toBeNull()
+  })
+})
