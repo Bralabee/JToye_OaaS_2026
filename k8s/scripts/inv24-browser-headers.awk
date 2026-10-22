@@ -19,6 +19,13 @@
 #                       HEADER_WORDS (`{ Prefer: "respond-async" }`; review round 2)
 # Header-shaped = hyphenated (`[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)+`) or a single word in
 # HEADER_WORDS (defined once, below). Comment lines (// /* *) are skipped.
+#
+# PORTABILITY: every regex here must parse identically under gawk (the CI runner), mawk (this
+# host's awk) and busybox awk. In a bracket expression a literal `]` goes FIRST and a literal `[`
+# goes LAST; no `[.`, `[=` or `[:` appears except as a real class such as [:space:] (gawk reads
+# `[.` as a collating-symbol opener and aborts: CI run 39742059553), and no `\]` escape inside
+# brackets. check-render-invariants.sh runs this file under every awk it can find on the host and
+# VOIDs when one of them fails or their outputs disagree.
 # <name> TAB <file>:<line> TAB <rule>
 function hy(s) { return s ~ /^[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)+$/ }
 # HEADER_WORDS: the ONE list of single-word request header names that are not CORS-safelisted
@@ -75,7 +82,7 @@ FNR == 1 { mode = ""; depth = 0 }
     }
     # .set/.append("Name" — any name on a headers receiver; a header-shaped name on any receiver
     t = line
-    while (match(t, /[A-Za-z0-9_$\]\)]*\.(set|append)\([[:space:]]*["'][A-Za-z][A-Za-z0-9-]*["']/)) {
+    while (match(t, /[]A-Za-z0-9_$)]*\.(set|append)\([[:space:]]*["'][A-Za-z][A-Za-z0-9-]*["']/)) {
         m = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
         rcv = m; sub(/\.(set|append)\(.*$/, "", rcv)
         n = m; sub(/^.*\.(set|append)\([[:space:]]*["']/, "", n); sub(/["']$/, "", n)
@@ -86,7 +93,7 @@ FNR == 1 { mode = ""; depth = 0 }
     t = line
     while (match(t, /[Hh]eaders(\.[A-Za-z][A-Za-z0-9_]*|\[[[:space:]]*["'][A-Za-z][A-Za-z0-9-]*["'][[:space:]]*\])[[:space:]]*=($|[^=>])/)) {
         m = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH)
-        sub(/^[Hh]eaders/, "", m); sub(/[[:space:]]*=.*$/, "", m); gsub(/[][."'[:space:]]/, "", m)
+        sub(/^[Hh]eaders/, "", m); sub(/[[:space:]]*=.*$/, "", m); gsub(/[]."'[:space:][]/, "", m)
         emit(m, "headers-assign")
     }
     # x["Header-Name"] = on any receiver

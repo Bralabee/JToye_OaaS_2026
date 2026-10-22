@@ -566,6 +566,9 @@
 #              quoted key in property position ANYWHERE (an object built first and passed later);
 #            * a hit that is not a request header is excluded by FILE AND NAME in INV24_ALLOW with
 #              its reason; an entry no hit needs is STALE and fails the run;
+#            * the scanner is also run under every OTHER awk on the host (gawk, mawk, nawk,
+#              original-awk, busybox awk); one that fails or disagrees is a PARSE ERROR, because
+#              CI's gawk once refused a regex this host's mawk accepted (run 39742059553);
 #            * the CORS-safelisted names (Accept, Accept-Language, Content-Language) never need
 #              listing and are dropped. Content-Type stays: application/json is not safelisted.
 #          Each such Ingress must:
@@ -2191,6 +2194,9 @@ fi
 #   stale-allow     an INV24_ALLOW entry's hit disappears (safe-image's aria-label)     rc 1
 # Review round 2 (finding 4, unquoted keys), RED on 01fa0cad:
 #   bare-key        const extra = { Prefer: "respond-async" }; fetch(u, { headers: extra }) rc 1
+#   awk-portability the scanner copy gets a gawk-hostile bracket expression ([][."'...]),
+#                   the exact CI break of run 39742059553: some awk on the host must refuse it,
+#                   or the main awk itself does (CI). PARSE ERROR                      rc 2
 #   bare-key-plain  const extra = { method: "POST", cache: "no-store" } passed as headers:
 #                   ordinary unquoted keys are NOT headers (control)                    rc 0
 # INV24_SELFTEST_FORMAT=tap renders TAP 13.
@@ -2211,6 +2217,7 @@ inv24_plant() {
             f="$root/frontend/lib/planted-$arm.ts" ;;
         server-by-name) f="$root/frontend/lib/planted-server.ts" ;;
         bare-key|bare-key-plain) f="$root/frontend/lib/planted-$arm.ts" ;;
+        awk-portability) f="$k/scripts/inv24-browser-headers.awk" ;;
         route-not-app) f="$root/frontend/lib/route.ts" ;;
         stale-allow) f="$root/frontend/components/ui/safe-image.tsx" ;;
         *) return 1 ;;
@@ -2261,6 +2268,8 @@ inv24_plant() {
         headers-multi)
             printf '%s\n' 'export const p = (u: string) =>' '  fetch(u, {' '    headers: new Headers([' \
                 '      ["X-Planted-Multi", "1"],' '    ]),' '  })' > "$f" ;;
+        awk-portability)
+            awk '{ gsub(/gsub\(\/\[\]\."'"'"'\[:space:\]\[\]\//, "gsub(/[][.\"'"'"'[:space:]]/") } { print }' "$f" > "$f.new" && mv "$f.new" "$f" ;;
         bare-key)
             printf '%s\n' 'const extra = { Prefer: "respond-async" }' \
                 'export const p = (u: string) => fetch(u, { method: "POST", headers: extra })' > "$f" ;;
@@ -2286,7 +2295,7 @@ inv24_selftest() {
     cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-inv24 could not copy $K8S_DIR" >&2; exit 2; }
     local -a ARMS=(base-drop sse-drop overlay-revert wildcard absent new-literal new-set server-route server-only blind
                    bracket-assign indirect-object headers-bracket headers-prop headers-pairs headers-multi
-                   server-by-name route-not-app stale-allow bare-key bare-key-plain)
+                   server-by-name route-not-app stale-allow bare-key bare-key-plain awk-portability)
     declare -A WANT=(
         [base-drop]="INV-24: Ingress jtoye-ingress cors-allow-headers omits Idempotency-Key"
         [sse-drop]="INV-24: Ingress jtoye-sse-ingress cors-allow-headers omits Idempotency-Key"
@@ -2308,9 +2317,10 @@ inv24_selftest() {
         [route-not-app]="INV-24: Ingress jtoye-ingress cors-allow-headers omits X-Planted-Route"
         [bare-key]="INV-24: Ingress jtoye-ingress cors-allow-headers omits Prefer"
         [bare-key-plain]="PASS:"
+        [awk-portability]="INV-24: the browser header scan"
         [stale-allow]="INV-24 allow-list entry 'frontend/components/ui/safe-image.tsx|aria-label' matches no scanner hit"
     )
-    declare -A WANT_RC=([server-route]=0 [server-only]=0 [blind]=2 [bare-key-plain]=0)
+    declare -A WANT_RC=([server-route]=0 [server-only]=0 [blind]=2 [bare-key-plain]=0 [awk-portability]=2)
     for arm in "${ARMS[@]}"; do
         n=$((n + 1))
         selftest_stage "$st/pristine" "$st/arm"
@@ -3612,6 +3622,37 @@ while IFS= read -r f; do
 done < "$TMP/inv24_files"
 tr '\n' '\0' < "$TMP/inv24_client_files" | xargs -0 awk -f "$INV24_SCAN" > "$TMP/inv24_raw.tsv" \
     || parse_fail "INV-24: the browser header scan (awk) failed."
+# PORTABILITY: the scan must mean the same thing under every awk. This host's awk is mawk; the CI
+# runner's is gawk, which aborted on a bracket expression mawk accepted (`[.` read as a collating
+# symbol, CI run 39742059553) after every local run had passed. So the scanner is also run under
+# each OTHER awk present (gawk, mawk, nawk, original-awk, busybox awk), and any that FAILS, or
+# whose output differs from awk's, is a PARSE ERROR: the inventory would depend on the machine.
+# On this host busybox awk rejects exactly what gawk rejects, so the check fires here, not only
+# in CI. With no second awk installed nothing is compared, and the run says so.
+# Candidates are de-duplicated by the binary they resolve to (nawk is often a link to mawk), and
+# awk itself is never compared with itself.
+INV24_AWKS=()
+inv24_seen=" $(readlink -f "$(command -v awk)") "
+for a in gawk mawk nawk original-awk; do
+    a_bin=$(command -v "$a" 2>/dev/null) || continue
+    a_bin=$(readlink -f "$a_bin")
+    [[ "$inv24_seen" == *" $a_bin "* ]] && continue
+    inv24_seen+="$a_bin "; INV24_AWKS+=("$a")
+done
+busybox awk 'BEGIN { exit 0 }' > /dev/null 2>&1 && INV24_AWKS+=("busybox awk")
+INV24_AWK_NOTE="scanner output identical under awk ($(basename "$(readlink -f "$(command -v awk)")")"
+for a in "${INV24_AWKS[@]}"; do
+    read -r -a a_cmd <<< "$a"
+    if ! tr '\n' '\0' < "$TMP/inv24_client_files" | xargs -0 "${a_cmd[@]}" -f "$INV24_SCAN" > "$TMP/inv24_raw_alt.tsv" 2> "$TMP/inv24_alt.err"; then
+        parse_fail "INV-24: the browser header scan failed under '$a' ($(head -1 "$TMP/inv24_alt.err")); the scanner must parse under every awk (CI runs gawk). Keep its bracket expressions portable: a literal ] first, a literal [ last, no [. [= [: except real classes."
+    fi
+    cmp -s "$TMP/inv24_raw.tsv" "$TMP/inv24_raw_alt.tsv" \
+        || parse_fail "INV-24: the browser header scan disagrees between awk and '$a' ($(diff "$TMP/inv24_raw.tsv" "$TMP/inv24_raw_alt.tsv" | head -2 | tr '\n' ' ')); the inventory would depend on the machine."
+    INV24_AWK_NOTE+=", $a"
+done
+(( ${#INV24_AWKS[@]} > 0 )) || INV24_AWK_NOTE+="; no second awk installed, so nothing was cross-checked"
+INV24_AWK_NOTE+=")"
+echo "INV-24 portability: $INV24_AWK_NOTE"
 # file paths repo-relative, then the allow-list applied by (file, lower(name)); stale entries reported
 awk -F'\t' -v root="$REPO_ROOT/" 'BEGIN { OFS = "\t" } { if (index($2, root) == 1) $2 = substr($2, length(root) + 1); print }' \
     "$TMP/inv24_raw.tsv" > "$TMP/inv24_rel.tsv"

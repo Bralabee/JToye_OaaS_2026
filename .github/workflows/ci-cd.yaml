@@ -1001,7 +1001,9 @@ jobs:
       # Headers pairs on one line and across lines, a *-server.ts file with no server-only import, a
       # route.ts outside app/, a stale allow-list entry, and an unquoted single-word header key such
       # as { Prefer: v }), three controls that must PASS (two server-only files and an object of
-      # ordinary unquoted keys), and a blind scan, which is a PARSE ERROR (rc 2).
+      # ordinary unquoted keys), and two PARSE ERRORs (rc 2): a blind scan, and a scanner regex
+      # that some awk refuses (the gawk-only break of run 39742059553; the gate runs the scanner
+      # under every awk on the machine and refuses disagreement).
       - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
 
