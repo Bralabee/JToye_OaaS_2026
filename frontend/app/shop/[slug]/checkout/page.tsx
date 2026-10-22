@@ -378,6 +378,8 @@ function recordedAllergensOf(confirmation: GuestOrderConfirmation): RecordedAlle
  */
 /** 37-22 (K3): the availability notice's id, Place order's permanent explanation while the shop is not taking orders. */
 const SHOP_AVAILABILITY_EXPLAINER_ID = "shop-availability-explainer"
+/** #957 (30-02): the "Card payments are unavailable" alert's id, Place order's explanation while card payment cannot start. */
+const CARD_PAYMENTS_UNAVAILABLE_ID = "card-payments-unavailable"
 /** How long after the server's stated reopening time the shop is asked again (the kitchen uses the same grace). */
 const REOPEN_RECHECK_GRACE_MS = 500
 
@@ -779,6 +781,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     selectedSlotId,
   })
 
+  // #957 (30-02, UI-SPEC § S1 pre-POST): a shop that takes cards, in a build with no publishable key,
+  // cannot take a card payment — so the order is not sent at all. Posting it would create an unpaid
+  // DRAFT that nobody can pay. Keyed on `=== true`: a shop that has not said (old backend) is not
+  // refused here, and the post-POST failure state still catches a keyless confirmation.
+  const cardUnavailable = shop?.acceptsCardPayments === true && publishableKey() === null
+
   // The snapshot above is the ONLY thing that disables Place order, and it was read once, on mount.
   // A customer who opened checkout during a 20-minute pause and waited it out would otherwise keep a
   // dead button the server now accepts (#916 round 1, finding 1). So just after the server's own
@@ -847,6 +855,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     e.preventDefault()
     // K3: the disabled button already says why; an implicit or forced submit sends nothing either.
     if (notTakingOrders) return
+    // #957: the same defence in depth for a card shop with no publishable key — the notice at the top
+    // of step 1 says why; no order is created that could never be paid.
+    if (cardUnavailable) return
     setError(null)
 
     // Conditional UK-address validation (Surface E). Collection needs no address.
@@ -1352,6 +1363,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
   const minimumShortfall = minimumShortfallPennies(subtotalPennies, minimumOrderPennies)
   const belowMinimum = minimumShortfall !== null
+  // Every explanation of a disabled Place order that is on screen, in reading order (K3, #957).
+  const placeOrderDescribedBy =
+    [
+      notTakingOrders ? SHOP_AVAILABILITY_EXPLAINER_ID : null,
+      cardUnavailable ? CARD_PAYMENTS_UNAVAILABLE_ID : null,
+    ]
+      .filter((id): id is string => id !== null)
+      .join(" ") || undefined
   // COR-6: the VAT preview follows the BASKET's resolved rate, not a hardcoded 20%.
   //
   // This used to be Math.floor((previewTotalPennies * 20) / 120) with a "VAT (incl. 20%)" label,
@@ -1393,6 +1412,26 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           aria-describedby while the shop is not taking orders. */}
       {notTakingOrders && shop && (
         <ShopAvailabilityNotice shop={shop} id={SHOP_AVAILABILITY_EXPLAINER_ID} className="mt-6" />
+      )}
+
+      {/* #957 (UI-SPEC § S1): the K3 slot, after availability when both apply. Its id is Place
+          order's aria-describedby while card payment cannot start. An alert, unlike the
+          availability notice: this is a fault in the service, not the shop's state. */}
+      {cardUnavailable && (
+        <div
+          role="alert"
+          id={CARD_PAYMENTS_UNAVAILABLE_ID}
+          className="mt-6 flex items-start gap-3 rounded-xl border border-amber-600 bg-amber-50 p-4"
+        >
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+          <div className="min-w-0 [overflow-wrap:anywhere]">
+            <p className="text-base font-semibold text-amber-900">Card payments are unavailable</p>
+            <p className="mt-0.5 text-sm text-amber-900">
+              Card payments are unavailable right now, so this order can&apos;t be placed. Nothing has been
+              charged.
+            </p>
+          </div>
+        </div>
       )}
 
       <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
@@ -1692,10 +1731,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             {shop.acceptsCardPayments ? (
               <p className="mt-1.5 flex items-start gap-2 text-sm text-slate-600">
                 <CreditCard className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
-                <span>
-                  Pay securely by card — you&apos;ll enter your card details after
-                  confirming your order.
-                </span>
+                {/* #957: never promise a card step this build cannot show. */}
+                {cardUnavailable ? (
+                  <span>Pay by card — unavailable right now.</span>
+                ) : (
+                  <span>
+                    Pay securely by card — you&apos;ll enter your card details after
+                    confirming your order.
+                  </span>
+                )}
               </p>
             ) : (
               <p className="mt-1.5 flex items-start gap-2 text-sm text-slate-600">
@@ -1796,11 +1840,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
             `notTakingOrders` (37-22, K3) meets the same bar as `belowMinimum`: its permanent
             explanation is the availability notice at the top of step 1, linked here by
-            aria-describedby so a screen reader hears why the button is unavailable. */}
+            aria-describedby so a screen reader hears why the button is unavailable.
+
+            `cardUnavailable` (#957) meets it too: the "Card payments are unavailable" alert sits at the
+            top of step 1. aria-describedby lists every explanation on screen, availability first, and
+            is absent when there is none. */}
         <button
           type="submit"
-          disabled={submitting || belowMinimum || notTakingOrders}
-          aria-describedby={notTakingOrders ? SHOP_AVAILABILITY_EXPLAINER_ID : undefined}
+          disabled={submitting || belowMinimum || notTakingOrders || cardUnavailable}
+          aria-describedby={placeOrderDescribedBy}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {submitting ? (
