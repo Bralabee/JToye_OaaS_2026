@@ -27,11 +27,14 @@ node it is attached to, renders and reports `verified: true` exactly as these do
 Treat the badges as "you can go read this", not as proof, and have someone who knows
 the subsystem read the arrows.
 
-Counted claims on the `core-java` diagram are **checked on every push**: the controller
-count is bound to `java_controllers` and "schema at V…" to `schema_version` in
-`docs/metrics.json`, by rules in `scripts/gates/claims.manifest` (the docs-freshness
-claim gate), in both the `.json` and the generated `.html`. Edit either number and the
-gate fails; regenerate the HTML after any JSON edit or the HTML rule fails. Counts with no
+Counted claims on the `core-java` diagram are **checked by the docs-freshness claim gate**
+(every pull request to main, every push to main, and pre-push P-4): the controller count
+is bound to `java_controllers` and "schema at V…" to `schema_version` in
+`docs/metrics.json`, by rules in `scripts/gates/claims.manifest`. All four places they
+appear in the `.json` are bound. In the generated `.html` only the two node sublabels
+(`data-node-sublabel`) are, which is enough to fail a JSON edit whose `deliver` was never
+re-run, but not a hand edit of the HTML's other copies. Edit the JSON, never the HTML.
+The subtitle's Spring Boot version has no metric and is not checked. Counts with no
 metric behind them (services, repositories) were dropped rather than left to go stale, as
 the earlier "25 controllers · 66 migrations" did against a tree at 33 and V88.
 The `edge-go` card's "5 declared edge→core calls" is still unchecked.
@@ -70,16 +73,19 @@ the run, not artifacts.
 
 The docs-freshness workflow posts a `::notice` naming every cited file that changed
 since a diagram's pin (`scripts/check-diagram-evidence-drift.sh`). It never blocks: most
-such changes are unrelated to what the diagram draws. When it fires for a change that
-does matter, re-pin.
+such changes are unrelated to what the diagram draws. It compares the pin with HEAD, so
+the same notices repeat on every PR until someone re-pins. When it fires for a change
+that does matter, re-pin.
 
-Re-pin `meta.repository.revision` to a commit that is an **ancestor of `origin/main`**
-(a branch-local commit is orphaned by the squash merge, and the notice then reports
-"not an ancestor"), re-point any cited line that moved, and re-run `validate` and
-`deliver`. Broken citations fail loudly; **prose does not**, so re-read the arrows and
-labels by hand. As of 2026-10-22 `core-java` is pinned to `43d047fb`; `edge-go` is still
-at `a990551e` and its router moved (`gin.Default()` became `gin.New()` in `newRouter`),
-so it needs that read before its pin moves.
+Re-pin `meta.repository.revision` to a commit **already on `origin/main`**. A
+branch-local commit is orphaned by the squash merge, and the PR run cannot tell you: it
+checks out the merge commit, which contains that commit. Only the push-to-main run after
+the merge reports "not an ancestor". Re-point any cited line that moved, and re-run
+`validate` and `deliver`. Broken citations fail loudly; **prose does not**, so re-read the
+arrows and labels by hand. The current pins are the `meta.repository.revision` values in
+the two JSON files. `edge-go` was not re-pinned on 2026-10-22, when `core-java` was,
+because its router had moved (`gin.Default()` became `gin.New()` in `newRouter`) and it
+needs that read first.
 
 To see what changed between two snapshots, keep the previous JSON and diff them:
 
