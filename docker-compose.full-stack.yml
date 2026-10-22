@@ -565,6 +565,13 @@ services:
         # above: it is a dedicated address rather than the shared support queue,
         # because a data-subject request carries a one-month statutory clock.
         NEXT_PUBLIC_DATA_PROTECTION_EMAIL: ${NEXT_PUBLIC_DATA_PROTECTION_EMAIL:-privacy@olajay.co.uk}
+        # Issue #957 / #814: the Stripe publishable key is NEXT_PUBLIC_*, so it must be
+        # baked HERE at build time. It used to sit only under `environment:` below, where
+        # it was dead config — a runtime value never reaches the browser bundle, so local
+        # card checkout was as inert as staging's. Optional (empty default): a keyless
+        # build still produces an image and the checkout says card payments are
+        # unavailable (frontend/Dockerfile keeps it out of the CR-02 gate).
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     container_name: jtoye-frontend
     restart: unless-stopped
     environment:
@@ -606,7 +613,6 @@ services:
       CUSTOMER_KEYCLOAK_ISSUER: ${CUSTOMER_KEYCLOAK_ISSUER:-http://localhost:8085/realms/jtoye-customers}
       CUSTOMER_KEYCLOAK_ISSUER_INTERNAL: ${CUSTOMER_KEYCLOAK_ISSUER_INTERNAL:-http://keycloak:8080/realms/jtoye-customers}
       NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL: ${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL:-http://localhost:8085/realms/jtoye-customers}
-      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       PORT: 3000
       HOSTNAME: "0.0.0.0"
     ports:

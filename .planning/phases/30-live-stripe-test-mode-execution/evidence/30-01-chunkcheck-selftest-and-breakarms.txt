@@ -1,0 +1,33 @@
+# break arms on scratch copies of scripts/check-frontend-stripe-key-baked.sh (each: one-line mutation, then --selftest)
+== break: noctl (diff lines: 1)
+FAIL control-absent rc=0 (want 2): chunks=1 distinct_pk=1 keys=pk_test_(length=33) expect_prefix=pk_test_ residues=0 secrets=0 control=0 PASS: one publishable key inlined (pk_test_(length=33)), 0 residues, 0 secret literals, control found 0 time(s) 
+SELFTEST: 10/11
+rc=1
+== break: nosecret (diff lines: 1)
+FAIL secret-literal rc=0 (want 1): chunks=1 distinct_pk=1 keys=pk_test_(length=33) expect_prefix=pk_test_ residues=0 secrets=1 control=1 PASS: one publishable key inlined (pk_test_(length=33)), 0 residues, 0 secret literals, control found 1 time(s) 
+SELFTEST: 10/11
+rc=1
+== break: echo (diff lines: 1)
+FAIL no-echo htmlok.out contains a fixture value
+SELFTEST: 10/11
+rc=1
+== break: residue (diff lines: 1)
+FAIL residue rc=0 (want 1): chunks=1 distinct_pk=1 keys=pk_test_(length=33) expect_prefix=pk_test_ residues=0 secrets=0 control=1 PASS: one publishable key inlined (pk_test_(length=33)), 0 residues, 0 secret literals, control found 1 time(s) 
+SELFTEST: 10/11
+rc=1
+
+# real script --selftest
+PASS key-present rc=0
+PASS key-absent rc=1
+PASS residue rc=1
+PASS live-under-test-prefix rc=1
+PASS secret-literal rc=1
+PASS two-distinct-keys rc=1
+PASS control-absent rc=2
+PASS fetch-failure rc=2
+PASS html-mode rc=0/1
+PASS no-chunks rc=2
+PASS no-echo
+SELFTEST: 11/11
+rc=0
+missing=0 fail_lines=0

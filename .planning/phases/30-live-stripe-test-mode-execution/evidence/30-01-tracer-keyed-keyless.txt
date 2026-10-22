@@ -1,0 +1,18 @@
+tracer key: prefix=pk_test_ length=32 sha256=5471856aa02efe94
+== build jtoye-frontend:p30-key 2026-10-22T03:37:54Z
+build rc=0 image=sha256:537d9ea424bd769256c55034e3c913b1c9e617896eb227f46fe4dc8171d4f39e
+docker cp rc=0 files=82
+chunks=82 distinct_pk=1 keys=pk_test_(length=32) expect_prefix=pk_test_ residues=0 secrets=0 control=14
+PASS: one publishable key inlined (pk_test_(length=32)), 0 residues, 0 secret literals, control found 14 time(s)
+check rc=0 (arm=key)
+independent grep -rlF files containing the tracer key: 1
+== build jtoye-frontend:p30-nokey 2026-10-22T03:38:38Z
+build rc=0 image=sha256:6cea1d0577f71b5679ae8fdf51ae740312c1756f50baa1152e97594d09826aa7
+docker cp rc=0 files=82
+chunks=82 distinct_pk=0 keys=none expect_prefix=pk_test_ residues=0 secrets=0 control=14
+FAIL: the served checkout bundle does not carry exactly one usable publishable key; expected exactly 1 distinct publishable key, found 0
+check rc=1 (arm=nokey)
+independent grep -rlF files containing the tracer key: 0
+rm tag p30-key rc=0
+rm tag p30-nokey rc=0
+tags remaining: 0

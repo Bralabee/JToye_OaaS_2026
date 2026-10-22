@@ -83,6 +83,24 @@ ENV NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${NEXT_PUBLIC_COMPANY_REGISTERED_OFFIC
 ARG NEXT_PUBLIC_DATA_PROTECTION_EMAIL
 ENV NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${NEXT_PUBLIC_DATA_PROTECTION_EMAIL}
 
+# Issue #957 (phase 30, plan 30-01): the Stripe PUBLISHABLE key. Without this pair the
+# key never reached `next build`, so every image shipped the un-inlined lookup
+# `process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (measured on the staging bundle: 0
+# pk_ literals across 22 checkout chunks), the browser resolved it to nothing, and the
+# card checkout fell back to the form after the server had created an unpaid DRAFT.
+# A publishable key is public by design (it is meant to be in the browser bundle), so
+# it travels as a build-arg from a repo VARIABLE, like the other NEXT_PUBLIC_* values.
+#
+# Deliberately NOT added to the CR-02 fail-fast gate below: a keyless compose or local
+# build must still produce an image. An absent key now inlines "" — which
+# frontend/lib/stripe-loader.ts reads as "no key" and the checkout treats as "card
+# payments unavailable" (plan 30-02), never a silent fall-through. Which key an
+# environment may carry is enforced at DEPLOY time by scripts/check-stripe-pk-var.sh
+# (staging: pk_test_ only; production: refuses pk_test_), and the key actually served
+# is read back out of the live staging chunks by scripts/check-frontend-stripe-key-baked.sh.
+ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+
 # ---------------------------------------------------------------------------
 # CR-02 fail-fast gate. Runs BEFORE `next build`, because once next build has run
 # the empty value is already inlined and no later check can undo it.
@@ -100,6 +118,9 @@ ENV NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${NEXT_PUBLIC_DATA_PROTECTION_EMAIL}
 #                       _DATA_PROTECTION_EMAIL (phase 31 / LGL-01;
 #                       resolveControllerContact() omits the contact block, so the
 #                       same soft-misconfig classification applies)
+#                    -> NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY (issue #957; absence is
+#                       handled LOUDLY by the checkout, and the per-environment key
+#                       is enforced at deploy time by scripts/check-stripe-pk-var.sh)
 #
 # NEXT_PUBLIC_KEYCLOAK_URL is deliberately NOT listed and deliberately has no
 # ARG/ENV line: leaving it absent at build time is what keeps it RUNTIME-resolvable
