@@ -372,7 +372,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                   ? "Order Refunded"
                   : currentStep >= 4
                     ? "Order Complete!"
-                    : "Order in Progress"}
+                    : order.status === "DRAFT"
+                      ? // #957: an unpaid card order is not in progress — the shop won't prepare it.
+                        ORDER_STATUS_COPY.DRAFT.label
+                      : "Order in Progress"}
             </p>
             <p className="mt-1 text-sm text-slate-600">{order.shopName}</p>
             {payOnLine && <p className="mt-1 text-sm font-medium text-slate-900">{payOnLine}</p>}
