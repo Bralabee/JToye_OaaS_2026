@@ -4,20 +4,30 @@
 
 **2026-10-22 delta (RESUME HERE; everything below is history).**
 - **Phase 29 is complete.** The close is #1002: `29-VERIFICATION.md` passed 5/5, `29-SECURITY.md` closed, R-3 accepted by the owner on 2026-10-21 (staging only, conditional on the generated edge credential).
-- **Phase 30 ("The Money Path, Executed") is next.** It has 32 plans in 8 serial PRs, planned in #1018 and approved by the owner on 2026-10-21. Execution starts with 30-01, which fixes the root cause of #957 (still OPEN): the publishable Stripe key is not baked into the frontend image, so the checkout never shows a payment step.
-  - Start with `/gsd-execute-phase 30` from a checkout of a fresh `main`.
-  - The single resume source is `.planning/STATE.md` on main.
-- issue #1025 CORS fix merged as #1026 (4208b08e, deployed to staging, live preflight PASS); it unblocked PR 1's staging proof.
-- **Phase 30 PR 1 (issue #957) is #1029, open on `fix/957-card-checkout-payment-step`: plans 30-01, 30-02 and 30-03 done.** The staging card-checkout spec is RED on today's keyless staging at the payment step (unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C, for 30-09 to cancel). The repository variable `FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set (pk_test_, the Key Vault secret's pair) and passes the staging deploy guard. Next: the review series, the merge, then 30-04 (the green arms on the merged image).
+- **Phase 30 ("The Money Path, Executed") is executing: 4/32 plans done, PR 1 of 8 complete.**
+  - **Resume:** `/gsd-execute-phase 30` from branch `fix/958-awaiting-payment-gate` (cut from main 43d047fb; it carries 30-04's evidence, SUMMARY and the 4/32 tracking commit). The next plan is 30-05 (PR 2, issue #958). The single resume source is `.planning/STATE.md` on that branch.
+  - **PR 1 (issue #957) merged as #1029 (43d047fb), deployed (run 39803113150) and proven live by 30-04.** The live checkout chunks carry one `pk_test_` key (rc 0, rc 1 before), all three services pass digest parity at 43d047fb, and one TEST card payment was captured and read back from Stripe (`pi_3UTPKkDpS9ICNeRt0VWSmyrM`, `livemode` false). The evidence is on issue #957, which is left OPEN for the owner to close.
+  - **Unplanned prerequisite:** staging's ingress CORS omitted `Idempotency-Key`, so every browser order POST was refused (issue #1025). It was fixed by #1026 (4208b08e, INV-24, `scripts/check-cors-preflight.sh`, live preflight rc 0).
+  - **The repository variable `FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set** (pk_test_, the pair of the Key Vault secret `stripe-credentials--api-key`). The staging guard is rc 0 and the production guard refuses it (D-08).
+  - **Staging residue:** the paid TEST order ORD-1AAC0CDE-20261022-D69764AE, and the unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C for 30-09 to cancel.
+  - **Owner items from 30-04:** the sticky storefront header overlaps the card form in the full-page screenshot, and the focus ring of a focused card field is still to be judged by eye.
+  - **Traps hit this session:**
+    - A merge resolved with a whole-file `git checkout --ours` dropped the other side's non-conflicting doc version claims, and `check-doc-versions` caught it.
+    - A CI watch that read a GraphQL error as "no pending checks" reported green early. Watch loops must count real check rows.
+    - Local `awk` is mawk while CI's is gawk.
+    - This shell's default kube context `jtoye-staging` is dead; always pass `--context jtoye-stg-aks`.
 - **Merged since the 2026-10-21 block:**
   - #1002, the Phase 29 close;
   - #1004, CI skips integration tests, images and deploys for documentation-only changes;
   - #1018, the Phase 30 plan;
   - #1019, an integration of #1005 (deploy.sh waits on every workload; issues 969, 970, 999) and #1006 (Mailpit cert reload; issue 972). Both source PRs are now CLOSED unmerged, because their reviewed heads are ancestors of #1019's head and #1019's tree is main's f858d5cc;
   - #1021, an authorization fix: shop-child updates now authorise a changed shopId;
-  - #1022, an integration of the second swarm bundle (a product must name its shop, the allergen label's 422, STAFF refused the shop-admin controls; issues 959, 960, 961).
+  - #1022, an integration of the second swarm bundle (a product must name its shop, the allergen label's 422, STAFF refused the shop-admin controls; issues 959, 960, 961);
+  - #1026, the ingress CORS fix (issue #1025);
+  - #1028, the Dependabot rollup #993 to #998 plus the wordmark link name (merged from another session);
+  - #1029, Phase 30 PR 1 (issue #957).
 - **At 87a1f772 (#1022), `ci-cd.yaml` passed, including Deploy to Staging and the Staging Edge Probe, so staging runs that commit.** `docs-freshness` FAILED at that sha (run 39669304589) on H-3 of `scripts/check-handoff-contract.sh`: HANDOFF.md was 4 merged commits behind main, over its budget of 3. Updating this file clears that.
-- **Still open, none blocking Phase 30:** follow-ups #992 and #971, the Grafana 24 h restart watch, `29-VALIDATION.md` still `draft`, and six Dependabot PRs (#993 to #998).
+- **Still open, none blocking Phase 30:** follow-ups #992 and #971, the Grafana 24 h restart watch, `29-VALIDATION.md` still `draft`, and issue #1027 (the `/shop` card link's axe 4.14 design exception). The six Dependabot PRs #993 to #998 were rolled up and merged as #1028.
 - **Merge discipline for Phase 30.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main redeploys staging (about 75 to 95 min of CI). Merge one PR at a time and watch each deploy to green before the next. Never merge while the owner's persona swarm is running: ask the owner first. If a deploy goes red, set the variable to `false`, read it back, and stop.
 - **Keep this file current during Phase 30.** H-3 lets HANDOFF.md fall at most 3 merged commits behind main, and Phase 30 merges 8 PRs. It counts from the PR's own copy, so each Phase 30 PR should update this block (the plans done, the next plan). Otherwise `docs-freshness` goes red on the 4th merge.
 - **Unchanged:**
