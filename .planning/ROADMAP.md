@@ -349,7 +349,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
-| 30. The Money Path, Executed | v2.3 | 3/32 | In progress — 30-01..30-03 done, PR 1 #1029 open (2026-10-22) | — |
+| 30. The Money Path, Executed | v2.3 | 4/32 | In progress — PR 1 (30-01..30-04) merged and proven on staging (2026-10-22) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -727,7 +727,7 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
 
-**Plans:** 3/32 plans complete (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+**Plans:** 4/32 plans complete (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
 
 Plans:
 **Wave 1**
@@ -740,7 +740,7 @@ Plans:
 - [x] 30-03-PLAN.md — #957 PR 1: staging card-checkout spec, RED vs today's staging, PR open; owner sets the staging pk_test_ variable
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 30-04-PLAN.md — #957 PR 1: merge, deploy watch, live GREEN card payment on staging
+- [x] 30-04-PLAN.md — #957 PR 1: merge, deploy watch, live GREEN card payment on staging
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 30-05-PLAN.md — #958 PR 2: typed 409 awaiting-payment gate on SUBMIT/CONFIRM/PREPARING; status-preserving payment webhook; vendor NONE orders untouched (D-01)
