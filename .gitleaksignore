@@ -63,3 +63,17 @@ f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/s
 # commit, file or line still fires.
 9e13b94535a898d8e130610c7397eeff373349c1:scripts/staging-seed.sh:stripe-access-token:924
 9e13b94535a898d8e130610c7397eeff373349c1:scripts/staging-seed.sh:stripe-access-token:925
+# ---- Phase 30 (plan 30-07, 2026-10-22) ----
+# Commit 95d59b34 (the RED commit of the stripe-get selftest arms) wrote a SYNTHETIC
+# PaymentIntent client secret as a stub fixture literal (pi_sg1 + a STUBCS marker the
+# selftest greps for). Made up, never issued by Stripe, reaches no account. The live
+# file composes it at run time (30-07's fix commit), so only this commit's line
+# carries it. Commit-pinned: the same shape anywhere else still fires.
+95d59b347de78cc651837a9bb42edc7888458026:scripts/staging-seed.sh:generic-api-key:2129
+# Commits 4bd017f0 and 48577794 (plan 30-05's RED evidence) embed verbatim JUnit XML
+# whose captured log lines carry the integration tests' own synthetic Idempotency-Key
+# values, key=30-05-<random UUID>; the generic rule reads them as API keys. They are
+# test request keys, not credentials, and editing the files would corrupt the recorded
+# RED evidence. Found by 30-07's branch-range scan (11 findings on these two lines).
+4bd017f02cff247dfa0b6238f73f534912a68990:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task1.json:generic-api-key:4
+485777942fda6f147c1ea481526102c1c38db1cf:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task2-it.json:generic-api-key:4
