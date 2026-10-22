@@ -24,6 +24,8 @@
   - Python gates under `conda activate jtoye-ops`;
   - Azure always with `--subscription c483d353-5f61-4587-a790-addb9ab5fb94`.
 
+**Parallel lane, 2026-10-22: the Dependabot rollup (branch `chore/dependabot-rollup-993-998`, worktree `JToye_OaaS_2026-deps`).** Not Phase 30 work; it touches no plan, no `.planning/STATE.md` and no migration. It consolidates the six open Dependabot PRs (#993 to #998) the way 39-10 did (`.planning/phases/39-platform-runtime-upgrades/39-10-SUMMARY.md`), fixes one defect the frontend bump revealed (the wordmark link's name omitted its visible "J", WCAG 2.5.3) and HOLDS `@axe-core/playwright` at 4.13.0: axe-core 4.14.0 turns `label-content-name-mismatch` on by default and the `/shop` card link (UXT-082, named by `aria-labelledby`) fails it on every viewport, which is the owner's design call, issue #1027. Merge it only when main's pipeline is idle and the Phase 30 session is not between a PR open and its staging proof: `DEPLOY_STAGING_ENABLED=true` means this merge redeploys staging too.
+
 **2026-10-21 delta (history; superseded by the 2026-10-22 block above).**
 - **Phase 29.** Merged to main as #984; all 29 plans have a SUMMARY. Still to do: phase verification (gsd-verifier) and `29-SECURITY.md`.
 - **Staging deploys from CI.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main runs "Deploy to Staging" (about 75 min of CI). Merges go one at a time, each deploy green before the next. If a deploy goes red: set the variable to `false`, read it back, stop.
