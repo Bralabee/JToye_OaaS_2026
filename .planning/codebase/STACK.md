@@ -62,7 +62,7 @@
 - Spring Boot Gradle Plugin 4.1.1 — bootJar packaging, redirected to `core-java/build-local/` (`layout.buildDirectory.set(file("build-local"))`) — `core-java/build/` is a stale artifact directory, never read.
 - Flyway 12 (Boot-managed 12.4.0): `flyway-core` + `flyway-database-postgresql` — schema migration. Under Boot 4 the Flyway auto-configuration is its own module, so `spring-boot-starter-flyway` is declared explicitly; without it 0 of 67 migrations apply and `RlsContractTest` goes 4/7 red (38-03, 38-04).
 - Lombok + MapStruct 1.6.3 (+ `lombok-mapstruct-binding` 0.2.0) — boilerplate reduction / compile-time DTO mapping.
-- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.4.0`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
+- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.4.2`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
 - TailwindCSS 4.3.3 + `@tailwindcss/postcss` 4.3.3 + PostCSS 8.5.12 — Frontend styling.
 - tsx ^4 — MCP server dev-mode TS execution (`mcp-server/package.json` `dev` script).
 - cross-env 10.1.0 — cross-platform env var injection for `npm run dev`.
@@ -73,7 +73,7 @@
 - PostgreSQL JDBC Driver 42.7.14 (`core-java/build.gradle.kts:351`) — explicit pin, not Boot-managed.
 - Azure Storage Blob SDK 12.36.0 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.7 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
 - Stripe Java SDK 34.0.0 — Payment intents, Connect (destination charges), webhook signature verification.
-- @stripe/react-stripe-js 7.0.0 + @stripe/stripe-js 10.0.0 — Frontend Stripe Elements integration.
+- @stripe/react-stripe-js 7.0.0 + @stripe/stripe-js 10.1.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
 - @modelcontextprotocol/sdk ^1.29.0 — MCP server protocol implementation (`mcp-server/package.json`).
 - golang-jwt/jwt/v5 v5.3.1 — Edge gateway JWT validation against Keycloak JWKS.
@@ -90,8 +90,8 @@
 - Recharts 3.10.1 — dashboard charts.
 - Radix UI (`@radix-ui/react-*`) — headless component primitives.
 - Zod 4.6.7 (core-java's DTOs use Bean Validation instead) / 4.x in frontend and mcp-server — schema validation.
-- React Hook Form 7.90.0 + @hookform/resolvers 5.9.1 — form state.
-- @stomp/stompjs 7.4.0 + @microsoft/fetch-event-source 2.0.1 — Frontend real-time (STOMP over WebSocket, SSE consumption).
+- React Hook Form 7.90.0 + @hookform/resolvers 5.9.2 — form state.
+- @stomp/stompjs 7.5.0 + @microsoft/fetch-event-source 2.0.1 — Frontend real-time (STOMP over WebSocket, SSE consumption).
 - pino ^10 — MCP server structured logging.
 - express ^5 — MCP server HTTP host (Streamable HTTP transport).
 - prometheus/client_golang v1.25.0 — Edge gateway Prometheus metrics.
