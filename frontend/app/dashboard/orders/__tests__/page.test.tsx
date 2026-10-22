@@ -170,3 +170,70 @@ describe("Orders page — the Index width tier (phase 35)", () => {
     expect(declared[0]).toHaveClass("space-y-6")
   })
 })
+
+/**
+ * Phase 30-06 (issue #958, UI-SPEC § S2 "Orders list").
+ *
+ * The server refuses SUBMIT and CONFIRM of an order still awaiting its card or link payment (plan
+ * 30-05, 409 awaiting-payment). The list therefore stops OFFERING those two actions for such an order
+ * and shows the "Awaiting payment" badge instead, while Cancel stays so a vendor can still clear an
+ * abandoned DRAFT (D-02, the manual operation; DRAFT -> CANCELLED is legal on the server). A vendor
+ * DRAFT (paymentStatus NONE, no reference — D-01) is unaffected: Submit, no badge.
+ */
+describe("Orders list: an order awaiting payment (issue #958, UI-SPEC § S2)", () => {
+  const AWAITING_DRAFT = "ORD-AWAITING-DRAFT"
+  const VENDOR_DRAFT = "ORD-VENDOR-DRAFT"
+  const AWAITING_PENDING = "ORD-AWAITING-PENDING"
+
+  beforeEach(() => {
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/orders")) {
+        return Promise.resolve({
+          data: {
+            content: [
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000001", AWAITING_DRAFT), status: "DRAFT", paymentStatus: "PENDING", paymentReference: "pi_unpaid" },
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000002", VENDOR_DRAFT), status: "DRAFT", paymentStatus: "NONE", paymentReference: null },
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000003", AWAITING_PENDING), status: "PENDING", paymentStatus: "NONE", paymentReference: "plink_unpaid" },
+            ],
+            totalPages: 1,
+            totalElements: 3,
+          },
+        })
+      }
+      return Promise.resolve({ data: { content: [] } })
+    })
+  })
+
+  async function rowFor(orderNumber: string): Promise<HTMLElement> {
+    const cell = await screen.findByText(orderNumber)
+    const row = cell.closest("tr")
+    expect(row).not.toBeNull()
+    return row as HTMLElement
+  }
+
+  it("an awaiting-payment DRAFT shows the badge, offers no Submit, and keeps Cancel", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(AWAITING_DRAFT)
+
+    expect(within(row).getByTestId("awaiting-payment")).toHaveTextContent("Awaiting payment")
+    expect(within(row).queryByRole("button", { name: /Submit/ })).toBeNull()
+    expect(within(row).getByRole("button", { name: /Cancel/ })).toBeInTheDocument()
+  })
+
+  it("an awaiting-payment PENDING order shows the badge, offers no Confirm, and keeps Cancel", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(AWAITING_PENDING)
+
+    expect(within(row).getByTestId("awaiting-payment")).toBeInTheDocument()
+    expect(within(row).queryByRole("button", { name: /Confirm/ })).toBeNull()
+    expect(within(row).getByRole("button", { name: /Cancel/ })).toBeInTheDocument()
+  })
+
+  it("a vendor DRAFT (NONE, no reference) still offers Submit and shows no badge (D-01)", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(VENDOR_DRAFT)
+
+    expect(within(row).getByRole("button", { name: /Submit/ })).toBeInTheDocument()
+    expect(within(row).queryByTestId("awaiting-payment")).toBeNull()
+  })
+})
