@@ -220,6 +220,7 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
   if (ORIGINAL_KEY === undefined) delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   else process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = ORIGINAL_KEY
 })
@@ -295,6 +296,101 @@ describe("#957 post-POST: a clientSecret confirmation always reaches step 2", ()
     expectOnPaymentStep()
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
     expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Pre-POST (task 2): a shop that takes cards, in a build with no publishable key, cannot take a
+// card payment, so the order is never sent — no DRAFT is created that the customer can never pay.
+// The reason is on screen BEFORE they try (the K3 / belowMinimum rule: a button may be disabled only
+// when its reason is beside it), and the submit handler refuses too (a disabled button is not the
+// only way a form is submitted).
+// ---------------------------------------------------------------------------------------------
+
+const CARD_NOTICE_HEADLINE = "Card payments are unavailable"
+const CARD_NOTICE_DETAIL = "Card payments are unavailable right now, so this order can't be placed. Nothing has been charged."
+const CARD_LINE_UNAVAILABLE = "Pay by card — unavailable right now."
+const placeOrderButton = () => screen.getByRole("button", { name: /place order/i })
+
+describe("#957 pre-POST: a card shop with no publishable key refuses to place the order, and says why", () => {
+  it("shows the notice at the top of step 1, disables Place order described by it, and sends NO order however it is submitted", async () => {
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    mockShop({ ...SHOP, acceptsCardPayments: true })
+    await renderCheckout()
+    await armCheckout()
+
+    const notice = await screen.findByText(CARD_NOTICE_HEADLINE)
+    const region = notice.closest('[role="alert"]') as HTMLElement
+    expect(region).not.toBeNull()
+    expect(region.id).toBe("card-payments-unavailable")
+    expect(region).toHaveTextContent(CARD_NOTICE_DETAIL)
+    // Top of step 1: before the first step-1 control (the fulfilment toggle).
+    const firstControl = screen.getByRole("button", { name: /delivery/i })
+    expect(region.compareDocumentPosition(firstControl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    expect(placeOrderButton()).toBeDisabled()
+    expect(placeOrderButton().getAttribute("aria-describedby")).toBe("card-payments-unavailable")
+    // The How you'll pay line says the same thing, not "Pay securely by card".
+    expect(screen.getByText(CARD_LINE_UNAVAILABLE)).toBeInTheDocument()
+    expect(screen.queryByText(/pay securely by card/i)).toBeNull()
+
+    // A click on the disabled button sends nothing...
+    fireEvent.click(placeOrderButton())
+    // ...and neither does a forced submit of the form itself (the handler refuses too).
+    const form = placeOrderButton().closest("form") as HTMLFormElement
+    fireEvent.submit(form)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+  })
+
+  it("when the shop is ALSO not taking orders: availability first, the card notice second, and Place order names both", async () => {
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    mockShop({
+      ...SHOP,
+      acceptsCardPayments: true,
+      openNow: false,
+      nextOpenAt: null,
+      pausedUntil: null,
+      pausedIndefinitely: true,
+    })
+    await renderCheckout()
+    await screen.findByText(CARD_NOTICE_HEADLINE)
+
+    const availability = screen.getByTestId("shop-availability-notice")
+    const card = document.getElementById("card-payments-unavailable") as HTMLElement
+    expect(card).not.toBeNull()
+    expect(availability.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await waitFor(() => expect(placeOrderButton()).toBeDisabled())
+    expect(placeOrderButton().getAttribute("aria-describedby")).toBe(
+      "shop-availability-explainer card-payments-unavailable"
+    )
+  })
+
+  it("a card shop WITH a key shows no notice and places the order (regression)", async () => {
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = PUBLISHABLE_KEY
+    mockShop({ ...SHOP, acceptsCardPayments: true })
+    await placeCardOrder()
+
+    expect(screen.queryByText(CARD_NOTICE_HEADLINE)).toBeNull()
+    expect(document.getElementById("card-payments-unavailable")).toBeNull()
+    await screen.findByTestId("stripe-elements")
+  })
+
+  it("a cash shop with no key shows no notice, places the order, and loads no Stripe", async () => {
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    mockShop({ ...SHOP, acceptsCardPayments: false })
+    mockedPost.mockResolvedValue({ data: { ...CARD_CONFIRMATION, orderNumber: "ORD-957-CASH", clientSecret: null } })
+    await renderCheckout()
+    await armCheckout()
+
+    expect(screen.queryByText(CARD_NOTICE_HEADLINE)).toBeNull()
+    expect(placeOrderButton()).not.toBeDisabled()
+    expect(placeOrderButton().getAttribute("aria-describedby")).toBeNull()
+    fireEvent.click(placeOrderButton())
+    await waitFor(() => expect(sessionStorage.getItem("jtoye-just-placed:ORD-957-CASH")).toBe("ORD-957-CASH"))
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
   })
 })
 

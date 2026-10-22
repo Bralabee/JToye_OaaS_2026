@@ -263,21 +263,23 @@ describe("Stripe lazy load (#793)", () => {
     expect(elementsStripeProps.every((p) => p === loaded)).toBe(true)
   })
 
-  // #957 (30-02): this property used to settle on "Place order is enabled again" after a keyless card
-  // order was POSTed — that IS the #957 defect (an unpaid DRAFT created, and the customer handed the
-  // same form back with nothing said). The property it protected is kept: no key, no Stripe load.
-  // The settle point is now step 2's stated failure, which a clientSecret confirmation always reaches.
-  it("with NO publishable key configured, a card order never calls loadStripe", async () => {
+  // #957 (30-02): this property used to assert that a keyless card order was POSTed and Place order
+  // re-enabled — that assertion ENCODED the #957 defect (an unpaid DRAFT created, and the customer
+  // handed the same form back with nothing said). Replaced: a card shop with no key sends no order,
+  // shows why, and keeps Place order disabled. The property it protected is kept: no key, no load.
+  // (The post-POST path — a keyless confirmation that still arrives — is card-unavailable.test.tsx.)
+  it("with NO publishable key configured, a card shop sends no order, disables Place order, and never calls loadStripe", async () => {
     delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
     mockedPost.mockResolvedValue({ data: CARD_CONFIRMATION })
     await renderCheckout()
     await armCheckout()
 
+    await screen.findByText("Card payments are unavailable")
+    expect(screen.getByRole("button", { name: /place order/i })).toBeDisabled()
     placeOrder()
-    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
-    // Let the post-submit state settle before asserting the absence.
-    await screen.findByText("Card payment couldn't load")
+    await new Promise((r) => setTimeout(r, 50))
 
+    expect(mockedPost).toHaveBeenCalledTimes(0)
     expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
   })
