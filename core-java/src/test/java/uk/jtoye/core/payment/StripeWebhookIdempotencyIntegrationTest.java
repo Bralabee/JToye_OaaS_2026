@@ -7,9 +7,12 @@ import com.stripe.net.Webhook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.MockedStatic;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -34,8 +37,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,6 +64,7 @@ import static org.mockito.Mockito.when;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+@ExtendWith(OutputCaptureExtension.class)
 class StripeWebhookIdempotencyIntegrationTest {
 
     @Container
@@ -104,6 +110,7 @@ class StripeWebhookIdempotencyIntegrationTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000a04");
 
     private Order seededOrder;
+    private UUID seededShopId;
 
     @BeforeEach
     void seed() {
@@ -124,18 +131,29 @@ class StripeWebhookIdempotencyIntegrationTest {
             shop.setSlug("idempotency-shop-" + UUID.randomUUID().toString().substring(0, 8));
             shop.setAddress("1 Test Lane");
             Shop savedShop = shopRepository.save(shop);
+            seededShopId = savedShop.getId();
+        } finally {
+            TenantContext.clear();
+        }
+        seededOrder = seedOrder(OrderStatus.DRAFT, null);
+    }
 
+    /** An order awaiting its card payment, in {@code status}, optionally carrying a PaymentIntent reference. */
+    private Order seedOrder(OrderStatus status, String paymentReference) {
+        TenantContext.set(TENANT_ID);
+        try {
             Order order = new Order();
             order.setTenantId(TENANT_ID);
-            order.setShopId(savedShop.getId());
+            order.setShopId(seededShopId);
             order.setOrderNumber("ORD-IDEMP-" + UUID.randomUUID().toString().substring(0, 8));
-            order.setStatus(OrderStatus.DRAFT);
+            order.setStatus(status);
             order.setPaymentStatus(PaymentStatus.PENDING);
+            order.setPaymentReference(paymentReference);
             order.setCustomerEmail("idempotency@test.local");
             order.setCustomerName("Idempotency Test");
             order.setTotalAmountPennies(2500L);
             order.setSubtotalPennies(2500L);
-            seededOrder = orderRepository.save(order);
+            return orderRepository.save(order);
         } finally {
             TenantContext.clear();
         }
@@ -232,11 +250,87 @@ class StripeWebhookIdempotencyIntegrationTest {
                 Long.class, "evt_distinct_1", "evt_distinct_2");
         assertThat(rows).isEqualTo(2L);
 
-        verify(orderEventPublisher, times(2))
+        // Both events are processed (each records the payment), but only the first finds the order in DRAFT.
+        // Phase 30-05 (#958): the second used to reset the now-PENDING order to PENDING and announce DRAFT -> PENDING
+        // again, which re-sends the customer's "Received" email; the state change is now published once.
+        verify(paymentEventPublisher, times(2))
+                .publishSucceeded(any(), any(), any(), any(), anyLong(), any());
+        verify(orderEventPublisher, times(1))
                 .publishStateChange(any(), any(), any(), any(), any(), any());
     }
 
+    // --- Phase 30-05 (issue #958): a successful payment never moves an order backwards ---
+
+    @Test
+    void paymentOnDraftOrderMovesItToPending() {
+        Order draft = seedOrder(OrderStatus.DRAFT, "pi_958_draft");
+        Event event = buildSucceededEvent("evt_958_draft", "pi_958_draft", draft.getId(), TENANT_ID);
+
+        deliver(event);
+
+        assertThat(dbRow(draft.getId()))
+                .containsEntry("status", "PENDING")
+                .containsEntry("payment_status", "CAPTURED")
+                .containsEntry("payment_reference", "pi_958_draft");
+        verify(orderEventPublisher, times(1)).publishStateChange(eq(draft.getId()), eq(TENANT_ID), eq(seededShopId),
+                eq(draft.getOrderNumber()), eq(OrderStatus.DRAFT), eq(OrderStatus.PENDING));
+    }
+
+    @Test
+    void paymentOnConfirmedOrderKeepsItsStatus(CapturedOutput output) {
+        // A payment link issued after the vendor accepted the order, paid late.
+        Order confirmed = seedOrder(OrderStatus.CONFIRMED, "plink_958_confirmed");
+        Event event = buildSucceededEvent("evt_958_confirmed", "pi_958_confirmed", confirmed.getId(), TENANT_ID);
+
+        deliver(event);
+
+        assertThat(dbRow(confirmed.getId()))
+                .as("read straight from the row, not the entity cache")
+                .containsEntry("status", "CONFIRMED")
+                .containsEntry("payment_status", "CAPTURED")
+                .containsEntry("payment_reference", "pi_958_confirmed");
+        verify(orderEventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+        verify(paymentEventPublisher, times(1))
+                .publishSucceeded(eq(confirmed.getId()), any(), any(), eq("pi_958_confirmed"), anyLong(), any());
+        assertThat(output.getOut() + output.getErr())
+                .as("an open order paid late is normal, not a refund case")
+                .doesNotContain("event=payment_on_closed_order order=" + confirmed.getOrderNumber());
+    }
+
+    @Test
+    void paymentOnCancelledOrderKeepsItsStatus(CapturedOutput output) {
+        // The vendor cancelled an unpaid order; the customer's payment lands afterwards.
+        Order cancelled = seedOrder(OrderStatus.CANCELLED, "pi_958_cancelled");
+        Event event = buildSucceededEvent("evt_958_cancelled", "pi_958_cancelled", cancelled.getId(), TENANT_ID);
+
+        deliver(event);
+
+        assertThat(dbRow(cancelled.getId()))
+                .containsEntry("status", "CANCELLED")
+                .containsEntry("payment_status", "CAPTURED")
+                .containsEntry("payment_reference", "pi_958_cancelled");
+        verify(orderEventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+        assertThat(output.getOut() + output.getErr())
+                .as("T-30-22: a captured payment on a closed order is logged for a refund decision")
+                .contains("event=payment_on_closed_order order=" + cancelled.getOrderNumber()
+                        + " status=CANCELLED intent=pi_958_cancelled")
+                .doesNotContain("idempotency@test.local");
+    }
+
     // --- helpers -------------------------------------------------------
+
+    private void deliver(Event event) {
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(event);
+            paymentService.handleWebhookEvent("payload", "sig");
+        }
+    }
+
+    /** The order row as stored, read by SQL (the test superuser bypasses RLS). */
+    private Map<String, Object> dbRow(UUID orderId) {
+        return jdbcTemplate.queryForMap(
+                "SELECT status, payment_status, payment_reference FROM orders WHERE id = ?", orderId);
+    }
 
     /**
      * Build a stub {@link Event} that mirrors the shape PaymentService
