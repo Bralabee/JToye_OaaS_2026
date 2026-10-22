@@ -127,7 +127,29 @@ PR BODY SCAN — positive and clean controls  2026-10-22T04:19:16Z
   scratch "issue #957 and issue #814 (frontend half)" -> attribution=0 closing=0
   (the stored-body scan result is recorded under PR below)
 
-PR: <pending: recorded after gh pr create>
+SECRET SCAN (gitleaks 8.30.1, repo .gitleaks.toml)  2026-10-22T11:04Z
+  gitleaks git --log-opts=origin/main..HEAD   -> 21 commits scanned, no leaks found, rc=0
+  gitleaks dir <the PR body file>              -> no leaks found, rc=0
+  fail arm: a planted sk_test_-shaped fake in a scratch dir -> leaks found: 1, rc=1 (dir deleted)
+PR BODY PRE-POST SCAN
+  check-dply02-dispositions.sh --scan-text <body>          -> findings=0, rc=0
+  fail arm: the same body + a planted "Closes #957" line   -> findings=1, rc=1
+
+PR: #1029  https://github.com/Bralabee/JToye_OaaS_2026/pull/1029
+  opened 2026-10-22T11:04Z from fix/957-card-checkout-payment-step at f9d6efc2 (pushed before
+  opening; behind-base rc 0 at that moment), base main
+  title: fix(checkout): card checkout shows the Stripe payment step (Phase 30 PR 1, issue #957)
+  stored body read back 2026-10-22T11:05:07Z: diff against the posted file = 0 lines;
+    attribution=0 closing=0 (plan verify 3); closingIssuesReferences = [] (GitHub links no issue to close)
+  CHANGELOG [Unreleased] entry cites (#1029); HANDOFF names #1029.
+
+POST-PR CONTRACT GATES
+  check-changelog-contract.sh  rc=0  "all 69 merged feat/fix PR(s) since fbee244d are cited"
+  check-handoff-contract.sh    rc=1 first (2026-10-22T11:06:11Z): H-1 "resume block says 'EXPECT 59 x rc=0'
+                               but the repo has 61 gate script(s)" — the merge combined main's
+                               check-cors-preflight (59) with 30-01's two gates; fixed in 3169ce34
+                               (EXPECT 61; both new gates measured rc=2 bare, usage) -> rc=0
+  check-branch-behind-base.sh  rc=0 at head 3169ce34
 
 ------------------------------------------------------------------------------------------------
 SUPERSEDED — the first RED run, 2026-10-22T04:14Z, before #1026 (kept as history)
