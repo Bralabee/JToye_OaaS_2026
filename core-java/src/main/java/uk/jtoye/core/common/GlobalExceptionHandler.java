@@ -26,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
 import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
+import uk.jtoye.core.exception.AwaitingPaymentException;
 import uk.jtoye.core.exception.BasketChangedException;
 import uk.jtoye.core.exception.BasketConfirmationRequiredException;
 import uk.jtoye.core.exception.DsarExportUnavailableException;
@@ -105,6 +106,19 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problem.setTitle("Invalid State Transition");
         problem.setType(URI.create("https://jtoye.uk/errors/invalid-state-transition"));
+        return problem;
+    }
+
+    /**
+     * Phase 30-05 (issue #958): submit, confirm or start-prep of an order still awaiting its card or link payment.
+     * 409, not invalid-state-transition's 400: the request is well-formed and the transition legal, it conflicts with
+     * the order's payment state. Clients key on the stable {@code type}; the detail is shown to staff verbatim.
+     */
+    @ExceptionHandler(AwaitingPaymentException.class)
+    public ProblemDetail handleAwaitingPayment(AwaitingPaymentException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Awaiting payment");
+        problem.setType(URI.create("https://jtoye.uk/errors/awaiting-payment"));
         return problem;
     }
 

@@ -1,0 +1,49 @@
+# 30-07 Task 3 break arms, bracketed clean -> arm -> clean; restores verified by git blob hash against HEAD 2a1de3cb
+== task3 break: remove the walk/del sanitiser
+-- clean-before: blob 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba head 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba
+   selftest rc=0 pass=41 fail=0
+-- arm: blob 3588e8d8095b91fb902f0cb1fe3e2f192e1e60c9 (differs from head: yes)
+   selftest rc=1 pass=40 fail=1
+   FAIL stripe-get-sanitized a client secret or personal field survived:   "client_secret": "pi_sg1_secret_STUBCSsg1",|  "receipt_email": "piizq7@example.invalid",|
+-- restore: blob 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba == head 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba: yes
+   git diff --quiet: clean
+-- clean-after: selftest rc=0 pass=41 fail=0
+== task3 extra break: accept any object without a livemode field
+-- clean-before: blob 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba head 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba
+   selftest rc=0 pass=41 fail=0
+-- arm: blob 8c4967492a749096d42d58cd7aa3ae154c8d1670 (differs from head: yes)
+   selftest rc=1 pass=40 fail=1
+   FAIL stripe-get-livemode-absent intent without livemode: rc=0 (want 1)
+-- restore: blob 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba == head 333e942d7a54a65ea1b4dc676b2ef4fd7d53d8ba: yes
+   git diff --quiet: clean
+-- clean-after: selftest rc=0 pass=41 fail=0
+
+## Task 3 verify
+rc=0
+missing=0 fail_lines=0 arms=41
+verify3_rc=0
+
+## gitleaks, first run over origin/main..HEAD at 5cfc96b8: rc=1, 12 findings
+   11 x key=30-05-<uuid> (synthetic Idempotency-Key values in plan 30-05's verbatim JUnit evidence, commits 4bd017f0 and 48577794)
+   1 x scripts/staging-seed.sh:2129 at 95d59b34 (this plan's RED fixture: a literal stub client_secret)
+   (the first read of rc printed 0: it was tail's status through a pipe; re-run with a report file and rc on the same line)
+## after 2a1de3cb (fixture composed at run time; three commit-pinned fingerprints):
+9:21PM INF 34 commits scanned.
+9:21PM INF scanned ~732633 bytes (732.63 KB) in 274ms
+9:21PM INF no leaks found
+   gitleaks detect --source . --log-opts origin/main..HEAD rc=0
+## control: a scratch file holding a run-time composed sk_test_-shaped literal, --no-git: rc=1 (leaks found: 1)
+## path allowlist both directions (bash [[ =~ ]] on the script's own STRIPE_PATH_RE):
+   ALLOW  /v1/events?type=payment_intent.succeeded&limit=100
+   ALLOW  /v1/payment_intents?limit=100
+   ALLOW  /v1/webhook_endpoints/we_123
+   ALLOW  /v1/events?created[gte]=123
+   ALLOW  /v1/balance
+   ALLOW  /v1/accounts/acct_1
+   ALLOW  /v1/refunds/re_1
+   REFUSE /v1/customers
+   REFUSE /v1/balance_transactions
+   REFUSE /v1/payment_intents/../customers
+   REFUSE /v1/payment_intents/pi_1?x=$(id)
+   REFUSE https://evil/v1/balance
+   REFUSE /v2/balance

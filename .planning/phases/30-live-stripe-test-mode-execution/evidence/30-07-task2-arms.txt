@@ -1,0 +1,42 @@
+# 30-07 Task 2 break arms, bracketed clean -> arm -> clean; restores verified by git blob hash against HEAD 44859bff
+== task2 break A: drop the paid refusal (succeeded/processing/requires_capture fall into the cancel branch)
+-- clean-before: blob 63bbb4508cef118975b9bd7c2fb1b13c6784a908 head 63bbb4508cef118975b9bd7c2fb1b13c6784a908
+   selftest rc=0 pass=35 fail=0
+-- arm: blob 1c48a09e5783ef141e949e83143515e62ea86b6e (differs from head: yes)
+   selftest rc=1 pass=34 fail=1
+   FAIL cancel-paid succeeded: rc=0 (want 1)
+-- restore: blob 63bbb4508cef118975b9bd7c2fb1b13c6784a908 == head 63bbb4508cef118975b9bd7c2fb1b13c6784a908: yes
+   git diff --quiet: clean
+-- clean-after: selftest rc=0 pass=35 fail=0
+== task2 break B: call the vendor cancel before the Stripe cancel and its read-back
+-- clean-before: blob 63bbb4508cef118975b9bd7c2fb1b13c6784a908 head 63bbb4508cef118975b9bd7c2fb1b13c6784a908
+   selftest rc=0 pass=35 fail=0
+-- arm: blob 3424cec5df48f4f3cc83d122595661d87db5c831 (differs from head: yes)
+   selftest rc=1 pass=32 fail=3
+   FAIL cancel-stripe-fails the order whose intent did not cancel was cancelled anyway
+   FAIL cancel-one out of order: stripe_cancel=6 intent_readback=7 order_cancel=5 order_readback=8
+-- restore: blob 63bbb4508cef118975b9bd7c2fb1b13c6784a908 == head 63bbb4508cef118975b9bd7c2fb1b13c6784a908: yes
+   git diff --quiet: clean
+-- clean-after: selftest rc=0 pass=35 fail=0
+== task2 break C: ignore --orders and cancel every DRAFT
+-- clean-before: blob 63bbb4508cef118975b9bd7c2fb1b13c6784a908 head 63bbb4508cef118975b9bd7c2fb1b13c6784a908
+   selftest rc=0 pass=35 fail=0
+-- arm: blob d505fe1ebf51d9617d23b442b2c7b2b6193036d0 (differs from head: yes)
+   selftest rc=1 pass=30 fail=5
+   FAIL cancel-only-listed vendor cancel calls=3 (want exactly 1)
+-- restore: blob 63bbb4508cef118975b9bd7c2fb1b13c6784a908 == head 63bbb4508cef118975b9bd7c2fb1b13c6784a908: yes
+   git diff --quiet: clean
+-- clean-after: selftest rc=0 pass=35 fail=0
+
+# Task 2 <verify> blocks on the committed tree, with the scheduler grep's positive control
+## verify 1
+rc=0
+missing=0 fail_lines=0
+verify1_rc=0
+## verify 2 (D-02 no sweeper)
+git_rc=0 added_schedulers=0 diff_lines=179
+verify2_rc=0
+## verify 2 positive control (here-string)
+control_count=1 (want 1)
+## verify 2 control: the diff range is non-empty and sees core-java/src/main lines
+ 5 files changed, 75 insertions(+), 16 deletions(-)

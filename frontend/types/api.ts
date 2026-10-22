@@ -526,6 +526,12 @@ export interface Order {
   scheduledWindowLabel?: string | null
   depositAmountPennies?: number | null
   balanceDuePennies?: number | null
+  // Phase 30-06 (issue #958): backend OrderDto has always carried these (OrderMapper maps both);
+  // the list type now declares them so the Orders list can show "Awaiting payment" and stop
+  // offering Submit/Confirm the server would refuse. Absent (NON_NULL) = null. Read them through
+  // `isAwaitingPayment` (lib/awaiting-payment.ts), the server rule transcribed.
+  paymentStatus?: PaymentStatus | null
+  paymentReference?: string | null
 }
 
 /** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */

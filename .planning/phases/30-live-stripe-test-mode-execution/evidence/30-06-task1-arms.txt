@@ -1,0 +1,27 @@
+30-06 Task 1 break arms — run on committed GREEN a593e02b; restore by cp from scratch backup, verified by sha256 against the HEAD blob.
+Command per arm: npx jest --ci --watchAll=false --runTestsByPath lib/__tests__/awaiting-payment.test.ts components/dashboard/orders/__tests__/awaiting-payment-badge.test.tsx app/dashboard/orders/__tests__/page.test.tsx (cwd frontend/)
+
+OPEN lib/awaiting-payment.ts sha256 == HEAD blob
+OPEN app/dashboard/orders/page.tsx sha256 == HEAD blob
+== clean (open)
+Tests:       28 passed, 28 total
+rc=0
+== ARM A (PR #1018 finding 8): reintroduce 'if (status == null) return false'
+  ● isAwaitingPayment mirrors OrderService.isAwaitingUpfrontOrDepositPayment › l.1107-1109: a null status WITH a reference is awaiting payment (null is neither CAPTURED nor AUTHORIZED)
+  ● isAwaitingPayment mirrors OrderService.isAwaitingUpfrontOrDepositPayment › l.1107-1109: an undefined status WITH a reference is awaiting payment
+Tests:       2 failed, 26 passed, 28 total
+rc=1
+== ARM C: truthy reference check (empty string treated as unset)
+  ● isAwaitingPayment mirrors OrderService.isAwaitingUpfrontOrDepositPayment › l.1107: NONE with an EMPTY reference is awaiting payment (Java checks != null only)
+Tests:       1 failed, 27 passed, 28 total
+rc=1
+== ARM B: orders list stops filtering submit/confirm
+  ● Orders list: an order awaiting payment (issue #958, UI-SPEC § S2) › an awaiting-payment DRAFT shows the badge, offers no Submit, and keeps Cancel
+  ● Orders list: an order awaiting payment (issue #958, UI-SPEC § S2) › an awaiting-payment PENDING order shows the badge, offers no Confirm, and keeps Cancel
+Tests:       2 failed, 26 passed, 28 total
+rc=1
+CLOSE lib/awaiting-payment.ts sha256 == HEAD blob
+CLOSE app/dashboard/orders/page.tsx sha256 == HEAD blob
+== clean (close)
+Tests:       28 passed, 28 total
+rc=0

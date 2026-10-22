@@ -170,3 +170,104 @@ describe("Orders page — the Index width tier (phase 35)", () => {
     expect(declared[0]).toHaveClass("space-y-6")
   })
 })
+
+/**
+ * Phase 30-06 (issue #958, UI-SPEC § S2 "Orders list").
+ *
+ * The server refuses SUBMIT and CONFIRM of an order still awaiting its card or link payment (plan
+ * 30-05, 409 awaiting-payment). The list therefore stops OFFERING those two actions for such an order
+ * and shows the "Awaiting payment" badge instead, while Cancel stays so a vendor can still clear an
+ * abandoned DRAFT (D-02, the manual operation; DRAFT -> CANCELLED is legal on the server). A vendor
+ * DRAFT (paymentStatus NONE, no reference — D-01) is unaffected: Submit, no badge.
+ */
+describe("Orders list: an order awaiting payment (issue #958, UI-SPEC § S2)", () => {
+  const AWAITING_DRAFT = "ORD-AWAITING-DRAFT"
+  const VENDOR_DRAFT = "ORD-VENDOR-DRAFT"
+  const AWAITING_PENDING = "ORD-AWAITING-PENDING"
+  const AWAITING_CONFIRMED = "ORD-AWAITING-CONFIRMED"
+  const REFUNDED_CARD = "ORD-REFUNDED-CARD"
+
+  beforeEach(() => {
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/orders")) {
+        return Promise.resolve({
+          data: {
+            content: [
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000001", AWAITING_DRAFT), status: "DRAFT", paymentStatus: "PENDING", paymentReference: "pi_unpaid" },
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000002", VENDOR_DRAFT), status: "DRAFT", paymentStatus: "NONE", paymentReference: null },
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000003", AWAITING_PENDING), status: "PENDING", paymentStatus: "NONE", paymentReference: "plink_unpaid" },
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000004", AWAITING_CONFIRMED), status: "CONFIRMED", paymentStatus: "PENDING", paymentReference: "plink_late" },
+              { ...orderRow("aaaaaaaa-0000-0000-0000-000000000005", REFUNDED_CARD), status: "REFUNDED", paymentStatus: "REFUNDED", paymentReference: "pi_refunded" },
+            ],
+            totalPages: 1,
+            totalElements: 5,
+          },
+        })
+      }
+      return Promise.resolve({ data: { content: [] } })
+    })
+  })
+
+  async function rowFor(orderNumber: string): Promise<HTMLElement> {
+    const cell = await screen.findByText(orderNumber)
+    const row = cell.closest("tr")
+    expect(row).not.toBeNull()
+    return row as HTMLElement
+  }
+
+  // PR #1030 review round 1, finding 1: a one-tap Cancel on an unpaid card DRAFT cancels the order but
+  // leaves its PaymentIntent live; a customer still at checkout can then pay a CANCELLED order, which the
+  // webhook (30-05) records without reopening it — money taken, nothing to fulfil. Such a DRAFT is cleared
+  // by the D-02 tool (staging-seed.sh cancel-drafts), which cancels the intent FIRST and refuses a paid one.
+  it("an awaiting-payment DRAFT shows the badge and offers neither Submit nor a one-tap Cancel", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(AWAITING_DRAFT)
+
+    expect(within(row).getByTestId("awaiting-payment")).toHaveTextContent("Awaiting payment")
+    expect(within(row).queryByRole("button", { name: /Submit/ })).toBeNull()
+    expect(within(row).queryByRole("button", { name: /Cancel/ })).toBeNull()
+  })
+
+  it("a vendor DRAFT (NONE, no reference) keeps its Cancel", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(VENDOR_DRAFT)
+
+    expect(within(row).getByRole("button", { name: /Cancel/ })).toBeInTheDocument()
+  })
+
+  // Round 1, finding 5: the server refuses START_PREP of an order awaiting payment too (30-05), so the
+  // list must not offer Start Preparing for one, for the same reason it hides Submit and Confirm.
+  it("an awaiting-payment CONFIRMED order offers no Start Preparing", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(AWAITING_CONFIRMED)
+
+    expect(within(row).getByTestId("awaiting-payment")).toBeInTheDocument()
+    expect(within(row).queryByRole("button", { name: /Start Prep/i })).toBeNull()
+  })
+
+  // Round 1, finding 2: a refunded card order keeps its pi_ reference with status REFUNDED; it must not
+  // be badged "Awaiting payment".
+  it("a REFUNDED card order shows no awaiting-payment badge", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(REFUNDED_CARD)
+
+    expect(within(row).queryByTestId("awaiting-payment")).toBeNull()
+  })
+
+  it("an awaiting-payment PENDING order shows the badge, offers no Confirm, and keeps Cancel", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(AWAITING_PENDING)
+
+    expect(within(row).getByTestId("awaiting-payment")).toBeInTheDocument()
+    expect(within(row).queryByRole("button", { name: /Confirm/ })).toBeNull()
+    expect(within(row).getByRole("button", { name: /Cancel/ })).toBeInTheDocument()
+  })
+
+  it("a vendor DRAFT (NONE, no reference) still offers Submit and shows no badge (D-01)", async () => {
+    render(<OrdersPage />)
+    const row = await rowFor(VENDOR_DRAFT)
+
+    expect(within(row).getByRole("button", { name: /Submit/ })).toBeInTheDocument()
+    expect(within(row).queryByTestId("awaiting-payment")).toBeNull()
+  })
+})
