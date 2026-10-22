@@ -14,6 +14,12 @@
 # USAGE
 #   scripts/staging-seed.sh --context NAME --stage vendor|order|all
 #                           [--identity-file PATH] [--api URL] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage list-drafts|vendor-order [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage order-transition --orders ORD-x
+#                           --event submit|confirm|start-preparation [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage cancel-drafts --orders ORD-a,ORD-b [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage stripe-get --path /v1/<object>/<id>
+#                           [--account acct_…] [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -30,6 +36,35 @@
 #                        livemode=… at=<ISO-8601 UTC>.
 #     --stage all        vendor, then order (the vendor stage's operator is
 #                        deleted before the order is placed).
+#   The hand tools (plan 30-07; issue #958; D-01, D-02). Each signs in as the
+#   staging test vendor (or reads the Stripe TEST key) after the same guards, and
+#   prints no customer name, email, phone, address or note:
+#     --stage list-drafts      READ-ONLY: the tenant's DRAFT orders, one line each,
+#                              DRAFT-CANDIDATE order=… created=… payment_status=…
+#                              intent=present|none total=…p, then
+#                              LIST-DRAFTS count=… card=… at=<ISO>.
+#     --stage vendor-order     ONE vendor order at staging-test-kitchen, as the
+#                              dashboard makes it (no customer field, submit
+#                              unset): VENDOR-ORDER order=… status=DRAFT
+#                              payment_status=NONE, refused unless it is exactly
+#                              that (the D-01 control for plan 30-08).
+#     --stage order-transition --orders ORD-x --event submit|confirm|start-preparation
+#                              one POST to exactly that order; prints
+#                              TRANSITION order=… event=… http=… type=… detail=….
+#     --stage cancel-drafts --orders ORD-a,ORD-b
+#                              D-02, the owner-confirmed list ONLY: per order, the
+#                              intent cancelled in Stripe TEST and read back
+#                              canceled, then the order cancelled and read back
+#                              CANCELLED (SEED-CANCEL …); a paid or paying intent
+#                              is refused [paid]; ends CANCEL-DRAFTS requested=…
+#                              cancelled=… refused=…, rc 1 when anything was refused.
+#     --stage stripe-get --path /v1/<object>[/<id>…][?query] [--account acct_…]
+#                              one sanitised TEST-mode GET of webhook_endpoints,
+#                              payment_intents, charges, refunds, transfers,
+#                              payouts, accounts, subscriptions, invoices, events
+#                              or balance (any other path is REFUSED [stripe-path]);
+#                              --account sends Stripe-Account. Client secrets and
+#                              personal fields are removed before printing.
 #     --dry-run          run every guard (they only read), then print the ordered
 #                        request plan; no Azure, Keycloak or API call is made.
 #     --list-kv-objects  the Key Vault object names the stages read, one per
@@ -209,10 +244,18 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|stripe-get) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
+  if [ "$STAGE" = stripe-get ]; then
+    echo "  target        Stripe ${STRIPE_API} (TEST only)"
+    echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+    echo "  02 GET        ${STRIPE_API}${STRIPE_PATH}${STRIPE_ACCOUNT:+   Stripe-Account ${STRIPE_ACCOUNT} (in a per-call copy of the mode-600 config)}"
+    echo "  03 check      livemode false (refund and account objects carry no livemode field: printed with LIVEMODE n/a)"
+    echo "  04 print      the object without client_secret, secret, billing_details, receipt_email, email, name, phone, address, shipping"
+    return 0
+  fi
   echo "  target        api ${API_BASE}; shop ${SHOP_SLUG}; signed in as ${VENDOR_USERNAME}"
   echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: staging-seed--test-vendor-password keycloak-credentials--frontend-client-secret (values never printed)"
   echo "  02 POST       ${TOKEN_ENDPOINT}   vendor password grant on core-api"
@@ -860,13 +903,16 @@ pub_api() {
 # STRIPE_EXTRA_HEADER, when set, is sent as one more header (an Idempotency-Key;
 # never a secret).
 STRIPE_EXTRA_HEADER=""
+# STRIPE_CURLRC, when set, is the config file used instead of stripe.curlrc (a
+# per-call copy carrying a Stripe-Account header; mode 600, in WORKDIR).
+STRIPE_CURLRC=""
 stripe_api() {
   local method="$1" path="$2" out="$3" code rc=0 f
   shift 3
   local -a form=() xh=()
   for f in "$@"; do form+=(--data-urlencode "$f"); done
   [ -z "$STRIPE_EXTRA_HEADER" ] || xh=(-H "$STRIPE_EXTRA_HEADER")
-  code=$(curl -sS -K "$WORKDIR/stripe.curlrc" -X "$method" ${xh[@]+"${xh[@]}"} ${form[@]+"${form[@]}"} \
+  code=$(curl -sS -K "${STRIPE_CURLRC:-$WORKDIR/stripe.curlrc}" -X "$method" ${xh[@]+"${xh[@]}"} ${form[@]+"${form[@]}"} \
     -o "$out" -w '%{http_code}' "${STRIPE_API}${path}") || rc=$?
   if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
   echo "$code"
@@ -1297,6 +1343,44 @@ cancel_drafts_stage() {
   done
   echo "CANCEL-DRAFTS requested=$requested cancelled=$cancelled refused=$refused"
   [ "$refused" -eq 0 ] || exit 1
+}
+
+# --stage stripe-get --path P [--account acct_…] — one GET, TEST mode only, for
+# evidence. The path was matched against the allowlist before any guard ran.
+# livemode must read false. Two object types Stripe defines without a livemode
+# field (refund, account; stripe-java 34.0.0 has none on Refund or Account) are
+# printed with a LIVEMODE n/a line, since the sk_test_ key is what makes them
+# TEST; any other object without the field is refused, never assumed TEST.
+stripe_get_stage() {
+  local code verdict obj
+  read_stripe_key
+  if [ -n "$STRIPE_ACCOUNT" ]; then
+    (umask 077 && { cat "$WORKDIR/stripe.curlrc"; printf 'header = "Stripe-Account: %s"\n' "$STRIPE_ACCOUNT"; } > "$WORKDIR/stripe-acct.curlrc")
+    STRIPE_CURLRC="$WORKDIR/stripe-acct.curlrc"
+  fi
+  code=$(stripe_api GET "$STRIPE_PATH" "$WORKDIR/sg.json")
+  STRIPE_CURLRC=""
+  rm -f "$WORKDIR/stripe-acct.curlrc"
+  [ "$code" = 200 ] || stripe_fail "GET $STRIPE_PATH" "$code" "$WORKDIR/sg.json"
+  verdict=$(jq -r '
+    def lm: if type != "object" then "unparseable"
+            elif has("livemode") then (if .livemode == false then "false" else "live" end)
+            elif (.object == "refund" or .object == "account") then "absent-known"
+            else "absent" end;
+    if type == "object" and .object == "list" then
+      ([.data[]? | lm] | if any(. == "live") then "live" elif any(. == "absent" or . == "unparseable") then "absent"
+                         elif length == 0 then "empty" elif all(. == "false") then "false" else "absent-known" end)
+    else lm end' "$WORKDIR/sg.json" 2>/dev/null || echo unparseable)
+  obj=$(jq -r 'if type == "object" then (.object // "unknown") else "unknown" end' "$WORKDIR/sg.json" 2>/dev/null || echo unknown)
+  case "$verdict" in
+    false|empty) ;;
+    absent-known) echo "LIVEMODE n/a object=$obj (Stripe defines no livemode field on this object; TEST mode rests on the sk_test_ key)" ;;
+    live) rm -f "$WORKDIR/sg.json"; refuse stripe-mode "GET $STRIPE_PATH returned a live object; a live object must never exist in staging (D-28)" ;;
+    *) rm -f "$WORKDIR/sg.json"; refuse stripe-mode "GET $STRIPE_PATH returned a $obj that does not read livemode false ($verdict); refused rather than assumed TEST" ;;
+  esac
+  jq 'walk(if type == "object" then del(.client_secret, .secret, .billing_details, .receipt_email, .email, .name, .phone, .address, .shipping) else . end)' \
+    "$WORKDIR/sg.json"
+  rm -f "$WORKDIR/sg.json"
 }
 
 # ===========================================================================
@@ -2141,8 +2225,8 @@ IDF
     why="a client secret or personal field survived: $(command grep -E '_secret_|client_secret|receipt_email|billing_details|shipping' <<<"$ST_OUT" | head -n 2 | tr '\n' '|')"
   elif [ "$(_st_pii)" -ne 0 ] || command grep -qF '07700 900777' <<<"$ST_OUT$ST_ERR"; then why="personal data was printed"
   elif [ "$(_st_leaks)" -ne 0 ]; then why="a key or client secret marker was printed or put in argv"
-  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/payment_intents/pi_sg1 -> 200$')" -ne 1 ] || [ "$(_st_flow '^(POST|DELETE|PUT) ')" -ne 1 ]; then
-    why="calls: want one Stripe GET and only the token grant beside it: $(tr '\n' '|' < "$ast/logs/curl-flow.log")"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/payment_intents/pi_sg1 -> 200$')" -ne 1 ] || [ "$(_st_flow '^(POST|DELETE|PUT|PATCH) ')" -ne 0 ]; then
+    why="calls: want exactly one Stripe GET and no write: $(tr '\n' '|' < "$ast/logs/curl-flow.log")"
   fi
   if [ -z "$why" ]; then _st_result "PASS stripe-get-sanitized rc=0 printed=pi_sg1+ch_sg1 secrets=0 pii=0"
   else _st_result "FAIL stripe-get-sanitized $why"; fails=$((fails + 1)); fi
@@ -2245,6 +2329,9 @@ STAGE=""
 DRY_RUN=0
 ORDERS=""
 EVENT=""
+STRIPE_PATH=""
+STRIPE_ACCOUNT=""
+STRIPE_PATH_RE='^/v1/(webhook_endpoints|payment_intents|charges|refunds|transfers|payouts|accounts|subscriptions|invoices|events|balance)(/[A-Za-z0-9_]+)*(\?[]A-Za-z0-9_.=&[-]*)?$'
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -2254,6 +2341,8 @@ while [ "$#" -gt 0 ]; do
     --stage)           shift; [ "$#" -gt 0 ] || usage_error "--stage needs a stage name"; STAGE="$1" ;;
     --orders)          shift; [ "$#" -gt 0 ] || usage_error "--orders needs a comma list of order numbers"; ORDERS="$1" ;;
     --event)           shift; [ "$#" -gt 0 ] || usage_error "--event needs submit|confirm|start-preparation"; EVENT="$1" ;;
+    --path)            shift; [ "$#" -gt 0 ] || usage_error "--path needs a Stripe path (/v1/…)"; STRIPE_PATH="$1" ;;
+    --account)         shift; [ "$#" -gt 0 ] || usage_error "--account needs a connected account id (acct_…)"; STRIPE_ACCOUNT="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
     --list-kv-objects) ACTION="list-kv-objects" ;;
     --selftest)        ACTION="selftest" ;;
@@ -2271,10 +2360,14 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition or cancel-drafts" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|stripe-get) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|stripe-get)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts or stripe-get" ;;
 esac
+if [ "$STAGE" != stripe-get ]; then
+  [ -z "$STRIPE_PATH" ] || usage_error "--path is taken by --stage stripe-get only"
+  [ -z "$STRIPE_ACCOUNT" ] || usage_error "--account is taken by --stage stripe-get only"
+fi
 # Stage-specific flags are checked before any guard or call. A flag a stage
 # does not take is an error, never ignored: an order list must not be mistaken
 # for a filter by a stage that would not honour it.
@@ -2301,6 +2394,14 @@ case "$STAGE" in
       done
     fi
     [ -z "$_cd_why" ] || usage_error "--stage cancel-drafts needs --orders ORD-a,ORD-b (the owner-confirmed list, D-02): $_cd_why" ;;
+  stripe-get)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage stripe-get"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    [ -n "$STRIPE_PATH" ] || usage_error "--stage stripe-get needs --path /v1/<object>/<id>"
+    [[ "$STRIPE_PATH" =~ $STRIPE_PATH_RE ]] \
+      || refuse stripe-path "'$STRIPE_PATH' is not an allowlisted evidence path (webhook_endpoints, payment_intents, charges, refunds, transfers, payouts, accounts, subscriptions, invoices, events, balance); nothing was called"
+    [ -z "$STRIPE_ACCOUNT" ] || [[ "$STRIPE_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]] \
+      || usage_error "--account must be a connected account id (acct_ followed by letters and digits)" ;;
   *)
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage $STAGE"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only" ;;
@@ -2318,6 +2419,7 @@ case "$STAGE" in
   vendor-order)     vendor_order_stage ;;
   order-transition) order_transition_stage ;;
   cancel-drafts)    cancel_drafts_stage ;;
+  stripe-get)       stripe_get_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
