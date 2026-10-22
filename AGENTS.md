@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38), Next.js 16, Go 1.27, PostgreSQL 18
 - **Java version**: JDK 25 (Temurin) on Gradle 9.7.1 — JDK 25 requires Gradle ≥ 9.1 (migrated from JDK 21/Gradle 8.10.2, 2026-08-31)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 6509 logical invocations passing (2990 Java `@Test` methods across 421 files + 3145 Jest `it/test` blocks across 267 files + 112 top-level Go `Test*` funcs across 14 files + 192 Playwright `test()` blocks across 47 specs + 70 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
+- **Testing**: All new code requires tests — project standard is 6513 logical invocations passing (2990 Java `@Test` methods across 421 files + 3149 Jest `it/test` blocks across 268 files + 112 top-level Go `Test*` funcs across 14 files + 192 Playwright `test()` blocks across 47 specs + 70 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -21,7 +21,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ## Languages
 - Java 25 - Core API (Spring Boot 4.1.1)
-- TypeScript 5 - Frontend (Next.js 16.4.0, React 19)
+- TypeScript 5 - Frontend (Next.js 16.4.2, React 19)
 - Go 1.27 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
@@ -49,7 +49,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Micrometer Prometheus - Metrics export
 - Micrometer Tracing (Brave/Zipkin, via spring-boot-starter-zipkin) - Distributed tracing
 - Jackson 3 (tools.jackson) - Application JSON line: Boot's JsonMapper with Jackson 3 defaults; Jackson 2 is transitive-only, floored via jackson-2-bom.version
-- Next.js 16.4.0 - React framework with file-based routing
+- Next.js 16.4.2 - React framework with file-based routing
 - React 19 - UI component library
 - React Hook Form 7.90.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
@@ -65,7 +65,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Spring Boot Test - Testing utilities and test containers
 - Jest 30.5.2 - JavaScript test runner
 - @testing-library/react - React component testing
-- @playwright/test 1.64.0 - E2E browser automation
+- @playwright/test 1.64.1 - E2E browser automation
 - Spring Boot Gradle Plugin 4.1.1 - JAR packaging
 - Flyway 12 - Database migration management
 - Lombok - Boilerplate reduction (code generation)
@@ -76,9 +76,9 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Hibernate Envers - Audit history tracking
 - Azure Storage Blob SDK (12.36.0) - Blob API for image storage
 - Azure Identity (1.18.7) - Workload Identity credential for Blob in AKS
-- Stripe React/JS 7.0.0, 10.0.0 - Payment processing UI integration
+- Stripe React/JS 7.0.0, 10.1.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
-- Framer Motion 14.0.0 - Animation library
+- Framer Motion 14.3.0 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
 - Redis 8.10 - Session and cache store
 - RabbitMQ 4.3.6 - Message queue (AMQP)
@@ -140,7 +140,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Azurite: 3.37.0
 - Go: 1.27-alpine
 - Node.js: 24+
-- Next.js: 16.4.0
+- Next.js: 16.4.2
 ## Performance Tuning
 - Connection pooling: HikariCP
 - Batch insert/update: Hibernate batch_size=20 (prod: 50)

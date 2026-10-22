@@ -94,13 +94,12 @@ export default function SignInPage() {
           <CardHeader className="space-y-4 text-center pb-6">
             <Link
               href="/"
-              aria-label="J'Toye home"
               className="mx-auto flex w-fit items-center gap-2 text-xl font-semibold tracking-tight text-oxblood"
             >
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-oxblood text-base font-bold text-white">
+              <span aria-hidden="true" className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-oxblood text-base font-bold text-white">
                 J
               </span>
-              <span>J&apos;Toye</span>
+              <span>J&apos;Toye</span><span className="sr-only"> home</span>
             </Link>
             {/* The page's one level-1 heading. Written out rather than routed
                 through CardTitle: that primitive renders at level 3 and is

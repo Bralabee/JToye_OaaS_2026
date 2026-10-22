@@ -15,13 +15,14 @@ jobs:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
-          # REQUIRED, not cosmetic. gitleaks-action@v2 hardcodes a 8.24.3 default
-          # (src/index.js: `process.env.GITLEAKS_VERSION || "8.24.3"`), and 8.24.3
+          # REQUIRED, not cosmetic. gitleaks-action v2 and v3.0.0 both hardcode a 8.24.3 default
+          # (src/index.js line 138 at the pinned v3 sha: `process.env.GITLEAKS_VERSION || "8.24.3"`;
+          # v3 changed only the Node runtime), and 8.24.3
           # silently ignores the plural `[[allowlists]]` array-of-tables form that
           # .gitleaks.toml is written in — it parses without error and has no
           # effect, so every allowlist in that file was dead. Measured on a probe

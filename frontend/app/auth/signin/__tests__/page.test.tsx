@@ -39,7 +39,7 @@ describe('SignIn Page', () => {
   it('should link the brand wordmark to the public home page', () => {
     render(<SignInPage />)
 
-    const brandLink = screen.getByRole('link', { name: /j'toye home/i })
+    const brandLink = screen.getByRole('link', { name: "J'Toye home" })
     expect(brandLink).toHaveAttribute('href', '/')
   })
 
@@ -170,7 +170,7 @@ describe('SignIn Page preserves every load-bearing element', () => {
   it('still renders the wordmark, both escape links, the cross-link and the legal line', () => {
     render(<SignInPage />)
 
-    expect(screen.getByRole('link', { name: /j'toye home/i })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: "J'Toye home" })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: /customer sign in/i })).toHaveAttribute(
       'href',
       '/shop/signin'

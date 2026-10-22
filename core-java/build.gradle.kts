@@ -303,8 +303,8 @@ dependencies {
     // WebP derivative/thumbnail by delegating to a `cwebp` binary (bundled on
     // glibc hosts; the musl runtime image overrides to the system cwebp via
     // -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin — see Dockerfile).
-    implementation("com.sksamuel.scrimage:scrimage-core:4.6.8")
-    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.8")
+    implementation("com.sksamuel.scrimage:scrimage-core:4.6.9")
+    implementation("com.sksamuel.scrimage:scrimage-webp:4.6.9")
     // Read-only WebP ImageIO plugin — lets ImageReader header-read + decode-VERIFY
     // a WebP *upload* (stock JDK ImageIO cannot read WebP at all). Cannot encode.
     implementation("com.twelvemonkeys.imageio:imageio-webp:3.15.3")

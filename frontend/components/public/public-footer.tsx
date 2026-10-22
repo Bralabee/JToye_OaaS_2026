@@ -130,10 +130,10 @@ export function PublicFooter() {
               href="/"
               className="flex items-center gap-2 text-lg font-semibold tracking-tight text-white"
             >
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-sm font-bold text-oxblood">
+              <span aria-hidden="true" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-sm font-bold text-oxblood">
                 J
               </span>
-              <span>J&apos;Toye</span>
+              <span>J&apos;Toye</span><span className="sr-only"> home</span>
             </Link>
             <p className="text-sm text-cream/75 max-w-xs">
               Order from independent local kitchens, or run your own food
