@@ -886,10 +886,17 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 59 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 61 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-22 (fix/957-card-checkout-payment-step, Phase 30 PR 1): 59 -> 61.
+# Both take arguments, so in this bare loop each prints rc=2 (usage error, measured
+# 2026-10-22): run them as CI does. check-stripe-pk-var refuses a deploy whose publishable
+# key is empty or of the wrong mode (`--selftest`, or STRIPE_PK_VAR in the environment plus
+# `--environment staging|production`). check-frontend-stripe-key-baked reads the key out of
+# the live staging checkout chunks (the staging-edge-probe arguments in ci-cd.yaml); it is
+# rc 1 until a keyed image is deployed (plan 30-04).
 # 2026-10-22 (fix/1025-ingress-cors-idempotency-key): 58 -> 59. check-cors-preflight asks the
 # live staging api host whether the order POST's preflight admits the browser's headers
 # (issue #1025); it curls a public host, so from a laptop it needs network, not a stack.
