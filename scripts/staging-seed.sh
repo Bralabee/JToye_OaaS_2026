@@ -209,7 +209,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -228,6 +228,16 @@ print_tool_plan() {
       echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
       echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
       echo "  05 print      TRANSITION order=${ORDERS} event=${EVENT} http=… type=… detail=…" ;;
+    cancel-drafts)
+      echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+      echo "  04 GET        /api/v1/orders/status/DRAFT   the ids of exactly: ${ORDERS//,/ }"
+      echo "  per order     GET /api/v1/orders/{id}/detail   refused [not-draft] unless DRAFT, paymentStatus PENDING|FAILED, a pi_ reference"
+      echo "                GET ${STRIPE_API}/v1/payment_intents/{pi}   livemode false; refused [paid] if succeeded|processing|requires_capture"
+      echo "                POST ${STRIPE_API}/v1/payment_intents/{pi}/cancel   cancellation_reason=abandoned, Idempotency-Key d02-cancel-{pi}; skipped if already canceled"
+      echo "                GET ${STRIPE_API}/v1/payment_intents/{pi}   must read canceled BEFORE the order is touched"
+      echo "                POST /api/v1/orders/{id}/cancel, then GET /api/v1/orders/{id}/detail   must read CANCELLED"
+      echo "                print SEED-CANCEL order=… intent=… intent_status=canceled order_status=CANCELLED livemode=false at=…"
+      echo "  last          CANCEL-DRAFTS requested=… cancelled=… refused=… (rc 1 when anything was refused)" ;;
   esac
 }
 print_order_plan() {
@@ -847,12 +857,16 @@ pub_api() {
 
 # stripe_api METHOD PATH OUT [FORM-FIELD...] — Stripe, the key from the mode-600
 # config file. Form fields go through --data-urlencode; none is a secret.
+# STRIPE_EXTRA_HEADER, when set, is sent as one more header (an Idempotency-Key;
+# never a secret).
+STRIPE_EXTRA_HEADER=""
 stripe_api() {
   local method="$1" path="$2" out="$3" code rc=0 f
   shift 3
-  local -a form=()
+  local -a form=() xh=()
   for f in "$@"; do form+=(--data-urlencode "$f"); done
-  code=$(curl -sS -K "$WORKDIR/stripe.curlrc" -X "$method" ${form[@]+"${form[@]}"} \
+  [ -z "$STRIPE_EXTRA_HEADER" ] || xh=(-H "$STRIPE_EXTRA_HEADER")
+  code=$(curl -sS -K "$WORKDIR/stripe.curlrc" -X "$method" ${xh[@]+"${xh[@]}"} ${form[@]+"${form[@]}"} \
     -o "$out" -w '%{http_code}' "${STRIPE_API}${path}") || rc=$?
   if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
   echo "$code"
@@ -893,11 +907,11 @@ intents_for() {
   INTENT_COUNT=$(jq -r --arg o "$1" '[.data[] | select(.metadata.order_number == $o)] | length' "$WORKDIR/pi-list.json")
 }
 
-order_stage() {
-  local key code rc
-
-  # 1. The subscription guard, then the Stripe TEST key into a mode-600 config
-  #    file. A key that is not sk_test_ is refused before any API call.
+# read_stripe_key — the subscription guard, then the Stripe TEST key from Key
+# Vault into the mode-600 config file. A key that is not sk_test_ is refused
+# before any API call. Shared by the order, cancel-drafts and stripe-get stages.
+read_stripe_key() {
+  local key rc
   azure_guard_once
   need_tool curl
   ensure_workdir
@@ -917,6 +931,14 @@ order_stage() {
   (umask 077 && printf 'user = "%s:"\n' "$key" > "$WORKDIR/stripe.curlrc")
   key=""
   echo "OK: read the Stripe TEST key from $KEY_VAULT_NAME/$STRIPE_KV_OBJECT (sk_test_; value not shown)"
+}
+
+order_stage() {
+  local code
+
+  # 1. The Stripe TEST key (read_stripe_key: the subscription guard, the
+  #    sk_test_ refusal, the mode-600 config file).
+  read_stripe_key
 
   # 2. The public shop and menu, as a customer's browser reads them.
   local fulfilment fee
@@ -1192,6 +1214,89 @@ order_transition_stage() {
     2??|400|409|422) return 0 ;;
     *) echo "FAIL: POST /api/v1/orders/{id}/$EVENT did not reach a verdict (HTTP $code)" >&2; exit 1 ;;
   esac
+}
+
+# --stage cancel-drafts --orders ORD-a,ORD-b — D-02, by hand, an explicit list
+# only. For each named order, in the order given: the order must be a card DRAFT
+# awaiting payment; its intent is read (livemode false), refused if paid or
+# paying, cancelled in Stripe (cancellation_reason abandoned, Idempotency-Key
+# d02-cancel-<pi>) and read back canceled; only then is the order cancelled
+# through the vendor API and read back CANCELLED. A refusal or failure ends that
+# order only (each runs in its own errexit subshell), the next named order is
+# processed, and the run exits 1. No order is cancelled whose intent is not
+# canceled first, so a later payment cannot land on a cancelled order.
+cancel_one() {
+  local id="$1" n="$2" code ost ops pref pist lm
+  code=$(api vendor GET "/api/v1/orders/$id/detail" "$WORKDIR/c-detail.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/orders/{id}/detail ($n)" "$code" "$WORKDIR/c-detail.json"
+  ost=$(jq -r '.status // ""' "$WORKDIR/c-detail.json")
+  ops=$(jq -r '.paymentStatus // ""' "$WORKDIR/c-detail.json")
+  pref=$(jq -r '.paymentReference // ""' "$WORKDIR/c-detail.json")
+  rm -f "$WORKDIR/c-detail.json"
+  [ "$ost" = DRAFT ] || refuse not-draft "$n is $ost, not DRAFT; only an abandoned card DRAFT is cancelled here"
+  case "$ops" in PENDING|FAILED) ;; *) refuse not-draft "$n has paymentStatus $ops, not PENDING or FAILED: not a card order awaiting payment" ;; esac
+  [[ "$pref" =~ ^pi_[A-Za-z0-9]+$ ]] || refuse not-draft "$n carries no PaymentIntent reference (pi_…)"
+
+  code=$(stripe_api GET "/v1/payment_intents/$pref" "$WORKDIR/c-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$pref" "$code" "$WORKDIR/c-pi.json"
+  assert_test_mode "$WORKDIR/c-pi.json" "PaymentIntent $pref"
+  if [ "$(jq -r '.metadata.order_number // ""' "$WORKDIR/c-pi.json")" != "$n" ]; then
+    refuse intent-mismatch "PaymentIntent $pref names order '$(jq -r '.metadata.order_number // ""' "$WORKDIR/c-pi.json")', not $n"
+  fi
+  pist=$(jq -r '.status // ""' "$WORKDIR/c-pi.json")
+  case "$pist" in
+    succeeded|processing|requires_capture)
+      refuse paid "$n: PaymentIntent $pref is $pist; a paid or paying order is never cancelled here (D-02)" ;;
+    canceled)
+      echo "SKIP: PaymentIntent $pref is already canceled; no Stripe write" ;;
+    requires_payment_method|requires_confirmation|requires_action)
+      STRIPE_EXTRA_HEADER="Idempotency-Key: d02-cancel-$pref"
+      code=$(stripe_api POST "/v1/payment_intents/$pref/cancel" "$WORKDIR/c-pi-cancel.json" "cancellation_reason=abandoned")
+      STRIPE_EXTRA_HEADER=""
+      [ "$code" = 200 ] || stripe_fail "POST /v1/payment_intents/$pref/cancel" "$code" "$WORKDIR/c-pi-cancel.json"
+      assert_test_mode "$WORKDIR/c-pi-cancel.json" "the cancelled PaymentIntent $pref"
+      echo "OK: Stripe accepted the cancel of $pref (Idempotency-Key d02-cancel-$pref)" ;;
+    *)
+      refuse intent-status "$n: PaymentIntent $pref is '$pist', a status this tool does not cancel" ;;
+  esac
+  code=$(stripe_api GET "/v1/payment_intents/$pref" "$WORKDIR/c-pi.json")
+  [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents/$pref (read-back)" "$code" "$WORKDIR/c-pi.json"
+  assert_test_mode "$WORKDIR/c-pi.json" "PaymentIntent $pref"
+  pist=$(jq -r '.status // ""' "$WORKDIR/c-pi.json"); lm=$(jq -r '.livemode' "$WORKDIR/c-pi.json")
+  [ "$pist" = canceled ] || { echo "FAIL: PaymentIntent $pref reads $pist after the cancel, not canceled; $n is left untouched" >&2; exit 1; }
+
+  code=$(api vendor POST "/api/v1/orders/$id/cancel" "$WORKDIR/c-cancel.json")
+  rm -f "$WORKDIR/c-cancel.json"
+  [ "$code" = 200 ] || { echo "FAIL: POST /api/v1/orders/{id}/cancel ($n) returned HTTP $code; its intent $pref IS canceled" >&2; exit 1; }
+  code=$(api vendor GET "/api/v1/orders/$id/detail" "$WORKDIR/c-detail.json")
+  ost=$(jq -r '.status // ""' "$WORKDIR/c-detail.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/c-detail.json"
+  [ "$code" = 200 ] && [ "$ost" = CANCELLED ] || { echo "FAIL: $n reads HTTP $code status '$ost' after the cancel, not CANCELLED" >&2; exit 1; }
+  echo "SEED-CANCEL order=$n intent=$pref intent_status=canceled order_status=CANCELLED livemode=$lm at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+cancel_drafts_stage() {
+  local n id rc requested=0 cancelled=0 refused=0
+  local -a list=()
+  vendor_login
+  read_stripe_key
+  orders_in_status DRAFT "$WORKDIR/drafts.json"
+  IFS=, read -r -a list <<<"$ORDERS"
+  for n in "${list[@]}"; do
+    requested=$((requested + 1))
+    id=$(jq -r --arg n "$n" '[.[] | select(.orderNumber == $n)] | if length == 1 then .[0].id else empty end' "$WORKDIR/drafts.json")
+    if [ -z "$id" ]; then
+      echo "REFUSED [not-draft]: $n is not one of the tenant's DRAFT orders; nothing was called for it" >&2
+      refused=$((refused + 1)); continue
+    fi
+    set +e
+    ( set -e; cancel_one "$id" "$n" ); rc=$?
+    set -e
+    if [ "$rc" -eq 0 ]; then cancelled=$((cancelled + 1))
+    else refused=$((refused + 1)); echo "NOT-CANCELLED: $n (rc=$rc); going on to the next named order" >&2; fi
+  done
+  echo "CANCEL-DRAFTS requested=$requested cancelled=$cancelled refused=$refused"
+  [ "$refused" -eq 0 ] || exit 1
 }
 
 # ===========================================================================
@@ -2057,9 +2162,9 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order or order-transition" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition or cancel-drafts" ;;
 esac
 # Stage-specific flags are checked before any guard or call. A flag a stage
 # does not take is an error, never ignored: an order list must not be mistaken
@@ -2071,6 +2176,22 @@ case "$STAGE" in
       *) usage_error "--event must be submit, confirm or start-preparation (got '${EVENT}'); cancellation goes through --stage cancel-drafts only" ;;
     esac
     [[ "$ORDERS" =~ ^ORD-[A-Za-z0-9-]+$ ]] || usage_error "--stage order-transition needs --orders with exactly one order number (ORD-…)" ;;
+  cancel-drafts)
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    _cd_why=""
+    if [ -z "$ORDERS" ]; then _cd_why="no list was given"
+    else
+      _cd_seen=" "
+      IFS=, read -r -a _cd_list <<<"$ORDERS"
+      [ "${#_cd_list[@]}" -gt 0 ] || _cd_why="the list is empty"
+      [[ "$ORDERS" != *, && "$ORDERS" != ,* && "$ORDERS" != *,,* ]] || _cd_why="the list has an empty entry"
+      for _cd_n in "${_cd_list[@]}"; do
+        [[ "$_cd_n" =~ ^ORD-[A-Za-z0-9-]+$ ]] || { _cd_why="'$_cd_n' is not an order number"; break; }
+        case "$_cd_seen" in *" $_cd_n "*) _cd_why="$_cd_n is named twice"; break ;; esac
+        _cd_seen="$_cd_seen$_cd_n "
+      done
+    fi
+    [ -z "$_cd_why" ] || usage_error "--stage cancel-drafts needs --orders ORD-a,ORD-b (the owner-confirmed list, D-02): $_cd_why" ;;
   *)
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage $STAGE"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only" ;;
@@ -2087,6 +2208,7 @@ case "$STAGE" in
   list-drafts)      list_drafts_stage ;;
   vendor-order)     vendor_order_stage ;;
   order-transition) order_transition_stage ;;
+  cancel-drafts)    cancel_drafts_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
