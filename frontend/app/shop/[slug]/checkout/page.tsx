@@ -3,15 +3,18 @@
 import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, Bike, Store, Banknote } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ShoppingBag, Loader2, CreditCard, Bike, Store, Banknote } from "lucide-react"
 // #793: Stripe is loaded through lib/stripe-loader, which imports the `/pure` entry, NEVER the
 // package default. The default entry injects js.stripe.com as a module side effect, so merely
 // importing it put Stripe's script — and its `__stripe_mid` / `__stripe_sid` cookies and
 // m.stripe.network calls — on every cash checkout, which takes no payment online. `/pure` injects
 // nothing until `loadStripe()` is called, which loadStripeOnce() does only at the payment step.
 // #957: the loader is also the ONE place the publishable key is read; this page no longer reads it.
-import { loadStripeOnce, type StripePromise } from "@/lib/stripe-loader"
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
+import { loadStripeOnce, publishableKey, STRIPE_APPEARANCE, type StripePromise } from "@/lib/stripe-loader"
+import { Elements } from "@stripe/react-stripe-js"
+// #957 (30-02): the card form lives in its own module so the payment-link page (/pay) shares it.
+import { CardPaymentForm } from "@/components/storefront/card-payment-form"
+import { Skeleton } from "@/components/ui/skeleton"
 import { applyBasketChanges, useCart, type CartItem } from "@/components/storefront/cart-provider"
 // 37-34 (UI-SPEC § C1, D-16): the panel that renders the server's basket diff, and the one error-slot
 // sentence for a body this page cannot act on (the 422, or a malformed 409).
@@ -380,111 +383,6 @@ const REOPEN_RECHECK_GRACE_MS = 500
 
 // The B7 note (NoVatRegistrationNote) is components/storefront/no-vat-registration-note.tsx, shared with the order page (37-37).
 
-/**
- * Inner payment form — rendered inside Stripe Elements context.
- */
-function PaymentForm({
-  slug,
-  orderNumber,
-  customerEmail,
-  totalPennies,
-}: {
-  slug: string
-  orderNumber: string
-  customerEmail: string
-  totalPennies: number
-}) {
-  const stripe = useStripe()
-  const elements = useElements()
-  const router = useRouter()
-  const { clearCart } = useCart()
-  const [paying, setPaying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handlePayment = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!stripe || !elements) return
-
-    setError(null)
-    setPaying(true)
-
-    try {
-      const { error: stripeError } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/shop/${slug}/orders/${orderNumber}`,
-          receipt_email: customerEmail,
-        },
-        redirect: "if_required",
-      })
-
-      if (stripeError) {
-        setError(stripeError.message || "Payment failed. Please try again.")
-        setPaying(false)
-        return
-      }
-
-      // Payment succeeded without redirect — save and navigate
-      saveLocalOrder({
-        orderNumber,
-        email: customerEmail,
-        shopSlug: slug,
-        placedAt: new Date().toISOString(),
-      })
-      clearCart()
-      router.push(`/shop/${slug}/orders/${orderNumber}`)
-    } catch {
-      setError("Something went wrong. Please try again.")
-      setPaying(false)
-    }
-  }, [stripe, elements, slug, orderNumber, customerEmail, clearCart, router])
-
-  return (
-    <form onSubmit={handlePayment} className="space-y-4">
-      <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <CreditCard className="h-4 w-4 text-slate-600" />
-          <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
-        </div>
-        <PaymentElement
-          options={{
-            layout: "tabs",
-          }}
-        />
-      </div>
-
-      {error && (
-        <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={paying || !stripe || !elements}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {paying ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Processing payment...
-          </>
-        ) : (
-          <>
-            <Lock className="h-3.5 w-3.5" />
-            Pay {formatPrice(totalPennies)}
-          </>
-        )}
-      </button>
-
-      <div className="flex items-center justify-center gap-1 text-xs text-slate-400">
-        <Lock className="h-3 w-3" />
-        Secured by Stripe. Your card details never touch our servers.
-      </div>
-    </form>
-  )
-}
-
 /** The lines-only signature the acknowledgement is reset on (D-02): `productId:quantity` per line. */
 function basketSignatureOf(lines: readonly Pick<CartItem, "productId" | "quantity">[]): string {
   return lines.map((i) => `${i.productId}:${i.quantity}`).join("|")
@@ -771,6 +669,35 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // default on this card path (owner choice, 31.1 RESEARCH Pattern 6), so setLoadParameters is
   // deliberately not called.
   const [stripePromise, setStripePromise] = useState<StripePromise | null>(null)
+  // #957 (30-02, UI-SPEC § S1): step 2 is driven by an explicit load state, never by whether a
+  // Stripe promise exists. The old guard `paymentState && stripePromise` sent a keyless build back to
+  // the step-1 form AFTER the server had created an unpaid DRAFT, with nothing said. Now a
+  // confirmation carrying a clientSecret always renders step 2, and its payment-details card shows
+  // loading, the form, or a stated failure (no key, Stripe.js rejected or resolved null, or the
+  // Payment Element's onLoadError).
+  const [cardLoadState, setCardLoadState] = useState<"loading" | "ready" | "failed">("loading")
+  // Only the LATEST load may set the state: a slow first load settling after a "Try again" (or after
+  // "Back to details") must not overwrite the newer answer.
+  const cardLoadAttemptRef = useRef(0)
+  const startCardLoad = useCallback(() => {
+    const attempt = ++cardLoadAttemptRef.current
+    const promise = loadStripeOnce()
+    setStripePromise(promise)
+    if (promise === null) {
+      // No publishable key in this build: nothing is loaded, and a retry cannot succeed.
+      setCardLoadState("failed")
+      return
+    }
+    setCardLoadState("loading")
+    promise.then(
+      (stripe) => {
+        if (cardLoadAttemptRef.current === attempt) setCardLoadState(stripe ? "ready" : "failed")
+      },
+      () => {
+        if (cardLoadAttemptRef.current === attempt) setCardLoadState("failed")
+      }
+    )
+  }, [])
 
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
@@ -1062,8 +989,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
 
       // Move to payment step. This is the ONLY place Stripe is loaded (#793): the order exists
-      // and carries a clientSecret, so this customer is paying by card.
-      setStripePromise(loadStripeOnce())
+      // and carries a clientSecret, so this customer is paying by card. Step 2 renders whatever
+      // the load does (#957): loading, the form, or a stated failure.
+      startCardLoad()
       setPaymentState({
         clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
@@ -1232,8 +1160,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     )
   }
 
-  // Step 2: Payment form (shown after order creation)
-  if (paymentState && stripePromise) {
+  // Step 2: Payment form (shown after order creation). #957: NOT gated on a Stripe promise — a
+  // confirmation with a clientSecret means an unpaid order exists, and the customer must be shown
+  // the form or a stated failure, never the step-1 form again.
+  if (paymentState) {
+    const paymentOrderNumber = paymentState.orderNumber
     return (
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
         <button
@@ -1339,27 +1270,68 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             information, before the card is taken. */}
         {shop && <SellerBlock seller={shop.seller} className="mb-4" />}
 
-        <Elements
-          stripe={stripePromise}
-          options={{
-            clientSecret: paymentState.clientSecret,
-            appearance: {
-              theme: "stripe",
-              variables: {
-                colorPrimary: "#f97316",
-                borderRadius: "12px",
-                fontFamily: "system-ui, -apple-system, sans-serif",
-              },
-            },
-          }}
-        >
-          <PaymentForm
-            slug={slug}
-            orderNumber={paymentState.orderNumber}
-            customerEmail={customerEmail}
-            totalPennies={paymentState.totalAmountPennies}
-          />
-        </Elements>
+        {cardLoadState === "ready" && stripePromise ? (
+          <Elements
+            stripe={stripePromise}
+            options={{
+              clientSecret: paymentState.clientSecret,
+              appearance: STRIPE_APPEARANCE,
+            }}
+          >
+            <CardPaymentForm
+              slug={slug}
+              orderNumber={paymentOrderNumber}
+              customerEmail={customerEmail}
+              totalPennies={paymentState.totalAmountPennies}
+              returnUrl={`${window.location.origin}/shop/${slug}/orders/${paymentOrderNumber}`}
+              onSucceeded={() => {
+                // Payment succeeded without redirect — save and navigate (unchanged from the
+                // former inline PaymentForm).
+                saveLocalOrder({
+                  orderNumber: paymentOrderNumber,
+                  email: customerEmail,
+                  shopSlug: slug,
+                  placedAt: new Date().toISOString(),
+                })
+                clearCart()
+                router.push(`/shop/${slug}/orders/${paymentOrderNumber}`)
+              }}
+              onLoadError={() => setCardLoadState("failed")}
+            />
+          </Elements>
+        ) : cardLoadState === "failed" || !stripePromise ? (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-xl border border-amber-600 bg-amber-50 p-4"
+          >
+            <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+            <div className="min-w-0 [overflow-wrap:anywhere]">
+              <p className="text-base font-semibold text-amber-900">Card payment couldn&apos;t load</p>
+              <p className="mt-0.5 text-sm text-amber-900">
+                Order {paymentOrderNumber} hasn&apos;t been paid, so the shop won&apos;t prepare it. Nothing has
+                been charged.
+              </p>
+              {/* A retry can only help a script or network failure; with no key in this build it
+                  cannot succeed, so it is not offered. */}
+              {publishableKey() !== null && (
+                <button
+                  type="button"
+                  onClick={startCardLoad}
+                  className="mt-3 inline-flex h-11 items-center justify-center rounded-xl border border-amber-600 bg-white px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700"
+                >
+                  Try again
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
+            <Skeleton data-testid="card-form-skeleton" className="min-h-60 w-full rounded-xl" />
+            <p role="status" className="mt-3 text-sm text-slate-600">
+              Loading secure card form…
+            </p>
+          </div>
+        )}
       </div>
     )
   }

@@ -263,6 +263,10 @@ describe("Stripe lazy load (#793)", () => {
     expect(elementsStripeProps.every((p) => p === loaded)).toBe(true)
   })
 
+  // #957 (30-02): this property used to settle on "Place order is enabled again" after a keyless card
+  // order was POSTed — that IS the #957 defect (an unpaid DRAFT created, and the customer handed the
+  // same form back with nothing said). The property it protected is kept: no key, no Stripe load.
+  // The settle point is now step 2's stated failure, which a clientSecret confirmation always reaches.
   it("with NO publishable key configured, a card order never calls loadStripe", async () => {
     delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
     mockedPost.mockResolvedValue({ data: CARD_CONFIRMATION })
@@ -272,7 +276,7 @@ describe("Stripe lazy load (#793)", () => {
     placeOrder()
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     // Let the post-submit state settle before asserting the absence.
-    await waitFor(() => expect(screen.getByRole("button", { name: /place order/i })).not.toBeDisabled())
+    await screen.findByText("Card payment couldn't load")
 
     expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
