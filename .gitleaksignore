@@ -77,3 +77,11 @@ f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/s
 # RED evidence. Found by 30-07's branch-range scan (11 findings on these two lines).
 4bd017f02cff247dfa0b6238f73f534912a68990:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task1.json:generic-api-key:4
 485777942fda6f147c1ea481526102c1c38db1cf:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task2-it.json:generic-api-key:4
+# ---- Phase 30 (plan 30-08, 2026-10-22) ----
+# Commit 09beb869 (30-07's Task 3 break-arm record) quotes, verbatim, the selftest FAIL
+# line of the "walk/del sanitiser removed" arm: the stub PaymentIntent's SYNTHETIC client
+# secret (pi_sg1 + the STUBCS marker the selftest greps for). Made up, never issued by
+# Stripe, reaches no account; it is the recorded proof the arm went red, so it is not
+# edited. 30-07 measured its branch-range scan at 2a1de3cb, before this commit existed;
+# 30-08's pre-PR scan found it. Commit-pinned: the same shape anywhere else still fires.
+09beb8698531e55c7a632740c765b34cd9a02c9b:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-07-task3-arms.txt:generic-api-key:7
