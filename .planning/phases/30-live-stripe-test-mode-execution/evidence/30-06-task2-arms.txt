@@ -1,0 +1,54 @@
+30-06 Task 2 break arms — run on committed GREEN 109f3de3; restore by cp from scratch backup, verified by sha256 against the HEAD blob.
+Command per arm: npx jest --ci --watchAll=false --runTestsByPath app/dashboard/kitchen/__tests__/page.test.tsx components/dashboard/kitchen/__tests__/kds-new-lane.test.tsx components/dashboard/kitchen/__tests__/unverified-contact-badge.test.tsx (cwd frontend/)
+
+OPEN app/dashboard/kitchen/page.tsx sha256 == HEAD blob
+OPEN components/dashboard/kitchen/kds-new-lane.tsx sha256 == HEAD blob
+== clean (open)
+Tests:       60 passed, 60 total
+rc=0
+== ARM D: old toast title restored
+  ● Console
+  ● KitchenPage grid: a refused bump says why (issue #958) › a 409 awaiting-payment refusal toasts 'Order not updated' with the server detail verbatim, and re-reads the board
+  ● KitchenPage grid: a refused bump says why (issue #958) › a bump with no response (network) toasts the 'Couldn't start preparing this order' fallback
+Tests:       2 failed, 58 passed, 60 total
+rc=1
+== ARM E: no own fallback for a response-less error (describeLoadError returns 'Network Error')
+  ● Console
+  ● KitchenPage grid: a refused bump says why (issue #958) › a bump with no response (network) toasts the 'Couldn't start preparing this order' fallback
+  ● KitchenPage grid: a refused bump says why (issue #958) › the fallback names the action: Complete reads 'Couldn't complete this order'
+  ● KitchenPage grid: a refused bump says why (issue #958) › the fallback names the action: Mark Ready reads 'Couldn't mark ready this order'
+Tests:       3 failed, 57 passed, 60 total
+rc=1
+== ARM F: board no longer re-read after a refusal
+  ● Console
+  ● KitchenPage grid: a refused bump says why (issue #958) › a 409 awaiting-payment refusal toasts 'Order not updated' with the server detail verbatim, and re-reads the board
+  ● KitchenPage grid: a refused bump says why (issue #958) › a bump with no response (network) toasts the 'Couldn't start preparing this order' fallback
+Tests:       2 failed, 58 passed, 60 total
+rc=1
+== ARM G: New lane awaiting-payment branch disabled
+  ● KDS New card: an unpaid order (issue #958) › a 409 awaiting-payment refusal shows the server detail in the card's alert, not 'Check your connection'
+Tests:       1 failed, 59 passed, 60 total
+rc=1
+== ARM H: New lane branch accepts a blank detail (no trim)
+  ● KDS New card: an unpaid order (issue #958) › an awaiting-payment problem with an empty detail falls through to the existing branches
+Tests:       1 failed, 59 passed, 60 total
+rc=1
+CLOSE app/dashboard/kitchen/page.tsx sha256 == HEAD blob
+CLOSE components/dashboard/kitchen/kds-new-lane.tsx sha256 == HEAD blob
+== clean (close)
+Tests:       60 passed, 60 total
+rc=0
+
+== Plan criterion: rg -uu -c 'Error updating order' frontend/app/dashboard/kitchen/page.tsx
+GREEN tree: (no output) rc=1
+Control, pre-GREEN copy (git show 8fde2ffa:frontend/app/dashboard/kitchen/page.tsx > scratch): count 1, rc=0
+
+== Build fail direction (npm run build, cwd frontend/, after npm ci restored the lockfile)
+BREAK: 'const fallback: number = bumpFailedCopy(...)' -> app/dashboard/kitchen/page.tsx(638,13): error TS2322: Type 'string' is not assignable to type 'number'. build_rc=1
+restore: sha256 == HEAD blob; CLEAN: Compiled successfully, Finished TypeScript, build_rc=0
+Content: rg -uu -l 'Order not updated' frontend/.next/{static,server} -> found in the kitchen client and SSR chunks (rc=0); 'Error updating order' absent from the build output (rc=1)
+
+== Pitfall 8 survey: bare catch {} within N lines after apiClient.post (dashboard, non-test) — recorded, NOT changed
+Control: pre-GREEN kitchen page -> 1 hit at l.623 (the handleBump catch this plan rewrote)
+Real, window 8: files=95 bare_catch_lines=27 hits=0
+Real, window 25: 1 hit — frontend/app/dashboard/products/import/page.tsx:337 (handleScan, toast 'Scan failed' / 'Could not process images'; bulk image import, not a payment-gated transition; out of scope)
