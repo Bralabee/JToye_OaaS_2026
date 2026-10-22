@@ -1,8 +1,28 @@
-# Handoff: Phase 37 (59/59, UAT 15/15), Phase 39 (10/10), and ADR-0007 (V87, GAP-GTM-01..04, 06, 07B) COMPLETE and consolidated on main
+# Handoff: Phase 29 COMPLETE on main; Phase 30 (The Money Path, Executed) planned and approved, starting at 30-01
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-21 delta (RESUME HERE; everything below is history).**
+**2026-10-22 delta (RESUME HERE; everything below is history).**
+- **Phase 29 is complete.** The close is #1002: `29-VERIFICATION.md` passed 5/5, `29-SECURITY.md` closed, R-3 accepted by the owner on 2026-10-21 (staging only, conditional on the generated edge credential).
+- **Phase 30 ("The Money Path, Executed") is next.** It has 32 plans in 8 serial PRs, planned in #1018 and approved by the owner on 2026-10-21. Execution starts with 30-01, which fixes the root cause of #957 (still OPEN): the publishable Stripe key is not baked into the frontend image, so the checkout never shows a payment step.
+  - Start with `/gsd-execute-phase 30` from a checkout of a fresh `main`.
+  - The single resume source is `.planning/STATE.md` on main.
+- **Merged since the 2026-10-21 block:**
+  - #1002, the Phase 29 close;
+  - #1004, CI skips integration tests, images and deploys for documentation-only changes;
+  - #1018, the Phase 30 plan;
+  - #1019, an integration of #1005 (deploy.sh waits on every workload; issues 969, 970, 999) and #1006 (Mailpit cert reload; issue 972). Both source PRs are now CLOSED unmerged, because their reviewed heads are ancestors of #1019's head and #1019's tree is main's f858d5cc;
+  - #1021, an authorization fix: shop-child updates now authorise a changed shopId;
+  - #1022, an integration of the second swarm bundle (a product must name its shop, the allergen label's 422, STAFF refused the shop-admin controls; issues 959, 960, 961).
+- **Main CI/CD is green at 87a1f772 (#1022), so staging runs that commit.**
+- **Still open, none blocking Phase 30:** follow-ups #992 and #971, the Grafana 24 h restart watch, `29-VALIDATION.md` still `draft`, and six Dependabot PRs (#993 to #998).
+- **Merge discipline for Phase 30.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main redeploys staging (about 75 to 95 min of CI). Merge one PR at a time and watch each deploy to green before the next. Never merge while the owner's persona swarm is running: ask the owner first. If a deploy goes red, set the variable to `false`, read it back, and stop.
+- **Unchanged:**
+  - kube context `jtoye-stg-aks` only;
+  - Python gates under `conda activate jtoye-ops`;
+  - Azure always with `--subscription c483d353-5f61-4587-a790-addb9ab5fb94`.
+
+**2026-10-21 delta (history; superseded by the 2026-10-22 block above).**
 - **Phase 29.** Merged to main as #984; all 29 plans have a SUMMARY. Still to do: phase verification (gsd-verifier) and `29-SECURITY.md`.
 - **Staging deploys from CI.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main runs "Deploy to Staging" (about 75 min of CI). Merges go one at a time, each deploy green before the next. If a deploy goes red: set the variable to `false`, read it back, stop.
 - **Since #984:**
