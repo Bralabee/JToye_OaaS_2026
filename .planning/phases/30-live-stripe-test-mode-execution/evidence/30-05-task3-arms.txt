@@ -1,0 +1,50 @@
+30-05 Task 3 — status-preserving payment webhook, OpenAPI snapshot, counts (2026-10-22, branch fix/958-awaiting-payment-gate)
+
+RED (tests d1283f06, PaymentService as at the plan base f6108ccc)
+  ./gradlew :core-java:cleanTest :core-java:test --tests '...PaymentServiceTest' \
+            :core-java:cleanIntegrationTest :core-java:integrationTest --tests '...StripeWebhookIdempotencyIntegrationTest' --continue   rc=1
+    PaymentServiceTest tests=26 failures=2: CONFIRMED arm expected <CONFIRMED> but was <PENDING>; CANCELLED arm expected <CANCELLED> but was <PENDING>
+    StripeWebhookIdempotencyIntegrationTest tests=6 failures=3:
+      paymentOnConfirmedOrderKeepsItsStatus: stored row {payment_reference=pi_958_confirmed, payment_status=CAPTURED, status=PENDING}
+      paymentOnCancelledOrderKeepsItsStatus: stored row {..., status=PENDING}
+      distinctEventIdsBothProcess: publishStateChange called twice (TooManyActualInvocations)
+    passing on the pre-fix tree: paymentOnDraftOrderMovesItToPending and the three dedup tests
+    classifier: RED_EVIDENCE_OK for both (30-05-red-task3-it.json, 30-05-red-task3-unit.json)
+
+GREEN (791b7a16)
+  webhook IT 6/6, OpenApiSnapshotTest 1/1, PaymentServiceTest 26/26, rc=0
+
+Full core-java suite at 791b7a16 (./gradlew :core-java:cleanTest :core-java:test :core-java:cleanIntegrationTest :core-java:integrationTest --continue)
+  rc=0, 35m20s. JUnit XML tally: test 221 classes, 1947 tests, 0 failures, 0 errors, 1 skipped;
+  integrationTest 226 classes, 1369 tests, 0 failures, 0 errors, 1 skipped. (Run because a widened guard can break
+  existing tests that move orders; none did.)
+
+Break arm 1 (WARN line downgraded to log.debug) + break arm 2 (OpenAPI snapshot reverted to f6108ccc's) in one run
+  StripeWebhookIdempotencyIntegrationTest 6/6 GREEN  <- the WARN assertion could NOT fail: the test profile logs
+     uk.jtoye at DEBUG (application-test.yml l.81), so "output contains the message" held for a debug line too.
+     Recorded as found; the assertion was strengthened (39b3d63d) to match "WARN\s+\S*PaymentService - event=...".
+  OpenApiSnapshotTest 1/1 FAILED: "The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot"
+  Restore: cp both backups; sha256 PaymentService c6a6b066..., snapshot c022030e... == HEAD blobs; marker count 0.
+
+WARN assertion arms after 39b3d63d (one IT class each run)
+  clean before: git diff --quiet HEAD -- PaymentService.java
+  green (strengthened)            rc=0  6/6
+  break: log.warn -> log.debug    rc=1  1 failure: paymentOnCancelledOrderKeepsItsStatus
+  break: if (false) log.warn(...) rc=1  1 failure: paymentOnCancelledOrderKeepsItsStatus
+  restore: cp backup, sha256 c6a6b066... == HEAD blob, marker count 0, git diff --quiet -> restored = HEAD
+  closing green                   rc=0  6/6
+
+Final verification at 39b3d63d
+  OrderServiceTest 50/50, PaymentServiceTest 26/26, OrderAwaitingPaymentGateIntegrationTest 8/8,
+  OrderCreateSubmitIntegrationTest 5/5, StripeWebhookIdempotencyIntegrationTest 6/6, OpenApiSnapshotTest 1/1; rc=0,
+  no :test / :integrationTest UP-TO-DATE.
+
+Counts
+  before --write: scripts/docs-freshness.sh rc=1 (drift, total 6541 -> 6562)
+  after --write, before prose: scripts/check-doc-metrics.sh rc=1 (10 FAIL lines across README, CLAUDE.md, AGENTS.md)
+  after prose (eed7ee02): docs-freshness OK (6562) && check-doc-metrics PASS 37/37, rc=0
+
+MCP parity (read, no change): mcp-server/src/errors.ts toToolError forwards any application/problem+json as
+  "core {status} {title}: {detail}", so an agent receives "core 409 Awaiting payment: Order ... is awaiting payment. ..."
+  verbatim. MCP create_order always sends submit: true on a NONE order (D-01), which the gate does not touch, and there is
+  no MCP confirm or start-prep tool.
