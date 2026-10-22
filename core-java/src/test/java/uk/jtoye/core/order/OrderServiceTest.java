@@ -13,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import uk.jtoye.core.exception.AwaitingPaymentException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
@@ -619,11 +620,11 @@ class OrderServiceTest {
         when(stateMachineService.sendEvent(orderId, OrderStatus.CONFIRMED, OrderEvent.START_PREP))
                 .thenReturn(OrderStatus.PREPARING);
 
-        InvalidStateTransitionException ex = assertThrows(
-                InvalidStateTransitionException.class,
+        AwaitingPaymentException ex = assertThrows(
+                AwaitingPaymentException.class,
                 () -> orderService.startPreparation(orderId)
         );
-        assertTrue(ex.getMessage().contains("cannot enter kitchen preparation until upfront or deposit payment is completed"));
+        assertTrue(ex.getMessage().contains("is awaiting payment"));
         verify(orderRepository, never()).save(any(Order.class));
     }
 
