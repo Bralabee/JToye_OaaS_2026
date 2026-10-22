@@ -4,17 +4,17 @@ milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
-status: planning
-stopped_at: Phase 30 plan APPROVED by the owner 2026-10-21; ready to execute (30-01 first)
-last_updated: "2026-10-21T09:04:40.849Z"
-last_activity: 2026-10-21
-last_activity_desc: Phase 30 planned, 32 plans in 8 serial PRs; plan approved by the owner 2026-10-21 (owner also accepted R-3 after the Phase 29 close)
-state_head: 92d057aa6cc85b2af48dbce77282e15106a7bfe3
+status: executing
+stopped_at: Phase 30 executing — 30-03 DONE (3/32); PR 1 = #1029 open (fix/957-card-checkout-payment-step); next 30-04 (D3 review + merge + live proof)
+last_updated: "2026-10-22T11:11:00.000Z"
+last_activity: 2026-10-22
+last_activity_desc: 30-03 done — staging card spec RED at the #957 payment step (DRAFT ORD-1AAC0CDE-20261022-0C094A2C for 30-09); PR #1029 opened; staging pk variable set (guard rc 0); CORS blocker fixed first (issue #1025, PR #1026)
+state_head: 52835de200fd982b5e11036b3e1ee071d57f7611
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 283
+  completed_plans: 286
   percent: 90
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 ## Current Position
 
-Phase: 30 — The Money Path, Executed (PLANNED, owner-approved 2026-10-21)
-Status: Ready to execute — 32 plans (30-01..30-32), checker passed, owner-approved 2026-10-21
-Last activity: 2026-10-21 — Phase 30 planned (research, UI-SPEC, 32 plans)
+Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
+Status: Executing — 3/32 plans done (30-01..30-03); PR 1 = #1029 open; next 30-04 (review series, merge, deploy watch, live card proof)
+Last activity: 2026-10-22 — 30-03 complete (SUMMARY 30-03-SUMMARY.md); unplanned prerequisite: ingress CORS omitted Idempotency-Key (issue #1025), fixed by PR #1026 (merged 4208b08e, staging deploy green, live preflight rc 0)
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1523,9 +1523,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-20T19:55:00.000Z
-Stopped at: Phase 29 complete, ready to plan Phase 30
-Resume file: `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md` (the "2026-10-21 — PHASE CLOSE" block at its end)
+Last session: 2026-10-22T11:11:00.000Z
+Stopped at: Phase 30 — 30-03 done (3/32), PR #1029 open; next /gsd-execute-phase 30 resumes at 30-04
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-03-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 

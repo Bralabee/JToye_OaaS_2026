@@ -309,6 +309,11 @@ const UNASSERTED_SITES: ReadonlySet<string> = new Set([
   "components/storefront/cart-drawer.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
   "components/storefront/cart-drawer.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   "components/storefront/customer-signin-prompt.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
+  // The card form's "Secured by Stripe" fine print moved here, unchanged, with the form's
+  // extraction out of checkout/page.tsx (#957, 30-02; UI-SPEC: the step-2 surface is moved, not
+  // restyled). The site is the same one; checkout/page.tsx's own text-slate-400 entry above remains
+  // for its other sites (the How you'll pay icons).
+  "components/storefront/card-payment-form.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   // The cart bar's amber shortfall label sits on the bar's own bg-oxblood
   // (#3A0B0D, ~7.7:1 against amber-300), never on a light surface; the pair
   // moved here with the component's extraction out of shop-detail-client

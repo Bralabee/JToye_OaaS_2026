@@ -7,7 +7,8 @@
 - **Phase 30 ("The Money Path, Executed") is next.** It has 32 plans in 8 serial PRs, planned in #1018 and approved by the owner on 2026-10-21. Execution starts with 30-01, which fixes the root cause of #957 (still OPEN): the publishable Stripe key is not baked into the frontend image, so the checkout never shows a payment step.
   - Start with `/gsd-execute-phase 30` from a checkout of a fresh `main`.
   - The single resume source is `.planning/STATE.md` on main.
-- issue #1025 CORS fix PR open, blocks PR 1's staging proof.
+- issue #1025 CORS fix merged as #1026 (4208b08e, deployed to staging, live preflight PASS); it unblocked PR 1's staging proof.
+- **Phase 30 PR 1 (issue #957) is #1029, open on `fix/957-card-checkout-payment-step`: plans 30-01, 30-02 and 30-03 done.** The staging card-checkout spec is RED on today's keyless staging at the payment step (unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C, for 30-09 to cancel). The repository variable `FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set (pk_test_, the Key Vault secret's pair) and passes the staging deploy guard. Next: the review series, the merge, then 30-04 (the green arms on the merged image).
 - **Merged since the 2026-10-21 block:**
   - #1002, the Phase 29 close;
   - #1004, CI skips integration tests, images and deploys for documentation-only changes;
@@ -887,10 +888,17 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 59 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 61 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-22 (fix/957-card-checkout-payment-step, Phase 30 PR 1): 59 -> 61.
+# Both take arguments, so in this bare loop each prints rc=2 (usage error, measured
+# 2026-10-22): run them as CI does. check-stripe-pk-var refuses a deploy whose publishable
+# key is empty or of the wrong mode (`--selftest`, or STRIPE_PK_VAR in the environment plus
+# `--environment staging|production`). check-frontend-stripe-key-baked reads the key out of
+# the live staging checkout chunks (the staging-edge-probe arguments in ci-cd.yaml); it is
+# rc 1 until a keyed image is deployed (plan 30-04).
 # 2026-10-22 (fix/1025-ingress-cors-idempotency-key): 58 -> 59. check-cors-preflight asks the
 # live staging api host whether the order POST's preflight admits the browser's headers
 # (issue #1025); it curls a public host, so from a laptop it needs network, not a stack.

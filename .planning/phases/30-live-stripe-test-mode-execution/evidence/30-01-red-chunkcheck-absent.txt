@@ -1,0 +1,14 @@
+
+rc=127
+MISSING PASS key-present
+MISSING PASS key-absent
+MISSING PASS residue
+MISSING PASS live-under-test-prefix
+MISSING PASS secret-literal
+MISSING PASS two-distinct-keys
+MISSING PASS control-absent
+MISSING PASS fetch-failure
+MISSING PASS html-mode
+MISSING PASS no-echo
+missing=10 fail_lines=0
+bash: scripts/check-frontend-stripe-key-baked.sh: No such file or directory

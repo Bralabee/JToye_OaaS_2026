@@ -29,6 +29,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { loadStripe } from "@stripe/stripe-js/pure"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
+import { resetStripeLoaderForTests } from "@/lib/stripe-loader"
 
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
@@ -47,9 +48,12 @@ jest.mock("@stripe/stripe-js", () => {
 })
 
 // The side-effect-free entry. The spy returns a fresh, identifiable promise per call so the
-// test can prove WHICH promise <Elements> received.
+// test can prove WHICH promise <Elements> received. It resolves a stand-in Stripe instance, as a
+// SUCCESSFUL load does: #957 moved the memo into lib/stripe-loader, which forgets a load that
+// resolves null (Stripe.js's failure value) so a retry can load again — a null here would make
+// property 3's resubmission a retry of a failed load rather than a reuse of a good one.
 jest.mock("@stripe/stripe-js/pure", () => ({
-  loadStripe: jest.fn(() => Promise.resolve(null)),
+  loadStripe: jest.fn(() => Promise.resolve({ __fakeStripe: true })),
 }))
 
 // Every `stripe` prop <Elements> was rendered with, in render order.
@@ -182,6 +186,9 @@ beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
   mockedLoadStripe.mockClear()
+  // #957: the memo is module-level now (lib/stripe-loader), so it would otherwise carry one
+  // test's load into the next and make every count below order-dependent.
+  resetStripeLoaderForTests()
   elementsStripeProps.length = 0
   mockShop({ ...SHOP, acceptsCardPayments: true })
   seedCart()
@@ -256,17 +263,23 @@ describe("Stripe lazy load (#793)", () => {
     expect(elementsStripeProps.every((p) => p === loaded)).toBe(true)
   })
 
-  it("with NO publishable key configured, a card order never calls loadStripe", async () => {
+  // #957 (30-02): this property used to assert that a keyless card order was POSTed and Place order
+  // re-enabled — that assertion ENCODED the #957 defect (an unpaid DRAFT created, and the customer
+  // handed the same form back with nothing said). Replaced: a card shop with no key sends no order,
+  // shows why, and keeps Place order disabled. The property it protected is kept: no key, no load.
+  // (The post-POST path — a keyless confirmation that still arrives — is card-unavailable.test.tsx.)
+  it("with NO publishable key configured, a card shop sends no order, disables Place order, and never calls loadStripe", async () => {
     delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
     mockedPost.mockResolvedValue({ data: CARD_CONFIRMATION })
     await renderCheckout()
     await armCheckout()
 
+    await screen.findByText("Card payments are unavailable")
+    expect(screen.getByRole("button", { name: /place order/i })).toBeDisabled()
     placeOrder()
-    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
-    // Let the post-submit state settle before asserting the absence.
-    await waitFor(() => expect(screen.getByRole("button", { name: /place order/i })).not.toBeDisabled())
+    await new Promise((r) => setTimeout(r, 50))
 
+    expect(mockedPost).toHaveBeenCalledTimes(0)
     expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
   })

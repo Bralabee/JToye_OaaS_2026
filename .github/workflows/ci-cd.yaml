@@ -1842,6 +1842,16 @@ jobs:
       # (staging-secrets, staging-secrets-preflight, staging-db-bootstrap and the rest) must be
       # invoked as `<name>.sh --selftest` on a non-comment line of a workflow; #989 wired the
       # three, this is what keeps them wired. The gate's own --selftest plants the holes first.
+      # Issue #957 (plan 30-01): the two publishable-key gates also run their selftests on EVERY
+      # PR, docs-only ones included, so a change that breaks either guard is caught before the
+      # merge whose deploy would depend on it. Both need only bash and coreutils (no network:
+      # the chunk check's --url arms read fixtures through STRIPE_KEY_CHECK_FETCH_ROOT).
+      - name: Prove the publishable-key deploy guard can fail (#957 --selftest)
+        run: bash scripts/check-stripe-pk-var.sh --selftest
+
+      - name: Prove the served-chunk publishable-key check can fail (#957 --selftest)
+        run: bash scripts/check-frontend-stripe-key-baked.sh --selftest
+
       - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
         run: bash scripts/check-gate-enforcement.sh --selftest
 
@@ -2145,6 +2155,13 @@ jobs:
           #   FRONTEND_PUBLIC_SUPPORT_URL                 (optional)
           #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
           #   FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE   (optional; D-14, #794)
+          #   FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY (optional at build; staging pk_test_, #957)
+          # FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is optional HERE only: an empty value still
+          # builds (frontend/Dockerfile keeps it out of the CR-02 gate), but deploy-staging
+          # refuses anything that is not a pk_test_ key and deploy-production refuses a
+          # pk_test_ or empty key (the publishable-key guard steps, #957), and staging-edge-probe
+          # reads the key back out of the live checkout chunks after every staging deploy.
+          # A publishable key is public by design, so it is a variable, not a secret.
           # FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE is the registered office on the
           # Companies House record for 16471464, confirmed by the owner 2026-10-07 —
           # the same string as .env.example and the k8s ConfigMap key
@@ -2173,6 +2190,7 @@ jobs:
             NEXT_PUBLIC_SUPPORT_URL=${{ vars.FRONTEND_PUBLIC_SUPPORT_URL }}
             NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
             NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${{ vars.FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE }}
+            NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # frontend is amd64-only: its arm64 build runs under QEMU emulation
@@ -2349,6 +2367,24 @@ jobs:
           set -euo pipefail
           kustomize build k8s/staging > /tmp/staging-render.yaml
           bash scripts/check-frontend-baked-origin.sh --overlay k8s/staging
+
+      # Issue #957 (plan 30-01), beside CR-02 and for the same reason: build-and-push inlined
+      # vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY into the ONE frontend image this job is about
+      # to ship, and an inlined key cannot be corrected by a runtime env. Staging accepts only a
+      # Stripe TEST key, ^pk_test_[A-Za-z0-9]+$ (D-06: no live credential enters staging); an
+      # empty variable is refused, because that image's card checkout is inert. Until the owner
+      # sets the variable (plan 30-03) this refuses every staging deploy, which is the point:
+      # it is undone by setting the variable, never by editing this gate. Runs before any
+      # credential is materialised; the value reaches the script through env, never argv, and
+      # only its prefix and length are printed. The selftest runs first, so a guard that cannot
+      # fail is never trusted here.
+      - name: Prove the publishable-key guard can fail (#957 --selftest)
+        run: bash scripts/check-stripe-pk-var.sh --selftest
+
+      - name: Assert the baked publishable key is a Stripe TEST key (#957, D-06)
+        env:
+          STRIPE_PK_VAR: ${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+        run: bash scripts/check-stripe-pk-var.sh --environment staging
 
       # FE-1 / E-5 (QA council 20260902-134741): before deploying, ask the DEPLOYED realm
       # whether it accepts the post_logout_redirect_uri this overlay's vendor sign-out
@@ -2651,6 +2687,16 @@ jobs:
       - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin)
         run: bash scripts/check-staging-edge.sh --skip-burst
 
+      # Issue #957: read the publishable key out of the RUNNING artifact. A green build, a 200 and
+      # a rendered checkout look identical whether or not the key was inlined (staging served 22
+      # checkout chunks with 0 pk_ literals for months), so this fetches the checkout page the
+      # browser loads, then every chunk it names, and requires exactly one pk_test_ literal, zero
+      # un-inlined env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY lookups and zero secret-key literals.
+      # The inlined API origin is the control: found 0 times, the scan is blind and the step is
+      # VOID (exit 2), never a pass. Public, read-only GETs: no credential, contents: read only.
+      - name: Read the publishable key out of the LIVE checkout chunks (#957)
+        run: bash scripts/check-frontend-stripe-key-baked.sh --url https://app-staging.olajay.co.uk --path /shop/staging-test-kitchen/checkout --expect-prefix pk_test_ --control api-staging.olajay.co.uk
+
       # Issue #1025: the order POST's preflight admits every header the browser sends
       # (content-type, authorization, idempotency-key, x-tenant-id). One OPTIONS request to the
       # public api host; exit 1 = a header refused, 2 = VOID. INV-24 holds the render; this holds
@@ -2727,6 +2773,21 @@ jobs:
             exit 1
           fi
           echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/production app-config api.url ($RENDER_API_URL)"
+
+      # Issue #957 / D-08: the production mirror of deploy-staging's publishable-key guard. The
+      # pipeline builds ONE frontend image per commit, so the image this job would ship is the one
+      # staging was given — baked with staging's pk_test_ key. Production therefore refuses a
+      # pk_test_ key (test-mode payments in production) and an empty one (an inert card checkout),
+      # and accepts only ^pk_live_[A-Za-z0-9]+$. With one image this means production cannot deploy
+      # while staging carries a test key; that is the honest state of a single-image pipeline, and
+      # per-environment frontend images are Phase 32 (out of scope for Phase 30).
+      - name: Prove the publishable-key guard can fail (#957 --selftest)
+        run: bash scripts/check-stripe-pk-var.sh --selftest
+
+      - name: Assert the baked publishable key is a Stripe LIVE key (#957, D-08)
+        env:
+          STRIPE_PK_VAR: ${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+        run: bash scripts/check-stripe-pk-var.sh --environment production
 
       # FE-1 / E-5: identical pre-flight to deploy-staging's — see the long rationale
       # there. Inputs come from the production render; enforced only while

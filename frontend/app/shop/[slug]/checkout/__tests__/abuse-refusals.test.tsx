@@ -155,16 +155,24 @@ async function settle() {
   })
 }
 
+// #957 (30-02): a card-accepting shop in a build with NO publishable key is refused before any POST
+// (the card-payments-unavailable notice). These arms are about the server's refusals of an order
+// that IS sent, so they run as a deployed card shop does: with a key. Harness only.
+const ORIGINAL_STRIPE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
   mockedSession.mockReset()
   mockedSession.mockResolvedValue(null)
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_abuse_refusals"
   seedCart()
 })
 
 afterEach(() => {
   localStorage.clear()
+  if (ORIGINAL_STRIPE_KEY === undefined) delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  else process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = ORIGINAL_STRIPE_KEY
 })
 
 describe("Checkout: the cash-order cap 429 (UI-SPEC § D1, § Copywriting C1-C4)", () => {

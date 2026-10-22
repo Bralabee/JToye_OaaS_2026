@@ -20,6 +20,10 @@
  * read aloud), and a failed read writes nothing (F1 error, planner assumption).
  */
 export const ORDER_STATUS_COPY: Readonly<Record<string, { label: string; desc: string }>> = {
+  // #957 (30-02): a card order is a DRAFT until its payment completes, and the shop will not
+  // prepare it. Not a tracker step (the order page's STEPS start at PENDING) — a status line and an
+  // announcement only, so an unpaid order is never described as in progress.
+  DRAFT: { label: "Awaiting payment", desc: "Waiting for your payment" },
   PENDING: { label: "Received", desc: "Order sent to shop" },
   CONFIRMED: { label: "Confirmed", desc: "Shop accepted your order" },
   PREPARING: { label: "Preparing", desc: "Being prepared now" },

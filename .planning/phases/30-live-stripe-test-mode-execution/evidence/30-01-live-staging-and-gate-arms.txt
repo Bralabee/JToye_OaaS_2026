@@ -1,0 +1,44 @@
+# 2026-10-22T03:48:19Z read-only public GETs against the CURRENTLY deployed staging frontend (pre-30-01 image)
+# expected: the #957 root-cause state from 30-RESEARCH step 8 (22 chunks, 0 pk_ literals, an un-inlined lookup, control 1)
+$ bash scripts/check-frontend-stripe-key-baked.sh --url https://app-staging.olajay.co.uk --path /shop/staging-test-kitchen/checkout --expect-prefix pk_test_ --control api-staging.olajay.co.uk
+chunks=22 distinct_pk=0 keys=none expect_prefix=pk_test_ residues=1 secrets=0 control=1
+FAIL: the served checkout bundle does not carry exactly one usable publishable key; expected exactly 1 distinct publishable key, found 0; 1 un-inlined env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY lookup(s) (the build had no key)
+rc=1
+
+# control arm: --control no-such-origin.invalid (a string the bundle cannot contain)
+chunks=22 distinct_pk=0 keys=none expect_prefix=pk_test_ residues=1 secrets=0 control=0
+VOID: the control string was found 0 times in 22 chunk(s): the scan cannot see an inlined value, so a 0 for the key would mean nothing
+rc=2
+
+# meta-gate break arms (check-gate-enforcement.sh)
+== 1. clean
+rc=0 PASS: every gate either runs in CI or has a declared reason it cannot,
+== 2. arm: every non-comment line invoking check-frontend-stripe-key-baked.sh removed from ci-cd.yaml
+references left: 0
+rc=1
+        check-frontend-stripe-key-baked.sh (invokes: curl)
+restore git=0 cmp=0
+== 2. arm: every non-comment line invoking check-stripe-pk-var.sh removed from ci-cd.yaml
+references left: 1
+rc=0
+restore git=0 cmp=0
+== 4. clean again
+rc=0 PASS: every gate either runs in CI or has a declared reason it cannot,
+== after the comment fix (HEAD 90df31a8)
+clean: rc=0
+references left: 0
+arm (invocations removed): rc=1
+        check-stripe-pk-var.sh
+restore git=0 cmp=0
+clean again: rc=0
+
+# env-contract STALE break arm
+== 1. clean (committed HEAD d1275842)
+rc=0 PASS: core-java 89 injected / 193 read; edge-go 9 injected /
+== 2. arm: the row put back (verbatim from origin/main)
+rc=1
+  - frontend allowlist (b): STALE entry 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY' — frontend/Dockerfile now declares it as a build ARG, so it is supplied through the enforced build-arg channel. Remove the entry.
+== 3. restore by content
+git=0 cmp=0
+== 4. clean again
+rc=0 PASS: core-java 89 injected / 193 read; edge-go 9 injected /
