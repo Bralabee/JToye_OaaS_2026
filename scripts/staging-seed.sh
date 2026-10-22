@@ -209,6 +209,26 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition) print_tool_plan ;; esac
+}
+print_tool_plan() {
+  echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
+  echo "  target        api ${API_BASE}; shop ${SHOP_SLUG}; signed in as ${VENDOR_USERNAME}"
+  echo "  01 az_read    keyvault secret show --vault-name ${KEY_VAULT_NAME}: staging-seed--test-vendor-password keycloak-credentials--frontend-client-secret (values never printed)"
+  echo "  02 POST       ${TOKEN_ENDPOINT}   vendor password grant on core-api"
+  case "$STAGE" in
+    list-drafts)
+      echo "  03 GET        /api/v1/orders/status/DRAFT?size=100&page=N   every page; READ-ONLY, nothing is written"
+      echo "  04 print      DRAFT-CANDIDATE order=… created=… payment_status=… intent=present|none total=…p (no customer field), then LIST-DRAFTS count=… card=… at=…" ;;
+    vendor-order)
+      echo "  03 GET        /api/v1/shops?size=100 (the ${SHOP_SLUG} id), /api/v1/public/shops/${SHOP_SLUG}/products (first available dish)"
+      echo "  04 POST       /api/v1/orders   {shopId, items: [{productId, quantity: 1}]}, no customer field, submit unset; Idempotency-Key vendor-order-<UTC stamp>"
+      echo "  05 print      VENDOR-ORDER order=… status=DRAFT payment_status=NONE (refused unless the 201 is a DRAFT with paymentStatus NONE)" ;;
+    order-transition)
+      echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
+      echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
+      echo "  05 print      TRANSITION order=${ORDERS} event=${EVENT} http=… type=… detail=…" ;;
+  esac
 }
 print_order_plan() {
   cat <<PLAN
@@ -355,13 +375,17 @@ api() {
   fi
   echo "$code"
 }
+# API_EXTRA_HEADER, when set, is sent as one more header (never a secret).
+API_EXTRA_HEADER=""
 _api_call() {
   local who="$1" method="$2" path="$3" out="$4" body="${5:-}" code rc=0
+  local -a xh=()
+  [ -z "$API_EXTRA_HEADER" ] || xh=(-H "$API_EXTRA_HEADER")
   if [ -n "$body" ]; then
-    code=$(curl -sS -K "$WORKDIR/$who-auth.curlrc" -X "$method" -H 'Accept: application/json' \
+    code=$(curl -sS -K "$WORKDIR/$who-auth.curlrc" -X "$method" -H 'Accept: application/json' ${xh[@]+"${xh[@]}"} \
       -H 'Content-Type: application/json' --data-binary "@$body" -o "$out" -w '%{http_code}' "${API_BASE}${path}") || rc=$?
   else
-    code=$(curl -sS -K "$WORKDIR/$who-auth.curlrc" -X "$method" -H 'Accept: application/json' \
+    code=$(curl -sS -K "$WORKDIR/$who-auth.curlrc" -X "$method" -H 'Accept: application/json' ${xh[@]+"${xh[@]}"} \
       -o "$out" -w '%{http_code}' "${API_BASE}${path}") || rc=$?
   fi
   if [ "$rc" -ne 0 ]; then echo "000"; return 0; fi
@@ -1017,6 +1041,157 @@ order_stage() {
 
   # 9. The verdict, one machine-checkable line, last.
   echo "SEED-ORDER order=$order_no intent=$intent status=$tstatus payment_status=$tpay livemode=$(jq -r '.livemode' "$WORKDIR/pi.json") at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# ===========================================================================
+# The hand tools (plan 30-07; issue #958; decisions D-01 and D-02)
+# ===========================================================================
+#
+# The 2026-10-19 swarm left unpaid card DRAFTs on staging, each with a live
+# requires_payment_method PaymentIntent and the customer's details. D-02: there
+# is no sweeper; they are cancelled by hand, one owner-confirmed order at a time.
+# These stages are that hand: a read-only listing, a vendor order for the D-01
+# control, a single transition whose answer is printed, the cancellation of an
+# explicit list, and a sanitised Stripe read. Every one runs run_guards first.
+# Nothing here prints a customer's name, email, phone, address or note: order
+# fields reach stdout only through a jq projection that selects named keys.
+
+# vendor_login — the vendor's password and the core-api client secret from Key
+# Vault into mode-600 files (exactly as vendor_stage reads them), then a token.
+vendor_login() {
+  local row name obj v rc
+  azure_guard_once
+  need_tool curl
+  ensure_workdir
+  set +x
+  for row in "${KV_MAP[@]}"; do
+    name="${row%%=*}"; obj="${row#*=}"
+    case "$name" in VENDOR_PASSWORD|CORE_API_CLIENT_SECRET) ;; *) continue ;; esac
+    rc=0; v=$(az_read keyvault secret show --vault-name "$KEY_VAULT_NAME" -n "$obj" --query value -o tsv) || rc=$?
+    if [ "$rc" -ne 0 ] || [ -z "$v" ]; then
+      refuse key-vault "could not read $obj from $KEY_VAULT_NAME (az rc=$rc); plan 29-13 generates it"
+    fi
+    case "$name" in
+      VENDOR_PASSWORD)        (umask 077 && printf '%s' "$v" > "$WORKDIR/vendor-password") ;;
+      CORE_API_CLIENT_SECRET) (umask 077 && printf '%s' "$v" > "$WORKDIR/kv-client-secret") ;;
+    esac
+  done
+  v=""
+  (umask 077 && printf '%s' "$VENDOR_USERNAME" > "$WORKDIR/vendor-username")
+  echo "OK: read 2 Key Vault objects from $KEY_VAULT_NAME (values not shown)"
+  user_token vendor || { echo "FAIL: the vendor $VENDOR_USERNAME could not sign in" >&2; exit 1; }
+  echo "OK: signed in as $VENDOR_USERNAME"
+}
+
+# orders_in_status STATUS OUT — every page of GET /api/v1/orders/status/STATUS,
+# as one JSON array in OUT (the vendor's grant-scoped view). A response without a
+# content array is a failure, never "no orders".
+orders_in_status() {
+  local st="$1" out="$2" page=0 pages code
+  printf '[]' | body "$out"
+  while :; do
+    code=$(api vendor GET "/api/v1/orders/status/$st?size=100&page=$page&sort=createdAt,asc" "$WORKDIR/orders-page.json")
+    [ "$code" = 200 ] || fail_http "GET /api/v1/orders/status/$st (page $page)" "$code" "$WORKDIR/orders-page.json"
+    if ! jq -e '(.content | type) == "array"' "$WORKDIR/orders-page.json" >/dev/null 2>&1; then
+      echo "FAIL: GET /api/v1/orders/status/$st (page $page) did not return a page with a content array" >&2; exit 1
+    fi
+    jq -s '.[0] + .[1].content' "$out" "$WORKDIR/orders-page.json" | body "$out.next"
+    cp "$out.next" "$out"; rm -f "$out.next"
+    pages=$(jq -r '.totalPages // .page.totalPages // 1' "$WORKDIR/orders-page.json")
+    page=$((page + 1))
+    [ "$page" -lt "$pages" ] || break
+    [ "$page" -lt 50 ] || { echo "FAIL: more than 50 pages of $st orders; refusing to guess" >&2; exit 1; }
+  done
+  rm -f "$WORKDIR/orders-page.json"
+}
+
+# find_order_id NUMBER STATUS... — sets FOUND_ID to the id of the order numbered
+# NUMBER, searching the listed statuses in order. Called directly, never in $(…).
+FOUND_ID=""
+FOUND_STATUS=""
+find_order_id() {
+  local n="$1" st hits
+  shift
+  FOUND_ID=""; FOUND_STATUS=""
+  for st in "$@"; do
+    orders_in_status "$st" "$WORKDIR/find-$st.json"
+    hits=$(jq -r --arg n "$n" '[.[] | select(.orderNumber == $n) | .id] | length' "$WORKDIR/find-$st.json")
+    if [ "$hits" -gt 1 ]; then echo "FAIL: $hits $st orders are numbered $n" >&2; exit 1; fi
+    if [ "$hits" -eq 1 ]; then
+      FOUND_ID=$(jq -r --arg n "$n" '.[] | select(.orderNumber == $n) | .id' "$WORKDIR/find-$st.json")
+      FOUND_STATUS="$st"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# --stage list-drafts — READ-ONLY. One line per DRAFT, then the count.
+list_drafts_stage() {
+  vendor_login
+  orders_in_status DRAFT "$WORKDIR/drafts.json"
+  jq -r 'map({orderNumber, createdAt, paymentStatus, paymentReference, totalAmountPennies})[]
+    | "DRAFT-CANDIDATE order=\(.orderNumber) created=\(.createdAt) payment_status=\(.paymentStatus // "NONE") intent=\(if (.paymentReference // "") != "" then "present" else "none" end) total=\(.totalAmountPennies)p"' \
+    "$WORKDIR/drafts.json"
+  echo "LIST-DRAFTS count=$(jq 'length' "$WORKDIR/drafts.json") card=$(jq '[.[] | select((.paymentReference // "") != "")] | length' "$WORKDIR/drafts.json") at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+# --stage vendor-order — ONE vendor order at the staging test shop, made the way
+# the dashboard makes it: no customer field, submit unset, so it stays a DRAFT
+# with paymentStatus NONE (the D-01 control for plan 30-08's live #958 arms).
+vendor_order_stage() {
+  local code shop_id pid stamp out ost ops
+  vendor_login
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops" "$code" "$WORKDIR/shops.json"
+  shop_id=$(jq -r --arg s "$SHOP_SLUG" '[.content[]? | select(.slug == $s)][0].id // empty' "$WORKDIR/shops.json")
+  [ -n "$shop_id" ] || { echo "FAIL: the vendor holds no shop $SHOP_SLUG" >&2; exit 1; }
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG/products" "$WORKDIR/pub-products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG/products" "$code" "$WORKDIR/pub-products.json"
+  pid=$(jq -r '[(if type == "object" and has("content") then .content[] elif type == "object" then .[][] else .[] end)
+                | select(.inStock == true)][0].id // empty' "$WORKDIR/pub-products.json")
+  [ -n "$pid" ] || { echo "FAIL: $SHOP_SLUG has no available product on its public menu" >&2; exit 1; }
+  jq -n --arg s "$shop_id" --arg p "$pid" '{shopId: $s, items: [{productId: $p, quantity: 1}]}' | body "$WORKDIR/vendor-order.json"
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  API_EXTRA_HEADER="Idempotency-Key: vendor-order-$stamp"
+  code=$(api vendor POST /api/v1/orders "$WORKDIR/vendor-order-out.json" "$WORKDIR/vendor-order.json")
+  API_EXTRA_HEADER=""
+  [ "$code" = 201 ] || fail_http "POST /api/v1/orders (vendor order)" "$code" "$WORKDIR/vendor-order-out.json"
+  out=$(jq -c '{orderNumber, status, paymentStatus}' "$WORKDIR/vendor-order-out.json")
+  rm -f "$WORKDIR/vendor-order-out.json"
+  ost=$(jq -r '.status // ""' <<<"$out"); ops=$(jq -r '.paymentStatus // ""' <<<"$out")
+  if [ "$ost" != DRAFT ]; then
+    echo "FAIL: the vendor order $(jq -r '.orderNumber' <<<"$out") came back with status $ost, not DRAFT; a control that is not a NONE DRAFT proves nothing about D-01" >&2; exit 1
+  fi
+  if [ "$ops" != NONE ]; then
+    echo "FAIL: the vendor order $(jq -r '.orderNumber' <<<"$out") came back with paymentStatus $ops, not NONE; a control that is not a NONE DRAFT proves nothing about D-01" >&2; exit 1
+  fi
+  echo "VENDOR-ORDER order=$(jq -r '.orderNumber' <<<"$out") status=DRAFT payment_status=NONE"
+}
+
+# --stage order-transition — one POST to exactly the named order; the answer is
+# printed, not judged (a 409 awaiting-payment is the expected #958 refusal).
+# rc 0 when the API answered the transition (2xx, 400, 409, 422); rc 1 when the
+# call did not reach a verdict (no connection, 401, 403, 404, 5xx).
+order_transition_stage() {
+  local code ptype pdetail
+  vendor_login
+  find_order_id "$ORDERS" DRAFT PENDING CONFIRMED \
+    || { echo "FAIL: no DRAFT, PENDING or CONFIRMED order is numbered $ORDERS in the vendor's view" >&2; exit 1; }
+  echo "OK: $ORDERS is $FOUND_STATUS ($FOUND_ID)"
+  code=$(api vendor POST "/api/v1/orders/$FOUND_ID/$EVENT" "$WORKDIR/transition.json")
+  ptype=none; pdetail=none
+  case "$code" in
+    4*|5*)
+      ptype=$(jq -r 'if type == "object" and (.type | type) == "string" then .type else "none" end' "$WORKDIR/transition.json" 2>/dev/null || echo none)
+      pdetail=$(jq -j 'if type == "object" and (.detail | type) == "string" then .detail else "none" end' "$WORKDIR/transition.json" 2>/dev/null | tr '\n' ' ' | head -c 300 || echo none) ;;
+  esac
+  rm -f "$WORKDIR/transition.json"
+  echo "TRANSITION order=$ORDERS event=$EVENT http=$code type=$ptype detail=$pdetail"
+  case "$code" in
+    2??|400|409|422) return 0 ;;
+    *) echo "FAIL: POST /api/v1/orders/{id}/$EVENT did not reach a verdict (HTTP $code)" >&2; exit 1 ;;
+  esac
 }
 
 # ===========================================================================
@@ -1693,13 +1868,17 @@ IDENTITY_FILE="$REPO_ROOT/k8s/staging/azure-identity.yaml"
 API_BASE="$STAGING_API"
 STAGE=""
 DRY_RUN=0
+ORDERS=""
+EVENT=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --context)         shift; [ "$#" -gt 0 ] || usage_error "--context needs a name"; KUBE_CONTEXT="$1" ;;
     --identity-file)   shift; [ "$#" -gt 0 ] || usage_error "--identity-file needs a path"; IDENTITY_FILE="$1" ;;
     --api)             shift; [ "$#" -gt 0 ] || usage_error "--api needs a URL"; API_BASE="$1" ;;
-    --stage)           shift; [ "$#" -gt 0 ] || usage_error "--stage needs vendor|order|all"; STAGE="$1" ;;
+    --stage)           shift; [ "$#" -gt 0 ] || usage_error "--stage needs a stage name"; STAGE="$1" ;;
+    --orders)          shift; [ "$#" -gt 0 ] || usage_error "--orders needs a comma list of order numbers"; ORDERS="$1" ;;
+    --event)           shift; [ "$#" -gt 0 ] || usage_error "--event needs submit|confirm|start-preparation"; EVENT="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
     --list-kv-objects) ACTION="list-kv-objects" ;;
     --selftest)        ACTION="selftest" ;;
@@ -1717,9 +1896,23 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all) ;;
-  "") usage_error "--stage vendor|order|all is required" ;;
-  *) usage_error "--stage must be vendor, order or all" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order or order-transition" ;;
+esac
+# Stage-specific flags are checked before any guard or call. A flag a stage
+# does not take is an error, never ignored: an order list must not be mistaken
+# for a filter by a stage that would not honour it.
+case "$STAGE" in
+  order-transition)
+    case "$EVENT" in
+      submit|confirm|start-preparation) ;;
+      *) usage_error "--event must be submit, confirm or start-preparation (got '${EVENT}'); cancellation goes through --stage cancel-drafts only" ;;
+    esac
+    [[ "$ORDERS" =~ ^ORD-[A-Za-z0-9-]+$ ]] || usage_error "--stage order-transition needs --orders with exactly one order number (ORD-…)" ;;
+  *)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage $STAGE"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only" ;;
 esac
 
 run_guards
@@ -1730,6 +1923,9 @@ fi
 case "$STAGE" in
   vendor) vendor_stage ;;
   order)  order_stage ;;
+  list-drafts)      list_drafts_stage ;;
+  vendor-order)     vendor_order_stage ;;
+  order-transition) order_transition_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
