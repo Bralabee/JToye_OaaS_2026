@@ -2136,7 +2136,7 @@ jobs:
           # FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is optional HERE only: an empty value still
           # builds (frontend/Dockerfile keeps it out of the CR-02 gate), but deploy-staging
           # refuses anything that is not a pk_test_ key and deploy-production refuses a
-          # pk_test_ or empty key (scripts/check-stripe-pk-var.sh), and staging-edge-probe
+          # pk_test_ or empty key (the publishable-key guard steps, #957), and staging-edge-probe
           # reads the key back out of the live checkout chunks after every staging deploy.
           # A publishable key is public by design, so it is a variable, not a secret.
           # FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE is the registered office on the
