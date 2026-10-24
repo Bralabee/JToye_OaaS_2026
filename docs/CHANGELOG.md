@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### mcp-server body-parser 2.4.0 and zod 4.6.7, with Their CVE Floors in the Manifest (#1039) — 2026-10-24
+
+The required Security Scan went red on every PR on 2026-10-24 without any change to the tree: two new advisories entered Trivy's database against `mcp-server/package-lock.json`. body-parser 2.3.0 (GHSA-27r3-jxmh-p828, a DoS via trailing bytes after a compressed request body) is fixed in 2.4.0, and zod 4.4.3 (a DoS via unbounded array validation) is fixed in 4.6.6. This is the daily-DB time-bomb again, as with `fast-uri` (#726).
+
+- **Lockfile.** body-parser 2.4.0 (bringing `content-type` 2.1.0 and `qs` 6.16.1) and zod 4.6.7. Nothing else moves.
+- **Floors stated, not left to resolution luck.** zod's range becomes `^4.6.6`, and an `overrides` entry `body-parser: ^2.4.0` sits beside the fast-uri and hono floors. Starting from main's lockfile, `npm install --package-lock-only` moves to 2.4.0 / 4.6.7 under the new manifest and stays on 2.3.0 / 4.4.3 under the old one.
+- **Measured with the gate's own scanner.** `aquasec/trivy:0.70.0 fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1` over a `git archive` extract exits 1 on main (exactly these two) and 0 on this branch. 70/70 vitest and `tsc --noEmit` pass. Out of scope: 3 moderate advisories and the dev-only `source-map-js` HIGH, which the gate excludes.
+
 ### An Unpaid Card Order Cannot Be Submitted, Accepted or Prepared, and Staff See Why (#958) (#1030) — 2026-10-22
 
 Phase 30, PR 2 (plans 30-05 to 30-07). The payment check guarded only one edge (CONFIRMED -> PREPARING) of the three that take an order to the kitchen. SUBMIT and CONFIRM were unguarded, so staff could push an order nobody had paid for into the kitchen, and each of those transitions sent the customer a "Received" or "Confirmed" email. Separately, `payment_intent.succeeded` reset any order to PENDING, so a link paid on a confirmed order moved it backwards and re-sent "Received", and a payment on a cancelled order re-opened it.
