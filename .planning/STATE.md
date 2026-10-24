@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: Phase 30 executing — 30-05 DONE (5/32); issue #958 server gate + DRAFT-only payment webhook committed on fix/958-awaiting-payment-gate (not pushed); next 30-06
-last_updated: "2026-10-22T19:44:12.000Z"
-last_activity: 2026-10-22
-last_activity_desc: 30-05 done — typed 409 awaiting-payment gate on SUBMIT/CONFIRM/PREPARING, payment webhook moves only DRAFT (WARN payment_on_closed_order), full core-java suite green, counts 6562
+stopped_at: Phase 30 executing — 30-08 DONE (8/32); PR 2 (#1030, issue #958) merged 7b117162, deployed, 409 proven live on staging; next 30-09 (route must change, issue #1038)
+last_updated: "2026-10-24T22:30:00.000Z"
+last_activity: 2026-10-24
+last_activity_desc: 30-08 done — PR #1030 reviewed (2 rounds) and merged 7b117162; staging digest parity; live 409 awaiting-payment on a fresh unpaid card DRAFT, vendor NONE submit 200, paid confirm 200; stale-DRAFT cleanup orphans intents (issue #1038)
 state_head: 021c0815b358a710ab31ffe4cb3f4f33e9b52636
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 288
+  completed_plans: 291
   percent: 91
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 7/32 plans done (30-01..30-07); PR 1 (#1029) merged + deployed + proven live; PR 2 (issue #958) in progress on branch fix/958-awaiting-payment-gate: 30-05 (server gate), 30-06 (staff UI) and 30-07 (D-02 hand tools) done, next 30-08
-Last activity: 2026-10-22 — 30-07 complete (SUMMARY 30-07-SUMMARY.md, evidence/30-07-*): scripts/staging-seed.sh gained --stage list-drafts (read-only, projection only), vendor-order (the D-01 NONE DRAFT control), order-transition (prints TRANSITION http/type/detail), cancel-drafts --orders (intent cancelled in Stripe TEST and read back BEFORE the order; [not-draft]/[paid] refusals; no sweeper, D-02) and stripe-get --path (allowlisted, TEST-only, sanitised; refund/account print LIVEMODE n/a); selftest 20 -> 41 arms, 7 break arms red; gitleaks branch range rc 0 after pinning 3 commit fingerprints (one 30-07 fixture, two 30-05 evidence lines); no live staging or Stripe call; nothing pushed. Before that, 30-06 complete (SUMMARY 30-06-SUMMARY.md, evidence/30-06-*): "Awaiting payment" badge (isAwaitingPayment = the server rule) on the Orders list and both kitchen cards; the list offers no Submit/Confirm for such an order and DRAFT gained Cancel; the kitchen grid toasts "Order not updated" with the server detail and the New lane shows it in the card alert; frontend jest 3207/3207, build rc 0, counts 6593; nothing pushed. Before that, 30-05 (SUMMARY 30-05-SUMMARY.md, evidence/30-05-*): typed 409 https://jtoye.uk/errors/awaiting-payment on SUBMIT/CONFIRM/PREPARING of an unpaid card/link order, D-01 vendor orders unchanged, payment webhook moves only DRAFT; nothing pushed. Staging still leaves paid TEST order ORD-1AAC0CDE-20261022-D69764AE and the 30-03 unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C for 30-09
+Status: Executing — 8/32 plans done (30-01..30-08); PR 1 (#1029) and PR 2 (#1030, issue #958) merged + deployed + proven live; next 30-09 on branch fix/108-stripe-timeouts (not pushed)
+Last activity: 2026-10-24 — 30-08 complete (SUMMARY 30-08-SUMMARY.md, evidence/30-08-958-live.txt): PR #1030 review round 1 (8 findings, 4 admissible: 3 fixed 86291e96/095b5d30, 1 filed issue #1031) and round 2 (0 admissible, Review-Record on 095b5d30); squash-merged 7b117162 2026-10-22T23:04:16Z; ci-cd 39869345195 Deploy to Staging + Edge Probe success (one Frontend E2E apt-403 runner failure, rerun green); digest parity for core-java/edge-go/frontend; live on staging 2026-10-24: fresh unpaid card DRAFT ORD-1AAC0CDE-20261024-C6DA71F1 SUBMIT -> 409 awaiting-payment and still DRAFT, then cancelled (intent canceled); vendor NONE ORD-…C555E294 SUBMIT 200; paid ORD-…D69764AE CONFIRM 200. DEVIATION: the planned target ORD-…0C094A2C and the six 10-19 swarm DRAFTs were DELETED by ScheduledCleanupService (03:00Z, >24 h), leaving 7 payable PaymentIntents with no order (issue #1038), so 30-09's cancel-drafts route has nothing to look up and must be re-routed before it runs. kubectl on jtoye-stg-aks needs a token minted with --subscription c483d353 (kubelogin azurecli follows the ambient default). Before that, 30-07 complete (SUMMARY 30-07-SUMMARY.md, evidence/30-07-*): scripts/staging-seed.sh gained --stage list-drafts (read-only, projection only), vendor-order (the D-01 NONE DRAFT control), order-transition (prints TRANSITION http/type/detail), cancel-drafts --orders (intent cancelled in Stripe TEST and read back BEFORE the order; [not-draft]/[paid] refusals; no sweeper, D-02) and stripe-get --path (allowlisted, TEST-only, sanitised; refund/account print LIVEMODE n/a); selftest 20 -> 41 arms, 7 break arms red; gitleaks branch range rc 0 after pinning 3 commit fingerprints (one 30-07 fixture, two 30-05 evidence lines); no live staging or Stripe call; nothing pushed. Before that, 30-06 complete (SUMMARY 30-06-SUMMARY.md, evidence/30-06-*): "Awaiting payment" badge (isAwaitingPayment = the server rule) on the Orders list and both kitchen cards; the list offers no Submit/Confirm for such an order and DRAFT gained Cancel; the kitchen grid toasts "Order not updated" with the server detail and the New lane shows it in the card alert; frontend jest 3207/3207, build rc 0, counts 6593; nothing pushed. Before that, 30-05 (SUMMARY 30-05-SUMMARY.md, evidence/30-05-*): typed 409 https://jtoye.uk/errors/awaiting-payment on SUBMIT/CONFIRM/PREPARING of an unpaid card/link order, D-01 vendor orders unchanged, payment webhook moves only DRAFT; nothing pushed. Staging still leaves paid TEST order ORD-1AAC0CDE-20261022-D69764AE and the 30-03 unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C for 30-09
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
