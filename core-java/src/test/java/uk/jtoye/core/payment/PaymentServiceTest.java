@@ -693,7 +693,7 @@ class PaymentServiceTest {
                         3000L,
                         7000L
                 )));
-        when(stripeConnectService.applicationFeePennies(7000L)).thenReturn(175L);
+        when(stripeConnectService.applicationFeePennies(tenantId, 7000L)).thenReturn(175L);
 
         PaymentIntent mockIntent = mock(PaymentIntent.class);
         when(mockIntent.getId()).thenReturn("pi_bal_1");
@@ -721,6 +721,36 @@ class PaymentServiceTest {
             assertEquals("acct_caterer_1", optionsCaptor.getValue().getStripeAccount());
             assertEquals(PaymentService.balanceIntentIdempotencyKey(testOrder),
                     optionsCaptor.getValue().getIdempotencyKey());
+        }
+    }
+
+    @Test
+    @DisplayName("PAY-04 / A-1: retrieveClientSecret(order, piId) routes with RequestOptions.setStripeAccount for direct-charge vendor MOR orders")
+    void retrieveClientSecret_directChargeOrder_passesConnectedStripeAccount() throws Exception {
+        when(stripeConnectService.resolveSettlementRouting(testOrder))
+                .thenReturn(Optional.of(new SettlementRoutingDecision(
+                        SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR,
+                        "acct_vendor_direct_1",
+                        1500L,
+                        8L,
+                        null,
+                        null
+                )));
+
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getClientSecret()).thenReturn("pi_direct_123_secret_abc");
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.retrieve(eq("pi_direct_123"), any(com.stripe.net.RequestOptions.class)))
+                    .thenReturn(mockIntent);
+
+            String secret = paymentService.retrieveClientSecret(testOrder, "pi_direct_123");
+            assertEquals("pi_direct_123_secret_abc", secret);
+
+            ArgumentCaptor<com.stripe.net.RequestOptions> optionsCaptor =
+                    ArgumentCaptor.forClass(com.stripe.net.RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.retrieve(eq("pi_direct_123"), optionsCaptor.capture()));
+            assertEquals("acct_vendor_direct_1", optionsCaptor.getValue().getStripeAccount());
         }
     }
 
@@ -836,6 +866,70 @@ class PaymentServiceTest {
             ArgumentCaptor<CreateTransactionRequest> txCaptor = ArgumentCaptor.forClass(CreateTransactionRequest.class);
             verify(financialTransactionService).createTransaction(txCaptor.capture());
             assertEquals(10_000L, txCaptor.getValue().amountPennies());
+        }
+    }
+
+    // --- Phase 30-05 (issue #958): a successful payment never moves an order backwards ---
+
+    @Test
+    @DisplayName("#958: payment on a CONFIRMED (link) order records the money, keeps CONFIRMED, publishes no state change")
+    void handlePaymentSucceeded_onConfirmedOrder_keepsStatus() throws Exception {
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setPaymentReference("plink_958");
+
+        deliverSucceeded("pi_958_conf", "evt_958_conf");
+
+        assertEquals(OrderStatus.CONFIRMED, testOrder.getStatus());
+        assertEquals(PaymentStatus.CAPTURED, testOrder.getPaymentStatus());
+        assertEquals("pi_958_conf", testOrder.getPaymentReference());
+        verify(orderRepository).save(testOrder);
+        verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+        verify(paymentEventPublisher).publishSucceeded(
+                eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                eq("pi_958_conf"), eq(1500L), eq("gbp"));
+        verify(financialTransactionService).createTransaction(any());
+    }
+
+    @Test
+    @DisplayName("#958: payment on a CANCELLED order records the money, keeps CANCELLED, publishes no state change")
+    void handlePaymentSucceeded_onCancelledOrder_keepsStatus() throws Exception {
+        testOrder.setStatus(OrderStatus.CANCELLED);
+
+        deliverSucceeded("pi_958_canc", "evt_958_canc");
+
+        assertEquals(OrderStatus.CANCELLED, testOrder.getStatus());
+        assertEquals(PaymentStatus.CAPTURED, testOrder.getPaymentStatus());
+        verify(eventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+        verify(paymentEventPublisher).publishSucceeded(
+                eq(orderId), eq(tenantId), eq("ORD-TEST-20260403-ABCD1234"),
+                eq("pi_958_canc"), eq(1500L), eq("gbp"));
+    }
+
+    /** Delivers one payment_intent.succeeded for {@link #testOrder} with no charge lookup. */
+    private void deliverSucceeded(String paymentIntentId, String eventId) throws Exception {
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn(paymentIntentId);
+        when(mockIntent.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString()
+        ));
+        when(mockIntent.getLatestCharge()).thenReturn(null);
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockIntent));
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.succeeded");
+        when(mockEvent.getId()).thenReturn(eventId);
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(mockEvent);
+            paymentService.handleWebhookEvent("{}", "sig_test");
         }
     }
 }

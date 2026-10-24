@@ -1,0 +1,10 @@
+{
+  "command": "BAKED_ORIGIN_SELFTEST_FORMAT=tap bash scripts/check-frontend-baked-origin.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..5\nnot ok 1 - production-origin\n  ---\n  message: 'rc=0 (want 1): OK: (stub) /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a4601e69d2f2d0e93/k8s/staging '\n  ...\nok 2 - staging-origin\nnot ok 3 - empty-origin\n  ---\n  message: 'rc=0 (want 1): OK: (stub) /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a4601e69d2f2d0e93/k8s/staging '\n  ...\nnot ok 4 - void-no-api-url\n  ---\n  message: 'rc=0 (want 2): OK: (stub) /tmp/jtoye-cr02-st.FcKp4PoM/noapi '\n  ...\nnot ok 5 - void-no-kubectl\n  ---\n  message: 'rc=0 (want 2)'\n  ...\n# SELFTEST: 1/5 (staging api.url=https://api-staging.olajay.co.uk)\n",
+  "targetTest": "production-origin",
+  "targetFile": "scripts/check-frontend-baked-origin.sh",
+  "expected": "ok - production-origin: BAKED_API_URL=https://api.olajay.co.uk against k8s/staging exits 1 and names both origins",
+  "actual": "not ok 1 - production-origin   ---   message: 'rc=0 (want 1): OK: (stub) /home/sanmi/IdeaProjects/JToye_OaaS_2026/.claude/worktrees/agent-a4601e69d2f2d0e93/k8s/staging '",
+  "semanticAssessment": "Target arm executed and failed on its planned assertion: the guard body is a stub that always exits 0 (the plan's 'stub that always passes'), so the production-baked image against the staging overlay was reported OK, not caught. Not a harness fault: the staging-origin arm passed against the same render, and the selftest's own control (api.url read from k8s/staging/configmap-patch.yaml) resolved https://api-staging.olajay.co.uk."
+}

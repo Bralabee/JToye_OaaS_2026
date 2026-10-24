@@ -40,9 +40,31 @@ WORKLOAD_GLOBS = [
 # External pod-label references (not Deployments we ship) that should be
 # recognised as valid. These are either K8s-built-in (kube-dns) or
 # placeholders explicitly documented in 50-observability.yaml.
+#
+# Phase 29 (plan 29-02): the POD-LABEL CONTRACT the rewritten allow-lists bind to
+# (k8s/base/networkpolicies/README.md "The pod-label contract"). These workloads
+# are shipped by plans 29-10, 29-12, 29-22, 29-23 and 29-24, not as
+# k8s/base/*-deployment.yaml files, or their label is set by an operator
+# (RabbitMQ cluster operator, cert-manager), so they are declared here. Changing
+# one is a coordinated change across those plans, the policies and INV-7.
 KNOWN_EXTERNAL_LABELS: dict[str, set[str]] = {
     "k8s-app": {"kube-dns"},
-    "app": {"nonexistent-placeholder"},  # 50-observability placeholder
+    "app": {
+        "nonexistent-placeholder",  # 50-observability placeholder
+        "keycloak",
+        "redis",
+        "mailpit",
+        "prometheus",
+        "alertmanager",
+        "grafana",
+        "postgres-exporter",
+        "redis-exporter",
+        "secret-sync",
+    },
+    # Set by the RabbitMQ cluster operator on a RabbitmqCluster named rabbitmq.
+    "app.kubernetes.io/name": {"rabbitmq"},
+    # Set by cert-manager on its ACME HTTP-01 solver pods.
+    "acme.cert-manager.io/http01-solver": {"true"},
 }
 
 

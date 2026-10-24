@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -13,6 +14,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.dto.CreatePromotionRequest;
@@ -267,6 +270,43 @@ class PromotionServiceTest {
         verify(promotionRepository).findById(promotionId);
         verify(promotionMapper).updateEntity(eq(updateRequest), eq(testPromotion));
         verify(promotionRepository).saveAndFlush(testPromotion);
+    }
+
+    @Test
+    @DisplayName("updatePromotion - a changed shopId is authorised against the target shop before anything is applied")
+    void updatePromotion_changedShop_isAuthorisedBeforeAnythingIsApplied() {
+        UUID targetShop = UUID.randomUUID();
+        CreatePromotionRequest updateRequest = new CreatePromotionRequest();
+        updateRequest.setLabel("Moved Promo");
+        updateRequest.setShopId(targetShop);
+        when(promotionRepository.findById(promotionId)).thenReturn(Optional.of(testPromotion));
+        doThrow(new ShopAccessDeniedException(targetShop, ShopRole.SHOP_MANAGER))
+                .when(shopAccessService).requireForShopChange(shopId, targetShop);
+
+        assertThrows(ShopAccessDeniedException.class,
+                () -> promotionService.updatePromotion(promotionId, updateRequest));
+
+        verify(promotionMapper, never()).updateEntity(any(CreatePromotionRequest.class), any(ShopPromotion.class));
+        verify(promotionRepository, never()).saveAndFlush(any(ShopPromotion.class));
+        assertEquals(shopId, testPromotion.getShopId(), "the row still points at its own shop");
+    }
+
+    @Test
+    @DisplayName("updatePromotion - an authorised shop change assigns the target shop explicitly")
+    void updatePromotion_authorisedShopChange_assignsTargetShop() {
+        UUID targetShop = UUID.randomUUID();
+        CreatePromotionRequest updateRequest = new CreatePromotionRequest();
+        updateRequest.setLabel("Moved Promo");
+        updateRequest.setShopId(targetShop);
+        when(promotionRepository.findById(promotionId)).thenReturn(Optional.of(testPromotion));
+        when(promotionRepository.saveAndFlush(any(ShopPromotion.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        promotionService.updatePromotion(promotionId, updateRequest);
+
+        InOrder order = inOrder(shopAccessService, promotionMapper);
+        order.verify(shopAccessService).requireForShopChange(shopId, targetShop);
+        order.verify(promotionMapper).updateEntity(eq(updateRequest), eq(testPromotion));
+        assertEquals(targetShop, testPromotion.getShopId());
     }
 
     @Test

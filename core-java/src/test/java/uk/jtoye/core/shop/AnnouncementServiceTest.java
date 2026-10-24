@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -13,6 +14,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.dto.AnnouncementDto;
@@ -251,6 +254,43 @@ class AnnouncementServiceTest {
         verify(announcementRepository).findById(announcementId);
         verify(announcementMapper).updateEntity(eq(updateRequest), eq(testAnnouncement));
         verify(announcementRepository).saveAndFlush(testAnnouncement);
+    }
+
+    @Test
+    @DisplayName("updateAnnouncement - a changed shopId is authorised against the target shop before anything is applied")
+    void updateAnnouncement_changedShop_isAuthorisedBeforeAnythingIsApplied() {
+        UUID targetShop = UUID.randomUUID();
+        CreateAnnouncementRequest updateRequest = new CreateAnnouncementRequest();
+        updateRequest.setTitle("Moved");
+        updateRequest.setShopId(targetShop);
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(testAnnouncement));
+        doThrow(new ShopAccessDeniedException(targetShop, ShopRole.SHOP_MANAGER))
+                .when(shopAccessService).requireForShopChange(shopId, targetShop);
+
+        assertThrows(ShopAccessDeniedException.class,
+                () -> announcementService.updateAnnouncement(announcementId, updateRequest));
+
+        verify(announcementMapper, never()).updateEntity(any(CreateAnnouncementRequest.class), any(ShopAnnouncement.class));
+        verify(announcementRepository, never()).saveAndFlush(any(ShopAnnouncement.class));
+        assertEquals(shopId, testAnnouncement.getShopId(), "the row still points at its own shop");
+    }
+
+    @Test
+    @DisplayName("updateAnnouncement - an authorised shop change assigns the target shop explicitly")
+    void updateAnnouncement_authorisedShopChange_assignsTargetShop() {
+        UUID targetShop = UUID.randomUUID();
+        CreateAnnouncementRequest updateRequest = new CreateAnnouncementRequest();
+        updateRequest.setTitle("Moved");
+        updateRequest.setShopId(targetShop);
+        when(announcementRepository.findById(announcementId)).thenReturn(Optional.of(testAnnouncement));
+        when(announcementRepository.saveAndFlush(any(ShopAnnouncement.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        announcementService.updateAnnouncement(announcementId, updateRequest);
+
+        InOrder order = inOrder(shopAccessService, announcementMapper);
+        order.verify(shopAccessService).requireForShopChange(shopId, targetShop);
+        order.verify(announcementMapper).updateEntity(eq(updateRequest), eq(testAnnouncement));
+        assertEquals(targetShop, testAnnouncement.getShopId());
     }
 
     @Test

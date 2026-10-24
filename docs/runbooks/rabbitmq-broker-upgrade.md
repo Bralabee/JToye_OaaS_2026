@@ -1,6 +1,9 @@
 # Runbook — RabbitMQ broker upgrade and rollback
 
-Owner: unassigned (see ADR-0002). Written by plan 27-02, 2026-07-29, when the dev/compose broker
+Owner: unassigned. ADR-0002 (Accepted 2026-08-10) puts the staging/production broker in-cluster
+under the RabbitMQ cluster operator, which Phase 29 builds.
+
+Written by plan 27-02, 2026-07-29, when the dev/compose broker
 moved **3.12.14 → 4.3.4** (patched in place **4.3.4 → 4.3.6** by plan 39-02, 2026-10-16).
 
 > **This file is deliberately allowlisted from the AC-2 / AC-12 "no 3.x version strings" rules.**
@@ -196,7 +199,15 @@ naive `wc -l` over its output is off by one.
 
 ## 7. Staging / production — the operator action this repo cannot perform
 
-**The staging/production broker is not deployed from this repository and its version is unknown and
+> **Staging, 2026-10-18 (plan 29-10):** step 4 below is DONE for staging. The staging broker is the
+> `RabbitmqCluster` `rabbitmq` in `k8s/components/rabbitmq/rabbitmq-cluster.yaml` (cluster operator
+> v2.23.1, `spec.image: rabbitmq:4.3.6-management-alpine`), included only by `k8s/staging`, and it is
+> a FRESH install, so steps 1-3 have nothing to read there. The `rabbitmq-k8s` horizon row carries
+> that pin at that site and its `manual_review` is retired. The text below still describes
+> **production**, whose broker is decided in Phase 32.
+
+**Until Phase 29 ships the operator manifest, the staging/production broker is not deployed from
+this repository and its version is unknown and
 unknowable from this checkout.** `k8s/base/configmap.yaml` points at
 `rabbitmq.jtoye-infrastructure.svc.cluster.local`; there is no RabbitMQ manifest anywhere under
 `k8s/`, only a host, a port and a `rabbitmq-credentials` secret reference. No gate reads its version
@@ -210,5 +221,6 @@ Someone with cluster access must:
 3. Record the result against the `rabbitmq-k8s` row in `infra/dependency-horizons.yaml`, which is
    currently `pin: unknown`, `owner: UNASSIGNED`, with a dated `manual_review` that **expires
    2027-01-16** and turns the horizon gate red by itself if nobody acts.
-4. Settle the in-cluster cluster-operator question in ADR-0002, still *Proposed* and unsigned since
-   2026-07-12.
+4. Once Phase 29 ships the RabbitMQ cluster-operator manifest (the route ADR-0002 accepted on
+   2026-08-10), set the `rabbitmq-k8s` row to that manifest's declared broker pin and retire its
+   `manual_review`.

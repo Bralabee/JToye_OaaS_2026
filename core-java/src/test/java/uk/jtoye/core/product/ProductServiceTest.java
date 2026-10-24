@@ -15,6 +15,8 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.storage.StorageService;
@@ -134,6 +136,8 @@ class ProductServiceTest {
         validRequest.setIngredientsText("Yam (100%)");
         validRequest.setAllergenMask(0);
         validRequest.setPricePennies(999L);
+        // #959: a product belongs to exactly one shop, so a valid create names one.
+        validRequest.setShopId(UUID.randomUUID());
 
         // Mock ProductMapper behavior to mimic actual MapStruct implementation
         // Use lenient() to avoid UnnecessaryStubbingException in tests that don't use the mapper
@@ -343,6 +347,43 @@ class ProductServiceTest {
     }
 
     @Test
+    @DisplayName("updateProduct - a changed shopId is authorised against the target shop before anything is applied")
+    void testUpdateProduct_ChangedShop_IsAuthorisedBeforeAnythingIsApplied() {
+        UUID currentShop = UUID.randomUUID();
+        UUID targetShop = UUID.randomUUID();
+        testProduct.setShopId(currentShop);
+        validRequest.setShopId(targetShop);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
+        doThrow(new ShopAccessDeniedException(targetShop, ShopRole.SHOP_MANAGER))
+                .when(shopAccessService).requireForShopChange(currentShop, targetShop);
+
+        assertThrows(ShopAccessDeniedException.class, () -> productService.updateProduct(productId, validRequest));
+
+        verify(productMapper, never()).updateEntity(any(CreateProductRequest.class), any(Product.class));
+        verify(productRepository, never()).saveAndFlush(any(Product.class));
+        assertEquals(currentShop, testProduct.getShopId(), "the product still points at its own shop");
+    }
+
+    @Test
+    @DisplayName("updateProduct - an authorised shop change assigns the target shop explicitly; an omitted shopId keeps the shop")
+    void testUpdateProduct_AuthorisedShopChange_AssignsTargetShop_OmittedKeeps() {
+        UUID currentShop = UUID.randomUUID();
+        UUID targetShop = UUID.randomUUID();
+        testProduct.setShopId(currentShop);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
+        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        validRequest.setShopId(null);
+        productService.updateProduct(productId, validRequest);
+        assertEquals(currentShop, testProduct.getShopId(), "an omitted shopId keeps the stored shop");
+
+        validRequest.setShopId(targetShop);
+        productService.updateProduct(productId, validRequest);
+        verify(shopAccessService).requireForShopChange(currentShop, targetShop);
+        assertEquals(targetShop, testProduct.getShopId());
+    }
+
+    @Test
     @DisplayName("updateProduct - Fails when product not found")
     void testUpdateProduct_NotFound() {
         // Given
@@ -434,6 +475,19 @@ class ProductServiceTest {
         assertEquals(testProduct.getAllergenMask(), dto.getAllergenMask());
         assertEquals(testProduct.getPricePennies(), dto.getPricePennies());
         assertEquals(testProduct.getCreatedAt(), dto.getCreatedAt());
+    }
+
+    @Test
+    @DisplayName("createProduct - #959: no shop is refused before anything is built or stored")
+    void testCreateProduct_NoShopIsRefused() {
+        validRequest.setShopId(null);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                uk.jtoye.core.exception.ProductShopRequiredException.class,
+                () -> productService.createProduct(validRequest));
+
+        verify(productRepository, org.mockito.Mockito.never()).saveAndFlush(any(Product.class));
+        verify(productRepository, org.mockito.Mockito.never()).save(any(Product.class));
     }
 
     @Test

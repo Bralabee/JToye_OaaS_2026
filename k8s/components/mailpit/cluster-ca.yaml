@@ -1,0 +1,89 @@
+# The staging cluster's INTERNAL certificate authority and Mailpit's SMTP
+# certificate (plan 29-22, D-20 / D-21). cert-manager's documented bootstrap
+# (cert-manager.io/docs/configuration/selfsigned "Bootstrapping CA Issuers" and
+# /docs/configuration/ca, both read 2026-10-19):
+#
+#   Issuer jtoye-staging-selfsigned (selfSigned)
+#     -> Certificate jtoye-staging-ca (isCA, Secret jtoye-staging-ca)
+#     -> Issuer jtoye-staging-ca-issuer (ca.secretName jtoye-staging-ca)
+#     -> Certificate mailpit-tls (Secret mailpit-tls, mounted by Mailpit)
+#
+# Namespaced Issuers, not ClusterIssuers: the CA exists for this namespace's
+# in-cluster TLS only, and a namespaced Issuer cannot sign for another namespace.
+#
+# WHO TRUSTS IT. core-java reads Secret jtoye-staging-ca key ca.crt into a JVM
+# truststore built from the JDK cacerts PLUS this CA at pod start
+# (../cluster-ca-truststore, D-30); Keycloak reads the same key through
+# KC_TRUSTSTORE_PATHS. Both validate the full chain AND the host name; there is no
+# mail.smtp.ssl.trust pinning anywhere (D-21).
+#
+# THE NAME core-java DIALS. app-config smtp.host is
+# mailpit.jtoye-staging.svc.cluster.local (k8s/staging/configmap-patch.yaml, plan
+# 29-08), so that exact FQDN is a dnsName below; hostname verification fails on any
+# name the certificate does not carry.
+#
+# RENEWAL. rotationPolicy Never on the CA keeps its key across renewals, so a
+# truststore built before a renewal still anchors a leaf signed after it (the JDK
+# anchors on the CA's name and key, not on its validity dates). mailpit-tls rotates
+# normally (90 days, renewed 15 days early) and Mailpit reads it only at start: a renewed
+# leaf reaches it when the container restarts, which the supervisor in mailpit.yaml does by
+# itself within about two minutes of the Secret changing (issue #972, INV-23); the old leaf stays
+# valid until then.
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: jtoye-staging-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: jtoye-staging-ca
+spec:
+  isCA: true
+  commonName: "J'Toye staging internal CA"
+  secretName: jtoye-staging-ca
+  duration: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Never
+  issuerRef:
+    name: jtoye-staging-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: jtoye-staging-ca-issuer
+spec:
+  ca:
+    secretName: jtoye-staging-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mailpit-tls
+spec:
+  secretName: mailpit-tls
+  commonName: mailpit.jtoye-staging.svc.cluster.local
+  dnsNames:
+    - mailpit.jtoye-staging.svc.cluster.local
+    - mailpit.jtoye-staging.svc
+    - mailpit
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  issuerRef:
+    name: jtoye-staging-ca-issuer
+    kind: Issuer
+    group: cert-manager.io

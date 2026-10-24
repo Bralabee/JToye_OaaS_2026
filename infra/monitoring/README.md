@@ -153,6 +153,7 @@ docker-compose -f docker-compose.monitoring.yml down -v
 
 8. **NoOrdersCreated** (no orders in 30 minutes)
    - Severity: Info
+   - Reads `jtoye_orders_total`, the `jtoye.orders.created` counter registered at core-java startup (the exporter strips `_created`; do not rename it to `jtoye_orders_created_total`). It counts orders placed (PENDING), exists from the first scrape, and needs no seeding after a restart
    - Action: Check if this is expected business behavior
 
 ## Dashboard Recommendations

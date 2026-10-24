@@ -230,7 +230,7 @@ states:
   - id: TS-13
     name: exporter up but blind
     kind: infra_exporter
-    locator: "infra/monitoring/docker-compose.monitoring.yml:179"
+    locator: "infra/monitoring/docker-compose.monitoring.yml:193"
     subject: "postgres-exporter"
     what_stops: "Every PostgreSQL metric. DatabaseDown watches up{job=\"postgres\"}, which is 1 because the exporter's own HTTP endpoint answers, so the database reports healthy while nothing about it is being measured. TooManyDatabaseConnections matches zero series for the same reason."
     owner: maintainer
@@ -262,7 +262,7 @@ states:
     name: RedisDown watches the scrape target, not the exporter's upstream gauge
     kind: detection_defect
     discovered: "2026-07-27, while verifying 27-00 Task 1. Not in the F-9 planning census."
-    locator: "infra/monitoring/prometheus/alerts.yml:302"
+    locator: "infra/monitoring/prometheus/alerts.yml:328"
     subject: "RedisDown"
     what_stops: "All Redis observability, in exactly the way TS-13 describes for Postgres. RedisDown evaluated up{job=\"redis\"} == 0, which only proves the exporter's HTTP endpoint answers. redis_up — the exporter's own upstream-health gauge, which reports whether it can actually reach Redis — was live and referenced by NO rule. Sessions and cache could be entirely unreachable while RedisDown stayed inactive."
     owner: maintainer

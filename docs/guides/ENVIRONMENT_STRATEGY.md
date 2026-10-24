@@ -79,6 +79,7 @@ https://app-staging.olajay.co.uk     → Frontend
 https://api-staging.olajay.co.uk     → Core API
 https://edge-staging.olajay.co.uk    → Edge Gateway
 https://auth-staging.olajay.co.uk    → Keycloak
+https://mail-staging.olajay.co.uk    → Mailpit, the captured staging mail (testers only, basic auth; D-33)
 
 Kubernetes Cluster (staging namespace)
 - PostgreSQL: Cloud DB (staging instance)

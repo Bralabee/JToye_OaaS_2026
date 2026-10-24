@@ -1,0 +1,147 @@
+# Prometheus scrape configuration for jtoye-staging (Phase 29 plan 29-23, DPLY-03, D-16).
+#
+# The Kubernetes sibling of infra/monitoring/prometheus/prometheus.yml.tmpl. It is NOT a byte
+# copy of that file: only the TARGETS differ, and scripts/check-k8s-copy-parity.sh holds the rest
+# equal through the `jobs` pair in k8s/copy-parity.conf (the job_name set, each job's labels,
+# metrics_path, params and metric_relabel_configs). The alert corpus beside this file IS a byte
+# copy (the `alerts.yml` pair in the same list).
+#
+# THE EIGHT SHARED JOB NAMES ARE A CONTRACT (plus one k8s-only job, cert-manager, declared as such
+# in k8s/copy-parity.conf: compose has no cert-manager). scripts/check-alert-liveness.sh maps rules to jobs through
+# EXPORTER_GAUGES, DIRECT_JOBS and SERVICE_JOB_MAP and VOIDs on a job it does not know, so a
+# renamed or added job here stops that gate. Keep the names; change only where a job points.
+#
+# This whole file is ConfigMap DATA, so it lands in the render, where INV-4 refuses the loopback
+# host name and address anywhere in a non-local target. No line here may spell either, comments
+# included.
+#
+# No /-/reload (same as compose): the ConfigMap is generated with a content hash, so an edit here
+# renames it and rolls the Deployment.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'jtoye-stg-aks'
+    environment: 'staging'
+
+# Alertmanager arrives with plan 29-24 (Service alertmanager:9093). Until then Prometheus logs a
+# DNS failure for it on each evaluation and delivers nothing; the rules still evaluate.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+# Relative to this file's directory, as in compose: the projected volume puts alerts.yml next to
+# prometheus.yml in /etc/prometheus, the path check-alert-liveness.sh's L-0 reads by default.
+rule_files:
+  - 'alerts.yml'
+
+scrape_configs:
+  # Prometheus itself, through its own ClusterIP Service (the compose target is the loopback
+  # name, which INV-4 forbids in this render).
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+        labels:
+          service: 'prometheus'
+
+  # core-java: actuator on the management port 9091 (application-prod.yml), reached PER POD.
+  # The headless Service core-java-metrics (clusterIP None) publishes one A record per Ready pod,
+  # so each replica is its own target with its own `instance` and rate() is sound (DEF-29-8).
+  # The compose job pins `instance` to a constant because compose runs one container; through a
+  # ClusterIP that constant would stitch unrelated pods' counters into one series. dns_sd_configs
+  # takes no `labels:` block, so the compose labels are set by source-less relabel rules, which
+  # the jobs pair in k8s/copy-parity.conf reads as this job's labels.
+  - job_name: 'core-java'
+    metrics_path: '/actuator/prometheus'
+    dns_sd_configs:
+      - names: ['core-java-metrics.jtoye-staging.svc.cluster.local']
+        type: 'A'
+        port: 9091
+    relabel_configs:
+      - target_label: service
+        replacement: 'core-api'
+      - target_label: component
+        replacement: 'backend'
+
+  # edge-go: /metrics on the app port 8080 (EDGE_MANAGEMENT_PORT is unset in k8s), per pod
+  # through the headless edge-go-metrics Service, for the same reason as core-java.
+  - job_name: 'edge-go'
+    metrics_path: '/metrics'
+    dns_sd_configs:
+      - names: ['edge-go-metrics.jtoye-staging.svc.cluster.local']
+        type: 'A'
+        port: 8080
+    relabel_configs:
+      - target_label: service
+        replacement: 'edge-api'
+      - target_label: component
+        replacement: 'gateway'
+
+  # The managed PostgreSQL, through postgres-exporter (role jtoye_monitor, pg_monitor only).
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+          component: 'database'
+
+  # Keycloak 26 serves /metrics on its management port 9000 (KC_METRICS_ENABLED); the Service
+  # keycloak exposes 9000 for this job. Compose keeps the legacy interface on 8080 instead.
+  - job_name: 'keycloak'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['keycloak:9000']
+        labels:
+          service: 'keycloak'
+          component: 'auth'
+
+  # The in-cluster Redis, through redis-exporter.
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          component: 'cache'
+
+  # The RabbitMQ cluster operator's client Service is `rabbitmq` (rabbitmq_prometheus on 15692).
+  # One broker replica, so the ClusterIP is one pod. LEAVE THIS JOB ALONE: it supplies the
+  # node-level series and the `up` series RabbitMQDown reads.
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+        labels:
+          service: 'rabbitmq'
+          component: 'messaging'
+
+  # Per-queue series (plan 27-03, D-01): the aggregated endpoint above carries no `queue` label.
+  # params and metric_relabel_configs are the compose job's, verbatim, and the jobs pair holds
+  # them equal. The drop rule is load-bearing: the SSE fan-out queue name changes on every
+  # core-java restart, so keeping it would leak one label value per restart.
+  - job_name: 'rabbitmq-queues'
+    metrics_path: '/metrics/detailed'
+    params:
+      family: ['queue_coarse_metrics', 'queue_consumer_count']
+    static_configs:
+      - targets: ['rabbitmq:15692']
+        labels:
+          service: 'rabbitmq'
+          component: 'messaging'
+    metric_relabel_configs:
+      - source_labels: [queue]
+        regex: 'order[.]state-changes[.]sse[.].*'
+        action: drop
+
+  # cert-manager's own metrics (issue #972): certmanager_certificate_expiration_timestamp_seconds
+  # and friends, read by the CertificateExpiringSoon rule. K8S-ONLY: compose has no cert-manager,
+  # so this job is declared in k8s/copy-parity.conf (`k8s-only-job`) and absent from
+  # infra/monitoring/prometheus/prometheus.yml.tmpl. The Service lives in the cert-manager
+  # namespace (ClusterIP, port 9402, the controller's http-metrics); prometheus-allow admits that
+  # one egress (an escalated NetworkPolicy row, INV-7) and cert-manager's namespace has no policy
+  # of its own. No `service` label on purpose: the rule sets service: platform, and a series
+  # label of the same name would be silently overwritten.
+  - job_name: 'cert-manager'
+    static_configs:
+      - targets: ['cert-manager.cert-manager.svc.cluster.local:9402']
+        labels:
+          component: 'platform'

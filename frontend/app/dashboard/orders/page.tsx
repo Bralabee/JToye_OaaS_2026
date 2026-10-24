@@ -52,6 +52,8 @@ import { Badge } from "@/components/ui/badge"
 import { VoidedBadge } from "@/components/dashboard/orders/voided-badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
+import { AwaitingPaymentBadge } from "@/components/dashboard/orders/awaiting-payment-badge"
+import { isAwaitingPayment } from "@/lib/awaiting-payment"
 import {
   RejectOrdersDialog,
   type RejectableOrder,
@@ -70,7 +72,7 @@ import {
   RefreshCcw,
 } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
-import type { Order, OrderDetail, OrderStatus, Shop, Product } from "@/types/api"
+import type { Order, OrderDetail, OrderStatus, PaymentStatus, Shop, Product } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 import { formatUkDateTime } from "@/lib/uk-datetime"
 import { Trash2 } from "lucide-react"
@@ -209,9 +211,26 @@ interface StateTransition {
   color: string
 }
 
-const getAvailableTransitions = (
-  currentStatus: OrderStatus
-): StateTransition[] => {
+/** Transition endpoints the server refuses while an order awaits its payment (plan 30-05, #958). */
+const PAYMENT_GATED_ENDPOINTS = new Set(["submit", "confirm", "start-preparation"])
+
+/**
+ * The row / detail-panel actions for an order.
+ *
+ * 30-06 (issue #958, UI-SPEC § S2): it takes the ORDER, not only its status. For an order awaiting
+ * its card or link payment (`isAwaitingPayment`, the server rule) Submit, Confirm and Start Prep are not
+ * offered, because the server refuses all three with 409 awaiting-payment; the "Awaiting payment" badge
+ * takes their place. Cancel stays on every non-terminal status, DRAFT included, EXCEPT an unpaid card
+ * DRAFT: a one-tap cancel there leaves its PaymentIntent payable, and a customer still at checkout could
+ * then pay a cancelled order. Such a DRAFT is cleared by the D-02 tool, which cancels the intent first
+ * and refuses a paid one (PR #1030 review round 1, findings 1 and 5). Display only: the server stays
+ * authoritative (T-30-23).
+ */
+const getAvailableTransitions = (order: {
+  status: OrderStatus
+  paymentStatus?: PaymentStatus | null
+  paymentReference?: string | null
+}): StateTransition[] => {
   const transitions: Record<OrderStatus, StateTransition[]> = {
     DRAFT: [
       {
@@ -222,6 +241,13 @@ const getAvailableTransitions = (
         // A11Y-10: white text needs bg-yellow-700 (4.92:1) to clear WCAG AA;
         // -600 (2.94:1) fails. Hover deepens to -800 to keep a visible delta.
         color: "bg-yellow-700 hover:bg-yellow-800",
+      },
+      {
+        action: "Cancel",
+        endpoint: "cancel",
+        nextStatus: "CANCELLED",
+        icon: Ban,
+        color: "bg-red-600 hover:bg-red-700",
       },
     ],
     PENDING: [
@@ -282,7 +308,13 @@ const getAvailableTransitions = (
     // action on the list.
     REFUNDED: [],
   }
-  return transitions[currentStatus] || []
+  const available = transitions[order.status] || []
+  if (!isAwaitingPayment(order)) return available
+  return available.filter(
+    (t) =>
+      !PAYMENT_GATED_ENDPOINTS.has(t.endpoint) &&
+      !(order.status === "DRAFT" && t.endpoint === "cancel")
+  )
 }
 
 const PAGE_SIZE = 20
@@ -793,7 +825,7 @@ function OrdersPageInner() {
                   {filteredOrders.map((order) => {
                     const config = statusConfig[order.status]
                     const StatusIcon = config.icon
-                    const transitions = getAvailableTransitions(order.status)
+                    const transitions = getAvailableTransitions(order)
                     const isProcessing = processingOrderId === order.id
                     const orderLabel = order.orderNumber ?? `${order.id.substring(0, 8)}...`
 
@@ -850,6 +882,13 @@ function OrdersPageInner() {
                             <div className="flex flex-wrap items-center gap-2 font-medium">
                               <span>{order.customerName || "N/A"}</span>
                               <UnverifiedContactBadge contactVerified={order.contactVerified} />
+                              {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link orders, by the
+                                  server's own rule; Submit/Confirm are not offered for them. */}
+                              <AwaitingPaymentBadge
+                                orderStatus={order.status}
+                                paymentStatus={order.paymentStatus}
+                                paymentReference={order.paymentReference}
+                              />
                             </div>
                             {order.customerEmail && (
                               <div className="text-xs text-slate-500">
@@ -1339,9 +1378,9 @@ function OrdersPageInner() {
               </div>
 
               {/* Actions */}
-              {getAvailableTransitions(selectedOrderDetail.status).length > 0 && (
+              {getAvailableTransitions(selectedOrderDetail).length > 0 && (
                 <div className="flex justify-end gap-2 border-t pt-4">
-                  {getAvailableTransitions(selectedOrderDetail.status).map((transition) => {
+                  {getAvailableTransitions(selectedOrderDetail).map((transition) => {
                     const TransitionIcon = transition.icon
                     return (
                       <Button

@@ -434,6 +434,26 @@ If `isSuperuser: true` or `status: "INSECURE"`, multi-tenant isolation is BROKEN
 
 **Solution:** Use correct endpoint for current state (e.g., `/submit` for DRAFT orders)
 
+### Awaiting Payment
+
+`/submit`, `/confirm` and `/start-preparation` refuse an order that is still waiting for its card or
+payment-link money (payment status `PENDING` or `FAILED`, or a payment reference that is not yet
+`CAPTURED`/`AUTHORIZED`). The order is left exactly as it was: no status change, no stock movement, no
+event and so no customer email. Orders created without a payment (payment status `NONE`) are not affected.
+
+```json
+{
+  "type": "https://jtoye.uk/errors/awaiting-payment",
+  "title": "Awaiting payment",
+  "status": 409,
+  "detail": "Order ORD-… is awaiting payment. It can't be submitted, accepted or prepared until the customer's payment completes.",
+  "instance": "/api/v1/orders/uuid/submit"
+}
+```
+
+**Solution:** Wait for the payment to complete (the Stripe webhook moves a paid card DRAFT to PENDING), or
+cancel the order. Key on `type`; `detail` is written for staff and may be shown verbatim.
+
 ---
 
 ## Rate Limiting

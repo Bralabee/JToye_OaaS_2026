@@ -11,7 +11,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -23,6 +22,7 @@ import uk.jtoye.core.onboarding.client.CompaniesHouseClient;
 import uk.jtoye.core.onboarding.client.FhrsClient;
 import uk.jtoye.core.onboarding.dto.CreateOnboardingRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.TenantJwts;
 
 import java.util.List;
 import java.util.UUID;
@@ -129,6 +129,7 @@ class OnboardingSubmitIntegrationTest {
 
     private JsonNode getMe() throws Exception {
         String body = mockMvc.perform(get("/api/v1/onboarding/me")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -136,10 +137,10 @@ class OnboardingSubmitIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void createThenSubmitReadsBackVerifyingWithSubmittedAt() throws Exception {
         // create -> DRAFT (201)
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody()))
@@ -150,6 +151,7 @@ class OnboardingSubmitIntegrationTest {
 
         // submit -> VERIFYING (200)
         mockMvc.perform(post("/api/v1/onboarding/submit")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("VERIFYING"))
@@ -165,19 +167,21 @@ class OnboardingSubmitIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void resubmitFromVerifyingReturns400() throws Exception {
         mockMvc.perform(post("/api/v1/onboarding")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody()))
                 .andExpect(status().isCreated());
         mockMvc.perform(post("/api/v1/onboarding/submit")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isOk());
 
         // Second submit from VERIFYING is an illegal transition -> 400.
         mockMvc.perform(post("/api/v1/onboarding/submit")
+                        .with(TenantJwts.adminJwt(tenantId))
                         .header("X-Tenant-Id", tenantId.toString()))
                 .andExpect(status().isBadRequest());
     }

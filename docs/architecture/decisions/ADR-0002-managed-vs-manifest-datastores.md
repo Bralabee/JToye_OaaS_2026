@@ -1,6 +1,6 @@
 # ADR-0002: Managed services vs in-cluster manifests for stateful infrastructure
 
-**Status:** Proposed (2026-07-12) — needs owner sign-off before #101 implementation starts
+**Status:** Accepted (2026-08-10) — signed by the owner as proposed; recorded on main 2026-10-18 (see the last section)
 **Refs:** #101 (no PITR / no DB HA), #98 (observability), #100 (sealed secrets), SYSTEM_DESIGN_V2 §3.2/§7.1
 
 ## Context
@@ -116,3 +116,54 @@ Re-checked ahead of the `2026-10-26` `rabbitmq-k8s` `manual_review` expiry:
 - `rabbitmq-k8s.manual_review` in [`infra/dependency-horizons.yaml`](../../../infra/dependency-horizons.yaml)
   is refreshed to `last_checked: "2026-10-16"`, `expires: "2027-01-16"` (90-day cadence). Status of
   this ADR remains `Proposed` pending owner sign-off.
+
+## 2026-10-18 — Accepted (owner sign-off of 2026-08-10, recorded on main)
+
+The owner signed this ADR **as proposed** on **2026-08-10**, during the Phase 29 discussion: the
+hybrid of option 3. PostgreSQL goes to Azure Database for PostgreSQL Flexible Server, Redis to managed
+Azure Cache, and RabbitMQ in-cluster through the RabbitMQ cluster operator. That sign-off is
+decision D-09 in the Phase 29 context, which exists only on the `phase-29-research` branch
+(commit `9555dcd6`, `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-CONTEXT.md`, D-09). The
+2026-10-17 salvage audit ruled that branch is re-planned on main, not merged. So until now the
+acceptance existed only off main, and every section above still read Proposed. This entry records
+it on main. The Status line is changed to match. Every section above is left as written, per this
+file's convention that dated records are appended, not edited.
+
+What this entry does **not** carry over from the branch, deliberately:
+
+- **Concrete pins.** The branch named an operator version, a broker image, a cert-manager version
+  and a PostgreSQL major version for the managed server. They were measured in August against an
+  estate that is being deleted, and the dev stack has since moved to PostgreSQL 18 and RabbitMQ 4.3.6.
+  Phase 29, re-planned on main, re-derives and records them.
+- **The PostgreSQL version floor stays a Phase 29 input.** It is not decided here. The branch found
+  that the `jtoye_backup` role (`BYPASSRLS`, `infra/backups/create-backup-role.sql`) cannot be
+  created by `azure_pg_admin` on PostgreSQL 15 or earlier. Without that role the backup cannot read
+  tenant data. A plain `pg_dump` (default `row_security=off`) run by a role that is neither the
+  owner nor BYPASSRLS errors on the first table with RLS enabled. With `--enable-row-security`
+  it produces a PARTIAL dump that looks plausible: with no tenant set, only the rows the policies
+  admit with no tenant (published storefront data) and the RLS-exempt tables are captured. Orders,
+  customers and the ledger are missing. So the managed server must be at least 16. Phase 29 verifies this
+  against current Microsoft documentation before provisioning.
+- **The managed Redis product and tier are Phase 29 inputs too.** The original decision says only
+  "Azure Cache". Phase 29 checks Microsoft's retirement schedule for Azure Cache for Redis, and
+  the alternative Azure Managed Redis, before choosing a product and tier.
+
+The `rabbitmq-k8s` horizon row (`infra/dependency-horizons.yaml`) stays as it is. Accepting the
+operator route decides *how* the broker's version becomes declared in-repo; the row closes when
+Phase 29 actually ships that manifest, not when this entry lands.
+
+## Amendment 2026-10-20 — D-24: Redis in-cluster for staging
+
+Phase 29 decided D-24 by measurement: **staging runs Redis in-cluster** (`k8s/components/redis`), not on a managed
+Redis service. This amends, for staging only, the Accepted section's "Redis to managed".
+
+- **Measured estate (plan 29-19, `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-COST-CHECKPOINT.md`):**
+  £156.00/month on 2026-10-20 with four B2s nodes, from the subscription's own Cost Management data. The load
+  balancer is still on its free meter, and research priced it at +£13.80/month once it bills (£169.80).
+- **Managed Redis priced by research:** Azure Managed Redis B0 bills two node-hours per hour with HA, £19.86/month
+  (measured in the August usage data). On today's measured estate it would make £175.86; once the load balancer
+  bills, £189.66.
+- **Ceiling:** the owner moved the D-03 ceiling to £178/month on 2026-10-20. Managed Redis would sit £2.14 under it
+  today, and £11.66 over it as soon as the load balancer meter bills, so in-cluster Redis stands.
+- **Production is not decided here.** Production's Redis hosting is a Phase 32 decision, made against production's
+  own budget and availability needs.

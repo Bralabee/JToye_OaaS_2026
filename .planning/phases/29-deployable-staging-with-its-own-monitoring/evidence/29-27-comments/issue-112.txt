@@ -1,0 +1,9 @@
+Phase 29 disposition for #112 (DPLY-03): minimal scope delivered; the remainder is deferred after the first tenant is live (decision D-18).
+
+Delivered:
+- A real paging path. Alertmanager on staging sends through authenticated STARTTLS SMTP to the owner's inbox, with a copy in the in-cluster Mailpit. scripts/check-alert-liveness.sh posted a synthetic alert and the owner confirmed it arrived in the inbox, not spam, carrying the matching run id. The gate was also shown failing with the real mail path broken before it was shown passing again. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-25-dply03.txt, lines 110 to 131 and 176 to 284.
+- One honest runbook page for the staging environment: how to reach the cluster, read Grafana, restart a workload and run the restore drill (scripts/staging-pitr-drill.sh), at docs/runbooks/staging-operations.md. This minimal close depends on that page being on the merged branch.
+
+Deferred, with the reason: SLOs and the full runbook set. docs/runbooks/alerts.md still carries 5 first-response entries that are TODO stubs (measured in .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-measurements.txt, lines 72 to 79), and SLOs are not defined. First-response lessons are written after a real incident teaches them; filling the stubs earlier would be invention. D-18 scopes this issue to the paging path plus one honest page.
+
+Unmet and carried by #982: criterion 1 (the 5 TODO runbook stubs in docs/runbooks/alerts.md) and the SLO half of criterion 2.

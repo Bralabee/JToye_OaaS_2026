@@ -57,6 +57,31 @@ public class ProductLabelService {
     static final DateTimeFormatter LABEL_DATE =
             DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.UK);
 
+    /**
+     * Supported PPDS label page layouts (GTM-BLK-06).
+     * <ul>
+     *   <li>{@link #STANDARD_100X60MM}: 100mm x 60mm (283 x 170 pt) landscape sticker/sheet label.</li>
+     *   <li>{@link #THERMAL_62MM}: 62mm x ~81mm (176 x 230 pt) portrait continuous roll label for
+     *       Brother QL-800/810W (DK-22205) and 62mm thermal label printers.</li>
+     * </ul>
+     */
+    public enum LabelFormat {
+        STANDARD_100X60MM,
+        THERMAL_62MM;
+
+        public static LabelFormat fromQueryParam(String raw) {
+            if (raw == null || raw.isBlank()) {
+                return STANDARD_100X60MM;
+            }
+            return switch (raw.trim().toUpperCase(Locale.ROOT)) {
+                case "STANDARD_100X60MM", "STANDARD", "100X60", "100X60MM", "A4" -> STANDARD_100X60MM;
+                case "THERMAL_62MM", "THERMAL-62MM", "62MM", "QL-62MM" -> THERMAL_62MM;
+                default -> throw new IllegalArgumentException(
+                        "Unsupported label format '" + raw + "'. Use STANDARD_100X60MM or THERMAL_62MM.");
+            };
+        }
+    }
+
     private final ProductRepository productRepository;
     private final ShopRepository shopRepository;
     private final ShopAccessService shopAccessService;
@@ -75,16 +100,25 @@ public class ProductLabelService {
      * {@code generateLabel(productId, null)}.
      */
     public byte[] generateLabel(UUID productId) {
-        return generateLabel(productId, null);
+        return generateLabel(productId, null, LabelFormat.STANDARD_100X60MM);
     }
 
     /**
-     * Generate the PPDS label PDF for a product.
+     * Generate the standard 100x60mm PPDS label PDF for a product.
+     */
+    public byte[] generateLabel(UUID productId, LocalDate productionDate) {
+        return generateLabel(productId, productionDate, LabelFormat.STANDARD_100X60MM);
+    }
+
+    /**
+     * Generate the PPDS label PDF for a product in the requested page format (GTM-BLK-06).
      *
      * @param productionDate the date the food was produced (D-17), or {@code null} for today in
      *                       Europe/London. "Today" is read from the injected clock once per call,
      *                       so concurrent downloads either side of UK midnight each get their own
      *                       date; no date state is shared between calls.
+     * @param format         the label page size ({@link LabelFormat#STANDARD_100X60MM} or
+     *                       {@link LabelFormat#THERMAL_62MM}; {@code null} defaults to standard)
      * @throws ResourceNotFoundException      if the product does not exist (tenant-scoped, 404)
      * @throws IncompleteLabelDataException   if the product is missing required PPDS
      *                                        data — business identity (null/blank shop_id,
@@ -95,7 +129,7 @@ public class ProductLabelService {
      *                                        or the durability date it gives has already
      *                                        passed (422, field {@code productionDate})
      */
-    public byte[] generateLabel(UUID productId, LocalDate productionDate) {
+    public byte[] generateLabel(UUID productId, LocalDate productionDate, LabelFormat format) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
         // VSA-02 (D-02): the label endpoint (/products/{id}/label) is a shop-scoped
@@ -134,7 +168,7 @@ public class ProductLabelService {
         validateProductionDate(product, produced, today);
 
         LabelRenderModel model = buildRenderModel(product, shop, produced);
-        return renderPdf(model);
+        return renderPdf(model, format != null ? format : LabelFormat.STANDARD_100X60MM);
     }
 
     /**
@@ -161,28 +195,62 @@ public class ProductLabelService {
     }
 
     /**
-     * Collect and report EVERY missing required PPDS field at once, so the vendor
+     * Collect and report EVERY missing required PPDS item at once, so the vendor
      * sees the full list rather than fixing them one 422 at a time.
+     *
+     * <p>Issue #960 (SW-ADE-03): the detail is plain words for the vendor, with no column name and
+     * no UUID; the same facts go out as the {@code missingFields} problem member (field names the
+     * product form uses), so a client can point at the right input without parsing prose.
      */
     private void validatePpdsData(Product product, Shop shop) {
         List<String> missing = new ArrayList<>();
-        if (shop == null || shop.getName() == null || shop.getName().isBlank()) {
-            missing.add("business identity (shop name)");
-        }
-        if (shop == null || shop.getAddress() == null || shop.getAddress().isBlank()) {
-            missing.add("business address");
+        if (shop == null) {
+            missing.add(IncompleteLabelDataException.FIELD_SHOP);
+        } else {
+            if (shop.getName() == null || shop.getName().isBlank()) {
+                missing.add(IncompleteLabelDataException.FIELD_SHOP_NAME);
+            }
+            if (shop.getAddress() == null || shop.getAddress().isBlank()) {
+                missing.add(IncompleteLabelDataException.FIELD_SHOP_ADDRESS);
+            }
         }
         if (product.getShelfLifeDays() == null) {
-            missing.add("shelf life (shelf_life_days)");
+            missing.add(IncompleteLabelDataException.FIELD_SHELF_LIFE);
         }
         if (product.getDurabilityType() == null || product.getDurabilityType().isBlank()) {
-            missing.add("durability type (durability_type)");
+            missing.add(IncompleteLabelDataException.FIELD_DURABILITY_TYPE);
         }
         if (!missing.isEmpty()) {
-            throw new IncompleteLabelDataException(
-                    "Cannot generate PPDS label for product " + product.getId()
-                            + ": missing " + String.join(", ", missing));
+            throw new IncompleteLabelDataException(plainMissingMessage(missing), product.getId(), missing);
         }
+    }
+
+    /** The vendor-facing sentence for a set of missing field names (see {@link #validatePpdsData}). */
+    static String plainMissingMessage(List<String> missing) {
+        boolean shelf = missing.contains(IncompleteLabelDataException.FIELD_SHELF_LIFE);
+        boolean durability = missing.contains(IncompleteLabelDataException.FIELD_DURABILITY_TYPE);
+        List<String> sentences = new ArrayList<>();
+        if (shelf && durability) {
+            sentences.add("Add a shelf life (in days) and choose use-by or best-before on the product");
+        } else if (shelf) {
+            sentences.add("Add a shelf life (in days) on the product");
+        } else if (durability) {
+            sentences.add("Choose use-by or best-before on the product");
+        }
+        if (missing.contains(IncompleteLabelDataException.FIELD_SHOP)) {
+            sentences.add("Choose a shop for the product, so the label can carry the shop's name and address");
+        } else {
+            boolean name = missing.contains(IncompleteLabelDataException.FIELD_SHOP_NAME);
+            boolean address = missing.contains(IncompleteLabelDataException.FIELD_SHOP_ADDRESS);
+            if (name && address) {
+                sentences.add("Add the shop's name and business address in the shop's settings");
+            } else if (name) {
+                sentences.add("Add the shop's name in the shop's settings");
+            } else if (address) {
+                sentences.add("Add the shop's business address in the shop's settings");
+            }
+        }
+        return "This allergen label cannot be printed yet. " + String.join(". ", sentences) + ".";
     }
 
     /**
@@ -261,19 +329,23 @@ public class ProductLabelService {
      * Chunks — emphasised runs in bold — so allergens are emboldened INLINE within
      * the list. No standalone allergen-summary block, no fallback text.
      */
-    private byte[] renderPdf(LabelRenderModel model) {
+    private byte[] renderPdf(LabelRenderModel model, LabelFormat format) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        // Label size: 100mm x 60mm (283 x 170 pt).
-        Document doc = new Document(new Rectangle(283, 170), 10, 10, 10, 10);
+        boolean thermal = format == LabelFormat.THERMAL_62MM;
+        // Standard: 100mm x 60mm (283 x 170 pt).
+        // Thermal 62mm continuous roll (Brother QL-800/810W DK-22205): 62mm x ~81mm (176 x 230 pt).
+        Rectangle pageRect = thermal ? new Rectangle(176, 230) : new Rectangle(283, 170);
+        float margin = thermal ? 8f : 10f;
+        Document doc = new Document(pageRect, margin, margin, margin, margin);
         PdfWriter.getInstance(doc, out);
         doc.open();
 
-        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14);
-        Font skuFont = FontFactory.getFont(FontFactory.HELVETICA, 8, Font.ITALIC);
-        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9);
-        Font bodyFont = FontFactory.getFont(FontFactory.HELVETICA, 8);
-        Font boldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8);
-        Font priceFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12);
+        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, thermal ? 11 : 14);
+        Font skuFont = FontFactory.getFont(FontFactory.HELVETICA, 7.5f, Font.ITALIC);
+        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, thermal ? 8 : 9);
+        Font bodyFont = FontFactory.getFont(FontFactory.HELVETICA, thermal ? 7.5f : 8);
+        Font boldFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, thermal ? 7.5f : 8);
+        Font priceFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, thermal ? 10 : 12);
 
         // Product name (FSA: name of the food).
         Paragraph title = new Paragraph(model.productName(), titleFont);
@@ -283,7 +355,7 @@ public class ProductLabelService {
         // SKU.
         Paragraph sku = new Paragraph(model.sku(), skuFont);
         sku.setAlignment(Element.ALIGN_CENTER);
-        sku.setSpacingAfter(5);
+        sku.setSpacingAfter(thermal ? 3 : 5);
         doc.add(sku);
 
         // Price (optional).
@@ -291,7 +363,7 @@ public class ProductLabelService {
             Paragraph price = new Paragraph(
                     String.format("£%.2f", model.pricePennies() / 100.0), priceFont);
             price.setAlignment(Element.ALIGN_CENTER);
-            price.setSpacingAfter(5);
+            price.setSpacingAfter(thermal ? 3 : 5);
             doc.add(price);
         }
 
@@ -304,29 +376,29 @@ public class ProductLabelService {
         for (IngredientRun run : model.ingredientRuns()) {
             ingredients.add(new Chunk(run.text(), run.emphasised() ? boldFont : bodyFont));
         }
-        ingredients.setSpacingAfter(model.mayContainLine() == null ? 5 : 1);
+        ingredients.setSpacingAfter(model.mayContainLine() == null ? (thermal ? 3 : 5) : 1);
         doc.add(ingredients);
 
         // #861 (D-16): cross-contact allergens, their own line beneath the ingredients, only when
         // at least one is not already declared. Never part of the emphasised ingredients.
         if (model.mayContainLine() != null) {
             Paragraph mayContain = new Paragraph(model.mayContainLine(), boldFont);
-            mayContain.setSpacingAfter(3);
+            mayContain.setSpacingAfter(thermal ? 2 : 3);
             doc.add(mayContain);
         }
 
         // Production date and the durability date counted from it (FSA: use-by / best-before;
         // D-17). One line at a 12pt leading, so the extra date does not push the business
         // identity off the 100x60mm label (asserted one page by ProductLabelServiceTest).
-        Paragraph dates = new Paragraph(12);
+        Paragraph dates = new Paragraph(thermal ? 10 : 12);
         dates.add(new Chunk(model.productionLine(), bodyFont));
-        dates.add(new Chunk("    ", bodyFont));
+        dates.add(new Chunk(thermal ? "  " : "    ", bodyFont));
         dates.add(new Chunk(model.durabilityLine(), sectionFont));
         doc.add(dates);
 
         // Food business identity (FSA: business name + address).
         Paragraph business = new Paragraph(model.businessName(), bodyFont);
-        business.setSpacingBefore(3);
+        business.setSpacingBefore(thermal ? 2 : 3);
         doc.add(business);
         doc.add(new Paragraph(model.businessAddress(), bodyFont));
 

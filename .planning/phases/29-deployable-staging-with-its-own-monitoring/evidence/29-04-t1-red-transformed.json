@@ -1,0 +1,10 @@
+{
+  "command": "STAGING_REALM_SELFTEST_FORMAT=tap bash scripts/staging-realm-import.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..5\nok 1 - raw-template\nok 2 - raw-customer-template\nnot ok 3 - transformed\n  ---\n  message: '(vendor assert) rc=1: DEFECT: realm is jtoye-dev, expected jtoye-staging DEFECT: 4 non-service users: admin-user, tenant-a-user, tenant-b-user, admin-user-b DEFECT: webOrigins \"*\" on client(s): core-api, edge-api DEFECT: redirect URI(s) outside https://app-staging.olajay.co.uk/: core-api http://localhost:8080/*, core-api http://localhost:3000/*, core-api http://localhost:3100/*, core-api http://localhost:9090/*, core-api http://app.jtoye.local/*, edge-api http://localhost:8090/* DEFECT: 5 string(s) contain \"localhost\" (first at clients.4.redirectUris.0) DEFECT: 2 string(s) contain \"jtoye.local\" (first at clients.4.redirectUris.4) '\n  ...\nok 4 - survived-placeholder\nok 5 - builtin-count",
+  "targetTest": "transformed",
+  "targetFile": "scripts/staging-realm-import.sh",
+  "expected": "ok - transformed: the vendor and customer staging renders each pass --assert with rc 0",
+  "actual": "not ok - transformed",
+  "semanticAssessment": "Target arm executed against the identity transform (infra/keycloak/staging-realm.jq is the RED placeholder `.`). Both renders succeeded (rc 0), so the harness, the render path and the substitution are live; the vendor --assert then refused the render on exactly the planned assertions: realm jtoye-dev, 4 non-service users, webOrigins * on core-api and edge-api, localhost/app.jtoye.local redirect URIs, mailhog SMTP without STARTTLS. Not a syntax, fixture or load fault: raw-template, raw-customer-template, survived-placeholder and builtin-count PASS in the same run."
+}

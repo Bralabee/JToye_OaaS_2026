@@ -160,10 +160,14 @@ beforeEach(() => {
   })
 })
 
+const ORIGINAL_STRIPE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+
 afterEach(() => {
   localStorage.clear()
   sessionStorage.clear()
   ;(saveLocalOrder as jest.Mock).mockClear()
+  if (ORIGINAL_STRIPE_KEY === undefined) delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  else process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = ORIGINAL_STRIPE_KEY
 })
 
 // ---------------------------------------------------------------------------
@@ -397,6 +401,9 @@ describe("How you'll pay disclosure (QA-council FIX-6)", () => {
   })
 
   it("shows the card notice when the shop accepts card payments", async () => {
+    // #957 (30-02): the card line promises a card step only when this build can show one (a key is
+    // configured); the keyless line is asserted in card-unavailable.test.tsx. Harness only.
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = "pk_test_how_youll_pay"
     seedCart(1000)
     mockShop({ ...SHOP, acceptsCardPayments: true })
     renderCheckout()

@@ -59,6 +59,9 @@ line at print time:
 - `shelfLifeDays` — an integer number of days (e.g. `3`).
 - `durabilityType` — `USE_BY` or `BEST_BEFORE`.
 
+On an edit, omitting both keeps what is stored; to remove them send `clearDurability: true` and neither value
+(sending a value beside it is a 400).
+
 The label prints `Use by: <generation date + shelfLifeDays>` (or
 `Best before: …`), formatted like `8 Jul 2026`.
 
@@ -81,6 +84,17 @@ is absent:
 
 This is intentional: an incomplete PPDS label is a food-safety and regulatory
 liability, so generation fails loudly until the data is supplied.
+
+The 422 is an RFC 7807 `errors/incomplete-label-data` problem written for the
+vendor who reads it. `detail` says in plain words what to add and where (for
+example "This allergen label cannot be printed yet. Add a shelf life (in days)
+and choose use-by or best-before on the product."), with no database column
+name and no product id. The same facts are machine-readable in the
+`missingFields` member, using the request field names `shelfLifeDays`,
+`durabilityType`, `shopId` (no shop, or one that does not resolve),
+`shopName` and `shopAddress`; `productId` is its own member. The dashboard's
+product form has both durability inputs, so the fix is on the screen the vendor
+is already looking at.
 
 ## Frontend "mark allergens" editor — fast-follow
 

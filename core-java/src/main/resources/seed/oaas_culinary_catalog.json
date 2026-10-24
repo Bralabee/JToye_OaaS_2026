@@ -1,0 +1,2108 @@
+{
+  "schemaVersion": "OaaS-V86-ADR0007",
+  "generatedAt": "2026-10-17T11:52:26.623Z",
+  "purpose": "GTM-BLK-02 1-click Pan-African dish & Natasha's Law allergen template seed for JToye_OaaS_2026",
+  "allergenBitTable": [
+    {
+      "marketIntelKey": "gluten",
+      "bit": 0,
+      "oaasName": "Gluten",
+      "emphasisToken": "gluten"
+    },
+    {
+      "marketIntelKey": "crustaceans",
+      "bit": 1,
+      "oaasName": "Crustaceans",
+      "emphasisToken": "crustaceans"
+    },
+    {
+      "marketIntelKey": "eggs",
+      "bit": 2,
+      "oaasName": "Eggs",
+      "emphasisToken": "eggs"
+    },
+    {
+      "marketIntelKey": "fish",
+      "bit": 3,
+      "oaasName": "Fish",
+      "emphasisToken": "fish"
+    },
+    {
+      "marketIntelKey": "peanuts",
+      "bit": 4,
+      "oaasName": "Peanuts",
+      "emphasisToken": "peanuts"
+    },
+    {
+      "marketIntelKey": "soya",
+      "bit": 5,
+      "oaasName": "Soybeans",
+      "emphasisToken": "soya"
+    },
+    {
+      "marketIntelKey": "milk",
+      "bit": 6,
+      "oaasName": "Milk",
+      "emphasisToken": "milk"
+    },
+    {
+      "marketIntelKey": "tree_nuts",
+      "bit": 7,
+      "oaasName": "Nuts",
+      "emphasisToken": "nuts"
+    },
+    {
+      "marketIntelKey": "celery",
+      "bit": 8,
+      "oaasName": "Celery",
+      "emphasisToken": "celery"
+    },
+    {
+      "marketIntelKey": "mustard",
+      "bit": 9,
+      "oaasName": "Mustard",
+      "emphasisToken": "mustard"
+    },
+    {
+      "marketIntelKey": "sesame",
+      "bit": 10,
+      "oaasName": "Sesame",
+      "emphasisToken": "sesame"
+    },
+    {
+      "marketIntelKey": "sulphites",
+      "bit": 11,
+      "oaasName": "Sulphites",
+      "emphasisToken": "sulphites"
+    },
+    {
+      "marketIntelKey": "lupin",
+      "bit": 12,
+      "oaasName": "Lupin",
+      "emphasisToken": "lupin"
+    },
+    {
+      "marketIntelKey": "molluscs",
+      "bit": 13,
+      "oaasName": "Molluscs",
+      "emphasisToken": "molluscs"
+    }
+  ],
+  "panAfricanSynonymsForOaaS": [
+    {
+      "term": "stockfish",
+      "bit": 3,
+      "oaasName": "Fish",
+      "sourceIngredient": "stockfish"
+    },
+    {
+      "term": "okporoko",
+      "bit": 3,
+      "oaasName": "Fish",
+      "sourceIngredient": "stockfish"
+    },
+    {
+      "term": "titus",
+      "bit": 3,
+      "oaasName": "Fish",
+      "sourceIngredient": "mackerel"
+    },
+    {
+      "term": "saltfish",
+      "bit": 3,
+      "oaasName": "Fish",
+      "sourceIngredient": "saltfish"
+    },
+    {
+      "term": "bacalao",
+      "bit": 3,
+      "oaasName": "Fish",
+      "sourceIngredient": "saltfish"
+    },
+    {
+      "term": "yaji",
+      "bit": 4,
+      "oaasName": "Peanuts",
+      "sourceIngredient": "yaji"
+    },
+    {
+      "term": "kibbeh",
+      "bit": 6,
+      "oaasName": "Milk",
+      "sourceIngredient": "niter-kibbeh"
+    },
+    {
+      "term": "ayib",
+      "bit": 6,
+      "oaasName": "Milk",
+      "sourceIngredient": "ayib"
+    }
+  ],
+  "counts": {
+    "dishes": 52,
+    "variants": 26,
+    "ingredients": 94
+  },
+  "dishes": [
+    {
+      "slug": "curry-channa-and-aloo",
+      "name": "Curry Channa & Aloo",
+      "cuisineKey": "caribbean",
+      "cuisineLabel": "Caribbean (general)",
+      "region": "CARIBBEAN",
+      "course": "main",
+      "description": "A comforting, naturally vegan Trini curry of chickpeas and potato simmered in fragrant, geera-scented gravy.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 512,
+      "mayContainNames": [
+        "Mustard"
+      ],
+      "ingredientsText": "Chickpeas (channa), Potato, Onions, Garlic, Curry powder, Cumin & coriander (ground), Scotch bonnet peppers, Vegetable oil, Salt",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "Curry Chickpeas and Potato",
+        "Channa Aloo"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "doubles",
+      "name": "Doubles",
+      "cuisineKey": "caribbean",
+      "cuisineLabel": "Caribbean (general)",
+      "region": "CARIBBEAN",
+      "course": "street-food",
+      "description": "Trinidad's beloved breakfast street snack: two soft, turmeric-yellow bara flatbreads folded around lightly spiced curried chickpeas.",
+      "servings": 4,
+      "shelfLifeDays": 2,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 1,
+      "allergenNames": [
+        "Gluten"
+      ],
+      "mayContainMask": 1552,
+      "mayContainNames": [
+        "Peanuts",
+        "Mustard",
+        "Sesame"
+      ],
+      "ingredientsText": "Wheat flour (**gluten**), Turmeric, Yeast, Salt, Water, Vegetable oil, Chickpeas (channa), Onions, Garlic, Curry powder, Cumin & coriander (ground), Scotch bonnet peppers",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "Trini Doubles"
+      ],
+      "variants": [
+        {
+          "name": "Extra-pepper Doubles",
+          "note": "Load with slathered scotch bonnet pepper sauce for the classic 'slight, more, plenty' order.",
+          "changes": [
+            "add Scotch bonnet peppers"
+          ],
+          "allergenMask": 1,
+          "allergenNames": [
+            "Gluten"
+          ],
+          "mayContainMask": 1552,
+          "mayContainNames": [
+            "Peanuts",
+            "Mustard",
+            "Sesame"
+          ],
+          "dietaryTags": [
+            "vegan"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "guyanese-cook-up-rice",
+      "name": "Guyanese Cook-up Rice",
+      "cuisineKey": "caribbean",
+      "cuisineLabel": "Caribbean (general)",
+      "region": "CARIBBEAN",
+      "course": "main",
+      "description": "Guyana's Saturday one-pot: rice and peas cooked down in coconut milk with meat, herbs and a whole hot pepper.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Long-grain rice, Peeled black-eyed beans (blended), Coconut milk, Chicken, Thyme, Scallion (spring onion), Onions, Garlic, Scotch bonnet peppers, Vegetable oil, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Cook-up Rice",
+        "Cookup"
+      ],
+      "variants": [
+        {
+          "name": "Saltfish Cook-up",
+          "note": "Use flaked, soaked saltfish in place of chicken for a Lenten or coastal version.",
+          "changes": [
+            "swap Chicken → Salted cod (saltfish)"
+          ],
+          "allergenMask": 8,
+          "allergenNames": [
+            "Fish"
+          ],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "pescatarian",
+            "gluten-free",
+            "dairy-free"
+          ]
+        },
+        {
+          "name": "Kidney-bean Cook-up",
+          "note": "Swap black-eyed peas for red kidney beans, a common household variation.",
+          "changes": [
+            "swap Peeled black-eyed beans (blended) → Red kidney beans (or gungo / pigeon peas)"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "guyanese-pepperpot",
+      "name": "Guyanese Pepperpot",
+      "cuisineKey": "caribbean",
+      "cuisineLabel": "Caribbean (general)",
+      "region": "CARIBBEAN",
+      "course": "stew",
+      "description": "Guyana's national dish: a dark, glossy, slow-stewed meat pot preserved and flavoured by cassava-derived cassareep with warm spice and heat.",
+      "servings": 6,
+      "shelfLifeDays": 4,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Beef, Cassareep (cassava molasses), Cinnamon, Allspice (pimento) berries, Scotch bonnet peppers, Onions, Thyme, Lemon, Sugar, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Pepperpot",
+        "Amerindian Pepperpot"
+      ],
+      "variants": [
+        {
+          "name": "Pork & Beef Pepperpot",
+          "note": "Traditionally a mix of meats — add pork to the beef for the classic festive pot.",
+          "changes": [
+            "swap Beef → Pork"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "contains-pork",
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "pelau",
+      "name": "Pelau",
+      "cuisineKey": "caribbean",
+      "cuisineLabel": "Caribbean (general)",
+      "region": "CARIBBEAN",
+      "course": "main",
+      "description": "A one-pot Trinidadian classic of rice and peas caramelised in burnt sugar 'browning' with chicken and creamy coconut.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Long-grain rice, Chicken, Red kidney beans (or gungo / pigeon peas), Browning (burnt-sugar colouring), Sugar, Coconut milk, Carrot, Onions, Garlic, Thyme, Scotch bonnet peppers, Vegetable oil, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Trini Pelau",
+        "Chicken Pelau"
+      ],
+      "variants": [
+        {
+          "name": "Beef Pelau",
+          "note": "Swap chicken for stewing beef, browning it well in the caramel for a richer pot.",
+          "changes": [
+            "swap Chicken → Beef"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "ackee-and-saltfish",
+      "name": "Ackee & Saltfish",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "breakfast",
+      "description": "Jamaica's national dish — soft ackee folded through sautéed salted cod, onion, peppers and scotch bonnet.",
+      "servings": 4,
+      "shelfLifeDays": 2,
+      "storage": "Keep refrigerated below 5°C. Reheat gently until piping hot; do not reheat more than once.",
+      "allergenMask": 8,
+      "allergenNames": [
+        "Fish"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Ackee (tinned), Salted cod (saltfish) (**fish**), Onions, Scotch bonnet peppers, Red bell peppers, Tomatoes (fresh or blended), Scallion (spring onion), Thyme, Black pepper, Vegetable oil",
+      "dietaryTags": [
+        "pescatarian",
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "ackee and saltfish"
+      ],
+      "variants": [
+        {
+          "name": "Vegan Ackee",
+          "note": "Just ackee with the peppers & seasoning — removes the fish allergen and makes it vegan.",
+          "changes": [
+            "remove Salted cod (saltfish)"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "vegan",
+            "gluten-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "brown-stew-chicken",
+      "name": "Brown Stew Chicken",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "main",
+      "description": "Chicken browned with burnt-sugar 'browning' and simmered in a rich, spicy-sweet gravy with pimento and scotch bonnet.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Chicken, Browning (burnt-sugar colouring), Onions, Garlic, Ginger, Scallion (spring onion), Thyme, Scotch bonnet peppers, Tomatoes (fresh or blended), Allspice (pimento) berries, Black pepper, Vegetable oil, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "brown stew"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "curry-goat",
+      "name": "Curry Goat",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "main",
+      "description": "Bone-in goat slow-cooked in Caribbean curry with scotch bonnet, pimento and potato until fall-apart tender — the celebration dish.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 512,
+      "mayContainNames": [
+        "Mustard"
+      ],
+      "ingredientsText": "Goat meat (bone-in), Curry powder, Onions, Garlic, Ginger, Scotch bonnet peppers, Thyme, Allspice (pimento) berries, Potato, Vegetable oil, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "curried goat",
+        "goat curry"
+      ],
+      "variants": [
+        {
+          "name": "Curry Chicken",
+          "note": "Faster — chicken cooks in ~40 min instead of 2 hours.",
+          "changes": [
+            "swap Goat meat (bone-in) → Chicken"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 512,
+          "mayContainNames": [
+            "Mustard"
+          ],
+          "dietaryTags": [
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "fried-plantain",
+      "name": "Fried Plantain",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "side",
+      "description": "Ripe plantain shallow-fried to sweet, caramelised gold — the universal African/Caribbean side.",
+      "servings": 4,
+      "shelfLifeDays": 2,
+      "storage": "Best eaten fresh; keep refrigerated below 5°C and reheat once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Plantain, Vegetable oil, Salt [optional]",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "dodo",
+        "sweet plantain"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "jamaican-patty",
+      "name": "Jamaican Beef Patty",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "snack",
+      "description": "Golden turmeric-tinted flaky pastry filled with spiced minced beef — the classic handheld street snack.",
+      "servings": 6,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat in an oven until piping hot; do not reheat more than once.",
+      "allergenMask": 65,
+      "allergenNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "mayContainMask": 512,
+      "mayContainNames": [
+        "Mustard"
+      ],
+      "ingredientsText": "Wheat flour (**gluten**), Butter (**milk**), Turmeric, Minced beef, Onions, Scallion (spring onion), Scotch bonnet peppers, Thyme, Curry powder, Black pepper, Vegetable oil, Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "patty",
+        "beef patty"
+      ],
+      "variants": [
+        {
+          "name": "Chicken Patty",
+          "note": "Same pastry, minced or shredded chicken filling.",
+          "changes": [
+            "swap Minced beef → Chicken"
+          ],
+          "allergenMask": 65,
+          "allergenNames": [
+            "Gluten",
+            "Milk"
+          ],
+          "mayContainMask": 512,
+          "mayContainNames": [
+            "Mustard"
+          ],
+          "dietaryTags": []
+        }
+      ]
+    },
+    {
+      "slug": "jerk-chicken",
+      "name": "Jerk Chicken",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "main",
+      "description": "Chicken marinated in fiery-aromatic jerk (pimento, scotch bonnet, thyme, scallion) and grilled over smoke — Jamaica's defining dish.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 33,
+      "mayContainNames": [
+        "Gluten",
+        "Soybeans"
+      ],
+      "ingredientsText": "Chicken, Jerk marinade (pimento, scotch bonnet, thyme, scallion), Scallion (spring onion), Scotch bonnet peppers, Allspice (pimento) berries, Thyme, Ginger, Garlic, Vegetable oil, Salt",
+      "dietaryTags": [
+        "dairy-free"
+      ],
+      "aliases": [
+        "jerk"
+      ],
+      "variants": [
+        {
+          "name": "Jerk Pork",
+          "note": "Pork shoulder, same marinade — the original pit-cooked jerk.",
+          "changes": [
+            "swap Chicken → Pork"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 33,
+          "mayContainNames": [
+            "Gluten",
+            "Soybeans"
+          ],
+          "dietaryTags": [
+            "contains-pork",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "rice-and-peas",
+      "name": "Rice & Peas",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "side",
+      "description": "Rice simmered with kidney (or gungo) peas in coconut milk, scallion and thyme — the Sunday-dinner staple, despite the name it's beans not peas.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Long-grain rice, Red kidney beans (or gungo / pigeon peas), Coconut milk, Scallion (spring onion), Thyme, Scotch bonnet peppers, Garlic, Allspice (pimento) berries, Salt",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "rice and peas",
+        "coconut rice and peas"
+      ],
+      "variants": [
+        {
+          "name": "With salted pig tail",
+          "note": "The traditional savoury depth — makes it non-vegan and non-halal.",
+          "changes": [
+            "add Pork"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "contains-pork",
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "steamed-callaloo",
+      "name": "Callaloo (Steamed)",
+      "cuisineKey": "caribbean-jamaican",
+      "cuisineLabel": "Caribbean (Jamaican)",
+      "region": "CARIBBEAN",
+      "course": "side",
+      "description": "Leafy amaranth greens steamed down with onion, garlic, tomato and a hint of scotch bonnet — a naturally vegan, gluten-free side.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Callaloo (amaranth greens), Onions, Garlic, Scotch bonnet peppers, Thyme, Tomatoes (fresh or blended), Vegetable oil, Salt",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "callaloo"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "doro-wat",
+      "name": "Doro Wat",
+      "cuisineKey": "ethiopian-eritrean",
+      "cuisineLabel": "Ethiopian / Eritrean",
+      "region": "EAST_AFRICAN",
+      "course": "main",
+      "description": "Slow-cooked chicken stew in berbere and spiced butter, finished with a whole hard-boiled egg — the national dish.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 68,
+      "allergenNames": [
+        "Eggs",
+        "Milk"
+      ],
+      "mayContainMask": 289,
+      "mayContainNames": [
+        "Gluten",
+        "Soybeans",
+        "Celery"
+      ],
+      "ingredientsText": "Chicken, Niter kibbeh (spiced clarified butter) (**milk**), Hard-boiled egg (**eggs**), Berbere spice blend, Onions, Garlic, Ginger, Seasoning / stock cube (bouillon), Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "doro wot"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "injera",
+      "name": "Injera",
+      "cuisineKey": "ethiopian-eritrean",
+      "cuisineLabel": "Ethiopian / Eritrean",
+      "region": "EAST_AFRICAN",
+      "course": "bread",
+      "description": "Sourdough teff flatbread with a soft, spongy, honeycombed surface. Traditionally 100% teff (gluten-free) — but many restaurant blends add wheat or barley flour, bringing gluten in unseen.",
+      "servings": 6,
+      "shelfLifeDays": 4,
+      "storage": "Keep in a sealed bag at room temperature; best within 2 days. Do not store damp.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 1,
+      "mayContainNames": [
+        "Gluten"
+      ],
+      "ingredientsText": "Teff flour, Wheat or barley flour [optional], Water, Fermentation starter (ersho)",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "taita"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "kitfo",
+      "name": "Kitfo",
+      "cuisineKey": "ethiopian-eritrean",
+      "cuisineLabel": "Ethiopian / Eritrean",
+      "region": "EAST_AFRICAN",
+      "course": "main",
+      "description": "Minced beef warmed (or served rare) in spiced butter and mitmita, often with ayib fresh cheese.",
+      "servings": 4,
+      "shelfLifeDays": 1,
+      "storage": "Highly perishable (minced, often served rare). Keep refrigerated below 5°C and eat within 24 hours; if rare, not suitable for reheating.",
+      "allergenMask": 64,
+      "allergenNames": [
+        "Milk"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Minced beef, Niter kibbeh (spiced clarified butter) (**milk**), Ayib (fresh curd cheese) (**milk**), Mitmita spice blend, Salt",
+      "dietaryTags": [
+        "gluten-free"
+      ],
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "sambusa",
+      "name": "Sambusa",
+      "cuisineKey": "ethiopian-eritrean",
+      "cuisineLabel": "Ethiopian / Eritrean",
+      "region": "EAST_AFRICAN",
+      "course": "snack",
+      "description": "Crisp fried triangle pastry with a spiced lentil or beef filling — a Horn-of-Africa street and fasting-season staple.",
+      "servings": 6,
+      "shelfLifeDays": 2,
+      "storage": "Keep refrigerated below 5°C. Reheat in an oven until piping hot; do not reheat more than once.",
+      "allergenMask": 1,
+      "allergenNames": [
+        "Gluten"
+      ],
+      "mayContainMask": 1024,
+      "mayContainNames": [
+        "Sesame"
+      ],
+      "ingredientsText": "Wheat flour (**gluten**), Red lentils, Onions, Green chilli, Cumin & coriander (ground), Vegetable oil, Salt",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "sambusas",
+        "samosa"
+      ],
+      "variants": [
+        {
+          "name": "Beef Sambusa",
+          "note": "Spiced minced-beef filling instead of lentils.",
+          "changes": [
+            "swap Red lentils → Minced beef"
+          ],
+          "allergenMask": 1,
+          "allergenNames": [
+            "Gluten"
+          ],
+          "mayContainMask": 1024,
+          "mayContainNames": [
+            "Sesame"
+          ],
+          "dietaryTags": [
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "shiro",
+      "name": "Shiro",
+      "cuisineKey": "ethiopian-eritrean",
+      "cuisineLabel": "Ethiopian / Eritrean",
+      "region": "EAST_AFRICAN",
+      "course": "stew",
+      "description": "Smooth simmered stew of ground chickpea/broad-bean flour and berbere — looks vegan, but is often cooked in spiced butter.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 4160,
+      "mayContainNames": [
+        "Milk",
+        "Lupin"
+      ],
+      "ingredientsText": "Shiro flour (ground chickpeas / broad beans), Niter kibbeh (spiced clarified butter) [optional], Berbere spice blend, Onions, Garlic, Tomatoes (fresh or blended), Vegetable oil, Salt",
+      "dietaryTags": [
+        "vegetarian",
+        "gluten-free"
+      ],
+      "aliases": [
+        "shiro wat"
+      ],
+      "variants": [
+        {
+          "name": "Vegan Shiro",
+          "note": "Cook in oil only, no niter kibbeh — removes the milk allergen and makes it fully vegan (the fasting-season version).",
+          "changes": [
+            "remove Niter kibbeh (spiced clarified butter)"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 4096,
+          "mayContainNames": [
+            "Lupin"
+          ],
+          "dietaryTags": [
+            "vegan",
+            "gluten-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "banku-and-tilapia",
+      "name": "Banku & Tilapia",
+      "cuisineKey": "ghanaian",
+      "cuisineLabel": "Ghanaian",
+      "region": "WEST_AFRICAN",
+      "course": "main",
+      "description": "Smooth, tangy fermented maize dough stretched and folded to a soft mound, served beside a charred whole tilapia and a fiery relish of shito, onion and tomato.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 8,
+      "allergenNames": [
+        "Fish"
+      ],
+      "mayContainMask": 2,
+      "mayContainNames": [
+        "Crustaceans"
+      ],
+      "ingredientsText": "Fermented corn / maize flour, Gari (roasted cassava granules), Water, Tilapia (whole or fillet) (**fish**), Shito (Ghanaian pepper sauce), Onions, Tomatoes (fresh or blended), Salt",
+      "dietaryTags": [
+        "pescatarian",
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Banku with Grilled Tilapia"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "groundnut-soup",
+      "name": "Groundnut Soup",
+      "cuisineKey": "ghanaian",
+      "cuisineLabel": "Ghanaian",
+      "region": "WEST_AFRICAN",
+      "course": "soup",
+      "description": "A silky, deeply savoury peanut soup where ground groundnut paste melts into a tomato-and-ginger broth around tender pieces of chicken, warmed through with scotch bonnet.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 304,
+      "allergenNames": [
+        "Peanuts",
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 65,
+      "mayContainNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "ingredientsText": "Groundnut paste (peanut butter) (**peanuts**), Chicken, Tomatoes (fresh or blended), Onions, Ginger, Scotch bonnet peppers, Seasoning / stock cube (bouillon) (**celery, soya**), Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "Nkatenkwan",
+        "Peanut Soup"
+      ],
+      "variants": [
+        {
+          "name": "Goat Meat Groundnut Soup",
+          "note": "A richer, gamier version made with bone-in goat meat in place of chicken, simmered longer until fall-apart tender.",
+          "changes": [
+            "swap Chicken → Goat meat (bone-in)"
+          ],
+          "allergenMask": 304,
+          "allergenNames": [
+            "Peanuts",
+            "Soybeans",
+            "Celery"
+          ],
+          "mayContainMask": 65,
+          "mayContainNames": [
+            "Gluten",
+            "Milk"
+          ],
+          "dietaryTags": []
+        }
+      ]
+    },
+    {
+      "slug": "kelewele",
+      "name": "Kelewele",
+      "cuisineKey": "ghanaian",
+      "cuisineLabel": "Ghanaian",
+      "region": "WEST_AFRICAN",
+      "course": "snack",
+      "description": "Cubes of ripe plantain tumbled in ginger, chilli and warm nutmeg then fried until caramelised and crisp at the edges, Ghana's favourite naturally vegan street-side snack.",
+      "servings": 4,
+      "shelfLifeDays": 2,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Plantain, Ginger, Cayenne pepper, Nutmeg, Salt, Vegetable oil",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "Spicy Fried Plantain"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "red-red",
+      "name": "Red Red",
+      "cuisineKey": "ghanaian",
+      "cuisineLabel": "Ghanaian",
+      "region": "WEST_AFRICAN",
+      "course": "stew",
+      "description": "A rich, naturally vegan black-eyed pea stew simmered in ruby-red palm oil with tomatoes and ginger, its name a nod to the twin reds of oil and tomato, served with sweet fried plantain.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Peeled black-eyed beans (blended), Palm oil, Tomatoes (fresh or blended), Onions, Ginger, Tomato purée, Plantain, Salt",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "Bean Stew",
+        "Ghanaian Black-Eyed Pea Stew"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "waakye",
+      "name": "Waakye",
+      "cuisineKey": "ghanaian",
+      "cuisineLabel": "Ghanaian",
+      "region": "WEST_AFRICAN",
+      "course": "main",
+      "description": "A beloved Ghanaian one-pot of rice and beans stained a deep reddish-brown by dried sorghum leaves, sold from bustling roadside stalls with a riot of toppings.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Long-grain rice, Peeled black-eyed beans (blended), Waakye leaves (dried sorghum leaves), Salt",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "Wakye",
+        "Rice and Beans"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "egusi-soup",
+      "name": "Egusi Soup",
+      "cuisineKey": "nigerian",
+      "cuisineLabel": "Nigerian",
+      "region": "WEST_AFRICAN",
+      "course": "soup",
+      "description": "Ground melon-seed soup thickened to soft curds, with leafy greens and assorted meat — eaten with a swallow like pounded yam or eba.",
+      "servings": 6,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 298,
+      "allergenNames": [
+        "Crustaceans",
+        "Fish",
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 65,
+      "mayContainNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "ingredientsText": "Ground egusi (melon) seeds, Palm oil, Stockfish (dried fish) (**fish**), Dried crayfish (whole or ground) (**crustaceans**), Assorted meat & tripe, Ugu (pumpkin) / spinach leaves, Onions, Scotch bonnet peppers, Seasoning / stock cube (bouillon) (**celery, soya**), Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "melon-seed soup"
+      ],
+      "variants": [
+        {
+          "name": "Egusi–Ogbono mix",
+          "note": "Add a little ogbono for extra 'draw' (stretch) alongside the egusi curds.",
+          "changes": [
+            "add Ground ogbono (wild mango) seeds"
+          ],
+          "allergenMask": 298,
+          "allergenNames": [
+            "Crustaceans",
+            "Fish",
+            "Soybeans",
+            "Celery"
+          ],
+          "mayContainMask": 65,
+          "mayContainNames": [
+            "Gluten",
+            "Milk"
+          ],
+          "dietaryTags": []
+        }
+      ]
+    },
+    {
+      "slug": "jollof-rice",
+      "name": "Jollof Rice",
+      "cuisineKey": "nigerian",
+      "cuisineLabel": "Nigerian",
+      "region": "WEST_AFRICAN",
+      "course": "main",
+      "description": "Smoky long-grain rice simmered in a blended pepper-and-tomato base — the centrepiece of any West-African spread.",
+      "servings": 6,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 288,
+      "allergenNames": [
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 577,
+      "mayContainNames": [
+        "Gluten",
+        "Milk",
+        "Mustard"
+      ],
+      "ingredientsText": "Long-grain rice, Tomatoes (fresh or blended), Red bell peppers, Scotch bonnet peppers, Onions, Tomato purée, Vegetable oil, Seasoning / stock cube (bouillon) (**celery, soya**), Curry powder, Thyme, Bay leaf, Salt",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "party jollof"
+      ],
+      "variants": [
+        {
+          "name": "Coconut Jollof",
+          "note": "Cook the rice in coconut milk for a richer, subtly sweet version.",
+          "changes": [
+            "add Coconut milk"
+          ],
+          "allergenMask": 288,
+          "allergenNames": [
+            "Soybeans",
+            "Celery"
+          ],
+          "mayContainMask": 577,
+          "mayContainNames": [
+            "Gluten",
+            "Milk",
+            "Mustard"
+          ],
+          "dietaryTags": [
+            "vegan"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "moin-moin",
+      "name": "Moin Moin",
+      "cuisineKey": "nigerian",
+      "cuisineLabel": "Nigerian",
+      "region": "WEST_AFRICAN",
+      "course": "side",
+      "description": "Steamed savoury bean pudding of blended black-eyed peas, enriched with egg and fish.",
+      "servings": 6,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 302,
+      "allergenNames": [
+        "Crustaceans",
+        "Eggs",
+        "Fish",
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 65,
+      "mayContainNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "ingredientsText": "Peeled black-eyed beans (blended), Red bell peppers, Onions, Vegetable oil, Hard-boiled egg (**eggs**), Mackerel / sardine (**fish**), Dried crayfish (whole or ground) (**crustaceans**), Seasoning / stock cube (bouillon) (**celery, soya**), Salt",
+      "dietaryTags": [
+        "pescatarian"
+      ],
+      "aliases": [
+        "moi moi",
+        "bean pudding"
+      ],
+      "variants": [
+        {
+          "name": "Plain / Vegan Moin Moin",
+          "note": "Drop the egg, fish and crayfish for a plant-based version — removes the egg, fish and crustacean allergens.",
+          "changes": [
+            "remove Hard-boiled egg",
+            "remove Mackerel / sardine",
+            "remove Dried crayfish (whole or ground)"
+          ],
+          "allergenMask": 288,
+          "allergenNames": [
+            "Soybeans",
+            "Celery"
+          ],
+          "mayContainMask": 65,
+          "mayContainNames": [
+            "Gluten",
+            "Milk"
+          ],
+          "dietaryTags": [
+            "vegan"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "ogbono-soup",
+      "name": "Ogbono Soup",
+      "cuisineKey": "nigerian",
+      "cuisineLabel": "Nigerian",
+      "region": "WEST_AFRICAN",
+      "course": "soup",
+      "description": "Slippery 'draw' soup thickened with ground ogbono (wild-mango) seeds, rich with palm oil, assorted meat and dried fish — eaten with a swallow.",
+      "servings": 6,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 298,
+      "allergenNames": [
+        "Crustaceans",
+        "Fish",
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 65,
+      "mayContainNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "ingredientsText": "Ground ogbono (wild mango) seeds, Palm oil, Assorted meat & tripe, Stockfish (dried fish) (**fish**), Dried crayfish (whole or ground) (**crustaceans**), Ugu (pumpkin) / spinach leaves, Onions, Scotch bonnet peppers, Seasoning / stock cube (bouillon) (**celery, soya**), Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "draw soup",
+        "apon soup"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "puff-puff",
+      "name": "Puff Puff",
+      "cuisineKey": "nigerian",
+      "cuisineLabel": "Nigerian",
+      "region": "WEST_AFRICAN",
+      "course": "snack",
+      "description": "Sweet, airy deep-fried dough balls — the classic West-African teatime and party snack.",
+      "servings": 6,
+      "shelfLifeDays": 2,
+      "storage": "Store in a cool, dry place. Best eaten same day.",
+      "allergenMask": 1,
+      "allergenNames": [
+        "Gluten"
+      ],
+      "mayContainMask": 1040,
+      "mayContainNames": [
+        "Peanuts",
+        "Sesame"
+      ],
+      "ingredientsText": "Wheat flour (**gluten**), Sugar, Yeast, Nutmeg, Salt, Water, Vegetable oil",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "bofrot"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "suya",
+      "name": "Suya (Beef Skewers)",
+      "cuisineKey": "nigerian",
+      "cuisineLabel": "Nigerian",
+      "region": "WEST_AFRICAN",
+      "course": "street-food",
+      "description": "Char-grilled beef skewers coated in the spicy groundnut yaji rub — Nigeria's defining street food.",
+      "servings": 4,
+      "shelfLifeDays": 2,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 16,
+      "allergenNames": [
+        "Peanuts"
+      ],
+      "mayContainMask": 1824,
+      "mayContainNames": [
+        "Soybeans",
+        "Celery",
+        "Mustard",
+        "Sesame"
+      ],
+      "ingredientsText": "Beef, Yaji (suya) spice rub (**peanuts**), Vegetable oil, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "tsire"
+      ],
+      "variants": [
+        {
+          "name": "Chicken Suya",
+          "note": "Same yaji rub on chicken instead of beef.",
+          "changes": [
+            "swap Beef → Chicken"
+          ],
+          "allergenMask": 16,
+          "allergenNames": [
+            "Peanuts"
+          ],
+          "mayContainMask": 1824,
+          "mayContainNames": [
+            "Soybeans",
+            "Celery",
+            "Mustard",
+            "Sesame"
+          ],
+          "dietaryTags": [
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "chicken-tagine",
+      "name": "Chicken Tagine with Preserved Lemon & Olives",
+      "cuisineKey": "north-african",
+      "cuisineLabel": "North African (Moroccan / Algerian / Libyan)",
+      "region": "NORTH_AFRICAN",
+      "course": "main",
+      "description": "Chicken slow-cooked in a fragrant saffron-gold sauce brightened with salty preserved lemon and green olives.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Chicken, Preserved lemon, Olives, Ras el hanout (spice blend), Onions, Garlic, Ginger, Vegetable oil",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Djaj Mqualli",
+        "Lemon Olive Tagine"
+      ],
+      "variants": [
+        {
+          "name": "Lamb Tagine",
+          "note": "Richer, made with lamb shoulder in place of chicken; extend cooking to 1.5 hours.",
+          "changes": [
+            "swap Chicken → Lamb (or mutton)"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "harira",
+      "name": "Harira",
+      "cuisineKey": "north-african",
+      "cuisineLabel": "North African (Moroccan / Algerian / Libyan)",
+      "region": "NORTH_AFRICAN",
+      "course": "soup",
+      "description": "A hearty tomato-based Moroccan soup of lentils, chickpeas and lamb, thickened to a velvety finish and traditionally broken over at iftar.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 257,
+      "allergenNames": [
+        "Gluten",
+        "Celery"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Red lentils, Chickpeas (channa), Tomatoes (fresh or blended), Onions, Celery (**celery**), Cumin & coriander (ground), Wheat flour (**gluten**), Lamb (or mutton)",
+      "dietaryTags": [
+        "dairy-free"
+      ],
+      "aliases": [
+        "Moroccan Lentil & Chickpea Soup",
+        "Ramadan Soup"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "merguez",
+      "name": "Merguez",
+      "cuisineKey": "north-african",
+      "cuisineLabel": "North African (Moroccan / Algerian / Libyan)",
+      "region": "NORTH_AFRICAN",
+      "course": "main",
+      "description": "Fiery North-African lamb sausages singing with harissa, garlic and warm cumin, charred over the grill.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Lamb (or mutton), Harissa (chilli paste), Garlic, Cumin & coriander (ground), Paprika, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Spicy Lamb Sausage"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "shakshuka",
+      "name": "Shakshuka",
+      "cuisineKey": "north-african",
+      "cuisineLabel": "North African (Moroccan / Algerian / Libyan)",
+      "region": "NORTH_AFRICAN",
+      "course": "breakfast",
+      "description": "Eggs gently poached in a simmering skillet of paprika-spiced tomatoes and sweet peppers.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 4,
+      "allergenNames": [
+        "Eggs"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Egg (**eggs**), Tomatoes (fresh or blended), Red bell peppers, Onions, Garlic, Cumin & coriander (ground), Paprika, Vegetable oil",
+      "dietaryTags": [
+        "vegetarian",
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Eggs in Purgatory",
+        "Shakshouka"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "vegetable-couscous",
+      "name": "Seven-Vegetable Couscous",
+      "cuisineKey": "north-african",
+      "cuisineLabel": "North African (Moroccan / Algerian / Libyan)",
+      "region": "NORTH_AFRICAN",
+      "course": "main",
+      "description": "Fluffy steamed couscous crowned with chickpeas and a spiced medley of tender vegetables in a light golden broth.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 289,
+      "allergenNames": [
+        "Gluten",
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 64,
+      "mayContainNames": [
+        "Milk"
+      ],
+      "ingredientsText": "Couscous (**gluten**), Chickpeas (channa), Carrot, Courgette, Tomatoes (fresh or blended), Ras el hanout (spice blend), Seasoning / stock cube (bouillon) (**celery, soya**)",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "Couscous aux Légumes"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "chapati",
+      "name": "Chapati",
+      "cuisineKey": "pan-african",
+      "cuisineLabel": "Pan-African",
+      "region": "PAN_AFRICAN",
+      "course": "bread",
+      "description": "The soft, layered, faintly flaky East and Central African flatbread, rolled thin and cooked on a dry pan until golden and pliable.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 1,
+      "allergenNames": [
+        "Gluten"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Wheat flour (**gluten**), Vegetable oil, Water, Salt",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "Soft Chapati",
+        "Chapo"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "chin-chin",
+      "name": "Chin Chin",
+      "cuisineKey": "pan-african",
+      "cuisineLabel": "Pan-African",
+      "region": "PAN_AFRICAN",
+      "course": "snack",
+      "description": "Bite-sized cubes of lightly sweet, nutmeg-scented dough fried to a satisfying golden crunch, the ubiquitous West African party nibble.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 69,
+      "allergenNames": [
+        "Gluten",
+        "Eggs",
+        "Milk"
+      ],
+      "mayContainMask": 1040,
+      "mayContainNames": [
+        "Peanuts",
+        "Sesame"
+      ],
+      "ingredientsText": "Wheat flour (**gluten**), Sugar, Butter (**milk**), Nutmeg, Egg (**eggs**), Vegetable oil",
+      "dietaryTags": [
+        "vegetarian"
+      ],
+      "aliases": [
+        "Chin-Chin",
+        "Fried Dough Snack"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "grilled-whole-tilapia",
+      "name": "Grilled Whole Tilapia",
+      "cuisineKey": "pan-african",
+      "cuisineLabel": "Pan-African",
+      "region": "PAN_AFRICAN",
+      "course": "main",
+      "description": "A whole tilapia scored and steeped in a bright ginger-garlic-chilli-lemon marinade, then charred over open heat until the skin blisters and the flesh flakes.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 8,
+      "allergenNames": [
+        "Fish"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Tilapia (whole or fillet) (**fish**), Ginger, Garlic, Green chilli, Lemon, Vegetable oil, Salt",
+      "dietaryTags": [
+        "pescatarian",
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Barbecued Tilapia",
+        "Grilled Fish"
+      ],
+      "variants": [
+        {
+          "name": "Mackerel",
+          "note": "Swap tilapia for whole mackerel, a common oily-fish alternative.",
+          "changes": [
+            "swap Tilapia (whole or fillet) → Mackerel / sardine"
+          ],
+          "allergenMask": 8,
+          "allergenNames": [
+            "Fish"
+          ],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "pescatarian",
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "party-fried-rice",
+      "name": "Party Fried Rice (African style)",
+      "cuisineKey": "pan-african",
+      "cuisineLabel": "Pan-African",
+      "region": "PAN_AFRICAN",
+      "course": "main",
+      "description": "A festive, curry-tinted fried rice flecked with sweet carrot and green beans, the staple centrepiece of every diaspora celebration table.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 288,
+      "allergenNames": [
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 577,
+      "mayContainNames": [
+        "Gluten",
+        "Milk",
+        "Mustard"
+      ],
+      "ingredientsText": "Long-grain rice, Carrot, Green beans, Curry powder, Seasoning / stock cube (bouillon) (**celery, soya**), Onions, Vegetable oil",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "African Fried Rice",
+        "Nigerian Fried Rice"
+      ],
+      "variants": [
+        {
+          "name": "Chicken Fried Rice",
+          "note": "Add shredded cooked chicken with the rice for a heartier plate.",
+          "changes": [
+            "swap Green beans → Chicken"
+          ],
+          "allergenMask": 288,
+          "allergenNames": [
+            "Soybeans",
+            "Celery"
+          ],
+          "mayContainMask": 577,
+          "mayContainNames": [
+            "Gluten",
+            "Milk",
+            "Mustard"
+          ],
+          "dietaryTags": []
+        }
+      ]
+    },
+    {
+      "slug": "pilau",
+      "name": "Pilau",
+      "cuisineKey": "pan-african",
+      "cuisineLabel": "Pan-African",
+      "region": "PAN_AFRICAN",
+      "course": "main",
+      "description": "A deeply aromatic Swahili one-pot rice, its grains stained brown and perfumed with pilau masala and tender braised beef.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 288,
+      "allergenNames": [
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 65,
+      "mayContainNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "ingredientsText": "Long-grain rice, Pilau masala (spice blend), Beef, Onions, Garlic, Seasoning / stock cube (bouillon) (**celery, soya**), Vegetable oil",
+      "dietaryTags": [],
+      "aliases": [
+        "Swahili Pilau",
+        "Pilau Rice"
+      ],
+      "variants": [
+        {
+          "name": "Chicken Pilau",
+          "note": "Swap beef for bone-in chicken pieces, a lighter everyday version.",
+          "changes": [
+            "swap Beef → Chicken"
+          ],
+          "allergenMask": 288,
+          "allergenNames": [
+            "Soybeans",
+            "Celery"
+          ],
+          "mayContainMask": 65,
+          "mayContainNames": [
+            "Gluten",
+            "Milk"
+          ],
+          "dietaryTags": []
+        }
+      ]
+    },
+    {
+      "slug": "bariis-iskukaris",
+      "name": "Bariis Iskukaris",
+      "cuisineKey": "somali",
+      "cuisineLabel": "Somali",
+      "region": "EAST_AFRICAN",
+      "course": "main",
+      "description": "Fragrant long-grain rice slow-cooked with the warm Somali xawaash blend, sweet caramelised onions, cardamom, cinnamon and a scatter of plump raisins.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 288,
+      "allergenNames": [
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 2113,
+      "mayContainNames": [
+        "Gluten",
+        "Milk",
+        "Sulphites"
+      ],
+      "ingredientsText": "Long-grain rice, Xawaash (Somali spice blend), Onions, Vegetable oil, Raisins / sultanas, Cardamom, Cinnamon, Seasoning / stock cube (bouillon) (**celery, soya**), Salt, Water",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "Somali Spiced Rice",
+        "Bariis"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "canjeero",
+      "name": "Canjeero",
+      "cuisineKey": "somali",
+      "cuisineLabel": "Somali",
+      "region": "EAST_AFRICAN",
+      "course": "bread",
+      "description": "A soft, spongy fermented pancake with a lacy bubbled surface, cooked on one side only and eaten torn into savoury stews or drizzled with oil and sugar at breakfast.",
+      "servings": 4,
+      "shelfLifeDays": 2,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 1,
+      "allergenNames": [
+        "Gluten"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Wheat flour (**gluten**), Fermented corn / maize flour, Water, Yeast, Sugar",
+      "dietaryTags": [
+        "vegan"
+      ],
+      "aliases": [
+        "Canjeelo",
+        "Lahoh",
+        "Somali Fermented Flatbread"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "malawax",
+      "name": "Malawax",
+      "cuisineKey": "somali",
+      "cuisineLabel": "Somali",
+      "region": "EAST_AFRICAN",
+      "course": "breakfast",
+      "description": "Thin, tender sweet crepes enriched with egg and milk, cooked until golden-lacy and folded into quarters for a beloved Somali breakfast.",
+      "servings": 4,
+      "shelfLifeDays": 2,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 69,
+      "allergenNames": [
+        "Gluten",
+        "Eggs",
+        "Milk"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Wheat flour (**gluten**), Egg (**eggs**), Milk (**milk**), Sugar, Vegetable oil",
+      "dietaryTags": [
+        "vegetarian"
+      ],
+      "aliases": [
+        "Malawah",
+        "Sweet Somali Crepe"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "maraq",
+      "name": "Maraq",
+      "cuisineKey": "somali",
+      "cuisineLabel": "Somali",
+      "region": "EAST_AFRICAN",
+      "course": "soup",
+      "description": "A hearty, brothy Somali soup of tender goat or lamb simmered with potato, carrot and tomato and lifted by garlic, xawaash and toasted cumin and coriander.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Goat meat (bone-in), Potato, Carrot, Tomatoes (fresh or blended), Onions, Garlic, Xawaash (Somali spice blend), Cumin & coriander (ground), Vegetable oil, Salt, Water",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Somali Soup",
+        "Maraq Digaag Iyo Khudaar"
+      ],
+      "variants": [
+        {
+          "name": "Maraq with Lamb",
+          "note": "Lamb pieces in place of goat for a milder, richer broth.",
+          "changes": [
+            "swap Goat meat (bone-in) → Lamb (or mutton)"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "suqaar",
+      "name": "Suqaar",
+      "cuisineKey": "somali",
+      "cuisineLabel": "Somali",
+      "region": "EAST_AFRICAN",
+      "course": "main",
+      "description": "Tender cubes of beef flash-sautéed with onion, garlic and the aromatic xawaash blend, finished with tomato and sweet bell pepper for a quick, deeply savoury pan dish.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Beef, Onions, Garlic, Xawaash (Somali spice blend), Tomatoes (fresh or blended), Red bell peppers, Vegetable oil, Salt",
+      "dietaryTags": [
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Somali Diced Beef Stir-Fry"
+      ],
+      "variants": [
+        {
+          "name": "Goat Suqaar",
+          "note": "Diced goat meat in place of beef, cooked a little longer until tender.",
+          "changes": [
+            "swap Beef → Goat meat (bone-in)"
+          ],
+          "allergenMask": 0,
+          "allergenNames": [],
+          "mayContainMask": 0,
+          "mayContainNames": [],
+          "dietaryTags": [
+            "gluten-free",
+            "dairy-free"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "bobotie",
+      "name": "Bobotie",
+      "cuisineKey": "south-african",
+      "cuisineLabel": "Southern African (South African)",
+      "region": "SOUTHERN_CENTRAL_AFRICAN",
+      "course": "main",
+      "description": "A Cape Malay bake of curried minced beef sweetened with chutney and raisins, crowned with a set golden egg-and-milk custard.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 69,
+      "allergenNames": [
+        "Gluten",
+        "Eggs",
+        "Milk"
+      ],
+      "mayContainMask": 3616,
+      "mayContainNames": [
+        "Soybeans",
+        "Mustard",
+        "Sesame",
+        "Sulphites"
+      ],
+      "ingredientsText": "Minced beef, Egg (**eggs**), Milk (**milk**), White bread / bread roll (**gluten**), Curry powder, Fruit chutney (apricot / mango), Onions, Raisins / sultanas, Bay leaf, Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "Cape Malay Bobotie"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "boerewors",
+      "name": "Boerewors",
+      "cuisineKey": "south-african",
+      "cuisineLabel": "Southern African (South African)",
+      "region": "SOUTHERN_CENTRAL_AFRICAN",
+      "course": "main",
+      "description": "A coriander-scented coil of coarsely ground beef and pork, spiralled tight and grilled over coals until juicy and smoky.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Beef, Pork, Cumin & coriander (ground), Allspice (pimento) berries, Cinnamon, Salt",
+      "dietaryTags": [
+        "contains-pork",
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Farmer's sausage",
+        "Wors"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "bunny-chow",
+      "name": "Bunny Chow",
+      "cuisineKey": "south-african",
+      "cuisineLabel": "Southern African (South African)",
+      "region": "SOUTHERN_CENTRAL_AFRICAN",
+      "course": "main",
+      "description": "A hollowed half-loaf of white bread brimming with fiery Durban lamb curry, the pulled-out crumb served on top for dunking.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 1,
+      "allergenNames": [
+        "Gluten"
+      ],
+      "mayContainMask": 1632,
+      "mayContainNames": [
+        "Soybeans",
+        "Milk",
+        "Mustard",
+        "Sesame"
+      ],
+      "ingredientsText": "White bread / bread roll (**gluten**), Lamb (or mutton), Curry powder, Potato, Tomatoes (fresh or blended), Onions, Garlic, Ginger, Vegetable oil, Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "Bunny",
+        "Kota (Durban style)"
+      ],
+      "variants": [
+        {
+          "name": "Chicken Bunny",
+          "note": "A lighter version using bone-in chicken pieces instead of lamb.",
+          "changes": [
+            "swap Lamb (or mutton) → Chicken"
+          ],
+          "allergenMask": 1,
+          "allergenNames": [
+            "Gluten"
+          ],
+          "mayContainMask": 1632,
+          "mayContainNames": [
+            "Soybeans",
+            "Milk",
+            "Mustard",
+            "Sesame"
+          ],
+          "dietaryTags": []
+        }
+      ]
+    },
+    {
+      "slug": "chakalaka",
+      "name": "Chakalaka",
+      "cuisineKey": "south-african",
+      "cuisineLabel": "Southern African (South African)",
+      "region": "SOUTHERN_CENTRAL_AFRICAN",
+      "course": "side",
+      "description": "A vibrant, spicy relish of grated carrot, peppers and beans simmered with curry spice — the braai companion that livens up any plate.",
+      "servings": 4,
+      "shelfLifeDays": 4,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 512,
+      "mayContainNames": [
+        "Mustard"
+      ],
+      "ingredientsText": "Red kidney beans (or gungo / pigeon peas), Carrot, Onions, Red bell peppers, Curry powder, Tomatoes (fresh or blended), Vegetable oil, Salt",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "South African bean relish"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "pap",
+      "name": "Pap",
+      "cuisineKey": "south-african",
+      "cuisineLabel": "Southern African (South African)",
+      "region": "SOUTHERN_CENTRAL_AFRICAN",
+      "course": "side",
+      "description": "The staple stiff maize porridge of South Africa — smooth, comforting and made to be scooped up with a saucy stew or relish.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 0,
+      "allergenNames": [],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Maize meal (mealie meal), Water, Salt",
+      "dietaryTags": [
+        "vegan",
+        "gluten-free"
+      ],
+      "aliases": [
+        "Mealie pap",
+        "Mieliepap",
+        "Stywe pap"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "attieke-grilled-fish",
+      "name": "Attiéké & Grilled Fish",
+      "cuisineKey": "west-african",
+      "cuisineLabel": "West African (unspecified)",
+      "region": "WEST_AFRICAN",
+      "course": "main",
+      "description": "Ivory Coast's everyday plate — light, tangy cassava couscous piled beside a whole grilled fish and a fresh lemon-and-onion relish.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 8,
+      "allergenNames": [
+        "Fish"
+      ],
+      "mayContainMask": 0,
+      "mayContainNames": [],
+      "ingredientsText": "Attiéké (fermented cassava couscous), Tilapia (whole or fillet) (**fish**), Onions, Tomatoes (fresh or blended), Lemon, Scotch bonnet peppers, Vegetable oil, Salt",
+      "dietaryTags": [
+        "pescatarian",
+        "gluten-free",
+        "dairy-free"
+      ],
+      "aliases": [
+        "Attiéké Poisson",
+        "Garba"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "thieboudienne",
+      "name": "Thieboudienne",
+      "cuisineKey": "west-african",
+      "cuisineLabel": "West African (unspecified)",
+      "region": "WEST_AFRICAN",
+      "course": "main",
+      "description": "Senegal's national dish — firm white fish stuffed with a herb paste, braised with vegetables and simmered rice in a deep tomato broth stained red with palm and pepper.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 296,
+      "allergenNames": [
+        "Fish",
+        "Soybeans",
+        "Celery"
+      ],
+      "mayContainMask": 65,
+      "mayContainNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "ingredientsText": "Long-grain rice, Tilapia (whole or fillet) (**fish**), Tomato purée, Tomatoes (fresh or blended), Cabbage, Carrot, Onions, Garlic, Scotch bonnet peppers, Vegetable oil, Seasoning / stock cube (bouillon) (**celery, soya**), Salt",
+      "dietaryTags": [
+        "pescatarian"
+      ],
+      "aliases": [
+        "Ceebu Jen",
+        "Thiebou Djeun",
+        "Senegalese Rice and Fish"
+      ],
+      "variants": [
+        {
+          "name": "Thiebou Yapp (meat version)",
+          "note": "Swaps the fish for slow-braised beef for a heartier, drier rice.",
+          "changes": [
+            "swap Tilapia (whole or fillet) → Beef"
+          ],
+          "allergenMask": 288,
+          "allergenNames": [
+            "Soybeans",
+            "Celery"
+          ],
+          "mayContainMask": 65,
+          "mayContainNames": [
+            "Gluten",
+            "Milk"
+          ],
+          "dietaryTags": []
+        }
+      ]
+    },
+    {
+      "slug": "yassa-chicken",
+      "name": "Yassa Chicken",
+      "cuisineKey": "west-african",
+      "cuisineLabel": "West African (unspecified)",
+      "region": "WEST_AFRICAN",
+      "course": "main",
+      "description": "Chicken marinated in tangy lemon and mustard, then simmered under a mountain of slow-caramelised onions until meltingly sweet and sharp.",
+      "servings": 4,
+      "shelfLifeDays": 3,
+      "storage": "Keep refrigerated below 5°C. Reheat until piping hot; do not reheat more than once.",
+      "allergenMask": 800,
+      "allergenNames": [
+        "Soybeans",
+        "Celery",
+        "Mustard"
+      ],
+      "mayContainMask": 65,
+      "mayContainNames": [
+        "Gluten",
+        "Milk"
+      ],
+      "ingredientsText": "Chicken, Onions, Mustard (Dijon or English) (**mustard**), Lemon, Scotch bonnet peppers, Vegetable oil, Seasoning / stock cube (bouillon) (**celery, soya**), Salt",
+      "dietaryTags": [],
+      "aliases": [
+        "Poulet Yassa",
+        "Chicken Yassa"
+      ],
+      "variants": [
+        {
+          "name": "Yassa Poisson (fish version)",
+          "note": "The same onion-lemon base built around grilled fish instead of chicken.",
+          "changes": [
+            "swap Chicken → Tilapia (whole or fillet)"
+          ],
+          "allergenMask": 808,
+          "allergenNames": [
+            "Fish",
+            "Soybeans",
+            "Celery",
+            "Mustard"
+          ],
+          "mayContainMask": 65,
+          "mayContainNames": [
+            "Gluten",
+            "Milk"
+          ],
+          "dietaryTags": [
+            "pescatarian"
+          ]
+        }
+      ]
+    }
+  ]
+}

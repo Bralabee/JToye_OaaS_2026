@@ -1,0 +1,8 @@
+# k8s/platform/acme-probe — the one-shot DNS -> IP -> Traefik -> HTTP-01 -> TLS
+# probe (plan 29-11). Applied by scripts/staging-bootstrap.sh --stage acme-probe
+# and removed by --stage acme-probe-delete once the certificate has been issued
+# and the route has answered.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - probe.yaml

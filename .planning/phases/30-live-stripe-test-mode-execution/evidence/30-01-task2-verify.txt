@@ -1,0 +1,78 @@
+# scripts/check-stripe-pk-var.sh --selftest (GREEN, plan verify command verbatim)
+PASS staging-test rc=0
+PASS staging-empty rc=1
+PASS staging-unset rc=1
+PASS staging-live rc=1
+PASS staging-malformed rc=1
+PASS production-test rc=1
+PASS production-empty rc=1
+PASS production-live rc=0
+PASS bad-environment rc=2
+PASS staging-secret rc=1
+PASS no-echo
+SELFTEST: 11/11
+rc=0
+missing=0 fail_lines=0
+
+# dry run: STRIPE_PK_VAR="" --environment staging
+environment=staging prefix=empty length=0
+FAIL: the repository variable FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is EMPTY, so the frontend image baked no publishable key and its card checkout is inert (#957). Set the variable (staging: a Stripe TEST key, pk_test_...), then re-run; do not relax this guard.
+rc=1
+
+# break arms on scratch copies (first run: stgprefix/prodtest SURVIVED because a second check kept the verdict; arms tightened to assert the refusal reason, then re-run):
+== break: stgprefix (changed lines: 1)
+FAIL staging-live output lacks 'D-06': environment=staging prefix=pk_live_ length=34 FAIL: the value starts pk_test_ but is not pk_test_ followed by letters and digits only (length=34); a pasted key with stray characters would fail inside Stripe.js, far from here. 
+SELFTEST: 10/11
+rc=1
+== break: echo (changed lines: 1)
+FAIL no-echo production-live.out contains a fixture value
+SELFTEST: 10/11
+rc=1
+== break: prodtest (changed lines: 1)
+FAIL production-test output lacks 'D-08': environment=production prefix=pk_test_ length=34 FAIL: production accepts only a Stripe LIVE publishable key (pk_live_...), got prefix=pk_test_. 
+SELFTEST: 10/11
+rc=1
+== break: stgacceptall (changed lines: 2)
+FAIL staging-live rc=0 (want 1): environment=staging prefix=pk_live_ length=34 OK: the baked publishable key is accepted for staging (prefix=pk_live_ length=34) 
+FAIL staging-malformed rc=0 (want 1): environment=staging prefix=pk_test_ length=26 OK: the baked publishable key is accepted for staging (prefix=pk_test_ length=26) 
+SELFTEST: 9/11
+rc=1
+
+# env-contract + gate-enforcement (plan verify verbatim)
+  (a) VIOLATIONS (injected, never read)            0
+  (a) VIOLATIONS (build-time name, dead at runtime) 0
+  (b) distinct env names read                      32
+  (b) supplied at runtime (env:)                   13
+  (b) supplied at build (Dockerfile ARG)           8
+  (b) allowlisted (reasoned)                       11
+  (b) VIOLATIONS                                   0
+
+PASS: core-java 89 injected / 193 read; edge-go 9 injected / 17 read; frontend 13 injected / 8 build-arg / 32 read. Both directions hold for all three services, with 23 allowlisted omission(s), of which 0 are tracked OPEN DEFECTS listed above.
+check-gate-enforcement  (2026-10-22T03:44:00Z)
+  gates     : 59
+  workflows : 8
+  exempt    : 5 declared
+  selftests : 16 scripts dispatch a --selftest
+PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run.
+rc=0 bad_lines=0
+
+# workflow structure (plan verify verbatim) on the tree
+buildarg True
+staging True
+production True
+probe True
+probe-perms True
+pr-selftests True
+rc=0 true_lines=6
+# same check on origin/main ci-cd.yaml (fail direction): 1/6 True (probe-perms only)
+
+# doc-only wiring (plan verify verbatim)
+PASS C4 the API fails outright -> false (docs_only=false)
+PASS glue-uses-pr-copy: caught by arm B2
+PASS glue-diffs-vs-before: caught by arm C2 c1's deploy FAILED
+PASS glue-skips-ancestry: caught by arm C6
+PASS glue-skips-unreadable-run: caught by arm C10
+PASS glue-falls-back-to-before: caught by arm C3
+PASS blind-extractor rc=2
+ci-docs-skip-wiring selftest: all arms behaved
+rc=0 mixed=[docs_only=false] docs=[docs_only=true]

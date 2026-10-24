@@ -306,11 +306,15 @@ kubectl apply -f k8s/base/configmap.yaml -n jtoye-production
 **Option A: Using Script**
 
 ```bash
-# Deploy all services to production
-./scripts/deploy.sh production all
+# Deploy all services: a named kube context and the full 40-hex commit sha CI
+# built are required, and the context must point at the API server recorded in
+# k8s/<env>/azure-identity.yaml (production has none until Phase 32, so a
+# production deploy is refused until then). One apply retags core-java,
+# frontend and edge-go together, so there is no single-service form any more.
+./scripts/deploy.sh production --context <context> --image-tag <40-hex-sha>
 
-# Or deploy individual service
-./scripts/deploy.sh production core-java
+# Render what would be applied, offline, without a context
+./scripts/deploy.sh production --render-only --image-tag <40-hex-sha>
 ```
 
 **Option B: Manual**

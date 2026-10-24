@@ -611,6 +611,92 @@
         "type" : "object"
       },
       "BeanFactory" : { },
+      "BillingSubscriptionDto" : {
+        "properties" : {
+          "billingPlanMode" : {
+            "enum" : [
+              "SAAS_HYBRID_STANDARD",
+              "SAAS_FLAT_PREDICTABLE",
+              "BATCH_PAYG_STARTER",
+              "WALK_SETUP_STEPDOWN"
+            ],
+            "type" : "string"
+          },
+          "cancelAtPeriodEnd" : {
+            "type" : "boolean"
+          },
+          "currentPeriodEnd" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "effectiveFeeBps" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "latestStripeInvoiceId" : {
+            "type" : "string"
+          },
+          "monthlyAmountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "monthlyFeeCapPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "monthlyFeeChargedPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "stripeCustomerId" : {
+            "type" : "string"
+          },
+          "stripeSubscriptionId" : {
+            "type" : "string"
+          },
+          "subscriptionStatus" : {
+            "enum" : [
+              "NONE",
+              "ACTIVE",
+              "TRIALING",
+              "PAST_DUE",
+              "CANCELED"
+            ],
+            "type" : "string"
+          },
+          "tenantId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "walkSetupCompleted" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "BillingSubscriptionRequest" : {
+        "properties" : {
+          "paymentMethodId" : {
+            "type" : "string"
+          },
+          "planMode" : {
+            "enum" : [
+              "SAAS_HYBRID_STANDARD",
+              "SAAS_FLAT_PREDICTABLE",
+              "BATCH_PAYG_STARTER",
+              "WALK_SETUP_STEPDOWN"
+            ],
+            "type" : "string"
+          },
+          "testClockId" : {
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "planMode"
+        ],
+        "type" : "object"
+      },
       "BulkCancelRequest" : {
         "description" : "Which orders to reject, and why. The reason is kept on each order and never shown to the customer.",
         "properties" : {
@@ -695,6 +781,28 @@
               "OTHER"
             ],
             "example" : "CUSTOMER_REQUEST",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ChallengeResult" : {
+        "properties" : {
+          "challengeId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "channel" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "phoneNormalized" : {
+            "type" : "string"
+          },
+          "testPreviewOtp" : {
             "type" : "string"
           }
         },
@@ -1187,6 +1295,11 @@
             "example" : "Mains",
             "type" : "string"
           },
+          "clearDurability" : {
+            "description" : "Edit only. true removes the stored shelfLifeDays AND durabilityType (the product then cannot print a PPDS label until both are set again); it must not be combined with either value (a 400 errors/validation naming clearDurability). Omitted, null or false keeps the stored values. Has no effect on create.",
+            "example" : true,
+            "type" : "boolean"
+          },
           "description" : {
             "description" : "Customer-facing product description",
             "maxLength" : 5000,
@@ -1260,14 +1373,15 @@
             "type" : "integer"
           },
           "shelfLifeDays" : {
-            "description" : "Per-product shelf life in days. The PPDS label prints a durability date computed as generationDate + shelfLifeDays. Required for a compliant label (the label 422s when absent).",
+            "description" : "Per-product shelf life in days (0 to 3650). The PPDS label prints a durability date computed as generationDate + shelfLifeDays. Required for a compliant label (the label 422s when absent).",
             "example" : 3,
             "format" : "int32",
+            "maximum" : 3650,
             "minimum" : 0,
             "type" : "integer"
           },
           "shopId" : {
-            "description" : "Shop this product belongs to (null = available on all tenant shops)",
+            "description" : "Shop this product belongs to. Required on create: a product with no shop is on no storefront and cannot be ordered, so a create without one is a 400 errors/shop-required. On an edit, omitting it keeps the stored shop.",
             "format" : "uuid",
             "type" : "string"
           },
@@ -1894,6 +2008,225 @@
           },
           "tokenEndpoint" : {
             "description" : "The Keycloak token endpoint for the client-credentials grant",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CulinaryDishTemplateDto" : {
+        "description" : "A pre-audited Pan-African or Caribbean dish template with UK FSA 14-allergen bitmasks and inline-emphasised ingredients prose (GTM-BLK-02)",
+        "properties" : {
+          "allergenMask" : {
+            "description" : "UK FSA 14-allergen declared bitmask (0..16383)",
+            "example" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "allergenNames" : {
+            "description" : "Declared allergens in UK FSA bit order",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "course" : {
+            "description" : "Course classification (main, soup-stew, street-food, side, snack, dessert, breakfast, drink)",
+            "example" : "main",
+            "type" : "string"
+          },
+          "cuisineKey" : {
+            "description" : "Cuisine key",
+            "example" : "nigerian",
+            "type" : "string"
+          },
+          "cuisineLabel" : {
+            "description" : "Human-readable cuisine label",
+            "example" : "Nigerian",
+            "type" : "string"
+          },
+          "description" : {
+            "description" : "Customer-facing dish description",
+            "type" : "string"
+          },
+          "dietaryTags" : {
+            "description" : "Dietary tags (e.g. halal-friendly, gluten-free, vegan)",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "ingredientsText" : {
+            "description" : "Ingredients prose with **bold** emphasis tokens matching allergenMask",
+            "type" : "string"
+          },
+          "mayContainMask" : {
+            "description" : "UK FSA 14-allergen cross-contact ('May contain') bitmask (0..16383)",
+            "example" : 608,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "mayContainNames" : {
+            "description" : "Cross-contact allergens in UK FSA bit order",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "name" : {
+            "description" : "Display name of the dish",
+            "example" : "Jollof Rice",
+            "type" : "string"
+          },
+          "region" : {
+            "description" : "Geographic/cultural region",
+            "example" : "WEST_AFRICAN",
+            "type" : "string"
+          },
+          "shelfLifeDays" : {
+            "description" : "Recommended refrigerated shelf life in days for PPDS Use-By calculation",
+            "example" : 3,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "slug" : {
+            "description" : "Stable dish slug",
+            "example" : "jollof-rice",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CulinaryPackDto" : {
+        "description" : "A cuisine pack of pre-audited Pan-African / Caribbean dish templates for 1-click shop seeding",
+        "properties" : {
+          "cuisineKey" : {
+            "description" : "Stable cuisine pack key",
+            "example" : "nigerian",
+            "type" : "string"
+          },
+          "cuisineLabel" : {
+            "description" : "Human-readable cuisine pack name",
+            "example" : "Nigerian",
+            "type" : "string"
+          },
+          "dishCount" : {
+            "description" : "Number of dish templates in this cuisine pack",
+            "example" : 6,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "dishes" : {
+            "description" : "Dish templates included in this cuisine pack",
+            "items" : {
+              "$ref" : "#/components/schemas/CulinaryDishTemplateDto"
+            },
+            "type" : "array"
+          },
+          "region" : {
+            "description" : "Region identifier",
+            "example" : "WEST_AFRICAN",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CulinaryPackSeedRequest" : {
+        "description" : "Seed a shop's product catalogue from the Pan-African & Caribbean Culinary Knowledge Base. Requires SHOP_MANAGER on shopId and SCOPE_catalog:write. Idempotent: dishes whose deterministic CKB SKU or title already exist in the target shop are skipped.",
+        "properties" : {
+          "available" : {
+            "description" : "Whether seeded dishes are immediately marked available on the storefront. Defaults to false (draft) so the Food Business Operator reviews and confirms their exact kitchen recipe and price before going live.",
+            "type" : "boolean"
+          },
+          "cuisineKeys" : {
+            "description" : "Cuisine pack keys to seed (e.g. ['nigerian', 'ghanaian']). At least one of cuisineKeys or dishSlugs must be provided.",
+            "items" : {
+              "type" : "string"
+            },
+            "maxItems" : 20,
+            "minItems" : 0,
+            "type" : "array"
+          },
+          "defaultPricePennies" : {
+            "description" : "Optional override price in pennies applied to seeded dishes. When omitted, mains/soups-stews default to 950 (£9.50) and sides/snacks/street-food/desserts/drinks default to 550 (£5.50).",
+            "format" : "int64",
+            "minimum" : 1,
+            "type" : "integer"
+          },
+          "dishSlugs" : {
+            "description" : "Optional specific dish slugs to seed (e.g. ['jollof-rice', 'suya']). If both cuisineKeys and dishSlugs are provided, their union is seeded.",
+            "items" : {
+              "type" : "string"
+            },
+            "maxItems" : 100,
+            "minItems" : 0,
+            "type" : "array"
+          },
+          "shopId" : {
+            "description" : "Target shop to seed dishes into (requires SHOP_MANAGER)",
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "shopId"
+        ],
+        "type" : "object"
+      },
+      "CulinaryPackSeedResult" : {
+        "description" : "Result of seeding Pan-African / Caribbean dish templates into a shop",
+        "properties" : {
+          "created" : {
+            "description" : "Dishes created in the target shop",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "failed" : {
+            "description" : "Dishes that could not be seeded; see each item's reason",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "items" : {
+            "description" : "One outcome per requested dish template, in catalogue order",
+            "items" : {
+              "$ref" : "#/components/schemas/CulinaryPackSeedResultItem"
+            },
+            "type" : "array"
+          },
+          "skipped" : {
+            "description" : "Dishes skipped because the target shop already has them",
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CulinaryPackSeedResultItem" : {
+        "description" : "The outcome for one dish template",
+        "properties" : {
+          "dishName" : {
+            "description" : "The dish display name",
+            "type" : "string"
+          },
+          "dishSlug" : {
+            "description" : "The dish template slug",
+            "type" : "string"
+          },
+          "outcome" : {
+            "description" : "CREATED, SKIPPED or FAILED",
+            "enum" : [
+              "CREATED",
+              "SKIPPED",
+              "FAILED"
+            ],
+            "type" : "string"
+          },
+          "productId" : {
+            "description" : "The new product ID in the target shop (CREATED only)",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "reason" : {
+            "description" : "Why it was skipped or failed (null when CREATED)",
             "type" : "string"
           }
         },
@@ -2900,6 +3233,57 @@
         },
         "type" : "object"
       },
+      "IssuePaymentLinkRequest" : {
+        "properties" : {
+          "purpose" : {
+            "type" : "string"
+          },
+          "ttlMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "IssuedPaymentLinkDto" : {
+        "properties" : {
+          "amountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "clientSecret" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "paymentUrl" : {
+            "type" : "string"
+          },
+          "purpose" : {
+            "type" : "string"
+          },
+          "stripePaymentIntentId" : {
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "JspConfigDescriptor" : {
         "properties" : {
           "jspPropertyGroups" : {
@@ -3070,6 +3454,21 @@
           "groupAdmin" : {
             "description" : "True if the caller has unrestricted (tenant-wide GROUP_ADMIN) access.",
             "type" : "boolean"
+          },
+          "shopRoles" : {
+            "additionalProperties" : {
+              "enum" : [
+                "STAFF",
+                "SHOP_MANAGER",
+                "GROUP_ADMIN"
+              ],
+              "type" : "string"
+            },
+            "description" : "The role the caller holds on each shop in grantedShopIds (the higher of the shop's own grant and the tenant-wide role). Null for a GROUP_ADMIN (unrestricted). A hint for hiding controls the server would refuse; the server still decides every request.",
+            "type" : [
+              "object",
+              "null"
+            ]
           },
           "tenantWideRole" : {
             "description" : "The role a tenant-wide STAFF or SHOP_MANAGER grant gives the caller on EVERY shop of the tenant; grantedShopIds then lists every current shop. Null when the caller holds no such grant, and always null for a GROUP_ADMIN.",
@@ -4883,6 +5282,36 @@
         },
         "type" : "object"
       },
+      "RedeemedPaymentLinkDto" : {
+        "properties" : {
+          "amountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "clientSecret" : {
+            "type" : "string"
+          },
+          "linkId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "purpose" : {
+            "type" : "string"
+          },
+          "stripePaymentIntentId" : {
+            "type" : "string"
+          },
+          "usedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "RedirectView" : {
         "properties" : {
           "applicationContext" : {
@@ -5206,6 +5635,21 @@
           "addressLines",
           "entityType",
           "legalName"
+        ],
+        "type" : "object"
+      },
+      "SendPhoneVerificationRequest" : {
+        "properties" : {
+          "channel" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "phone"
         ],
         "type" : "object"
       },
@@ -6565,6 +7009,38 @@
         },
         "type" : "object"
       },
+      "VerifyPhoneOtpRequest" : {
+        "properties" : {
+          "otp" : {
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "phone" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "otp",
+          "phone"
+        ],
+        "type" : "object"
+      },
+      "VerifyResult" : {
+        "properties" : {
+          "phoneNormalized" : {
+            "type" : "string"
+          },
+          "verified" : {
+            "type" : "boolean"
+          },
+          "verifiedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "VoidOrderRequest" : {
         "description" : "Why the order is being voided.",
         "properties" : {
@@ -7516,6 +7992,129 @@
         ]
       }
     },
+    "/api/v1/billing/subscription" : {
+      "get" : {
+        "operationId" : "getSubscription",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get current tenant billing plan and subscription status",
+        "tags" : [
+          "Billing"
+        ]
+      },
+      "post" : {
+        "operationId" : "subscribeOrUpdate",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BillingSubscriptionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Subscribe or switch the tenant's recurring billing plan (GAP-GTM-05 / PAY-02 / D-B9)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/api/v1/billing/subscription/cancel" : {
+      "post" : {
+        "operationId" : "cancelSubscription",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "immediate",
+            "required" : false,
+            "schema" : {
+              "default" : true,
+              "type" : "boolean"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Self-serve subscription cancellation with zero exit fee (B8)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/api/v1/billing/subscription/complete-walk-setup" : {
+      "post" : {
+        "operationId" : "completeWalkSetup",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Complete WALK_SETUP_STEPDOWN onboarding book and step down from £195/mo to 2.5% capped at £39/mo (B9 / D-B9)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
     "/api/v1/credentials" : {
       "get" : {
         "description" : "Every credential of the business, newest first, revoked ones included: name, scopes, shop, role, who issued, rotated and revoked it and when, and lastUsedAt, which is best-effort and never more precise than lastUsedIntervalMinutes. Never carries a secret.",
@@ -8298,6 +8897,16 @@
               }
             },
             "description" : "shop-access-denied: not a Group admin"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "orderId is not an order of the caller's tenant, or shopId is not a shop of it"
           }
         },
         "security" : [
@@ -8903,6 +9512,16 @@
             },
             "description" : "Validation error or missing tenant"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "409" : {
             "content" : {
               "application/problem+json" : {
@@ -9305,6 +9924,16 @@
             },
             "description" : "Invalid state (not DRAFT/ACTION_REQUIRED) or malformed company number"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "404" : {
             "content" : {
               "application/problem+json" : {
@@ -9354,6 +9983,16 @@
               }
             },
             "description" : "Gates not satisfied or illegal transition (not in APPROVED)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
           },
           "404" : {
             "content" : {
@@ -9445,6 +10084,16 @@
             },
             "description" : "Illegal transition (not in ACTION_REQUIRED)"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "404" : {
             "content" : {
               "application/problem+json" : {
@@ -9495,6 +10144,16 @@
             },
             "description" : "Illegal transition (not in DRAFT)"
           },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
+          },
           "404" : {
             "content" : {
               "application/problem+json" : {
@@ -9544,6 +10203,16 @@
               }
             },
             "description" : "Illegal transition (already terminal / LIVE / SUSPENDED)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the onboarded shop (shop-access-denied, application/problem+json)"
           },
           "404" : {
             "content" : {
@@ -10584,7 +11253,7 @@
                 }
               }
             },
-            "description" : "Concurrent modification of the same order, or insufficient stock"
+            "description" : "Concurrent modification of the same order, insufficient stock, or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)"
           }
         },
         "security" : [
@@ -10778,7 +11447,7 @@
                 }
               }
             },
-            "description" : "Concurrent modification of the same order, or insufficient stock"
+            "description" : "Concurrent modification of the same order, insufficient stock, or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)"
           }
         },
         "security" : [
@@ -10856,7 +11525,7 @@
                 }
               }
             },
-            "description" : "Concurrent modification of the same order, or insufficient stock"
+            "description" : "Concurrent modification of the same order, insufficient stock, or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)"
           }
         },
         "security" : [
@@ -10963,6 +11632,53 @@
           }
         ],
         "summary" : "Void an order",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{orderId}/payment-links" : {
+      "post" : {
+        "description" : "Requires the customer's phone number on the order to be verified (#461 / #462). Supports UPFRONT, DEPOSIT, and BALANCE payment links and revokes any prior unused link for the same order and purpose.",
+        "operationId" : "issuePaymentLink",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "orderId",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/IssuePaymentLinkRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Issue a single-use expiring payment link for an order",
         "tags" : [
           "Orders"
         ]
@@ -11214,7 +11930,7 @@
                 }
               }
             },
-            "description" : "Validation error - missing required fields or invalid price"
+            "description" : "Validation error - missing required fields or invalid price, or no shop named (errors/shop-required, field shopId)"
           },
           "401" : {
             "content" : {
@@ -11460,6 +12176,129 @@
           }
         ],
         "summary" : "Copy products to another shop",
+        "tags" : [
+          "Products"
+        ]
+      }
+    },
+    "/api/v1/products/culinary-packs" : {
+      "get" : {
+        "description" : "Returns the 10 pre-audited regional cuisine packs (52 dishes) from the bundled OaaS Culinary Knowledge Base (GTM-BLK-02), with UK FSA 14-allergen declared and cross-contact bitmasks, inline-emphasised ingredients prose, and recommended refrigerated shelf-life days.",
+        "operationId" : "listCulinaryPacks",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/CulinaryPackDto"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "Available culinary packs and dish templates"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or an invalid one"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "List Pan-African & Caribbean culinary packs",
+        "tags" : [
+          "Products"
+        ]
+      }
+    },
+    "/api/v1/products/culinary-packs/seed" : {
+      "post" : {
+        "description" : "Idempotently seeds a shop's product catalogue from one or more regional cuisine packs or specific dish template slugs (GTM-BLK-02). Requires SHOP_MANAGER on shopId and SCOPE_catalog:write. Seeded dishes are created as drafts (available=false) by default so the Food Business Operator confirms their exact kitchen recipe and price before publishing. Dishes whose deterministic CKB SKU or title already exist in the target shop are SKIPPED.",
+        "operationId" : "seedCulinaryPack",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CulinaryPackSeedRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CulinaryPackSeedResult"
+                }
+              }
+            },
+            "description" : "Seed processed; see created, skipped, failed and items"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing shopId, or neither cuisineKeys nor dishSlugs provided (errors/validation, errors/invalid-argument)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on shopId (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Shop not found in the caller's tenant (errors/not-found)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Seed shop catalogue from Pan-African & Caribbean culinary pack",
         "tags" : [
           "Products"
         ]
@@ -12220,7 +13059,7 @@
     },
     "/api/v1/products/{id}/label" : {
       "get" : {
-        "description" : "Returns a PPDS (Natasha's Law) allergen label PDF for the product. The label prints the production date and a use-by / best-before date counted from it (production date + the product's shelf life), and a separate 'May contain' line for cross-contact allergens that are not already declared. Dates are printed en-GB, e.g. '5 October 2026'.",
+        "description" : "Returns a PPDS (Natasha's Law) allergen label PDF for the product. The label prints the production date and a use-by / best-before date counted from it (production date + the product's shelf life), and a separate 'May contain' line for cross-contact allergens that are not already declared. Dates are printed en-GB, e.g. '5 October 2026'. Optional format parameter selects STANDARD_100X60MM (100x60mm sticker, default) or THERMAL_62MM (62mm continuous thermal roll for Brother QL-800/810W printers, GTM-BLK-06).",
         "operationId" : "generateLabel",
         "parameters" : [
           {
@@ -12242,6 +13081,16 @@
               "format" : "date",
               "type" : "string"
             }
+          },
+          {
+            "description" : "Optional page layout: STANDARD_100X60MM (default 100x60mm sheet/sticker) or THERMAL_62MM (62mm continuous roll for Brother QL thermal printers, GTM-BLK-06).",
+            "example" : "THERMAL_62MM",
+            "in" : "query",
+            "name" : "format",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
           }
         ],
         "responses" : {
@@ -12255,6 +13104,16 @@
               }
             },
             "description" : "The label PDF (attachment label-{id}.pdf)"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Unsupported label format parameter (errors/invalid-argument)"
           },
           "401" : {
             "content" : {
@@ -12294,7 +13153,7 @@
                 }
               }
             },
-            "description" : "The product lacks required label data (errors/incomplete-label-data), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
+            "description" : "The product lacks required label data (errors/incomplete-label-data: a plain-words detail plus a missingFields member naming shelfLifeDays, durabilityType, shopId, shopName and/or shopAddress), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
           }
         },
         "security" : [
@@ -12984,6 +13843,38 @@
         ]
       }
     },
+    "/api/v1/public/payment-links/{token}/redeem" : {
+      "post" : {
+        "description" : "Marks the payment link token as used (single-use) and returns the live Stripe PaymentIntent client secret (#461 / PAY-04).",
+        "operationId" : "redeemPaymentLink",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RedeemedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Redeem a single-use expiring payment link",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/payments/webhook" : {
       "post" : {
         "description" : "Handles Stripe webhook events. Verifies signature before processing.",
@@ -13300,6 +14191,90 @@
           }
         },
         "summary" : "Place a guest order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/shops/{slug}/phone-verification/send" : {
+      "post" : {
+        "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
+        "operationId" : "sendPhoneVerification",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SendPhoneVerificationRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChallengeResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Send customer phone OTP verification challenge",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/shops/{slug}/phone-verification/verify" : {
+      "post" : {
+        "description" : "Verifies a 6-digit OTP challenge for the shop's tenant and marks matching customer and open order records phone_verified = true (#462).",
+        "operationId" : "verifyPhoneOtp_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyPhoneOtpRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/VerifyResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Verify customer phone OTP code",
         "tags" : [
           "Public Storefront"
         ]
@@ -15734,6 +16709,129 @@
         ]
       }
     },
+    "/billing/subscription" : {
+      "get" : {
+        "operationId" : "getSubscription_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get current tenant billing plan and subscription status",
+        "tags" : [
+          "Billing"
+        ]
+      },
+      "post" : {
+        "operationId" : "subscribeOrUpdate_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BillingSubscriptionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Subscribe or switch the tenant's recurring billing plan (GAP-GTM-05 / PAY-02 / D-B9)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/billing/subscription/cancel" : {
+      "post" : {
+        "operationId" : "cancelSubscription_1",
+        "parameters" : [
+          {
+            "in" : "query",
+            "name" : "immediate",
+            "required" : false,
+            "schema" : {
+              "default" : true,
+              "type" : "boolean"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Self-serve subscription cancellation with zero exit fee (B8)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
+    "/billing/subscription/complete-walk-setup" : {
+      "post" : {
+        "operationId" : "completeWalkSetup_1",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BillingSubscriptionDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Complete WALK_SETUP_STEPDOWN onboarding book and step down from £195/mo to 2.5% capped at £39/mo (B9 / D-B9)",
+        "tags" : [
+          "Billing"
+        ]
+      }
+    },
     "/health" : {
       "get" : {
         "operationId" : "health",
@@ -15947,6 +17045,38 @@
           }
         },
         "summary" : "Create remaining-balance PaymentIntent for a deposit order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/payment-links/{token}/redeem" : {
+      "post" : {
+        "description" : "Marks the payment link token as used (single-use) and returns the live Stripe PaymentIntent client secret (#461 / PAY-04).",
+        "operationId" : "redeemPaymentLink_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "token",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RedeemedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Redeem a single-use expiring payment link",
         "tags" : [
           "Public Storefront"
         ]
@@ -16268,6 +17398,90 @@
           }
         },
         "summary" : "Place a guest order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/shops/{slug}/phone-verification/send" : {
+      "post" : {
+        "description" : "Normalizes a UK or international mobile number to E.164 and sends a 6-digit OTP via SMS or WhatsApp (#462).",
+        "operationId" : "sendPhoneVerification_1",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SendPhoneVerificationRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChallengeResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Send customer phone OTP verification challenge",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/shops/{slug}/phone-verification/verify" : {
+      "post" : {
+        "description" : "Verifies a 6-digit OTP challenge for the shop's tenant and marks matching customer and open order records phone_verified = true (#462).",
+        "operationId" : "verifyPhoneOtp",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "slug",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyPhoneOtpRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/VerifyResult"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Verify customer phone OTP code",
         "tags" : [
           "Public Storefront"
         ]
@@ -16615,6 +17829,10 @@
     {
       "description" : "Announcement management endpoints",
       "name" : "Announcements"
+    },
+    {
+      "description" : "Plan-configurable recurring subscription billing & fee metering",
+      "name" : "Billing"
     },
     {
       "description" : "Integrator API credentials: issue, list, rotate, revoke (Group admin only)",

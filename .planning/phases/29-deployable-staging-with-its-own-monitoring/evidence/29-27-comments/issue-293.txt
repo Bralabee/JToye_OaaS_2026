@@ -1,0 +1,5 @@
+Phase 29 disposition for #293 (DPLY-02): already closed on 2026-08-04; verified live on the staging ingress.
+
+scripts/check-staging-edge.sh reads the Content-Security-Policy the staging ingress actually serves and requires the identity provider origin to admit the sign-in URLs. On staging, connect-src and form-action admit https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth and the token endpoint, each through the slash-terminated realm source. The check was shown failing first: a probe route served without any CSP header is refused. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-15-edge.txt, line 50 and lines 67 to 77.
+
+A CSP source with a path matches exactly that path unless it ends in a slash. The matcher table in the same file shows the bare realm source admitting nothing the browser calls and the slash form admitting the whole subtree (lines 134 to 147), which is why the served policy lists each realm twice.

@@ -2,8 +2,11 @@
 # Weekly update PRs across every dependency surface in the repo. Minor + patch
 # updates are grouped per ecosystem to avoid PR spam; majors still open singly
 # so breaking bumps get individual review. open-pull-requests-limit caps churn.
-# Manages GitHub-owned actions/* + github/codeql-action/* pins that the
-# workflow deliberately leaves on @vN float.
+# Manages the GitHub Actions pins: EVERY `uses:` in .github/workflows/ is pinned to a full
+# 40-hex commit sha with a trailing `# <tag>` comment (Phase 29 CI hardening, M2), the
+# GitHub-owned actions/* and github/codeql-action/* and the third-party ones alike. Nothing
+# floats on @vN any more; the github-actions entry below is what moves the pins, one PR per
+# bump, rewriting both the sha and the comment.
 version: 2
 updates:
   # --- Java / Spring Boot (Gradle) ---
@@ -163,7 +166,12 @@ updates:
       minor-and-patch:
         update-types: ["minor", "patch"]
 
-  # --- GitHub Actions (pins the actions/* left on @vN float) ---
+  # --- GitHub Actions (bumps the sha pins; every uses: is a 40-hex sha with a # <tag> comment) ---
+  #
+  # Keep this entry: with the floats gone it is the ONLY thing that moves a pin. Without it a
+  # sha pin is a frozen action that silently stops receiving fixes. Review a bump by the
+  # comment's tag, then confirm the new sha is that tag's commit (an annotated tag needs
+  # `gh api repos/<owner>/<repo>/git/tags/<sha>` to reach the commit it names).
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

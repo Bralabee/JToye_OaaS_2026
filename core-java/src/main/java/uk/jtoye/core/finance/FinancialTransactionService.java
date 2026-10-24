@@ -14,9 +14,16 @@ import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
 import uk.jtoye.core.finance.dto.FinancialVatRow;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopRole;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.order.OrderRepository;
+import uk.jtoye.core.order.Order;
+import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.InvalidRequestFieldsException;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,11 +46,52 @@ public class FinancialTransactionService {
 
     private final FinancialTransactionRepository financialTransactionRepository;
     private final FinancialTransactionMapper financialTransactionMapper;
+    private final OrderRepository orderRepository;
+    private final ShopAccessService shopAccessService;
 
     public FinancialTransactionService(FinancialTransactionRepository financialTransactionRepository,
-                                       FinancialTransactionMapper financialTransactionMapper) {
+                                       FinancialTransactionMapper financialTransactionMapper,
+                                       OrderRepository orderRepository,
+                                       ShopAccessService shopAccessService) {
         this.financialTransactionRepository = financialTransactionRepository;
         this.financialTransactionMapper = financialTransactionMapper;
+        this.orderRepository = orderRepository;
+        this.shopAccessService = shopAccessService;
+    }
+
+    /**
+     * The ledger create behind {@code POST /financial-transactions}: the same write as
+     * {@link #createTransaction}, but the {@code orderId} and {@code shopId} in the body come from the caller,
+     * so they are authorised first. The order writers (completion, card settlement) call
+     * {@link #createTransaction} directly with the id and shop of an order they have just loaded.
+     *
+     * <ul>
+     *   <li>An {@code orderId} must name an order of the caller's tenant (looked up by id AND tenant), else
+     *       the same 404 as an absent order.</li>
+     *   <li>With an order, the row's shop is the order's own shop; a body {@code shopId} that disagrees is
+     *       refused (400 naming {@code shopId}).</li>
+     *   <li>A {@code shopId} given with no order is not stored (a manual row has no shop) but is still
+     *       authorised: SHOP_MANAGER on it, which {@link ShopAccessService#require} also binds to the
+     *       caller's tenant.</li>
+     * </ul>
+     */
+    public FinancialTransactionDto createTransactionForCaller(CreateTransactionRequest request) {
+        UUID shopId = request.shopId();
+        if (request.orderId() != null) {
+            UUID tenantId = TenantContext.get()
+                    .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+            Order order = orderRepository.findByIdAndTenantId(request.orderId(), tenantId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + request.orderId()));
+            if (shopId != null && !shopId.equals(order.getShopId())) {
+                throw new InvalidRequestFieldsException(Map.of("shopId",
+                        "shopId must be the shop of the order named by orderId (or omitted)"));
+            }
+            shopId = order.getShopId();
+        } else if (shopId != null) {
+            shopAccessService.require(shopId, ShopRole.SHOP_MANAGER);
+        }
+        return createTransaction(new CreateTransactionRequest(request.amountPennies(), request.vatRate(),
+                request.description(), request.orderId(), shopId));
     }
 
     /**

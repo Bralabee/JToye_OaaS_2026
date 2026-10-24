@@ -1,0 +1,567 @@
+#!/usr/bin/env bash
+# check-deploy-digest-parity.sh — proves the pods that are RUNNING after a rollout are the
+# images that were BUILT for this commit.
+#
+# ---------------------------------------------------------------------------------------
+# WHAT GOES WRONG
+#
+#   Phase 26 shipped a runtime missing its own `application.yml` change and three merged UI
+#   PRs, past FOUR green gates, and the user caught it by eye. HTTP 200, a rendered page
+#   title, "builds clean" and a green suite are all identical whether the running code is
+#   current or months stale. The deploy job already:
+#
+#     - pins :<sha> with `kustomize edit set image` and asserts the RENDER contains it,
+#     - waits for `kubectl rollout status` on all three deployments,
+#     - curls actuator health in-cluster and runs public smoke tests.
+#
+#   None of that answers the question. A render assertion proves the YAML we are about to
+#   apply names the right TAG. A rollout status proves pods became Ready. A health check
+#   proves something is listening. A tag can be re-pointed, an imagePullPolicy can serve a
+#   cached layer, a node can hold a stale image under the same tag, and a partially-failed
+#   rollout can leave old replicas serving — every one of which produces exactly the same
+#   green as a correct deploy.
+#
+#   The only thing that distinguishes them is the DIGEST the kubelet actually pulled.
+#
+# THE COMPOSE HALF AND THE KUBERNETES HALF
+#
+#   `scripts/check-runtime-freshness.sh` is the COMPOSE half of the runtime-parity
+#   doctrine: it reads `.Metadata.LastTagTime` off local Docker images and compares the
+#   running container's image id against the tag's. It has no cluster concept at all, so
+#   pointed at Kubernetes it can only ever exit 2 (VOID) — and a VOID recorded as a pass is
+#   how this whole failure mode survives. THIS script is the KUBERNETES half.
+#
+# WHY A SET AND NOT AN EQUALITY — a deliberate widening, with its reason
+#
+#   core-java and edge-go are built `linux/amd64,linux/arm64`. A multi-platform tag resolves
+#   to a manifest-LIST (OCI index) digest, while a node may report the platform-specific
+#   MANIFEST digest for the architecture it actually pulled. Which of the two AKS/containerd
+#   reports in `.status.containerStatuses[].imageID` is NOT measurable without a live
+#   cluster, and guessing would produce a gate that fails on every correct deploy.
+#
+#   So the expected set is built from `docker buildx imagetools inspect`: the index digest
+#   PLUS each platform manifest digest, and membership is asserted. This is the WEAKER of
+#   the two correct forms and it is chosen knowingly. It still fails on a genuinely
+#   different image — which is the property being bought — because a stale or wrong build
+#   produces a digest in NEITHER set.
+#
+#   NARROWING THIS TO A SINGLE MEASURED DIGEST IS OWED TO A LATER PLAN. Plan 29-14 ran it on
+#   the first live deploy and recorded which digest AKS/containerd reports in
+#   evidence/29-14-tracer.txt; until a plan narrows it against that record, do not narrow it
+#   speculatively: a gate that reds every correct deploy gets deleted, and then there is no
+#   gate.
+#
+# WHY THE EXPECTED DIGESTS COME FROM THE REGISTRY AND NOT FROM JOB OUTPUTS
+#
+#   `build-and-push` is a MATRIX job (`strategy.matrix.service: [core-java, edge-go,
+#   frontend]`) and GitHub Actions matrix job outputs are LAST-WRITER-WINS: three parallel
+#   legs writing `outputs.digest` leave exactly one value, non-deterministically. Per-service
+#   digests therefore cannot be plumbed through outputs at all. They are resolved from the
+#   registry at deploy time, which is why the job needs `packages: read`.
+#
+# WAIT FOR THE OLD REPLICAS TO DRAIN, THEN COMPARE ONLY THE PODS THAT STAY
+#
+#   `kubectl rollout status` reports success once the old ReplicaSet is scaled to zero, which
+#   is BEFORE its pods have finished terminating. A pod in its grace period still carries the
+#   `app=<svc>` label, still reports `ready: true` and still reports its imageID. The first
+#   post-flip deploy-staging run (29-28, run 39440780472) read core-java 2.4 s after rollout
+#   status returned and found the new digest (MATCH) plus the previous revision's digest from
+#   the pod still shutting down (NOT IN THE EXPECTED SET), so a correct deploy failed and was
+#   rolled back.
+#
+#   So the gate reads each service's pods as one JSON list per poll and sorts them with one jq
+#   program (POD_JQ): a pod with a deletionTimestamp is TERMINATING, every other pod's
+#   containers are LIVE. It polls until a service has no terminating pod, against ONE deadline
+#   shared by all services (--drain-timeout seconds, default 180, set once before the first
+#   service; a poll already in flight can overrun it by up to its 30 s request timeout). A pod
+#   still terminating at the deadline counts as a mismatch, not a pod to ignore: it may still
+#   be serving the old code. The remaining services are still compared, so one stuck pod does
+#   not hide a wrong image elsewhere. Only LIVE digests are compared.
+#
+#   The selftest feeds POD_JQ real pod-list JSON (DIR/<svc>.pods.<poll>.json), so the filter
+#   that decides what counts as running is the code under test, not a stand-in for it.
+#
+#   A CONTAINER WITHOUT A DIGEST IS VOID (C-9). A container whose imageID is non-empty but
+#   carries no @sha256:<64 hex> (a bare "sha256:<id>"), or that reports state.running or
+#   ready: true with no imageID at all, used to fall out of the digest set silently, so a
+#   wrong image could run beside a matching one and the gate still passed. The state does not
+#   matter: a container in CrashLoopBackOff (state.waiting, ready: false) or a terminated one
+#   has already pulled and run its image, so its imageID is filled in and a bare one is a wrong
+#   image the gate cannot compare. The ONLY container ignored is one with an EMPTY imageID that
+#   is neither running nor ready: a Pending or ContainerCreating container legitimately has no
+#   imageID until the pull finishes.
+#
+#   The VOID is COLLECTED, not raised on sight. Every service is still compared, every
+#   unresolved container, mismatch and stuck pod is printed, and only then does the gate exit.
+#   Precedence is VOID (2) if any container was unresolved, else FAIL (1) if anything
+#   mismatched or was stuck, else PASS (0): a VOID never hides a wrong frontend image, and the
+#   FAIL summary never replaces the VOID.
+#
+# FAIL CLOSED — "could not check" is NEVER "clean"
+#
+#   An unreadable digest, an EMPTY actual set, an EMPTY expected set, or ZERO services
+#   discovered are all exit 2. A step that exits 0 on an empty result measures nothing, and
+#   this repo has already shipped one of those: check-runtime-freshness.sh once printed
+#   `PASS: 3 … (1 unverified)` and exited 0 with a service it had not verified.
+#
+# SHELL DISCIPLINE
+#
+#   There is deliberately no pipe into a quiet grep anywhere in this file. That shape
+#   inverts under `pipefail` when the pattern MATCHES — grep exits at the first hit, the
+#   writer takes SIGPIPE, pipefail promotes it to 141 — and so fails OPEN. It has made a
+#   real guard in this repo pass when it should have failed. Membership is tested with a
+#   here-string, and every `rc=$?` is captured on the SAME statement as its command (an
+#   intervening `echo` reports the echo's status, which is 0 essentially always).
+#
+# EXIT CODES — uniform with this phase's other gates
+#   0 = the running images match this commit · 1 = a WRONG image is running · 2 = VOID
+#
+# USAGE (plan 29-14)
+#   scripts/check-deploy-digest-parity.sh --context <ctx> --tag <40-hex sha> \
+#       [--namespace jtoye-staging] [--services "core-java edge-go frontend"] [--plant-stale]
+#   scripts/check-deploy-digest-parity.sh --selftest
+#
+#   --context   REQUIRED, no default and no environment fallback. Checked by
+#               scripts/lib/staging-kube-guard.sh before any cluster read: sipbihs2aks is
+#               refused by name and the context's server must equal
+#               https://<aks_api_server_fqdn>:443 from k8s/staging/azure-identity.yaml (a
+#               namespace other than jtoye-staging has no identity file yet and is refused:
+#               fail closed). The guard's refusal (1) or VOID (2) is re-reported as VOID:
+#               this gate compared nothing.
+#   --tag       REQUIRED: the full 40-lowercase-hex commit sha the images were pushed under.
+#               It must be the RECORDED deployed sha (deploy.sh's DEPLOYED_SHA line, or the
+#               variable the CI job deployed with), never a fresh `git rev-parse HEAD`: an
+#               evidence or docs commit moves HEAD to a commit whose images never existed.
+#   --plant-stale  the fail arm: everything is read for real, then the expected set is
+#               REPLACED by one deliberately wrong digest, so every running container must
+#               come out NOT IN THE EXPECTED SET and the gate must exit 1. An exit 0 here
+#               means the gate cannot see a wrong image.
+#   --drain-timeout N  seconds to wait for terminating pods of each service to go before
+#               comparing (default 180; a positive integer). Still terminating at N = FAIL.
+#   --fixture DIR  comparison logic only: read DIR/<svc>.actual and DIR/<svc>.expected
+#               instead of the cluster and the registry. Refused together with --context, so
+#               a cluster run can never be fed files. --selftest drives it. When
+#               DIR/<svc>.pods.1.json exists, the service's pods are read from
+#               DIR/<svc>.pods.<poll>.json instead of <svc>.actual (the highest-numbered file
+#               repeats once the sequence runs out), through the same POD_JQ as a cluster run.
+#
+# NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT" || exit 2
+
+void() { printf 'VOID: %s\n' "$*" >&2; exit 2; }
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+log()  { printf '  %s\n' "$*"; }
+
+# No environment variable feeds any of these: what a cluster run compares is decided by its
+# arguments alone (the branch version read DIGEST_PARITY_* overrides, including a fixture dir).
+KUBE_CONTEXT=""
+NAMESPACE="jtoye-staging"
+GIT_SHA=""
+SERVICES="core-java edge-go frontend"
+REGISTRY_PREFIX="ghcr.io/bralabee/jtoye-"
+FIXTURE=""
+PLANT_STALE=0
+SELFTEST=0
+DRAIN_TIMEOUT=180
+# One deliberately wrong digest for --plant-stale: sha256 of the string "plant-stale".
+STALE_DIGEST="sha256:$(printf 'plant-stale' | sha256sum | awk '{print $1}')"
+# Contexts refused by name before the guard even runs (the guard refuses it too).
+FORBIDDEN_CONTEXTS="sipbihs2aks"
+
+# A value-taking flag given as the LAST argument has no value. Under `set -uo` (no -e) a bare
+# `shift 2` with one argument left FAILS and shifts NOTHING, so the loop re-reads the same flag
+# for ever: a hang, which in CI is a stuck job holding cluster credentials and in the selftest
+# is a stuck step. Refuse it instead (round 1, F4).
+needval() { [ "$#" -ge 2 ] || void "$1 needs a value, and none was given (it was the last argument)"; }
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --context)     needval "$@"; KUBE_CONTEXT="$2"; shift 2 ;;
+    --namespace)   needval "$@"; NAMESPACE="$2"; shift 2 ;;
+    --tag)         needval "$@"; GIT_SHA="$2"; shift 2 ;;
+    --services)    needval "$@"; SERVICES="$2"; shift 2 ;;
+    --fixture)     needval "$@"; FIXTURE="$2"; shift 2 ;;
+    --drain-timeout) needval "$@"; DRAIN_TIMEOUT="$2"; shift 2 ;;
+    --plant-stale) PLANT_STALE=1; shift ;;
+    --selftest)    SELFTEST=1; shift ;;
+    -h|--help)
+      echo "usage: $0 --context <ctx> --tag <40-hex sha> [--namespace ns] [--services \"a b c\"] [--drain-timeout N] [--plant-stale] | --selftest"
+      exit 0 ;;
+    *) void "unknown argument '$1' — refusing to guess what was meant while holding cluster credentials" ;;
+  esac
+done
+[[ "$DRAIN_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || void "--drain-timeout must be a positive integer number of seconds (got '$DRAIN_TIMEOUT')"
+
+# ---- --selftest: the comparison and refusal arms, no cluster, no registry -------------
+if [ "$SELFTEST" -eq 1 ]; then
+  st="$(mktemp -d)" || void "mktemp -d failed"
+  trap 'rm -rf "$st"' EXIT
+  d1="sha256:$(printf a | sha256sum | awk '{print $1}')"; d2="sha256:$(printf b | sha256sum | awk '{print $1}')"
+  mkdir -p "$st/match" "$st/mismatch" "$st/empty" "$st/drains" "$st/stuck" "$st/stuckonly" "$st/oldlive"
+  for s in core-java edge-go frontend; do
+    printf '%s\n' "$d1" > "$st/match/$s.actual"; printf '%s\n%s\n' "$d2" "$d1" > "$st/match/$s.expected"
+    printf '%s\n' "$d1" > "$st/mismatch/$s.actual"; printf '%s\n' "$d1" > "$st/mismatch/$s.expected"
+    : > "$st/empty/$s.actual"; printf '%s\n' "$d1" > "$st/empty/$s.expected"
+    for x in drains stuck stuckonly oldlive; do printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"; done
+  done
+  # The 29-28 shape, as pod-list JSON: core-java's new pod (d1) is live and the previous
+  # revision's pod (d2) is still terminating, still reporting its imageID.
+  pod() { # pod NAME DIGEST TERMINATING(0|1)
+    local del=""; [ "$3" -eq 1 ] && del=',"deletionTimestamp":"2026-10-20T16:21:00Z"'
+    printf '{"metadata":{"name":"%s"%s},"status":{"containerStatuses":[{"name":"core-java","ready":true,"imageID":"ghcr.io/bralabee/jtoye-core-java@%s"}]}}' "$1" "$del" "$2"
+  }
+  new=$(pod core-java-new "$d1" 0); old=$(pod core-java-old "$d2" 1)
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/drains/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/drains/core-java.pods.2.json"
+  printf '{"items":[%s]}' "$new" > "$st/drains/core-java.pods.3.json"
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuck/core-java.pods.1.json"
+  # The stuck pod alone, every live digest matching: only the STUCK check can fail this one.
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuckonly/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$(pod core-java-old "$d2" 0)" > "$st/oldlive/core-java.pods.1.json"
+  # C-9, as pod-list JSON. cpod NAME CONTAINER IMAGEID STATE(running|ready|waiting|crashloop|
+  # terminated): a pod whose one container reports the given state and imageID. "running" =
+  # state.running set; "ready" = ready:true with no state.running; "waiting" = ContainerCreating,
+  # ready:false; "crashloop" = CrashLoopBackOff, ready:false; "terminated" = state.terminated.
+  cpod() {
+    local st
+    case "$4" in
+      running) st='"ready":false,"state":{"running":{"startedAt":"2026-10-20T16:00:00Z"}}' ;;
+      ready)   st='"ready":true,"state":{}' ;;
+      waiting) st='"ready":false,"state":{"waiting":{"reason":"ContainerCreating"}}' ;;
+      crashloop) st='"ready":false,"state":{"waiting":{"reason":"CrashLoopBackOff"}}' ;;
+      terminated) st='"ready":false,"state":{"terminated":{"exitCode":1,"reason":"Error"}}' ;;
+    esac
+    printf '{"metadata":{"name":"%s"},"status":{"containerStatuses":[{"name":"%s",%s,"imageID":"%s"}]}}' "$1" "$2" "$st" "$3"
+  }
+  mkdir -p "$st/unres-running" "$st/unres-ready" "$st/unres-short" "$st/pending-ok" "$st/crashloop-bare" \
+    "$st/terminated-bare" "$st/unres-and-wrong" "$st/wrong-then-unres" "$st/stuck-then-unres"
+  for x in unres-running unres-ready unres-short pending-ok crashloop-bare terminated-bare unres-and-wrong wrong-then-unres stuck-then-unres; do
+    for s in core-java edge-go frontend; do
+      printf '%s\n' "$d1" > "$st/$x/$s.actual"; printf '%s\n' "$d1" > "$st/$x/$s.expected"
+    done
+  done
+  # A live container that has a digest-less imageID next to a correct one: the correct one used to
+  # carry the gate to a PASS and the other was dropped unseen.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-bare sidecar "sha256:$(printf c | sha256sum | awk '{print $1}')" running)" > "$st/unres-running/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-nodigest core-java "" ready)" > "$st/unres-ready/core-java.pods.1.json"
+  # An @sha256: with a truncated digest is not comparable either.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-short core-java "ghcr.io/bralabee/jtoye-core-java@sha256:abcd" running)" > "$st/unres-short/core-java.pods.1.json"
+  # The control: a Pending pod (ContainerCreating, empty imageID) beside the live one is NOT VOID.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-pending core-java "" waiting)" > "$st/pending-ok/core-java.pods.1.json"
+  # A container that is NOT running and NOT ready but has already pulled and run its image: its
+  # imageID is filled in, bare. Only an EMPTY imageID may be ignored, so both are VOID.
+  bare="sha256:$(printf c | sha256sum | awk '{print $1}')"
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-crash core-java "$bare" crashloop)" > "$st/crashloop-bare/core-java.pods.1.json"
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-exited sidecar "$bare" terminated)" > "$st/terminated-bare/core-java.pods.1.json"
+  # VOID must not hide the other services (round 1, F3). core-java has an unresolved container,
+  # edge-go is right and frontend runs a WRONG image: all three are reported, and the rc is 2.
+  printf '{"items":[%s,%s]}' "$new" "$(cpod core-java-bare sidecar "$bare" running)" > "$st/unres-and-wrong/core-java.pods.1.json"
+  printf '%s\n' "$d2" > "$st/unres-and-wrong/frontend.actual"
+  # ... and in the other order: core-java's mismatch (counted BEFORE frontend's unresolved
+  # container) is still printed, not replaced by the VOID.
+  printf '%s\n' "$d2" > "$st/wrong-then-unres/core-java.actual"
+  printf '{"items":[%s]}' "$(cpod fe-bare frontend "$bare" running)" > "$st/wrong-then-unres/frontend.pods.1.json"
+  # ... and a stuck pod (drain-loop finding) is printed too.
+  printf '{"items":[%s,%s]}' "$new" "$old" > "$st/stuck-then-unres/core-java.pods.1.json"
+  printf '{"items":[%s]}' "$(cpod fe-bare frontend "$bare" running)" > "$st/stuck-then-unres/frontend.pods.1.json"
+  # The stuck arm also plants a wrong frontend image: one stuck pod must not hide it.
+  printf '%s\n' "$d2" > "$st/stuck/frontend.actual"
+  printf '%s\n' "$d2" > "$st/mismatch/frontend.actual"
+  fails=0
+  arm() { # arm NAME WANT_RC ARGS...
+    local name="$1" want="$2" rc=0; shift 2
+    # Bounded: a hang is a FAIL (rc 124), never a stuck selftest. (Round 1 F4: a value flag given
+    # as the LAST argument made the parser spin for ever, and the selftest had no arm that could
+    # notice, because every arm ran unbounded.)
+    timeout 20 bash "$0" "$@" >"$st/$name.out" 2>&1 || rc=$?
+    if [ "$rc" -eq "$want" ]; then echo "PASS $name rc=$rc"; else echo "FAIL $name rc=$rc (want $want): $(tail -2 "$st/$name.out" | tr '\n' ' ')"; fails=$((fails + 1)); fi
+  }
+  arm match           0 --fixture "$st/match"
+  arm mismatch        1 --fixture "$st/mismatch"
+  arm plant-stale     1 --fixture "$st/match" --plant-stale
+  arm empty-actual    2 --fixture "$st/empty"
+  arm zero-services   2 --fixture "$st/match" --services ""
+  arm no-context      2 --tag 0123456789abcdef0123456789abcdef01234567
+  arm employer        2 --context sipbihs2aks --tag 0123456789abcdef0123456789abcdef01234567
+  arm short-tag       2 --context jtoye-stg-aks --tag 0123abc
+  arm fixture-context 2 --fixture "$st/match" --context jtoye-stg-aks
+  arm old-pod-drains  0 --fixture "$st/drains" --drain-timeout 10
+  arm old-pod-stuck   1 --fixture "$st/stuck" --drain-timeout 1
+  arm old-pod-live    1 --fixture "$st/oldlive"
+  arm stuck-only      1 --fixture "$st/stuckonly" --drain-timeout 1
+  arm unres-running   2 --fixture "$st/unres-running"
+  arm unres-ready     2 --fixture "$st/unres-ready"
+  arm unres-short     2 --fixture "$st/unres-short"
+  arm pending-ok      0 --fixture "$st/pending-ok"
+  arm crashloop-bare  2 --fixture "$st/crashloop-bare"
+  arm terminated-bare 2 --fixture "$st/terminated-bare"
+  arm unres-and-wrong 2 --fixture "$st/unres-and-wrong"
+  arm wrong-then-unres 2 --fixture "$st/wrong-then-unres"
+  arm stuck-then-unres 2 --fixture "$st/stuck-then-unres" --drain-timeout 1
+  arm drain-zero      2 --fixture "$st/match" --drain-timeout 0
+  arm drain-word      2 --fixture "$st/match" --drain-timeout soon
+  # A value-taking flag as the LAST argument: VOID (2), not a hang (124).
+  for f in --context --namespace --tag --services --fixture --drain-timeout; do
+    arm "dangling${f}" 2 "$f"
+    arm "dangling${f}-after-ok" 2 --fixture "$st/match" "$f"
+  done
+  # Content, not only rc: the drain arm must have waited and then compared only the new pod,
+  # and the stuck arm must name the stuck pod AND still report frontend's wrong image.
+  want_line() { # want_line ARM PATTERN
+    if command grep -Eq -- "$2" "$st/$1.out"; then echo "PASS $1 shows /$2/"; else echo "FAIL $1 lacks /$2/"; fails=$((fails + 1)); fi
+  }
+  want_line old-pod-drains "core-java: 1 old pod\(s\) still terminating"
+  want_line old-pod-drains "core-java +$d1 +MATCH"
+  want_line old-pod-stuck  "core-java-old +STILL TERMINATING"
+  want_line old-pod-stuck  "frontend +$d2 +NOT IN THE EXPECTED SET"
+  want_line old-pod-live   "core-java +$d2 +NOT IN THE EXPECTED SET"
+  want_line stuck-only     "FAIL: 1 pod\\(s\\) were still terminating"
+  # C-9: VOID names the pod AND the container; the Pending control compares the live pod only.
+  want_line unres-running  "UNRESOLVED .*core-java-bare/sidecar imageID=sha256:"
+  want_line unres-running  "^VOID: [0-9]+ container\\(s\\) in 1 service\\(s\\) \\(core-java\\) report"
+  want_line unres-ready    "UNRESOLVED .*core-java-nodigest/core-java imageID="
+  want_line unres-short    "UNRESOLVED .*core-java-short/core-java imageID="
+  want_line pending-ok     "core-java +$d1 +MATCH"
+  want_line crashloop-bare  "UNRESOLVED .*core-java-crash/core-java imageID=sha256:"
+  want_line terminated-bare "UNRESOLVED .*core-java-exited/sidecar imageID=sha256:"
+  # F3: VOID is raised AFTER every service is compared. The unresolved container, the services
+  # compared after it and the wrong image are ALL in the output, and the VOID line is last.
+  want_line unres-and-wrong "UNRESOLVED .*core-java-bare/sidecar imageID=sha256:"
+  want_line unres-and-wrong "edge-go +$d1 +MATCH"
+  want_line unres-and-wrong "frontend +$d2 +NOT IN THE EXPECTED SET"
+  want_line unres-and-wrong "^VOID: 1 container\\(s\\) in 1 service\\(s\\) \\(core-java\\)"
+  want_line unres-and-wrong "Alongside it: 1 wrong image digest\\(s\\) and 0 stuck"
+  want_line wrong-then-unres "core-java +$d2 +NOT IN THE EXPECTED SET"
+  want_line wrong-then-unres "UNRESOLVED .*fe-bare/frontend imageID=sha256:"
+  want_line stuck-then-unres "core-java-old +STILL TERMINATING"
+  want_line stuck-then-unres "UNRESOLVED .*fe-bare/frontend imageID=sha256:"
+  [ "$fails" -eq 0 ] || exit 1
+  exit 0
+fi
+
+echo "check-deploy-digest-parity  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
+# ---- 0. zero services is VOID, and it is checked FIRST ---------------------------------
+# A loop over an empty list completes without a single comparison and reports success. That
+# is the strongest-looking and least trustworthy result this gate could produce.
+SERVICE_COUNT=0
+for _s in $SERVICES; do SERVICE_COUNT=$((SERVICE_COUNT + 1)); done
+[ "$SERVICE_COUNT" -gt 0 ] || void "ZERO services to check. A loop over an empty service list makes no
+       comparison at all and would exit 0 having measured nothing. An empty discovery
+       result is VOID, never clean."
+
+if [ -n "$FIXTURE" ] && [ -n "$KUBE_CONTEXT" ]; then
+  void "--fixture and --context together: a cluster run is never fed files"
+fi
+
+if [ -n "$FIXTURE" ]; then
+  echo "  ***********************************************************************"
+  echo "  *  FIXTURE MODE — digests are read from files, not from a cluster or  *"
+  echo "  *  a registry. This exercises the COMPARISON LOGIC only. It is not    *"
+  echo "  *  evidence about any deployed image.                                 *"
+  echo "  ***********************************************************************"
+  [ -d "$FIXTURE" ] || void "fixture directory '$FIXTURE' does not exist"
+else
+  # ---- 1. tooling and context guard ----------------------------------------------------
+  command -v kubectl >/dev/null 2>&1 \
+    || void "kubectl not on PATH — the running image digest cannot be read without a cluster client"
+  command -v jq >/dev/null 2>&1 \
+    || void "jq not on PATH — the pod list is sorted into live and terminating pods with jq"
+  command -v docker >/dev/null 2>&1 \
+    || void "docker not on PATH — the expected digest set is resolved with 'docker buildx imagetools inspect'"
+
+  [ -n "$KUBE_CONTEXT" ] || void "no kube context named.
+       This gate reads with cluster credentials and will not inherit the ambient context to
+       do it: on the maintainer's host the only context is employer infrastructure. Name it:
+         $0 --context <kube-context> --namespace $NAMESPACE --tag <40-hex git-sha>
+       An unnamed context is VOID, never clean."
+
+  for forbidden in $FORBIDDEN_CONTEXTS; do
+    [ "$KUBE_CONTEXT" = "$forbidden" ] \
+      && void "context '$KUBE_CONTEXT' is on the refusal list (DIGEST_PARITY_FORBIDDEN_CONTEXTS).
+       That cluster is EMPLOYER infrastructure. Naming it explicitly does not make it safe —
+       intent is not a safety mechanism."
+  done
+
+  [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || void "--tag must be the full 40-lowercase-hex commit sha the images were
+       pushed under (got '${GIT_SHA}'). Without it there is no expected image to resolve, and a
+       comparison against an unknown expectation is VOID, never clean."
+
+  # The shared staging context guard (plan 29-03): employer context by name, then the
+  # context's server against the identity file, read locally. Any refusal is VOID here.
+  [ "$NAMESPACE" = jtoye-staging ] || void "namespace '$NAMESPACE' has no identity file to check the context's server
+       against (only k8s/staging/azure-identity.yaml exists): fail closed."
+  # shellcheck source=scripts/lib/staging-kube-guard.sh
+  . "$REPO_ROOT/scripts/lib/staging-kube-guard.sh" || void "could not source scripts/lib/staging-kube-guard.sh"
+  grc=0
+  staging_kube_guard "$KUBE_CONTEXT" "$REPO_ROOT/k8s/staging/azure-identity.yaml" || grc=$?
+  [ "$grc" -eq 0 ] || void "the staging context guard refused '$KUBE_CONTEXT' (rc $grc, line above); nothing was compared"
+fi
+
+log "namespace : ${NAMESPACE}"
+log "commit    : ${GIT_SHA:-<fixture mode>}"
+[ "$PLANT_STALE" -eq 0 ] || log "PLANT-STALE: the expected set is replaced by ${STALE_DIGEST} (fail arm)"
+log "services  : ${SERVICE_COUNT} (${SERVICES})"
+echo
+
+# ---- 2. digest readers -----------------------------------------------------------------
+# Both go through a single function each, so fixture mode is total rather than best-effort.
+
+# POD_JQ: one line per LIVE container ("live <imageID>"), one per TERMINATING pod
+# ("terminating <pod name>"), and one per container that is RUNNING or READY yet reports no
+# usable @sha256:<64 hex> imageID ("unresolved <pod>/<container> imageID=<what it reported>").
+# Unresolved is: ANY non-empty imageID without the digest, whatever the container state
+# (running, waiting/CrashLoopBackOff, terminated), or an empty imageID on a container that is
+# running or ready. The one container that emits nothing has an EMPTY imageID and is neither
+# (Pending, ContainerCreating: the pull has not finished). This program is the filter; the
+# selftest runs it on pod JSON.
+POD_JQ='.items[] | if .metadata.deletionTimestamp then "terminating \(.metadata.name)" else (.metadata.name as $p | (.status.containerStatuses // [])[] | if ((.imageID // "") | test("@sha256:[0-9a-f]{64}")) then "live \(.imageID)" elif ((.imageID // "") != "") or (.state.running != null) or (.ready == true) then "unresolved \($p)/\(.name) imageID=\(.imageID // "")" else empty end) end'
+
+classify() { # classify <svc> <poll> -> POD_JQ lines on stdout; rc 2 = the pods could not be read
+  local svc="$1" poll="$2" f json rc
+  if [ -n "$FIXTURE" ]; then
+    if [ ! -f "$FIXTURE/$svc.pods.1.json" ]; then
+      [ -f "$FIXTURE/$svc.actual" ] && sed -n 's/^\(sha256:.*\)$/live @\1/p' "$FIXTURE/$svc.actual"
+      return 0
+    fi
+    while [ "$poll" -gt 1 ] && [ ! -f "$FIXTURE/$svc.pods.$poll.json" ]; do poll=$((poll - 1)); done
+    json=$(cat "$FIXTURE/$svc.pods.$poll.json") || return 2
+  else
+    json=$(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" --request-timeout=30s get pods -l "app=$svc" -o json 2>/dev/null); rc=$?
+    [ "$rc" -eq 0 ] || return 2
+  fi
+  jq -r "$POD_JQ" <<<"$json" 2>/dev/null || return 2
+}
+
+# imageID is reported per container as e.g. ghcr.io/bralabee/jtoye-core-java@sha256:abcd...
+# Take the digest portion only. A container whose imageID carries no digest is never dropped
+# silently: POD_JQ emits it as "unresolved" and the loop below collects it for the final VOID
+# (C-9). A not-yet-started container (empty imageID, not running, not ready) is correctly ignored.
+live_digests() { sed -n 's/^live .*@\(sha256:[0-9a-f]\{64\}\).*/\1/p' | sort -u; }
+
+read_expected() { # read_expected <svc> -> newline-separated digests on stdout
+  local svc="$1"
+  if [ -n "$FIXTURE" ]; then
+    [ -f "$FIXTURE/$svc.expected" ] && cat "$FIXTURE/$svc.expected"
+    return 0
+  fi
+  # The index digest PLUS each platform manifest digest — see the header for why this is a
+  # set and not a single value.
+  docker buildx imagetools inspect "${REGISTRY_PREFIX}${svc}:${GIT_SHA}" --raw >/dev/null 2>&1
+  docker buildx imagetools inspect "${REGISTRY_PREFIX}${svc}:${GIT_SHA}" 2>/dev/null \
+    | sed -n 's/.*\(sha256:[0-9a-f]\{64\}\).*/\1/p' | sort -u
+}
+
+# ---- 3. compare ------------------------------------------------------------------------
+MISMATCHES=0
+STUCK=0
+CHECKED=0
+UNRESOLVED_N=0
+UNRESOLVED_SVCS=""
+DRAIN_END=$(( $(date +%s) + DRAIN_TIMEOUT ))
+
+for svc in $SERVICES; do
+  # Poll until no pod of this service is terminating, or the shared deadline passes.
+  poll=1; pods=""; waited=0; svc_stuck=0
+  while :; do
+    pods="$(classify "$svc" "$poll")" || void "could not read the pods of '$svc' in namespace '$NAMESPACE'"
+    term="$(sed -n 's/^terminating //p' <<<"$pods")"
+    [ -z "$term" ] && break
+    if [ "$waited" -eq 0 ]; then
+      log "$svc: $(command grep -c . <<<"$term") old pod(s) still terminating; waiting until the shared ${DRAIN_TIMEOUT}s deadline"
+      waited=1
+    fi
+    if [ "$(date +%s)" -ge "$DRAIN_END" ]; then
+      while IFS= read -r t; do printf '  %-12s %s  STILL TERMINATING at the deadline\n' "$svc" "$t"; svc_stuck=$((svc_stuck + 1)); done <<<"$term"
+      break
+    fi
+    if [ -n "$FIXTURE" ]; then sleep 0.2; else sleep 5; fi
+    poll=$((poll + 1))
+  done
+  STUCK=$((STUCK + svc_stuck))
+  # A container with no usable digest is a container this gate cannot compare. Dropping it would
+  # let a wrong image run unseen next to a matching one, so it makes the run VOID, naming
+  # pod/container. The VOID is COLLECTED and raised after the loop: exiting here would hide the
+  # mismatches, stuck pods and wrong images of every other service.
+  unresolved="$(sed -n 's/^unresolved //p' <<<"$pods")"
+  svc_unres=0
+  if [ -n "$unresolved" ]; then
+    while IFS= read -r u; do
+      printf '  %-12s UNRESOLVED (imageID has no @sha256 digest): %s\n' "$svc" "$u"
+      svc_unres=$((svc_unres + 1))
+    done <<<"$unresolved"
+    UNRESOLVED_N=$((UNRESOLVED_N + svc_unres))
+    UNRESOLVED_SVCS="${UNRESOLVED_SVCS:+$UNRESOLVED_SVCS }$svc"
+  fi
+  actual="$(live_digests <<<"$pods")"
+  expected="$(read_expected "$svc")"
+  if [ "$PLANT_STALE" -eq 1 ] && [ -n "$expected" ]; then
+    expected="$STALE_DIGEST"
+  fi
+
+  # A service whose only containers are unresolved has no live digest to compare: its VOID is
+  # already collected above, so move on rather than exit and hide the services after it.
+  if [ -z "$actual" ] && [ "$svc_unres" -gt 0 ]; then CHECKED=$((CHECKED + 1)); continue; fi
+  [ -n "$actual" ] || void "could not read a single image digest for '$svc' in namespace '$NAMESPACE'.
+       An empty ACTUAL set means the gate is blind, and a blind gate that exits 0 is exactly
+       the shape that let a stale runtime past four green gates. VOID, never clean."
+  [ -n "$expected" ] || void "could not resolve any expected digest for '${REGISTRY_PREFIX}${svc}:${GIT_SHA}'.
+       An empty EXPECTED set makes every comparison below vacuous — membership in the empty
+       set is false for everything, so this would red a correct deploy for the wrong reason
+       and green a wrong one if the test were inverted. VOID, never clean."
+
+  svc_bad=0
+  while IFS= read -r a; do
+    [ -n "$a" ] || continue
+    # HERE-STRING, never `printf ... | grep -q`: that shape inverts under pipefail when the
+    # pattern matches (SIGPIPE -> 141) and fails OPEN.
+    if command grep -Fxq -- "$a" <<<"$expected"; then
+      printf '  %-12s %s  MATCH\n' "$svc" "$a"
+    else
+      printf '  %-12s %s  NOT IN THE EXPECTED SET\n' "$svc" "$a"
+      svc_bad=$((svc_bad + 1))
+    fi
+  done <<<"$actual"
+
+  if [ "$svc_bad" -gt 0 ]; then
+    MISMATCHES=$((MISMATCHES + svc_bad))
+    printf '  %-12s expected set was:\n' "$svc"
+    while IFS= read -r e; do [ -n "$e" ] && printf '  %-12s   %s\n' "" "$e"; done <<<"$expected"
+  fi
+  CHECKED=$((CHECKED + 1))
+done
+
+echo
+[ "$CHECKED" -gt 0 ] || void "no service was actually compared despite a non-empty service list — VOID, never clean."
+
+# Exit precedence: VOID (2) if any container was unresolved, else FAIL (1), else PASS (0).
+# Everything above has already been printed, so a VOID never hides a mismatch or a stuck pod.
+if [ "$UNRESOLVED_N" -gt 0 ]; then
+  void "$UNRESOLVED_N container(s) in $(wc -w <<<"$UNRESOLVED_SVCS" | tr -d ' ') service(s) ($UNRESOLVED_SVCS) report an imageID with no @sha256:<digest> (UNRESOLVED lines above).
+       The image they run cannot be compared, and a container skipped here is a wrong image the
+       gate never saw. Alongside it: $MISMATCHES wrong image digest(s) and $STUCK stuck terminating pod(s)
+       across the other comparisons (named above). VOID outranks FAIL: could not check is never clean."
+fi
+
+if [ "$STUCK" -gt 0 ]; then
+  fail "$STUCK pod(s) were still terminating at the ${DRAIN_TIMEOUT}s deadline (named above), and $MISMATCHES
+      live container digest(s) were not built for ${GIT_SHA:-this commit}. A terminating pod may still be
+      serving the previous image, so parity is not proven. Find out why it did not go."
+fi
+
+if [ "$MISMATCHES" -gt 0 ]; then
+  fail "$MISMATCHES running container image digest(s) across $CHECKED service(s) are NOT the images
+      built for ${GIT_SHA:-this commit}. The rollout reported success and the pods are Ready, so
+      every other gate in this job is green — this is the Phase 26 stale-runtime shape, caught.
+      Do NOT relax this gate: re-run the build for this commit and redeploy."
+fi
+
+echo "PASS: every running container image digest across $CHECKED service(s) is in the set of digests"
+echo "      published for ${GIT_SHA:-<fixture>}. NOTE: this is the SET form (index digest plus each"
+echo "      platform manifest digest). Narrowing it to a single measured digest is owed to a later plan."
+exit 0

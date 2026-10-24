@@ -68,6 +68,7 @@ public class RefundService {
     private final RefundMapper refundMapper;
     private final StripeRefundClient stripeRefundClient;
     private final RefundEventPublisher refundEventPublisher;
+    private final StripeConnectService stripeConnectService;
 
     public RefundService(RefundRepository refundRepository,
                          OrderRepository orderRepository,
@@ -75,12 +76,25 @@ public class RefundService {
                          RefundMapper refundMapper,
                          StripeRefundClient stripeRefundClient,
                          RefundEventPublisher refundEventPublisher) {
+        this(refundRepository, orderRepository, stateMachineService,
+                refundMapper, stripeRefundClient, refundEventPublisher, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public RefundService(RefundRepository refundRepository,
+                         OrderRepository orderRepository,
+                         OrderStateMachineService stateMachineService,
+                         RefundMapper refundMapper,
+                         StripeRefundClient stripeRefundClient,
+                         RefundEventPublisher refundEventPublisher,
+                         StripeConnectService stripeConnectService) {
         this.refundRepository = refundRepository;
         this.orderRepository = orderRepository;
         this.stateMachineService = stateMachineService;
         this.refundMapper = refundMapper;
         this.stripeRefundClient = stripeRefundClient;
         this.refundEventPublisher = refundEventPublisher;
+        this.stripeConnectService = stripeConnectService;
     }
 
     /**
@@ -174,21 +188,39 @@ public class RefundService {
         log.info("Created Refund row {} (status=CREATING) for order {} amount={}",
                 refund.getId(), orderId, requested);
 
-        // Step 7 — Call Stripe with the stored key
+        // Step 7 — Call Stripe with the stored key (and connected-account routing for PAY-03 / GAP-GTM-01)
         com.stripe.model.Refund stripeRefund;
         try {
-            RefundCreateParams params = RefundCreateParams.builder()
+            RefundCreateParams.Builder paramsBuilder = RefundCreateParams.builder()
                     .setPaymentIntent(order.getPaymentReference())
                     .setAmount(requested)
                     .setReason(RefundReason.toStripeReason(request.reason()))
                     .putMetadata("refund_id", refund.getId().toString())
                     .putMetadata("tenant_id", tenantId.toString())
-                    .putMetadata("order_id", orderId.toString())
-                    .build();
-            RequestOptions opts = RequestOptions.builder()
-                    .setIdempotencyKey(serverIdemKey)
-                    .build();
-            stripeRefund = stripeRefundClient.create(params, opts);
+                    .putMetadata("order_id", orderId.toString());
+            RequestOptions.RequestOptionsBuilder optsBuilder = RequestOptions.builder()
+                    .setIdempotencyKey(serverIdemKey);
+
+            if (stripeConnectService != null) {
+                Optional<SettlementRoutingDecision> routingOpt =
+                        stripeConnectService.resolveSettlementRouting(order);
+                if (routingOpt.isPresent()) {
+                    SettlementRoutingDecision decision = routingOpt.get();
+                    if (decision.usesDirectChargeHeader()) {
+                        optsBuilder.setStripeAccount(decision.connectedAccountId());
+                        if (decision.applicationFeePennies() > 0) {
+                            paramsBuilder.setRefundApplicationFee(true);
+                        }
+                    } else if (decision.usesDestinationTransfer()) {
+                        paramsBuilder.setReverseTransfer(true);
+                        if (decision.applicationFeePennies() > 0) {
+                            paramsBuilder.setRefundApplicationFee(true);
+                        }
+                    }
+                }
+            }
+
+            stripeRefund = stripeRefundClient.create(paramsBuilder.build(), optsBuilder.build());
         } catch (StripeException ex) {
             log.warn("Stripe.Refund.create failed for refund {}: {}", refund.getId(), ex.getMessage());
             markRefundFailed(refund.getId(), ex.getMessage());

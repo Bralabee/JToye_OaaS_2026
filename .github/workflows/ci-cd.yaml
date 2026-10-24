@@ -13,6 +13,188 @@ env:
   IMAGE_PREFIX: ${{ github.repository_owner }}/jtoye
 
 jobs:
+  # Job 0: classify the change (doc-only skip).
+  #
+  # A push or pull request that touches ONLY documentation must not cost the ~55-minute
+  # Testcontainers suite, four image builds and a staging redeploy (#1002 and #1003 changed
+  # only .planning/** and markdown and each still cost ~72 minutes plus a redeploy). This job
+  # computes the changed paths and asks scripts/ci-docs-only.sh whether EVERY one is an
+  # allow-listed documentation path. Its single output, docs_only, gates ONLY the expensive
+  # work: the heavy STEPS of integration-tests, and the job build-and-push, through which
+  # deploy-staging, deploy-production and staging-edge-probe skip by needs. Every other job in this file, and every
+  # separate workflow (docs-freshness, gitleaks, pii-guard, review-record), runs on every
+  # change exactly as before - including the gates that PARSE docs (check-doc-metrics,
+  # check-doc-citations, check-changelog-contract), so a doc edit that breaks one still reds.
+  #
+  # FAIL CLOSED. docs_only is `true` in exactly one situation: the diff was computed, was not
+  # empty, and every path in it matched the allow-list. An all-zero `before` (a new branch), a
+  # `before` that is not in the clone (a force-push), a diff that errors or is empty, an
+  # unknown event (release, workflow_dispatch, anything added later), an unreadable
+  # classifier, a base commit with no classifier, a classifier that exits non-zero - each
+  # outputs `false`, i.e. the full
+  # pipeline. A trap on EXIT writes `false` if the step dies before it has written anything.
+  # The downstream gates are also written so that this job FAILING (a runner fault before the
+  # step even starts) runs the integration suite rather than skipping it - see integration-tests.
+  #
+  # WHY A HAND-WRITTEN DETECTOR AND NOT dorny/paths-filter (which this file uses elsewhere).
+  # On a push, dorny diffs against `before` (the previous push) or a fixed `base:`; it cannot
+  # diff against "the head of the newest run whose Deploy to Staging job succeeded", which is
+  # the base this job needs so that a failed deploy of a code merge is repaired by the next
+  # merge even when that merge is docs-only. dorny also gives a list of matching files, not the
+  # all-paths-allowed-and-nothing-else answer plus the hygiene rules (renames, quoting,
+  # traversal, empty list) that scripts/ci-docs-only.sh enforces. Both detectors stay: dorny
+  # still answers "can any Java have changed" inside integration-tests.
+  #
+  # WHY fetch-depth: 0. A push is diffed from an arbitrary earlier deploy and must prove that
+  # commit is an ancestor of HEAD, which needs the history between them; there is no fixed pair
+  # of commits to fetch shallowly. The clone is a few seconds on this repository.
+  changes:
+    name: Classify Changes (doc-only skip)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # actions: read lets the step ask which main commit last deployed to staging (a push is
+    # diffed against that commit, not against the previous push).
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: a push is diffed from the last deployed commit and must be shown to be an
+          # ancestor of HEAD; a PR needs its merge base. Neither is in a depth-1 clone.
+          fetch-depth: 0
+
+      - name: Classify the changed paths (docs_only is true only if EVERY path is documentation)
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # The default Actions shell is `bash -e`; every failure below is handled by reading
+          # its exit code on the same statement, so errexit is turned OFF for this step.
+          set +e
+          set -u
+          out="${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
+          emitted=0
+          emit() { echo "docs_only=$1" >> "$out"; emitted=1; echo "docs_only=$1  ($2)"; }
+          # Whatever happens after this line, an unwritten output becomes `false`.
+          trap 'if [ "$emitted" = 0 ]; then echo "docs_only=false" >> "$out"; echo "docs_only=false  (step ended before deciding)"; fi' EXIT
+
+          # `base` is the commit whose classifier is trusted: the PR's base, or a push's
+          # `before`. Where the DIFF starts is the same for a pull_request, but not for a push:
+          # see "WHAT A PUSH IS DIFFED AGAINST" below.
+          case "$EVENT_NAME" in
+            push)
+              base="$PUSH_BEFORE"; head="$PUSH_AFTER" ;;
+            pull_request)
+              base="$PR_BASE"; head="$PR_HEAD" ;;
+            *)
+              emit false "event '$EVENT_NAME' is not push or pull_request: run everything"; exit 0 ;;
+          esac
+
+          sha_re='^[0-9a-f]{40}$'
+          if ! [[ "$base" =~ $sha_re && "$head" =~ $sha_re ]]; then
+            emit false "no usable commit range (base='$base' head='$head'): run everything"; exit 0
+          fi
+          if [[ "$base" =~ ^0+$ ]]; then
+            emit false "all-zero base (new branch): run everything"; exit 0
+          fi
+          for c in "$base" "$head"; do
+            git cat-file -e "$c^{commit}" 2>/dev/null; rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "commit $c is not in the clone (force-push?): run everything"; exit 0
+            fi
+          done
+
+          # WHAT A PUSH IS DIFFED AGAINST: the last commit that was actually DEPLOYED, not the
+          # previous push. Before the doc-only skip every merge to main rebuilt and redeployed
+          # HEAD, so a code merge X whose build or deploy failed was repaired by the next merge.
+          # Diffing before..after would break that: X fails, a docs-only Y follows, Y alone is
+          # "docs only", and staging stays on the code from before X. So take the head SHA of the
+          # newest completed push run of this workflow on main whose "Deploy to Staging" job
+          # concluded success, and classify THAT..HEAD. Invariant kept: staging runs the newest
+          # code commit on main, or the full pipeline runs. Anything unprovable is `false`: the
+          # API fails, no such run in the newest 50, a SHA that is malformed, absent from the
+          # clone, or not an ancestor of HEAD (a force-push, a branch that forked before it).
+          # If DEPLOY_STAGING_ENABLED is false nothing ever deploys, the search finds an older
+          # deploy (or none), and later docs-only merges simply run everything: fail-safe.
+          if [ "$EVENT_NAME" = push ]; then
+            repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}"
+            runs=$(gh api "repos/$repo/actions/workflows/ci-cd.yaml/runs?branch=main&event=push&status=completed&per_page=50"); rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "listing workflow runs failed (rc=$rc): run everything"; exit 0
+            fi
+            list=$(jq -r '.workflow_runs[] | "\(.id) \(.head_sha)"' <<< "$runs"); rc=$?
+            if [ "$rc" -ne 0 ] || [ -z "$list" ]; then
+              emit false "no usable workflow runs in the API answer (jq rc=$rc): run everything"; exit 0
+            fi
+            deployed=""
+            while read -r run_id run_sha; do
+              jobs=$(gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100"); rc=$?
+              if [ "$rc" -ne 0 ]; then
+                emit false "listing jobs of run $run_id failed (rc=$rc): run everything"; exit 0
+              fi
+              ok=$(jq -r '[.jobs[] | select(.name == "Deploy to Staging" and .conclusion == "success")] | length' <<< "$jobs"); rc=$?
+              if [ "$rc" -ne 0 ] || ! [[ "$ok" =~ ^[0-9]+$ ]]; then
+                emit false "unreadable jobs answer for run $run_id (jq rc=$rc): run everything"; exit 0
+              fi
+              if [ "$ok" -gt 0 ]; then deployed="$run_sha"; break; fi
+            done <<< "$list"
+            if ! [[ "$deployed" =~ $sha_re ]]; then
+              emit false "no run in the newest 50 deployed to staging successfully: run everything"; exit 0
+            fi
+            git cat-file -e "$deployed^{commit}" 2>/dev/null; rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "last deployed commit $deployed is not in the clone: run everything"; exit 0
+            fi
+            git merge-base --is-ancestor "$deployed" "$head"; rc=$?
+            if [ "$rc" -ne 0 ]; then
+              emit false "last deployed commit $deployed is not an ancestor of $head (merge-base rc=$rc): run everything"; exit 0
+            fi
+            range="$deployed..$head"
+          else
+            range="$base...$head"
+          fi
+          echo "Diffing $range (classifier read from $base)"
+
+          # --no-renames: with rename detection a code file moved to docs/ lists only its NEW
+          # path and would read as documentation. quotePath=false keeps UTF-8 names raw; any
+          # path git still has to quote starts with a double quote and fails the classifier.
+          changed="${RUNNER_TEMP:-/tmp}/changed-paths.txt"
+          git -c core.quotePath=false diff --name-only --no-renames "$range" > "$changed"; rc=$?
+          if [ "$rc" -ne 0 ]; then
+            emit false "git diff $range failed (rc=$rc): run everything"; exit 0
+          fi
+          echo "Changed paths ($range):"; sed 's/^/  /' "$changed"
+
+          # THE CLASSIFIER COMES FROM THE BASE, NEVER FROM THE CHANGE UNDER TEST. On a
+          # pull_request the checkout is the PR's merge ref, so `bash scripts/ci-docs-only.sh`
+          # would be judged by the very edit being judged: a PR that widens the allow-list (or
+          # makes the script print `docs_only=true`) would skip the suite for itself, and its
+          # selftest could be edited in the same PR. So read the script out of the commit the
+          # change is measured FROM: the PR's base commit, or a push's `before`. If that commit
+          # has no classifier this is its first introduction and nothing vouches for it yet:
+          # `false`.
+          cls="${RUNNER_TEMP:-/tmp}/ci-docs-only.from-base.sh"
+          git show "$base:scripts/ci-docs-only.sh" > "$cls" 2>/dev/null; rc=$?
+          if [ "$rc" -ne 0 ] || [ ! -s "$cls" ]; then
+            emit false "$base has no scripts/ci-docs-only.sh (first introduction, or unreadable): run everything"; exit 0
+          fi
+          verdict=$(bash "$cls" --file "$changed"); rc=$?
+          if [ "$rc" -eq 0 ] && [ "$verdict" = "docs_only=true" ]; then
+            emit true "every changed path is documentation: skipping integration tests, images and deploys"
+          else
+            emit false "classifier said '$verdict' (rc=$rc): run everything"
+          fi
+
   # Job 1: Run tests
   test:
     name: Run Tests
@@ -33,17 +215,17 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version: '25'
           distribution: 'temurin'
           cache: 'gradle'
 
       - name: Set up Go 1.27
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           # Must match edge-go/go.mod (go 1.27.0). Pinning an older version
           # (was 1.22) made GOTOOLCHAIN auto-download the newer one mid-build,
@@ -54,7 +236,7 @@ jobs:
           cache-dependency-path: edge-go/go.sum
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -85,7 +267,7 @@ jobs:
       # downstream as an opaque artifact error instead of here, at its source.
       - name: Upload the unit suite's JaCoCo execution data
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: java-coverage-exec-unit
           path: core-java/build-local/jacoco/test.exec
@@ -243,7 +425,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-results
           path: |
@@ -277,6 +459,30 @@ jobs:
   # context brokerless (RabbitMQ dead-port) and cache-less.
   integration-tests:
     name: Integration Tests (Testcontainers RLS)
+    # DOC-ONLY SKIP, done at STEP level. This job ALWAYS RUNS and ALWAYS REPORTS SUCCESS (or a
+    # real failure); a documentation-only change simply runs none of the expensive steps below,
+    # exactly as the path filter already does for a pull_request that touches no Java. It is a
+    # REQUIRED check, and this file's rule stands: gate in-job, never skip the job on
+    # `docs_only`.
+    #
+    # The one job-level `if:` below is NOT a skip condition and must stay constant. With
+    # `needs: changes` and no `if:`, a FAILED `changes` job makes GitHub skip this job (implicit
+    # success()), and GitHub reports a skipped job as Success for a required check - the
+    # documentation says so twice, "A job depends on a failed job -> the dependent job is
+    # skipped and may not block merging" (Troubleshooting required status checks) and
+    # "Required status checks must have a successful, skipped, or neutral status" (About
+    # protected branches). That would merge a CODE change with no integration run. `!cancelled()`
+    # is a conditional that makes the job continue regardless of `changes`; then every
+    # expensive step is gated on `needs.changes.outputs.docs_only != 'true'`, which is TRUE for
+    # a failed or skipped `changes` (empty output), so the suite runs. Only a successfully
+    # computed `true` skips the steps.
+    #
+    # scripts/check-ci-docs-skip-wiring.sh pins this by structure (W-4): the job-level `if:` is
+    # exactly `!cancelled()` - not `success() && !cancelled() && ...`, not a docs_only term - and
+    # every step gated on the path filter carries the docs_only term as its own top-level `&&`
+    # conjunct (parenthesise the existing `a || b`, or `&&` binds tighter and a push runs anyway).
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Explicit because the repo's default GITHUB_TOKEN is restricted (contents +
     # packages read only): dorny/paths-filter lists the PR's changed files via
@@ -286,13 +492,15 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Path-filter the ~24.5-min Gradle integrationTest work: on pull_request runs
       # whose diff cannot affect the Java integration suite (docs-only / frontend-only
       # / edge-go-only / k8s-only PRs) the suite is skipped, but the job still reports
-      # SUCCESS (in-job STEP gating, never a job-level `if:`) so it stays a satisfiable
-      # required check. push/release bypass the filter (see the reusable gate below).
+      # SUCCESS (in-job STEP gating; the only job-level `if:` is the constant `!cancelled()`
+      # explained above, never a skip condition) so it stays a satisfiable required check.
+      # push/release bypass THIS filter (see the reusable gate below) but not the docs_only
+      # term: a push that changed only documentation runs none of the heavy steps either.
       - name: Filter paths affecting the Java integration suite
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -314,7 +522,8 @@ jobs:
           echo "Integration suite skipped: this pull_request's diff touches none of the trigger paths"
           echo "  (core-java/**, build.gradle.kts, settings.gradle.kts, gradle.properties, gradle/**, gradlew, gradlew.bat, .github/workflows/ci-cd.yaml)"
           echo "so ./gradlew :core-java:integrationTest cannot be affected. This job reports SUCCESS on purpose"
-          echo "so it stays a satisfiable required check. push/release runs always execute the full suite."
+          echo "so it stays a satisfiable required check. A push or release whose diff is not documentation-only"
+          echo "always executes the full suite."
           echo ""
           echo "JAVA COVERAGE WAS NOT EVALUATED ON THIS RUN."
           echo "  The Java coverage floor is enforced over the AGGREGATE of the unit suite and this"
@@ -324,9 +533,19 @@ jobs:
           echo "  COVERAGE — do not read it as a coverage result, and do not quote a number from it."
           echo "  Could not measure is not measured and fine."
 
+      - name: Skip notice (documentation-only change)
+        if: needs.changes.outputs.docs_only == 'true'
+        run: |
+          echo "Integration suite skipped: the changes job found every changed path to be allow-listed"
+          echo "documentation (scripts/ci-docs-only.sh). This job reports SUCCESS on purpose so it stays"
+          echo "a satisfiable required check."
+          echo ""
+          echo "JAVA COVERAGE WAS NOT EVALUATED ON THIS RUN. THIS JOB'S SUCCESS SAYS NOTHING ABOUT"
+          echo "COVERAGE - do not read it as a coverage result, and do not quote a number from it."
+
       - name: Set up JDK 25
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
-        uses: actions/setup-java@v6
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version: '25'
           distribution: 'temurin'
@@ -338,14 +557,14 @@ jobs:
       # divisor was inert on CI for exactly that reason and nobody noticed, because
       # nothing ever printed the number it resolved to.
       - name: Runner shape (input to the integrationTest fork count)
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: |
           echo "nproc            : $(nproc)"
           echo "memory           : $(free -h | awk '/^Mem:/ {print $2 " total, " $7 " available"}')"
           echo "disk (workspace) : $(df -h . | awk 'NR==2 {print $4 " available"}')"
 
       - name: Run Testcontainers integration suite
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: ./gradlew :core-java:integrationTest --no-daemon
 
       # Plan 34-09 (TRUTH-02, #110). Java coverage is measured over BOTH suites and
@@ -371,9 +590,9 @@ jobs:
       # gate's own VOID naming the missing suite, not an opaque "unable to find any
       # artifacts" error — and under no ordering does a missing half produce a PASS.
       - name: Download the unit suite's JaCoCo execution data
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: java-coverage-exec-unit
           path: core-java/build-local/jacoco
@@ -387,7 +606,7 @@ jobs:
       # its test task with mustRunAfter, never dependsOn). It re-reports the downloaded
       # .exec and nothing else.
       - name: Generate the unit-only and aggregate JaCoCo reports
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: ./gradlew :core-java:jacocoTestReport :core-java:jacocoAggregateReport --no-daemon
 
       # Shown to FAIL before being trusted, then restored and verified by
@@ -409,14 +628,14 @@ jobs:
       # unit-only report and exits 2 instead. Clean tree: rc=0 at 88.06 / 71.88 / 87.55
       # / 87.53.
       - name: Enforce the aggregate Java coverage floor (#110)
-        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        if: (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
         run: |
           chmod +x ./scripts/check-jacoco-coverage.sh
           ./scripts/check-jacoco-coverage.sh
 
       - name: Upload integration test results
-        if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true')
-        uses: actions/upload-artifact@v7
+        if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true') && needs.changes.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: integration-test-results
           path: |
@@ -486,7 +705,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Same in-job STEP gating as the integration suite: a PR that cannot
       # affect the frontend skips the work but still reports SUCCESS, so this
@@ -509,7 +728,7 @@ jobs:
 
       - name: Set up Node.js
         if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -610,7 +829,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-public-layout-report
           path: |
@@ -653,7 +872,8 @@ jobs:
   #      and `valueFrom` (the API server rejects that apply), no common labels
   #      injected into the kube-dns DNS-egress podSelector (D-17 — a total DNS
   #      outage under an enforcing CNI), no localhost/storage-emulator literal in a
-  #      non-local render, and no DB superuser in the secret recipe or template.
+  #      non-local render, no DB superuser in the secret recipe or template, and
+  #      (INV-7) every rendered NetworkPolicy equal to its declared rule set.
   #   5. render-golden.sh — byte-compares the staging and production renders
   #      against the reviewed goldens in k8s/goldens/. A k8s/base edit that
   #      changes either render without a regenerated, reviewed golden fails the
@@ -664,7 +884,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
@@ -681,6 +901,9 @@ jobs:
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
 
+      - name: Prove the connection-math gate can fail (D-25 per-target reserve, parse arms)
+        run: ./k8s/scripts/check-connection-math.sh --selftest
+
       - name: Assert the core-java, edge-go and frontend env contracts hold in both directions (D-07/D-08)
         run: |
           chmod +x ./k8s/scripts/check-env-contract.sh
@@ -690,6 +913,265 @@ jobs:
         run: |
           chmod +x ./k8s/scripts/check-render-invariants.sh
           ./k8s/scripts/check-render-invariants.sh
+
+      # INV-7 asserts the WHOLE NetworkPolicy allow-list (Phase 29, plan 29-02).
+      # This proves it can fail: five holes planted in a copy of k8s/ (an extra
+      # egress port, the dropped 9091 scrape rule, an undeclared policy, an
+      # undeclared ipBlock shape, a CiliumNetworkPolicy), each must exit 1 with
+      # the message naming it, and the clean copy must exit 0.
+      - name: Prove INV-7 catches planted NetworkPolicy holes (--selftest-inv7)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv7
+
+      # Plan 29-08: the same shape for INV-15 (per-host TLS, one cert-manager
+      # owner per Secret, staging noindex with no base-header drift, production
+      # indexable, every nginx annotation Traefik-documented). Each planted hole
+      # must exit with its expected rc and name the hole; the clean copy exits 0.
+      - name: Prove INV-15 catches planted Ingress holes (--selftest-inv15)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv15
+
+      # Plan 29-22: the same shape for INV-16 (core-java's truststore is the JDK
+      # cacerts PLUS the cluster CA, never the CA alone; JVM flags arrive as a
+      # literal JAVA_TOOL_OPTIONS, never JAVA_OPTS; staging must build it).
+      - name: Prove INV-16 catches planted truststore holes (--selftest-inv16)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv16
+
+      # Plan 29-26 (#859): INV-17 keeps the customer realm's require-verified-email
+      # gate on in every deployed core-java (a literal, an app-config value, a
+      # relaxed-binding spelling, the dev profile, application.yml's default).
+      # Six planted holes; the default line removed is a PARSE ERROR (rc 2).
+      - name: Prove INV-17 catches a disabled require-verified-email (--selftest-inv17)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv17
+
+      # Plan 29-22 (D-33): INV-18 keeps the testers' public mail UI authenticated
+      # and on 8025 only, keeps every mailpit Service ClusterIP and keeps Mailpit
+      # from sending (no relay/forward, Send API locked). Six planted holes.
+      - name: Prove INV-18 catches planted mail-UI holes (--selftest-inv18)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv18
+
+      # #976: INV-20 keeps Keycloak from believing X-Forwarded-* from every source
+      # address. A Keycloak container with proxy headers on, in ANY spelling (env,
+      # -D in JAVA_OPTS*, command/args, envFrom, any ConfigMap), must carry exactly
+      # one trusted-addresses setting that resolves, in the render, to a non-empty
+      # private CIDR list without whitespace (never /0, never public); the legacy
+      # KC_PROXY and any source the render cannot read are refused.
+      # 39 planted arms (the two long-value controls must PASS, including the value
+      # folded before a `#`) and 5 unit probes (the unquoting helpers, the image
+      # finder and the path walker); the clean copy must exit 0. The path walker is
+      # k8s/scripts/render_paths.py: python3 with PyYAML is the runner's (the Key
+      # Vault chain gate below needs the same); a missing one is a PARSE ERROR.
+      - name: Prove INV-20 catches planted Keycloak proxy-trust holes (--selftest-inv20)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv20
+
+      # #968 item 3: INV-21 keeps staging Grafana behind the same Traefik basic-auth chain as
+      # the mail UI: every Ingress route to Service grafana carries auth-type basic and an
+      # auth-secret that a SecretProviderClass syncs as key `auth`, and every Service reaching Grafana's
+      # pod is ClusterIP. Ten planted holes (an open route, a cross-namespace secret, the wrong
+      # secret type, an unsynced secret, the wrong synced key, a second open route, no route at
+      # all, which is a PARSE ERROR, rc 2, a LoadBalancer Service, a second Service behind an
+      # open Ingress, and an open spec.defaultBackend).
+      - name: Prove INV-21 catches planted Grafana edge-auth holes (--selftest-inv21)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv21
+
+      # #999: INV-22 keeps staging core-java's metrics labelled environment="staging" (the prod
+      # profile it runs says "production"): the overlay must set MANAGEMENT_METRICS_TAGS_ENVIRONMENT
+      # to its label, once, from a source the render can read, and production may not override it.
+      # Ten planted holes (the override removed, a wrong value, an empty one, a misspelt name
+      # that binds nothing, two spellings, an unreadable Secret source, base bleeding "staging"
+      # into production, application-prod.yml losing the key, which is a PARSE ERROR, rc 2, an
+      # overlay INV22_EXPECTED does not name, and k8s/local losing its override).
+      - name: Prove INV-22 catches planted environment-label holes (--selftest-inv22)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv22
+
+      # Issue #972: INV-23 keeps Mailpit's certificate-reload supervisor in the render (Mailpit
+      # reads its TLS certificate only at start, so without it a cert-manager renewal leaves the
+      # running process serving the old certificate until it expires and every STARTTLS fails)
+      # and keeps MP_SMTP_REQUIRE_STARTTLS true. Eight planted holes (no supervisor, an exec of
+      # Mailpit, a hash of the wrong file, no comparison, no stop, STARTTLS off, the markers in a
+      # sidecar only, a quoted exec).
+      - name: Prove INV-23 catches planted Mailpit cert-reload holes (--selftest-inv23)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv23
+
+      # Issue #1025: INV-24 keeps every CORS-enabled Ingress admitting every header the browser
+      # sends cross-origin (the inventory is scanned from frontend/ on each run; server-only code
+      # is excluded). Base shipped ingress-nginx's default list, without Idempotency-Key, so every
+      # storefront order POST on staging died at the preflight. Seventeen planted holes (a base drop,
+      # an SSE drop, an overlay putting the old list back, a wildcard, the annotation removed, and a
+      # new browser header in each shape the scanner reads: headers object, headers.set, bracket
+      # assignment, an object built first and passed later, headers["X"] =, headers.X =, new
+      # Headers pairs on one line and across lines, a *-server.ts file with no server-only import, a
+      # route.ts outside app/, a stale allow-list entry, and an unquoted single-word header key such
+      # as { Prefer: v }), three controls that must PASS (two server-only files and an object of
+      # ordinary unquoted keys), and two PARSE ERRORs (rc 2): a blind scan, and a scanner regex
+      # that some awk refuses (the gawk-only break of run 39742059553; the gate runs the scanner
+      # under every awk on the machine and refuses disagreement).
+      - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
+
+      # The live half of #1025 runs in staging-edge-probe after a deploy; its judge is proven
+      # here on every change against synthetic preflight responses (today's staging list must
+      # fail, the fixed list pass, a wildcard / missing header / wrong origin / non-2xx status /
+      # no POST in allow-methods / no credentials true / a repeated ACAO or ACAH fail, empty VOID).
+      - name: Prove the CORS preflight probe can fail (check-cors-preflight.sh --selftest)
+        run: bash scripts/check-cors-preflight.sh --selftest
+
+      # Plan 29-12 (D-23): the Key Vault chain of every target that includes
+      # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
+      # has exactly one producing SecretProviderClass that the consuming pod mounts,
+      # each SPC's clientID is its pod's ServiceAccount client-id, and every
+      # identifier is GUID-shaped (an unreplaced placeholder fails). The selftest
+      # runs first: six planted breaks into a copy of the real staging render
+      # (an undeclared key, two producers, a clientID mismatch, a consumer that
+      # does not mount its producer, two workloads sharing one identity, an
+      # objectName not mounted) must each exit 1,
+      # three VOID arms (no SPC, no PyYAML, no kubectl) must exit 2, and the real
+      # render must exit 0. python3 here is the runner's, with PyYAML (the same
+      # interpreter ops-contracts' horizons gate uses).
+      - name: Prove the Key Vault chain gate catches planted breaks (29-12 --selftest)
+        run: bash k8s/scripts/check-keyvault-chain.sh --selftest
+
+      - name: Assert the Key Vault chain holds on every azure-keyvault target (29-12)
+        run: bash k8s/scripts/check-keyvault-chain.sh
+
+      # k8s/platform/* (Phase 29, plan 29-03: Traefik, the ClusterIssuers, the CI
+      # deployer RBAC, the ACME probe) sits at depth 3, so the gates above never
+      # discover it — deliberately, to keep it out of the goldens. The bootstrap
+      # applies it to the staging cluster, so it gets its own render check here:
+      # every kustomization renders, renders SOMETHING (an empty render would make
+      # the Secret count vacuous), and holds no `kind: Secret`.
+      - name: Assert every k8s/platform kustomization renders and holds no Secret (29-03)
+        run: |
+          bad=0; n=0
+          for d in k8s/platform/*/; do
+            [ -f "$d/kustomization.yaml" ] || continue
+            n=$((n + 1))
+            r=$(kubectl kustomize "$d"); rc=$?
+            kinds=$(grep -cE '^kind: ' <<<"$r" || true)
+            secrets=$(grep -cx 'kind: Secret' <<<"$r" || true)
+            echo "$d rc=$rc kinds=$kinds secrets=$secrets"
+            if [ "$rc" -ne 0 ] || [ "$kinds" -eq 0 ] || [ "$secrets" -ne 0 ]; then bad=$((bad + 1)); fi
+          done
+          echo "platform_kustomizations=$n bad=$bad"
+          [ "$n" -ge 4 ] && [ "$bad" -eq 0 ]
+
+      # The staging bootstrap's guards are shown refusing before anything trusts
+      # them (29-03): no context, the employer's sipbihs2aks, an unreadable or
+      # ambiguous identity file, a stale or re-pointed server URL, a tampered
+      # upstream manifest, a missing kubelogin, and a dry run that mutates nothing
+      # — each against stub kubectl/kubelogin/curl, so no cluster and no network.
+      - name: Prove the staging bootstrap guards refuse (29-03 --selftest)
+        run: bash scripts/staging-bootstrap.sh --selftest
+
+      # Plan 29-04: the staging realm assertion suite refuses the raw dev template
+      # and passes the staging transform of BOTH templates, built-in tokens survive,
+      # a surviving secret placeholder is named, and --apply refuses no context, the
+      # employer context and a stale server before the Azure guard is sourced (stub
+      # kubectl/kubelogin/curl/az, so no cluster, no network, no Azure).
+      - name: Prove the staging realm transform and import guards (29-04 --selftest)
+        run: bash scripts/staging-realm-import.sh --selftest
+
+      # Plan 29-06: the staging seed refuses the production and local API bases,
+      # no context, a stale server URL (the shared staging_kube_guard), and any
+      # Ready core-java pod not running SPRING_PROFILES_ACTIVE=prod (a dev pod, a
+      # mixed rollout, no Ready pod: DemoDataSeeder must never run on staging);
+      # its dry run calls nothing; and its per-run realm-admin operator is
+      # DELETEd after a failing step and after a successful run, with no Key
+      # Vault value in any curl argv or output (stubs only: no cluster, no Azure).
+      - name: Prove the staging seed guards and operator cleanup (29-06 --selftest)
+        run: bash scripts/staging-seed.sh --selftest
+
+      # Plan 29-14: deploy.sh refuses no --context, the employer's sipbihs2aks, a
+      # context whose server is not the staging API server, a non-40-hex
+      # --image-tag and a failed (or VOID) staging preflight, all before any apply;
+      # --render-only retags exactly core-java/frontend/edge-go through a wrapper
+      # and leaves the committed overlay byte-identical; a failed rollout is undone
+      # with no DEPLOYED_SHA record, and a green one ends on that record (stub
+      # kubectl/kubelogin and a stub preflight: no cluster, no Azure).
+      - name: Prove the deploy script's guards and DEPLOYED_SHA record (29-14 --selftest)
+        run: bash scripts/deploy.sh --selftest
+
+      # Issue #969: the CI deploy-staging job's wait on every workload it did not retag. The same
+      # library deploy.sh uses; a prometheus Deployment on an unpullable image exits 1 (the
+      # three-app wait it replaces certifies the same render), nothing is undone, a render that
+      # fails or lacks a retagged name is VOID (rc 2).
+      - name: Prove the other-workloads wait can fail (#969 --selftest)
+        run: bash scripts/wait-other-workloads.sh --selftest
+
+      # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
+      # mismatch, plant-stale, empty actual, zero services, no context, employer
+      # context, short tag, fixture-with-context) against fixtures: no cluster.
+      # Issue #985: the drain arms feed the terminating-pod filter (POD_JQ) pod-list
+      # JSON: an old pod that drains (pass), one that stays (fail, and the other
+      # services are still compared), an old image on a live pod (fail), and a
+      # zero or non-numeric --drain-timeout (VOID). Needs jq (present on the runner).
+      # C-9: a running or ready container whose imageID has no @sha256 digest is VOID
+      # naming the pod and container (three arms), and a Pending/ContainerCreating
+      # container with an empty imageID is not (two control arms).
+      - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
+        run: bash scripts/check-deploy-digest-parity.sh --selftest
+
+      # PR #984 review round 1 (F2): the staging rollback step must be gated on the apply step's
+      # `applied` output, or any pre-apply failure (Key Vault pre-flight, kubeconfig, origin
+      # guard) undoes healthy live staging. The check reads the workflow; the selftest plants
+      # each hole (bare failure(), wrong output, output set after the apply, no step id, no
+      # rollback step) and requires the check to catch every one.
+      - name: Assert the staging rollback only runs once the apply was reached (r1 F2)
+        run: |
+          bash scripts/check-deploy-rollback-guard.sh
+          bash scripts/check-deploy-rollback-guard.sh --selftest
+
+      # Plan 29-22 (D-33): every live mail-UI probe arm (UI-1..UI-8) FAILS on a
+      # planted wrong response (an open UI, a wrong password accepted, http serving
+      # the UI, SMTP published, the default certificate, relay on, the Send API
+      # open, no 429) and passes on the right one; stubbed curl/openssl/dig/
+      # kubectl/az and TCP connect: no cluster, no Azure, no network.
+      - name: Prove the mail-UI probe's arms can fail (29-22 --selftest)
+        run: bash scripts/staging-mail-ui.sh --selftest
+
+      # C-1 (Phase 29 follow-ups, plan item 4): the four staging operator scripts below each have
+      # a --selftest that was written, run by hand and then wired nowhere, so none of them could
+      # fail a pull request. Each is stub-only (no cluster, no Azure, no network) and runs here
+      # because this job already has kubectl, python3 with PyYAML and the runner's openssl.
+      # Each was shown red on a planted break and clean again before being wired.
+      #
+      # Plan 29-12/29-22: the Key Vault secret generator, against a stub vault. Generate and
+      # set-external are write-once (a second run writes nothing), no secret value reaches argv,
+      # every value shape holds (hex64, alnum32, b64url32, the htpasswd-apr1 composite), an
+      # unclassified object refuses before any write, the leak scan names a hit, and a missing
+      # python is VOID (rc 2).
+      - name: Prove the staging secret generator's arms can fail (--selftest)
+        run: bash scripts/staging-secrets.sh --selftest
+
+      # The Key Vault pre-flight that decides whether a deploy may mount: against a stub vault
+      # it must name a missing object, a missing access grant, a disabled or empty object, a
+      # stale identity file, a wrong-prefix Stripe key and an invalid external value, and
+      # --names-only must read no value at all (the detector is shown to fire in full mode).
+      - name: Prove the staging secrets pre-flight's arms can fail (--selftest)
+        run: bash scripts/staging-secrets-preflight.sh --selftest
+
+      # Plan 29-20: the PITR drill's own safety predicates, against stubs (no cluster, no
+      # restore, no Azure): a write to the SOURCE server is refused before any kubectl call, only
+      # the drill-<digits> server is admitted, the cleanup trap is installed before the restore
+      # is requested, a zero-byte or junk dump is refused by the size floor, and per-table counts
+      # compare by name (reordered equal; differing, missing or empty do not).
+      - name: Prove the staging PITR drill's predicates can fail (--selftest)
+        run: bash scripts/staging-pitr-drill.sh --selftest
+
+      # Plan 29-17 (DPLY-05, #297): the NetworkPolicy-enforcement VERDICT logic. The live probe
+      # (agnhost pods, a probe namespace, a run-scoped egress policy) needs a cluster credential
+      # and an enforcing CNI and stays operator-run, so scripts/gates/gate-enforcement.conf no
+      # longer lists it, but the live arm is NOT in CI. What runs here is the classifier, 22 TAP
+      # arms with no cluster: a timeout is DENIED, a reset is not, a control that does not
+      # connect is VOID, a denied arm that connects is FAIL, and a foreign or miscounted
+      # artefact is refused. They are what stops a false "enforced" verdict.
+      - name: Prove the NetworkPolicy-enforcement verdict classifier can fail (--selftest)
+        run: bash scripts/check-networkpolicy-enforcement.sh --selftest
+
+      # #968 item 3: the same for the Grafana edge gate's probe (G-1..G-4): an open page, no
+      # Basic challenge, a page leaked in the 401 body, a wrong password accepted, the
+      # credential refused, a title-only or other-app 200, http serving the page, a redirect to
+      # http, and a DNS mismatch (VOID) each FAIL alone; stubbed curl/dig/kubectl/az.
+      - name: Prove the Grafana edge probe's arms can fail (#968 --selftest)
+        run: bash scripts/staging-grafana-edge.sh --selftest
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |
@@ -723,7 +1205,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history: the gate walks HEAD..base, which a shallow clone cannot.
           fetch-depth: 0
@@ -758,10 +1240,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           java-version: '25'
           distribution: 'temurin'
@@ -786,7 +1268,7 @@ jobs:
 
       - name: Upload regenerated spec (debugging aid)
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: openapi-current
           path: core-java/build-local/openapi/openapi-current.json
@@ -804,10 +1286,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -926,7 +1408,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Needed by the edge↔core contract gate below, which is a Go test that
       # reflects over the edge's real client types. Kept in this job rather than
@@ -934,7 +1416,7 @@ jobs:
       # 0/1/2 VOID convention with the gates around it, and it stays green on a
       # docs-only PR where the heavy test job has nothing to say.
       - name: Set up Go 1.27
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.27'
           cache-dependency-path: edge-go/go.sum
@@ -954,10 +1436,28 @@ jobs:
           chmod +x ./scripts/check-alert-rules.sh
           ./scripts/check-alert-rules.sh
 
+      - name: Prove the order-metric probe refuses card stacks and a missing series (973 --selftest)
+        run: bash scripts/seed-order-metric.sh --selftest
+
       - name: Assert every doc citation resolves to what it claims
         run: |
           chmod +x ./scripts/check-doc-citations.sh
           ./scripts/check-doc-citations.sh
+
+      # Doc-only skip (the `changes` job at the top of this file). Both steps run on EVERY change,
+      # docs-only included - they are what makes the skip safe. The classifier's selftest proves
+      # it can answer both true and false, fails closed on an empty list, a mixed list, a
+      # traversal, openapi-snapshot.json, any src/** file and a workflow or script change, and
+      # that every Dockerfile directory and every doc a test reads is classified as code. The
+      # wiring check proves the skip reaches exactly those places and that the
+      # Integration Tests job still runs the suite when `changes` itself fails.
+      - name: Prove the doc-only classifier can say both answers and fails closed (--selftest)
+        run: bash scripts/ci-docs-only.sh --selftest
+
+      - name: Assert the doc-only skip is wired to exactly the expensive jobs and fails closed
+        run: |
+          bash scripts/check-ci-docs-skip-wiring.sh
+          bash scripts/check-ci-docs-skip-wiring.sh --selftest
 
       - name: Assert logout preflights preserve advisory and enforced exits under Actions errexit
         run: python3 scripts/check-logout-preflight.py
@@ -1007,6 +1507,81 @@ jobs:
           chmod +x ./scripts/check-no-object-store-residue.sh
           bash ./scripts/gates/object-store-residue-selftest.sh
           ./scripts/check-no-object-store-residue.sh
+
+      # Phase 29-01 (T-29-01, D-01/D-32). The az CLI's ambient default subscription on the
+      # operator host has been the EMPLOYER's, and an empty --subscription silently resolves
+      # to it. scripts/lib/azure-guard.sh pins every call (az_guard_init asserts the J'Toye
+      # id; az_mutate/az_read append --subscription); this makes "no raw az call anywhere in
+      # scripts/" a property every PR re-proves, not a habit. Its only admission is a declared
+      # AZ_PIN_EXEMPT row for a connection-string `az storage` data-plane call, printed and
+      # counted; a stale row fails. The selftest runs nine planted arms first (a raw call,
+      # four prefixed shapes, an empty tree that must VOID, a stale exemption, ...), so a
+      # gate that can no longer fail goes red here rather than passing quietly below.
+      #
+      # Static by construction: reads scripts/ only, invokes no az, no network, no stack.
+      - name: Assert the subscription-pin gate can fail (29-01 selftest)
+        run: bash scripts/check-az-subscription-pin.sh --selftest
+
+      - name: Assert no raw az call bypasses the subscription pin (29-01)
+        run: bash scripts/check-az-subscription-pin.sh
+
+      # Plan 29-27 (DPLY-02, T-29-98, T-29-99, T-29-104). "Closed or explicitly deferred with a
+      # reason recorded per issue" is only a property if the list of issues is DERIVED: the
+      # gate reads the ROADMAP's Phase 29 section, unions the four references the section does
+      # not carry, and holds the dispositions table to exact set equality with that list (no
+      # missing row, no extra row), an existing evidence path and line per row, a written
+      # reason per deferral, and a comment file per issue that cites its evidence and passes the
+      # public-text rule. That rule exists because GitHub's closing-keyword parser is lexical:
+      # "does not close #100" closed #100 through docs PR #955, so a closing keyword next to any
+      # issue reference, and any AI-attribution line, is a finding. The selftest runs first: its
+      # planted-file arms (a deleted row, an extra row, a dead evidence path, an empty deferral
+      # reason, each keyword shape plus its negative control, each attribution shape, an unparsed
+      # ROADMAP section and table, a stubbed gh for the live modes, and the manifest/approval
+      # hash arms) must each be caught, so a gate that can no longer fail goes red here rather
+      # than passing quietly below.
+      #
+      # Static by construction: reads committed files only, no gh, no network, no stack. The
+      # live modes (--pre-close, --post-close) and the approval check run in plan 29-28.
+      - name: Assert the DPLY-02 dispositions gate can fail (29-27 selftest)
+        run: bash scripts/check-dply02-dispositions.sh --selftest
+
+      - name: Assert every ROADMAP Phase 29 issue has an evidence-linked disposition (29-27)
+        run: bash scripts/check-dply02-dispositions.sh
+
+      # Plan 29-10 (T-29-36). kustomize cannot read a file outside its own root, so a
+      # file both runtimes serve (compose by bind mount, k8s by ConfigMap: the Keycloak
+      # login theme now, the alert corpus and dashboards from plan 29-23) is a
+      # committed COPY, declared with its canonical side in k8s/copy-parity.conf. The
+      # gate md5-compares every pair. The selftest runs first: eighteen planted holes
+      # (a one-byte edit of a binary copy, a missing copy or canonical, no md5sum, an
+      # empty or comment-only list, a self-pair, a symlink copy, and since plan 29-23 a
+      # renamed job, a dropped label, zero jobs and no python3 for the `jobs` pair kind,
+      # which parses YAML with the runner's python3 + PyYAML) must each exit with their
+      # rc, so a gate that can no longer fail goes red here.
+      #
+      # Static by construction: reads committed files only, no stack, no network.
+      - name: Assert the copy-parity gate can fail (29-10 selftest)
+        run: bash scripts/check-k8s-copy-parity.sh --selftest
+
+      - name: Assert every committed copy is byte-equal to its canonical file (29-10)
+        run: bash scripts/check-k8s-copy-parity.sh
+
+      # Plan 29-24 (DPLY-03 part B, T-29-87, T-29-90). The ONE Alertmanager template and
+      # entrypoint are mounted by compose and (as byte copies) by staging Kubernetes. The
+      # gate runs the real entrypoint inside the compose-pinned prom/alertmanager image
+      # (docker, --network none), runs amtool check-config on each render, and holds the
+      # compose render byte-identical to compose-render.golden.yml, which was taken from
+      # the files BEFORE 29-24 added SMTP auth and the extra email_config. The staging arm
+      # asserts auth on the Zoho integration only, the Mailpit sink with the cluster CA,
+      # the alertname-only mute and no password string in the render. The selftest runs
+      # first: six planted holes (an unknown __TOKEN__, a drifted golden, the auth line
+      # removed, auth planted in global, a widened mute validator, a password in a render)
+      # must each be caught. PyYAML is the runner's python3, as for copy-parity above.
+      - name: Assert the Alertmanager render gate can fail (29-24 selftest)
+        run: bash scripts/check-alertmanager-render.sh --selftest
+
+      - name: Assert the Alertmanager corpus renders for compose and staging (29-24)
+        run: bash scripts/check-alertmanager-render.sh
 
       # Plan 31-06 (LGL-01, D-08). docs/retention-manifest.json is the source of truth for a
       # LEGALLY OPERATIVE document — the published per-category retention schedule. A period
@@ -1233,6 +1808,17 @@ jobs:
           chmod +x ./scripts/check-layout-width-contract.sh
           ./scripts/check-layout-width-contract.sh
 
+      # C-1 (Phase 29 follow-ups, plan item 4): staging-db-bootstrap.sh --selftest starts and
+      # removes its own postgres:18 stand-in, with a CREATEROLE non-superuser in place of
+      # azure_pg_admin, and proves the pre-stage is idempotent, the owners can create, the
+      # post-stage fails before a migration and reads back after, the scratch DB is refused for
+      # jtoye and keycloak, the relay goes through the named kube context, and no password
+      # reaches any psql argv. It needs docker and pulls postgres:18, so it lives HERE and not in
+      # k8s-validate: this job is not in any deploy `needs:` list (27-06 section 5), so an
+      # image-pull outage reds a PR check and never blocks or rolls back a deploy.
+      - name: Prove the staging DB bootstrap's guards and role model (--selftest)
+        run: bash scripts/staging-db-bootstrap.sh --selftest
+
       #   11. The meta-gate, so the three steps above are the LAST time this is found by
       #      hand. It asserts that every scripts/check-*.sh either runs in a workflow or
       #      carries a reasoned entry in scripts/gates/gate-enforcement.conf saying why a
@@ -1246,6 +1832,29 @@ jobs:
       #      runtime binaries, because the script necessarily names every one it looks
       #      for. Fixed by stripping the definition line; the trap is documented in the
       #      script, since this repo has hit it before with doc-lint rules.)
+      # Review round 1 on #1005 (F2): scripts/gates/review-record-check.sh has a --selftest
+      # (80 arms, 48 more skipped by design outside the canonical dotfiles context) that no
+      # workflow ran; review-record.yml runs only --status-verdict. Needs only bash and jq.
+      - name: Prove the review-record gate's arms (--selftest)
+        run: bash scripts/gates/review-record-check.sh --selftest
+
+      # Issue #970: pass 2 of the same gate. Every non-check script that dispatches a --selftest
+      # (staging-secrets, staging-secrets-preflight, staging-db-bootstrap and the rest) must be
+      # invoked as `<name>.sh --selftest` on a non-comment line of a workflow; #989 wired the
+      # three, this is what keeps them wired. The gate's own --selftest plants the holes first.
+      # Issue #957 (plan 30-01): the two publishable-key gates also run their selftests on EVERY
+      # PR, docs-only ones included, so a change that breaks either guard is caught before the
+      # merge whose deploy would depend on it. Both need only bash and coreutils (no network:
+      # the chunk check's --url arms read fixtures through STRIPE_KEY_CHECK_FETCH_ROOT).
+      - name: Prove the publishable-key deploy guard can fail (#957 --selftest)
+        run: bash scripts/check-stripe-pk-var.sh --selftest
+
+      - name: Prove the served-chunk publishable-key check can fail (#957 --selftest)
+        run: bash scripts/check-frontend-stripe-key-baked.sh --selftest
+
+      - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
+        run: bash scripts/check-gate-enforcement.sh --selftest
+
       - name: Assert every gate either runs in CI or says why it cannot
         run: |
           chmod +x ./scripts/check-gate-enforcement.sh
@@ -1262,7 +1871,7 @@ jobs:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Trivy vulnerability scanner (filesystem, SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -1275,7 +1884,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -1313,10 +1922,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -1331,7 +1940,7 @@ jobs:
         working-directory: frontend
 
       - name: Set up Go 1.27
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.27'
           cache-dependency-path: edge-go/go.sum
@@ -1385,12 +1994,26 @@ jobs:
   # "never a job-level `if:`" precisely so it stays a satisfiable required check
   # that always reports SUCCESS. That is the pattern any future conditional gate
   # must follow; a job-level `if:` on any job listed below would turn this gate
-  # into a deploy blocker.
+  # into a deploy blocker. (integration-tests' constant `if: ${{ !cancelled() }}` is not a
+  # skip condition - it exists so a failed `changes` cannot skip it - and the doc-only skip
+  # is step-level there too.)
+  #
+  # DOC-ONLY SKIP. integration-tests ALWAYS RUNS (it gates its steps on docs_only, see its
+  # comment), so it no longer skips this job through the needs graph; this job is therefore
+  # the one place that skips images on a documentation-only change, EXPLICITLY, with
+  # `needs.changes.outputs.docs_only != 'true'` in its own `if:`. Its deploy jobs
+  # (deploy-staging, deploy-production, staging-edge-probe) skip through it: an implicit
+  # success() and a skipped need. `changes` is in `needs:` so the output is readable; if
+  # `changes` FAILS this job is skipped - nothing is built or deployed without a successful
+  # classification, and a re-run of the one cheap job fixes it. The integration suite, by
+  # contrast, runs in that case, so no change ever merges untested. The other six needs still
+  # cannot skip, so on any change the classifier does not call docs-only this job is gated
+  # exactly as before.
   build-and-push:
     name: Build and Push Images
-    needs: [test, integration-tests, security-scan, k8s-validate, lint, openapi-compat, mcp-server-tests]
+    needs: [changes, test, integration-tests, security-scan, k8s-validate, lint, openapi-compat, mcp-server-tests]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'release'
+    if: (github.event_name == 'push' || github.event_name == 'release') && needs.changes.outputs.docs_only != 'true'
     permissions:
       contents: read
       packages: write
@@ -1430,7 +2053,7 @@ jobs:
         service: [core-java, edge-go, frontend, pg-backup]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -1532,6 +2155,13 @@ jobs:
           #   FRONTEND_PUBLIC_SUPPORT_URL                 (optional)
           #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
           #   FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE   (optional; D-14, #794)
+          #   FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY (optional at build; staging pk_test_, #957)
+          # FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is optional HERE only: an empty value still
+          # builds (frontend/Dockerfile keeps it out of the CR-02 gate), but deploy-staging
+          # refuses anything that is not a pk_test_ key and deploy-production refuses a
+          # pk_test_ or empty key (the publishable-key guard steps, #957), and staging-edge-probe
+          # reads the key back out of the live checkout chunks after every staging deploy.
+          # A publishable key is public by design, so it is a variable, not a secret.
           # FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE is the registered office on the
           # Companies House record for 16471464, confirmed by the owner 2026-10-07 —
           # the same string as .env.example and the k8s ConfigMap key
@@ -1560,6 +2190,7 @@ jobs:
             NEXT_PUBLIC_SUPPORT_URL=${{ vars.FRONTEND_PUBLIC_SUPPORT_URL }}
             NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
             NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${{ vars.FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE }}
+            NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # frontend is amd64-only: its arm64 build runs under QEMU emulation
@@ -1581,7 +2212,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload image scan results
-        uses: github/codeql-action/upload-sarif@v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
         with:
           sarif_file: 'trivy-image-results.sarif'
@@ -1638,18 +2269,51 @@ jobs:
     # below. Runs only on main AND when the repo variable DEPLOY_STAGING_ENABLED
     # is set to 'true' (the old branch-name gate could never fire — that branch
     # does not exist on the remote).
+    #
+    # DOC-ONLY SKIP: a documentation-only merge neither rebuilds nor redeploys staging. There
+    # is deliberately NO docs_only term here: build-and-push is skipped for it, and a skipped
+    # `needs:` entry skips this job (this `if:` has no status function, so GitHub applies an
+    # implicit success()). One gate, one place to edit; scripts/check-ci-docs-skip-wiring.sh
+    # (W-5) pins that this job still needs build-and-push and carries no status function.
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    # One staging deploy-or-probe at a time, across runs. The staging-edge-probe job below
+    # joins this SAME group, so a probe of run N cannot overlap run N+1's rollout or rollback
+    # and report (or sign off) a transient revision. cancel-in-progress is false: a rollout
+    # in flight is never killed half-applied. GitHub keeps one running and one PENDING job
+    # per group, so a third push cancels the older pending deploy-staging; that is safe, the
+    # newer push deploys a newer tree.
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
+    # Plan 29-21 (D-04, D-32): Azure is reached ONLY through an OIDC federated credential.
+    # id-token: write lets azure/login request the GitHub token that Entra exchanges for
+    # jtoye-ci, whose federated credential gh-deploy-staging admits exactly the subject
+    # repo:Bralabee/JToye_OaaS_2026:environment:staging, i.e. this job's `environment:`
+    # below. Renaming that environment breaks authentication silently, so it is not renamed.
+    # No long-lived kubeconfig secret exists or is read.
+    permissions:
+      id-token: write
+      contents: read
     environment:
       name: staging
       url: https://app-staging.olajay.co.uk
+    env:
+      # Plan 29-14: ONE variable names the deployed tag. The pin step deploys it and
+      # the digest-parity step checks it, so the check cannot drift from the deploy.
+      DEPLOY_TAG: ${{ github.sha }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Plan 29-21: within one minor of the cluster. jtoye-stg-aks reported
+      # kubernetesVersion 1.36.4 (az_read, 2026-10-19; evidence/29-21-ci.txt), and kubectl
+      # is supported only within one minor of the API server, so this pins that patch.
+      # Re-read and re-pin when the cluster is upgraded (K8S_MINOR in
+      # scripts/azure-staging-provision.sh).
       - name: Set up kubectl
         uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
         with:
-          version: 'v1.28.0'
+          version: 'v1.36.4'
 
       - name: Install kustomize (pinned, checksum-verified)
         # Same checksum-verified-pinned-binary shape as the oasdiff install in the
@@ -1688,34 +2352,39 @@ jobs:
       # fix is per-environment frontend images (or a genuinely runtime CSP origin);
       # both are larger changes than this review finding, and both deploy jobs are
       # gated OFF by repo variable today.
+      #
+      # Plan 29-21: the comparison lives in scripts/check-frontend-baked-origin.sh (one
+      # implementation, with a --selftest that shows the production origin against this
+      # overlay being refused). The selftest runs first, so a guard that cannot fail is
+      # never trusted here. The render below feeds the logout pre-flight that follows.
+      - name: Prove the CR-02 baked-origin guard can fail (29-21 --selftest)
+        run: bash scripts/check-frontend-baked-origin.sh --selftest
+
       - name: Assert the baked frontend API origin matches this environment (CR-02)
         env:
           BAKED_API_URL: ${{ vars.FRONTEND_PUBLIC_API_URL }}
         run: |
           set -euo pipefail
           kustomize build k8s/staging > /tmp/staging-render.yaml
-          # awk reads a FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
-          RENDER_API_URL="$(awk '/^[[:space:]]*api\.url:[[:space:]]/ { v = $2; gsub(/^"|"$/, "", v); print v; exit }' /tmp/staging-render.yaml)"
-          if [ -z "$RENDER_API_URL" ]; then
-            echo "FATAL: could not read app-config api.url from the k8s/staging render — this guard is blind, so it fails closed." >&2
-            exit 2
-          fi
-          if [ -z "$BAKED_API_URL" ]; then
-            echo "FATAL: repo variable FRONTEND_PUBLIC_API_URL is unset, so the frontend image baked an EMPTY API origin." >&2
-            echo "       The build should already have failed in build-and-push (frontend/Dockerfile guard); if you are seeing" >&2
-            echo "       this, that guard was bypassed. Set the variable rather than relaxing either check." >&2
-            exit 2
-          fi
-          if [ "$RENDER_API_URL" != "$BAKED_API_URL" ]; then
-            echo "FATAL: the frontend image was built for a DIFFERENT environment." >&2
-            echo "         baked NEXT_PUBLIC_API_URL (vars.FRONTEND_PUBLIC_API_URL): $BAKED_API_URL" >&2
-            echo "         k8s/staging app-config api.url:                           $RENDER_API_URL" >&2
-            echo "       NEXT_PUBLIC_* is inlined at image build time, so this cannot be corrected by a runtime env." >&2
-            echo "       Deploying anyway would give every browser an enforcing CSP whose connect-src names the wrong" >&2
-            echo "       origin — refused fetches, with READY pods and passing server-side smoke tests (CR-02)." >&2
-            exit 1
-          fi
-          echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url ($RENDER_API_URL)"
+          bash scripts/check-frontend-baked-origin.sh --overlay k8s/staging
+
+      # Issue #957 (plan 30-01), beside CR-02 and for the same reason: build-and-push inlined
+      # vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY into the ONE frontend image this job is about
+      # to ship, and an inlined key cannot be corrected by a runtime env. Staging accepts only a
+      # Stripe TEST key, ^pk_test_[A-Za-z0-9]+$ (D-06: no live credential enters staging); an
+      # empty variable is refused, because that image's card checkout is inert. Until the owner
+      # sets the variable (plan 30-03) this refuses every staging deploy, which is the point:
+      # it is undone by setting the variable, never by editing this gate. Runs before any
+      # credential is materialised; the value reaches the script through env, never argv, and
+      # only its prefix and length are printed. The selftest runs first, so a guard that cannot
+      # fail is never trusted here.
+      - name: Prove the publishable-key guard can fail (#957 --selftest)
+        run: bash scripts/check-stripe-pk-var.sh --selftest
+
+      - name: Assert the baked publishable key is a Stripe TEST key (#957, D-06)
+        env:
+          STRIPE_PK_VAR: ${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+        run: bash scripts/check-stripe-pk-var.sh --environment staging
 
       # FE-1 / E-5 (QA council 20260902-134741): before deploying, ask the DEPLOYED realm
       # whether it accepts the post_logout_redirect_uri this overlay's vendor sign-out
@@ -1759,12 +2428,72 @@ jobs:
             echo "ADVISORY (flag off, deploy proceeds on today's /auth/signin leg): the staging realm did not cleanly accept $URI (rc=$rc; 2 = unreachable/VOID). Register <frontend.url>/api/vendor-auth/logout-complete on client $CLIENT and re-run before flipping vendor.logout-complete.enabled."
           fi
 
-      - name: Configure kubeconfig
+      # ---- Plan 29-21: authentication (D-04, D-32) --------------------------------------
+      # Every credential below is short-lived and minted for this run: the GitHub OIDC
+      # token, the Entra token azure/login exchanges it for, and the AKS token kubelogin
+      # obtains through the Azure CLI. The cluster is Entra-only with local accounts
+      # disabled, so the kubeconfig az writes holds no credential; kubelogin supplies one.
+      # The identifiers are environment variables of the `staging` environment (not
+      # secrets: a client id and a tenant id are not credentials, T-29-32).
+      - name: Refuse a subscription that is not J'Toye's
+        # An empty --subscription silently resolves to the CLI's default (measured
+        # 2026-09-28), so the variable is checked byte-for-byte before any az call.
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+          if [ "$AZURE_SUBSCRIPTION_ID" != "c483d353-5f61-4587-a790-addb9ab5fb94" ]; then
+            echo "FATAL: environment variable AZURE_SUBSCRIPTION_ID is '${AZURE_SUBSCRIPTION_ID:-<unset>}', not the J'Toye subscription c483d353-5f61-4587-a790-addb9ab5fb94." >&2
+            exit 1
+          fi
+
+      - name: Azure login (OIDC, jtoye-ci, no stored secret)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install kubelogin (pinned, checksum-verified)
+        # Same checksum-verified-pinned-binary shape as kustomize above. Version and
+        # linux_amd64 zip sha256 taken from the Azure/kubelogin v0.2.21 release's own
+        # .sha256 asset and re-computed locally before pinning (evidence/29-21-ci.txt).
+        run: |
+          KUBELOGIN_VERSION="v0.2.21"
+          KUBELOGIN_SHA256="934a2a9618e018cb9fbeb14f3e4c28416fdae815df7706df91500e41d234eb66"
+          curl -sSfL -o kubelogin.zip "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip"
+          echo "${KUBELOGIN_SHA256}  kubelogin.zip" | sha256sum -c -
+          unzip -o -j kubelogin.zip bin/linux_amd64/kubelogin -d kubelogin-bin
+          sudo install -m 0755 kubelogin-bin/kubelogin /usr/local/bin/kubelogin
+          kubelogin --version
+
+      - name: Configure kubeconfig (az aks get-credentials + kubelogin, Entra only)
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          az aks get-credentials --subscription "$AZURE_SUBSCRIPTION_ID" -g jtoye-rg -n jtoye-stg-aks --overwrite-existing
+          kubelogin convert-kubeconfig -l azurecli
+          kubectl config current-context
+          # Fetch the AKS token now, while the federated assertion is fresh, and prove this
+          # identity may write in the staging namespace before anything is applied.
+          can="$(kubectl auth can-i create deployments -n jtoye-staging)"
+          echo "can-i create deployments -n jtoye-staging: $can"
+          [ "$can" = yes ]
+
+      # D-23 / T-29-49..51: refuse a half-configured vault before applying. --names-only
+      # reads object names, enabled flags and per-secret role assignments, never a value
+      # (jtoye-ci holds Key Vault Reader at vault scope, not Secrets User). The script
+      # initialises the subscription guard itself; JTOYE_AZURE_SUBSCRIPTION_ID is what
+      # az_guard_init compares with the pinned id, so a wrong or missing variable refuses.
+      - name: Pre-flight — every staging Key Vault object present, enabled and granted (29-13 / 29-21)
+        env:
+          JTOYE_AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: bash scripts/staging-secrets-preflight.sh --names-only
 
       - name: Pin full-sha images + deploy staging overlay
+        # `id` is what the rollback step is gated on (see its comment): this step sets the
+        # `applied` output immediately before `kubectl apply`.
+        id: deploy
         env:
           IMAGE_OWNER: ${{ github.repository_owner }}
         run: |
@@ -1797,11 +2526,11 @@ jobs:
             exit 2
           fi
           IMAGE_PUBLISH_BASE="${REGISTRY}/${IMAGE_OWNER,,}/jtoye"
-          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${{ github.sha }}"
+          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${DEPLOY_TAG}"
           (cd k8s/staging && kustomize edit set image \
-            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${{ github.sha }}" \
-            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${{ github.sha }}" \
-            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${{ github.sha }}")
+            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${DEPLOY_TAG}" \
+            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${DEPLOY_TAG}" \
+            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${DEPLOY_TAG}")
           # Premortem guard: assert the RENDERED overlay actually pins :<sha> on
           # all three jtoye images BEFORE apply. A silent images[].name key
           # mismatch would fall back to the static 2.1.0 default and deploy the
@@ -1815,13 +2544,16 @@ jobs:
           # why it survives testing: it waits for the render to grow.
           RENDERED="$(kustomize build k8s/staging)"
           for svc in core-java edge-go frontend; do
-            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" <<< "$RENDERED"; then
-              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" >&2
+            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" <<< "$RENDERED"; then
+              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${DEPLOY_TAG}" >&2
               echo "Rendered jtoye image refs were:" >&2
               grep -E "image: .*/jtoye-" <<< "$RENDERED" >&2 || true
               exit 1
             fi
           done
+          # From here on a failure means a deploy was STARTED, so the rollback step may undo it.
+          # Set before the apply, not after: an apply that fails half way has changed Deployments.
+          echo "applied=true" >> "$GITHUB_OUTPUT"
           kubectl apply -k k8s/staging
 
       - name: Wait for rollout
@@ -1829,6 +2561,18 @@ jobs:
           kubectl rollout status deployment/core-java -n jtoye-staging --timeout=5m
           kubectl rollout status deployment/edge-go -n jtoye-staging --timeout=3m
           kubectl rollout status deployment/frontend -n jtoye-staging --timeout=3m
+
+      - name: Digest parity — the running pods are the images pushed for DEPLOY_TAG (29-14)
+        # The Kubernetes half of runtime parity: every running core-java, edge-go and
+        # frontend container's imageID must be in the digest set GHCR holds for the tag
+        # this job deployed (DEPLOY_TAG, the same variable the pin step used). Exit 1 is a
+        # wrong image; exit 2 is VOID (the shared staging context guard refused the
+        # context, kubelogin or docker is missing, or no pod was read) and fails the job
+        # too: "could not check" is never "clean". The guard needs kubelogin and the
+        # kubeconfig's server to equal the staging API server; since plan 29-21 both come
+        # from the Configure kubeconfig step above (az aks get-credentials + kubelogin).
+        run: |
+          bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag "$DEPLOY_TAG"
 
       - name: Health check after core-java deployment
         # issue #98 [P2-7] item 4: actuator now lives on the INTERNAL management
@@ -1841,18 +2585,124 @@ jobs:
           kubectl exec -n jtoye-staging deployment/core-java -- curl -f http://localhost:9091/actuator/health || exit 1
 
       - name: Run smoke tests
-        # Staging exposes Swagger (application-staging.yml) — assert it is reachable.
+        # Plan 29-21 (Blocker G, #549): k8s staging runs the PROD Spring profile
+        # deliberately, for parity with production, so the API docs are off there and
+        # #549 keeps them off a public host. EXPECT_SWAGGER=false asserts /swagger-ui.html
+        # and /v3/api-docs are NOT served. Expecting them (the old line) would fail every
+        # healthy deploy and the rollback below would undo it.
         run: |
           chmod +x ./scripts/smoke-test.sh
-          EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
+          EXPECT_SWAGGER=false ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
+
+      # Issue #969: `kubectl apply -k k8s/staging` applies the whole overlay, so the job is only
+      # green once everything it applied is Ready, not just the three retagged images (a merge
+      # that broke prometheus, alertmanager or grafana used to deploy through here green).
+      # Every other Deployment and StatefulSet in the render is waited on by the same library
+      # scripts/deploy.sh uses (scripts/lib/wait-workloads.sh): one 600 s budget, every failure
+      # named, the job fails. It undoes NOTHING: the three apps are Ready here, and the Rollback
+      # step below excludes this step's failure (steps.wait_other.outcome) because rolling healthy
+      # apps back for a monitoring fault trades one fault for another.
+      #
+      # IT RUNS LAST, after the digest-parity, health and smoke steps, on purpose: placed before
+      # them, a monitoring fault would fail it first, skip those app checks and (through the
+      # exclusion) disable the rollback, so apps that fail their health or smoke check would stay
+      # on staging. Here an app-check failure skips this step (outcome `skipped`, so the rollback
+      # still fires) and a failure of THIS step alone is the only thing the exclusion covers.
+      # scripts/check-deploy-rollback-guard.sh R-5 pins the ordering and both halves.
+      - name: Wait for the other workloads in the render (monitoring, Keycloak, Redis, ... #969)
+        id: wait_other
+        run: |
+          bash scripts/wait-other-workloads.sh --overlay k8s/staging --namespace jtoye-staging \
+            --retagged core-java,edge-go,frontend
 
       - name: Rollback on failure
-        if: failure()
+        # failure() alone is true when ANY earlier step failed, including the ones that run
+        # BEFORE the apply (baked-origin guard, logout pre-flight, subscription check,
+        # kubelogin, can-i, Key Vault pre-flight). Nothing is deployed then, and an undo would
+        # roll healthy live staging back a revision. So it also needs the `applied` output of
+        # the apply step. A failure of the wait_other step (a workload this job did NOT retag
+        # never became Ready, #969) is excluded too: the apps are Ready and stay. This step and
+        # the three-app "Wait for rollout" above stay the only things it undoes.
+        # scripts/check-deploy-rollback-guard.sh pins this shape (R-1..R-5).
+        if: failure() && steps.deploy.outputs.applied == 'true' && steps.wait_other.outcome != 'failure'
         run: |
           kubectl rollout undo deployment/core-java -n jtoye-staging
           kubectl rollout undo deployment/edge-go -n jtoye-staging
           kubectl rollout undo deployment/frontend -n jtoye-staging
           exit 1
+
+  # Job 4b: Probe the staging edge after a successful staging deploy (C-2, Phase 29 follow-ups).
+  #
+  # scripts/check-staging-edge.sh asks the LIVE edge whether Traefik honours the annotations the
+  # render gates only prove are written: the six security headers, the CSP admitting the realm
+  # endpoints, the CORS preflight and the Keycloak admin-path restriction. Until this job it ran
+  # nowhere, and its gate-enforcement.conf entry said "plan 29-21 runs it from the deploy job",
+  # which was never true.
+  #
+  # A SEPARATE JOB, NOT A STEP OF deploy-staging, and that is the whole design. A failing step in
+  # deploy-staging runs "Rollback on failure" (kubectl rollout undo on all three Deployments), so
+  # an edge-probe step that flaked on a DNS blip or a Traefik restart would roll back a CORRECT
+  # deploy. Here a red is a red check on the run and nothing else. `needs: deploy-staging` with
+  # the implicit success() means it is skipped, not run, against a deploy that failed or was
+  # rolled back, and no later job `needs:` it.
+  #
+  # WHAT THIS JOB HOLDS: `contents: read` on the repository, and nothing else. No `id-token`
+  # (it cannot mint an OIDC token), no Azure login, no kubelogin, no kubeconfig, no cluster
+  # credential of any kind, and no `environment:` (so no environment secret or variable, no
+  # federated-credential subject, and no GitHub deployment record that a red probe could turn
+  # into a failed "staging" deployment). It runs repo code, so it must not hold the identity
+  # deploy-staging uses. The read-only run needs none of that: the script's context guard
+  # applies only to --fail-arms, and the four arms curl the public staging hosts.
+  #
+  # READ-ONLY ARMS ONLY, with --skip-burst. The 429 burst arm (1500 requests at concurrency 40,
+  # passing only above ~150 rps) is timing-sensitive and says as much about the client as about
+  # the edge; it stays operator-run, as does --fail-arms (it creates a scratch Ingress and needs
+  # the cluster). The script's own PASS line says the burst arm was not run, so this job's green
+  # cannot be read as the full five-arm result.
+  #
+  # Same `if:` as deploy-staging and the SAME `concurrency:` group, so a probe never overlaps a
+  # later run's rollout.
+  #
+  # DOC-ONLY SKIP, by needs: this job names no `changes` term because it does not need one. Its
+  # `if:` carries no status function, so GitHub applies an implicit success(), and a skipped
+  # `needs: deploy-staging` skips it. A documentation-only merge does not redeploy staging, so
+  # there is no new rollout to probe; the last probed revision is still the live one.
+  staging-edge-probe:
+    name: Staging Edge Probe
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED == 'true'
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # curl, jq and getent are on the runner image. Exit 1 = an arm failed on the live edge,
+      # exit 2 = VOID (a host did not resolve, a request did not complete): both fail this job.
+      - name: Probe the live staging edge, read-only arms (headers, csp, cors, admin)
+        run: bash scripts/check-staging-edge.sh --skip-burst
+
+      # Issue #957: read the publishable key out of the RUNNING artifact. A green build, a 200 and
+      # a rendered checkout look identical whether or not the key was inlined (staging served 22
+      # checkout chunks with 0 pk_ literals for months), so this fetches the checkout page the
+      # browser loads, then every chunk it names, and requires exactly one pk_test_ literal, zero
+      # un-inlined env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY lookups and zero secret-key literals.
+      # The inlined API origin is the control: found 0 times, the scan is blind and the step is
+      # VOID (exit 2), never a pass. Public, read-only GETs: no credential, contents: read only.
+      - name: Read the publishable key out of the LIVE checkout chunks (#957)
+        run: bash scripts/check-frontend-stripe-key-baked.sh --url https://app-staging.olajay.co.uk --path /shop/staging-test-kitchen/checkout --expect-prefix pk_test_ --control api-staging.olajay.co.uk
+
+      # Issue #1025: the order POST's preflight admits every header the browser sends
+      # (content-type, authorization, idempotency-key, x-tenant-id). One OPTIONS request to the
+      # public api host; exit 1 = a header refused, 2 = VOID. INV-24 holds the render; this holds
+      # what the live edge answers.
+      - name: Probe the live staging CORS preflight admits the browser's headers (#1025)
+        run: bash scripts/check-cors-preflight.sh
 
   # Job 5: Deploy to production
   #
@@ -1863,13 +2713,15 @@ jobs:
     name: Deploy to Production
     needs: [build-and-push, k8s-validate]
     runs-on: ubuntu-latest
+    # DOC-ONLY SKIP: as deploy-staging, through build-and-push. A `release` event always
+    # classifies as not docs-only.
     if: (github.ref == 'refs/heads/main' || github.event_name == 'release') && vars.DEPLOY_ENABLED == 'true'
     environment:
       name: production
       url: https://app.olajay.co.uk
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
@@ -1921,6 +2773,21 @@ jobs:
             exit 1
           fi
           echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/production app-config api.url ($RENDER_API_URL)"
+
+      # Issue #957 / D-08: the production mirror of deploy-staging's publishable-key guard. The
+      # pipeline builds ONE frontend image per commit, so the image this job would ship is the one
+      # staging was given — baked with staging's pk_test_ key. Production therefore refuses a
+      # pk_test_ key (test-mode payments in production) and an empty one (an inert card checkout),
+      # and accepts only ^pk_live_[A-Za-z0-9]+$. With one image this means production cannot deploy
+      # while staging carries a test key; that is the honest state of a single-image pipeline, and
+      # per-environment frontend images are Phase 32 (out of scope for Phase 30).
+      - name: Prove the publishable-key guard can fail (#957 --selftest)
+        run: bash scripts/check-stripe-pk-var.sh --selftest
+
+      - name: Assert the baked publishable key is a Stripe LIVE key (#957, D-08)
+        env:
+          STRIPE_PK_VAR: ${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+        run: bash scripts/check-stripe-pk-var.sh --environment production
 
       # FE-1 / E-5: identical pre-flight to deploy-staging's — see the long rationale
       # there. Inputs come from the production render; enforced only while

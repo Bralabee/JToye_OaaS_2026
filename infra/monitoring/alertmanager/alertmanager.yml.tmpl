@@ -29,6 +29,7 @@ receivers:
   - name: email-default
     email_configs:
       - to: '__SMTP_TO__'
+__SMTP_AUTH_BLOCK__
         send_resolved: true
         headers:
           Subject: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }}/{{ .CommonLabels.severity }})'
@@ -42,6 +43,7 @@ receivers:
           <p><b>Service:</b> {{ .Labels.service }}</p>
           <p><b>Started:</b> {{ .StartsAt }}</p>
           {{ end }}
+__EXTRA_EMAIL_CONFIGS_BLOCK__
 __EXTRA_RECEIVERS_BLOCK__
 
 inhibit_rules: []

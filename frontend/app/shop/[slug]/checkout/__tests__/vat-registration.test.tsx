@@ -39,7 +39,10 @@ jest.mock("@/lib/customer-auth", () => ({
   getCustomerSession: jest.fn(() => Promise.resolve(null)),
 }))
 jest.mock("@/lib/order-history", () => ({ saveLocalOrder: jest.fn() }))
-jest.mock("@stripe/stripe-js/pure", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
+// #957 (30-02): a load resolving null is Stripe.js's FAILURE value, which step 2 now shows as
+// "Card payment couldn't load" instead of the form. These arms are about what the card step shows
+// beside a WORKING form, so the load succeeds (a stand-in instance). Harness only.
+jest.mock("@stripe/stripe-js/pure", () => ({ loadStripe: jest.fn(() => Promise.resolve({ __fakeStripe: true })) }))
 jest.mock("@stripe/react-stripe-js", () => ({
   Elements: ({ children }: { children: React.ReactNode }) => <div data-testid="stripe-elements">{children}</div>,
   PaymentElement: () => null,

@@ -10,6 +10,7 @@
  */
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import ProductsPage from "../page"
+import { chooseTestShop, getWithShop } from "@/test-utils/shop-assignment"
 import apiClient from "@/lib/api-client"
 import { MAY_CONTAIN_HELP_COPY } from "@/lib/allergen-copy"
 import { MAY_CONTAIN_MASK_MAX, mayContainMaskSchema } from "../product-form-schema"
@@ -68,6 +69,7 @@ async function openCreate() {
     target: { value: "rice, butter (MILK), pepper" },
   })
   fireEvent.change(screen.getByLabelText(/^Price/), { target: { value: "4.50" } })
+  await chooseTestShop()
 }
 
 async function openEditOf(p: Record<string, unknown>) {
@@ -80,7 +82,7 @@ async function openEditOf(p: Record<string, unknown>) {
 describe("D-16: the separate 'May contain' checkboxes", () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockedApiClient.get.mockResolvedValue(listOf([]))
+    mockedApiClient.get.mockImplementation(getWithShop([]) as jest.Mock)
     mockedApiClient.post.mockResolvedValue({ data: { ...product, allergenWarnings: [] } })
     mockedApiClient.put.mockResolvedValue({ data: { ...product, allergenWarnings: [] } })
   })
@@ -326,5 +328,17 @@ describe("D-17: Download allergen label asks for the production date", () => {
     expect(createObjectURL).not.toHaveBeenCalled()
     expect(anchorClick).not.toHaveBeenCalled()
     expect(screen.getByRole("dialog")).toBeInTheDocument()
+  })
+
+  it("selecting the 62mm continuous thermal roll format appends &format=THERMAL_62MM (GTM-BLK-06)", async () => {
+    const dialog = await openLabelDialog()
+    const formatSelect = within(dialog).getByLabelText("Label size / printer")
+    fireEvent.change(formatSelect, { target: { value: "THERMAL_62MM" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download label" }))
+
+    await waitFor(() => expect(labelCalls()).toHaveLength(1))
+    expect(labelCalls()[0][0]).toBe(
+      `/api/v1/products/p-1/label?productionDate=${LONDON_TODAY}&format=THERMAL_62MM`
+    )
   })
 })

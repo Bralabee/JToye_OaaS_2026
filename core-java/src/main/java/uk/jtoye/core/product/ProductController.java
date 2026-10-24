@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -25,6 +26,9 @@ import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.CopyProductsRequest;
 import uk.jtoye.core.product.dto.CopyProductsResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
+import uk.jtoye.core.product.dto.CulinaryPackDto;
+import uk.jtoye.core.product.dto.CulinaryPackSeedRequest;
+import uk.jtoye.core.product.dto.CulinaryPackSeedResult;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.product.dto.ProductPatchRequest;
 
@@ -47,13 +51,22 @@ public class ProductController {
     private final ProductLabelService labelService;
     private final ImageAnalysisService imageAnalysisService;
     private final BulkImportService bulkImportService;
+    private final CulinaryPackSeedService culinaryPackSeedService;
 
     public ProductController(ProductService productService, ProductLabelService labelService,
                               ImageAnalysisService imageAnalysisService, BulkImportService bulkImportService) {
+        this(productService, labelService, imageAnalysisService, bulkImportService, null);
+    }
+
+    @Autowired
+    public ProductController(ProductService productService, ProductLabelService labelService,
+                              ImageAnalysisService imageAnalysisService, BulkImportService bulkImportService,
+                              @jakarta.annotation.Nullable CulinaryPackSeedService culinaryPackSeedService) {
         this.productService = productService;
         this.labelService = labelService;
         this.imageAnalysisService = imageAnalysisService;
         this.bulkImportService = bulkImportService;
+        this.culinaryPackSeedService = culinaryPackSeedService;
     }
 
     @GetMapping
@@ -204,7 +217,56 @@ public class ProductController {
         return ResponseEntity.ok(productService.copyProducts(request));
     }
 
+    // ---- Culinary Knowledge Base 1-Click Seeding (GTM-BLK-02) ----
+
+    @GetMapping("/culinary-packs")
+    @Operation(summary = "List Pan-African & Caribbean culinary packs",
+            description = "Returns the 10 pre-audited regional cuisine packs (52 dishes) from the bundled OaaS "
+                    + "Culinary Knowledge Base (GTM-BLK-02), with UK FSA 14-allergen declared and cross-contact "
+                    + "bitmasks, inline-emphasised ingredients prose, and recommended refrigerated shelf-life days.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Available culinary packs and dish templates"),
+            @ApiResponse(responseCode = "401", description = "No bearer token, or an invalid one")
+    })
+    public ResponseEntity<List<CulinaryPackDto>> listCulinaryPacks() {
+        if (culinaryPackSeedService == null) {
+            throw new IllegalStateException("Culinary pack seed service is not configured");
+        }
+        return ResponseEntity.ok(culinaryPackSeedService.listPacks());
+    }
+
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")
+    @PostMapping(value = "/culinary-packs/seed", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Seed shop catalogue from Pan-African & Caribbean culinary pack",
+            description = "Idempotently seeds a shop's product catalogue from one or more regional cuisine packs "
+                    + "or specific dish template slugs (GTM-BLK-02). Requires SHOP_MANAGER on shopId and "
+                    + "SCOPE_catalog:write. Seeded dishes are created as drafts (available=false) by default so the "
+                    + "Food Business Operator confirms their exact kitchen recipe and price before publishing. "
+                    + "Dishes whose deterministic CKB SKU or title already exist in the target shop are SKIPPED.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Seed processed; see created, skipped, failed and items"),
+            @ApiResponse(responseCode = "400",
+                    description = "Missing shopId, or neither cuisineKeys nor dishSlugs provided (errors/validation, errors/invalid-argument)"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no "
+                            + "SHOP_MANAGER grant on shopId (errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Shop not found in the caller's tenant (errors/not-found)")
+    })
+    public ResponseEntity<CulinaryPackSeedResult> seedCulinaryPack(
+            @Valid @RequestBody CulinaryPackSeedRequest request) {
+        if (culinaryPackSeedService == null) {
+            throw new IllegalStateException("Culinary pack seed service is not configured");
+        }
+        return ResponseEntity.ok(culinaryPackSeedService.seedPack(request));
+    }
+
     // ---- Labels ----
+
+    public ResponseEntity<byte[]> generateLabel(UUID id, LocalDate productionDate) {
+        return generateLabel(id, productionDate, null);
+    }
 
     @GetMapping("/{id}/label")
     @Operation(summary = "Generate allergen label PDF",
@@ -212,15 +274,20 @@ public class ProductController {
                     + "prints the production date and a use-by / best-before date counted from it "
                     + "(production date + the product's shelf life), and a separate 'May contain' line "
                     + "for cross-contact allergens that are not already declared. Dates are printed "
-                    + "en-GB, e.g. '5 October 2026'.")
+                    + "en-GB, e.g. '5 October 2026'. Optional format parameter selects STANDARD_100X60MM "
+                    + "(100x60mm sticker, default) or THERMAL_62MM (62mm continuous thermal roll for "
+                    + "Brother QL-800/810W printers, GTM-BLK-06).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "The label PDF (attachment label-{id}.pdf)"),
+            @ApiResponse(responseCode = "400", description = "Unsupported label format parameter (errors/invalid-argument)"),
             @ApiResponse(responseCode = "401", description = "No bearer token, or an invalid one"),
             @ApiResponse(responseCode = "403",
                     description = "The caller holds no STAFF grant on the product's shop (errors/shop-access-denied)"),
             @ApiResponse(responseCode = "404", description = "Product not found"),
             @ApiResponse(responseCode = "422",
-                    description = "The product lacks required label data (errors/incomplete-label-data), "
+                    description = "The product lacks required label data (errors/incomplete-label-data: a "
+                            + "plain-words detail plus a missingFields member naming shelfLifeDays, "
+                            + "durabilityType, shopId, shopName and/or shopAddress), "
                             + "or productionDate is after today (UK time) or gives a durability date "
                             + "that has already passed (errors/invalid-production-date, field "
                             + "productionDate)")
@@ -232,11 +299,17 @@ public class ProductController {
                     + "after today, and must not give a durability date that has already passed.",
                     example = "2026-10-03")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate productionDate) {
-        byte[] pdf = labelService.generateLabel(id, productionDate);
+            LocalDate productionDate,
+            @Parameter(description = "Optional page layout: STANDARD_100X60MM (default 100x60mm sheet/sticker) "
+                    + "or THERMAL_62MM (62mm continuous roll for Brother QL thermal printers, GTM-BLK-06).",
+                    example = "THERMAL_62MM")
+            @RequestParam(required = false) String format) {
+        ProductLabelService.LabelFormat resolvedFormat = ProductLabelService.LabelFormat.fromQueryParam(format);
+        byte[] pdf = labelService.generateLabel(id, productionDate, resolvedFormat);
+        String suffix = resolvedFormat == ProductLabelService.LabelFormat.THERMAL_62MM ? "-62mm" : "";
         return ResponseEntity.ok()
                 .header("Content-Type", "application/pdf")
-                .header("Content-Disposition", "attachment; filename=label-" + id + ".pdf")
+                .header("Content-Disposition", "attachment; filename=label-" + id + suffix + ".pdf")
                 .body(pdf);
     }
 
@@ -245,7 +318,7 @@ public class ProductController {
     @Operation(summary = "Create product", description = "Creates a new product. Requires ingredients_text, allergen_mask, and price per Natasha's Law (UK) and business requirements.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Product created successfully"),
-            @ApiResponse(responseCode = "400", description = "Validation error - missing required fields or invalid price"),
+            @ApiResponse(responseCode = "400", description = "Validation error - missing required fields or invalid price, or no shop named (errors/shop-required, field shopId)"),
             // API-5: the scope gate above and the shop-grant check in ProductService both
             // answer 403 live, and neither was declared.
             @ApiResponse(responseCode = "401",

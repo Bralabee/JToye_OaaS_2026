@@ -256,8 +256,11 @@ with `blobctl`. It never prunes and never deletes.
   cannot read, list or delete (provisioning runbook §6). So the job has **no post-upload read-back**
   — it cannot list what it wrote — and a compromised job cannot read, delete or replace old dumps,
   which hold every tenant's PII.
-- The database half is unchanged: `DB_USER` / `PGPASSWORD` come from the `postgres-credentials`
-  secret's `backup-username` / `backup-password` keys, and must be the BYPASSRLS role below.
+- The database half: `DB_USER` / `PGPASSWORD` come from the `pg-backup-credentials` secret's
+  `backup-username` / `backup-password` keys (with `host` / `port` / `database`), and must be the
+  BYPASSRLS role below. Since plan 29-12 the CronJob reads a Secret of its own name: in staging it
+  is synced from the same Key Vault objects as core-java's `postgres-credentials`
+  (`postgres-credentials--host`, …, `postgres-credentials--backup-password`).
 
 ### The image
 
@@ -371,7 +374,8 @@ export BACKUP_PW="$(<secret manager>)"
   | psql -U <superuser> -d jtoye -v ON_ERROR_STOP=1
 ```
 
-Put the same password in the `postgres-credentials` secret's `backup-password` key. There is **no
+Put the same password in the `pg-backup-credentials` secret's `backup-password` key (in staging, the
+Key Vault object `postgres-credentials--backup-password`). There is **no
 storage credential to create**: Blob access is the Workload Identity above. The kustomize builds
 ship no Secret objects (#100); see `docs/runbooks/sealed-secrets.md` for the required-secrets table.
 
@@ -460,6 +464,112 @@ The fail directions recorded with it:
 - a count read from the live database → exit 1
 - Azurite stopped → exit 2
 
+### Managed PITR drill (staging) — `scripts/staging-pitr-drill.sh`
+
+The compose drill above proves the logical-dump path against a local Postgres. Staging runs on
+Azure Database for PostgreSQL Flexible Server (`jtoye-stg-pg`, PostgreSQL 18), whose first line of
+recovery is the **provider's point-in-time restore** (D-10). This drill rehearses both lines
+against the managed server, by row count, with the counterexample beside them (DPLY-04, #101).
+
+```bash
+JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 \
+  bash scripts/staging-pitr-drill.sh --context jtoye-stg-aks    # 0 PASS · 1 a defect · 2 VOID
+bash scripts/staging-pitr-drill.sh --selftest                     # offline arms
+```
+
+**Two servers, never interchangeable.**
+
+| Name | Role in the drill | What the drill may do to it |
+|---|---|---|
+| `SOURCE` = `jtoye-stg-pg` | the live staging server | **reads only**, as `jtoye_backup`, plus exactly **two writes**: the marker products, made through the vendor API as any vendor edit would be |
+| `RESTORED` = `jtoye-stg-pg-drill-<RUN_ID>` | the PITR copy, a NEW server | one firewall rule, the scratch role `jtoye_drill_norls`, the scratch databases `drill_a` and `drill_b`, every dump and every `pg_restore` |
+
+Every `CREATE ROLE`, `CREATE DATABASE`, `DROP` and `pg_restore` passes `target_guard` first. It
+is an allow-list that admits only a `jtoye-stg-pg-drill-<digits>` host, and refuses the SOURCE name
+or FQDN (any case, trailing dot) or an empty host, with rc 1 before any connection. The `--selftest`
+arm `source-write-refused` shows it refusing 20 such cases with zero `kubectl` calls.
+
+**What each arm proves.**
+
+| Arm | What runs | Must | Why |
+|---|---|---|---|
+| **P** | PITR of SOURCE to `T0` into RESTORED; counts as `jtoye_backup` | carry the before-marker, not the after-marker; `products`, `orders`, `customers`, `shops` equal SOURCE's counts at `T0` | the provider restore lands where it was asked to, with the data |
+| **A** | on RESTORED: `jtoye_drill_norls` (LOGIN, NOBYPASSRLS, SELECT only) dumps it, plain then `--enable-row-security`; the partial dump restores into `drill_a` | plain `pg_dump` exits non-zero with a row-level security error; the partial dump **passes** the pipeline's size floor and `pg_restore --list`; `drill_a` counts **differ** from SOURCE | the pipeline's own content checks cannot tell a partial dump from a whole one; only the row count can |
+| **B** | on RESTORED: `pg_dump` as `jtoye_backup` (BYPASSRLS; PITR carries the role) restored into `drill_b` | passes the same checks; `drill_b` counts **equal** SOURCE at `T0` | the artifact the CronJob uploads carries the tenant data |
+| **zero** | the size-floor line against an empty file | refused | the floor is not vacuous |
+
+The pipeline checks are not re-implemented. The drill reads the floor and listing lines out of
+the backup image's own script (`/usr/local/bin/backup`), checks that each occurs exactly once,
+compares them with `infra/backups/k8s-backup.sh`, and runs them unchanged. Arm A's dump is never
+uploaded.
+
+**How `T0` is chosen.** The before-marker (`pitr-marker-before-<RUN_ID>`, `available: false`, so
+the published shop never offers it) is written and its committed `created_at` read back. After
+60 s the drill counts SOURCE, sets `T0` two seconds ahead, waits past it and counts again. The two
+counts must be equal, or the run is VOID: rows moved across `T0`, so its counts are not pinned.
+After another 60 s the after-marker is written, and SQL on SOURCE asserts
+`before.created_at < T0 < after.created_at`. The restore is requested five minutes later, so the
+WAL past `T0` is archived.
+
+**Counting.** Every count is one statement,
+`SELECT current_database(), (SELECT count(*) FROM products) AS products, …`, run as
+`jtoye_backup`. The session first prints its role, `rolbypassrls` and the tenant GUC, because a
+non-BYPASSRLS count with no GUC reads 0 on a full table. The database it reports must be the one
+the step meant to read. Sets are compared by table name (jq), never by output position. A SOURCE
+`products` count of 0 is VOID.
+
+**Network (A12).** PITR does not copy firewall rules. The drill reads SOURCE's single rule (the
+cluster outbound IP, cross-checked against `k8s/staging/azure-identity.yaml`) and adds that one
+rule to RESTORED only. Every client runs inside one drill pod in `jtoye-staging`, labelled
+`app.kubernetes.io/name: pg-backup` so its NetworkPolicy admits public 5432, from the backup image
+itself (the PostgreSQL 18 client: the host's 16 cannot dump an 18 server). Secrets reach the pod
+only on `kubectl exec -i` stdin. They never appear in argv, a pod spec or a Kubernetes Secret.
+
+**The trap, and cost.** `trap cleanup EXIT` is installed before anything is created. The
+restore-requested flag is set immediately before the request leaves the machine. On every exit
+path, cleanup:
+- deletes the drill pod by name and reads its absence back;
+- deletes RESTORED, retrying while Azure reports it busy;
+- reads back, in one list query whose positive control is SOURCE, that RESTORED is gone.
+
+The `restored server deleted` line prints only after that read-back. A SIGKILL cannot be trapped:
+the pod carries `activeDeadlineSeconds`, and the server name is printed before the request.
+RESTORED is a Burstable `Standard_B2s` copy, about **£0.06/hour** while it exists, so one drill
+costs pennies. A server left behind costs that every hour until someone deletes it.
+
+**First execution, 2026-10-19 (run `20261019144933`; evidence
+`.planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-20-pitr.txt`):**
+- `T0` = 14:51:13Z, strictly between the before-marker (14:50:08Z) and the after-marker
+  (14:52:16Z). SOURCE counts at `T0`: products 6, orders 1, customers 0, shops 1, equal before and
+  after `T0`.
+- **Arm P:** the restore request returned Ready after **486 s**. The counts were equal on all four
+  tables, the before-marker was present and the after-marker absent.
+- **Arm A:**
+  - the plain `pg_dump` exited 1 ("query would be affected by row-level security policy for table
+    customers");
+  - the `--enable-row-security` dump was 15,841,187 bytes, **15,841× the floor**, and passed both
+    pipeline checks;
+  - `drill_a` restored products 0 and orders 0 against 6 and 1.
+- **Arm B:** the dump was 15,852,055 bytes and passed; `drill_b` counts were equal on all four
+  tables.
+- **Zero-byte:** refused (`0 < 1000`).
+- **Cleanup:** the drill pod was gone, and RESTORED was deleted on the first attempt and absent from
+  a list that still showed SOURCE. The whole run took 19m44s.
+
+**Measured on the restored server, and needed in a real recovery.**
+- The firewall came back **empty** (A12).
+- The `azure.extensions` allow-list also came back **empty**. A server parameter is not carried by
+  PITR. The restored `jtoye` database keeps its installed `uuid-ossp`, but `CREATE EXTENSION
+  "uuid-ossp"` in any new database on that server is refused ("not allow-listed").
+- After a real PITR, then, re-add the firewall rule **and** re-set `azure.extensions` before any
+  migration or restore that creates an extension.
+- The drill itself stays inside its approval: it creates a scratch-only
+  `public.uuid_generate_v4()` shim in `drill_a`/`drill_b` and never changes a server parameter.
+
+**Not done here.** The WORM lock on `jtoye-db-backups` stays a human step after the drill
+(provisioning runbook §4.4). Nothing is restored onto SOURCE, and nothing is written to the live
+`backups/` prefix.
+
 ### What Azurite cannot prove
 
 - **Blob immutability (WORM), soft delete and lifecycle deletion** are not in Azurite's support
@@ -476,8 +586,11 @@ The fail directions recorded with it:
 - [ ] Backup account, container, soft delete, WORM (unlocked) and lifecycle created, with the
   provisioning runbook §8 read-backs recorded both ways.
 - [ ] The first staging CronJob run exits 0 and leaves exactly one new `.dump` under `backups/`.
-- [ ] A **staging restore drill** from the real account (a human with a time-bound Reader, the
-  procedure above), with staging-scale RPO and RTO recorded here.
+- [x] A **staging restore drill**, with staging-scale RPO and RTO recorded here. Done
+  2026-10-19 as the managed PITR drill above: RPO is the requested `T0` exactly, and the restore
+  became Ready in 486 s. Arm B's logical dump was taken from the restored server, not downloaded
+  from the account: the operator holds no data-plane role, so a download-and-restore from Blob
+  still needs a time-bound Reader.
 - [ ] After that drill, a human locks the WORM policy (provisioning runbook §4.4).
 
 ### History

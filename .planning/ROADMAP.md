@@ -50,8 +50,8 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 
 - [x] **Phase 28: Security Triage + the Dev/Prod Boundary** — The 11 findings in the untracked Strix pentest backlog triaged into the tracker or formally accepted; the dev-only tenant-header path no longer advertised or reachable under `prod`; the local stack stops publishing infrastructure to `0.0.0.0` (completed 2026-08-10)
 - [x] **Phase 36: Azure Blob Storage Throughout** — Object storage moves to Azure Blob (staging/prod) + Azurite (local/nightly); MinIO and the never-provisioned AWS S3 target retired (added 2026-09-28 by owner ruling; blocks Phase 29 plans 29-11 onward) (completed 2026-09-29)
-- [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
-- [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
+- [x] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today (completed 2026-10-21)
+- [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock *(code merged 2026-10-17 as PR #949, V88, with Stripe test-mode API proofs in `30-VERIFICATION.md`; NOT complete: PAY-01's refund E2E is still `ALLOW`-skipped and PAY-03's staging limb is now unblocked (Phase 29 complete 2026-10-21))*
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
 - [x] **Phase 31.1: Persona gap closure (INSERTED)** — The 17 persona-testing clusters (epic #880) on completed Phase 31: DSAR fulfilment, the allergen acknowledgement and display chain, seller identity, and privacy/cookie/accessibility statement truthfulness; 6 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request) (completed 2026-10-07)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
@@ -348,23 +348,24 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
-| 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
+| 30. The Money Path, Executed | v2.3 | 7/32 | In Progress — PR 1 (30-01..30-04) merged and proven on staging (2026-10-22) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
+| 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
-| 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
+| 35. Horizontal Layout Contract | v2.3 | 13/13 | Complete | 2026-08-30 |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
 | 37. Real-world operations readiness | v2.3 | 59/59 | Complete    | 2026-10-16 |
 | 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
 | 39. Platform runtime upgrades | v2.3 | 10/10 | Complete    | 2026-10-16 |
 
-**Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
-before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
-The `progress:` frontmatter counters in `STATE.md` deliberately still read 48/48 — they run on the
-**v2.3 build denominator (Phases 21–26)** and are not the milestone's completion measure. Phases
-27–34 are tracked in this table.
+**Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's original 6/6 build
+(Phases 21–26, where `STATE.md` counters originally sat at 48/48) closed but before any successor
+milestone opened, and `STATE.md` kept the milestone `in-progress` throughout. All 20 v2.3 phases
+(21–39, including 31.1) are now tracked in this table and reconciled with `STATE.md` frontmatter
+(`17/20` phases complete, `254/254` written plans on `main`).
 
 > **Every open issue has a home — see `.planning/ISSUE-DISPOSITION.md`.** Added 2026-08-07 after a
 > sweep found that **15 of 57** open issues were named anywhere in this file, and that six —
@@ -378,8 +379,8 @@ The `progress:` frontmatter counters in `STATE.md` deliberately still read 48/48
 starts until they land: (1) the production domain (`jtoye.co.uk` is registered but parked at
 Namecheap — HTTPS times out, nothing serves the application; measured 2026-08-08;
 `FRONTEND_PUBLIC_*` point at `olajay.co.uk`; parking A records only — nothing serving the app); (2) the hosting target; (3) Stripe
-test-mode keys, which gate Phase 30 entirely; (4) **ADR-0002 sign-off**, still `Proposed`, which
-gates DPLY-04.
+test-mode keys, which gate Phase 30 entirely; (4) **ADR-0002 sign-off**, which
+gated DPLY-04. RESOLVED: signed 2026-08-10, recorded Accepted on main 2026-10-18 (#953).
 
 ### Phase 27: Operational Maturity — messaging as the first instance
 
@@ -549,7 +550,7 @@ deliberately sequenced after them so the role catalogue does not change under th
 **Goal**: A staging environment exists that a human can log into and that **alerts a human when it
 breaks** — the first runtime of this platform outside a laptop.
 **Depends on**: Phase 28 (do not deploy an untriaged exposure surface). Blocked on the production-domain
-and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-off**.
+and hosting-target decisions; DPLY-04's **ADR-0002 sign-off** blocker is RESOLVED (Accepted, #953).
 **Requirements**: DPLY-01, DPLY-02, DPLY-03, DPLY-04, DPLY-05
 **Success Criteria** (what must be TRUE):
 
@@ -570,11 +571,12 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
      in Phase 27 `deferred-items.md` §5. Everything Phase 27 built is compose-scoped, so a staging
      deploy today would be wholly unmonitored. (DPLY-03)
   4. PITR per #101, with a restore proven **by row count on a restored database**, two-arm. Arm A
-     must demonstrate that a zero-row dump still passes the pipeline's own byte-size and
-     `pg_restore --list` checks — 26-07's L4 measured exactly that (arm A `products 0` while clearing
+     must demonstrate that a zero-row or partial dump still passes the pipeline's own byte-size and
+     `pg_restore --list` checks (a non-BYPASSRLS `pg_dump` errors by default, while
+     `--enable-row-security` yields a plausible partial dump; ADR-0002 2026-10-18, #954) — 26-07's L4 measured exactly that (arm A `products 0` while clearing
      `MIN_BACKUP_BYTES` by 149×). A single green arm is not evidence. (DPLY-04)
-  5. NetworkPolicies are **enforced, not merely rendered** (#297 — install Calico; the Phase 26 D-17
-     prerequisite is already cleared), with a denied connection captured as the positive proof.
+  5. NetworkPolicies are **enforced, not merely rendered** (#297 — an enforcing engine chosen at cluster creation, Calico or
+     AKS-native Cilium; reconciled 2026-10-18; the Phase 26 D-17 prerequisite is already cleared), with a denied connection captured as the positive proof.
      Phase 26 recorded enforcement explicitly NOT PROVEN and that record must not be quietly
      inherited as a pass. (DPLY-05)
 
@@ -589,6 +591,67 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
 | **#300** | DPLY-02 | sealed-secrets / external-secrets for the local secrets path; sibling of #100 |
 | **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
 | **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
+
+**Plans:** 29/29 plans complete (14 waves; planned on main 2026-10-18; the August plans on `phase-29-research` are archive input only). The phase tracer is 29-14 (one vendor login through Traefik to a dashboard with seeded rows, wired through every layer); every plan from 29-15 on depends on it.
+
+Plans:
+- [x] 29-29-PLAN.md
+
+**Wave 1**
+- [x] 29-01-PLAN.md — Structural subscription pin (guard library + CI gate) and the compute/identity provisioning script
+- [x] 29-02-PLAN.md — NetworkPolicies for an enforcing cluster (Blockers D/F, Traefik namespace, ACME solver), INV-7 rewritten
+- [x] 29-03-PLAN.md — Platform bootstrap: Traefik with the Ingress-NGINX provider, cert-manager issuers, operator, scoped CI RBAC, horizons
+- [x] 29-05-PLAN.md — TDD: connection budget per target (D-25)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 29-04-PLAN.md — Staging realm transform + import for the vendor and customer realms (Blocker H)
+- [x] 29-06-PLAN.md — Real-flow seed script, vendor stage (D-26/D-27)
+- [x] 29-07-PLAN.md — Managed Postgres + Blob provisioning scripts and the managed-DB role bootstrap (Blocker E ordering)
+- [x] 29-08-PLAN.md — Login-path overlay fixes: migrator split + DB TLS, real client id, in-namespace hosts, scale floors, per-host TLS, noindex
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 29-09-PLAN.md — Provision the staging estate behind the one-way-doors checkpoint
+- [x] 29-10-PLAN.md — In-cluster platform components: Keycloak, Redis, RabbitMQ; copy-parity gate
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 29-11-PLAN.md — Bootstrap the cluster platform, owner DNS records, ACME end-to-end probe
+- [x] 29-12-PLAN.md — Key Vault component: one identity per secret-reading workload, the secret-chain gate (D-23)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 29-13-PLAN.md — Write-once Key Vault writer, derived preflight, owner Stripe TEST values
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 29-14-PLAN.md — TRACER: first deploy, first boot on the managed DB, realm, seed, the DPLY-01 L7 login + fail arms + runtime parity
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 29-15-PLAN.md — Edge fidelity under Traefik (D-29 b), CSP/#293, trusted proxies measured
+- [x] 29-16-PLAN.md — TDD: required STARTTLS literals under the deployed profiles (D-20)
+- [x] 29-19-PLAN.md — 24 h measured cost-meter checkpoint (D-03)
+- [x] 29-21-PLAN.md — CI deploy gate wiring: OIDC + kubelogin, true smoke test, GitHub staging environment (#99 part 1)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 29-17-PLAN.md — DPLY-05: denied connection captured under Cilium with control and policy-free arms (#297)
+- [x] 29-22-PLAN.md — Mailpit with required STARTTLS, cluster CA, JVM truststore, two-arm TLS proofs (D-20..D-22, D-30)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 29-18-PLAN.md — Stripe TEST webhook proof and the seed order paid by a PaymentIntent (D-28/D-31)
+- [x] 29-23-PLAN.md — Monitoring A: Prometheus + exporters in k8s, liveness gate k8s path, check-alert-metrics against staging
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 29-20-PLAN.md — DPLY-04: PITR two-arm drill, first real backup, WORM human lock (#101)
+- [x] 29-24-PLAN.md — Monitoring B build: Alertmanager (Zoho + Mailpit) and Grafana, additive canonical Alertmanager blocks
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 29-25-PLAN.md — DPLY-03 live: both alert gates exit 0 against staging, the real inbox, the failure arm (#98, #112)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [x] 29-26-PLAN.md — Deploy-knot config: customer realm (#299, #859) and one-click unsubscribe (#592)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [x] 29-27-PLAN.md — DPLY-02 dispositions + gate, the D-18 runbook page, supersede notes, ADR-0002 D-24 amendment
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [x] 29-28-PLAN.md — Merge gate, the first green CI deploy with runtime parity, issue dispositions applied (#99)
 
 **UI hint**: no
 
@@ -663,6 +726,105 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-03` (Consolidated Kitchen "Cook Sheet" Aggregator):** Add `OrderCookSheetService` read projection (`GROUP BY product_id, product_name, allergen_mask` per scheduled date/slot) + `/dashboard/kitchen/cook-sheet` with batch PPDS PDF label export.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
+
+**Plans:** 7/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+
+Plans:
+**Wave 1**
+- [x] 30-01-PLAN.md — #957 PR 1: publishable key baked at build (Dockerfile ARG, compose), stripe-loader, served-chunk key gate, CI variable checks, production refuses a pk_test_ image (D-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 30-02-PLAN.md — #957 PR 1: fail-loud card checkout (loading/ready/failed payment step, card-unavailable notice, awaiting-payment copy)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 30-03-PLAN.md — #957 PR 1: staging card-checkout spec, RED vs today's staging, PR open; owner sets the staging pk_test_ variable
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 30-04-PLAN.md — #957 PR 1: merge, deploy watch, live GREEN card payment on staging
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 30-05-PLAN.md — #958 PR 2: typed 409 awaiting-payment gate on SUBMIT/CONFIRM/PREPARING; status-preserving payment webhook; vendor NONE orders untouched (D-01)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 30-06-PLAN.md — #958 PR 2: awaiting-payment badge, hidden actions, kitchen and KDS refusal messages
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 30-07-PLAN.md — #958 PR 2 / D-02: staging-seed list-drafts, order-transition, cancel-drafts, stripe-get stages
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 30-08-PLAN.md — #958 PR 2: merge, live 409 on an unpaid DRAFT with a paid control
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 30-09-PLAN.md — D-02: owner-confirmed manual cancellation of abandoned staging DRAFTs and their PaymentIntents, read back from Stripe
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 30-10-PLAN.md — #108 PR 3: Stripe client timeouts/retries from config, charge and refund circuit breakers, typed 503
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 30-11-PLAN.md — #108 PR 3: merge, live pod log line RED/GREEN, #108 record
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 30-12-PLAN.md — PR 4: Connect webhook route with its own secret, environment tag, Express capabilities + idempotency
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 30-13-PLAN.md — PR 4: Key Vault class, SPC, env and config wiring for the Connect secret and environment tag
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 30-14-PLAN.md — PR 4: API snapshot and counts, PR open; owner registers the Connect endpoint (pinned API version) and stores its secret
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 30-15-PLAN.md — PR 4: merge, secret mounted, forged/unsigned Connect events refused live
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [ ] 30-16-PLAN.md — PAY-04 PR 5 (D-03): owner decisions (token path vs fragment, staging OTP); payment-link preview endpoint
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [ ] 30-17-PLAN.md — PAY-04 PR 5: stripeAccountId on intent results, OTP production refusal keyed on the environment tag
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [ ] 30-18-PLAN.md — PAY-04 PR 5: the /pay page (all states) and connected-account Stripe initialisation in checkout
+
+**Wave 19** *(blocked on Wave 18 completion)*
+- [ ] 30-19-PLAN.md — PAY-04 PR 5: /pay robots/referrer/SSR hygiene, pay-link staging stage, account-aware staging specs
+
+**Wave 20** *(blocked on Wave 19 completion)*
+- [ ] 30-20-PLAN.md — PAY-04 PR 5: staging OTP setting per the owner's decision and API snapshot, merge, a real link paid through /pay on staging
+
+**Wave 21** *(blocked on Wave 20 completion)*
+- [ ] 30-21-PLAN.md — PAY-01 PR 6: skip-budget S-5 rule, selftest, lint, report union
+
+**Wave 22** *(blocked on Wave 21 completion)*
+- [ ] 30-22-PLAN.md — PAY-01 PR 6: own-order Stripe refund spec, nightly Stripe phase (pinned CLI), CI key checks
+
+**Wave 23** *(blocked on Wave 22 completion)*
+- [ ] 30-23-PLAN.md — PAY-01 PR 6: owner creates the CI sandbox keys; branch nightly; ALLOW retired with a measured budget
+
+**Wave 24** *(blocked on Wave 23 completion)*
+- [ ] 30-24-PLAN.md — PAY-01 PR 6: merge, main nightly green, #61 evidence
+
+**Wave 25** *(blocked on Wave 24 completion)*
+- [ ] 30-25-PLAN.md — PAY-02 PR 7 (D-04): owner quantity rule; per-location subscription quantity, idempotency keys, location sync
+
+**Wave 26** *(blocked on Wave 25 completion)*
+- [ ] 30-26-PLAN.md — PAY-02 PR 7: staging-seed billing and billing-sync-check stages
+
+**Wave 27** *(blocked on Wave 26 completion)*
+- [ ] 30-27-PLAN.md — PAY-02 PR 7: merge, live per-location billing with an invoice read by id
+
+**Wave 28** *(blocked on Wave 27 completion)*
+- [ ] 30-28-PLAN.md — PAY-03 PR 8: connect-onboard, settlement-mode, destination money loop with refund and evidence
+
+**Wave 29** *(blocked on Wave 28 completion)*
+- [ ] 30-29-PLAN.md — PAY-03 PR 8: direct-charge loop, payout and payout-read, run-id replay
+
+**Wave 30** *(blocked on Wave 29 completion)*
+- [ ] 30-30-PLAN.md — PAY-03 PR 8: RED refusal on today's staging, merge, onboarding link for the owner
+
+**Wave 31** *(blocked on Wave 30 completion)*
+- [ ] 30-31-PLAN.md — PAY-03: owner completes hosted onboarding; Connect positive arm; destination loop live
+
+**Wave 32** *(blocked on Wave 31 completion)*
+- [ ] 30-32-PLAN.md — PAY-03: direct loop and browser checkout live, payout, evidence and leak scans, known gaps (D-01, D-02) recorded
 
 **UI hint**: yes (billing/subscription surface, scheduled slot picker, and kitchen cook sheet)
 

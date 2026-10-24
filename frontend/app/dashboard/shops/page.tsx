@@ -9,6 +9,8 @@ import apiClient from "@/lib/api-client"
 import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
+import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import { shopAdminCapabilities } from "@/lib/shop-admin-capabilities"
 import {
   Card,
   CardContent,
@@ -48,8 +50,14 @@ import {
   OpeningScheduleEditor,
   type OpeningScheduleEditorHandle,
 } from "@/components/dashboard/shops/opening-schedule-editor"
+import { ShopFulfilmentSlotsDialog } from "@/components/dashboard/shops/shop-fulfilment-slots-dialog"
 import type { OpeningScheduleMap } from "@/lib/opening-schedule"
-import type { Shop, CreateShopRequest } from "@/types/api"
+import type {
+  Shop,
+  CreateShopRequest,
+  FulfilmentTimingMode,
+  SettlementPolicyMode,
+} from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 
 const PAGE_SIZE = 20
@@ -188,6 +196,13 @@ export default function ShopsPage() {
   const [offersCollection, setOffersCollection] = useState(true)
   const neitherOffered = !offersDelivery && !offersCollection
   const deliveryOptionRef = useRef<HTMLButtonElement>(null)
+  // ADR-0007 / GAP-GTM-01 & GAP-GTM-02: commercial & scheduled fulfilment policy
+  const [fulfilmentTimingMode, setFulfilmentTimingMode] =
+    useState<FulfilmentTimingMode>("IMMEDIATE_ONLY")
+  const [settlementPolicyMode, setSettlementPolicyMode] =
+    useState<SettlementPolicyMode | "">("")
+  const [depositPercent, setDepositPercent] = useState<string>("50")
+  const [slotsShop, setSlotsShop] = useState<Shop | null>(null)
   // Re-mounts the editor on every open, so it always starts from the shop being edited.
   const [editorSession, setEditorSession] = useState(0)
   const scheduleEditorRef = useRef<OpeningScheduleEditorHandle>(null)
@@ -203,6 +218,8 @@ export default function ShopsPage() {
   const [loadFailed, setLoadFailed] = useState(false)
   const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const { toast } = useToast()
+  // #961: offer only the shop controls the API will let this caller use (see shop-admin-capabilities).
+  const shopCaps = shopAdminCapabilities(useOptionalShopSwitcherData())
 
   const {
     register,
@@ -285,6 +302,9 @@ export default function ShopsPage() {
     setPublished(false)
     setOffersDelivery(true)
     setOffersCollection(true)
+    setFulfilmentTimingMode("IMMEDIATE_ONLY")
+    setSettlementPolicyMode("")
+    setDepositPercent("50")
     setScheduleDraft(null)
     resetSlugControl("")
     setEditorSession((n) => n + 1)
@@ -315,6 +335,13 @@ export default function ShopsPage() {
     // An absent flag reads as offered: that is what the shop did before the flags existed.
     setOffersDelivery(shop.offersDelivery !== false)
     setOffersCollection(shop.offersCollection !== false)
+    setFulfilmentTimingMode(shop.fulfilmentTimingMode ?? "IMMEDIATE_ONLY")
+    setSettlementPolicyMode(shop.settlementPolicyMode ?? "")
+    setDepositPercent(
+      shop.depositBps && shop.depositBps < 10000
+        ? String(Math.round(shop.depositBps / 100))
+        : "50"
+    )
     setPublished(shop.published || false)
     setScheduleDraft(null)
     resetSlugControl(shop.slug || "")
@@ -326,7 +353,9 @@ export default function ShopsPage() {
   // notice. Handled once, after the first list load; the shop is read by id when it is not on the
   // page that loaded. The parameters are dropped so a reload does not reopen the dialog.
   useEffect(() => {
-    if (loading || deepLinkHandled.current) return
+    // #961: wait for the caller's access, then honour the link only for a shop they may edit (the edit
+    // button is hidden from a STAFF member, so a link must not open the dialog the button no longer offers).
+    if (loading || shopCaps.pending || deepLinkHandled.current) return
     deepLinkHandled.current = true
     const params = new URLSearchParams(window.location.search)
     const id = params.get("edit")
@@ -340,6 +369,7 @@ export default function ShopsPage() {
       "",
       window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash
     )
+    if (!shopCaps.canEditShop(id)) return
     const open = (target: Shop) => {
       setFocusHoursOnOpen(atHours)
       openEditDialog(target)
@@ -362,7 +392,7 @@ export default function ShopsPage() {
         })
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, shops])
+  }, [loading, shops, shopCaps.pending])
 
   const openDeleteDialog = (shop: Shop) => {
     setDeletingShop(shop)
@@ -396,6 +426,11 @@ export default function ShopsPage() {
       setSubmitting(true)
       setSlugError(null)
 
+      const computedDepositBps =
+        settlementPolicyMode === "SPLIT_DEPOSIT_VENDOR_MOR"
+          ? Math.min(10000, Math.max(1000, Math.round((Number(depositPercent) || 50) * 100)))
+          : undefined
+
       const payload: CreateShopRequest = {
         name: data.name,
         address: data.address || undefined,
@@ -415,6 +450,9 @@ export default function ShopsPage() {
         offersDelivery,
         offersCollection,
         published,
+        fulfilmentTimingMode,
+        ...(settlementPolicyMode ? { settlementPolicyMode } : {}),
+        ...(computedDepositBps !== undefined ? { depositBps: computedDepositBps } : {}),
         // 37-48 (UXT-028): an edit sends the web address the vendor typed, or else the CURRENT one; a create
         // sends none and the server generates it. The 37-48 server keeps a slug that is absent or equal to the
         // current one, so an ordinary save (hours, phone, a rename) never moves the shop. Re-sending the current
@@ -523,10 +561,12 @@ export default function ShopsPage() {
           <h1 className="text-4xl font-bold text-slate-900">Shops</h1>
           <p className="mt-2 text-slate-600">Manage your shop locations</p>
         </div>
-        <Button onClick={openCreateDialog} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Shop
-        </Button>
+        {shopCaps.canCreateShop && (
+          <Button onClick={openCreateDialog} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Shop
+          </Button>
+        )}
       </m.div>
 
       {/* Shops Table */}
@@ -570,12 +610,16 @@ export default function ShopsPage() {
                   No shops yet
                 </h3>
                 <p className="mb-4 text-sm text-slate-500">
-                  Get started by creating your first shop
+                  {shopCaps.canCreateShop
+                    ? "Get started by creating your first shop"
+                    : "Ask your administrator to add a shop."}
                 </p>
-                <Button onClick={openCreateDialog} variant="outline">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Shop
-                </Button>
+                {shopCaps.canCreateShop && (
+                  <Button onClick={openCreateDialog} variant="outline">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Shop
+                  </Button>
+                )}
               </div>
             ) : (
               <Table containerLabel="Shops table">
@@ -664,16 +708,25 @@ export default function ShopsPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <IconButton
-                            onClick={() => openEditDialog(shop)}
-                            label={`Edit shop ${shop.name}`}
-                            icon={<Pencil className="h-4 w-4" />}
+                            onClick={() => setSlotsShop(shop)}
+                            label={`Scheduled slots and WhatsApp link for ${shop.name}`}
+                            icon={<Calendar className="h-4 w-4" />}
                           />
-                          <IconButton
-                            onClick={() => openDeleteDialog(shop)}
-                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                            label={`Delete shop ${shop.name}`}
-                            icon={<Trash2 className="h-4 w-4" />}
-                          />
+                          {shopCaps.canEditShop(shop.id) && (
+                            <IconButton
+                              onClick={() => openEditDialog(shop)}
+                              label={`Edit shop ${shop.name}`}
+                              icon={<Pencil className="h-4 w-4" />}
+                            />
+                          )}
+                          {shopCaps.canDeleteShop && (
+                            <IconButton
+                              onClick={() => openDeleteDialog(shop)}
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              label={`Delete shop ${shop.name}`}
+                              icon={<Trash2 className="h-4 w-4" />}
+                            />
+                          )}
                         </div>
                       </TableCell>
                     </m.tr>
@@ -977,6 +1030,62 @@ export default function ShopsPage() {
               </fieldset>
             </div>
 
+            {/* Commercial & Scheduled Fulfilment Policy (ADR-0007 / GAP-GTM-01 & GAP-GTM-02) */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Commercial &amp; Pre-Order Policy
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="fulfilmentTimingMode">Order timing mode</Label>
+                  <select
+                    id="fulfilmentTimingMode"
+                    value={fulfilmentTimingMode}
+                    onChange={(e) => setFulfilmentTimingMode(e.target.value as FulfilmentTimingMode)}
+                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="IMMEDIATE_ONLY">Immediate orders only (hot takeaway)</option>
+                    <option value="SCHEDULED_SLOTS_ONLY">Scheduled slots only (weekend drop / catering)</option>
+                    <option value="HYBRID_IMMEDIATE_AND_SLOTS">Hybrid (immediate + scheduled pre-orders)</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="settlementPolicyMode">Settlement &amp; deposit policy</Label>
+                  <select
+                    id="settlementPolicyMode"
+                    value={settlementPolicyMode}
+                    onChange={(e) =>
+                      setSettlementPolicyMode(e.target.value as SettlementPolicyMode | "")
+                    }
+                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="">Use business default</option>
+                    <option value="DIRECT_CHARGE_VENDOR_MOR">Direct vendor checkout (100% upfront)</option>
+                    <option value="SPLIT_DEPOSIT_VENDOR_MOR">Split catering deposit (deposit at booking)</option>
+                    <option value="DESTINATION_CHARGE_PLATFORM_MOR">Managed marketplace destination charge</option>
+                  </select>
+                </div>
+              </div>
+              {settlementPolicyMode === "SPLIT_DEPOSIT_VENDOR_MOR" && (
+                <div className="space-y-1.5 sm:max-w-xs">
+                  <Label htmlFor="depositPercent">Upfront catering deposit (%)</Label>
+                  <Input
+                    id="depositPercent"
+                    type="number"
+                    min="10"
+                    max="100"
+                    step="5"
+                    value={depositPercent}
+                    onChange={(e) => setDepositPercent(e.target.value)}
+                    className="h-11"
+                  />
+                  <p className="text-xs text-slate-600">
+                    Between 10% and 100% charged at booking; remaining balance collected before dispatch.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Opening hours (37-21, UI-SPEC K4): structured, what the server enforces. */}
             <OpeningScheduleEditor
               key={`${editingShop?.id ?? "new"}-${editorSession}`}
@@ -996,6 +1105,15 @@ export default function ShopsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ShopFulfilmentSlotsDialog
+        open={slotsShop !== null}
+        onOpenChange={(next) => {
+          if (!next) setSlotsShop(null)
+        }}
+        shop={slotsShop}
+        canManage={slotsShop === null || shopCaps.canManageSlots(slotsShop.id)}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

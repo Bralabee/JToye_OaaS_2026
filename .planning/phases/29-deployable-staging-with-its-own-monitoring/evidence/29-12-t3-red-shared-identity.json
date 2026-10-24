@@ -1,0 +1,10 @@
+{
+  "command": "KEYVAULT_CHAIN_SELFTEST_FORMAT=tap bash k8s/scripts/check-keyvault-chain.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..11\nok 1 - undeclared-key\nok 2 - two-producers\nok 3 - clientid-mismatch\nok 4 - sync-lifetime\nnot ok 5 - shared-identity\n  ---\n  message: 'want rc 1 and ServiceAccounts frontend, keycloak share; got rc=0: OK: 6 SecretProviderClasses, 35 consumed (Secret, key) reference(s), 27 Key Vault objects; every consumer mounts its one producer, every clientID is its ServiceAccounts '\n  ...\nok 6 - object-not-mounted\nok 7 - zero-spc\nok 8 - pyyaml-missing\nok 9 - kubectl-missing\nok 10 - clean-library\nok 11 - clean-gate\n",
+  "targetTest": "shared-identity",
+  "targetFile": "k8s/scripts/check-keyvault-chain.sh",
+  "expected": "rc 1 naming ServiceAccounts frontend and keycloak sharing one client-id",
+  "actual": "rc=0: rule (d) only compares an SPC's clientID with its own pod's ServiceAccount, so two workloads wired to ONE identity (consistently) pass",
+  "semanticAssessment": "Target arm executed: the plant changed the render (frontend's SA annotation and frontend-kv clientID both set to keycloak's client id), and keyvault-chain.py check exited 0 because no rule compares identities ACROSS workloads. Found by a real-tree break arm after GREEN (staging replacements re-pointed at client_id_keycloak: chain gate and render invariants both rc 0). All other arms in the same run were caught and both clean arms were rc 0, so the harness is sound. Correct RED, failing on the planned assertion."
+}

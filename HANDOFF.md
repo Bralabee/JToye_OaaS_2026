@@ -1,6 +1,92 @@
-# Handoff: Phase 37 (59/59, UAT 15/15), Phase 39 (10/10), and ADR-0007 (V87, GAP-GTM-01..04, 06, 07B) COMPLETE and consolidated on main
+# Handoff: Phase 29 COMPLETE on main; Phase 30 (The Money Path, Executed) planned and approved, starting at 30-01
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
+
+**2026-10-22 delta (RESUME HERE; everything below is history).**
+- **Phase 29 is complete.** The close is #1002: `29-VERIFICATION.md` passed 5/5, `29-SECURITY.md` closed, R-3 accepted by the owner on 2026-10-21 (staging only, conditional on the generated edge credential).
+- **Phase 30 ("The Money Path, Executed") is executing: 7/32 plans done, PR 1 of 8 complete (#1029, merged as 43d047fb), PR 2 (issue #958, plans 30-05 to 30-07) open for review as #1030 (https://github.com/Bralabee/JToye_OaaS_2026/pull/1030).**
+  - **Resume:** plan 30-08 Task 2 is the owner's: run the D3 review series on PR #1030 to a zero-admissible round, then squash-merge it (plan 30-04 Task 1 steps 1-4: head equals the PR head, branch-behind rc 0 immediately before merging, squash message scanned, `gh pr merge --squash --body-file`). Then `/gsd-execute-phase 30` resumes 30-08 Task 3: watch the merge's deploy, digest parity, the live 409 on the unpaid DRAFT, the vendor NONE DRAFT and paid-order controls, on a new branch `fix/108-stripe-timeouts` cut from the merged main. Branch `fix/958-awaiting-payment-gate` (cut from main 43d047fb) carries 30-04's record and the 30-05, 30-06 and 30-07 commits; nothing is pushed to it after the review starts. The single resume source is `.planning/STATE.md` on that branch.
+  - **PR 2 pre-open gates (2026-10-22, at 58db5b95), each rc 0:**
+    - core-java: unit 1947 and integration 1369 tests, 0 failures;
+    - full Jest 3207/3207;
+    - lint, 0 errors;
+    - `staging-seed.sh --selftest`;
+    - env-contract, gate-enforcement, docs-freshness, doc-metrics and branch-behind-base.
+  - **gitleaks over the branch range:** it was rc 1 on 30-07's own break-arm record (09beb869 quotes the stub's synthetic client secret). That commit came after 30-07's scan. A commit-pinned `.gitleaksignore` fingerprint brings it to rc 0.
+  - **30-05 done (server half of #958):** SUBMIT, CONFIRM and START_PREP of an order still awaiting its card or link payment answer 409 `https://jtoye.uk/errors/awaiting-payment` ("Awaiting payment", UI-SPEC detail, no `#`) and write nothing; vendor/REST/MCP orders with paymentStatus NONE are unchanged (D-01). `payment_intent.succeeded` now moves only a DRAFT; a paid CANCELLED/REFUNDED/voided order logs `WARN event=payment_on_closed_order`. Full core-java suite green at 791b7a16; counts 6562. See `30-05-SUMMARY.md`.
+  - **30-06 done (staff half of #958):** an "Awaiting payment" badge (`isAwaitingPayment`, the server rule transcribed, absent status with a reference counts) on Orders-list rows and on New-lane and grid cards; the Orders list offers no Submit/Confirm for such an order, and every DRAFT now offers Cancel (D-02); the kitchen grid toasts "Order not updated" with the server's detail (or a named-action fallback with no response) and the New lane shows the detail in the card alert. Frontend jest 3207/3207, `npm run build` rc 0, counts 6593. `frontend/node_modules` was restored with `npm ci` (it was stale against the lock; the 30-01 deferred item is resolved). See `30-06-SUMMARY.md`.
+  - **30-07 done (D-02 hand tools; built and selftested against stubs only, no live call):** `scripts/staging-seed.sh` gained five stages: `--stage list-drafts` (read-only DRAFT listing, a jq projection with no customer field), `vendor-order` (one vendor NONE DRAFT, the D-01 control 30-08 needs), `order-transition --orders ORD-x --event submit|confirm|start-preparation` (prints `TRANSITION … http= type= detail=`), `cancel-drafts --orders ORD-a,ORD-b` (per order: refused `[not-draft]` unless a card DRAFT awaiting payment, refused `[paid]` for a succeeded/processing/requires_capture intent, the intent cancelled in Stripe TEST and read back canceled BEFORE the vendor cancel and its CANCELLED read-back; no sweeper) and `stripe-get --path /v1/… [--account acct_…]` (allowlisted, TEST-only, client secret and personal fields removed; refund and account objects have no livemode field and print `LIVEMODE n/a`). Selftest 20 -> 41 arms, every new arm RED first, 7 break arms red. gitleaks over the branch range is rc 0 after three commit-pinned fingerprints in `.gitleaksignore` (one 30-07 fixture line, two 30-05 evidence lines holding synthetic `key=30-05-<uuid>` Idempotency-Keys). See `30-07-SUMMARY.md`.
+  - **PR 1 (issue #957) merged as #1029 (43d047fb), deployed (run 39803113150) and proven live by 30-04.** The live checkout chunks carry one `pk_test_` key (rc 0, rc 1 before), all three services pass digest parity at 43d047fb, and one TEST card payment was captured and read back from Stripe (`pi_3UTPKkDpS9ICNeRt0VWSmyrM`, `livemode` false). The evidence is on issue #957, which is left OPEN for the owner to close.
+  - **Unplanned prerequisite:** staging's ingress CORS omitted `Idempotency-Key`, so every browser order POST was refused (issue #1025). It was fixed by #1026 (4208b08e, INV-24, `scripts/check-cors-preflight.sh`, live preflight rc 0).
+  - **The repository variable `FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set** (pk_test_, the pair of the Key Vault secret `stripe-credentials--api-key`). The staging guard is rc 0 and the production guard refuses it (D-08).
+  - **Staging residue:** the paid TEST order ORD-1AAC0CDE-20261022-D69764AE, and the unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C for 30-09 to cancel (with `staging-seed.sh --stage list-drafts`, then `--stage cancel-drafts --orders …` behind the owner's checkpoint).
+  - **Owner items from 30-04:** the sticky storefront header overlaps the card form in the full-page screenshot, and the focus ring of a focused card field is still to be judged by eye.
+  - **Traps hit this session:**
+    - A merge resolved with a whole-file `git checkout --ours` dropped the other side's non-conflicting doc version claims, and `check-doc-versions` caught it.
+    - A CI watch that read a GraphQL error as "no pending checks" reported green early. Watch loops must count real check rows.
+    - Local `awk` is mawk while CI's is gawk.
+    - This shell's default kube context `jtoye-staging` is dead; always pass `--context jtoye-stg-aks`.
+- **Merged since the 2026-10-21 block:**
+  - #1002, the Phase 29 close;
+  - #1004, CI skips integration tests, images and deploys for documentation-only changes;
+  - #1018, the Phase 30 plan;
+  - #1019, an integration of #1005 (deploy.sh waits on every workload; issues 969, 970, 999) and #1006 (Mailpit cert reload; issue 972). Both source PRs are now CLOSED unmerged, because their reviewed heads are ancestors of #1019's head and #1019's tree is main's f858d5cc;
+  - #1021, an authorization fix: shop-child updates now authorise a changed shopId;
+  - #1022, an integration of the second swarm bundle (a product must name its shop, the allergen label's 422, STAFF refused the shop-admin controls; issues 959, 960, 961);
+  - #1026, the ingress CORS fix (issue #1025);
+  - #1028, the Dependabot rollup #993 to #998 plus the wordmark link name (merged from another session);
+  - #1029, Phase 30 PR 1 (issue #957).
+- **At 87a1f772 (#1022), `ci-cd.yaml` passed, including Deploy to Staging and the Staging Edge Probe, so staging runs that commit.** `docs-freshness` FAILED at that sha (run 39669304589) on H-3 of `scripts/check-handoff-contract.sh`: HANDOFF.md was 4 merged commits behind main, over its budget of 3. Updating this file clears that.
+- **Still open, none blocking Phase 30:** follow-ups #992 and #971, the Grafana 24 h restart watch, `29-VALIDATION.md` still `draft`, and issue #1027 (the `/shop` card link's axe 4.14 design exception). The six Dependabot PRs #993 to #998 were rolled up and merged as #1028.
+- **Merge discipline for Phase 30.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main redeploys staging (about 75 to 95 min of CI). Merge one PR at a time and watch each deploy to green before the next. Never merge while the owner's persona swarm is running: ask the owner first. If a deploy goes red, set the variable to `false`, read it back, and stop.
+- **Keep this file current during Phase 30.** H-3 lets HANDOFF.md fall at most 3 merged commits behind main, and Phase 30 merges 8 PRs. It counts from the PR's own copy, so each Phase 30 PR should update this block (the plans done, the next plan). Otherwise `docs-freshness` goes red on the 4th merge.
+- **Unchanged:**
+  - kube context `jtoye-stg-aks` only;
+  - Python gates under `conda activate jtoye-ops`;
+  - Azure always with `--subscription c483d353-5f61-4587-a790-addb9ab5fb94`.
+
+**Parallel lane, 2026-10-22: the Dependabot rollup (branch `chore/dependabot-rollup-993-998`, worktree `JToye_OaaS_2026-deps`).** Not Phase 30 work; it touches no plan, no `.planning/STATE.md` and no migration. It consolidates the six open Dependabot PRs (#993 to #998) the way 39-10 did (`.planning/phases/39-platform-runtime-upgrades/39-10-SUMMARY.md`), fixes one defect the frontend bump revealed (the wordmark link's name omitted its visible "J" on four surfaces, WCAG 2.5.3) and takes axe-core 4.14, which turns `label-content-name-mismatch` on by default: the `/shop` card link (UXT-082, named by `aria-labelledby`) fails it on every viewport, which is the owner's design call, issue #1027, so `public-a11y.spec.ts` excludes that one rule on that one element (`DESIGN_EXCEPTION_1027`, asserted to fire on `/shop`) and nothing else. Merge it only when main's pipeline is idle and the Phase 30 session is not between a PR open and its staging proof: `DEPLOY_STAGING_ENABLED=true` means this merge redeploys staging too.
+
+**2026-10-21 delta (history; superseded by the 2026-10-22 block above).**
+- **Phase 29.** Merged to main as #984; all 29 plans have a SUMMARY. Still to do: phase verification (gsd-verifier) and `29-SECURITY.md`.
+- **Staging deploys from CI.** `DEPLOY_STAGING_ENABLED=true`, so every merge to main runs "Deploy to Staging" (about 75 min of CI). Merges go one at a time, each deploy green before the next. If a deploy goes red: set the variable to `false`, read it back, stop.
+- **Since #984:**
+  - #986, digest parity waits for old replicas to drain;
+  - #987, Grafana memory 320Mi/512Mi;
+  - #991, 29-28 close-out records;
+  - #988, Keycloak `KC_PROXY_TRUSTED_ADDRESSES=10.244.0.0/16` plus render invariant INV-20, proven live 2026-10-21: a spoofed `X-Forwarded-Host` from an untrusted peer no longer moves `token_endpoint`, and the staging-login spec passed 2/2.
+- **Queue after this block:**
+  - Grafana edge basic auth (INV-21), whose Key Vault objects were already written from its branch;
+  - the CI-hardening batch (selftests wired, action pins, the `staging-edge-probe` job).
+- **Resume document:** `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md`.
+- **Unchanged:**
+  - kube context `jtoye-stg-aks` only;
+  - Python gates under `conda activate jtoye-ops`;
+  - Azure always with `--subscription c483d353-5f61-4587-a790-addb9ab5fb94`.
+
+**2026-10-19 delta (history; superseded by the 2026-10-21 block above).**
+- Phase 29 is executing on branch `phase-29-deployable-staging`, pushed, NOT merged to main. 25/29 plans have a SUMMARY.
+- A NEW live Azure staging estate exists: AKS `jtoye-stg-aks` (4×B2s), PG `jtoye-stg-pg`, KV `jtoye-stg-kv`.
+- Staging is persona-ready at https://app-staging.olajay.co.uk, and its monitoring pages ola.ibitoye@olajay.co.uk.
+- The single resume document is `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-ORCHESTRATOR-LEDGER.md`, section "END OF DAY 2026-10-19". It holds every in-session owner ruling (D-33, D-34, Stripe test writes, the backup drill, lock-after-verified-backup) and the ordered next steps:
+  1. 29-20 backup check, then the owner's WORM lock, after 02:00Z.
+  2. 29-19 cost check, from ~10:00Z.
+  3. 29-27 close-out.
+  4. 29-28 merge, with CI's first staging deploy.
+- Start the session with `/gsd-execute-phase 29`.
+- Do not deploy staging while the owner's persona swarm runs.
+- Kube context is always `jtoye-stg-aks`; current-context `jtoye-staging` is dead.
+- Python gates and owner-run scripts need `conda activate jtoye-ops`.
+
+**2026-10-17 evening delta (history; the consolidation delta below is older history).** Merged after it: #947 (Phase 37 owner decisions), #950 (ledger reconcile), #948 (GTM track 2: culinary pack seeder, 62mm thermal PPDS labels, slot/settlement UI), #949 (Phase 30, `V88`: billing tiers, Connect payouts, phone OTP, payment links; built outside GSD plans, `30-VERIFICATION.md` only) and #951 (ledger records Phase 30 as PARTIAL: PAY-02/PAY-04 evidenced but unticked pending owner acceptance; PAY-01 open because `vendor-refund-flow.spec.ts` is still `ALLOW` in `scripts/gates/e2e-skip-budget.conf`; PAY-03 open because its criterion says "on staging").
+
+- **Local Postgres upgraded 15 → 18.** Phase 39 changed compose to `postgres:18-alpine` mounted at `/var/lib/postgresql` but never migrated this machine's dev volume. The old PG 15 container kept running until `scripts/sync-runtime.sh` (`--force-recreate` also recreates dependencies) replaced it, and PG 18 then refused the data. Fixed by `pg_dumpall` from a temporary `postgres:15-alpine`, re-init on PG 18 without `initdb.d`, and restore. Per-table row counts, `pg_policies`, RLS/FORCE flags, functions and roles were identical (planted-diff control caught). Backup volume `jtoye_oaas_2026_postgres_data_pg15_backup_20261017` is KEPT until the owner rules. **Any other machine with a pre-Phase-39 volume hits the same thing:** read the volume's `PG_VERSION` before recreating.
+- **DEF-29-6 (STARTTLS) fixed by #952.** `application.yml` spelled `mail.smtp.starttls.enabled`, but JavaMail reads `.enable`, so STARTTLS was off for every real SMTP server. Unit test RED/GREEN; a live invite reached Mailhog on the rebuilt runtime.
+- **Phase 29 salvage audit (git-only).** All ten executed plans on `phase-29-research` are BRANCH-ONLY. A trial merge gives 23 non-`.planning` conflicts, every image pin is behind main, and 29-11..16 assume the retired object store, PG16 and old line numbers. Verdict: **re-plan Phase 29 on main** (`/gsd-discuss-phase 29`), carrying named scripts and decisions D-01..D-10, D-13, D-16..D-19 by hand, minus D-11/D-12 (superseded by the 2026-09-28 Azure Blob ruling). ADR-0002 "Accepted" exists only on the branch.
+- **Azure (read-only, `--subscription c483d353…`):** `jtoye-staging-aks` Stopped, `jtoye-staging-pg` (PG16 B2s) Stopped, Redis gone; public IPs and the load balancer remain. Azure auto-starts a stopped PG flexible server after 7 days. The cost is not quantified; keep or delete is the owner's call.
+- **Worktrees:** `-agy-phase30` and the merged branches were removed. `-agy-synthesis-gate` (unpushed `feature/synthesis-governance-gate`) is LEFT WITH ANTIGRAVITY by owner ruling.
+- **Next:** merge #952 after its review series → small PR landing ADR-0002 acceptance on main → `/gsd-discuss-phase 29` on main.
+- **Public marketing surfaces refreshed (2026-10-19, outside GSD, PR #965 and #966).** `/for-operators` now states the October 2026 position (both rhythms, V88 pricing from one `PRICING` const, one caveat list), the July pilot-pack PDF is gone with a 308 redirect to `/for-operators`, and `/business-model-guide` and `/competitive` are reconciled to the same sources (#966, with a shared `frontend/lib/pricing.ts`). A redesign of `/for-operators` (five sections, product images from route-mocked captures, fit check removed) follows on `feature/operators-redesign`. None of this touched `.planning/`, the Phase 29 branch, the shared containers or staging.
 
 **2026-10-17 consolidation delta: Phase 37 (59/59 plans, UAT 15/15, verification passed, `quick-261016-edv` forced-light dashboard theme), Phase 39 (10/10 runtime upgrades, `active-exemptions=0`), and `ADR-0007` (`GAP-GTM-01..04, 06, 07B`, Schema `V87`) are all merged to `main` and consolidated. Next roadmap phase: Phase 29 (note: its paused body lives on branch `phase-29-research`; do not plan it blindly on `main`). Resume here; the blocks below it are history.**
 
@@ -11,7 +97,7 @@
 - **G-37-6 & Phase 37 Completion (PR 941 MERGED `c216e95e` + `quick-261016-edv` forced-light dashboard theme + Phase 37 `.planning/` closeout).** Closed UAT test 6's gap G-37-6 (plans 37-56..37-59: finance container-width grids, `withFullStop` sentence-end parity across TypeScript and Java, pagination container-width tiers, void dialog proven at 390/768/1280 px); re-tested UAT 15/15 PASS (`37-VERIFICATION.md` 8/8 roadmap criteria, 35/35 requirements, `threats_open: 0`); and shipped `quick-261016-edv` (`DARK_THEME_AVAILABLE = false` in `frontend/hooks/use-theme.ts`, withholding the dashboard theme toggle while keeping stored preferences intact until a dashboard-wide dark pass lands).
 - **Strategic Positioning & `ADR-0007` (PR 940 MERGED `e1c7dabf`).** Reframes J'Toye OaaS around its four code-verified UK West African food operator advantages (`£39/location/mo + 0.5% GTV` with Vendor as MoR, `V81`/`V80` abuse-hardened counter ops, Cohort B scheduled batch/catering fulfilment, and `V63`–`V86` UK FSA/Natasha's Law/GDPR statutory defensibility), records `GAP-GTM-01`..`07`, and specifies the 4-axis composable policy engine in `docs/architecture/decisions/ADR-0007-multi-model-commercial-and-fulfilment-policy-engine.md`.
 - **Phase 39 (`39-01..39-10`, 10/10 complete).** `39-01` (PR 926) authored `39-CONTEXT.md`, `39-RESEARCH.md`, `39-DEPENDABOT-TRIAGE.md` and `ADR-0002`, and advanced the `2026-10-26` `rabbitmq-k8s` review window to `2027-01-16`. `39-08` (PR 927, `V85__customer_origin_shop_scope.sql`) shipped Option C per-shop customer narrowing (`customers.origin_shop_id` + `customers_aud` mirror, GUC-pinned backfill under `NOSUPERUSER NOBYPASSRLS`). `39-09` (PR 933, `V86__shop_slug_alias.sql`) shipped old-slug `301` storefront redirects (`shop_slug_alias`, RLS-exempt by addition in `RlsContractTest.EXEMPT_TABLES`, proven under `NOSUPERUSER NOBYPASSRLS` by `ShopSlugAliasIntegrationTest`). `39-10` (PR 934) consolidated all 9 open Dependabot PRs (`#905`, `#907`, `#909`, `#910`, `#928..#932`). `39-02` + `39-03` (PR 935) upgraded `alpine:3.24`, `rabbitmq:4.3.6-management-alpine`, Prometheus `v3.13.4` LTS, Grafana `13.2.4`, Alertmanager `v0.34.1`, `redis-exporter:v1.94.0`, and `postgres-exporter:v0.20.1`. `39-07` (PR 936) migrated the frontend to Tailwind CSS `4.3.3` (`@tailwindcss/postcss`). `39-04` (PR 937) upgraded Keycloak to `26.8.1` and retired the final `DEFERRED-27` horizon exemption (`active-exemptions=0`). `39-05` + `39-06` (PR 939) upgraded PostgreSQL `15` -> `18.6` (`postgres:18-alpine`, `jtoye-pg-backup:18-blob`, 10-site `check-postgres-major-parity.sh`, `IntegrationTestSupport.ensureDowngradableTestRole` for `NOSUPERUSER` RLS tests) and Redis `7.4` -> `8.10-alpine`.
-- **Owner items unchanged.** The per-IP cash-order cap for signed-in customers; staging/production trusted proxies and `CLIENT_IP_HMAC_KEY`; `core-api serviceAccountsEnabled` (recommended off).
+- **Phase 37 Owner Decisions Resolved (2026-10-17).** (1) **Per-IP cash-order cap for signed-in customers (`37-31` H4):** `PublicStorefrontService.placeGuestOrder` now skips `cashOrderCaps.checkIp(...)` and leaves `orders.client_ip_digest` `null` when `contactVerified == true` (verified customer-realm token matches the order email), preventing proxy-peer IP bucket exhaustion through `/api/customer-orders` while keeping the 3/email and 3/phone caps enforced (`PublicStorefrontServiceTest`, `CashOrderCapIntegrationTest`). (2) **Keycloak `core-api` `serviceAccountsEnabled` (`T-37-107`):** set `"serviceAccountsEnabled": false` on `core-api` (and `"enabled": false` on `service-account-core-api`) in `infra/keycloak/realm-export.template.json` and updated `docs/runbooks/credential-rotation.md`. (3) **Staging/production `security.trusted-proxies` & `CLIENT_IP_HMAC_KEY`:** kept `security.trusted-proxies: ""` in git (`k8s/staging/configmap-patch.yaml`, `k8s/production/configmap-patch.yaml`, `INV-12` `WARN`, fail-closed) until Phase 29 Wave 7 live cluster bring-up verifies `externalTrafficPolicy: Local` on `ingress-nginx` and measures the live ingress pod CIDR, alongside minting environment-isolated 64-hex `client-ip-credentials/hmac-key` and `dsar-credentials/encryption-key` Secrets (**Phase 29 merge note:** when merging `main` into `phase-29-research`, add `client-ip-credentials` and `dsar-credentials` to `scripts/staging-secrets.sh` and set `"serviceAccountsEnabled": false` on `core-api` in `k8s/base/keycloak/realm-import-configmap.yaml`).
 
 **2026-10-14 delta: 37-E is MERGED as PR 920 (squash d6c3d308); the nightly E2E is fixed by PR 921 (squash ae245840); main is merged back (f596a032, pushed) and the stack is rebuilt and fresh. Resume here; the blocks below it are history.**
 
@@ -822,10 +908,29 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 48 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 61 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-22 (fix/957-card-checkout-payment-step, Phase 30 PR 1): 59 -> 61.
+# Both take arguments, so in this bare loop each prints rc=2 (usage error, measured
+# 2026-10-22): run them as CI does. check-stripe-pk-var refuses a deploy whose publishable
+# key is empty or of the wrong mode (`--selftest`, or STRIPE_PK_VAR in the environment plus
+# `--environment staging|production`). check-frontend-stripe-key-baked reads the key out of
+# the live staging checkout chunks (the staging-edge-probe arguments in ci-cd.yaml); it is
+# rc 1 until a keyed image is deployed (plan 30-04).
+# 2026-10-22 (fix/1025-ingress-cors-idempotency-key): 58 -> 59. check-cors-preflight asks the
+# live staging api host whether the order POST's preflight admits the browser's headers
+# (issue #1025); it curls a public host, so from a laptop it needs network, not a stack.
+# 2026-10-21 (ci/doc-only-skip): 57 -> 58. check-ci-docs-skip-wiring fails a doc-only skip that
+# reaches a cheap gate, or an Integration Tests condition that no longer runs the suite when
+# the `changes` job itself fails.
+# 2026-10-20 (PR #984 review round 1, p29/r1-platform): 56 -> 57. check-deploy-rollback-guard
+# fails a deploy-staging rollback that can run before the apply was reached (F2).
+# 2026-10-20 (phase 29, branch phase-29-deployable-staging): 48 -> 56. Phase 29 added
+# check-alertmanager-render, check-az-subscription-pin, check-deploy-digest-parity,
+# check-dply02-dispositions, check-frontend-baked-origin, check-k8s-copy-parity,
+# check-networkpolicy-enforcement and check-staging-edge (H-1 caught the stale 48).
 # 2026-10-11 (phase 37 plan 37-04, PR #913): 47 -> 48. scripts/check-strict-scoping-default.sh fails any
 # runtime that overrides jtoye.access.strict-scoping back to false (D-06).
 # 2026-10-05 (phase 38 plan 38-11): 46 -> 47. scripts/check-boot-config-keys.sh runs

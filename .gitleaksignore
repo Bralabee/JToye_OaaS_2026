@@ -53,3 +53,35 @@ f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/s
 # carries an inline gitleaks:allow; this fingerprint covers the original commit.
 # Do not quote the finding's output line here: that re-triggers the rule.
 4e39487f434dcbc6d6d3e68c89c14144837c7004:.planning/phases/38-spring-boot-4-1-migration/evidence/38-18-ci-and-nightly.txt:generic-api-key:24
+# ---- Phase 29-18 selftest fixtures (2026-10-19) ----
+# Commit 9e13b945 (the RED commit of scripts/staging-seed.sh --selftest) wrote two
+# SYNTHETIC Stripe-shaped strings as Key Vault stub answers for the order stage's
+# test-key and live-key arms. They are made-up stub values, never issued by Stripe,
+# and reach no account; stripe-access-token reads them by shape. The live file
+# composes them at run time (29-18's leak-scan fix commit), so only this commit's two
+# lines carry them. Fingerprints are commit-pinned: the same shape in any other
+# commit, file or line still fires.
+9e13b94535a898d8e130610c7397eeff373349c1:scripts/staging-seed.sh:stripe-access-token:924
+9e13b94535a898d8e130610c7397eeff373349c1:scripts/staging-seed.sh:stripe-access-token:925
+# ---- Phase 30 (plan 30-07, 2026-10-22) ----
+# Commit 95d59b34 (the RED commit of the stripe-get selftest arms) wrote a SYNTHETIC
+# PaymentIntent client secret as a stub fixture literal (pi_sg1 + a STUBCS marker the
+# selftest greps for). Made up, never issued by Stripe, reaches no account. The live
+# file composes it at run time (30-07's fix commit), so only this commit's line
+# carries it. Commit-pinned: the same shape anywhere else still fires.
+95d59b347de78cc651837a9bb42edc7888458026:scripts/staging-seed.sh:generic-api-key:2129
+# Commits 4bd017f0 and 48577794 (plan 30-05's RED evidence) embed verbatim JUnit XML
+# whose captured log lines carry the integration tests' own synthetic Idempotency-Key
+# values, key=30-05-<random UUID>; the generic rule reads them as API keys. They are
+# test request keys, not credentials, and editing the files would corrupt the recorded
+# RED evidence. Found by 30-07's branch-range scan (11 findings on these two lines).
+4bd017f02cff247dfa0b6238f73f534912a68990:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task1.json:generic-api-key:4
+485777942fda6f147c1ea481526102c1c38db1cf:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task2-it.json:generic-api-key:4
+# ---- Phase 30 (plan 30-08, 2026-10-22) ----
+# Commit 09beb869 (30-07's Task 3 break-arm record) quotes, verbatim, the selftest FAIL
+# line of the "walk/del sanitiser removed" arm: the stub PaymentIntent's SYNTHETIC client
+# secret (pi_sg1 + the STUBCS marker the selftest greps for). Made up, never issued by
+# Stripe, reaches no account; it is the recorded proof the arm went red, so it is not
+# edited. 30-07 measured its branch-range scan at 2a1de3cb, before this commit existed;
+# 30-08's pre-PR scan found it. Commit-pinned: the same shape anywhere else still fires.
+09beb8698531e55c7a632740c765b34cd9a02c9b:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-07-task3-arms.txt:generic-api-key:7

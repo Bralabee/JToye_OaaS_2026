@@ -174,35 +174,57 @@ alert reports the JVM it measured rather than the one someone assumed.
 
 ## NoOrdersCreated
 
-**Expression:** `increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1`
+**Expression:** `sum(increase(jtoye_orders_total[30m])) < 1`
 · **for:** 30m · **severity:** info
 
 ### What it means
 
-No order was successfully created in the last 30 minutes. This is a **business** signal, not an
+No order was placed in the last 30 minutes. This is a **business** signal, not an
 outage — nothing is down, and no page is warranted on its own.
 
-### The trap: this is a REQUEST counter, not a database fact
+### What the series is (changed in #973)
 
-`http_server_requests_seconds_count` is a Micrometer request counter. It is **created on the first
-matching request and destroyed when core-java restarts.** Two consequences that have each cost time
-already:
+`jtoye_orders_total` is the Micrometer counter `jtoye.orders.created`, registered in the
+`BusinessMetricsService` constructor, so core-java exposes it at `0.0` from its first scrape and
+every restart re-creates it. The rule is therefore **evaluable from startup**: it no longer goes
+blind after a rebuild, and `scripts/check-alert-metrics.sh` M-1 passes on a fresh stack with zero
+orders. No seeding is needed.
 
-- **Seeding an order row in the database does not create the series.** Neither does any read
-  endpoint. Only a real `POST` that returns `201` does.
-- **This project mandates rebuilding all containers after any code change**, so after every rebuild
-  the alert is *blind* until the first order — precisely when you would most want it.
+- **Do not rename it to `jtoye_orders_created_total`.** The Prometheus exporter strips the reserved
+  `_created` suffix from a counter name, so the meter `jtoye.orders.created` is exposed as
+  `jtoye_orders_total`. The longer name does not exist and the rule would go blind again.
+- **It counts orders placed, not HTTP 201s.** `OrderStateChangeListener.sendEmailForState`
+  increments it on a deduplicated `ORDER_STATE_CHANGED` event whose new status is `PENDING`: a cash
+  storefront order at creation, a card order once the payment confirms, and a vendor/API/MCP order
+  on `DRAFT` to `PENDING`. An unpaid card checkout does not count.
+- **It is summed across pods.** The counter is per pod and the listener is a competing consumer,
+  so at N replicas one pod counts each order and the others stay at 0. An un-summed rule would
+  fire for every idle pod and for a dead pod's series left in the 30m window. `sum()` asks whether
+  ANY pod counted an order; the rule's labels and annotations are static, so nothing is lost by
+  dropping the series labels. `infra/monitoring/prometheus/tests/alerts.test.yml` proves it, and
+  `scripts/check-alert-rules.sh` (S-6) runs it.
+- **What a firing means beyond "no trade":** the increment happens in the consumer, so the rule
+  detects no order EVENT reaching the consumer (a broker or outbox stall). When this fires with
+  orders visibly being placed, check `payment_event_outbox` and the order-event queue first. It does
+  NOT detect a consumer that fails AFTER counting: the increment runs inside the listener's
+  transaction and is not undone on rollback, so a poison-message redelivery loop keeps the counter
+  rising and this alert quiet. That failure is covered by `DeadLetterQueueNonEmpty`,
+  `OutboxDeadLetterRising`, `DomainQueueBacklog` and `MessagingConsumerMissing`.
 
 ### Two different symptoms, two different fixes — do not confuse them
 
 | symptom | what it means | fix |
 |---|---|---|
-| `scripts/check-alert-metrics.sh` fails on it | the stack was rebuilt, the counter is gone, the alert is **blind** | `bash scripts/seed-order-metric.sh` |
-| the alert is **firing** in Prometheus | the counter exists, no order landed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` |
+| `scripts/check-alert-metrics.sh` fails on it | `jtoye_orders_total` has no series: core-java is not being scraped, or the rule file was reverted to the old `http_server_requests_seconds_count` selector | check the core-java scrape target and `curl -s <core-java>/actuator/prometheus` for `jtoye_orders_total`; **seeding an order is not the remedy** |
+| the alert is **firing** in Prometheus | the counter exists, no order was placed in 30m — the alert is **working** | `FORCE=1 bash scripts/seed-order-metric.sh` (writes a real order; cash stacks only) or the local mute below |
 
-The gate asks *does the series exist*; the alert asks *was there a recent order*. Both can be true at
-once, which is why the plain invocation exits early and places no order — it cannot silence a firing
-alert, and it says so itself.
+`scripts/seed-order-metric.sh` is kept because it proves the order path end to end, but it is no
+longer needed to make the metric gate green. It works only where Stripe is not configured: with
+card payments on (staging has test keys) a storefront order stays DRAFT awaiting the payment
+webhook and never publishes PENDING, so the counter cannot move. The script reads
+`acceptsCardPayments` from the public shop and exits VOID before placing anything; its
+`--selftest` covers the cash and card branches. With the series absent it also exits VOID without
+ordering, because that is a scrape problem.
 
 **Do not add a `KNOWN_DATALESS` entry for this.** That gate's own header calls it the wrong fix.
 
@@ -680,6 +702,60 @@ different:**
 3. If the counter rose from the `attempts >= 10` path instead, look for a broker outage in the same
    window — `RabbitMQDown` at any point in the last 15 minutes explains it, and the resurrection pass
    will clear it without intervention.
+
+## CertificateExpiringSoon
+
+**Expression:**
+`(certmanager_certificate_expiration_timestamp_seconds > 0) - time() < 7 * 86400`
+· **for:** 10m · **severity:** warning · **k8s only** (cert-manager exists only in the cluster; the
+rule is listed in `scripts/alert-k8s-only.txt` so the compose gates do not call it dataless)
+
+### What it means
+
+cert-manager has a certificate with fewer than 7 days left and has not renewed it. It renews 15 to
+30 days before expiry (`renewBefore`), so a certificate this close means issuance has been failing for
+a week or more. The value in the alert is the time remaining; a negative value means it has already
+expired.
+
+Every Certificate in the cluster is covered: the Let's Encrypt edge certificates
+(`jtoye-staging-*-tls`), the internal CA (`jtoye-staging-ca`, 1 year) and `mailpit-tls` (90 days,
+renewed 15 days early).
+
+### First-response steps
+
+1. Read the Certificate and its last issuance attempt:
+   `kubectl --context jtoye-stg-aks -n jtoye-staging describe certificate <name>` and then
+   `kubectl ... get certificaterequest,order,challenge` (the Let's Encrypt ones) or the Issuer
+   (`jtoye-staging-ca-issuer`, `jtoye-staging-selfsigned`) for the internal ones.
+2. The usual causes: the HTTP-01 challenge cannot be reached (Traefik, DNS, the
+   `acme-http01-solver-allow` policy), an Let's Encrypt rate limit, or the CA Secret missing for the
+   internal issuer.
+3. **`mailpit-tls` specifically.** Mailpit reads its certificate only at process start. The
+   `mailpit` container runs a supervisor (`k8s/components/mailpit/mailpit.yaml`, INV-23) that hashes
+   the mounted certificate and key every 15 s and restarts the container when they change, so a
+   renewal reaches Mailpit within about two minutes without anyone acting. Check it did:
+   `kubectl ... logs deploy/mailpit -c mailpit --previous` shows
+   `mailpit-cert-reload: certificate or key changed on disk`, and the container's restart count has
+   risen by one. To compare what Mailpit **serves** with the Secret by hand:
+   `kubectl ... port-forward svc/mailpit 1025:1025` and
+   `openssl s_client -starttls smtp -connect 127.0.0.1:1025 </dev/null | openssl x509 -noout -fingerprint -sha256 -enddate`,
+   against `kubectl ... get secret mailpit-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -fingerprint -sha256 -enddate`.
+   A mismatch means the supervisor is not running: restart the Deployment
+   (`kubectl ... rollout restart deploy/mailpit`).
+
+### What this alert does NOT tell you
+
+A Certificate that was never issued (first issuance stuck) reports expiry 0 and is excluded by the `> 0` filter: it is not a renewal failure, and it is not this alert. Find it with `kubectl ... get certificate` (READY False).
+
+That a workload is serving an old certificate after a successful renewal. It reads the Certificate as
+cert-manager sees it (the Secret). Mailpit is the one workload here that needs a restart to pick up a
+renewal, and its supervisor, not this alert, covers that.
+
+### Escalation
+
+Warning: act within the 7 days. If the issuer cannot be fixed in that time, an expired edge
+certificate breaks every browser and the deploy health step, an expired `mailpit-tls` breaks
+`core-java`'s mail health (and so the deploy-staging health step).
 
 ---
 

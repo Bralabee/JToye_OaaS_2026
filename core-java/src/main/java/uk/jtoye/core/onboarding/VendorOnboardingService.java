@@ -21,6 +21,8 @@ import uk.jtoye.core.onboarding.dto.OnboardingDto;
 import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
 import uk.jtoye.core.onboarding.gate.TraderIdentityGate;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
@@ -60,6 +62,7 @@ public class VendorOnboardingService {
     private final TraderIdentityGate traderIdentityGate;
     private final UserDirectoryRepository userDirectoryRepository;
     private final TransactionTemplate directoryTransaction;
+    private final ShopAccessService shopAccessService;
 
     public VendorOnboardingService(VendorOnboardingRepository onboardingRepository,
                                    VendorOnboardingGateRepository gateRepository,
@@ -70,7 +73,9 @@ public class VendorOnboardingService {
                                    AllergenCompletenessGate allergenCompletenessGate,
                                    TraderIdentityGate traderIdentityGate,
                                    UserDirectoryRepository userDirectoryRepository,
-                                   PlatformTransactionManager transactionManager) {
+                                   PlatformTransactionManager transactionManager,
+                                   ShopAccessService shopAccessService) {
+        this.shopAccessService = shopAccessService;
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.stateMachineService = stateMachineService;
@@ -92,6 +97,12 @@ public class VendorOnboardingService {
      */
     public OnboardingDto createOnboarding(OnboardingModel model, UUID shopId, String companyNumber) {
         UUID tenantId = CurrentTenant.require();
+
+        // #961: the onboarding lifecycle is the shop's publish / withdraw control, so it takes the same
+        // floor as editing the shop (ShopService.updateShop): SHOP_MANAGER on the shop. A STAFF grant (or
+        // no grant) is refused with the typed shop-access 403 before any lookup, and the gate also
+        // answers a foreign-tenant shop with the non-disclosing 404.
+        shopAccessService.require(shopId, ShopRole.SHOP_MANAGER);
 
         // CR-02: the caller must own the shop. The V43 FK shop_id -> shops(id) is
         // checked by Postgres referential-integrity, which BYPASSES RLS, so an INSERT
@@ -131,6 +142,7 @@ public class VendorOnboardingService {
     public OnboardingDto submit() {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboarding(tenantId);
+        requireShopManager(onboarding);
 
         transition(onboarding, OnboardingEvent.SUBMIT);
         recordSubmitterInDirectory(tenantId);
@@ -153,6 +165,7 @@ public class VendorOnboardingService {
     public OnboardingDto resubmit() {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboarding(tenantId);
+        requireShopManager(onboarding);
 
         transition(onboarding, OnboardingEvent.RESUBMIT);
         recordSubmitterInDirectory(tenantId);
@@ -195,6 +208,7 @@ public class VendorOnboardingService {
     public OnboardingDto goLive() {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboarding(tenantId);
+        requireShopManager(onboarding);
 
         transition(onboarding, OnboardingEvent.GO_LIVE);
 
@@ -216,6 +230,7 @@ public class VendorOnboardingService {
     public OnboardingDto withdraw() {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboarding(tenantId);
+        requireShopManager(onboarding);
 
         log.info("Vendor withdrawing onboarding {} (tenant {})", onboarding.getId(), tenantId);
         transition(onboarding, OnboardingEvent.WITHDRAW);
@@ -240,6 +255,7 @@ public class VendorOnboardingService {
     public OnboardingDto updateCompanyNumber(String companyNumber) {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboarding(tenantId);
+        requireShopManager(onboarding);
 
         if (onboarding.getStatus() != OnboardingState.DRAFT
                 && onboarding.getStatus() != OnboardingState.ACTION_REQUIRED) {
@@ -663,6 +679,17 @@ public class VendorOnboardingService {
      */
     private static String normaliseCompanyNumber(String companyNumber) {
         return CompanyNumbers.normalise(companyNumber);
+    }
+
+    /**
+     * #961: a vendor-side lifecycle action on the caller's onboarding needs SHOP_MANAGER on the shop it
+     * onboards (the floor {@code ShopService.updateShop} takes). An onboarding with no shop is
+     * tenant-wide, so {@code require(null, ...)} makes it Group-admin-only. The admin queue
+     * (approve / reject / resolve gate) is gated by the controller's {@code hasRole('admin')} and does
+     * not come through here.
+     */
+    private void requireShopManager(VendorOnboarding onboarding) {
+        shopAccessService.require(onboarding.getShopId(), ShopRole.SHOP_MANAGER);
     }
 
     private VendorOnboarding requireOnboarding(UUID tenantId) {

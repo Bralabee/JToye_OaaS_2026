@@ -255,6 +255,28 @@ public class ShopAccessService {
     }
 
     /**
+     * The gate for an UPDATE whose request body names a {@code shopId}. The caller has already been
+     * required to hold SHOP_MANAGER on the row's CURRENT shop; when the body names a DIFFERENT shop the row
+     * is being re-pointed, so SHOP_MANAGER is required on that TARGET shop too, through {@link #require}
+     * (same tenant check as every other write, FC-1). An absent shop (the field was omitted, the row keeps
+     * its shop) or the row's own shop changes nothing and needs no second check.
+     *
+     * <p>Moving a row from no shop to a shop passes for exactly the callers who could edit that row before
+     * (the current-shop gate is GROUP_ADMIN-only for a shop-less row) and who also manage the target.
+     * Call this BEFORE anything is applied to the entity, and assign the shop explicitly afterwards: the
+     * update mappers no longer copy {@code shopId}.
+     *
+     * @throws ShopAccessDeniedException if the caller lacks SHOP_MANAGER on the target shop
+     * @throws ResourceNotFoundException if the target shop belongs to another tenant
+     */
+    public void requireForShopChange(UUID currentShopId, UUID requestedShopId) {
+        if (requestedShopId == null || requestedShopId.equals(currentShopId)) {
+            return;
+        }
+        require(requestedShopId, ShopRole.SHOP_MANAGER);
+    }
+
+    /**
      * FC-1 (QA-council): assert {@code shopId} is owned by the caller's tenant, so a tenant-wide
      * GROUP_ADMIN's {@link #require} cannot reach across the tenant boundary. Only consulted for a
      * GROUP_ADMIN with a NON-null shopId (the non-GROUP_ADMIN branch is already tenant-safe: a

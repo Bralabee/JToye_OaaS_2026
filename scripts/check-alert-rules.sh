@@ -36,12 +36,17 @@
 #   check-alert-liveness.sh (27-00) LIVE.    Scrape-target health, exporter self-report,
 #                                   subject correctness, and Alertmanager DELIVERY.
 #
-# THE FIVE ASSERTIONS
+# THE SIX ASSERTIONS
 #   S-1  `promtool check rules` succeeds.
 #   S-2  Every LIVE rule carries severity + component + service labels
 #        (`service` exempt only via LABEL_EXEMPT, with a written reason each).
 #   S-3  Every LIVE rule carries `summary` AND `description` annotations.
 #   S-4  Every LIVE rule has a `## <AlertName>` heading in docs/runbooks/alerts.md.
+#   S-6  `promtool test rules` passes on <rules dir>/tests/alerts.test.yml (REQUIRED for the
+#        repo's own infra/monitoring/prometheus/alerts.yml; run when present for any other
+#        rules file, noted and skipped otherwise). Added with #973: NoOrdersCreated must
+#        aggregate across pods, and only a unit test with two pods can show it. The k8s copy
+#        of the rules is held byte-equal by k8s/copy-parity.conf, so one test file covers both.
 #   S-5  Every DORMANT_RULES entry ALSO has such a heading — that section is where the
 #        re-enable trigger lives, so a dormant rule with no section is a rule nobody can
 #        wake up.
@@ -160,6 +165,35 @@ fi
 if [ "$PROMTOOL_RC" -ne 0 ]; then
   violation "S-1 promtool check rules failed:"$'\n'"$PROMTOOL_OUT"
 fi
+# =================================================================================
+# S-6 — promtool unit tests (rule BEHAVIOUR, which S-1's syntax check cannot see)
+# =================================================================================
+TESTS_FILE="${ALERT_TESTS:-$RULES_DIR/tests/alerts.test.yml}"
+TESTS_STATUS="not run"
+if [ -r "$TESTS_FILE" ]; then
+  # A tests file with no alert_rule_test would make `promtool test rules` report SUCCESS over
+  # nothing: refuse it rather than count it.
+  grep -q 'alert_rule_test' "$TESTS_FILE" \
+    || violation "S-6 $TESTS_FILE has no alert_rule_test case — a rule test file that tests nothing passes vacuously"
+  TESTS_BASE="$(cd "$(dirname "$TESTS_FILE")" && pwd)"
+  set +e
+  TESTS_OUT="$(docker run --rm --entrypoint=promtool -v "$RULES_DIR:/rules:ro" "$PROM_IMAGE" \
+    test rules "/rules/${TESTS_BASE#"$RULES_DIR"/}/$(basename "$TESTS_FILE")" 2>&1)"
+  TESTS_RC=$?
+  set -e
+  if [ "$TESTS_RC" -ne 0 ]; then
+    violation "S-6 promtool test rules failed (rc=$TESTS_RC):"$'\n'"$TESTS_OUT"
+    TESTS_STATUS="FAILED rc=$TESTS_RC"
+  else
+    TESTS_STATUS="rc=0 ($(grep -c 'alertname:' "$TESTS_FILE") alert_rule_test assertion(s))"
+  fi
+elif [ "$RULES_DIR" = "$REPO_ROOT/infra/monitoring/prometheus" ]; then
+  violation "S-6 $TESTS_FILE is missing — the repo's own rules file must ship its promtool unit tests"
+else
+  echo "  note: no $TESTS_FILE next to $RULES_FILE — S-6 skipped (only the repo's own rules file requires it)"
+  TESTS_STATUS="skipped"
+fi
+
 PROMTOOL_COUNT="$(sed -n 's/.*SUCCESS: \([0-9]*\) rules found.*/\1/p' <<<"$PROMTOOL_OUT" | head -1)"
 PROMTOOL_COUNT="${PROMTOOL_COUNT:-0}"
 
@@ -274,7 +308,7 @@ for entry in "${DORMANT_RULES[@]}"; do
 done
 
 # =================================================================================
-echo "  promtool: rc=$PROMTOOL_RC, $PROMTOOL_COUNT rules found"
+echo "  promtool: rc=$PROMTOOL_RC, $PROMTOOL_COUNT rules found; unit tests: $TESTS_STATUS"
 echo "  extracted: $LIVE_COUNT live rule(s), $COMMENTED_COUNT commented-out '- alert:' block(s) skipped by the comment rule"
 echo "  exemptions: ${#LABEL_EXEMPT[@]} LABEL_EXEMPT, ${#DORMANT_RULES[@]} DORMANT_RULES"
 

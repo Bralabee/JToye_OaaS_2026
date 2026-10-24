@@ -14,6 +14,7 @@ import {
   Tooltip,
 } from "recharts"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+import { PRICING } from "@/lib/pricing"
 
 // ---------------------------------------------------------------------------
 // THE DATASET — single source of truth. Flipdish verified from public product
@@ -44,13 +45,13 @@ const FEATURES: Feature[] = [
   { id: "native-apps", group: "Ordering channels", name: "Native mobile apps (iOS/Android)", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Hard gap", note: "Flipdish ships branded native apps; J'Toye is web-only.", evidence: "Absent — searched, not built (no RN/Flutter/native; Next.js web only)" },
   { id: "kiosk", group: "Ordering channels", name: "Self-service kiosk", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Hard gap", note: "In-store kiosk ordering — not present in J'Toye.", evidence: "Absent — searched, not built" },
   { id: "qr-table", group: "Ordering channels", name: "QR / at-table ordering", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Hard gap", note: "J'Toye fulfilment is DELIVERY/COLLECTION only.", evidence: "Absent — FulfilmentType has DELIVERY/COLLECTION only; no table/dine-in" },
-  { id: "whatsapp", group: "Ordering channels", name: "WhatsApp ordering", flipdish: "none", jtoye: "partial", verdict: "jtoye", tag: "J'Toye leads", note: "J'Toye has an inbound WhatsApp order parser + notify channel.", evidence: "edge-go/internal/whatsapp/parser.go + notification WhatsAppSmsChannel.java" },
+  { id: "whatsapp", group: "Ordering channels", name: "WhatsApp ordering", flipdish: "none", jtoye: "partial", verdict: "jtoye", tag: "J'Toye leads", note: "J'Toye has a signature-verified inbound WhatsApp order-intake webhook and parser (inert until WHATSAPP_APP_SECRET is set) and a generated pre-order link that opens a pre-filled checkout; outbound WhatsApp send is a logged no-op, so it is not an automated channel.", evidence: "edge-go/internal/whatsapp/parser.go + edge-go/cmd/edge/handlers.go:240 (webhook) + core-java shop/ShopController.java:285 (whatsapp-preorder-link) + notification/dispatch/WhatsAppSmsChannel.java (logged no-op send)" },
   { id: "ai-phone", group: "Ordering channels", name: "AI phone-order agent", flipdish: "full", jtoye: "none", verdict: "flipdish", tag: "Flipdish leads", note: "Flipdish AI Phone Agent answers/takes calls; J'Toye has none.", evidence: "Absent — searched, not built" },
 
   // B. Payments & monetization
   { id: "card-pay", group: "Payments", name: "Card payments", flipdish: "full", jtoye: "full", verdict: "parity", tag: "Parity", note: "Flipdish Pay vs Stripe — functional parity.", evidence: "core-java payment/PaymentService.java (Stripe)" },
   { id: "marketplace-pay", group: "Payments", name: "Marketplace / multi-vendor payouts", flipdish: "partial", jtoye: "full", verdict: "jtoye", tag: "J'Toye leads", note: "J'Toye has native Stripe Connect destination charges + application_fee.", evidence: "payment/PaymentService.java (transfer_data[destination] + application_fee_amount) + StripeConnectService.java" },
-  { id: "wl-ownkey", group: "Payments", name: "White-label vendor-own-key payments", flipdish: "partial", jtoye: "partial", verdict: "parity", tag: "Parity", note: "Neither fully ships this; J'Toye's own-key path is a stubbed future slice.", evidence: "payment/PaymentService.java (WHITE_LABEL own-key marked future slice)" },
+  { id: "wl-ownkey", group: "Payments", name: "White-label vendor-own-key payments", flipdish: "partial", jtoye: "partial", verdict: "parity", tag: "Parity", note: "Neither fully ships this; J'Toye's vendor-as-merchant-of-record direct charge is built and proven in Stripe test mode, with live cutover pending.", evidence: "payment/PaymentService.java (Stripe-Account direct charge, usesDirectChargeHeader) + SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR + StripeConnectService.resolveSettlementRouting" },
 
   // C. Kitchen & operations
   { id: "kds", group: "Kitchen & ops", name: "Kitchen Display System (real-time)", flipdish: "full", jtoye: "full", verdict: "flipdish", tag: "Flipdish leads", note: "J'Toye's KDS is genuinely built (SSE+STOMP); Flipdish's is POS-linked + multi-station.", evidence: "core-java OrderController /orders/stream (SSE) + websocket/WebSocketConfig.java + frontend dashboard/kitchen" },
@@ -110,8 +111,8 @@ const SCALE = {
     ["Stage", "pre-market"],
     ["Raised", "£0"],
     ["Team", "solo/small build"],
-    ["Monetization", "Stripe Connect per-order platform fee"],
-    ["Billing", "no SaaS subscription billing built"],
+    ["Monetization", `£${PRICING.coreMonthly}/location/mo + ${PRICING.usageLabel} of direct sales (or flat £${PRICING.flatLow}–£${PRICING.flatHigh}, or £0 + ${PRICING.paygLabel} batch)`],
+    ["Billing", "SaaS subscription billing built (V88), proven in Stripe test mode; live cutover pending"],
   ],
 } as const
 
@@ -245,7 +246,7 @@ export function CompetitiveTeardown() {
               <span className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 bg-amber-300" /> J&apos;Toye OaaS / competitive teardown
               </span>
-              <span className="font-medium tracking-[0.12em] text-slate-300">Last updated · 24 July 2026</span>
+              <span className="font-medium tracking-[0.12em] text-slate-300">J&apos;Toye rows updated · 19 October 2026 · Flipdish research · 24 July 2026</span>
             </div>
             <div className="mt-10 grid gap-8 lg:grid-cols-[1.3fr_0.7fr] lg:items-end">
               <div>
@@ -507,9 +508,10 @@ export function CompetitiveTeardown() {
               <ScaleColumn title="J'Toye" tone="orange" rows={SCALE.jtoye} />
             </div>
             <p className="mt-6 border-l-4 border-oxblood bg-white p-5 text-sm leading-6 text-slate-600">
-              Flipdish monetizes via SaaS subscription + setup + per-order commission + add-on modules. J&apos;Toye&apos;s
-              only wired monetization is a Stripe Connect per-order platform fee; there is no SaaS subscription billing
-              built.
+              Flipdish monetizes via SaaS subscription + setup + per-order commission + add-on modules. J&apos;Toye bills{" "}
+              {`£${PRICING.coreMonthly} per location per month plus ${PRICING.usageLabel} of direct sales, a flat £${PRICING.flatLow}–£${PRICING.flatHigh} plan, or £0 plus ${PRICING.paygLabel} for batch kitchens,`}{" "}
+              with Stripe card fees passed through. That billing is built and proven in Stripe test mode; live cutover waits
+              for the first production tenant.
             </p>
           </section>
 
@@ -562,8 +564,8 @@ export function CompetitiveTeardown() {
             </div>
             <aside className="mt-8 border border-orange-200 bg-orange-50 p-5 text-sm leading-6 text-orange-900">
               <strong>Caveat:</strong> For J&apos;Toye, &ldquo;PRESENT&rdquo; means the code/wiring exists in the repo,
-              not that every path is proven end-to-end at production scale (e.g. the WHITE_LABEL own-key payment path is a
-              stub). Flipdish&apos;s features are live across 5,000+ brands. <strong>Last updated: 2026-07-24.</strong>
+              not that every path is proven end-to-end at production scale (e.g. card settlement and billing are proven in
+              Stripe test mode only; live cutover is pending). Flipdish&apos;s features are live across 5,000+ brands. <strong>J&apos;Toye rows updated: 2026-10-19. Flipdish research: 2026-07-24.</strong>
             </aside>
             <div className="mt-8 flex flex-wrap items-center gap-4 border-t border-dashed border-slate-300 pt-6 text-sm">
               <span className="text-xs uppercase tracking-[0.12em] text-slate-600">
@@ -591,7 +593,7 @@ export function CompetitiveTeardown() {
             className={`mx-auto flex ${WIDTH_TIER_CLASS.marketing} flex-wrap items-center justify-between gap-4 sm:px-3`}
           >
             <p className="text-xs uppercase tracking-[0.14em]">J&apos;Toye OaaS / competitive teardown</p>
-            <p className="text-xs uppercase tracking-[0.12em] text-slate-400">Last updated 24 July 2026</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-400">J&apos;Toye rows updated 19 October 2026 · Flipdish research 24 July 2026</p>
           </div>
         </footer>
       </div>

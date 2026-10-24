@@ -125,6 +125,7 @@ dependencies:
       - "docker-compose.full-stack.yml:145"
       - "infra/docker-compose.yml:71"
       - "infra/docker-compose.hostnet.yml:26"
+      - "k8s/components/keycloak/keycloak.yaml:70"
     kind: image
     owner: maintainer
     eol_slug: keycloak
@@ -142,7 +143,7 @@ dependencies:
 
   - id: redis
     pin: "redis:8.10-alpine"
-    sites: ["docker-compose.full-stack.yml:200"]
+    sites: ["docker-compose.full-stack.yml:200", "k8s/components/redis/redis.yaml:74"]
     kind: image
     owner: maintainer
     eol_slug: redis
@@ -298,7 +299,7 @@ dependencies:
 
   - id: redis-exporter
     pin: "oliver006/redis_exporter:v1.94.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:160"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:174"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -315,7 +316,7 @@ dependencies:
 
   - id: postgres-exporter
     pin: "prometheuscommunity/postgres-exporter:v0.20.1"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:180"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:194"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -418,8 +419,8 @@ dependencies:
     pin: "go-version: '1.27'"
     sites:
       - ".github/workflows/ci-cd.yaml:53"
-      - ".github/workflows/ci-cd.yaml:939"
-      - ".github/workflows/ci-cd.yaml:1336"
+      - ".github/workflows/ci-cd.yaml:1005"
+      - ".github/workflows/ci-cd.yaml:1435"
     kind: toolchain
     owner: maintainer
     eol_slug: go
@@ -503,7 +504,7 @@ dependencies:
 
   - id: jtoye-frontend
     pin: "ghcr.io/bralabee/jtoye-frontend:2.1.0"
-    sites: ["k8s/base/frontend-deployment.yaml:40"]
+    sites: ["k8s/base/frontend-deployment.yaml:44"]
     kind: first_party
     owner: maintainer
     eol_slug: null
@@ -530,30 +531,191 @@ dependencies:
       a postgres major upgrade that forgets the backup image shows up as two rows disagreeing
       rather than as one silent skew.
 
-  # ------------------------------------------------------------------ out of repo
-  #  The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
-  #  `pin: unknown` + `manual_review` is the honest state, not a placeholder for forgotten
-  #  work — and the gate PRINTS it on every run so it cannot become invisible.
-  - id: rabbitmq-k8s
-    pin: unknown
-    sites: []
-    kind: out_of_repo
-    owner: UNASSIGNED
+  # ------------------------------------------------------------------ k8s platform (Phase 29)
+  #  The in-cluster platform the staging bootstrap applies (scripts/staging-bootstrap.sh,
+  #  plan 29-03). Image pins under k8s/platform are discovered by H-1 through
+  #  K8S_GLOB_DIRS; the two upstream release manifests are pinned in the bootstrap script
+  #  by URL + sha256 and covered by H-5 at that site.
+  - id: traefik
+    pin: "traefik:v3.7.15@sha256:0f6150202bc1fed72a7bd2107460eaa510e5b8a905f3fdb5b84f2c8619c33368"
+    sites: ["k8s/platform/traefik/traefik.yaml:181"]
+    kind: image
+    owner: maintainer
+    eol_slug: traefik
+    eol_cycle: "3.7"
+    eol_date: "false"
+    note: >-
+      Staging ingress controller (D-29: Traefik v3 with its Ingress-NGINX provider).
+      Slug measured 2026-10-18 with `curl -o /dev/null -w '%{http_code} %{redirect_url}'`
+      against https://endoflife.date/api/traefik.json: `200 ` (direct, no redirect); cycle
+      3.7 `eol: false`, latest 3.7.15. v3.7.15 (released 2026-10-15) was the newest Traefik
+      release on that date; the digest is the multi-arch index digest read from
+      registry-1.docker.io the same day. A bump must re-read the provider's Annotations
+      Support table into k8s/platform/traefik/supported-annotations.txt (plan 29-08's render
+      invariant reads it).
+
+  - id: axllent-mailpit
+    pin: "axllent/mailpit:v1.31.6"
+    sites: ["k8s/components/mailpit/mailpit.yaml:73"]
+    kind: image
+    owner: maintainer
     eol_slug: null
     note: >-
-      The staging/production broker is not deployed from this repo. MEASURED 2026-07-26 and
-      re-verified 2026-10-16 (39-01): `rg -uu -n 'image:.*rabbitmq' k8s/` returns NOTHING —
-      the only rabbitmq strings under k8s/ are the configmap host/port (`k8s/base/configmap.yaml`
-      and `k8s/local/configmap-patch.yaml`, which routes local minikube pods to the host Compose
-      broker via `host.minikube.internal`) and the `rabbitmq-credentials` Secret refs. Its
-      staging/production version is therefore unresolvable from this repo by construction, which
-      is why this row is UNASSIGNED: there is no platform-operator identity here to assign it to,
-      and saying so is more useful than inventing a name. Re-checked 2026-10-16 against
-      https://www.rabbitmq.com/release-information: 4.3.6 (released 16 Sept 2026) is the newest
-      upstream release (no 4.4 series published yet), and the vendor extended 4.3 End of
-      Community Support to 31 Jan 2027 (2027-01-31). See ADR-0002 and
-      docs/runbooks/rabbitmq-broker-upgrade.md.
+      Staging mail trap (plan 29-22, D-20: STARTTLS required, certificate from the
+      cert-manager internal CA). endoflife.date `mailpit` returns 404 (measured
+      2026-10-19 with `curl -o /dev/null -w '%{http_code} %{redirect_url}'`: `404 `), so
+      the horizon is a dated manual review. v1.31.6 (published 2026-10-15) was the
+      latest release on 2026-10-19 (GitHub API releases/latest); the image index
+      digest that day was sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+      and `/mailpit version` printed `v1.31.6 compiled with go1.27.2`. Alpine-based,
+      so the send-api-lock init container's busybox head/od/tr are present (measured).
     manual_review:
-      last_checked: "2026-10-16"
-      expires: "2027-01-16"
-      url: "https://www.rabbitmq.com/release-information"
+      last_checked: "2026-10-19"
+      expires: "2027-01-19"
+      url: "https://github.com/axllent/mailpit/releases"
+
+  - id: agnhost
+    pin: "registry.k8s.io/e2e-test-images/agnhost:2.66.1@sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4"
+    sites: ["k8s/platform/acme-probe/probe.yaml:61"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      Kubernetes e2e test image (netexec), used by the one-shot ACME probe (plan 29-11)
+      and the DPLY-05 denial probe (plan 29-17); never a long-running workload.
+      endoflife.date `agnhost` returns 404 (measured 2026-10-18 with `curl -o /dev/null -w
+      '%{http_code} %{redirect_url}'`): the image has no published support horizon, it is
+      rebuilt from kubernetes/kubernetes test/images/agnhost. 2.66.1 was the newest tag
+      registry.k8s.io served on 2026-10-18 (tags/list; RESEARCH named 2.33 from an older
+      MS Learn recipe); the digest is the index digest read the same day.
+    manual_review:
+      last_checked: "2026-10-18"
+      expires: "2027-01-18"
+      url: "https://github.com/kubernetes/kubernetes/tree/master/test/images/agnhost"
+
+  - id: cert-manager
+    pin: "https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml"
+    sites: ["scripts/staging-bootstrap.sh:100"]
+    kind: image
+    owner: maintainer
+    eol_slug: cert-manager
+    eol_cycle: "1.21"
+    eol_date: "false"
+    note: >-
+      The cert-manager v1.21.2 release manifest (controller, webhook and cainjector images
+      quay.io/jetstack/cert-manager-*:v1.21.2), applied by scripts/staging-bootstrap.sh
+      --stage cert-manager from this URL only after its sha256 matches
+      e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f (1,034,400 bytes,
+      re-downloaded and hashed 2026-10-18). The pin is the URL, so bumping the release in
+      the script without this row is H-5 drift. Slug measured 2026-10-18 with
+      `curl -o /dev/null -w '%{http_code} %{redirect_url}'`: `200 ` (direct); cycle 1.21
+      `eol: false`, latest 1.21.2.
+
+  - id: rabbitmq-cluster-operator
+    pin: "https://github.com/rabbitmq/cluster-operator/releases/download/v2.23.1/cluster-operator.yml"
+    sites: ["scripts/staging-bootstrap.sh:103"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      The RabbitMQ cluster operator v2.23.1 release manifest (image
+      ghcr.io/rabbitmq/cluster-operator:2.23.1, requests 200m/500Mi), applied by
+      scripts/staging-bootstrap.sh --stage rabbitmq-operator after its sha256 matches
+      ae35a547751656bc64bb734026249a845d226d96aba5a73783e05c5ec3444687 (360,452 bytes,
+      re-downloaded and hashed 2026-10-18). Upgrading it rolls every RabbitmqCluster:
+      pause reconciliation first. endoflife.date has no product for it: `rabbitmq-cluster-operator`
+      and `rabbitmq-operator` both return 404 (measured 2026-10-18). The broker it runs is
+      the separate `rabbitmq-k8s` row (plan 29-10 pins it).
+    manual_review:
+      last_checked: "2026-10-18"
+      expires: "2027-01-18"
+      url: "https://github.com/rabbitmq/cluster-operator/releases"
+
+  # ------------------------------------------------------------------ Azure estate (Phase 29)
+  #  Cloud SKUs the staging provisioning scripts pin. Not images, but they age the same
+  #  way: a retired VM size stops being creatable and its running nodes are deallocated.
+  - id: aks-node-vm-sku
+    pin: "Standard_B2s"
+    sites: ["scripts/azure-staging-provision.sh:145"]
+    kind: toolchain
+    owner: maintainer
+    eol_slug: null
+    vendor_eol: "2028-11-15"
+    vendor_source: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"
+    note: >-
+      The AKS node size (NODE_VM_SIZE in scripts/azure-staging-provision.sh, plan 29-01):
+      3 x Standard_B2s nodes. B2s is B-series v1, which Microsoft has announced for
+      retirement on 2028-11-15. Read 2026-10-19 from the Microsoft Learn "Retirements and
+      capacity restrictions" table (row "B-series (V1)": Announced, announcement 10/15/25,
+      retirement 11/15/28; the older .../sizes/retirement/retired-sizes-list URL redirects
+      there). endoflife.date has no product for Azure VM sizes, so the horizon is the
+      vendor date held here under a dated manual_review (the gate evaluates no slug). The
+      successor family is not a drop-in today: Basv2 quota on this subscription is 0, and
+      Basv2 sizes support no ephemeral OS disk, which the cluster's 30 GiB ephemeral OS disks
+      rely on (29-RESEARCH State of the Art). kind is `toolchain` only because the schema
+      has no infrastructure kind; the gate treats image and toolchain rows identically.
+      The PostgreSQL Flexible Server compute (Burstable Standard_B2s,
+      scripts/azure-staging-datastores.sh) is a separate managed-service SKU and is not
+      covered by this row.
+    manual_review:
+      last_checked: "2026-10-19"
+      expires: "2027-01-19"
+      url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions"
+
+  # ------------------------------------------------------------------ in-cluster broker (Phase 29)
+  #  Seeded by 27-02 as the one `out_of_repo` row (`pin: unknown`, UNASSIGNED, a dated
+  #  manual_review), because the staging/production broker was deployed from nowhere in this
+  #  repo. Plan 29-10 ships the RabbitmqCluster that declares it, so the row now carries that
+  #  pin at that site and is evaluated like every other image row.
+  - id: rabbitmq-k8s
+    pin: "rabbitmq:4.3.6-management-alpine"
+    sites: ["k8s/components/rabbitmq/rabbitmq-cluster.yaml:37"]
+    kind: image
+    owner: maintainer
+    eol_slug: rabbitmq
+    eol_cycle: "4.3"
+    eol_date: "false"
+    eol_source: vendor
+    vendor_eol: "2027-01-31"
+    vendor_source: "https://www.rabbitmq.com/release-information"
+    note: >-
+      2026-10-18 (plan 29-10; ADR-0002, D-09): the in-cluster staging broker, run by the RabbitMQ
+      cluster operator v2.23.1 (row rabbitmq-cluster-operator) from the RabbitmqCluster `rabbitmq`
+      in k8s/components/rabbitmq/rabbitmq-cluster.yaml, which only k8s/staging includes. The broker
+      version is that CR's spec.image, the same tag compose runs (row rabbitmq), so the two rows
+      share one pin and, through the vendor date, one horizon: both enter the 90-day window on
+      ~2026-11-02 and must be moved together. Before this plan the row was `pin: unknown`,
+      `kind: out_of_repo`, `owner: UNASSIGNED` with a manual_review expiring 2027-01-16; that review
+      is RETIRED per docs/runbooks/rabbitmq-broker-upgrade.md §7 step 4 (a row with a declared pin
+      and a site needs no human re-check of an unknown), and the owner is the maintainer, who can
+      now act on it in-repo. Production's broker is still decided in Phase 32 and is NOT covered by
+      this row. Vendor date as on the compose row: 4.3 End of Community Support 2027-01-31
+      (https://www.rabbitmq.com/release-information, re-verified 2026-10-16); the catalogue returns
+      `eol: false` for cycle 4.3, hence eol_source vendor. H-1 discovers this pin only because
+      scripts/check-dependency-horizons.sh scans k8s/components (also plan 29-10).
+
+  # ------------------------------------------------------------------ Key Vault secret sync (Phase 29)
+  - id: registry-k8s-pause
+    pin: "registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4"
+    sites: ["k8s/components/azure-keyvault/secret-sync.yaml:78"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      2026-10-19 (plan 29-12, D-23): the container of the always-on `secret-sync` Deployment in
+      k8s/components/azure-keyvault, which only k8s/staging includes. It only sleeps; it exists so
+      that a pod always mounts the rabbitmq-kv SecretProviderClass and the CSI-synced Secret
+      rabbitmq-default-user that the RabbitMQ operator reads stays alive (29-RESEARCH Pitfall 11).
+      Tag 3.10.2 is the newest release tag in https://registry.k8s.io/v2/pause/tags/list (read
+      2026-10-19; the 3.x line before it is 3.10.1, 3.10, 3.9). The digest is the manifest-list
+      (multi-arch index) digest: the registry's docker-content-digest header, re-checked as the
+      sha256 of the downloaded index body, which lists linux/amd64 among its platforms. It is
+      DIGEST-PINNED because a tag is mutable. endoflife.date has no product for it (`pause`
+      returns 404, measured 2026-10-19 on both /api/pause.json and /api/v1/products/pause), so the
+      horizon is UNKNOWN by construction and the row passes only while its dated manual_review is
+      unexpired. A pause container has no attack surface of its own (no shell, no network, no
+      port), so the review is a version check, not a security triage.
+    manual_review:
+      last_checked: "2026-10-19"
+      expires: "2027-01-19"
+      url: "https://github.com/kubernetes/kubernetes/tree/master/build/pause"

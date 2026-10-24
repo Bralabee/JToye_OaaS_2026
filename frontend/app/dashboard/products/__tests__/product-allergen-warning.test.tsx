@@ -12,6 +12,7 @@
  */
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import ProductsPage from "../page"
+import { chooseTestShop, getWithShop } from "@/test-utils/shop-assignment"
 import apiClient from "@/lib/api-client"
 
 jest.mock("@/lib/api-client")
@@ -73,6 +74,7 @@ async function openCreateAndSubmitPersonaDish() {
   fireEvent.change(screen.getByLabelText("Product Title"), { target: { value: "Jollof Rice" } })
   fireEvent.change(screen.getByLabelText("Ingredients"), { target: { value: PERSONA_INGREDIENTS } })
   fireEvent.change(screen.getByLabelText(/^Price/), { target: { value: "4.50" } })
+  await chooseTestShop()
   fireEvent.click(screen.getByRole("button", { name: /create product/i }))
 }
 
@@ -83,7 +85,7 @@ function declaredGroup() {
 describe("#787 vendor side: the save-time warning (D-09)", () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockedApiClient.get.mockResolvedValue(listOf([]))
+    mockedApiClient.get.mockImplementation(getWithShop([]) as jest.Mock)
     mockedApiClient.post.mockResolvedValue({ data: savedWithWarning })
   })
 

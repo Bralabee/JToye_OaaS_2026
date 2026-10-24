@@ -1,0 +1,119 @@
+# 29-28 merge and deploy evidence
+
+## Task 1: pre-PR checks and PR open (2026-10-20T06:53:35Z)
+Static suite on 652ac77d (after the residue allowlist renumber; that gate was rc=1 on 2d32870d before it):
+  head 2d32870dac94272b34e8c182cb70875cee26c9ef 2026-10-20T06:51:36Z
+  rc=0 scripts/check-branch-behind-base.sh
+  rc=0 k8s/scripts/check-render-invariants.sh
+  rc=0 k8s/scripts/render-golden.sh
+  rc=0 k8s/scripts/check-env-contract.sh
+  rc=0 k8s/scripts/check-no-plaintext-secrets.sh
+  rc=0 k8s/scripts/check-connection-math.sh
+  rc=0 scripts/check-dependency-horizons.sh
+  rc=0 scripts/check-no-create-extension.sh
+  rc=0 scripts/check-gate-enforcement.sh
+  rc=0 scripts/check-alert-rules.sh
+  rc=1 scripts/check-no-object-store-residue.sh  (on 2d32870d; rc=0 on 652ac77d after the renumber)
+  rc=0 scripts/check-doc-citations.sh
+  rc=0 scripts/check-handoff-contract.sh
+  rc=0 scripts/check-dply02-dispositions.sh
+check-branch-behind-base.sh at PR open: rc=0
+PR body --scan-text: rc=0 findings=0; controls: Co-Authored-By line rc=1, 'closes #99' rc=1
+PR=984 https://github.com/Bralabee/JToye_OaaS_2026/pull/984
+Stored body read back: diff vs /tmp/claude-29-28/pr-body.md empty
+Attribution lines in stored body: 0; positive controls: Co-Authored-By=1, robot-emoji=1
+Deviation: the PR was opened before 29-19 and the 29-27 SUMMARY, so round 1 runs while the cost data posts. The cost commits land on this branch before merge.
+
+## Task 2 (run by Claude on the owner's instruction "you can do most of these things on my behalf", 2026-10-20)
+Review series: round 1 /code-review --comment (admissible 4, all fixed), round 2 /review-verify 984 on 6e42c7e79a44 (admissible 0, Review-Record posted, issuecomment-6289824284).
+CI on 6e42c7e7: push run 39414681728 attempt 1 Run Tests failed at the frontend build (next/font/google could not fetch Work Sans: "Can't resolve '@vercel/turbopack-next/internal/font/google/font'"); the PR run on the same sha passed; attempt 2 completed success. gh pr checks 984: 29 pass, 7 skipping, 0 fail, rc 0; review-record pass.
+Step 2 (2026-10-20T14:36:06Z): local HEAD = PR head = 6e42c7e79a4467130f28558d4317fca16b9580a2; check-branch-behind-base.sh rc=0 (0 behind a5dd4d94); core-java aggregate health 200 (kubectl exec rc 0).
+Step 3: squash message /tmp/claude-29-28/squash-msg.md, check-dply02-dispositions.sh --scan-text rc=0 findings=0.
+Step 4: origin/main still a5dd4d94; gh variable set DEPLOY_STAGING_ENABLED true; read back [true]; gh pr merge 984 --squash rc=0 at 2026-10-20T14:36:23Z.
+Merged: bffd2f74b87558eb966d548bd2813529b53c2464 (committer 2026-10-20T15:36:28+01:00 = 14:36:28Z, after both step-2 reads). Attribution lines in the stored merge message: 0.
+
+## Task 3, attempt 1: deploy-staging on bffd2f74 FAILED at digest parity (rollback rule applied)
+Run 39440780472 https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/39440780472, job "Deploy to Staging" 118743386422 (2026-10-20T16:17Z..16:21Z).
+Steps: 1-14 success (Key Vault preflight, apply, rollout status for all three); 15 "Digest parity" FAILURE; 16 health and 17 smoke skipped; 18 "Rollback on failure" ran (rollout undo core-java, edge-go, frontend; exits 1 by design).
+Parity output: core-java e46092ee... MATCH (bffd2f74) AND 0a462ba9... NOT IN THE EXPECTED SET; edge-go MATCH; frontend MATCH.
+Cause (measured 16:24Z): 0a462ba9 is ghcr.io/bralabee/jtoye-core-java:6e95ee6c, the previous revision, read from a pod still in its grace period. rollout status had printed "1 old replicas are pending termination" and then success; the gate listed every app=core-java pod, a terminating one included (it still reported ready=true). The built image itself was correct.
+Rollback rule: gh variable set DEPLOY_STAGING_ENABLED false at 2026-10-20T16:22:01Z, read back [false]. No issue touched.
+Estate after rollback: core-java, edge-go and frontend all on 6e95ee6c (the pre-merge state); `bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag 6e95ee6c44e357e3ff88964ed9674bf066fd7b61` (fixed gate) rc 0, 3 services MATCH.
+Fix: branch fix/29-parity-drain, commit e6542927: the gate waits up to --drain-timeout (default 180 s) for terminating pods, FAILs if one stays, then reads only pods without a deletionTimestamp.
+Fix proof: --selftest 25/25 rc 0; break arm (wait removed): old-pod-stuck rc 0 (want 1), selftest rc 1; restored (cmp equal), rc 0 again.
+Live proof: rollout restart deployment/core-java (same image 6e95ee6c), rollout status success, a pod still terminating right after it (core-java-869648bdf-4knpm); the fixed gate printed "1 old pod(s) still terminating; waiting up to 180s", then MATCH, rc 0, 20 s. (The same sequence on edge-go drained before the first poll: no wait printed.)
+
+## Fix PR #986, review round 1 (code-review on 3b32b3ca): the filter itself is now under test
+Reproduced: with the first fix, misspelling the filter key (`deletionTimestampX`) still gave selftest 25/25 rc 0, so the filter could not fail.
+Redesign (ac867be2): one `kubectl get pods -o json` per poll, sorted by one jq program (POD_JQ) into live digests and terminating pods; the selftest feeds POD_JQ pod-list JSON; one drain deadline shared by all services; a pod still terminating at the deadline is named and counted, and the remaining services are still compared.
+Selftest: 31/31 rc 0 (adds old-pod-live and five content checks: the drain arm waited and matched only the new pod; the stuck arm names the stuck pod AND still reports a wrong frontend image).
+Break arms, each red, then restored by sha256 and clean again rc 0:
+  POD_JQ key misspelled (deletionTimestampX): selftest rc 1 (old-pod-drains rc 1, two content checks fail).
+  POD_JQ drops terminating pods (`then empty`): selftest rc 1 (two content checks fail).
+Live, failing direction, on one real terminating pod with a DIFFERENT digest (2026-10-20, staging): `kubectl set image deployment/core-java core-java=ghcr.io/bralabee/jtoye-core-java:bffd2f74b87558eb966d548bd2813529b53c2464`, `rollout status` success, then at once, both `--context jtoye-stg-aks --tag bffd2f74b87558eb966d548bd2813529b53c2464 --services core-java`:
+  the gate as on main (copied into scripts/ for the run, then removed): rc 1, `0a462ba9... NOT IN THE EXPECTED SET` + `e46092ee... MATCH` (the CI output, reproduced);
+  the fixed gate: "core-java: 1 old pod(s) still terminating; waiting until the shared 180s deadline", then `e46092ee... MATCH`, rc 0.
+  Then `kubectl rollout undo deployment/core-java`; full parity against 6e95ee6c44e357e3ff88964ed9674bf066fd7b61 rc 0.
+  (An earlier attempt ran the main copy from /tmp, where it resolved its repo root to /tmp and VOIDed (rc 2) on the missing context guard; it compared nothing and is not counted.)
+Staging changes made for these proofs, all reverted: rollout restart edge-go and core-java (same image), set image core-java to bffd2f74 twice, each followed by rollout undo.
+
+## Fix PR #986, review round 2 (review-verify on 97282566): the stuck-pod check had no arm of its own
+Reproduced by the reviewer: `if [ "$STUCK" -gt 0 ]; then` -> `if false; then` left the selftest at rc 0, because old-pod-stuck also plants a wrong frontend image.
+Fix (e6a6c539): arm stuck-only, where one core-java pod stays terminating and every live digest matches, so the only thing that can fail it is the stuck-pod check. Its content check asserts that FAIL message.
+Selftest 33/33 rc 0. Break (stuck check -> `if false`): stuck-only rc 0 (want 1), selftest rc 1. Restored by sha256, clean again rc 0.
+Rounds 3 and 4 (Review-Resolution comments on #986): round 3 ran on 449deb57e09e, admissible 0; round 4 ran on bf85ae46b848 (a changelog entry only), admissible 0. Admissible per round: 1 -> 1 -> 0 -> 0.
+
+## Task 3, attempt 2: deploy-staging on the #986 merge commit 33585b23 (the fix PR for the parity race)
+Fix merged: PR #986 as 33585b230a95e37100c3f4e0b19dcacf4e37123e at 2026-10-20T18:06:34Z.
+Pre-flip at 2026-10-20T18:06:30Z-18:06:32Z: local head = PR head bf85ae46; check-branch-behind-base.sh rc 0; core-java aggregate health 200; main unchanged.
+DEPLOY_STAGING_ENABLED set to true, read back [true]. Squash message scanned with check-dply02-dispositions.sh --scan-text rc 0. Attribution lines in the stored merge message: 0.
+Issue #985 (the parity race) was closed by the #986 merge.
+CI run 39471893302 https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/39471893302
+  Job "Deploy to Staging": completed success at 2026-10-20T19:35Z.
+  Steps 1-17 success (step 15 Digest parity success, step 16 health success, step 17 smoke test success); step 18 "Rollback on failure" skipped.
+Operator-host parity: `bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag 33585b230a95e37100c3f4e0b19dcacf4e37123e` rc 0.
+  core-java sha256:53c33c05... MATCH
+  edge-go   sha256:4c46f907... MATCH
+  frontend  sha256:353af9e7... MATCH
+DPLY-01 spec: staging-login spec, STAGING_E2E=1, desktop project, against https://app-staging.olajay.co.uk, vendor password read via az_read: 2 passed (13.5s), rc 0, at 2026-10-20T19:36:38Z.
+This is the first green CI deploy of the phase (D-04): #99 closing evidence.
+
+### Dispositions applied (verbatim copy of /tmp/claude-29-28/apply.log, committed whole as evidence/29-28-dispositions-apply.txt; timestamps UTC; the "✓ Closed issue" lines are gh's own untimestamped output, each followed by the script's timestamped readback line)
+2026-10-20T19:36:44+00:00 --verify-approval rc=0 :: SUMMARY verify-approval approved=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 manifest=1d50dd2c89e8a3a3025fa675239102a4e65c6f3de8a425a53366419dcd4b20c7 pinned=19 findings=0
+2026-10-20T19:36:53+00:00 --pre-close rc=0 :: SUMMARY pre-close rows=20 findings=0
+2026-10-20T19:36:56+00:00 #98 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#99 ([P2-8] CI/CD deploy half is theatre: dead staging gate, image drift, self-reverting smoke test)
+2026-10-20T19:37:00+00:00 #99 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#100 ([P2-9] Sealed Secrets half-landed: plaintext Secret template still a live kustomize resource)
+2026-10-20T19:37:03+00:00 #100 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#101 ([P2-10] No PITR (RPO 24h) while SYSTEM_DESIGN_V2 falsely claims WAL-G; no DB HA)
+2026-10-20T19:37:08+00:00 #101 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#112 ([P3-10] Ops readiness: runbook stubs, no paging path, no SLOs)
+2026-10-20T19:37:12+00:00 #112 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:14+00:00 #271 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:17+00:00 #292 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:19+00:00 #293 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:22+00:00 #294 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#296 (If an in-cluster Keycloak is ever deployed, restore the auth.jtoye.co.uk ingress rule and TLS SAN with its Service and Deployment)
+2026-10-20T19:37:25+00:00 #296 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#297 (Install Calico on the local minikube profile to actually enforce NetworkPolicies (prerequisite now cleared))
+2026-10-20T19:37:29+00:00 #297 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#299 (Customer-storefront realm is unconfigured in EVERY k8s environment — base, staging, production and local)
+2026-10-20T19:37:32+00:00 #299 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#300 (Work Order H: sealed-secrets / external-secrets for the local secrets path)
+2026-10-20T19:37:36+00:00 #300 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:38+00:00 #301 comment=equal readback; state OPEN -> OPEN (want OPEN)
+2026-10-20T19:37:41+00:00 #302 comment=equal readback; state CLOSED -> CLOSED (want CLOSED)
+2026-10-20T19:37:43+00:00 #304 comment=equal readback; state OPEN -> OPEN (want OPEN)
+✓ Closed issue Bralabee/JToye_OaaS_2026#592 (One-click unsubscribe (RFC 8058) is unwired in k8s — the List-Unsubscribe header degrades to RFC 2369 in every deployed environment)
+2026-10-20T19:37:47+00:00 #592 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+✓ Closed issue Bralabee/JToye_OaaS_2026#859 (Nothing asserts at deploy time that customer email verification is on; dev runs with it off)
+2026-10-20T19:37:51+00:00 #859 comment=equal readback; state OPEN -> CLOSED (want CLOSED)
+2026-10-20T19:37:59+00:00 --post-close rc=0 :: SUMMARY post-close rows=20 findings=0
+Summary of the apply: 18 comments posted and read back equal; 10 issues closed by this run (99, 100, 101, 112, 296, 297, 299, 300, 592, 859) and 4 already closed (271, 292, 293, 302), so 14 issues CLOSED in all; 4 OPEN as approved (98, 294, 301, 304); the 2 pr-reference rows (953, 954) are MERGED and were not touched (14 + 4 + 2 = 20 rows). --verify-approval and --pre-close (19:36:44Z and 19:36:53Z) both precede the first comment (19:36:56Z).
+
+## After the close: the deploy variable and the #987 deploy (read 2026-10-20, closing PR round 1)
+`gh variable get DEPLOY_STAGING_ENABLED -R Bralabee/JToye_OaaS_2026` at 19:52Z: true. Left on deliberately (owner-delegated): every merge to main now redeploys staging, so follow-up merges are serial and each is watched.
+PR #987 (Grafana memory) merged as 1db60c70ada0d51a660f84086f2eb4c9d68f6809 at 2026-10-20T19:38:28Z; its deploy is run 39485184302. At 19:53:44Z the run was status in_progress, conclusion empty (Integration Tests (Testcontainers RLS) still running; no deploy job yet). Its conclusion is not recorded here.
+Live staging images at 2026-10-20T19:52:06Z (`kubectl --context jtoye-stg-aks -n jtoye-staging get deploy core-java edge-go frontend`, read-only): ghcr.io/bralabee/jtoye-{core-java,edge-go,frontend}:33585b230a95e37100c3f4e0b19dcacf4e37123e.
+Merging the closing docs PR (#991) redeploys staging as well.

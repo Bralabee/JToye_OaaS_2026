@@ -1,0 +1,10 @@
+{
+  "command": "STRIPE_PK_VAR_SELFTEST_FORMAT=tap bash scripts/check-stripe-pk-var.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..11\nnot ok 1 - staging-test\n  ---\n  message: 'rc=2 (want 0): VOID: not implemented '\n  ...\nnot ok 2 - staging-empty\n  ---\n  message: 'rc=2 (want 1): VOID: not implemented '\n  ...\nnot ok 3 - staging-unset\n  ---\n  message: 'rc=2 (want 1): VOID: not implemented '\n  ...\nnot ok 4 - staging-live\n  ---\n  message: 'rc=2 (want 1): VOID: not implemented '\n  ...\nnot ok 5 - staging-malformed\n  ---\n  message: 'rc=2 (want 1): VOID: not implemented '\n  ...\nnot ok 6 - production-test\n  ---\n  message: 'rc=2 (want 1): VOID: not implemented '\n  ...\nnot ok 7 - production-empty\n  ---\n  message: 'rc=2 (want 1): VOID: not implemented '\n  ...\nnot ok 8 - production-live\n  ---\n  message: 'rc=2 (want 0): VOID: not implemented '\n  ...\nnot ok 9 - bad-environment\n  ---\n  message: 'output lacks \"USAGE ERROR\": VOID: not implemented '\n  ...\nnot ok 10 - staging-secret\n  ---\n  message: 'rc=2 (want 1): VOID: not implemented '\n  ...\nnot ok 11 - no-echo\n  ---\n  message: 'staging-test.out does not describe the key, so the scan above proves nothing'\n  ...\n# SELFTEST: 0/11\n",
+  "targetTest": "staging-test",
+  "targetFile": "scripts/check-stripe-pk-var.sh",
+  "expected": "STRIPE_PK_VAR=<pk_test_ fixture> --environment staging exits 0 and prints environment=staging prefix=pk_test_ length=<n>",
+  "actual": "rc=2 'VOID: not implemented' (the check body is a stub; only the --selftest arms exist)",
+  "semanticAssessment": "Every arm executed and failed on its own planned assertion (wrong rc, or for bad-environment the missing USAGE ERROR text, for no-echo the non-vacuity control), not on a harness fault."
+}

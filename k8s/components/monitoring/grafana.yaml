@@ -1,0 +1,299 @@
+# Grafana for jtoye-staging (Phase 29 plan 29-24, DPLY-03 part B, D-16, D-19).
+#
+# THE ONLY MONITORING HOST WITH A PUBLIC NAME (D-19): https://grafana-staging.olajay.co.uk through
+# Traefik, with its own certificate and TLS Secret (INV-15(a)/(b)) and the staging header snippet
+# with X-Robots-Tag noindex (INV-15(c)). Prometheus and Alertmanager stay cluster-internal; Grafana
+# reaches Prometheus as http://prometheus:9090, the same URL the compose datasource names.
+#
+# ITS OWN LOGIN (T-29-88). The admin user and password come from Key Vault through grafana-kv
+# (grafana-admin-credentials: admin-user is an estate fact, admin-password is generated once by
+# scripts/staging-secrets.sh), as its own Workload Identity (client_id_grafana, federated to
+# system:serviceaccount:jtoye-staging:grafana). Anonymous access, sign-up and the plugin admin UI
+# are off; the analytics and update checks are off (no egress to grafana.com is admitted anyway).
+#
+# ONE DASHBOARD CORPUS. The datasource, the dashboard provider and the STOMP dashboard are committed
+# byte copies of infra/monitoring/grafana (k8s/copy-parity.conf), served by content-hashed
+# ConfigMaps at the paths compose mounts: /etc/grafana/provisioning/{datasources,dashboards} and
+# the provider's /var/lib/grafana/dashboards.
+#
+# NO PERSISTENCE: /var/lib/grafana is an emptyDir. Everything Grafana shows is provisioned from
+# files, and GF_SECURITY_ADMIN_* is applied on every fresh start, so a restart loses only UI edits
+# (allowUiUpdates) and sessions. Measured locally (grafana/grafana:13.2.4, --read-only, uid 472,
+# tmpfs at /var/lib/grafana and /tmp): health 200, anonymous /api/search 401, wrong password 401,
+# sign-up 401, the dashboard and datasource provisioned, no error-level log line.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: monitoring
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+    component: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+        component: monitoring
+    spec:
+      serviceAccountName: grafana
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        # The grafana image's own user (uid 472).
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: grafana
+        # = infra/monitoring/docker-compose.monitoring.yml pin; horizon row grafana/grafana.
+        image: grafana/grafana:13.2.4
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin-credentials
+              key: admin-user
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin-credentials
+              key: admin-password
+        - name: GF_SERVER_ROOT_URL
+          value: "https://grafana-staging.olajay.co.uk"
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "false"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_ANALYTICS_REPORTING_ENABLED
+          value: "false"
+        - name: GF_ANALYTICS_CHECK_FOR_UPDATES
+          value: "false"
+        - name: GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES
+          value: "false"
+        - name: GF_PLUGINS_PLUGIN_ADMIN_ENABLED
+          value: "false"
+        # Grafana 12+ installs a preinstall list of plugins from grafana.com at start. No egress
+        # to the internet is admitted (grafana-allow), so it is switched off rather than left to
+        # fail on every start.
+        - name: GF_PLUGINS_PREINSTALL_DISABLED
+          value: "true"
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 4
+        # MEMORY (issue #968). Measured on grafana/grafana:13.2.4 with the staging env, a 384Mi
+        # cgroup and a scan-shaped burst (8 parallel clients, ~14k junk-path and login requests):
+        # anonymous memory 240Mi at start and 275-301Mi under the burst (72-78% of the old limit),
+        # about 81% with kernel memory, so no room for the next spike. Idle use read 263Mi in the
+        # issue and 224Mi on the replacement pod. The request (320Mi) sits above both idle figures,
+        # so Grafana is not the first eviction candidate at rest; the limit (512Mi) is 1.65x the worst
+        # measured anon+kernel, and 1.33x the 384Mi the real kill exceeded. Staging node budget: the
+        # Grafana node carried 1718Mi of 2788Mi requested, so +192Mi of request fits (68%); a memory
+        # LIMIT is not scheduled against, only the request is.
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "320Mi"
+          limits:
+            memory: "512Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/grafana
+        - name: tmp
+          mountPath: /tmp
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+          readOnly: true
+        - name: dashboard-provider
+          mountPath: /etc/grafana/provisioning/dashboards
+          readOnly: true
+        - name: dashboards
+          mountPath: /var/lib/grafana/dashboards
+          readOnly: true
+      volumes:
+      - name: data
+        emptyDir:
+          sizeLimit: 256Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 64Mi
+      # kustomize rewrites these three to the generated, content-hashed ConfigMaps.
+      - name: datasources
+        configMap:
+          name: grafana-datasources
+      - name: dashboard-provider
+        configMap:
+          name: grafana-dashboard-provider
+      - name: dashboards
+        configMap:
+          name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: http
+    protocol: TCP
+    name: http
+---
+# grafana-public: the D-19 host. The shape of keycloak-public (its own certificate and Secret, the
+# staging snippet with the base headers plus noindex, per-IP limits); a Grafana page load fires a
+# few dozen API calls, so the limits sit between keycloak-public's and mailpit-ui's.
+#
+# THE EDGE GATE (#968 item 3, owner approval 2026-10-20, option A). The Grafana login page was
+# open to the internet, so anyone could throw password guesses at the admin login. Traefik now
+# answers 401 before Grafana sees a request, by the same chain as the testers' mail UI
+# (mailpit-ui-ingress.yaml, plan 29-22 D-33): the Ingress-NGINX provider's auth-type /
+# auth-secret annotations, from Secret grafana-edge-credentials (key `auth`, one apr1 htpasswd
+# line for user staging-operator), which the always-on secret-sync pod keeps synced from Key
+# Vault through SecretProviderClass grafana-edge-kv. Everything in that file's header about how
+# Traefik reads these annotations applies unchanged: an unresolvable Secret SKIPS this Ingress
+# (fail CLOSED, no route and never an open one), the non-TLS router carries only the redirect so
+# the credential is never sent over http, and Traefik strips the Authorization header before
+# forwarding, so Grafana's own login is a second, separate credential behind this one.
+# Basic auth runs before the rate-limit middlewares, so limit-rps does not throttle failed
+# guesses (accepted for the mail UI: a ~190-bit generated password). INV-21
+# (k8s/scripts/check-render-invariants.sh) refuses a staging render in which this Ingress loses
+# auth-type basic or names an auth-secret no SecretProviderClass syncs. Prometheus scrapes
+# Grafana through the Service, not this Ingress, so the gate does not touch it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-public
+  labels:
+    app: grafana
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: "grafana-edge-credentials"
+    nginx.ingress.kubernetes.io/auth-secret-type: "auth-file"
+    nginx.ingress.kubernetes.io/auth-realm: "J'Toye staging Grafana - operators only"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "X-Robots-Tag: noindex, nofollow";
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - grafana-staging.olajay.co.uk
+    secretName: jtoye-staging-grafana-tls
+  rules:
+  - host: grafana-staging.olajay.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+---
+# grafana-allow. INV-7 row grafana-allow@k8s/staging; k8s/base/networkpolicies/README.md carries the
+# same rows.
+#   Ingress: the ingress controller namespace (Traefik), TCP 3000 only.
+#   Egress:  kube-dns, then Prometheus on 9090 (prometheus-allow admits app=grafana there). Nothing
+#            else: no internet, no database, no Alertmanager.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-allow
+  labels:
+    app.kubernetes.io/name: grafana-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090

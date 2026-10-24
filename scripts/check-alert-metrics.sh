@@ -56,14 +56,41 @@
 #
 # USAGE
 #   bash scripts/check-alert-metrics.sh [path/to/alerts.yml]
-#   PROM_URL=http://host:9090 bash scripts/check-alert-metrics.sh
+#   ALERT_RUNTIME=compose PROM_URL=http://host:9090 bash scripts/check-alert-metrics.sh
+#   ALERT_RUNTIME=k8s PROM_URL=http://localhost:19090 bash scripts/check-alert-metrics.sh   # staging
+#   (ALERT_RUNTIME is required whenever PROM_URL is set; see below)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RULES_FILE="${1:-$REPO_ROOT/infra/monitoring/prometheus/alerts.yml}"
+PROM_URL_GIVEN="${PROM_URL:-}"   # before the default: ALERT_RUNTIME below is implicit only without it
 PROM_URL="${PROM_URL:-http://localhost:9091}"
+
+# ALERT_RUNTIME (issue #972): `compose` or `k8s`. Rules listed in scripts/alert-k8s-only.txt read
+# series only the cluster produces; against compose their empty selector is expected and is NOT a
+# violation. Against the staging Prometheus (ALERT_RUNTIME=k8s) no exemption applies, so a broken
+# cert-manager scrape (wrong port, a NetworkPolicy drop) is a violation there.
+#
+# THE RUNTIME IS NEVER GUESSED. A port-forwarded staging Prometheus is just as much a
+# `localhost:<port>` as the compose one, so the URL cannot say which it is, and a wrong guess of
+# `compose` would skip the very rule the cluster run exists to judge and PASS. So it is implicit
+# ONLY for the compose default (PROM_URL unset, i.e. http://localhost:9091); any other PROM_URL
+# with ALERT_RUNTIME unset is a VOID (rc 2) naming the fix.
+if [ -z "${ALERT_RUNTIME:-}" ]; then
+  if [ -z "$PROM_URL_GIVEN" ]; then
+    ALERT_RUNTIME=compose
+  else
+    echo "VOID: PROM_URL is set (${PROM_URL_GIVEN}) but ALERT_RUNTIME is not. This gate cannot tell a staging Prometheus from a compose one by its URL, and judging a cluster as compose silently skips the k8s-only rules (scripts/alert-k8s-only.txt). Set ALERT_RUNTIME=k8s (the port-forwarded staging Prometheus) or ALERT_RUNTIME=compose. Nothing was checked." >&2
+    exit 2
+  fi
+fi
+K8S_ONLY_FILE="${K8S_ONLY_FILE:-$SCRIPT_DIR/alert-k8s-only.txt}"
+case "$ALERT_RUNTIME" in
+  compose|k8s) ;;
+  *) echo "VOID: ALERT_RUNTIME must be 'compose' or 'k8s' (got '$ALERT_RUNTIME'); nothing was checked" >&2; exit 2 ;;
+esac
 
 VIOLATIONS=0
 violation() { echo "FAIL: $*" >&2; VIOLATIONS=$((VIOLATIONS + 1)); }
@@ -98,10 +125,12 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 #                     series. #343 fixed the data and left the exemption, so this gate
 #                     was red on main from the moment it merged. It is NOT in CI (it
 #                     needs a live Prometheus), so nothing in the pipeline noticed.
-#   NoOrdersCreated   #343 corrected the selector to include /public/shops/{slug}/orders
-#                     — the reason text above still quoted the OLD selector, which no
-#                     longer existed in the file — and a guest order was then placed
-#                     (ORD-00000000-20260729-63EB83BC), so the series is live.
+#   NoOrdersCreated   (historical; the selector it describes is RETIRED, see the #973
+#                     note below.) #343 corrected the then-selector, the POST 201
+#                     http_server_requests_seconds_count series, to include
+#                     /public/shops/{slug}/orders, and a guest order was then placed
+#                     (ORD-00000000-20260729-63EB83BC), so that series was live. Since
+#                     #973 the rule reads jtoye_orders_total, which needs no order.
 #
 # A THIRD WAS REMOVED ON 2026-07-30, by its own written trigger:
 #
@@ -116,17 +145,19 @@ void()      { echo "VOID: $*" >&2; exit 2; }
 # All three removals came from the STALE arm rather than from review, which is the point
 # of writing the trigger INTO the entry: the exemption cannot outlive its reason.
 #
-# CONSEQUENCE, RECORDED RATHER THAN HIDDEN: NoOrdersCreated is now covered by M-1 on its
-# own merits, so a stack on which no order has been placed SINCE CORE-JAVA LAST STARTED
-# will fail M-1 for it. That is the intended trade — this gate grades a LIVE runtime, and
-# a blind order alert is a fact about that runtime worth surfacing rather than exempting
-# in perpetuity. Re-adding an entry is the wrong fix; placing an order is the right one.
+# NoOrdersCreated NO LONGER GOES BLIND AFTER A RESTART (issue #973). It used to read the
+# http_server_requests_seconds_count POST 201 series, which Micrometer creates on the FIRST
+# matching request and which dies with the JVM, so M-1 went red after every core-java
+# restart until `scripts/seed-order-metric.sh` placed a real order. The rule now reads
+# `jtoye_orders_total` (the `jtoye.orders.created` counter, registered in the
+# BusinessMetricsService constructor, so it is exposed at 0.0 from the first scrape). Do NOT
+# rename it to jtoye_orders_created_total: the exporter strips the reserved `_created`
+# suffix and that name does not exist. M-1 covers the rule on its own merits and a fresh
+# stack passes it with zero orders. Re-adding an exemption is still the wrong fix.
 #
-# That fix is now committed rather than retyped: `scripts/seed-order-metric.sh` places one
-# real guest order through the public storefront path and waits for the scrape. The M-1
-# failure message names it, because the underlying cause is not guessable from the red —
-# the series is a *request* counter that does not survive a restart, so the alert is blind
-# after every rebuild until the first order, which is precisely when you would want it.
+# `scripts/seed-order-metric.sh` is kept: it proves the order path end to end on a cash
+# stack (and, with FORCE=1, clears a FIRING NoOrdersCreated), but it is no longer needed to
+# make this gate green.
 # ---------------------------------------------------------------------------------
 KNOWN_DATALESS=()
 
@@ -337,10 +368,12 @@ done
 #                  The instant a 5xx is served the series is created, the expression
 #                  evaluates, and the rule fires on its own. It is not blind; it is
 #                  quiet, and it wakes itself.
-#   ABSENCE-DETECTOR  NoOrdersCreated. Fires on `< 1`, i.e. on the ABSENCE of data. With
-#                  the series gone it yields 0 samples forever, so the one condition it
-#                  exists to detect is exactly the one it cannot see. GENUINELY blind,
-#                  and it needs seeding (scripts/seed-order-metric.sh).
+#   ABSENCE-DETECTOR  A rule that fires on `< 1`, i.e. on the ABSENCE of data. With its
+#                  series gone it yields 0 samples forever, so the one condition it exists
+#                  to detect is exactly the one it cannot see: GENUINELY blind. The class
+#                  is why S-1 exists. NoOrdersCreated was the live example until #973
+#                  pointed it at a counter registered at startup (jtoye_orders_total), so
+#                  its series now exists from the first scrape and it is evaluable.
 #   DEAD           StompBrokerLag's class: a label that exists on no series of the metric
 #                  family, so the filter can never match no matter what happens.
 #
@@ -401,7 +434,7 @@ for entry in "${SELF_HEALING[@]}"; do
     violation "SELF_HEALING '$sh_name': could not read its expression from $RULES_FILE — refusing to certify a rule whose shape cannot be inspected"
     sh_ok=0
   elif grep -qE '(<=|<|==[[:space:]]*0|absent\()' <<<"$sh_expr"; then
-    violation "S-1 SELF_HEALING '$sh_name' fires on ABSENCE (its expression contains <, <=, ==0 or absent()). An absence-detector CANNOT be self-healing: the empty case is precisely what it must detect. This is the NoOrdersCreated class — it needs a seed, not an exemption."
+    violation "S-1 SELF_HEALING '$sh_name' fires on ABSENCE (its expression contains <, <=, ==0 or absent()). An absence-detector CANNOT be self-healing: the empty case is precisely what it must detect. This is the absence-detector class (a series that does not exist cannot signal its own absence): point the rule at a series that exists from startup, as #973 did for NoOrdersCreated, rather than exempting it or seeding data."
     sh_ok=0
   fi
   # Granted ONLY when every assertion above passed. A rejected entry must fall through
@@ -415,6 +448,24 @@ for entry in "${SELF_HEALING[@]}"; do
 done
 
 # =================================================================================
+# K8S_ONLY hygiene (issue #972): scripts/alert-k8s-only.txt, same rules as KNOWN_DATALESS
+# =================================================================================
+declare -A K8S_ONLY_MAP=()
+[ -r "$K8S_ONLY_FILE" ] || void "k8s-only list not readable: $K8S_ONLY_FILE"
+while IFS= read -r ko_line || [ -n "$ko_line" ]; do
+  case "$ko_line" in ''|'#'*) continue ;; esac
+  IFS='|' read -r ko_name ko_reason ko_owner <<<"$ko_line"
+  [ -n "${ko_name:-}" ] || { violation "k8s-only entry is malformed: '$ko_line'"; continue; }
+  [ -n "${ko_reason:-}" ] || violation "k8s-only '$ko_name' has an EMPTY reason"
+  [ -n "${ko_owner:-}" ]  || violation "k8s-only '$ko_name' has an EMPTY owner"
+  [ -n "${K8S_ONLY_MAP[$ko_name]:-}" ] && violation "k8s-only list has a DUPLICATE entry: $ko_name"
+  K8S_ONLY_MAP[$ko_name]=1
+  printf '%s\n' "$EXTRACT" | awk -F'\t' -v n="$ko_name" '$1==n {f=1} END {exit !f}' \
+    || violation "k8s-only list names '$ko_name', which is not a live rule in $RULES_FILE — STALE entry, remove it"
+done < "$K8S_ONLY_FILE"
+K8S_ONLY_SKIPPED=0
+
+# =================================================================================
 # M-1 — every live rule's selectors must match >= 1 series
 # =================================================================================
 declare -A RULE_EMPTY=()
@@ -425,6 +476,13 @@ while IFS=$'\t' read -r rule sel; do
   CHECKED=$((CHECKED + 1))
   count="$(query_count "$sel")"
   if [ "$count" -lt 1 ]; then
+    # A rule that reads cluster-only series, against compose: expected, said out loud, and not
+    # entered in RULE_EMPTY (it is not a KNOWN_DATALESS candidate). Against k8s it falls through.
+    if [ "$ALERT_RUNTIME" != k8s ] && [ -n "${K8S_ONLY_MAP[$rule]:-}" ]; then
+      K8S_ONLY_SKIPPED=$((K8S_ONLY_SKIPPED + 1))
+      echo "  M-1   '$rule' selector empty — K8S-ONLY rule against ALERT_RUNTIME=$ALERT_RUNTIME (issue #972, scripts/alert-k8s-only.txt); run with ALERT_RUNTIME=k8s against the staging Prometheus to check it"
+      continue
+    fi
     RULE_EMPTY["$rule"]="${RULE_EMPTY["$rule"]:-}${sel}"$'\n'
     # SELF_HEALING: the empty selector is expected and resolves itself. S-2 is asserted
     # HERE, against the live runtime, because it is a property of the metric family and
@@ -450,7 +508,7 @@ while IFS=$'\t' read -r rule sel; do
       # KNOWN_DATALESS header explicitly calls the wrong fix).
       case "$rule" in
         NoOrdersCreated)
-          hint=$'\n       CAUSE: http_server_requests_seconds_count is created on the FIRST matching request and is destroyed when core-java restarts — so this is expected on a freshly rebuilt stack, and it means the alert is currently blind.\n       FIX:   bash scripts/seed-order-metric.sh   (places one real guest order and waits for the scrape)' ;;
+          hint=$'\n       CAUSE: NoOrdersCreated reads jtoye_orders_total (the jtoye.orders.created counter, registered at core-java startup and exposed at 0.0 from the first scrape; the exporter strips the _created suffix, so the name is NOT jtoye_orders_created_total). Zero series means core-java is not being scraped, or the rule file was reverted to the old http_server_requests_seconds_count POST 201 selector.\n       FIX:   check the core-java scrape target and run `curl -s <core-java>/actuator/prometheus` for jtoye_orders_total; seeding an order is NOT the remedy any more.' ;;
       esac
       violation "M-1 rule '$rule' selector matches ZERO series — this rule can never fire: $sel$hint"
     fi
@@ -495,6 +553,7 @@ echo "  live rules : $LIVE_RULES"
 echo "  selectors  : $SELECTORS extracted, $CHECKED queried (incl. ${#DORMANT_RULES[@]} dormant)"
 echo "  self-heal  : $SELF_HEALED rule(s) empty-but-self-healing (#384), ${#SELF_HEALING[@]} declared"
 echo "  exemptions : ${#KNOWN_DATALESS[@]} KNOWN_DATALESS, ${#DORMANT_RULES[@]} DORMANT_RULES"
+echo "  k8s-only   : ${#K8S_ONLY_MAP[@]} declared, $K8S_ONLY_SKIPPED selector(s) skipped on ALERT_RUNTIME=$ALERT_RUNTIME"
 
 if [ "$VIOLATIONS" -gt 0 ]; then
   echo "FAILED: $VIOLATIONS live alert-metric violation(s)." >&2

@@ -1,0 +1,44 @@
+30-05 Task 2 — accept and start-prep gate: RED, break arm, GREEN (2026-10-22, branch fix/958-awaiting-payment-gate)
+
+Tests committed first: 3662acf0 (test(30-05): accept and start-prep of an unpaid order are refused too).
+Production at that commit: 30634b95 (the full gate). Each arm edits ONE block of
+core-java/src/main/java/uk/jtoye/core/order/OrderService.java from a scratch copy whose sha256 equals HEAD's blob,
+and is restored by cp + sha256 (94790ce867ebfb335021e65eff29428cda11a392607db5fe5d02a58251bed082) + marker count 0.
+
+Opening clean: git diff --quiet HEAD -- OrderService.java -> clean; working sha == HEAD blob sha.
+
+RED arm (guard set back to the pre-plan one, verbatim: newStatus == PREPARING -> InvalidStateTransitionException "...(#461).")
+  ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.order.OrderServiceTest'       rc=1
+    tests=50 failures=4 errors=0
+      startPreparation - Blocks unpaid ... (#461 / PAY-04)   expected AwaitingPaymentException but was InvalidStateTransitionException
+      #958: submitOrder refuses an unpaid card DRAFT        Expected AwaitingPaymentException to be thrown, but nothing was thrown
+      #958: confirmOrder refuses ... link payment FAILED    Expected AwaitingPaymentException to be thrown, but nothing was thrown
+      #958: a reference that is not yet CAPTURED/AUTHORIZED Expected AwaitingPaymentException to be thrown, but nothing was thrown
+    classifier: RED_EVIDENCE_OK / target_test_failed (30-05-red-task2-unit.json)
+    (first run, before the lenient save stubs were added and amended into 3662acf0, the three new arms failed on a
+     downstream NullPointerException from the unstubbed save; the stubs make a missing refusal read "nothing was thrown")
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests '...OrderAwaitingPaymentGateIntegrationTest'  rc=1
+    tests=8 failures=3 errors=0
+      #958: submitting an unpaid card DRAFT ...       expected 409 but was 200
+      #958: accepting a PENDING order whose payment is PENDING ...  expected 409 but was 200
+      #958: starting preparation ... payment FAILED ...  expected 409 but was 400 (the old invalid-state-transition)
+    passing on the pre-plan tree (regression guards): D-01 vendor submit, D-01 vendor confirm, D-01 vendor start-prep,
+      CAPTURED confirm (stock 5 -> 3, the stock arm's positive control), D-02 cancel
+    classifier: RED_EVIDENCE_OK / target_test_failed (30-05-red-task2-it.json)
+
+Restore: cp backup -> sha256 == HEAD blob, marker count 0.
+
+Break arm (plan acceptance criterion: condition narrowed back to newStatus == PREPARING, new exception kept)
+  both tasks in one run with --continue                                                               rc=1
+    OrderServiceTest tests=50 failures=3: the SUBMIT refusal and both CONFIRM refusals red; the start-prep refusal green
+    Gate IT tests=8 failures=2: the submit arm and the confirm arm red; the start-prep arm green
+  -> exactly the submit and confirm arms go red, as the criterion predicts.
+
+Restore: cp backup -> sha256 94790ce8... == HEAD blob, BREAK/RED marker count 0, git diff --quiet -> restored = HEAD.
+
+Closing clean (GREEN on the restored tree):
+  OrderServiceTest tests=50 failures=0 errors=0 (timestamp 2026-10-22T18:51:59Z)
+  OrderAwaitingPaymentGateIntegrationTest tests=8 failures=0 errors=0 (timestamp 2026-10-22T18:52:03Z)       rc=0
+  Neither :test nor :integrationTest reported UP-TO-DATE (both cleaned first).
+
+Production change needed by Task 2 beyond Task 1: none (the plan predicted none).

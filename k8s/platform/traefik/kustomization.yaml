@@ -1,0 +1,10 @@
+# k8s/platform/traefik — the staging ingress controller (Phase 29, D-29).
+#
+# Applied by scripts/staging-bootstrap.sh --stage traefik with an explicit
+# --context; never by `kubectl apply -k k8s/staging`. Depth 3 under k8s/, so the
+# render gates and render-golden.sh do not treat it as a target (RESEARCH
+# Pattern 3). Only our own objects live here; no third-party manifest is vendored.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - traefik.yaml

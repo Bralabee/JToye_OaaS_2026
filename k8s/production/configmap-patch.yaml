@@ -67,6 +67,9 @@ data:
   # the recipient's own machine.
   notification.email.tracking-base-url: "https://app.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
+  # #592 / RFC 8058: the one-click POST target's origin, explicit here and equal
+  # to this overlay's api.url (not left to the base value).
+  notification.unsubscribe.one-click-base-url: "https://api.olajay.co.uk"
   gdpr.dsar.verify-base-url: "https://app.olajay.co.uk/data-request/confirm"
   gdpr.dsar.export-download-base-url: "https://app.olajay.co.uk/data-request/download"
   staff.invite.accept-base-url: "https://app.olajay.co.uk/invite"

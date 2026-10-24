@@ -26,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
 import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
+import uk.jtoye.core.exception.AwaitingPaymentException;
 import uk.jtoye.core.exception.BasketChangedException;
 import uk.jtoye.core.exception.BasketConfirmationRequiredException;
 import uk.jtoye.core.exception.DsarExportUnavailableException;
@@ -43,6 +44,7 @@ import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderCapExceededException;
+import uk.jtoye.core.exception.ProductShopRequiredException;
 import uk.jtoye.core.exception.BulkCancelTooLargeException;
 import uk.jtoye.core.exception.CredentialClientMissingException;
 import uk.jtoye.core.exception.CredentialRevokedException;
@@ -104,6 +106,19 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problem.setTitle("Invalid State Transition");
         problem.setType(URI.create("https://jtoye.uk/errors/invalid-state-transition"));
+        return problem;
+    }
+
+    /**
+     * Phase 30-05 (issue #958): submit, confirm or start-prep of an order still awaiting its card or link payment.
+     * 409, not invalid-state-transition's 400: the request is well-formed and the transition legal, it conflicts with
+     * the order's payment state. Clients key on the stable {@code type}; the detail is shown to staff verbatim.
+     */
+    @ExceptionHandler(AwaitingPaymentException.class)
+    public ProblemDetail handleAwaitingPayment(AwaitingPaymentException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Awaiting payment");
+        problem.setType(URI.create("https://jtoye.uk/errors/awaiting-payment"));
         return problem;
     }
 
@@ -301,6 +316,20 @@ public class GlobalExceptionHandler {
         if (ex.getAvailable() != null) {
             problem.setProperty("available", ex.getAvailable());
         }
+        return problem;
+    }
+
+    /**
+     * Issue #959 (SW-ADE-01): a product create names no shop. 400 with its own type and a typed
+     * {@code field} member, so the dashboard can point at the Shop Assignment field and an integrator
+     * can branch without parsing prose. Nothing is stored.
+     */
+    @ExceptionHandler(ProductShopRequiredException.class)
+    public ProblemDetail handleProductShopRequired(ProductShopRequiredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Shop Required");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-required"));
+        problem.setProperty("field", ProductShopRequiredException.FIELD);
         return problem;
     }
 
@@ -612,6 +641,13 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Incomplete Label Data");
         problem.setType(URI.create("https://jtoye.uk/errors/incomplete-label-data"));
+        // #960: the machine-readable twin of the plain-words detail. Field names, never columns.
+        if (!ex.getMissingFields().isEmpty()) {
+            problem.setProperty("missingFields", ex.getMissingFields());
+        }
+        if (ex.getProductId() != null) {
+            problem.setProperty("productId", ex.getProductId());
+        }
         return problem;
     }
 

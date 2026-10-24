@@ -1,0 +1,40 @@
+# Plan 29-22 Task 4 RED: the four selftests against stubs / absent implementations, and the INV-7 row before the policy edit
+# 2026-10-19T13:28:06Z on the RED tree (tests and classes in; INV-18 a stub, no Ingress/SPC/lock, no generator, probe judges stubbed to PASS)
+
+## check-render-invariants.sh --selftest-inv18 (rc 1)
+ARM no-auth caught=no
+ARM port-1025 caught=no
+ARM cross-ns-secret caught=no
+ARM loadbalancer caught=no
+ARM relay-all caught=no
+ARM lock-removed caught=no
+CLEAN rc=1
+
+## check-render-invariants.sh on the real tree (rc 1): the new INV-7 row before the policy carries it
+INV-7: NetworkPolicy 'mailpit-allow' is missing declared rule(s): in:ns=traefik:8025
+
+## check-keyvault-chain.sh --selftest (rc 1)
+ARM ingress-auth-unproduced caught=no (want rc 1 and 'Deployment/secret-sync reads mailpit-ui-planted/auth (auth-secret of Ingress/mailpit-ui), which no SecretProviderClass produces'; got rc=-1: plant did not apply (rc=1) )
+ARM ingress-auth-unsynced caught=no (want rc 1 and 'Deployment/secret-sync reads mailpit-ui-credentials/auth (auth-secret of Ingress/mailpit-ui), produced by mailpit-ui-kv, which Deployment/secret-sync does not mount'; got rc=-1: plant did 
+SELFTEST: 13/15 as expected
+
+## staging-secrets.sh --selftest (rc 1)
+FAIL htpasswd-composite the --password write (line 28) does not precede the --auth write (line none)
+SELFTEST: 11/12 (derived objects=32, generated=30, grants=35)
+
+## staging-mail-ui.sh --selftest (rc 1)
+ARM good caught=yes
+ARM ui1-open caught=no (want rc 1 and 'ARM UI-1 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implemented ARM
+ARM ui2-wrong-accepted caught=no (want rc 1 and 'ARM UI-2 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not imple
+ARM ui3-missing-id caught=no (want rc 1 and 'ARM UI-3 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implement
+ARM ui4-plain-ui caught=no (want rc 1 and 'ARM UI-4 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implemented
+ARM ui5-smtp-open caught=no (want rc 1 and 'ARM UI-5 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implemente
+ARM ui5-loadbalancer caught=no (want rc 1 and 'ARM UI-5 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not impleme
+ARM ui6-default-cert caught=no (want rc 1 and 'ARM UI-6 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not impleme
+ARM ui7-relay caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implemented AR
+ARM ui7-relay-env caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implemente
+ARM ui7-send-open caught=no (want rc 1 and 'ARM UI-7 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implemente
+ARM ui8-no-429 caught=no (want rc 1 and 'ARM UI-8 FAIL', got rc=0: ARM UI-1 PASS STUB: not implemented ARM UI-2 PASS STUB: not implemented A
+ARM dns-wrong caught=yes
+ARM list-kv-objects caught=yes
+SELFTEST: 3/14 as expected

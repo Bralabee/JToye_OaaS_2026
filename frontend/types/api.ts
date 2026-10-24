@@ -234,6 +234,12 @@ export interface Product {
    * backend; absent means "not returned", which the form never turns into a value of its own.
    */
   vatRate?: VatRate
+  /**
+   * #960: the PPDS / Natasha's Law label is dated from these two (core-java V41). Null/absent = not
+   * recorded; the label endpoint answers 422 until both are set.
+   */
+  shelfLifeDays?: number | null
+  durabilityType?: DurabilityType | null
   createdAt: string
   updatedAt: string
 }
@@ -278,6 +284,12 @@ export interface CreateProductRequest {
    * it keeps the stored rate.
    */
   vatRate?: VatRate
+  /** #960: omitted keeps the stored value on a PUT. 0..3650 days; needed with durabilityType for the label. */
+  shelfLifeDays?: number
+  /** #960: omitted keeps the stored value on a PUT. */
+  durabilityType?: DurabilityType
+  /** #960 (review F3): PUT only. true removes the stored shelfLifeDays and durabilityType; send it alone, not beside either. */
+  clearDurability?: boolean
 }
 
 /** One per-row CSV import error (core-java RowError). field "row" means the row as a whole. */
@@ -325,6 +337,76 @@ export interface CopyProductsResult {
   failed: number
   items: CopyProductsResultItem[]
 }
+
+/** GTM-BLK-06: PPDS label page layout format. */
+export type LabelFormat = "STANDARD_100X60MM" | "THERMAL_62MM"
+
+/** GTM-BLK-02: A single dish template in the Pan-African & Caribbean Culinary Knowledge Base. */
+export interface CulinaryDishTemplateDto {
+  slug: string
+  name: string
+  cuisineKey: string
+  cuisineLabel: string
+  region: string
+  course: string
+  description: string
+  shelfLifeDays: number
+  allergenMask: number
+  allergenNames: string[]
+  mayContainMask: number
+  mayContainNames: string[]
+  ingredientsText: string
+  dietaryTags: string[]
+}
+
+/** GTM-BLK-02: A regional cuisine pack of pre-audited dish templates. */
+export interface CulinaryPackDto {
+  cuisineKey: string
+  cuisineLabel: string
+  region: string
+  dishCount: number
+  dishes: CulinaryDishTemplateDto[]
+}
+
+/** GTM-BLK-02: Request to seed a shop's catalogue from selected cuisine packs or dish slugs. */
+export interface CulinaryPackSeedRequest {
+  shopId: string
+  cuisineKeys?: string[]
+  dishSlugs?: string[]
+  defaultPricePennies?: number | null
+  available?: boolean
+}
+
+export interface CulinaryPackSeedResultItem {
+  dishSlug: string
+  dishName: string
+  outcome: CopyOutcome
+  productId?: string | null
+  reason?: string | null
+}
+
+/** GTM-BLK-02: Outcome of seeding a culinary pack into a shop. */
+export interface CulinaryPackSeedResult {
+  created: number
+  skipped: number
+  failed: number
+  items: CulinaryPackSeedResultItem[]
+}
+
+/** GAP-GTM-06: Shareable WhatsApp pre-order checkout link and broadcast copy. */
+export interface WhatsAppPreOrderLinkDto {
+  shopId: string
+  shopSlug: string
+  shopName: string
+  slotId?: string | null
+  serviceDate?: string | null
+  windowLabel?: string | null
+  cutoffAt?: string | null
+  storefrontPath: string
+  prefilledMessage: string
+  waMeUrl: string
+}
+
 
 // Order Types
 export type OrderStatus =
@@ -444,6 +526,12 @@ export interface Order {
   scheduledWindowLabel?: string | null
   depositAmountPennies?: number | null
   balanceDuePennies?: number | null
+  // Phase 30-06 (issue #958): backend OrderDto has always carried these (OrderMapper maps both);
+  // the list type now declares them so the Orders list can show "Awaiting payment" and stop
+  // offering Submit/Confirm the server would refuse. Absent (NON_NULL) = null. Read them through
+  // `isAwaitingPayment` (lib/awaiting-payment.ts), the server rule transcribed.
+  paymentStatus?: PaymentStatus | null
+  paymentReference?: string | null
 }
 
 /** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */
@@ -624,6 +712,9 @@ export interface CreateCustomerRequest {
 
 // Financial Transaction Types
 export type VatRate = "ZERO" | "REDUCED" | "STANDARD" | "EXEMPT"
+
+/** #960: which date the PPDS label prints (core-java products.durability_type, V41). */
+export type DurabilityType = "USE_BY" | "BEST_BEFORE"
 
 /**
  * What a ledger row is (37-10): SALE settles an order, REVERSAL takes a voided order's

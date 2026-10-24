@@ -114,7 +114,14 @@ test.describe("Dashboard interface corrections (#450) @mobile-only", () => {
       await switcherSettled(page)
 
       const state = await page.evaluate((live) => {
-        const root = document.querySelector(live)
+        // NOT `querySelector(live)`: that takes the FIRST non-hidden body child, which since
+        // #924 is the cookie-notice portal host that bottom-notice-shell PREPENDS to <body> —
+        // a tree with no switcher in it, so every count below read 0 for a reason that had
+        // nothing to do with the ids (nightly red from 2026-10-16). The Playwright locators
+        // above match across every such div; this in-page read has to pick the one holding
+        // <main>, which is the app tree.
+        const root =
+          Array.from(document.querySelectorAll(live)).find((d) => d.querySelector("main")) ?? null
         if (!root) return null
         return {
           // The control has to be in its <select> state, or the count below is 0

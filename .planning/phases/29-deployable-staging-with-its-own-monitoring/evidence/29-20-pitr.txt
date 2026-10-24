@@ -1,0 +1,412 @@
+PLAN 29-20 — managed PITR drill (DPLY-04, #101, D-10). Evidence, both directions.
+Lane B executor, worktree branch worktree-agent-ad50f32906f338b65, base fea03fd4.
+Subscription pinned on every az call: c483d353-5f61-4587-a790-addb9ab5fb94 (JToye Digital Production).
+Kube context: jtoye-stg-aks only. No secret value appears below (leak scans at the end).
+
+Owner approval (in-session, 2026-10-19, relayed by the orchestrator): the PITR restore of
+jtoye-stg-pg into a NEW temporary server jtoye-stg-pg-drill-<RUN_ID> with the delete trap installed
+before the restore request and the deletion read back; one firewall rule on that temporary server
+only; the two marker products on live staging through the vendor API; the scratch role and
+databases ON THE RESTORED SERVER. NOT approved: the WORM retention-policy lock. Nothing else on Azure.
+
+Contents
+  A. Task 1: dry-run verify, pin gate, fail directions, selftest, RED record
+  B. Retention state BEFORE the drill (Unlocked)
+  C. The live drill, full output (RUN_ID 20261019144933)
+  D. Plan verify 1 line checks, both directions
+  E. Drill-server absence (verify 2) and SOURCE pg_roles read-back, both directions
+  F. Retention state AFTER the drill (Unlocked) + the WORM checkpoint facts
+  G. The first real backup Job (A7): NOT RUN, and why
+  H. Leak scans
+
+<!-- sections appended below -->
+
+==================================================================================================
+A. TASK 1 — recorded 2026-10-19T15:12:40Z at HEAD 5cfb7c74 (RED ca2f2908, GREEN 5cfb7c74)
+==================================================================================================
+--- A1. plan verify 1 (dry-run against az_guard_stub), verbatim body
+  OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+  [2026-10-19T15:12:40Z] staging-pitr-drill mode=dry-run run_id=20261019151240 context=jtoye-stg-aks
+  [2026-10-19T15:12:40Z] SOURCE=jtoye-stg-pg.postgres.database.azure.com (live; writes: the two vendor-API markers only)
+  [2026-10-19T15:12:40Z] RESTORED=jtoye-stg-pg-drill-20261019151240.postgres.database.azure.com (temporary; deleted by the EXIT trap)
+  [2026-10-19T15:12:40Z] firewall (stub): stub-id
+  
+  DRY RUN — ordered plan (no kubectl API call, no curl, no database call was made)
+    01 EXIT trap (cleanup)                     installed before anything is created (deletes pod jtoye-pitr-drill-20261019151240 and RESTORED, reads both back)
+    02 KV reads (values never printed)         jtoye-stg-kv: postgres-credentials--backup-password, pg-admin--password, staging-seed--test-vendor-password, keycloak-credentials--frontend-client-secret
+    03 drill pod                               jtoye-staging/jtoye-pitr-drill-20261019151240 image ghcr.io/bralabee/jtoye-pg-backup:18-blob, label app.kubernetes.io/name=pg-backup, activeDeadlineSeconds 7200
+    04 instrument control (SOURCE, read)       jtoye_backup on jtoye-stg-pg.postgres.database.azure.com: role, rolbypassrls, tenant GUC; counts; products > 0 or VOID
+    05 before-marker (SOURCE, vendor API)      POST https://api-staging.olajay.co.uk/api/v1/products sku=pitr-marker-before-20261019151240 available=false; read its created_at (SOURCE, read)
+    06 sleep 60s
+    07 T0 + source counts (SOURCE, read)       counts before T0 and right after T0 must be equal (quiet window), else VOID
+    08 sleep 60s
+    09 after-marker (SOURCE, vendor API)       POST https://api-staging.olajay.co.uk/api/v1/products sku=pitr-marker-after-20261019151240 available=false; before.created_at < T0 < after.created_at (SOURCE, read)
+    10 sleep 300s                       WAL past T0 archived before the request
+    11 PITR request -> RESTORED               az_mutate (pinned): restore jtoye-stg-pg at T0 into NEW server jtoye-stg-pg-drill-20261019151240
+    12 SERVERS during run                      az_read flexible-server list (both names expected)
+    13 firewall (RESTORED only)                rule drill-aks-outbound = 40.120.43.119 (the cluster outbound IP; SOURCE's rule is not touched)
+    14 counts + markers (RESTORED, read)       jtoye_backup: counts == source T0 counts by table name; before present, after absent
+    15 scratch role (RESTORED, admin)          CREATE ROLE jtoye_drill_norls LOGIN NOBYPASSRLS + SELECT; read back on RESTORED
+    16 arm A plain dump (RESTORED)             pg_dump as jtoye_drill_norls: expect rc != 0 with a row-level security error
+    17 arm A row-security dump (RESTORED)      pg_dump --enable-row-security as jtoye_drill_norls
+    18 pipeline checks (pod)                   size floor + pg_restore --list, lines read from /usr/local/bin/backup: expect PASS
+    19 restore into drill_a (RESTORED)         CREATE DATABASE drill_a; pg_restore; counts != source
+    20 arm B dump (RESTORED)                   pg_dump as jtoye_backup; pipeline checks PASS
+    21 restore into drill_b (RESTORED)         CREATE DATABASE drill_b; pg_restore; counts == source
+    22 zero-byte arm (pod)                     the size-floor line against an empty file: expect refused
+    23 compare                                 every count set joined by table name (jq)
+    24 cleanup (trap)                          delete pod by name + read back; delete RESTORED + read back with SOURCE as control
+  SOURCE is never a target of 15, 16, 17, 19, 20 or 21: target_guard refuses it before any connection.
+  [2026-10-19T15:12:40Z] DRY RUN COMPLETE: evidence about this file only, never a rehearsed restore
+  rc=0 calls=2 pinned=2
+  verify1_rc=0
+  --- stub argv log
+  account show --query {name:name,state:state} -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+  postgres flexible-server firewall-rule list -g jtoye-rg --server-name jtoye-stg-pg --query [].[name,startIpAddress,endIpAddress] -o tsv --subscription c483d353-5f61-4587-a790-addb9ab5fb94
+
+--- A2. plan verify 2 + fail directions + acceptance awk + selftest
+  (the planted-copy pin-gate run also reports a stale exemption: an artefact of copying only
+   scripts/lib + the drill into the temp root, where the exempt file is absent; the drill finding
+   is the one under test)
+  === verify 2: check-az-subscription-pin.sh (2026-10-19T15:12:40Z)
+  SUMMARY discovered=12 wrapper_calls=77 exempt=1 findings=0
+  rc=0
+  === verify 2 fail direction: a raw az call planted in a COPY of the drill under a temp root
+  FINDING scripts/staging-pitr-drill.sh:848 — raw az call outside az_mutate/az_read (not pinned to the J'Toye subscription): names="$(az postgres flexible-server list -g jtoye-rg -o tsv)"
+  FINDING scripts/check-media-content-types.sh — stale exemption: AZ_PIN_EXEMPT row matches no call (path scripts/check-media-content-types.sh, subcommand storage); delete the row or restore the call it names
+  SUMMARY discovered=2 wrapper_calls=16 exempt=0 findings=2
+  planted rc=1 (want 1)
+  === verify 1 fail direction: --dry-run with the REAL az on PATH (no stub marker)
+  REFUSED [dry-run]: --dry-run needs az on PATH to be the az_guard_stub (a directory holding .az-guard-stub); got '/usr/bin/az'
+  rc=2 (want 2)
+  === verify 1 fail direction: unset subscription id, stub on PATH
+  REFUSED [subscription]: JTOYE_AZURE_SUBSCRIPTION_ID is unset; refusing to let the CLI resolve its ambient default, which on this host is EMPLOYER infrastructure
+  rc=1 (want 1) stub_calls=0
+  === employer context refused
+  REFUSED [employer-context]: sipbihs2aks is the employer's cluster
+  rc=1 (want 1)
+  === acceptance awk (trap before restore)
+  trap=183 restore=684
+  awk rc=0
+  trap=847 restore=683
+  awk on trap-moved copy rc=1 (want 1)
+  awk on unreadable file rc=2 (want 2)
+  === selftest
+  PASS source-write-refused rc=1 x20 kubectl_calls=0
+  PASS restored-admitted rc=0 near_misses_refused=4
+  PASS trap-before-restore trap=183 restore=684 planted_reversed_rc=1
+  PASS zero-byte-refused zero_rc=1 junk_rc=1 floorless_rc=2
+  PASS compare-by-name reordered=0 differ=1 missing=2 empty=2
+  selftest rc=0
+
+--- A3. RED (commit ca2f2908): TAP selftest against VOID-stub helpers, classifier verdict
+  record: evidence/29-20-t1-red-source-write.json (exitCode 1, target source-write-refused)
+  {"verdict":"RED_EVIDENCE_OK","reason":"target_test_failed"}
+
+==================================================================================================
+B. RETENTION STATE BEFORE THE DRILL — scripts/azure-staging-storage.sh --readback, run 2026-10-19T14:38Z
+   (that run was piped through tail, so its rc was not captured; it printed reads_failed=0)
+==================================================================================================
+  --- retention policy on jtoye-db-backups (state, immutabilityPeriodSinceCreationInDays)
+  {
+    "allowProtectedAppendWrites": false,
+    "allowProtectedAppendWritesAll": null,
+    "etag": "\"8df2d7d078badf5\"",
+    "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups/immutabilityPolicies/default",
+    "immutabilityPeriodSinceCreationInDays": 30,
+    "name": "default",
+    "resourceGroup": "jtoye-rg",
+    "state": "Unlocked",
+    "systemData": null,
+    "type": "Microsoft.Storage/storageAccounts/blobServices/containers/immutabilityPolicies"
+  }
+  readback reads_failed=0
+
+==================================================================================================
+C. THE LIVE DRILL — bash scripts/staging-pitr-drill.sh --context jtoye-stg-aks (via run-drill.sh,
+   JTOYE_AZURE_SUBSCRIPTION_ID exported; full stdout+stderr; ISO-8601 UTC on every step)
+==================================================================================================
+  drill start 2026-10-19T14:49:33Z head=5cfb7c74
+  OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+  [2026-10-19T14:49:33Z] staging-pitr-drill mode=run run_id=20261019144933 context=jtoye-stg-aks
+  [2026-10-19T14:49:33Z] SOURCE=jtoye-stg-pg.postgres.database.azure.com (live; writes: the two vendor-API markers only)
+  [2026-10-19T14:49:33Z] RESTORED=jtoye-stg-pg-drill-20261019144933.postgres.database.azure.com (temporary; deleted by the EXIT trap)
+  [2026-10-19T14:49:39Z] SOURCE firewall: 1 rule FirewallIPAddress_2026-10-19_2-1-40 40.120.43.119 (= azure-identity.yaml outbound_ip_address)
+  [2026-10-19T14:49:40Z] SOURCE server: Ready 18 jtoye-stg-pg.postgres.database.azure.com 
+  [2026-10-19T14:49:43Z] secrets: 4 Key Vault objects read into mode-600 files + 1 generated (values never printed)
+  [2026-10-19T14:49:58Z] drill pod jtoye-staging/jtoye-pitr-drill-20261019144933 Ready (pg_dump (PostgreSQL) 18.6 (Debian 18.6-1.pgdg12+2))
+  [2026-10-19T14:50:00Z] INSTRUMENT source-control: host=jtoye-stg-pg.postgres.database.azure.com user=jtoye_backup tenant_guc=bypassrls=t unset
+  [2026-10-19T14:50:06Z] COUNTS source-control: {"current_database":"jtoye","products":"5","orders":"1","customers":"0","shops":"1"}
+  [2026-10-19T14:50:07Z] SOURCE user schemas: public
+  [2026-10-19T14:50:07Z] vendor token: HTTP 200; shop staging-test-kitchen = 18c69ce7-49b8-40f9-ac1e-d72962da428a
+  [2026-10-19T14:50:07Z] STEP before-marker (SOURCE, vendor API): pitr-marker-before-20261019144933
+  [2026-10-19T14:50:08Z] marker pitr-marker-before-20261019144933: HTTP 201 id=58eb54ef-5b41-4202-83cd-a47f7e81c557
+  [2026-10-19T14:50:09Z] before-marker committed: created_at=2026-10-19T14:50:08.065723Z
+  [2026-10-19T14:50:09Z] sleep 60s
+  [2026-10-19T14:51:10Z] INSTRUMENT source-pre-t0: host=jtoye-stg-pg.postgres.database.azure.com user=jtoye_backup tenant_guc=bypassrls=t unset
+  [2026-10-19T14:51:11Z] COUNTS source-pre-t0: {"current_database":"jtoye","products":"6","orders":"1","customers":"0","shops":"1"}
+  [2026-10-19T14:51:14Z] T0=2026-10-19T14:51:13+00:00
+  [2026-10-19T14:51:15Z] INSTRUMENT source-t0: host=jtoye-stg-pg.postgres.database.azure.com user=jtoye_backup tenant_guc=bypassrls=t unset
+  [2026-10-19T14:51:16Z] COUNTS source-t0: {"current_database":"jtoye","products":"6","orders":"1","customers":"0","shops":"1"}
+  [2026-10-19T14:51:16Z] quiet-window check (counts before T0 vs right after T0):
+    products   pre=6 post=6 equal
+    orders     pre=1 post=1 equal
+    customers  pre=0 post=0 equal
+    shops      pre=1 post=1 equal
+  [2026-10-19T14:51:16Z] sleep 60s
+  [2026-10-19T14:52:16Z] STEP after-marker (SOURCE, vendor API): pitr-marker-after-20261019144933
+  [2026-10-19T14:52:16Z] marker pitr-marker-after-20261019144933: HTTP 201 id=fa28058b-8825-4b5b-8746-cf887e7df7d8
+  [2026-10-19T14:52:18Z] after-marker committed: created_at=2026-10-19T14:52:16.703263Z
+  [2026-10-19T14:52:19Z] restore point strictly between markers: before=2026-10-19T14:50:08.065723Z < T0=2026-10-19T14:51:13+00:00 < after=2026-10-19T14:52:16.703263Z
+  [2026-10-19T14:52:20Z] MARKERS on SOURCE (fail direction of the marker query: both must be 1): {"current_database":"jtoye","before_marker":"1","after_marker":"1"}
+  [2026-10-19T14:52:20Z] sleep 300s (WAL past T0 archived before the restore request)
+  [2026-10-19T14:57:20Z] STEP restore: jtoye-stg-pg @ 2026-10-19T14:51:13+00:00 -> NEW server jtoye-stg-pg-drill-20261019144933 (cleanup trap already installed)
+  [2026-10-19T15:05:26Z] restore request rc=0 after 486s
+  [2026-10-19T15:05:27Z] SERVERS during run: jtoye-stg-pg jtoye-stg-pg-drill-20261019144933 
+  [2026-10-19T15:05:28Z] RESTORED server: Ready 18 Standard_B2s jtoye-stg-pg-drill-20261019144933.postgres.database.azure.com 
+  [2026-10-19T15:05:29Z] RESTORED firewall rules as restored (A12: PITR does not copy them): []
+  [2026-10-19T15:05:30Z] RESTORED azure.extensions: 
+  [2026-10-19T15:05:30Z] STEP firewall (RESTORED only): drill-aks-outbound = 40.120.43.119
+  [2026-10-19T15:06:33Z] RESTORED firewall rules now: [drill-aks-outbound 40.120.43.119 40.120.43.119;]
+  [2026-10-19T15:06:34Z] SOURCE firewall rules (unchanged): [FirewallIPAddress_2026-10-19_2-1-40 40.120.43.119 40.120.43.119;]
+  [2026-10-19T15:06:36Z] INSTRUMENT restored-P: host=jtoye-stg-pg-drill-20261019144933.postgres.database.azure.com user=jtoye_backup tenant_guc=bypassrls=t unset
+  [2026-10-19T15:06:37Z] COUNTS restored-P: {"current_database":"jtoye","products":"6","orders":"1","customers":"0","shops":"1"}
+  [2026-10-19T15:06:37Z] COMPARE arm P (source @T0 vs RESTORED jtoye):
+    products   source=6 restored=6 equal
+    orders     source=1 restored=1 equal
+    customers  source=0 restored=0 equal
+    shops      source=1 restored=1 equal
+  [2026-10-19T15:06:37Z] arm P counts equal
+  [2026-10-19T15:06:38Z] MARKERS on RESTORED: {"current_database":"jtoye","before_marker":"1","after_marker":"0"}
+  [2026-10-19T15:06:38Z] before-marker present
+  [2026-10-19T15:06:38Z] after-marker absent
+  [2026-10-19T15:06:38Z] arm P wall clock: restore request to Ready 486s; RPO here = T0 by construction
+  [2026-10-19T15:06:39Z] pipeline check lines: image /usr/local/bin/backup == repo infra/backups/k8s-backup.sh
+  [2026-10-19T15:06:39Z] pipeline lines used: MIN_BACKUP_BYTES="${MIN_BACKUP_BYTES:-1000}"|SIZE="$(stat -c%s "$TMP" 2>/dev/null || wc -c < "$TMP")"|[ "$SIZE" -ge "$MIN_BACKUP_BYTES" ] || fail "dump below size floor (${SIZE} < ${MIN_BACKUP_BYTES} bytes)"|pg_restore --list "$TMP" >/dev/null 2>&1 || fail "dump is not a readable pg_restore archive"|
+  [2026-10-19T15:06:39Z] STEP scratch role on RESTORED: jtoye_drill_norls
+  [2026-10-19T15:06:42Z] ROLE jtoye_drill_norls on RESTORED: 1 (rolbypassrls=false, db=jtoye)
+  [2026-10-19T15:06:42Z] STEP arm A plain pg_dump (RESTORED, as jtoye_drill_norls; expected to FAIL)
+  [2026-10-19T15:06:43Z]   arm A plain pg_dump rc=1: pg_dump: error: query failed: ERROR:  query would be affected by row-level security policy for table "customers" pg_dump: detail: Query was: COPY public.customers (id, tenant_id, created_at, updated_at, name, email, phone, allergen_restrictions, notes, origin_shop_id, phone_verified, phone_verified_at) TO stdout; command terminated with exit code 1 
+  [2026-10-19T15:06:43Z] arm A plain dump refused by row-level security (as D-10 states)
+  [2026-10-19T15:06:43Z] STEP arm A pg_dump --enable-row-security (RESTORED, as jtoye_drill_norls)
+  [2026-10-19T15:06:55Z]   pipeline checks on the arm A dump: rc=0 PIPELINE PASS: 15841187 bytes, floor 1000 bytes
+  [2026-10-19T15:06:55Z] arm A pipeline checks PASS: 15841187 bytes vs floor 1000 = 15841x, pg_restore --list readable
+  [2026-10-19T15:06:55Z] STEP restore arm A into drill_a (RESTORED)
+  [2026-10-19T15:06:59Z]   drill_a: uuid-ossp not creatable on RESTORED (psql:<stdin>:1: ERROR:  extension "uuid-ossp" is not allow-listed for users in Azure Database for PostgreSQL HINT:  to learn how to allow an extension or see th); scratch-only shim public.uuid_generate_v4() := gen_random_uuid()
+  [2026-10-19T15:07:09Z]   pg_restore into drill_a: rc=1 errors=2 first: pg_restore: error: could not execute query: ERROR:  extension "uuid-ossp" is not allow-listed for users in Azure Database for PostgreSQL|pg_restore: error: could not execute query: ERROR:  extension "uuid-ossp" is not allow-listed for users in Azure Database for PostgreSQL|
+  [2026-10-19T15:07:11Z] INSTRUMENT drill_a: host=jtoye-stg-pg-drill-20261019144933.postgres.database.azure.com user=jtoye_backup tenant_guc=bypassrls=t unset
+  [2026-10-19T15:07:12Z] COUNTS drill_a: {"current_database":"drill_a","products":"0","orders":"0","customers":"0","shops":"1"}
+  [2026-10-19T15:07:12Z] COMPARE arm A (source @T0 vs drill_a):
+    products   source=6 drill_a=0 DIFFERENT
+    orders     source=1 drill_a=0 DIFFERENT
+    customers  source=0 drill_a=0 equal
+    shops      source=1 drill_a=1 equal
+  [2026-10-19T15:07:12Z] arm A counts differ (the row count catches what the size floor and the listing passed)
+  [2026-10-19T15:07:12Z] STEP arm B pg_dump (RESTORED, as jtoye_backup)
+  [2026-10-19T15:07:24Z]   pipeline checks on the arm B dump: rc=0 PIPELINE PASS: 15852055 bytes, floor 1000 bytes
+  [2026-10-19T15:07:24Z] STEP restore arm B into drill_b (RESTORED)
+  [2026-10-19T15:07:26Z]   drill_b: uuid-ossp not creatable on RESTORED (psql:<stdin>:1: ERROR:  extension "uuid-ossp" is not allow-listed for users in Azure Database for PostgreSQL HINT:  to learn how to allow an extension or see th); scratch-only shim public.uuid_generate_v4() := gen_random_uuid()
+  [2026-10-19T15:07:35Z]   pg_restore into drill_b: rc=1 errors=2 first: pg_restore: error: could not execute query: ERROR:  extension "uuid-ossp" is not allow-listed for users in Azure Database for PostgreSQL|pg_restore: error: could not execute query: ERROR:  extension "uuid-ossp" is not allow-listed for users in Azure Database for PostgreSQL|
+  [2026-10-19T15:07:37Z] INSTRUMENT drill_b: host=jtoye-stg-pg-drill-20261019144933.postgres.database.azure.com user=jtoye_backup tenant_guc=bypassrls=t unset
+  [2026-10-19T15:07:39Z] COUNTS drill_b: {"current_database":"drill_b","products":"6","orders":"1","customers":"0","shops":"1"}
+  [2026-10-19T15:07:39Z] COMPARE arm B (source @T0 vs drill_b):
+    products   source=6 drill_b=6 equal
+    orders     source=1 drill_b=1 equal
+    customers  source=0 drill_b=0 equal
+    shops      source=1 drill_b=1 equal
+  [2026-10-19T15:07:39Z] arm B counts equal
+  [2026-10-19T15:07:40Z]   pipeline checks on a zero-byte file: rc=1 PIPELINE REFUSED: dump below size floor (0 < 1000 bytes)
+  command terminated with exit code 1
+  [2026-10-19T15:07:40Z] zero-byte artefact refused by the size floor
+  [2026-10-19T15:07:40Z] VERDICT P=1 before=1 after=1 role=1 A_plain=1 A_pipeline=1 A_differ=1 B=1 zero=1
+  [2026-10-19T15:07:40Z] DRILL PASS (the restored server is deleted by the trap next; its read-back decides the exit status)
+  [2026-10-19T15:07:40Z] cleanup: deleting drill pod jtoye-staging/jtoye-pitr-drill-20261019144933 by name
+  [2026-10-19T15:08:13Z] drill pod jtoye-staging/jtoye-pitr-drill-20261019144933 gone (read back: NotFound)
+  [2026-10-19T15:08:13Z] cleanup: deleting RESTORED jtoye-stg-pg-drill-20261019144933 (PITR always creates a second, billable server)
+  [2026-10-19T15:09:16Z]   delete attempt 1: rc=0
+  [2026-10-19T15:09:17Z]   SERVERS after delete attempt 1: jtoye-stg-pg 
+  [2026-10-19T15:09:17Z] restored server deleted: jtoye-stg-pg-drill-20261019144933 absent from the list that shows jtoye-stg-pg
+  drill end 2026-10-19T15:09:17Z rc=0
+
+==================================================================================================
+D. PLAN VERIFY 1 — the eight required lines + rc, applied to the run above; fail directions
+   (the drill was run ONCE: a second run would write two more markers and restore another server)
+==================================================================================================
+  --- pass direction (the real run)
+  rc=0
+  verify1 exit=0
+  --- fail direction: the same output with the deletion line removed
+  MISSING: restored server deleted
+  rc=0
+  verify1 exit=1 (want 1)
+  --- fail direction: the same output, rc 1
+  rc=1
+  verify1 exit=1 (want 1)
+  --- fail direction: arm A where the counts did not differ (line rewritten as the script prints that case)
+  MISSING: arm A counts differ
+  rc=0
+  verify1 exit=1 (want 1)
+
+==================================================================================================
+E. DRILL-SERVER ABSENCE (plan verify 2, verbatim) AND SOURCE pg_roles
+   fail direction of verify 2, recorded DURING the run (section C):
+     [2026-10-19T15:05:27Z] SERVERS during run: jtoye-stg-pg jtoye-stg-pg-drill-20261019144933 
+   — both names; in that state the verify's [ "$out" = "jtoye-stg-pg" ] exits 1.
+==================================================================================================
+  === [2026-10-19T15:09:50Z] verify 2 (verbatim): drill-server absence, positive control = the live server
+  az rc=0 names=[jtoye-stg-pg]
+  verify2 exit=0
+  === [2026-10-19T15:09:51Z] SOURCE pg_roles read-back (one-off pg-backup pod as jtoye_backup)
+  rc=0
+  current_database drill_role control
+  jtoye 0 1
+  SOURCE pg_roles: drill_role 0, control (jtoye_backup) 1 -> PASS
+  --- fail direction of the same statement: a role that DOES exist (jtoye_app) in the drill_role slot
+  rc=0 jtoye 1 1 (want jtoye 1 1: the statement CAN report a present role)
+  pod jtoye-pitr-rolecheck-20261019150952 deleted (read back NotFound)
+
+==================================================================================================
+F. RETENTION STATE AFTER THE DRILL + THE WORM CHECKPOINT FACTS
+==================================================================================================
+  readback start 2026-10-19T15:11:48Z
+  --- retention policy on jtoye-db-backups (state, immutabilityPeriodSinceCreationInDays)
+  {
+    "allowProtectedAppendWrites": false,
+    "allowProtectedAppendWritesAll": null,
+    "etag": "\"8df2d7d078badf5\"",
+    "id": "/subscriptions/c483d353-5f61-4587-a790-addb9ab5fb94/resourceGroups/jtoye-rg/providers/Microsoft.Storage/storageAccounts/jtoyestgbackup/blobServices/default/containers/jtoye-db-backups/immutabilityPolicies/default",
+    "immutabilityPeriodSinceCreationInDays": 30,
+    "name": "default",
+    "resourceGroup": "jtoye-rg",
+    "state": "Unlocked",
+    "systemData": null,
+    "type": "Microsoft.Storage/storageAccounts/blobServices/containers/immutabilityPolicies"
+  }
+  readback reads_failed=0
+  readback rc=0
+  --- fail direction: the same read-back without the subscription id
+  REFUSED [subscription]: JTOYE_AZURE_SUBSCRIPTION_ID is unset; refusing to let the CLI resolve its ambient default, which on this host is EMPLOYER infrastructure
+  rc=1 (want 1: a REFUSED read is never a state)
+
+  OK: subscription pinned: JToye Digital Production (c483d353-5f61-4587-a790-addb9ab5fb94), state Enabled
+  === [2026-10-19T15:11:06Z] immutability policy on jtoyestgbackup/jtoye-db-backups
+  {
+    "allowProtectedAppendWrites": false,
+    "etag": "\"8df2d7d078badf5\"",
+    "immutabilityPeriodSinceCreationInDays": 30,
+    "state": "Unlocked"
+  }
+  rc=0
+  === [2026-10-19T15:11:06Z] container (control plane)
+  {
+    "hasImmutabilityPolicy": true,
+    "hasLegalHold": false,
+    "lastModifiedTime": "2026-10-19T01:05:13+00:00",
+    "name": "jtoye-db-backups",
+    "publicAccess": "None"
+  }
+  rc=0
+  === [2026-10-19T15:11:07Z] blob LIST as the operator (data plane)
+  rc=1 ERROR:  You do not have the required permissions needed to perform this operation. Depending on your operation, you may need to be assigned one of the following
+  === [2026-10-19T15:11:09Z] Azure Monitor: successful blob WRITE transactions on jtoyestgbackup since 2026-10-19T00:00Z (hourly totals > 0)
+  PutBlob rc=0: [[{"n":2.0,"t":"2026-10-19T01:00:00Z"}]]
+  PutBlock rc=0: []
+  PutBlockList rc=0: []
+  CopyBlob rc=0: []
+  --- control: the same metric for ListContainers/GetBlobServiceProperties-type reads, any ResponseType (shows the metric is populated)
+  all-APIs rc=0: [{"n":34.0,"t":"2026-10-19T01:00:00Z"},{"n":8.0,"t":"2026-10-19T14:00:00Z"}]
+  === [2026-10-19T15:11:13Z] capacity metrics (daily granularity)
+  BlobCount rc=0: [{"t":"2026-10-19T01:00:00Z","v":0.0},{"t":"2026-10-19T02:00:00Z","v":0.0},{"t":"2026-10-19T03:00:00Z","v":0.0},{"t":"2026-10-19T04:00:00Z","v":0.0}]
+  BlobCapacity rc=0: [{"t":"2026-10-19T01:00:00Z","v":0.0},{"t":"2026-10-19T02:00:00Z","v":0.0},{"t":"2026-10-19T03:00:00Z","v":0.0},{"t":"2026-10-19T04:00:00Z","v":0.0}]
+  ContainerCount rc=0: [{"t":"2026-10-19T04:00:00Z","v":1.0},{"t":"2026-10-19T05:00:00Z","v":1.0},{"t":"2026-10-19T06:00:00Z","v":1.0},{"t":"2026-10-19T07:00:00Z","v":1.0},{"t":"2026-10-19T08:00:00Z","v":1.0},{"t":"2026-10-19T09:00:00Z","v":1.0},{"t":"2026-10-19T10:00:00Z","v":1.0},{"t":"2026-10-19T11:00:00Z","v":1.0},{"t":"2026-10-19T12:00:00Z","v":1.0},{"t":"2026-10-19T13:00:00Z","v":1.0},{"t":"2026-10-19T14:00:00Z","v":1.0},{"t":"2026-10-19T15:00:00Z","v":1.0}]
+  === [2026-10-19T15:11:15Z] CronJob pg-backup in staging
+  0 2 * * *   <none>   <none>   false
+  No resources found in jtoye-staging namespace.
+
+==================================================================================================
+G. THE FIRST REAL BACKUP JOB (A7) — NOT RUN by this executor
+==================================================================================================
+  Plan Task 2 asks for `kubectl create job --from=cronjob/pg-backup pg-backup-manual-<UTC>` and a
+  listing of backups/. Both were withheld, for two separate reasons:
+
+  1. Authority. The Job uploads a dump into jtoyestgbackup/jtoye-db-backups, a WORM container (the
+     policy is Unlocked, but a time-based policy already protects every blob written under it).
+     The owner's approval for this run named four live actions (the restore, one firewall rule on
+     the temporary server, the two markers, the scratch role/databases on the restored server) and
+     said "NOTHING ELSE on Azure". A write into Azure Blob storage is outside that list, so it is
+     returned to the owner rather than assumed. It is the same artefact the CronJob writes
+     unattended at 02:00 UTC (schedule 0 2 * * *); its first scheduled run is tonight. The CronJob
+     has never run: no lastScheduleTime, no Jobs in the namespace (section F).
+  2. The listing cannot be done by the operator. LIST of the container as admin@jtoyedigital.co.uk
+     with --auth-mode login is refused (section F, rc=1, "You do not have the required permissions"):
+     by design the operator holds no data-plane role, and the backup identity is write-only (it
+     cannot LIST either, infra/backups/k8s-backup.sh lines 79-80). Shared-key access is disabled on
+     the account. A listing therefore needs a time-bound Storage Blob Data Reader on the container,
+     which is a role assignment (an Azure write, not approved here).
+
+  What the control plane CAN show (section F):
+    - BlobCount on jtoyestgbackup = 0 in every capacity sample published so far (01:00Z..04:00Z);
+      ContainerCount = 1 throughout. So no backup dump exists yet.
+    - Successful PutBlob transactions: 2 in the 01:00Z hour (the provisioning window of plan 29-09;
+      the capacity samples after it still read 0 blobs), none since. No PutBlock / PutBlockList /
+      CopyBlob. Control: the same Transactions metric over all APIs is populated (34 in the 01:00Z
+      hour, 8 in the 14:00Z hour), so an empty answer is not an unpopulated metric.
+
+==================================================================================================
+H. LEAK SCANS (2026-10-19T15:13:11Z) — over this file as it stood before this section, and over the RED record
+==================================================================================================
+  staging-secrets.sh --leak-scan .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-20-pitr.txt: rc=0 leak-scan: 23 objects checked, 0 found (10 estate identifiers not secret, skipped)
+  staging-secrets.sh --leak-scan .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-20-t1-red-source-write.json: rc=0 leak-scan: 23 objects checked, 0 found (10 estate identifiers not secret, skipped)
+  staging-secrets.sh --leak-scan docs/runbooks/backups.md: rc=0 leak-scan: 23 objects checked, 0 found (10 estate identifiers not secret, skipped)
+  staging-secrets.sh --leak-scan scripts/staging-pitr-drill.sh: rc=0 leak-scan: 23 objects checked, 0 found (10 estate identifiers not secret, skipped)
+  control: a COPY with the jtoye_backup password appended: rc=1 LEAK postgres-credentials--backup-password 
+  pg-admin--password is not an SPC-mounted object (the leak-scan derives its list from the SPCs), so it is scanned here:
+    29-20-pitr.txt: clean
+    tmp.3c8sJHTK9c: clean
+    staging-pitr-drill.sh: clean
+    backups.md: clean
+    control (copy with it appended): LEAK (the scan can fire)
+  gitleaks dir 29-20-pitr.txt: rc=0
+  gitleaks dir 29-20-t1-red-source-write.json: rc=0
+  gitleaks control (planted AWS-shaped key): rc=0 (want 1)
+  CORRECTION: the AWS-shaped control above is not a valid fail arm (gitleaks' AWS rule ignores the
+  documented EXAMPLE key shape, so rc 0 there says nothing). Replacement controls, random each run:
+  gitleaks control (planted random ghp_ token, alone): rc=1 (want 1)
+  gitleaks control (this evidence file + the planted token): rc=1 (want 1)
+  gitleaks dir 29-20-pitr.txt (re-run): rc=0
+
+==================================================================================================
+NOTE (after the run): the INSTRUMENT lines in section C read "user=jtoye_backup tenant_guc=bypassrls=t unset".
+That is a print-formatting defect only (a sed that re-matched the space it had just inserted). The guard
+beside it reads the raw tab-separated fields and requires exactly jtoye_backup, t; it passed on every
+count. Fixed in the commit after this evidence: the line now prints user=jtoye_backup bypassrls=t tenant_guc=unset.
+
+==================================================================================================
+I. TASK 3 — THE FIRST REAL BACKUP (A7) AND THE OWNER'S WORM LOCK, 2026-10-20 (orchestrator, lane A)
+   Supersedes section G ("NOT RUN"): the CronJob ran unattended at 02:00 UTC and the owner approved the
+   time-limited read grant and the lock.
+==================================================================================================
+  --- I1. the scheduled run (kube-context jtoye-stg-aks, read 2026-10-20T03:17Z)
+  cronjob.batch/pg-backup   schedule 0 2 * * *   SUSPEND False   ACTIVE 0   LAST SCHEDULE 77m
+  job.batch/pg-backup-29874360   Complete   1/1   14s
+  log:
+    [2026-10-20T02:00:02Z] Starting backup of jtoye on jtoye-stg-pg.postgres.database.azure.com:5432 as jtoye_backup (BYPASSRLS expected)
+    [2026-10-20T02:00:11Z] Dump verified: 15860198 bytes, archive readable
+    [2026-10-20T02:00:11Z] Uploading to jtoye-db-backups/backups/jtoye-backup-20261020-020002.dump
+    [2026-10-20T02:00:12Z] Backup complete: jtoye-backup-20261020-020002.dump
+  --- I2. the listing (the operator holds no data-plane role by design; section G's refusal is the control)
+  2026-10-20T03:18:06Z GRANT  Storage Blob Data Reader to the owner (admin@jtoyedigital.co.uk), scope = container
+                              jtoye-db-backups ONLY, assignment 0618d7e3-6187-4f6b-8541-dc9e2385a823 (owner-approved, time-limited)
+  attempts 1 and 2: rc=1 "You do not have the required permissions" (RBAC propagation); attempt 3: rc=0
+  [{"bytes": 15860198, "created": "2026-10-20T02:00:12+00:00", "name": "backups/jtoye-backup-20261020-020002.dump"}]
+  => exactly one blob under backups/, size equal to the job's own "Dump verified" figure. The write-only role
+     "J'Toye Backup Blob Writer" was SUFFICIENT for the upload (A7). The dump was not downloaded or restored
+     here; the drill's arm B proved the dump -> restore -> counts path on the PITR copy.
+  2026-10-20T03:19:03Z REVOKE  assignment deleted (rc=0). Read-back of role assignments at that container scope:
+                       [{"p": "ca38c385-c0c1-467d-a638-88e62db7a65f", "r": "J'Toye Backup Blob Writer"}]  (the backup identity only)
+  --- I3. the lock (a human step: the owner ran the runbook §4.4 command in their own terminal and replied "locked")
+  readback 2026-10-20T03:20:56Z  bash scripts/azure-staging-storage.sh --readback  rc=0
+    "etag": "\"8df2e591d005345\""          (was "8df2d7d078badf5" in sections B and F: the policy object changed)
+    "immutabilityPeriodSinceCreationInDays": 30
+    "state": "Locked"                      (was "Unlocked" in sections B and F)
+  Retention counts from blob creation, so the 02:00:12Z dump is protected until 2026-11-19T02:00:12Z at the earliest.

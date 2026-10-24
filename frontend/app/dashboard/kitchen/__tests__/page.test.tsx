@@ -785,3 +785,148 @@ describe("KitchenPage", () => {
     expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
   })
 })
+
+/**
+ * Phase 30-06 (issue #958, UI-SPEC § S2 "Kitchen grid"): a refused bump says WHY.
+ *
+ * The grid used to swallow the server's answer (`catch {}`) and toast "Error updating order" /
+ * "Failed to start preparing. Reverting." — the same words for "the customer hasn't paid" as for a
+ * dropped connection. Now the toast is titled "Order not updated" and its description is the
+ * server's RFC 7807 `detail` verbatim (plan 30-05's staff sentence); with no response at all it is
+ * the kitchen's own "Couldn't {action} this order. Check your connection and try again." The board
+ * still re-reads, so the optimistic move reverts. Start Preparing stays ENABLED on an unpaid card:
+ * the badge warns before the tap and the server's refusal explains after it.
+ */
+describe("KitchenPage grid: a refused bump says why (issue #958)", () => {
+  const DETAIL =
+    "Order ORD-order-0 is awaiting payment. It can't be submitted, accepted or prepared until the customer's payment completes."
+
+  function stubOne(status: string, extra: Record<string, unknown> = {}) {
+    mockGet.mockReset()
+    mockGet.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/shops")) return Promise.resolve({ data: shopsPayload })
+      if (url.startsWith("/api/v1/orders/kitchen")) {
+        const content = [{ ...orderDetailPayload("order-0", status), ...extra }]
+        return Promise.resolve({
+          data: { content, totalElements: 1, totalPages: 1, size: 100, number: 0, first: true, last: true },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    mockPost.mockReset()
+  }
+
+  const boardReads = () =>
+    mockGet.mock.calls.filter(([u]) => String(u).includes("/api/v1/orders/kitchen")).length
+
+  async function bump(label: string) {
+    const card = (await screen.findByText("ORD-order-0")).closest("[data-testid='kds-grid-card']") as HTMLElement
+    expect(card).not.toBeNull()
+    const button = within(card).getByRole("button", { name: label })
+    expect(button).toBeEnabled()
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    return card
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    mockToast.mockClear()
+  })
+
+  it("a 409 awaiting-payment refusal toasts 'Order not updated' with the server detail verbatim, and re-reads the board", async () => {
+    stubOne("CONFIRMED", { paymentStatus: "PENDING", paymentReference: "pi_unpaid" })
+    mockPost.mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          type: "https://jtoye.uk/errors/awaiting-payment",
+          title: "Awaiting payment",
+          status: 409,
+          detail: DETAIL,
+        },
+      },
+    })
+    render(<KitchenPage />)
+
+    await bump("Start Preparing")
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        title: "Order not updated",
+        description: DETAIL,
+      })
+    })
+    // The optimistic move reverts through a fresh board read.
+    await waitFor(() => expect(boardReads()).toBe(2))
+  })
+
+  it("a bump with no response (network) toasts the 'Couldn't start preparing this order' fallback", async () => {
+    stubOne("CONFIRMED")
+    mockPost.mockRejectedValue(new Error("Network Error"))
+    render(<KitchenPage />)
+
+    await bump("Start Preparing")
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        title: "Order not updated",
+        description: "Couldn't start preparing this order. Check your connection and try again.",
+      })
+    })
+    await waitFor(() => expect(boardReads()).toBe(2))
+  })
+
+  it("the fallback names the action: Mark Ready reads 'Couldn't mark ready this order'", async () => {
+    stubOne("PREPARING")
+    mockPost.mockRejectedValue(new Error("Network Error"))
+    render(<KitchenPage />)
+
+    await bump("Mark Ready")
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Couldn't mark ready this order. Check your connection and try again.",
+        })
+      )
+    })
+  })
+
+  it("the fallback names the action: Complete reads 'Couldn't complete this order'", async () => {
+    stubOne("READY")
+    mockPost.mockRejectedValue(new Error("Network Error"))
+    render(<KitchenPage />)
+
+    await bump("Complete")
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Couldn't complete this order. Check your connection and try again.",
+        })
+      )
+    })
+  })
+
+  it("an unpaid grid card carries the 'Awaiting payment' badge in its header row, and Start Preparing stays enabled", async () => {
+    stubOne("CONFIRMED", { paymentStatus: "NONE", paymentReference: "plink_unpaid" })
+    render(<KitchenPage />)
+
+    const card = (await screen.findByText("ORD-order-0")).closest("[data-testid='kds-grid-card']") as HTMLElement
+    const header = within(card).getByTestId("kds-card-header")
+    expect(within(header).getByTestId("awaiting-payment")).toHaveTextContent("Awaiting payment")
+    expect(within(card).getByRole("button", { name: "Start Preparing" })).toBeEnabled()
+  })
+
+  it("a paid or vendor grid card carries no badge", async () => {
+    stubOne("CONFIRMED", { paymentStatus: "NONE" })
+    render(<KitchenPage />)
+
+    const card = (await screen.findByText("ORD-order-0")).closest("[data-testid='kds-grid-card']") as HTMLElement
+    expect(within(card).queryByTestId("awaiting-payment")).toBeNull()
+  })
+})

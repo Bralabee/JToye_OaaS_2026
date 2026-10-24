@@ -1,0 +1,10 @@
+{
+  "command": "KEYVAULT_CHAIN_SELFTEST_FORMAT=tap bash k8s/scripts/check-keyvault-chain.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..10\nnot ok 1 - undeclared-key\n  ---\n  message: 'want rc 1 and Deployment/core-java reads dsar-credentials/not-a-key; got rc=0: '\n  ...\nnot ok 2 - two-producers\n  ---\n  message: 'want rc 1 and Secret postgres-credentials has two producers; got rc=0: '\n  ...\nnot ok 3 - clientid-mismatch\n  ---\n  message: 'want rc 1 and Deployment/frontend mounts frontend-kv, whose clientID 00000000-0000-4000-8000-000000000000 differs; got rc=0: '\n  ...\nnot ok 4 - sync-lifetime\n  ---\n  message: 'want rc 1 and Deployment/frontend reads rabbitmq-default-user/username (env PLANTED_RMQ), produced by rabbitmq-kv, which Deployment/frontend does not mount; got rc=0: '\n  ...\nok 5 - object-not-mounted\nnot ok 6 - zero-spc\n  ---\n  message: 'want rc 2 and the render holds no SecretProviderClass; got rc=0: '\n  ...\nok 7 - pyyaml-missing\nok 8 - kubectl-missing\nok 9 - clean-library\nok 10 - clean-gate\n",
+  "targetTest": "zero-spc",
+  "targetFile": "k8s/scripts/check-keyvault-chain.sh",
+  "expected": "rc 2 VOID 'the render holds no SecretProviderClass'",
+  "actual": "rc=0: the RED keyvault-chain.py validates rule (c) only, so the planted break passes",
+  "semanticAssessment": "Target arm executed: the plant applied (plant() exits 3 when the render is unchanged, and it did not), and keyvault-chain.py check ran over the planted render and exited 0 because the RED library validates only rule (c). In the same run the (c) arm object-not-mounted was caught (rc 1), both VOID tooling arms were caught, and clean-library and clean-gate were rc 0, so the harness is sound. Correct RED, failing on the planned assertion."
+}

@@ -3,13 +3,18 @@
 import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, Bike, Store, Banknote } from "lucide-react"
-// #793: the `/pure` entry, NEVER the package default. The default entry injects js.stripe.com as
-// a module side effect, so merely importing it put Stripe's script — and its `__stripe_mid` /
-// `__stripe_sid` cookies and m.stripe.network calls — on every cash checkout, which takes no
-// payment online. `/pure` injects nothing until `loadStripe()` is called (see getStripe below).
-import { loadStripe } from "@stripe/stripe-js/pure"
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
+import { AlertTriangle, ArrowLeft, ShoppingBag, Loader2, CreditCard, Bike, Store, Banknote } from "lucide-react"
+// #793: Stripe is loaded through lib/stripe-loader, which imports the `/pure` entry, NEVER the
+// package default. The default entry injects js.stripe.com as a module side effect, so merely
+// importing it put Stripe's script — and its `__stripe_mid` / `__stripe_sid` cookies and
+// m.stripe.network calls — on every cash checkout, which takes no payment online. `/pure` injects
+// nothing until `loadStripe()` is called, which loadStripeOnce() does only at the payment step.
+// #957: the loader is also the ONE place the publishable key is read; this page no longer reads it.
+import { loadStripeOnce, publishableKey, STRIPE_APPEARANCE, type StripePromise } from "@/lib/stripe-loader"
+import { Elements } from "@stripe/react-stripe-js"
+// #957 (30-02): the card form lives in its own module so the payment-link page (/pay) shares it.
+import { CardPaymentForm } from "@/components/storefront/card-payment-form"
+import { Skeleton } from "@/components/ui/skeleton"
 import { applyBasketChanges, useCart, type CartItem } from "@/components/storefront/cart-provider"
 // 37-34 (UI-SPEC § C1, D-16): the panel that renders the server's basket diff, and the one error-slot
 // sentence for a body this page cannot act on (the 422, or a malformed 409).
@@ -373,118 +378,12 @@ function recordedAllergensOf(confirmation: GuestOrderConfirmation): RecordedAlle
  */
 /** 37-22 (K3): the availability notice's id, Place order's permanent explanation while the shop is not taking orders. */
 const SHOP_AVAILABILITY_EXPLAINER_ID = "shop-availability-explainer"
+/** #957 (30-02): the "Card payments are unavailable" alert's id, Place order's explanation while card payment cannot start. */
+const CARD_PAYMENTS_UNAVAILABLE_ID = "card-payments-unavailable"
 /** How long after the server's stated reopening time the shop is asked again (the kitchen uses the same grace). */
 const REOPEN_RECHECK_GRACE_MS = 500
 
 // The B7 note (NoVatRegistrationNote) is components/storefront/no-vat-registration-note.tsx, shared with the order page (37-37).
-
-/** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
-type StripePromise = ReturnType<typeof loadStripe>
-
-/**
- * Inner payment form — rendered inside Stripe Elements context.
- */
-function PaymentForm({
-  slug,
-  orderNumber,
-  customerEmail,
-  totalPennies,
-}: {
-  slug: string
-  orderNumber: string
-  customerEmail: string
-  totalPennies: number
-}) {
-  const stripe = useStripe()
-  const elements = useElements()
-  const router = useRouter()
-  const { clearCart } = useCart()
-  const [paying, setPaying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handlePayment = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!stripe || !elements) return
-
-    setError(null)
-    setPaying(true)
-
-    try {
-      const { error: stripeError } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/shop/${slug}/orders/${orderNumber}`,
-          receipt_email: customerEmail,
-        },
-        redirect: "if_required",
-      })
-
-      if (stripeError) {
-        setError(stripeError.message || "Payment failed. Please try again.")
-        setPaying(false)
-        return
-      }
-
-      // Payment succeeded without redirect — save and navigate
-      saveLocalOrder({
-        orderNumber,
-        email: customerEmail,
-        shopSlug: slug,
-        placedAt: new Date().toISOString(),
-      })
-      clearCart()
-      router.push(`/shop/${slug}/orders/${orderNumber}`)
-    } catch {
-      setError("Something went wrong. Please try again.")
-      setPaying(false)
-    }
-  }, [stripe, elements, slug, orderNumber, customerEmail, clearCart, router])
-
-  return (
-    <form onSubmit={handlePayment} className="space-y-4">
-      <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <CreditCard className="h-4 w-4 text-slate-600" />
-          <h2 className="text-sm font-semibold text-slate-900">Payment details</h2>
-        </div>
-        <PaymentElement
-          options={{
-            layout: "tabs",
-          }}
-        />
-      </div>
-
-      {error && (
-        <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={paying || !stripe || !elements}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {paying ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Processing payment...
-          </>
-        ) : (
-          <>
-            <Lock className="h-3.5 w-3.5" />
-            Pay {formatPrice(totalPennies)}
-          </>
-        )}
-      </button>
-
-      <div className="flex items-center justify-center gap-1 text-xs text-slate-400">
-        <Lock className="h-3 w-3" />
-        Secured by Stripe. Your card details never touch our servers.
-      </div>
-    </form>
-  )
-}
 
 /** The lines-only signature the acknowledgement is reset on (D-02): `productId:quantity` per line. */
 function basketSignatureOf(lines: readonly Pick<CartItem, "productId" | "quantity">[]): string {
@@ -764,22 +663,43 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // a new key to avoid the server's 422 idempotency-payload-mismatch (API-4 / PR #726 M3).
   const lastIntentSignatureRef = useRef<string | null>(null)
 
-  // #793: Stripe is loaded LAZILY, at most once per page, and only for a real card payment —
-  // getStripe() is called solely where a confirmation carrying a clientSecret moves the page to
-  // the payment step. A cash order, and a card-accepting shop's checkout FORM, load nothing.
-  // The ref is the memo (one loadStripe call however many submissions follow a "Back to
-  // details"); the state copy is what render reads, because a ref change does not re-render.
-  // Stripe's advanced fraud signals stay at their default on this card path (owner choice,
-  // 31.1 RESEARCH Pattern 6), so setLoadParameters is deliberately not called.
-  const stripeRef = useRef<StripePromise | null>(null)
+  // #793: Stripe is loaded LAZILY, and only for a real card payment — loadStripeOnce() is called
+  // solely where a confirmation carrying a clientSecret moves the page to the payment step. A cash
+  // order, and a card-accepting shop's checkout FORM, load nothing. The memo lives in
+  // lib/stripe-loader (#957: one loadStripe call however many submissions follow a "Back to
+  // details"); this state copy is what render reads. Stripe's advanced fraud signals stay at their
+  // default on this card path (owner choice, 31.1 RESEARCH Pattern 6), so setLoadParameters is
+  // deliberately not called.
   const [stripePromise, setStripePromise] = useState<StripePromise | null>(null)
-  const getStripe = (): StripePromise | null => {
-    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-    if (!stripeRef.current && publishableKey) {
-      stripeRef.current = loadStripe(publishableKey)
+  // #957 (30-02, UI-SPEC § S1): step 2 is driven by an explicit load state, never by whether a
+  // Stripe promise exists. The old guard `paymentState && stripePromise` sent a keyless build back to
+  // the step-1 form AFTER the server had created an unpaid DRAFT, with nothing said. Now a
+  // confirmation carrying a clientSecret always renders step 2, and its payment-details card shows
+  // loading, the form, or a stated failure (no key, Stripe.js rejected or resolved null, or the
+  // Payment Element's onLoadError).
+  const [cardLoadState, setCardLoadState] = useState<"loading" | "ready" | "failed">("loading")
+  // Only the LATEST load may set the state: a slow first load settling after a "Try again" (or after
+  // "Back to details") must not overwrite the newer answer.
+  const cardLoadAttemptRef = useRef(0)
+  const startCardLoad = useCallback(() => {
+    const attempt = ++cardLoadAttemptRef.current
+    const promise = loadStripeOnce()
+    setStripePromise(promise)
+    if (promise === null) {
+      // No publishable key in this build: nothing is loaded, and a retry cannot succeed.
+      setCardLoadState("failed")
+      return
     }
-    return stripeRef.current
-  }
+    setCardLoadState("loading")
+    promise.then(
+      (stripe) => {
+        if (cardLoadAttemptRef.current === attempt) setCardLoadState(stripe ? "ready" : "failed")
+      },
+      () => {
+        if (cardLoadAttemptRef.current === attempt) setCardLoadState("failed")
+      }
+    )
+  }, [])
 
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
@@ -861,6 +781,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     selectedSlotId,
   })
 
+  // #957 (30-02, UI-SPEC § S1 pre-POST): a shop that takes cards, in a build with no publishable key,
+  // cannot take a card payment — so the order is not sent at all. Posting it would create an unpaid
+  // DRAFT that nobody can pay. Keyed on `=== true`: a shop that has not said (old backend) is not
+  // refused here, and the post-POST failure state still catches a keyless confirmation.
+  const cardUnavailable = shop?.acceptsCardPayments === true && publishableKey() === null
+
   // The snapshot above is the ONLY thing that disables Place order, and it was read once, on mount.
   // A customer who opened checkout during a 20-minute pause and waited it out would otherwise keep a
   // dead button the server now accepts (#916 round 1, finding 1). So just after the server's own
@@ -929,6 +855,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     e.preventDefault()
     // K3: the disabled button already says why; an implicit or forced submit sends nothing either.
     if (notTakingOrders) return
+    // #957: the same defence in depth for a card shop with no publishable key — the notice at the top
+    // of step 1 says why; no order is created that could never be paid.
+    if (cardUnavailable) return
     setError(null)
 
     // Conditional UK-address validation (Surface E). Collection needs no address.
@@ -1071,8 +1000,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
 
       // Move to payment step. This is the ONLY place Stripe is loaded (#793): the order exists
-      // and carries a clientSecret, so this customer is paying by card.
-      setStripePromise(getStripe())
+      // and carries a clientSecret, so this customer is paying by card. Step 2 renders whatever
+      // the load does (#957): loading, the form, or a stated failure.
+      startCardLoad()
       setPaymentState({
         clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
@@ -1241,8 +1171,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     )
   }
 
-  // Step 2: Payment form (shown after order creation)
-  if (paymentState && stripePromise) {
+  // Step 2: Payment form (shown after order creation). #957: NOT gated on a Stripe promise — a
+  // confirmation with a clientSecret means an unpaid order exists, and the customer must be shown
+  // the form or a stated failure, never the step-1 form again.
+  if (paymentState) {
+    const paymentOrderNumber = paymentState.orderNumber
     return (
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
         <button
@@ -1348,27 +1281,68 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             information, before the card is taken. */}
         {shop && <SellerBlock seller={shop.seller} className="mb-4" />}
 
-        <Elements
-          stripe={stripePromise}
-          options={{
-            clientSecret: paymentState.clientSecret,
-            appearance: {
-              theme: "stripe",
-              variables: {
-                colorPrimary: "#f97316",
-                borderRadius: "12px",
-                fontFamily: "system-ui, -apple-system, sans-serif",
-              },
-            },
-          }}
-        >
-          <PaymentForm
-            slug={slug}
-            orderNumber={paymentState.orderNumber}
-            customerEmail={customerEmail}
-            totalPennies={paymentState.totalAmountPennies}
-          />
-        </Elements>
+        {cardLoadState === "ready" && stripePromise ? (
+          <Elements
+            stripe={stripePromise}
+            options={{
+              clientSecret: paymentState.clientSecret,
+              appearance: STRIPE_APPEARANCE,
+            }}
+          >
+            <CardPaymentForm
+              slug={slug}
+              orderNumber={paymentOrderNumber}
+              customerEmail={customerEmail}
+              totalPennies={paymentState.totalAmountPennies}
+              returnUrl={`${window.location.origin}/shop/${slug}/orders/${paymentOrderNumber}`}
+              onSucceeded={() => {
+                // Payment succeeded without redirect — save and navigate (unchanged from the
+                // former inline PaymentForm).
+                saveLocalOrder({
+                  orderNumber: paymentOrderNumber,
+                  email: customerEmail,
+                  shopSlug: slug,
+                  placedAt: new Date().toISOString(),
+                })
+                clearCart()
+                router.push(`/shop/${slug}/orders/${paymentOrderNumber}`)
+              }}
+              onLoadError={() => setCardLoadState("failed")}
+            />
+          </Elements>
+        ) : cardLoadState === "failed" || !stripePromise ? (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-xl border border-amber-600 bg-amber-50 p-4"
+          >
+            <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+            <div className="min-w-0 [overflow-wrap:anywhere]">
+              <p className="text-base font-semibold text-amber-900">Card payment couldn&apos;t load</p>
+              <p className="mt-0.5 text-sm text-amber-900">
+                Order {paymentOrderNumber} hasn&apos;t been paid, so the shop won&apos;t prepare it. Nothing has
+                been charged.
+              </p>
+              {/* A retry can only help a script or network failure; with no key in this build it
+                  cannot succeed, so it is not offered. */}
+              {publishableKey() !== null && (
+                <button
+                  type="button"
+                  onClick={startCardLoad}
+                  className="mt-3 inline-flex h-11 items-center justify-center rounded-xl border border-amber-600 bg-white px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700"
+                >
+                  Try again
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
+            <Skeleton data-testid="card-form-skeleton" className="min-h-60 w-full rounded-xl" />
+            <p role="status" className="mt-3 text-sm text-slate-600">
+              Loading secure card form…
+            </p>
+          </div>
+        )}
       </div>
     )
   }
@@ -1389,6 +1363,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
   const minimumShortfall = minimumShortfallPennies(subtotalPennies, minimumOrderPennies)
   const belowMinimum = minimumShortfall !== null
+  // Every explanation of a disabled Place order that is on screen, in reading order (K3, #957).
+  const placeOrderDescribedBy =
+    [
+      notTakingOrders ? SHOP_AVAILABILITY_EXPLAINER_ID : null,
+      cardUnavailable ? CARD_PAYMENTS_UNAVAILABLE_ID : null,
+    ]
+      .filter((id): id is string => id !== null)
+      .join(" ") || undefined
   // COR-6: the VAT preview follows the BASKET's resolved rate, not a hardcoded 20%.
   //
   // This used to be Math.floor((previewTotalPennies * 20) / 120) with a "VAT (incl. 20%)" label,
@@ -1430,6 +1412,26 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           aria-describedby while the shop is not taking orders. */}
       {notTakingOrders && shop && (
         <ShopAvailabilityNotice shop={shop} id={SHOP_AVAILABILITY_EXPLAINER_ID} className="mt-6" />
+      )}
+
+      {/* #957 (UI-SPEC § S1): the K3 slot, after availability when both apply. Its id is Place
+          order's aria-describedby while card payment cannot start. An alert, unlike the
+          availability notice: this is a fault in the service, not the shop's state. */}
+      {cardUnavailable && (
+        <div
+          role="alert"
+          id={CARD_PAYMENTS_UNAVAILABLE_ID}
+          className="mt-6 flex items-start gap-3 rounded-xl border border-amber-600 bg-amber-50 p-4"
+        >
+          <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+          <div className="min-w-0 [overflow-wrap:anywhere]">
+            <p className="text-base font-semibold text-amber-900">Card payments are unavailable</p>
+            <p className="mt-0.5 text-sm text-amber-900">
+              Card payments are unavailable right now, so this order can&apos;t be placed. Nothing has been
+              charged.
+            </p>
+          </div>
+        </div>
       )}
 
       <form onSubmit={handleCreateOrder} className="mt-6 space-y-6">
@@ -1729,10 +1731,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             {shop.acceptsCardPayments ? (
               <p className="mt-1.5 flex items-start gap-2 text-sm text-slate-600">
                 <CreditCard className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
-                <span>
-                  Pay securely by card — you&apos;ll enter your card details after
-                  confirming your order.
-                </span>
+                {/* #957: never promise a card step this build cannot show. */}
+                {cardUnavailable ? (
+                  <span>Pay by card — unavailable right now.</span>
+                ) : (
+                  <span>
+                    Pay securely by card — you&apos;ll enter your card details after
+                    confirming your order.
+                  </span>
+                )}
               </p>
             ) : (
               <p className="mt-1.5 flex items-start gap-2 text-sm text-slate-600">
@@ -1833,11 +1840,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
             `notTakingOrders` (37-22, K3) meets the same bar as `belowMinimum`: its permanent
             explanation is the availability notice at the top of step 1, linked here by
-            aria-describedby so a screen reader hears why the button is unavailable. */}
+            aria-describedby so a screen reader hears why the button is unavailable.
+
+            `cardUnavailable` (#957) meets it too: the "Card payments are unavailable" alert sits at the
+            top of step 1. aria-describedby lists every explanation on screen, availability first, and
+            is absent when there is none. */}
         <button
           type="submit"
-          disabled={submitting || belowMinimum || notTakingOrders}
-          aria-describedby={notTakingOrders ? SHOP_AVAILABILITY_EXPLAINER_ID : undefined}
+          disabled={submitting || belowMinimum || notTakingOrders || cardUnavailable}
+          aria-describedby={placeOrderDescribedBy}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {submitting ? (

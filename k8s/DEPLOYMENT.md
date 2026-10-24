@@ -47,6 +47,15 @@ Two interactive topology views, generated from [`SYSTEM_DESIGN_V2.md §1`](../do
 ### 2. Install Required Controllers
 
 #### NGINX Ingress Controller
+
+> **Superseded for staging by D-29 (Traefik v3), 2026-10-20.** Staging does not run ingress-nginx
+> and is not installed with Helm: its ingress controller is Traefik v3 reading the same
+> `nginx.ingress.kubernetes.io/*` annotations through its Ingress-NGINX provider, applied by
+> `scripts/staging-bootstrap.sh --stage traefik` from [`k8s/platform/traefik`](./platform/traefik/README.md).
+> The IngressClass stays `nginx`. The instructions below are kept as the original (and
+> production, until Phase 32 decides) recipe. Day-to-day staging operation:
+> [`docs/runbooks/staging-operations.md`](../docs/runbooks/staging-operations.md).
+
 ```bash
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
@@ -121,7 +130,10 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
   `pg-backup` (`k8s/base/serviceaccounts.yaml`, `automountServiceAccountToken:
   false`), and the pod-template label `azure.workload.identity/use: "true"` on
   the core-java Deployment and the pg-backup CronJob in staging and production
-  only (`k8s/staging|production/workload-identity-patch.yaml`). The account
+  only (production: `k8s/production/workload-identity-patch.yaml`; staging, since
+  plan 29-12: `k8s/components/azure-keyvault/workload-patches.yaml`, which also
+  gives frontend, keycloak, redis and secret-sync the label and a Key Vault
+  mount). The account
   endpoints and containers are app-config `storage.blob.*` / `backup.blob.*`
   keys, separate media and backup accounts per environment (D-01, D-11).
 - **What Phase 29 adds per overlay.** The annotation
@@ -202,6 +214,12 @@ kubectl create secret generic client-ip-credentials \
 ```
 
 #### Option B: Sealed Secrets (Recommended)
+
+> **Superseded for staging by D-23 (Key Vault + CSI), 2026-10-20.** Staging takes every secret
+> from Azure Key Vault `jtoye-stg-kv` through the Secrets Store CSI driver; no `SealedSecret` is
+> rendered. `docs/runbooks/sealed-secrets.md` is kept as history. For staging see
+> [`docs/runbooks/staging-operations.md`](../docs/runbooks/staging-operations.md) and
+> [`docs/runbooks/credential-rotation.md`](../docs/runbooks/credential-rotation.md).
 ```bash
 # Install Sealed Secrets controller
 helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
@@ -240,6 +258,100 @@ Get the LoadBalancer IP:
 ```bash
 kubectl get svc nginx-ingress-ingress-nginx-controller -n ingress-nginx
 ```
+
+> **Staging (2026-10-20):** the ingress address is the Traefik LoadBalancer's, recorded as
+> `ingress_ip_address` in `k8s/staging/azure-identity.yaml`; there is no `ingress-nginx` namespace
+> (D-29). See "Staging hosts" below.
+
+#### Staging hosts (Phase 29)
+
+Staging uses the flat `-staging` host shape (D-06). Every record is an A record at
+Namecheap pointing at the one Traefik ingress IP, `ingress_ip_address` in
+`k8s/staging/azure-identity.yaml`. The owner adds records; agents never edit DNS. No
+production name resolves until Phase 32 (D-08).
+
+| Host | Serves |
+|------|--------|
+| `api-staging.olajay.co.uk` | core-java (public API) and the SSE stream |
+| `app-staging.olajay.co.uk` | the frontend (vendor dashboard and storefront) |
+| `auth-staging.olajay.co.uk` | Keycloak: the `jtoye-staging` and `jtoye-customers` realm paths only |
+| `grafana-staging.olajay.co.uk` | Grafana, the one monitoring host with a public name (D-19), behind an operator basic-auth gate at the edge (#968) |
+| `mail-staging.olajay.co.uk` | Mailpit's web UI and API for persona testers, behind basic auth (D-33) |
+
+**Tester note: `mail-staging.olajay.co.uk`.**
+
+- **What it is.** Staging never delivers application mail. Every email it sends
+  (verification, password reset, staff invitation, order and DSAR mail) is captured by an
+  in-cluster Mailpit and never leaves the cluster. This host shows those captures. A
+  persona's address can therefore be invented, and its mail read here.
+- **Who holds the credential.** One shared login, user `staging-tester`. The password is
+  generated into Key Vault by `scripts/staging-secrets.sh` and nobody chooses it. The owner
+  retrieves it into their own terminal and hands it to testers out of band:
+
+  ```bash
+  az keyvault secret show --subscription c483d353-5f61-4587-a790-addb9ab5fb94 --vault-name jtoye-stg-kv -n mailpit-ui-credentials--password --query value -o tsv
+  ```
+
+  Never paste it into git, an issue, a PR or a chat log.
+- **The rule that makes this acceptable.** No real customer data on staging: use invented names, addresses and phone numbers and Stripe TEST cards only — whoever holds this credential reads every staging email, including password-reset, staff-invite and DSAR-export links.
+  Reading another persona's reset link is the same as taking over that account, which is
+  harmless only because every staging account belongs to a test persona.
+- **What is not exposed.** Only the web UI and API (port 8025) are published, and only
+  over HTTPS with the credential. Plain http answers a redirect. SMTP (1025) is reachable
+  only inside the cluster. Mailpit relays, releases and forwards nothing, and its Send API
+  is locked.
+- **Rotation.** `docs/runbooks/credential-rotation.md`, section "Staging mail UI
+  (`mailpit-ui-credentials`)". The live checks are `scripts/staging-mail-ui.sh --probe
+  --context jtoye-stg-aks`.
+
+**Operator note: `grafana-staging.olajay.co.uk` (#968 item 3, approved 2026-10-20).**
+
+- **What it is.** Grafana's own login page was open to the internet, so anyone could guess its
+  admin password. Traefik now answers `401` before Grafana sees the request, by the same chain as
+  the mail UI: Ingress `grafana-public` carries `auth-type: basic` and `auth-secret:
+  grafana-edge-credentials`, a Secret (key `auth`, one apr1 htpasswd line for user
+  `staging-operator`) that the always-on `secret-sync` pod keeps synced from Key Vault through
+  SecretProviderClass `grafana-edge-kv`. Grafana's own login
+  (`grafana-admin-credentials--admin-user` / `--admin-password`) is a SECOND credential behind
+  this one; Traefik strips the `Authorization` header before forwarding, so the two never meet.
+  Prometheus scrapes Grafana through its Service, not this Ingress, so scraping is unaffected.
+- **Where the credential lives.** Two Key Vault objects in `jtoye-stg-kv`, generated by
+  `scripts/staging-secrets.sh` (nobody chooses them): `grafana-edge-credentials--password`
+  (random alnum32, the plaintext an operator types; mounted by no pod, granted to no workload
+  identity) and `grafana-edge-credentials--auth` (its apr1 line, the only one mounted). Read the
+  password without echoing it: `docs/runbooks/staging-operations.md` section 2.
+- **Fail closed.** If the Secret cannot be resolved Traefik skips the Ingress, so Grafana
+  disappears (404 at the edge) instead of opening. The same is true of a failed mount of
+  `grafana-edge-kv`: a new `secret-sync` pod that cannot fetch both objects never becomes Ready,
+  and `rollout status deployment/secret-sync` is the check that says so (the deploy health step
+  does not look at Grafana).
+- **Write the Key Vault objects and the grant BEFORE the merge.** From the branch, an operator
+  writes the two objects and grants the `secret-sync` identity read on the new hash object:
+  `scripts/staging-secrets.sh` generate/write, then `--assign-access`, then
+  `scripts/staging-secrets-preflight.sh --names-only`. The PR that introduced the gate lists the
+  exact commands. The order matters because the two halves do NOT fail alike if the deploy comes
+  first:
+  - The Ingress annotations apply at once and name Secret `grafana-edge-credentials`, which does
+    not exist until a `secret-sync` pod has mounted `grafana-edge-kv`. Traefik logs "Cannot
+    resolve auth secret, skipping ingress", so **`grafana-staging.olajay.co.uk` returns 404 for
+    everyone, operators included**, until the objects and the grant exist and `secret-sync` has
+    rolled (`rollout restart deployment/secret-sync`, then `rollout status`). This is the
+    fail-closed behaviour above, and it is a Grafana outage, not a preserved service.
+  - The new `secret-sync` pod cannot mount, so its rollout stalls and the old pod keeps serving
+    the RabbitMQ and mail-UI Secrets it already synced. Only that part is "nothing already live is
+    lost".
+  - **Nothing goes red.** The deploy job waits on core-java, edge-go and the frontend only, so a
+    deploy that lands before the objects exist still passes. Check
+    `rollout status deployment/secret-sync` and run `scripts/staging-grafana-edge.sh --probe`
+    after the deploy.
+- **Live checks.** `scripts/staging-grafana-edge.sh --probe --context jtoye-stg-aks` (G-1..G-4:
+  no credential 401 with a Basic challenge, a wrong one 401, the credential 200 and Grafana's
+  login page, http redirected to https without the page). Its predicates are proven able to fail
+  by `scripts/staging-grafana-edge.sh --selftest` (CI, `k8s-validate`), and the render is held by
+  INV-21 (`k8s/scripts/check-render-invariants.sh`) and the chain gate
+  (`k8s/scripts/check-keyvault-chain.sh`).
+- **Rotation.** `docs/runbooks/credential-rotation.md`, section "Staging Grafana edge gate".
+- **Production.** None: production renders no monitoring.
 
 ## Deployment Steps
 
@@ -319,6 +431,20 @@ staging is off by default and only fires once the variable is enabled, exactly
 like the production `DEPLOY_ENABLED` gate. The CI job pins the full-sha image
 tag at deploy time via `kustomize edit set image`.
 
+A merge to `main` that changes only documentation does not rebuild images or
+redeploy staging, and it runs none of the Testcontainers integration steps (the job still
+runs and reports). The `changes` job diffs a push against the last commit whose
+`Deploy to Staging` job succeeded, not against the previous push, and runs
+`scripts/ci-docs-only.sh` (read from the base commit, never from the change) over that
+diff; only when every path is an allow-listed documentation path are the expensive steps
+and `build-and-push` (and so both deploys) skipped. So staging always runs the newest code
+commit on `main`: a code merge whose build or deploy failed is picked up by the next merge,
+documentation-only or not. If the last deploy cannot be found, is not an ancestor, or the
+API fails, the full pipeline runs. With `DEPLOY_STAGING_ENABLED` unset nothing deploys, so
+the search finds an older deploy (or none) and later documentation-only merges run the full
+pipeline; that is intentional and fail-safe. The cheap gates, including the ones that parse
+docs, always run.
+
 For a manual deploy, follow the same steps as production but use `k8s/staging`:
 ```bash
 # Deploy to staging
@@ -380,29 +506,52 @@ kubectl get hpa -n jtoye-production -w
 
 ### Database Connection Budget (issue #94)
 
-Postgres for this platform (managed in the `jtoye-infrastructure` namespace,
-NOT by this kustomization) **MUST run with `max_connections=200`** — the same
-explicit value the local compose stack sets (`docker-compose.full-stack.yml`).
-Do not leave it at the PG15 default (100): the budget below assumes 200.
+Each Postgres target has its own `max_connections` and its own count of
+connections the server reserves for itself. Both come from
+**`k8s/scripts/connection-budget.conf`**, one row per target (D-25). A
+self-hosted Postgres reserves 3 (`superuser_reserved_connections`). Azure
+Database for PostgreSQL Flexible Server reserves 15 for the service, so only
+`max_connections - 15` are usable. A missing, non-numeric, duplicated or absent
+target row is a PARSE ERROR (exit 2), never a default:
 
-Connection math at the HPA replica ceiling (per environment/namespace — each
-points at its own Postgres via the `postgres-credentials` secret):
+| Target | max_connections | Reserved | 80% budget line | Source |
+|--------|-----------------|----------|-----------------|--------|
+| `compose` | 200 (parsed from `docker-compose.full-stack.yml`) | 3 | 157 | self-hosted `postgres:18-alpine` |
+| `k8s-staging` | 429 | 15 | 331 | Flexible Server B2s; 429 measured on the August 2026 server, re-measured live by plan 29-14 (`SHOW max_connections;`) — update the row if it differs |
+| `k8s-production` | 200 (parsed from compose) | 3 | 157 | UNCHANGED until Phase 32 provisions the production Flexible Server |
+
+The production Postgres (managed in the `jtoye-infrastructure` namespace,
+NOT by this kustomization) **MUST run with `max_connections=200`**, the value
+its row reads from compose. Do not leave it at the PostgreSQL default (100):
+the production line assumes 200.
+
+Demand at the HPA replica ceiling (each namespace points at its own Postgres
+via the `postgres-credentials` secret, so each target must fit its own line):
 
 | Consumer                                   | Connections |
 |--------------------------------------------|-------------|
-| core-java: (maxReplicas 10 + surge 1) × pool 10 | 110    |
+| core-java: (maxReplicas 10 + surge 1) × pool 12 | 132    |
 | Keycloak (Agroal pool, capped)             | 20          |
 | pg-backup CronJob (pg_dump)                | 1           |
 | postgres-exporter                          | 2           |
-| **Total application demand**               | **133**     |
-| superuser_reserved_connections             | 3           |
-| **max_connections required**               | **200** (133 ≤ 157 = 80% of 197 usable → ~32% headroom) |
+| **Total k8s demand (staging and production)** | **155** (≤ 331 staging, ≤ 157 production) |
+| compose: 2 replicas × pool 20 + Keycloak 20 + exporter 2 + healthcheck 2 | 64 (≤ 157) |
 
-Every number in that table is parsed from the real files and re-asserted on
-every CI run by `k8s/scripts/check-connection-math.sh` (job `k8s-validate`).
-If you change `maxReplicas`, `DB_POOL_SIZE`, the Hikari profile defaults, or
+**Phase 32 counterfactual (printed by the gate on every run).** Production at
+Azure's reserve of 15 and today's `max_connections=200` has a budget line of
+148, below the 155 it needs. The gate prints this as
+`INFO counterfactual: k8s-production …`, computing the smallest
+`max_connections` that fits (209 today). Phase 32 must size the production
+Flexible Server at that value or above, or lower the pool.
+
+Every number above is parsed from the real files and re-asserted on every CI
+run by `k8s/scripts/check-connection-math.sh` (job `k8s-validate`), followed by
+its `--selftest`. The selftest proves the D-25 fail arm: `k8s-staging` at
+`max_connections` 200 passes with the old reserve of 3 (155 ≤ 157) and fails
+with 15 (155 > 148). It also proves the three parse arms. If you change
+`maxReplicas`, `DB_POOL_SIZE`, the Hikari profile defaults, or a target's
 `max_connections`, the gate fails until the math balances again with >=20%
-headroom. If load tests (#115) ever show 10 connections per pod saturating,
+headroom. If load tests (#115) ever show 12 connections per pod saturating,
 prefer introducing PgBouncer (transaction mode) in front of Postgres over
 inflating pool sizes.
 
@@ -426,7 +575,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 | Script | What it guarantees |
 |--------|--------------------|
 | `check-no-plaintext-secrets.sh` | `k8s/base` and every overlay build, and no build output contains a top-level `kind: Secret` or a `REPLACE_WITH_*` placeholder (outside the known non-secret `deployment.timestamp` annotation). Plaintext Secret material can never become a live kustomize resource (#100). |
-| `check-connection-math.sh` | HPA `maxReplicas` × Hikari pool (+ Keycloak + pg-backup + exporter + reserved slots) fits Postgres `max_connections` with ≥20% headroom, the k8s `DB_POOL_SIZE` env matches the `application-prod.yml` default, and the core-java HPA carries no memory metric (#94). See "Database Connection Budget" above. |
+| `check-connection-math.sh` | HPA `maxReplicas` × Hikari pool (+ Keycloak + pg-backup + exporter) fits each target's Postgres budget — `max_connections` minus that target's reserved slots, both from `k8s/scripts/connection-budget.conf` — with ≥20% headroom (`--selftest` proves the D-25 fail arm), the k8s `DB_POOL_SIZE` env matches the `application-prod.yml` default, and the core-java HPA carries no memory metric (#94). See "Database Connection Budget" above. |
 | `check-env-contract.sh` | The env contract in **both** directions for **all three built services** (core-java, edge-go, frontend — widened from core-java-only by #298). Direction (a): every env name a Deployment injects is read by that service (a wrong name silently resolves to the service's own default — this is how the AMQP pool authenticated as the wrong user). Direction (b): every name a service reads is supplied, or carries an **explicit allowlist entry with a reason**. Per-service specifics: core-java parses `${PLACEHOLDER}`s across `application*.yml` and fails a default that is absent, local-only, **or an unresolved Spring property chain**; edge-go parses `os.Getenv`/`getEnv` literals and uses the strong form (read-and-not-injected is a violation) because the weak default-shape form would have been vacuous for `JWT_EXPECTED_ISSUER`, whose default is a variable; the frontend parses literal `process.env.NAME` **plus** the names `env-validation.ts` declares for its dynamic `process.env[expr]` reads, and encodes the **build-time/runtime split** — a `NEXT_PUBLIC_*` name is supplied by an `ARG` in `frontend/Dockerfile`, and one that is *both* ARG-declared and injected as a runtime `env:` is a non-allowlistable dead-config violation (D-18). Every extractor is self-tested against a synthetic control, so a regex that matches nothing exits **2 (VOID)** instead of reporting a clean contract over an unexamined service. The allowlists are themselves gated: a blank reason, a duplicate, a now-unnecessary entry, or an `OPEN DEFECT` reason citing no issue number all fail; `OPEN DEFECT` entries are printed under their own heading on every run. Requires GNU `grep -P`. |
 | `check-render-invariants.sh` | Assertions on the kustomize **render**, which is what actually reaches a cluster: no hardcoded Postgres port in the base; no EnvVar carrying both `value` and `valueFrom` (accepted by `kubectl kustomize`, **rejected** by the API server at apply time); no common labels injected into the kube-dns DNS-egress `podSelector` (that selector then matches nothing and core-java loses all DNS egress under an enforcing CNI); no `localhost`/`127.0.0.1` literal, emulator connection string, emulator account name or storage account key in a non-local render; on staging and production, the Blob storage model (INV-8), no stored storage credential (INV-9) and Workload Identity on exactly the two Blob workloads (INV-10); and no DB **superuser** named as the `postgres-credentials` app username in `k8s/QUICK_START.md` or `k8s/base/secrets-template.yaml.example`. |
 | `render-golden.sh` | The `kubectl kustomize k8s/staging` and `k8s/production` output is byte-identical to the reviewed goldens in `k8s/goldens/`. A `k8s/base` edit that changes either render without a regenerated golden fails the PR. |
@@ -470,6 +619,15 @@ bash scripts/check-branch-behind-base.sh \
 | `check-runtime-freshness.sh` | For **every** compose service with a `build:` stanza and a running container: (1) the image's **`.Metadata.LastTagTime`** is at or after the newest commit touching the paths that image is built from, and (2) the container's image **ID** equals the ID the tag now points at. (1) catches "source changed, nobody rebuilt"; (2) catches "image rebuilt, container only `start`ed, so the new image is not running". The service set, each build context and each Dockerfile are read from `docker compose config`; the build **inputs** are the host-side `COPY`/`ADD` operands of that Dockerfile plus the Dockerfile itself, so nothing is hardcoded here. **A built service that is missing or not `running` VOIDs the whole run (exit 2)** — see below. |
 | `check-branch-behind-base.sh` | `HEAD..<remote>/<default-branch>` is empty — this branch contains every commit already on its base. The base branch is **resolved** (`--base`, `$BASE_REF`, `$GITHUB_BASE_REF`, `refs/remotes/origin/HEAD`, then `git ls-remote --symref`), never hardcoded to `main`. Being *ahead* is normal and is not a finding; only being behind is. |
 
+**The Kubernetes half (plan 29-14, 2026-10-20).** `check-runtime-freshness.sh` is the compose half
+and has no cluster concept: pointed at Kubernetes it can only exit 2 (VOID).
+`scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag <40-hex deployed sha>` is the
+Kubernetes half. It reads the `imageID` of every running `core-java`, `edge-go` and `frontend`
+container and requires each to be in the digest set GHCR holds for the commit that was deployed
+(the recorded `DEPLOYED_SHA` / `DEPLOY_TAG`, never a fresh `git rev-parse HEAD`). The CI
+`deploy-staging` job runs it after the rollout; exit 2 (VOID) fails the job, because "could not
+check" is never "clean". Usage: [`docs/runbooks/staging-operations.md`](../docs/runbooks/staging-operations.md).
+
 **A third gate covers a hazard neither of the two above can see: a pinned dependency that is
 *current* in the tree and *out of support* in the world.** `scripts/check-dependency-horizons.sh`
 (plan **27-00**, not this section's pair) fails the build before a pin's support horizon lapses.
@@ -481,7 +639,8 @@ years past its last security patch, which is exactly what was found for RabbitMQ
 Note it **cannot** see the staging/production RabbitMQ broker: that broker is provisioned outside
 this repository and carries no manifest here, so its row is `pin: unknown` / `owner: UNASSIGNED`
 with a dated `manual_review`. See [`docs/runbooks/rabbitmq-broker-upgrade.md`](../docs/runbooks/rabbitmq-broker-upgrade.md)
-§7 for the operator action and ADR-0002 for the open ownership question.
+§7 for the operator action. ADR-0002 (Accepted 2026-08-10) settles the route: the in-cluster
+RabbitMQ cluster operator, which Phase 29 builds.
 
 **Why `.Metadata.LastTagTime` and not `.Created`.** Docker preserves the original
 `.Created` across a fully-cached rebuild and across a `docker pull`. Measured on
@@ -637,7 +796,7 @@ everywhere:
 | Gate | Job | What it pins |
 |---|---|---|
 | `k8s/scripts/check-no-plaintext-secrets.sh` | `k8s-validate` | No plaintext Secret material in any kustomize build (#100). |
-| `k8s/scripts/check-connection-math.sh` | `k8s-validate` | The DB connection budget fits `max_connections` with ≥20% headroom (#94). |
+| `k8s/scripts/check-connection-math.sh` | `k8s-validate` | The DB connection budget fits each target's `max_connections` minus its reserved slots (`connection-budget.conf`, D-25) with ≥20% headroom (#94). |
 | `k8s/scripts/check-env-contract.sh` | `k8s-validate` | The env contract in both directions for core-java, edge-go **and** the frontend (D-07/D-08, widened by #298), including the frontend's build-time/runtime channel split. |
 | `k8s/scripts/check-render-invariants.sh` | `k8s-validate` | Render-level invariants (DB port, kube-dns selector, no localhost literal, no DB superuser). |
 | `k8s/scripts/render-golden.sh` | `k8s-validate` | staging/production renders are byte-identical to their reviewed goldens. |
@@ -727,9 +886,11 @@ today that sink is a Mailhog dev container with nobody behind it. Delivery is no
 **An expired deferral, exemption or `manual_review` is a FAIL by design.** That is the whole
 mechanism: a gap is acknowledged, owned and *dated*, and the build goes red the day the date
 passes. Re-date it deliberately with a reason, or resolve it — never delete the row. The
-`rabbitmq-k8s` row is the live example: the staging/production broker is provisioned outside this
-repository, so its row is `pin: unknown` / `owner: UNASSIGNED` with a dated `manual_review`, it is
-printed on **every** run, and it goes red the day that review lapses. See
+`rabbitmq-k8s` row was the example until plan 29-10: while the broker was provisioned outside this
+repository its row was `pin: unknown` / `owner: UNASSIGNED` with a dated `manual_review`, printed on
+**every** run. It was resolved, not deleted: the staging broker is now the `RabbitmqCluster` in
+`k8s/components/rabbitmq/`, and the row carries its `spec.image` pin at that site with the review
+retired. The rows still under a dated `manual_review` are the `UNKNOWN` lines each run prints. See
 [`docs/runbooks/rabbitmq-broker-upgrade.md`](../docs/runbooks/rabbitmq-broker-upgrade.md) §7.
 
 ## Monitoring and Observability
@@ -796,7 +957,22 @@ kubectl logs -f -n ingress-nginx -l app.kubernetes.io/component=controller
 
 # Check TLS certificate status
 kubectl get certificate -n jtoye-production
-kubectl describe certificate jtoye-tls -n jtoye-production
+kubectl describe certificate jtoye-api-tls jtoye-app-tls -n jtoye-production   # one per host (plan 29-08)
+```
+
+### Certificate stuck not-Ready (HTTP-01 challenge timeout)
+HTTP-01 behind default-deny was proven on staging by plan 29-14 (2026-10-19; see "HTTP-01 behind default-deny" in
+`k8s/base/networkpolicies/README.md`). The namespace is default-deny, so a challenge timeout is most likely the solver
+allow-rule (`acme-http01-solver-allow`), not DNS: a self-check that says connection refused/timeout (not NXDOMAIN)
+points at the rule. Check in this order:
+```bash
+kubectl --context jtoye-stg-aks -n jtoye-staging get challenges,orders
+kubectl --context jtoye-stg-aks -n jtoye-staging describe challenge <name>
+kubectl --context jtoye-stg-aks -n jtoye-staging get networkpolicy acme-http01-solver-allow -o yaml
+#   podSelector must match acme.cert-manager.io/http01-solver=true; ingress from the controller namespace
+#   (app-config ingress.controller-namespace: traefik in staging/production) on TCP 8089.
+kubectl --context jtoye-stg-aks -n jtoye-staging get pods -l acme.cert-manager.io/http01-solver=true --show-labels
+dig @dns1.registrar-servers.com +short A <host>.olajay.co.uk    # only after the above
 ```
 
 ### Database Connection Issues

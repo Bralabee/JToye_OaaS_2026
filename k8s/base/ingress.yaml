@@ -22,7 +22,12 @@ metadata:
     nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.olajay.co.uk"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS, PATCH"
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    # Every header the browser sends cross-origin must be named here: the edge answers
+    # the preflight from this list and never asks core-java. Idempotency-Key and
+    # X-Tenant-Id were missing, so every storefront order POST failed its preflight
+    # (issue #1025). INV-24 derives the browser's set from frontend/ and fails a
+    # render that omits one; never use "*" (credentials are on).
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id"
     nginx.ingress.kubernetes.io/cors-max-age: "86400"
 
     # Security Headers
@@ -44,17 +49,25 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
 spec:
   ingressClassName: nginx
-  # TLS: exactly the two hosts this controller actually serves.
+  # TLS: exactly the two hosts this controller actually serves, ONE CERTIFICATE
+  # PER HOST (Phase 29 plan 29-08, Pitfall 4, D-07).
   #
-  # A THIRD host used to sit in this SAN list — the Keycloak hostname — alongside
-  # a rule routing it to a Service named `keycloak`. See the note above `rules:`
-  # for why both were removed. The SAN entry mattered on its own: all three names
-  # share ONE `secretName: jtoye-tls`, and cert-manager issues that certificate as
-  # a single order covering every SAN. An HTTP-01 challenge for a hostname whose
-  # DNS points at the managed identity provider rather than at this controller
-  # cannot be answered here, and a failed challenge fails the WHOLE order — so a
-  # dangling SAN could block or stall renewal for api and app too, taking the
-  # platform's real certificate down with it.
+  # cert-manager issues one Certificate per tls entry, and one ACME order covers
+  # every host in that entry. Until 29-08 api and app shared one entry and one
+  # Secret (jtoye-tls), so a single failed HTTP-01 challenge (DNS for one host
+  # not yet added, or pointing elsewhere) failed the WHOLE order and left BOTH
+  # hosts without a certificate. A third host, the Keycloak hostname, once sat in
+  # that list too; see the note above `rules:` for why it was removed, which is
+  # exactly that failure. With one entry per host, each host is its own order:
+  # DNS can be added host by host, and one host's failed challenge or renewal
+  # cannot take the other down.
+  #
+  # THIS Ingress owns both certificates. The SSE Ingress (sse-ingress.yaml)
+  # serves the api host too and REFERENCES jtoye-api-tls without the cert-manager
+  # annotation: two Certificates writing one Secret would fight over it.
+  # INV-15 in k8s/scripts/check-render-invariants.sh asserts, on staging and
+  # production: one host per tls entry, and no two cert-manager-managed entries
+  # sharing a Secret.
   #
   # Keep this list in lockstep with `rules:` below: a host belongs here only if a
   # rule routes it to a Service that exists in the render. CI asserts the
@@ -62,8 +75,10 @@ spec:
   tls:
   - hosts:
     - api.olajay.co.uk
+    secretName: jtoye-api-tls
+  - hosts:
     - app.olajay.co.uk
-    secretName: jtoye-tls
+    secretName: jtoye-app-tls
   # Host rules.
   #
   # REMOVED (Phase 26 / plan 26-04, 26-REVIEWS.md Adjudication B — a CONFIRMED
@@ -86,6 +101,13 @@ spec:
   # before them. Recorded as a dated deferred item in
   # .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md
   # so the displaced intent is not lost.
+  #
+  # STAGING NOW DOES (Phase 29 plan 29-10, D-02): k8s/components/keycloak carries
+  # its OWN Ingress `keycloak-public` for auth-staging.olajay.co.uk in the same
+  # file as the keycloak Service and Deployment, with its own tls entry and Secret
+  # and only the /realms/jtoye-staging, /realms/jtoye-customers and /resources/
+  # prefixes. This base Ingress still does not claim an auth host, and production
+  # (whose IdP is decided in Phase 32) renders no Keycloak at all.
   rules:
   - host: api.olajay.co.uk
     http:

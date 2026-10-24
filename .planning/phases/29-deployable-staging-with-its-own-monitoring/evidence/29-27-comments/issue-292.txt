@@ -1,0 +1,5 @@
+Phase 29 disposition for #292 (DPLY-02): already closed on 2026-08-04; recorded, not reopened.
+
+The guard that closed it holds. scripts/check-frontend-baked-origin.sh requires the API origin baked into the frontend image to equal the overlay's api.url. In Phase 29 it was shown failing before it was shown passing: the production origin against the staging overlay exits 1 and names both origins; the staging origin exits 0; an empty origin exits 1; with the live repository variable FRONTEND_PUBLIC_API_URL set to the staging origin it passes, and with a wrong variable it fails. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-21-ci.txt, lines 46 to 72 and 329 to 334.
+
+Scope, so the closure is not read as more than it is: Phase 29 builds one frontend image for the staging origin and deploys staging only; the production deploy stays off. Per-environment frontend images, so that one commit can serve two environments, remain a prerequisite of Phase 32. Until then the guard is what stops a single-origin image from reaching the wrong environment.

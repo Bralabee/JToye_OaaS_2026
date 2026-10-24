@@ -34,6 +34,23 @@ metadata:
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
   labels:
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: production
+  name: frontend
+  namespace: jtoye-production
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
     app.kubernetes.io/component: database
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: pg-backup
@@ -53,6 +70,8 @@ data:
   backup.blob.prefix: backups
   cors.allowed-origins: https://app.olajay.co.uk
   db.port: "5432"
+  db.ssl-factory: org.postgresql.ssl.DefaultJavaSSLFactory
+  db.ssl-mode: verify-full
   edge.rate-limit.burst: "400"
   edge.rate-limit.rps: "200"
   edge.rate-limit.tenant.burst: "20"
@@ -61,13 +80,17 @@ data:
   frontend.url: https://app.olajay.co.uk
   gdpr.dsar.export-download-base-url: https://app.olajay.co.uk/data-request/download
   gdpr.dsar.verify-base-url: https://app.olajay.co.uk/data-request/confirm
+  ingress.controller-namespace: traefik
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.customer-realm: jtoye-customers
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
   keycloak.admin.vendor-realm: jtoye-prod
-  keycloak.client-id: frontend
+  keycloak.client-id: core-api
+  keycloak.customer.client-id: storefront-client
+  keycloak.customer.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-customers
+  keycloak.customer.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-customers
   keycloak.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   keycloak.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   log.level: INFO
@@ -78,6 +101,7 @@ data:
   media.outbox.resurrect.interval.ms: "300000"
   notification.email.tracking-base-url: https://app.olajay.co.uk
   notification.unsubscribe.base-url: https://app.olajay.co.uk
+  notification.unsubscribe.one-click-base-url: https://api.olajay.co.uk
   order-limits.max-basket-total-pennies: "100000"
   order-limits.max-basket-units: "200"
   order-limits.max-line-quantity: "50"
@@ -305,6 +329,26 @@ spec:
             secretKeyRef:
               key: password
               name: postgres-credentials
+        - name: DB_MIGRATION_USER
+          valueFrom:
+            secretKeyRef:
+              key: migration-username
+              name: postgres-credentials
+        - name: DB_MIGRATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: migration-password
+              name: postgres-credentials
+        - name: DB_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              key: db.ssl-mode
+              name: app-config
+        - name: DB_SSL_FACTORY
+          valueFrom:
+            configMapKeyRef:
+              key: db.ssl-factory
+              name: app-config
         - name: DB_POOL_SIZE
           value: "12"
         - name: JTOYE_RABBIT_DEFAULT_PREFETCH
@@ -472,6 +516,16 @@ spec:
             configMapKeyRef:
               key: jwt.expected-audience
               name: app-config
+        - name: CUSTOMER_KC_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.issuer.uri
+              name: app-config
+        - name: CUSTOMER_JWT_EXPECTED_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.public.issuer.uri
+              name: app-config
         - name: CORS_ALLOWED_ORIGINS
           valueFrom:
             configMapKeyRef:
@@ -553,6 +607,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: notification.unsubscribe.base-url
+              name: app-config
+        - name: NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: notification.unsubscribe.one-click-base-url
               name: app-config
         - name: DSAR_VERIFY_BASE_URL
           valueFrom:
@@ -744,6 +803,7 @@ spec:
         volumeMounts:
         - mountPath: /var/log/jtoye
           name: app-logs
+      enableServiceLinks: false
       securityContext:
         fsGroup: 1000
       serviceAccountName: core-java
@@ -975,8 +1035,8 @@ spec:
         - name: KEYCLOAK_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              key: frontend-client-secret
-              name: keycloak-credentials
+              key: client-secret
+              name: frontend-oidc-credentials
         - name: KEYCLOAK_ISSUER
           valueFrom:
             configMapKeyRef:
@@ -986,6 +1046,21 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: keycloak.issuer.uri
+              name: app-config
+        - name: CUSTOMER_KEYCLOAK_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.public.issuer.uri
+              name: app-config
+        - name: CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.issuer.uri
+              name: app-config
+        - name: CUSTOMER_KEYCLOAK_CLIENT_ID
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.customer.client-id
               name: app-config
         - name: NEXT_PUBLIC_KEYCLOAK_URL
           valueFrom:
@@ -1030,6 +1105,7 @@ spec:
           readOnlyRootFilesystem: false
           runAsNonRoot: true
           runAsUser: 1001
+      serviceAccountName: frontend
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -1081,27 +1157,27 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: host
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: DB_PORT
               valueFrom:
                 secretKeyRef:
                   key: port
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   key: database
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
                   key: backup-username
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
                   key: backup-password
-                  name: postgres-credentials
+                  name: pg-backup-credentials
             - name: STORAGE_AUTH_MODE
               valueFrom:
                 configMapKeyRef:
@@ -1331,7 +1407,7 @@ metadata:
       more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
       more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
-    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
     nginx.ingress.kubernetes.io/cors-allow-methods: GET, POST, PUT, DELETE, OPTIONS,
       PATCH
     nginx.ingress.kubernetes.io/cors-allow-origin: https://app.olajay.co.uk
@@ -1380,19 +1456,20 @@ spec:
   tls:
   - hosts:
     - api.olajay.co.uk
+    secretName: jtoye-api-tls
+  - hosts:
     - app.olajay.co.uk
-    secretName: jtoye-tls
+    secretName: jtoye-app-tls
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
     nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
-    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization
+    nginx.ingress.kubernetes.io/cors-allow-headers: DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Tenant-Id
     nginx.ingress.kubernetes.io/cors-allow-methods: GET, OPTIONS
     nginx.ingress.kubernetes.io/cors-allow-origin: https://app.olajay.co.uk
     nginx.ingress.kubernetes.io/cors-max-age: "86400"
@@ -1426,7 +1503,38 @@ spec:
   tls:
   - hosts:
     - api.olajay.co.uk
-    secretName: jtoye-tls
+    secretName: jtoye-api-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: acme-http01-solver-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: production
+  name: acme-http01-solver-allow
+  namespace: jtoye-production
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: traefik
+    ports:
+    - port: 8089
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+  - Ingress
+  - Egress
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -1461,22 +1569,49 @@ spec:
     - port: 5432
       protocol: TCP
     to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
   - ports:
     - port: 6379
       protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: redis
+  - ports:
     - port: 5672
       protocol: TCP
     - port: 61613
       protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: rabbitmq
+  - ports:
+    - port: 1025
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: mailpit
+  - ports:
     - port: 9093
       protocol: TCP
     to:
-    - namespaceSelector:
+    - podSelector:
         matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+          app: alertmanager
+  - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
   - ports:
     - port: 443
       protocol: TCP
@@ -1501,12 +1636,16 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: monitoring
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+          kubernetes.io/metadata.name: traefik
     ports:
     - port: 9090
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9091
       protocol: TCP
   podSelector:
     matchLabels:
@@ -1573,6 +1712,13 @@ spec:
         matchLabels:
           app: core-java
   - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
+  - ports:
     - port: 443
       protocol: TCP
     to:
@@ -1586,17 +1732,14 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+          kubernetes.io/metadata.name: traefik
     ports:
     - port: 8080
       protocol: TCP
   - from:
-    - namespaceSelector:
+    - podSelector:
         matchLabels:
-          kubernetes.io/metadata.name: monitoring
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+          app: prometheus
     ports:
     - port: 8080
       protocol: TCP
@@ -1644,6 +1787,13 @@ spec:
         matchLabels:
           app: core-java
   - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
+  - ports:
     - port: 443
       protocol: TCP
     to:
@@ -1657,7 +1807,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+          kubernetes.io/metadata.name: traefik
     ports:
     - port: 3000
       protocol: TCP
@@ -1730,9 +1880,12 @@ spec:
     - port: 5432
       protocol: TCP
     to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: jtoye-infrastructure
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
   - ports:
     - port: 443
       protocol: TCP

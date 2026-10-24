@@ -4,14 +4,25 @@
 # Allow-list for Next.js frontend pods (`app=frontend`).
 #
 # Ingress:
-#   - From ingress-nginx controller only, on port 3000.
+#   - From the ingress-controller namespace only, on port 3000. The namespace is
+#     NOT authored here: it is overwritten at render time from app-config
+#     `ingress.controller-namespace` (traefik in base/staging/production — the
+#     controller of record, Phase 29 D-29; ingress-nginx in k8s/local, where the
+#     minikube addon runs). See the `replacements:` block in
+#     k8s/base/kustomization.yaml.
 # Egress:
 #   - DNS to kube-dns.
 #   - core-java on port 9090 (server-side API calls from Next.js).
-#   - Public 443/TCP for Keycloak (NextAuth), image CDNs, and the Azure Blob media endpoint.
+#   - Keycloak pods in the SAME namespace (`app=keycloak`) on 8080: NextAuth's
+#     server-side OIDC calls go to the INTERNAL issuer (29-RESEARCH.md Pattern 5),
+#     not out through the public LoadBalancer and back (the hairpin an enforcing
+#     CNI may not evaluate against the 443 rule below).
+#   - Public 443/TCP for image CDNs, the Azure Blob media endpoint, and the
+#     public Keycloak host for any call that still uses the public issuer.
 #     Stripe is NOT called from the frontend (server-side-only).
 #
-# Enforces STRIDE T-15-01 (frontend cannot reach Postgres / Redis / RabbitMQ).
+# Enforces STRIDE T-15-01 (frontend cannot reach Postgres / Redis / RabbitMQ)
+# and T-29-04 (only the controller namespace reaches the frontend from outside).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -28,10 +39,12 @@ spec:
     - Ingress
     - Egress
   ingress:
+    # ingress.0.from.0 — the controller namespace; REPLACED from app-config
+    # ingress.controller-namespace (index is load-bearing, see kustomization.yaml).
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
+              kubernetes.io/metadata.name: traefik
       ports:
         - protocol: TCP
           port: 3000
@@ -57,7 +70,15 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
-    # Public 443 for Keycloak (auth.olajay.co.uk) + image CDNs + the Azure Blob media endpoint
+    # Keycloak in the same namespace (internal issuer, Pattern 5)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Public 443 for image CDNs + the Azure Blob media endpoint + public Keycloak
     # See 15-RESEARCH.md §4 — Stripe CIDR tradeoff; we use 0.0.0.0/0 with narrow
     # port scoping. A future egress-proxy pod is the defense-in-depth option.
     - to:

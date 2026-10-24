@@ -436,3 +436,35 @@ describe("the web address (UI-SPEC G2, UXT-028)", () => {
     expect(address.className).not.toMatch(/truncate|whitespace-nowrap/)
   })
 })
+
+describe("ADR-0007 commercial & scheduled fulfilment policy controls (GAP-GTM-01/02/06)", () => {
+  it("saves fulfilmentTimingMode, settlementPolicyMode, and depositBps when configured for scheduled batch / catering", async () => {
+    stubShops(KITCHEN)
+    const dialog = await openEdit("Rosie's Kitchen")
+
+    await type(within(dialog).getByLabelText("Order timing mode"), "SCHEDULED_SLOTS_ONLY")
+    await type(
+      within(dialog).getByLabelText("Settlement & deposit policy"),
+      "SPLIT_DEPOSIT_VENDOR_MOR"
+    )
+    await type(within(dialog).getByLabelText("Upfront catering deposit (%)"), "50")
+
+    await click(screen.getByRole("button", { name: "Update Shop" }))
+    const body = sentBody()
+    expect(body.fulfilmentTimingMode).toBe("SCHEDULED_SLOTS_ONLY")
+    expect(body.settlementPolicyMode).toBe("SPLIT_DEPOSIT_VENDOR_MOR")
+    expect(body.depositBps).toBe(5000)
+  })
+
+  it("opens the Scheduled Pre-Order Slots & WhatsApp Link dialog from the shop row action", async () => {
+    stubShops(KITCHEN)
+    render(<ShopsPage />)
+    const slotsBtn = await screen.findByRole("button", {
+      name: "Scheduled slots and WhatsApp link for Rosie's Kitchen",
+    })
+    await click(slotsBtn)
+    expect(
+      await screen.findByText(/Scheduled Pre-Order Slots & WhatsApp Link — Rosie's Kitchen/i)
+    ).toBeInTheDocument()
+  })
+})

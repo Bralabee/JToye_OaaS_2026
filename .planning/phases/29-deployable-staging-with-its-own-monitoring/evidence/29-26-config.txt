@@ -1,0 +1,259 @@
+# 29-26 evidence: #592 one-click origin, #299 customer realm, INV-17 (#859), live proofs
+# Executor: lane A, branch phase-29-deployable-staging, plan base fea03fd4e10eee7ea33085ac8d080c457c983807
+
+== TASK 1 BEFORE (tree at plan base, 2026-10-19T14:34:35Z): render count of the env per overlay
+  staging: kustomize rc=0 count=0
+  production: kustomize rc=0 count=0
+  local: kustomize rc=0 count=0
+  rg -uu ONE_CLICK k8s -> rg_rc=1
+
+== TASK 1 golden check BEFORE --write (2026-10-19T14:35:59Z): must fail (render changed)
+  render-golden.sh rc=1
+    If the change is INTENDED, review the diff above, then run
+      k8s/scripts/render-golden.sh --write
+    and commit the regenerated golden alongside the k8s/base edit that caused it.
+  render-golden.sh --write rc=0
+     k8s/goldens/production.yaml | 6 ++++++
+     k8s/goldens/staging.yaml    | 6 ++++++
+     2 files changed, 12 insertions(+)
+== TASK 1 AFTER (2026-10-19T14:35:59Z): render count of the env per overlay
+  staging: kustomize rc=0 count=1 value=[  notification.unsubscribe.one-click-base-url: https://api-staging.olajay.co.uk]
+  production: kustomize rc=0 count=1 value=[  notification.unsubscribe.one-click-base-url: https://api.olajay.co.uk]
+  local: kustomize rc=0 count=1 value=[  notification.unsubscribe.one-click-base-url: http://api.jtoye.local]
+== TASK 1 quick static set (2026-10-19T14:36:04Z)
+  check-render-invariants.sh rc=0
+  render-golden.sh rc=0
+  check-env-contract.sh rc=0
+  check-no-plaintext-secrets.sh rc=0
+  check-connection-math.sh rc=0
+
+== TASK 2 env contract, wiring added but the five #299 rows still present (2026-10-19T14:42:35Z): must fail STALE
+  check-env-contract.sh rc=1
+      - core-java allowlist (b): STALE entry 'CUSTOMER_JWT_EXPECTED_ISSUER' — a manifest now SUPPLIES it, so it is no longer an unsupplied omission. Remove the entry rather than leaving a standing excus
+      - core-java allowlist (b): STALE entry 'CUSTOMER_KC_ISSUER_URI' — a manifest now SUPPLIES it, so it is no longer an unsupplied omission. Remove the entry rather than leaving a standing excuse for 
+      - frontend allowlist (b): STALE entry 'CUSTOMER_KEYCLOAK_CLIENT_ID' — the manifest now SUPPLIES it at runtime. Remove the entry rather than leaving a standing excuse for a variable that is already
+      - frontend allowlist (b): STALE entry 'CUSTOMER_KEYCLOAK_ISSUER' — the manifest now SUPPLIES it at runtime. Remove the entry rather than leaving a standing excuse for a variable that is already fi
+      - frontend allowlist (b): STALE entry 'CUSTOMER_KEYCLOAK_ISSUER_INTERNAL' — the manifest now SUPPLIES it at runtime. Remove the entry rather than leaving a standing excuse for a variable that is a
+
+== TASK 2 verify 1 verbatim (2026-10-19T14:43:14Z)
+  rc=0
+  env-contract: PASS: core-java 89 injected / 193 read; edge-go 9 injected / 17 read; frontend 13 injected / 7 build-arg / 32 read. Both directions hold for all three services, with 24 allowlisted omission(s), of whi
+  selftest-inv17: ARM literal-false caught=yes
+  selftest-inv17: ARM configmap-false caught=yes
+  selftest-inv17: ARM relaxed-spelling caught=yes
+  selftest-inv17: ARM dev-profile caught=yes
+  selftest-inv17: ARM yaml-default-false caught=yes
+  selftest-inv17: ARM yaml-line-missing caught=yes
+  selftest-inv17: CLEAN rc=0
+  INV-17 SKIP (not in WI_TARGETS) 
+  INV-17 SKIP (not in WI_TARGETS) 
+  INV-17 OK (application.yml default true; 0 env override(s), all true; no active profile relaxes it) 
+  INV-17 OK (application.yml default true; 0 env override(s), all true; no active profile relaxes it) 
+  INV-17 hold on k8s/staging k8s/production; INV-16 holds on k8s/staging (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; LOC-1..LOC-6, LOC-7 checked on k8s/local.
+  render-golden: All overlay renders match their committed goldens.
+  quick set:
+    check-no-plaintext-secrets.sh rc=0
+    check-connection-math.sh rc=0
+    check-keyvault-chain.sh rc=0
+    check-gate-enforcement.sh rc=0
+
+== TASK 2 repo variable (read only; the dispatch forbids changing repo vars) (2026-10-19T14:43:40Z)
+  rc=0 value=[https://auth-staging.olajay.co.uk/realms/jtoye-customers]
+  verify 2 rc=0
+  fail direction (an unset name): rc=1 value=[variable FRONTEND_PUBLIC_CUSTOMER_KEYCLOAK_URL_DOES_NOT_EXIST was not found]
+  verify on the unset name rc=1
+
+== TASK 2 acceptance (2026-10-19T14:44:08Z)
+  -- fail direction: scratch copy of the committed tree (901f7fdd) with the five env entries removed (rows already removed)
+  planted: 5 env entries removed
+  check-env-contract.sh on the planted copy rc=1
+    named:       1 CUSTOMER_JWT_EXPECTED_ISSUER
+    named:       1 CUSTOMER_KC_ISSUER_URI
+    named:       1 CUSTOMER_KEYCLOAK_CLIENT_ID
+    named:       1 CUSTOMER_KEYCLOAK_ISSUER
+    named:       1 CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+  restored (unmodified copy of 901f7fdd) rc=0
+  -- OPEN DEFECT #299 rows
+  after: grep rc=1 lines=[]
+  before (FIRST=e5b03e30, e5b03e30^): git show rc=0
+    163:  'CUSTOMER_KC_ISSUER_URI|OPEN DEFECT #299 — the customer-storef
+    164:  'CUSTOMER_JWT_EXPECTED_ISSUER|OPEN DEFECT #299 — same realm, s
+    230:  'CUSTOMER_KEYCLOAK_ISSUER|OPEN DEFECT #299 — the customer-stor
+    231:  'CUSTOMER_KEYCLOAK_ISSUER_INTERNAL|OPEN DEFECT #299 — same rea
+    232:  'CUSTOMER_KEYCLOAK_CLIENT_ID|OPEN DEFECT #299 — same realm, sa
+
+== TASK 3 BEFORE the deploy (2026-10-19T14:46:49Z), kube-context jtoye-stg-aks, namespace jtoye-staging
+  core-java pod=core-java-594d8c456b-qmrsp exec rc=0: plan envs present=0 (control: NOTIFICATION_UNSUBSCRIBE_BASE_URL/KEYCLOAK_ISSUER present=1)
+  frontend pod=frontend-6c945447bd-pv7m8 exec rc=0: plan envs present=0 (control: NOTIFICATION_UNSUBSCRIBE_BASE_URL/KEYCLOAK_ISSUER present=1)
+  frontend image bake (pod frontend-6c945447bd-pv7m8, exec rc=0): cwd=/app/.next files naming the staging customer realm=5, the production one=0, any jtoye-customers realm=5 
+
+  -- Mailpit (in-cluster API through a PID-captured port-forward of svc/mailpit 18025:8025, 2026-10-19T14:48Z),
+     headers of the 29-18 seed order's mail BEFORE this plan's deploy (unsubscribe tokens redacted here):
+    41z354xMRi3gLIjKSrhMck To: guest.staging@olajay.co.uk  Subject: Payment received — order ORD-1AAC0CDE-20261019-4D3B23A2
+      List-Unsubscribe: <https://app-staging.olajay.co.uk/unsubscribe?tenant=1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4&email=guest.staging%40olajay.co.uk&category=FINANCIAL&token=<redacted>>
+      List-Unsubscribe-Post: (ABSENT)
+    3NxeR70CxLMw5ecNc88l6L To: vendor.staging@olajay.co.uk  Subject: Order ORD-1AAC0CDE-20261019-4D3B23A2 — an update
+      List-Unsubscribe: <https://app-staging.olajay.co.uk/unsubscribe?...&category=ORDERS&token=<redacted>>
+      List-Unsubscribe-Post: (ABSENT)
+    2Lr4n5XlVSoaMIcsju29pk To: vendor.staging@olajay.co.uk  Subject: Payment received — order ORD-1AAC0CDE-20261019-4D3B23A2
+      List-Unsubscribe: <https://app-staging.olajay.co.uk/unsubscribe?...&category=FINANCIAL&token=<redacted>>
+      List-Unsubscribe-Post: (ABSENT)
+    1qvuli90fKX1CLuABGTAO2 To: guest.staging@olajay.co.uk  Subject: Order ORD-1AAC0CDE-20261019-4D3B23A2 — Received
+      List-Unsubscribe: (ABSENT)   List-Unsubscribe-Post: (ABSENT)
+    => #592 measured live: every NotificationDispatchService mail (customer AND vendor) degraded to the RFC 2369 page link
+       on the APP origin, with no List-Unsubscribe-Post. The customer's ORDER-STATE mail comes from the legacy
+       EmailNotificationService path, which sets no List-Unsubscribe at all (RecipientResolver: order.state.* is vendor-only
+       on the dispatch path; the customer is on the legacy path, Pitfall 5).
+
+  -- staging-login.spec.ts BEFORE the deploy (2026-10-19T14:49Z, verbatim Task 3 verify 1): rc=0 passed=[2 passed] lines=0
+    CUSTOMER_AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-customers/protocol/openid-connect/auth?client_id=storefront-client&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fshop%2Fauth%2Fcallback&response_type=code&scope=openid+email+profile&code_challenge=<per-run>&code_challenge_method=S256&state=<per-run>&nonce=<per-run>
+    CUSTOMER_LOGIN_PAGE 200 https://auth-staging.olajay.co.uk/realms/jtoye-customers/protocol/openid-connect/auth
+    CUSTOMER_THEME_CSS .../resources/huzez/login/jtoye/css/login.css .../resources/huzez/login/jtoye/css/jtoye.css
+    => the customer REDIRECT already passes before the deploy, and cannot fail on it: it is built from the build-time
+       NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL baked into the 6e95ee6c frontend image (5 .next files name the staging customer
+       realm, 0 the production one; repo variable already = the staging realm). Its fail direction is the planted
+       spec arms recorded below. #299's RUNTIME half is server-side, proven by the customer order-history probe next.
+
+  -- #299 functional probe BEFORE the deploy (scratch Playwright, not committed; a test customer registered through
+     the storefront's own "Create an account" on the staging jtoye-customers realm, email verified through Mailpit,
+     password set through Keycloak's Forgot Password mail and held only in a mode-600 scratch file):
+    2026-10-19T14:50:57Z register customer-299-probe.staging@olajay.co.uk -> Keycloak "Email verification" required action
+    2026-10-19T14:55:01Z sign in through /shop/signin -> landed https://app-staging.olajay.co.uk/shop, nav shows "My Orders", "Probe Customer"
+      GET /api/customer-orders (the frontend proxy to core-java GET /public/orders/mine with X-Customer-Token):
+      ORDERS_STATUS 401
+      ORDERS_BODY {"detail":"Customer authentication required","instance":"/public/orders/mine","status":401,"title":"Unauthorized","type":"https://jtoye.uk/errors/response-status"}
+    => #299 measured live: a signed-in, email-verified storefront customer cannot read their order history, because
+       core-java's CustomerJwtVerifier has no CUSTOMER_KC_ISSUER_URI / CUSTOMER_JWT_EXPECTED_ISSUER and falls back to
+       http://localhost:8085/realms/jtoye-customers (the pod's own loopback).
+
+== TASK 3 pre-apply diff gate (2026-10-19T14:56:03Z): deploy.sh staging --render-only --image-tag 6e95ee6c... | kubectl --context jtoye-stg-aks diff -f -
+  render rc=0 (5051 lines); diff rc=1; changed objects:
+    apps.v1.Deployment.jtoye-staging.core-java
+    apps.v1.Deployment.jtoye-staging.frontend
+    v1.ConfigMap.jtoye-staging.app-config
+  every changed line except metadata.generation:
+    +        - name: CUSTOMER_KC_ISSUER_URI
+    +          valueFrom:
+    +            configMapKeyRef:
+    +              key: keycloak.customer.issuer.uri
+    +              name: app-config
+    +        - name: CUSTOMER_JWT_EXPECTED_ISSUER
+    +          valueFrom:
+    +            configMapKeyRef:
+    +              key: keycloak.customer.public.issuer.uri
+    +              name: app-config
+    +        - name: NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL
+    +          valueFrom:
+    +            configMapKeyRef:
+    +              key: notification.unsubscribe.one-click-base-url
+    +              name: app-config
+    +        - name: CUSTOMER_KEYCLOAK_ISSUER
+    +          valueFrom:
+    +            configMapKeyRef:
+    +              key: keycloak.customer.public.issuer.uri
+    +              name: app-config
+    +        - name: CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+    +          valueFrom:
+    +            configMapKeyRef:
+    +              key: keycloak.customer.issuer.uri
+    +              name: app-config
+    +        - name: CUSTOMER_KEYCLOAK_CLIENT_ID
+    +          valueFrom:
+    +            configMapKeyRef:
+    +              key: keycloak.customer.client-id
+    +              name: app-config
+    +  keycloak.customer.client-id: storefront-client
+    +  keycloak.customer.issuer.uri: http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-customers
+    +  keycloak.customer.public.issuer.uri: https://auth-staging.olajay.co.uk/realms/jtoye-customers
+    +  notification.unsubscribe.one-click-base-url: https://api-staging.olajay.co.uk
+  => only the 4 app-config keys and the 6 envs (3 core-java, 3 frontend); 0 image, 0 other lines.
+  fail direction: the same render at tag efab17d7 diffs 8 image lines against live (the gate sees a tag change).
+
+  -- the customer test's own fail direction (scratch copies of the spec, run with --grep customer, then deleted;
+     2026-10-19T14:57Z, against the live staging storefront):
+    ARM realm  (CUSTOMER_REALM "jtoye-staging")   rc=1 1 failed  Expected "/realms/jtoye-staging/protocol/openid-connect/auth"  Received "/realms/jtoye-customers/protocol/openid-connect/auth"
+    ARM client (CUSTOMER_CLIENT_ID "core-api")    rc=1 1 failed  Expected "core-api"  Received "storefront-client"
+
+  -- Playwright count (the second test): docs-freshness.sh before --write rc=1; after --write playwright_blocks 191 -> 192,
+     total 6354 -> 6355; CLAUDE.md, AGENTS.md, README.md updated; check-doc-metrics.sh rc=0, docs-freshness.sh rc=0.
+     scripts/check-test-count-oracle.sh playwright (STAGING_E2E=1 listing): runner=192 manifest=192 PASS rc=0;
+     fail direction: manifest set back to 191 -> "FAIL: ... runner says 192, docs/metrics.json says 191" rc=1, restored by hash.
+
+== TASK 3 deploy: scripts/deploy.sh staging --context jtoye-stg-aks --image-tag 6e95ee6c44e357e3ff88964ed9674bf066fd7b61 (jtoye-ops env, JTOYE_AZURE_SUBSCRIPTION_ID exported)
+  started 2026-10-19T14:56:10Z ended 2026-10-19T14:58:28Z rc=0
+    configmap/app-config configured
+    configmap/keycloak-theme-m5dt5btc4f configured
+    deployment.apps/core-java configured
+    deployment.apps/frontend configured
+    poddisruptionbudget.policy/core-java-pdb configured
+    poddisruptionbudget.policy/edge-go-pdb configured
+    poddisruptionbudget.policy/frontend-pdb configured
+    deployment "core-java" successfully rolled out
+    ✓ core-java deployed successfully
+    deployment "edge-go" successfully rolled out
+    ✓ edge-go deployed successfully
+    deployment "frontend" successfully rolled out
+    ✓ frontend deployed successfully
+    ✓ Deployment completed successfully!
+    DEPLOYED_SHA=6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+== TASK 3 AFTER: env read back from the RUNNING pods (2026-10-19T14:58:40Z)
+  core-java pod=core-java-594d8c456b-qmrsp image=6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+  core-java pod=core-java-869648bdf-zrkcb image=6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+    CUSTOMER_JWT_EXPECTED_ISSUER=https://auth-staging.olajay.co.uk/realms/jtoye-customers
+    CUSTOMER_KC_ISSUER_URI=http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-customers
+    NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL=https://api-staging.olajay.co.uk
+  frontend pod=frontend-654b56c684-lb79f image=6e95ee6c44e357e3ff88964ed9674bf066fd7b61
+    CUSTOMER_KEYCLOAK_CLIENT_ID=storefront-client
+    CUSTOMER_KEYCLOAK_ISSUER=https://auth-staging.olajay.co.uk/realms/jtoye-customers
+    CUSTOMER_KEYCLOAK_ISSUER_INTERNAL=http://keycloak.jtoye-staging.svc.cluster.local:8080/realms/jtoye-customers
+  post-apply kubectl diff of the same render: rc=0 (0 lines)
+== TASK 3 digest parity (2026-10-19T14:58:58Z)
+  check-deploy-digest-parity.sh --tag 6e95ee6c... rc=0
+    
+    PASS: every running container image digest across 3 service(s) is in the set of digests
+          published for 6e95ee6c44e357e3ff88964ed9674bf066fd7b61. NOTE: this is the SET form (index digest plus each
+          platform manifest digest). Narrowing it to a single measured digest is owed to a later plan.
+  --plant-stale rc=1
+          every other gate in this job is green — this is the Phase 26 stale-runtime shape, caught.
+          Do NOT relax this gate: re-run the build for this commit and redeploy.
+  -- staging-login.spec.ts AFTER the deploy (2026-10-19T14:59:32Z, verbatim Task 3 verify 1): rc=0 passed=[2 passed] skipped-flaky-failed-lines=0
+    AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/auth?scope=openid+profile+email&response_type=code&client_id=core-api&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fapi%2Fauth%2Fcallback%2Fkeycloak&code_challenge=<per-run>&code_challenge_method=S256
+    FINAL_URL https://app-staging.olajay.co.uk/dashboard   H1 Dashboard   PRODUCT_COUNT 5
+    CUSTOMER_AUTHORIZE_URL https://auth-staging.olajay.co.uk/realms/jtoye-customers/protocol/openid-connect/auth?client_id=storefront-client&redirect_uri=https%3A%2F%2Fapp-staging.olajay.co.uk%2Fshop%2Fauth%2Fcallback&response_type=code&scope=openid+email+profile&code_challenge=<per-run>&code_challenge_method=S256&state=<per-run>&nonce=<per-run>
+    CUSTOMER_LOGIN_PAGE 200 https://auth-staging.olajay.co.uk/realms/jtoye-customers/protocol/openid-connect/auth
+    CUSTOMER_THEME_CSS https://auth-staging.olajay.co.uk/resources/huzez/login/jtoye/css/login.css https://auth-staging.olajay.co.uk/resources/huzez/login/jtoye/css/jtoye.css
+
+  -- #299 functional probe AFTER the deploy (same scratch probe, same customer, fresh browser, 2026-10-19T14:59:36Z):
+      landed https://app-staging.olajay.co.uk/shop, nav "My Orders", "Probe Customer"
+      ORDERS_STATUS 200
+      ORDERS_BODY {"content":[],"empty":true,...,"totalElements":0,"totalPages":0}
+    => 401 "Customer authentication required" before, 200 after, with nothing changed but this plan's deploy (same image
+       tag, same customer, same probe). core-java now verifies jtoye-customers tokens against the in-cluster JWKS and the
+       public issuer. The list is empty because this probe customer has placed no order.
+
+== TASK 3 #592: the seed order moved to its next state, headers read back
+  list PENDING: HTTP 200 curl rc=0
+  order ORD-1AAC0CDE-20261019-4D3B23A2 id=738a5ebf-0dab-49ff-9da0-50a395e42b91 status=PENDING payment=CAPTURED
+  transition at 2026-10-19T15:00:04Z
+  POST /orders/738a5ebf-0dab-49ff-9da0-50a395e42b91/confirm: HTTP 200 curl rc=0 status=CONFIRMED
+  Mailpit after the transition (2026-10-19T15:00:10Z), two new messages; unsubscribe tokens redacted:
+    3jLROdjRSusLEXqD8JEN0c Date: Mon, 19 Oct 2026 15:00:09 +0000 (GMT)
+    3jLROdjRSusLEXqD8JEN0c To: vendor.staging@olajay.co.uk
+    3jLROdjRSusLEXqD8JEN0c Subject: =?UTF-8?Q?Order_ORD-1AAC0CDE-20261019-4D3B23A2_=E2=80=94_an_update?=
+    3jLROdjRSusLEXqD8JEN0c List-Unsubscribe: <https://api-staging.olajay.co.uk/api/v1/public/unsubscribe?tenant=1aac0cde-ab0c-4172-8fc8-4cfcbdc378b4&email=vendor.staging%40olajay.co.uk&category=ORDERS&token=<redacted>>
+    3jLROdjRSusLEXqD8JEN0c List-Unsubscribe-Post: List-Unsubscribe=One-Click
+    4q6tiFkdZYdXPekVrl6LzB Date: Mon, 19 Oct 2026 15:00:09 +0000 (GMT)
+    4q6tiFkdZYdXPekVrl6LzB To: guest.staging@olajay.co.uk
+    4q6tiFkdZYdXPekVrl6LzB Subject: =?UTF-8?Q?Order_ORD-1AAC0CDE-20261019-4D3B23A2_=E2=80=94_Confirmed?=
+    4q6tiFkdZYdXPekVrl6LzB List-Unsubscribe: (ABSENT)
+    4q6tiFkdZYdXPekVrl6LzB List-Unsubscribe-Post: (ABSENT)
+  => #592 live: the notification-dispatch mail now carries List-Unsubscribe on the API origin
+     (https://api-staging.olajay.co.uk/api/v1/public/unsubscribe) plus List-Unsubscribe-Post: List-Unsubscribe=One-Click;
+     before the deploy the same mail family carried the app-origin page link and no Post (3NxeR70CxLMw5ecNc88l6L above).
+     The CUSTOMER's state-change mail (4q6tiFkd...) is the legacy EmailNotificationService path and carries no
+     List-Unsubscribe at all, before or after; see the SUMMARY deviation.
+  one-click target served by core-java, probed WITHOUT unsubscribing anyone (token replaced by INVALIDTOKEN):
+    POST https://api-staging.olajay.co.uk/api/v1/public/unsubscribe?...&token=INVALIDTOKEN  body List-Unsubscribe=One-Click -> 200 application/json {"status":"invalid"}
+    control, same path on the app origin https://app-staging.olajay.co.uk -> 404 text/html (Next.js)
+  health (2026-10-19T15:00:38Z): api readiness 404, storefront /shop/staging-test-kitchen 200
+  core-java pod core-java-869648bdf-zrkcb readinessProbe /actuator/health/readiness:9091 -> Ready=True restarts=0 (the public api host does not serve /actuator; the 404 above is that, not a fault)

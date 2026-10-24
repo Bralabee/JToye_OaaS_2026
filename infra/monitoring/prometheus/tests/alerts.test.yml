@@ -1,0 +1,208 @@
+# Unit tests for infra/monitoring/prometheus/alerts.yml (and, by copy parity, the byte-identical
+# k8s/components/monitoring/prometheus/alerts.yml). Run by scripts/check-alert-rules.sh (S-6):
+#   promtool test rules infra/monitoring/prometheus/tests/alerts.test.yml
+#
+# NoOrdersCreated (issue #973). jtoye_orders_total is a PER-POD counter, incremented by the
+# competing-consumer OrderStateChangeListener, so at N replicas one pod counts each order and
+# the others stay at 0. The rule must therefore AGGREGATE (sum) across pods. Every case below
+# is one the un-summed form `increase(jtoye_orders_total[30m]) < 1` gets wrong or cannot see;
+# the two-pod case is the one that goes red on it.
+#
+# Timing: 30s samples; the 30m increase window plus `for: 30m`.
+rule_files:
+  - ../alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # 1. Restart, then zero orders. The series exists at 0 from the first scrape, so the rule can
+  #    fire (the whole point of #973). Quiet at 10m (window not yet pending for 30m), firing at 75m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: NoOrdersCreated
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: business
+              service: core-java
+            exp_annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."
+
+  # 2. TWO PODS, one order. Pod A consumes an order at ~10m (0 -> 1), pod B stays at 0 for the
+  #    whole run. Orders ARE flowing, so NOTHING may fire at 40m. Per-series, pod B's own
+  #    `increase < 1` would be true and fire after `for: 30m`; later the order leaves the
+  #    30m window and the aggregate legitimately fires; that is not asserted here.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x20 1x160'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-b"}'
+        values: '0x180'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+
+  # 3. Steady trade across three pods: an order every 25 minutes, rotating pod A, B, C (A at 10m
+  #    and 85m, B at 35m, C at 60m). Every 30m window holds an order, so the aggregate never fires;
+  #    each pod on its own sees an order only every 75m, so its own `< 1` holds for 45m and the
+  #    un-summed rule fires for pod A. Evaluated at 80m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-a"}'
+        values: '0x20 1x150'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-b"}'
+        values: '0x70 1x100'
+      - series: 'jtoye_orders_total{application="core-java", instance="pod-c"}'
+        values: '0x120 1x50'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+
+  # 4. A pod dies and its replacement starts at 0 (a restart under a new instance label). The
+  #    dead pod's last order still counts while it sits in the window, then the aggregate fires
+  #    once no pod has counted an order for 30m (+ `for: 30m`). Quiet at 45m, firing at 100m.
+  - interval: 30s
+    input_series:
+      - series: 'jtoye_orders_total{application="core-java", instance="old-pod"}'
+        values: '0x10 1x10 stale'
+      - series: 'jtoye_orders_total{application="core-java", instance="new-pod"}'
+        values: '_x30 0x170'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: NoOrdersCreated
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: NoOrdersCreated
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: business
+              service: core-java
+            exp_annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."
+
+# CertificateExpiringSoon (issue #972). cert-manager's certmanager_certificate_expiration_timestamp_seconds
+# is an absolute Unix time, so a series value V seen at eval time T means V - T seconds remain; the
+# series below use small absolute values (epoch 0 is the test clock's start). The rule fires when
+# fewer than 7 days remain and has stayed so for 10m; cert-manager renews 15 to 30 days early, so
+# firing means renewal is failing. 1m samples, 1m rule interval.
+#
+# Shared by the k8s-only scrape job cert-manager: in compose the series do not exist and the rule
+# is silent (scripts/alert-k8s-only.txt).
+  # 5. A certificate 3 days from expiry that is never renewed: quiet while pending (5m), firing
+  #    from 10m. The mailpit-tls case that motivated the rule.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{issuer_group="cert-manager.io", issuer_kind="Issuer", issuer_name="jtoye-staging-ca-issuer", name="mailpit-tls", namespace="jtoye-staging"}'
+        values: '259200x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: platform
+              service: platform
+              issuer_group: cert-manager.io
+              issuer_kind: Issuer
+              issuer_name: jtoye-staging-ca-issuer
+              name: mailpit-tls
+              namespace: jtoye-staging
+            exp_annotations:
+              summary: "Certificate jtoye-staging/mailpit-tls expires in under 7 days"
+              description: "cert-manager has not renewed certificate jtoye-staging/mailpit-tls and it expires in 2d 23h 40m 0s (a negative value means it has already expired). cert-manager renews at least 15 days early, so a certificate this close to expiry means renewal is failing. See docs/runbooks/alerts.md (## CertificateExpiringSoon)."
+
+  # 6. A certificate that has ALREADY expired (the deliberately expired case): expiry at t=1s, so
+  #    at 20m it expired about 20m ago. Fires, with the elapsed time shown as a negative duration.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{issuer_group="cert-manager.io", issuer_kind="Issuer", issuer_name="selfsigned", name="expired", namespace="scratch"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: platform
+              service: platform
+              issuer_group: cert-manager.io
+              issuer_kind: Issuer
+              issuer_name: selfsigned
+              name: expired
+              namespace: scratch
+            exp_annotations:
+              summary: "Certificate scratch/expired expires in under 7 days"
+              description: "cert-manager has not renewed certificate scratch/expired and it expires in -19m 59s (a negative value means it has already expired). cert-manager renews at least 15 days early, so a certificate this close to expiry means renewal is failing. See docs/runbooks/alerts.md (## CertificateExpiringSoon)."
+
+  # 7. A healthy certificate (90 days left, and one with 8 days left, just outside the window):
+  #    nothing fires at any point. 8 days is the boundary that keeps the threshold honest.
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="good", namespace="jtoye-staging"}'
+        values: '7776000x60'
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="eight-days", namespace="jtoye-staging"}'
+        values: '691200x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 55m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+
+  # 8. Renewal rescues it: 3 days left for 30m (firing at 20m), then cert-manager renews to 90
+  #    days. The alert clears once the new expiry is scraped (inactive at 55m).
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="renewed", namespace="jtoye-staging"}'
+        values: '259200x30 7776000x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: platform
+              service: platform
+              name: renewed
+              namespace: jtoye-staging
+            exp_annotations:
+              summary: "Certificate jtoye-staging/renewed expires in under 7 days"
+              description: "cert-manager has not renewed certificate jtoye-staging/renewed and it expires in 2d 23h 40m 0s (a negative value means it has already expired). cert-manager renews at least 15 days early, so a certificate this close to expiry means renewal is failing. See docs/runbooks/alerts.md (## CertificateExpiringSoon)."
+      - eval_time: 55m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+
+  # 9. A Certificate that was NEVER issued (a stuck first HTTP-01 challenge, a missing CA Secret).
+  #    cert-manager v1.21.2 emits expiration 0 when Status.NotAfter is nil, so without the `> 0`
+  #    filter the rule reads "0 - now" and fires with "has not renewed" for a certificate that was
+  #    never issued. It must stay quiet (a not-ready alert is a separate rule, out of scope).
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{name="never-issued", namespace="jtoye-staging"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 55m
+        alertname: CertificateExpiringSoon
+        exp_alerts: []

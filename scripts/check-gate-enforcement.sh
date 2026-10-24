@@ -58,11 +58,85 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELF_PATH="$REPO_ROOT/scripts/$(basename "${BASH_SOURCE[0]}")"
 WF_DIR="$REPO_ROOT/.github/workflows"
 CONF="$REPO_ROOT/scripts/gates/gate-enforcement.conf"
 RUNTIME_BINARIES='docker|curl|psql|kubectl|minikube|rabbitmqctl|redis-cli|wget|nc'
 
 void() { echo "VOID: $*" >&2; exit 2; }
+
+# --- --selftest: this gate against planted trees ------------------------------------
+#
+# A meta-gate nothing has ever seen fail is the thing it polices. Each arm builds a
+# minimal repo layout in a mktemp -d, runs a COPY of this script inside it (REPO_ROOT is
+# derived from the script's own location, so the copy reads only the planted tree) and
+# judges the exit code and the output. The clean arm is the control: every red arm below
+# differs from it by one line.
+selftest() {
+    local t fails=0 arm want why out rc
+    t=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/jtoye-gate-enf-st.XXXXXXXX") || { echo "VOID: mktemp -d failed" >&2; return 2; }
+    # shellcheck disable=SC2064
+    trap "rm -rf '$t'" RETURN
+    mkdir -p "$t/scripts/gates" "$t/.github/workflows"
+    cp "$SELF_PATH" "$t/scripts/check-gate-enforcement.sh"
+    printf '# planted: no exemptions\n' > "$t/scripts/gates/gate-enforcement.conf"
+    printf '#!/usr/bin/env bash\necho static gate\n' > "$t/scripts/check-a.sh"
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = "--selftest" ] && { echo selftest; exit 0; }\necho apply\n' > "$t/scripts/foo.sh"
+    printf '#!/usr/bin/env bash\necho no selftest here\n' > "$t/scripts/bar.sh"
+
+    # _arm NAME WANT_RC "WHY-IF-WRONG-TEXT-TO-FIND" WORKFLOW-BODY — WANT_RC 0|1|2; the text is
+    # looked for in the output when WANT_RC is not 0 ("-" = none).
+    _arm() {
+        arm=$1; want=$2; why=$3
+        # The planted tree holds a copy of this very gate, which pass 1 requires a workflow to name.
+        printf '%s\n      - run: bash scripts/check-gate-enforcement.sh\n' "$4" > "$t/.github/workflows/ci.yml"
+        out=$(bash "$t/scripts/check-gate-enforcement.sh" 2>&1); rc=$?
+        if [ "$rc" -ne "$want" ]; then
+            echo "FAIL $arm rc=$rc (want $want): $(head -c 200 <<<"$out" | tr '\n' ' ')"; fails=$((fails + 1))
+        elif [ "$why" != "-" ] && ! grep -qF -- "$why" <<<"$out"; then
+            echo "FAIL $arm rc=$rc but the output does not name '$why': $(head -c 200 <<<"$out" | tr '\n' ' ')"; fails=$((fails + 1))
+        else
+            echo "PASS $arm rc=$rc"
+        fi
+    }
+    local wired_gate='      - run: bash scripts/check-a.sh'
+    local wired_st='      - run: bash scripts/foo.sh --selftest'
+    _arm clean 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    _arm selftest-unwired 1 foo.sh "$wired_gate"
+    _arm selftest-comment-only 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      # run: bash scripts/foo.sh --selftest')"
+    _arm script-wired-without-selftest 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/foo.sh apply')"
+    _arm name-suffix-collision 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/xfoo.sh --selftest')"
+    _arm static-gate-unwired 1 check-a.sh "$wired_st"
+
+    # Review round 1 on #1005. F5: a TRAILING comment on a code line is a comment too.
+    _arm selftest-inline-comment-only 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: echo skip  # bash scripts/foo.sh --selftest')"
+    _arm inline-hash-inside-quotes-still-wired 0 - "$(printf '%s\n%s' "$wired_gate" '      - run: echo "a #b"; bash scripts/foo.sh --selftest')"
+    # F2: pass 2 reads scripts/ recursively and k8s/scripts/, not only scripts/*.sh.
+    mkdir -p "$t/k8s/scripts"
+    printf '#!/usr/bin/env bash\ncase "${1:-}" in\n  --selftest) echo selftest ;;\nesac\n' > "$t/scripts/gates/baz.sh"
+    _arm subdir-selftest-unwired 1 baz.sh "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    _arm subdir-selftest-wired 0 - "$(printf '%s\n%s\n%s' "$wired_gate" "$wired_st" '      - run: bash scripts/gates/baz.sh --selftest')"
+    rm -f "$t/scripts/gates/baz.sh"
+    printf '#!/usr/bin/env bash\nif [[ "${1:-}" == "--selftest" ]]; then echo selftest; fi\n' > "$t/k8s/scripts/qux.sh"
+    _arm k8s-scripts-selftest-unwired 1 qux.sh "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/k8s/scripts/qux.sh"
+    # F4: "dispatches a --selftest" is a DISPATCH SHAPE (a case arm or an equality test against
+    # exactly --selftest), not the substring. Each of these needs no `<name>.sh --selftest` line.
+    printf '#!/usr/bin/env bash\nif [[ "${1:-}" == "--selftest-inv1" ]]; then echo planted; fi\n' > "$t/scripts/variant.sh"
+    _arm flag-variant-only-not-a-selftest 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/scripts/variant.sh"
+    printf '#!/usr/bin/env bash\necho "usage: usage.sh [--selftest]"\n' > "$t/scripts/usage.sh"
+    _arm usage-text-only-not-a-selftest 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/scripts/usage.sh"
+    printf '#!/usr/bin/env bash\nbash "$(dirname "$0")/foo.sh" --selftest\n' > "$t/scripts/caller.sh"
+    _arm calls-another-scripts-selftest-not-a-selftest 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
+    rm -f "$t/scripts/caller.sh"
+    rm -f "$t/scripts/foo.sh"
+    _arm no-selftest-script-in-tree 2 "dispatches a --selftest" "$wired_gate"
+    [ "$fails" -eq 0 ]
+}
+
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 
 command -v grep >/dev/null 2>&1 || void "grep not found"
 command -v find >/dev/null 2>&1 || void "find not found"
@@ -149,6 +223,71 @@ for g in "${GATES[@]}"; do
     FAILED=1
 done
 
+# --- pass 2: a --selftest that runs nowhere is a check nobody ever asks (issue #970) ---
+#
+# Pass 1 reads scripts/check-*.sh only. The staging operator scripts (staging-secrets.sh,
+# staging-secrets-preflight.sh, staging-db-bootstrap.sh and their siblings, deploy.sh,
+# seed-order-metric.sh, wait-other-workloads.sh) are not named check-*, carry their proof in a
+# --selftest, and were invoked by no workflow: staging-secrets-preflight sat at 8/16 for a plan and
+# nobody saw it, because nothing ran it. So every .sh under scripts/ (recursively: scripts/gates/
+# and the rest) and under k8s/scripts/, other than the scripts/check-*.sh pass 1 owns, that
+# DISPATCHES a --selftest must be INVOKED with it by a workflow, as `<name>.sh --selftest`, on a
+# non-comment workflow line. Default-deny, like pass 1; no exemption table: a selftest that cannot
+# run on a hosted runner is a selftest that proves nothing in CI, and the script should say so by
+# being rewritten, not by being listed.
+#
+# "Dispatches" is a SHAPE, not the substring (review round 1, F4): a case arm `--selftest)` or an
+# equality test against exactly "--selftest". A script that only has --selftest-inv1, prints a usage
+# line, or runs ANOTHER script's --selftest does not dispatch one and is not demanded to be wired.
+#
+# What the match refuses, each one planted in --selftest: a workflow COMMENT that names the line,
+# a TRAILING comment after a code line (F5), a workflow that runs the script without --selftest
+# (that is the real thing, not its proof), and a longer name that merely ends in this one
+# (xfoo.sh --selftest is not foo.sh --selftest).
+
+# strip_comments: stdin -> stdout without `#` comments, full-line or trailing. A `#` starts a
+# comment only outside single and double quotes and at the start of the line or after whitespace,
+# so "a #b" and ${#arr} and $# survive. A line with an unbalanced quote keeps its tail, which can
+# only make something count as code, never hide it.
+strip_comments() {
+    awk '{
+        line = $0; out = ""; sq = 0; dq = 0; n = length(line)
+        for (i = 1; i <= n; i++) {
+            c = substr(line, i, 1)
+            if (c == "\"" && !sq) dq = !dq
+            else if (c == "\047" && !dq) sq = !sq
+            else if (c == "#" && !sq && !dq && (i == 1 || substr(line, i - 1, 1) ~ /[ \t]/)) break
+            out = out c
+        }
+        print out }'
+}
+
+SELFTEST_CASE_RE='(^|[[:space:]|(])["'"'"']?--selftest["'"'"']?[[:space:]]*(\||\))'
+SELFTEST_EQ_RE='(==|=|-eq)[[:space:]]*["'"'"']?--selftest["'"'"']?([[:space:];]|\]|$)'
+
+WF_CODE=""
+for wf in "${WF_FILES[@]}"; do
+    WF_CODE+="$(strip_comments < "$wf")"$'\n'
+done
+SELFTEST_SCRIPTS=0
+UNRUN_SELFTESTS=()
+SELFTEST_DIRS=("$REPO_ROOT/scripts")
+[ -d "$REPO_ROOT/k8s/scripts" ] && SELFTEST_DIRS+=("$REPO_ROOT/k8s/scripts")
+while IFS= read -r f; do
+    base="$(basename "$f")"
+    # scripts/check-*.sh are pass 1's; the same name under k8s/scripts/ is not covered by it.
+    if [ "$(dirname "$f")" = "$REPO_ROOT/scripts" ] && [[ "$base" == check-*.sh ]]; then continue; fi
+    body="$(strip_comments < "$f")"
+    grep -qE -- "$SELFTEST_CASE_RE" <<<"$body" || grep -qE -- "$SELFTEST_EQ_RE" <<<"$body" || continue
+    SELFTEST_SCRIPTS=$((SELFTEST_SCRIPTS + 1))
+    pat="(^|[[:space:]/])${base//./\\.}[[:space:]]+--selftest([[:space:]]|\$)"
+    if ! grep -qE -- "$pat" <<<"$WF_CODE"; then
+        UNRUN_SELFTESTS+=("${f#"$REPO_ROOT"/}")
+        FAILED=1
+    fi
+done < <(find "${SELFTEST_DIRS[@]}" -type f -name '*.sh' | sort)
+[ "$SELFTEST_SCRIPTS" -gt 0 ] || void "no .sh under scripts/ or k8s/scripts/ dispatches a --selftest — a scan with no inputs proves nothing"
+
 # --- an exemption naming a gate that does not exist is a broken table ----------------
 for name in "${!EXEMPT_REASON[@]}"; do
     [ -n "${SEEN[$name]+set}" ] || void "$CONF exempts '$name', which is not a scripts/check-*.sh — a table that names nothing cannot be trusted to name the right things"
@@ -158,6 +297,7 @@ echo "check-gate-enforcement  ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
 echo "  gates     : ${#GATES[@]}"
 echo "  workflows : ${#WF_FILES[@]}"
 echo "  exempt    : ${#EXEMPT_REASON[@]} declared"
+echo "  selftests : $SELFTEST_SCRIPTS scripts dispatch a --selftest"
 
 if [ "${#UNWIRED[@]}" -gt 0 ]; then
     echo "FAIL: ${#UNWIRED[@]} gate(s) are referenced by no workflow and carry no exemption:" >&2
@@ -167,13 +307,19 @@ if [ "${#UNWIRED[@]}" -gt 0 ]; then
     echo "      it cannot run on a hosted runner." >&2
 fi
 
+if [ "${#UNRUN_SELFTESTS[@]}" -gt 0 ]; then
+    echo "FAIL: ${#UNRUN_SELFTESTS[@]} script(s) carry a --selftest that no workflow runs:" >&2
+    for u in "${UNRUN_SELFTESTS[@]}"; do echo "        $u" >&2; done
+    echo "      Wire \`bash scripts/<name> --selftest\` into a job (a comment naming it does not count)." >&2
+fi
+
 if [ "${#STALE_EXEMPT[@]}" -gt 0 ]; then
     echo "FAIL: ${#STALE_EXEMPT[@]} exemption(s) look stale:" >&2
     for s in "${STALE_EXEMPT[@]}"; do echo "        $s" >&2; done
 fi
 
 if [ "$FAILED" -eq 0 ]; then
-    echo "PASS: every gate either runs in CI or has a declared reason it cannot."
+    echo "PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run."
 fi
 
 exit "$FAILED"

@@ -34,6 +34,8 @@ import {
 } from "@/components/dashboard/kitchen/allergy-note-block"
 import { KdsNewLane } from "@/components/dashboard/kitchen/kds-new-lane"
 import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
+import { AwaitingPaymentBadge } from "@/components/dashboard/orders/awaiting-payment-badge"
+import { describeLoadError } from "@/lib/human-error"
 import { KdsItemList, elapsedText } from "@/components/dashboard/kitchen/kds-card-parts"
 import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
 import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
@@ -111,12 +113,19 @@ interface BumpAction {
   label: string
   endpoint: string
   color: string
+  /** 30-06 (UI-SPEC § S2): the verb in "Couldn't {verb} this order. Check your connection…". */
+  failureVerb: string
 }
 
 const bumpActions: Record<string, BumpAction> = {
-  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", color: "bg-amber-600 hover:bg-amber-700" },
-  PREPARING: { label: "Mark Ready", endpoint: "mark-ready", color: "bg-green-600 hover:bg-green-700" },
-  READY: { label: "Complete", endpoint: "complete", color: "bg-emerald-600 hover:bg-emerald-700" },
+  CONFIRMED: { label: "Start Preparing", endpoint: "start-preparation", color: "bg-amber-600 hover:bg-amber-700", failureVerb: "start preparing" },
+  PREPARING: { label: "Mark Ready", endpoint: "mark-ready", color: "bg-green-600 hover:bg-green-700", failureVerb: "mark ready" },
+  READY: { label: "Complete", endpoint: "complete", color: "bg-emerald-600 hover:bg-emerald-700", failureVerb: "complete" },
+}
+
+/** The kitchen's fallback when a bump got no answer at all (UI-SPEC copy row "Kitchen refusal toast"). */
+function bumpFailedCopy(failureVerb: string): string {
+  return `Couldn't ${failureVerb} this order. Check your connection and try again.`
 }
 
 // --- Age border colour ---
@@ -620,12 +629,18 @@ export default function KitchenPage() {
 
     try {
       await apiClient.post(`/api/v1/orders/${orderId}/${action.endpoint}`)
-    } catch {
-      // Revert on error — refetch
+    } catch (error: unknown) {
+      // 30-06 (issue #958, UI-SPEC § S2): say WHY. A server answer carries its RFC 7807 `detail`
+      // (an order awaiting payment reads plan 30-05's staff sentence verbatim), rendered as a text
+      // node. With no response at all, describeLoadError would return the bare "Network Error", so
+      // the kitchen uses its own fallback naming the action. The board still re-reads, which
+      // reverts the optimistic move above.
+      const fallback = bumpFailedCopy(action.failureVerb)
+      const hasResponse = Boolean((error as { response?: unknown } | null)?.response)
       toast({
         variant: "destructive",
-        title: "Error updating order",
-        description: `Failed to ${action.label.toLowerCase()}. Reverting.`,
+        title: "Order not updated",
+        description: hasResponse ? describeLoadError(error, fallback).message : fallback,
       })
       fetchOrders()
     }
@@ -1163,6 +1178,14 @@ export default function KitchenPage() {
                         <KdsScheduledWindowBadge
                           scheduledWindowLabel={order.scheduledWindowLabel}
                           scheduledForDate={order.scheduledForDate}
+                        />
+                        {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link order, by the server's
+                            rule. Warns before the tap; Start Preparing stays enabled so the
+                            server's refusal (toast) is always reachable. */}
+                        <AwaitingPaymentBadge
+                          orderStatus={order.status}
+                          paymentStatus={order.paymentStatus}
+                          paymentReference={order.paymentReference}
                         />
                         {config && (
                           <Badge className={`${config.bgColor} ml-auto flex flex-shrink-0 items-center gap-1 text-white`}>

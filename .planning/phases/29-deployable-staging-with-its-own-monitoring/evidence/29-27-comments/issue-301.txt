@@ -1,0 +1,8 @@
+Phase 29 disposition for #301 (DPLY-02): deferred to Phase 32; the issue stays open.
+
+Measured on the tree: there is no mcp-server image or manifest anywhere under k8s/ and no row for it in the connection budget (k8s/scripts/connection-budget.conf), although the server itself exists (mcp-server/ with its Dockerfile). Each absence is paired with a control that does match: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-27-measurements.txt, lines 9 to 17.
+
+Why it waits: deploying the MCP surface is three decisions, none of them on the path Phase 29 had to prove (a real vendor login through the ingress to a dashboard).
+- A pool. The server needs its own database connections inside the budget the deployed estate is sized to, and the managed database reserves a fixed number of connections for itself (decision D-25).
+- A scoped client. It needs its own least-privilege identity at the identity provider rather than a shared one.
+- Public exposure. Whether and under what authentication and rate limits the MCP surface is reachable from outside the cluster is a production-cutover decision, and production hosts stay unresolvable until Phase 32.

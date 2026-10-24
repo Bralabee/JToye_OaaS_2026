@@ -63,6 +63,12 @@ public class Customer {
     @Column(name = "origin_shop_id")
     private UUID originShopId;
 
+    @Column(name = "phone_verified", nullable = false)
+    private boolean phoneVerified = false;
+
+    @Column(name = "phone_verified_at")
+    private OffsetDateTime phoneVerifiedAt;
+
     // Constructors
 
     public Customer() {
@@ -125,6 +131,24 @@ public class Customer {
 
     public void setPhone(String phone) {
         this.phone = phone;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    public boolean isPhoneVerified() {
+        return phoneVerified;
+    }
+
+    public void setPhoneVerified(boolean phoneVerified) {
+        this.phoneVerified = phoneVerified;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    public OffsetDateTime getPhoneVerifiedAt() {
+        return phoneVerifiedAt;
+    }
+
+    public void setPhoneVerifiedAt(OffsetDateTime phoneVerifiedAt) {
+        this.phoneVerifiedAt = phoneVerifiedAt;
         this.updatedAt = OffsetDateTime.now();
     }
 

@@ -1,0 +1,34 @@
+# Keycloak trusts the staging cluster CA (plan 29-22, D-21): its realm SMTP sends to
+# Mailpit over STARTTLS (the 29-04 realm settings), validated against Secret
+# jtoye-staging-ca key ca.crt.
+#
+# KC_TRUSTSTORE_PATHS ADDS to the JDK defaults. keycloak.org/server/keycloak-truststore
+# (read 2026-10-19), "Configuring the System Truststore": "The existing Java default
+# truststore certs will always be trusted. If you need additional certificates ...
+# use the --truststore-paths option to specify additional files or directories where
+# PEM or PKCS12 files are located." So the CA alone is listed here and the public CAs
+# (Keycloak's own outbound HTTPS, none today) stay trusted; no JDK cacerts path is
+# added. Host names are verified (tls-hostname-verifier DEFAULT, unchanged).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+spec:
+  template:
+    spec:
+      containers:
+      - name: keycloak
+        env:
+        - name: KC_TRUSTSTORE_PATHS
+          value: /cluster-ca/ca.crt
+        volumeMounts:
+        - name: cluster-ca
+          mountPath: /cluster-ca
+          readOnly: true
+      volumes:
+      - name: cluster-ca
+        secret:
+          secretName: jtoye-staging-ca
+          items:
+          - key: ca.crt
+            path: ca.crt

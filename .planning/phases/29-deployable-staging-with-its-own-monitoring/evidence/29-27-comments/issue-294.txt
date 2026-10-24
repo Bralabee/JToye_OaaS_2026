@@ -1,0 +1,5 @@
+Phase 29 disposition for #294 (DPLY-01): one half is done and one half is deferred, so the issue stays open for the deferred half.
+
+Done: the jtoye-images bucket half. It is superseded by Phase 36, which moved media to Azure Blob Storage. The replacement proof is the anonymous read-back against the staging media account: an anonymous GET of a derivative returns 200 with image/webp, and an anonymous container listing is refused, the private quarantine container included. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-14-tracer.txt, lines 1047 to 1062.
+
+Deferred to Phase 32, with the reason: the SES sending domain. Staging application mail is captured by an in-cluster Mailpit over required STARTTLS and is never delivered (decisions D-13 and D-20), shown both ways: a staff invitation lands in Mailpit, and with STARTTLS withdrawn the send is refused. Evidence: .planning/phases/29-deployable-staging-with-its-own-monitoring/evidence/29-22-mail-tls.txt, lines 76 to 121. No SES sending domain is exercised before production, so verifying one belongs to the production cutover.

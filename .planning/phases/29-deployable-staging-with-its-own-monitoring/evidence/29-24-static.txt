@@ -1,0 +1,240 @@
+# Plan 29-24 static evidence (DPLY-03 part B, the build). Every check shown failing first.
+
+## Task 1 — canonical Alertmanager SMTP-auth + extra email_configs, render gate
+
+Fetched 2026-10-19 (curl, raw.githubusercontent.com, tag v0.34.1):
+  https://raw.githubusercontent.com/prometheus/alertmanager/v0.34.1/docs/configuration.md  (<email_config>: smarthost, auth_username, auth_password_file, require_tls, tls_config exist; global smtp_auth_* exist)
+  https://raw.githubusercontent.com/prometheus/alertmanager/v0.34.1/config/config.go lines 406-409: each email_config INHERITS global smtp_auth_username / smtp_auth_password_file unless it sets its own (cmp.Or; empty cannot opt out)
+  https://raw.githubusercontent.com/prometheus/alertmanager/v0.34.1/notify/email/email.go line 203: AUTH is attempted whenever the server advertises it; LoginAuth (line 389) sends the password with no TLS check
+  Measured in prom/alertmanager:v0.34.1: amtool check-config SUCCESS on a config naming /nonexistent/pw and /nonexistent/ca.crt (it reads neither file); busybox timeout rc 143; under --network none alertmanager exits 1 (gossip: no private IP)
+
+Golden: --write-golden from the UNMODIFIED template blob 9fa6db49 and entrypoint blob 1faeab43 (commit c054f5f5):
+  compose-render.golden.yml sha256 f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc
+  second --write-golden: rc 2 'already exists' (cannot be re-taken silently)
+  harness fidelity: unmodified files + the live jtoye-alertmanager container's own env -> sha256 97a00e0a...; live /etc/alertmanager/alertmanager.yml 97a00e0a... (equal)
+
+RED (unmodified entrypoint, 2026-10-19T16:21:05Z re-recorded from the c054f5f5 record): rc 1
+  TAP version 13
+  1..9
+  ok 1 - compose-render-identical
+  ok 2 - compose-credentials-without-tls
+  not ok 3 - staging-env
+    ---
+    message: 'email-default has 1 email_configs, want 2; email_configs[0].auth_username=None; email_configs[0].auth_password_file=None'
+    ...
+  not ok 4 - password-env-to-mode-600-file
+    ---
+    message: 'email_configs[0].auth_password_file is "", want a /tmp file'
+    ...
+  ok 5 - mute-matcher-refused
+  not ok 6 - password-and-file-refused
+    ---
+    message: 'a config was rendered despite the refusal'
+    ...
+  not ok 7 - username-without-password-refused
+    ---
+    message: 'a config was rendered despite the refusal'
+    ...
+  not ok 8 - unreadable-sink-ca-refused
+    ---
+    message: 'a config was rendered despite the refusal'
+    ...
+  not ok 9 - render-only-exits-before-exec
+    ---
+    message: 'entrypoint rc 1, want 0 (ALERTMANAGER_RENDER_ONLY=1 must exit before exec)'
+    ...
+  classifier: RED_EVIDENCE_OK target staging-env (29-24-t1-red-render.json)
+
+GREEN:
+  check-alertmanager-render --selftest  (2026-10-19T16:21:05Z)
+    PASS  selftest-unknown-token-fails-compose-arm — render did not complete (rc 1): FATAL: unrendered placeholder(s) remain in /etc/alertmanager/alertmanager.yml: __PLANTED_UNKNOWN_TOKEN__ 
+    PASS  selftest-drifted-golden-fails-compose-arm — sha256 render=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc golden=83165776e3ecc4772de92a101e7b4b2221ff3267effbf9c4710c175d2630e10a
+    PASS  selftest-auth-line-removed-fails-staging-arm — email_configs[0].auth_username=None; email_configs[0].auth_password_file=None
+    PASS  selftest-global-auth-fails-staging-arm — global carries ['smtp_auth_username']: every email_config would inherit it, the Mailpit sink included
+    PASS  selftest-widened-mute-validator-fails-mute-arm — entrypoint rc 0, want 1 (refused)
+    PASS  selftest-password-in-render-detected — password string present in leaky.yml
+  check-alertmanager-render: PASS (6/6) [selftest] image=prom/alertmanager:v0.34.1
+  selftest rc=0
+  check-alertmanager-render  (2026-10-19T16:21:10Z)  image=prom/alertmanager:v0.34.1
+    PASS  compose-render-identical — sha256 render=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc golden=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc
+    PASS  compose-credentials-without-tls — sha256 render=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc golden=f9b5b39fc2036d07b3c6399063cc19c2635b1fd583df746b7a9b90b92faeefcc (credentials set, REQUIRE_TLS=false)
+    PASS  staging-env — amtool SUCCESS; 2 email_configs; auth on [0] only; sink CA set; mute alertname-only; no password string
+    PASS  password-env-to-mode-600-file — password written to /tmp/alertmanager-smtp-password mode 600, referenced as auth_password_file, never inlined
+    PASS  mute-matcher-refused — FATAL on 'severity=info' (alertname-only preserved)
+    PASS  password-and-file-refused — FATAL on PASSWORD and PASSWORD_FILE together
+    PASS  username-without-password-refused — FATAL on a username with no password
+    PASS  unreadable-sink-ca-refused — FATAL on an unreadable sink CA file
+    PASS  render-only-exits-before-exec — rendered, checked and exited 0 before exec
+  check-alertmanager-render: PASS (9/9) [run] image=prom/alertmanager:v0.34.1
+  run rc=0
+
+Compose with THIS machine's real .env (USERNAME and PASSWORD set, smarthost Mailhog, REQUIRE_TLS unset):
+  old files sha256 51f026d461580111fab670ace071e51ef7f94a000b8a9511b726500f6ab3face
+  new files sha256 51f026d461580111fab670ace071e51ef7f94a000b8a9511b726500f6ab3face  ('auth NOT rendered' printed 1x; no /tmp password file)
+  (the live container renders 97a00e0a: its container env differs from the current .env (measured: its own env reproduces 97a00e0a, the current .env 51f026d4) and it runs prom/alertmanager:v0.27.0 while compose pins v0.34.1 — a stale LOCAL runtime, outside this plan)
+
+check-gate-enforcement: workflow references replaced by a planted name -> rc 1 'check-alertmanager-render.sh (invokes: docker)' referenced by no workflow; restored (sha256 11f5f34b equal) -> rc 0
+
+Citation drift caused by the compose edit (+10 lines above postgres-/redis-exporter):
+  check-doc-citations.sh before the fix: rc 1 — "C-3 docs/ops/terminal-states.yaml:230 cites infra/monitoring/docker-compose.monitoring.yml:179, but its declared subject 'postgres-exporter' ... is at :189"
+  fixed: TS-13 179->189, horizon sites 160->170 (redis_exporter) and 180->190 (postgres-exporter)
+  after: rc 0, 46 verified, 0 violations
+  check-dependency-horizons.sh H-5 advisory pin-not-at-site: 7 with the HEAD sites, 5 after (the 5 pre-date this plan); rc 0 both (NOTE class)
+  check-terminal-states.sh rc 0; check-alert-mute.sh MODE=static rc 0 (Task 1 adds nothing under k8s/)
+
+## Task 2 — staging Alertmanager and Grafana
+
+BASELINE measured 2026-10-19T16:22:43Z at 441199847d7100f60b9ea6a7ade6acc1baa419f4
+  keyvault-chain.py objects rc=0 count=30; SPC read rc=0 count=9
+BASELINE-KV-OBJECT client-ip-credentials--hmac-key
+BASELINE-KV-OBJECT dsar-credentials--encryption-key
+BASELINE-KV-OBJECT keycloak-credentials--admin-password
+BASELINE-KV-OBJECT keycloak-credentials--admin-username
+BASELINE-KV-OBJECT keycloak-credentials--frontend-client-secret
+BASELINE-KV-OBJECT keycloak-server-credentials--db-password
+BASELINE-KV-OBJECT mailpit-ui-credentials--auth
+BASELINE-KV-OBJECT nextauth-secret--secret
+BASELINE-KV-OBJECT notification-credentials--unsubscribe-signing-secret
+BASELINE-KV-OBJECT postgres-credentials--backup-password
+BASELINE-KV-OBJECT postgres-credentials--backup-username
+BASELINE-KV-OBJECT postgres-credentials--database
+BASELINE-KV-OBJECT postgres-credentials--host
+BASELINE-KV-OBJECT postgres-credentials--migration-password
+BASELINE-KV-OBJECT postgres-credentials--migration-username
+BASELINE-KV-OBJECT postgres-credentials--password
+BASELINE-KV-OBJECT postgres-credentials--port
+BASELINE-KV-OBJECT postgres-credentials--username
+BASELINE-KV-OBJECT postgres-exporter-credentials--password
+BASELINE-KV-OBJECT postgres-exporter-credentials--username
+BASELINE-KV-OBJECT rabbitmq-credentials--password
+BASELINE-KV-OBJECT rabbitmq-credentials--stomp-login
+BASELINE-KV-OBJECT rabbitmq-credentials--stomp-passcode
+BASELINE-KV-OBJECT rabbitmq-credentials--username
+BASELINE-KV-OBJECT rabbitmq-default-user--default-user-conf
+BASELINE-KV-OBJECT redis-credentials--password
+BASELINE-KV-OBJECT smtp-credentials--password
+BASELINE-KV-OBJECT smtp-credentials--username
+BASELINE-KV-OBJECT stripe-credentials--api-key
+BASELINE-KV-OBJECT stripe-credentials--webhook-secret
+BASELINE-SPC core-java-kv
+BASELINE-SPC frontend-kv
+BASELINE-SPC keycloak-kv
+BASELINE-SPC mailpit-ui-kv
+BASELINE-SPC pg-backup-kv
+BASELINE-SPC postgres-exporter-kv
+BASELINE-SPC rabbitmq-kv
+BASELINE-SPC redis-exporter-kv
+BASELINE-SPC redis-kv
+
+Verify 2 (Ingress host set) on the UNEDITED tree:
+  api-staging.olajay.co.uk
+  app-staging.olajay.co.uk
+  auth-staging.olajay.co.uk
+  mail-staging.olajay.co.uk
+  3a4
+  > grafana-staging.olajay.co.uk
+  diff=1
+  rc=1
+
+Verify 3 (objects/SPCs vs baseline + 6 / + 2) on the UNEDITED tree:
+  0a1,4
+  > alertmanager-smtp-credentials--from
+  > alertmanager-smtp-credentials--password
+  > alertmanager-smtp-credentials--to
+  > alertmanager-smtp-credentials--username
+  2a7,8
+  > grafana-admin-credentials--admin-password
+  > grafana-admin-credentials--admin-user
+  0a1
+  > alertmanager-kv
+  2a4
+  > grafana-kv
+  objects=30 spcs=9 diff-objects=1 diff-spcs=1
+  rc=1
+
+### Task 2 results (2026-10-19T16:45:18Z)
+
+Verify 1 (copy parity && keyvault chain && render invariants && render-golden && staging-secrets --selftest): rc 0
+  PASS: 9 pairs, all byte-equal; 1 jobs pair(s), job sets and labels equal.
+  OK   [k8s/staging] OK: 11 SecretProviderClasses, 48 consumed (Secret, key) reference(s), 36 Key Vault objects; every consumer mounts its one producer, every clientID is its ServiceAccount's
+  PASS: the Key Vault chain holds in 1 target(s) (k8s/staging).
+  All overlay renders match their committed goldens.
+  SELFTEST: 13/13 (derived objects=41, generated=35, grants=45)
+  render invariants: INV-7 OK (17 policies, 120 rule tuples exact); INV-15 OK (5 Ingresses, 6 tls entries x1 host, noindex on all); INV-4 OK
+
+Verify 2 (Ingress host set) FINAL:
+  api-staging.olajay.co.uk
+  app-staging.olajay.co.uk
+  auth-staging.olajay.co.uk
+  grafana-staging.olajay.co.uk
+  mail-staging.olajay.co.uk
+  diff=0
+  rc=0  (unedited tree: rc 1, grafana-staging missing — recorded above)
+
+Verify 3 (objects/SPCs) FINAL:
+  objects=36 spcs=11 diff-objects=0 diff-spcs=0
+  rc=0  objects 30 -> 36 (baseline + 6), SPCs 9 -> 11 (baseline + 2); unedited tree rc 1 naming exactly those 8 (recorded above)
+
+Copy parity break arm: one byte appended to the entrypoint copy -> rc 1 'pair 6 has DRIFTED' (md5 511170d3 vs ae3996c7); restored, md5 equal
+
+INV-7 / INV-15 break arms (each restored by sha256; closing clean run rc 0):
+  row-missing            rc 1  INV-7: undeclared policy 'grafana-allow'
+  smtps-465              rc 1  INV-7: alertmanager-allow renders undeclared eg:ip=0.0.0.0/0:465, missing eg:ip=0.0.0.0/0:587
+  grafana->alertmanager  rc 1  INV-7: grafana-allow renders undeclared eg:pod=app=alertmanager:9093
+  noindex dropped        rc 1  INV-15: Ingress 'grafana-public' serves no X-Robots-Tag noindex
+  shares auth TLS Secret rc 1  INV-15: 'jtoye-staging-auth-tls' is requested by 2 tls entries
+  --selftest-inv7/15/16/17/18: rc 0 each
+
+INV-4 (first full run after the manifests): rc 1 — forbidden local-only literal 'localhost' in the render:
+  the byte-copied entrypoint's exec line '--web.external-url=http://localhost:9093' (now inside ConfigMap alertmanager-src)
+  fix: ALERTMANAGER_WEB_EXTERNAL_URL required by the entrypoint, no default in the file; compose passes the old value;
+  staging passes http://alertmanager.jtoye-staging.svc.cluster.local:9093; render gate arm external-url-required (10/10)
+  compose argv read from /proc/1/cmdline, old entrypoint vs new, compose env: identical
+    /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager --web.external-url=http://localhost:9093
+
+staging-secrets.sh --list (JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-...):
+  HEAD classification table: rc 1, 'list: 41 objects, 4 unclassified'; alertmanager --from/--to/--username and grafana --admin-user UNCLASSIFIED,
+    and alertmanager-smtp-credentials--password classed 'random' by *password* (--generate would have written a random Zoho password)
+  new table: rc 0
+    alertmanager-smtp-credentials--from	external
+    alertmanager-smtp-credentials--password	external
+    alertmanager-smtp-credentials--to	external
+    alertmanager-smtp-credentials--username	external
+    grafana-admin-credentials--admin-password	random
+    grafana-admin-credentials--admin-user	estate
+    list: 41 objects, 0 unclassified
+    UNCLASSIFIED rows: 0. (The plan's 'lines containing unclassified == 0' cannot pass: the summary line 'list: 41 objects, 0 unclassified' contains the word; replaced by the row count, as 29-23 did.)
+  selftest arm external-validators: PASS; planted @email accepting everything -> 'FAIL external-validators non-address rc=0', SELFTEST 12/13 rc 1; restored by sha256
+
+check-alert-mute.sh M-5 (MODE=static):
+  OLD text grep on this tree: rc 1, 3 files 'set' the mute (the byte-copied entrypoint, the staging golden, alertmanager.yaml)
+  NEW render-based: rc 0 — '4 overlay render(s) read; 1 mute setting(s)': k8s/staging Deployment/alertmanager=NoOrdersCreated
+  arms on a copied k8s/: mute in base -> rc 1, 3 FAIL lines (base, local, production named); staging 'NoOrdersCreated,ServiceDown' -> rc 1 'ServiceDown not on MUTE_ALLOWLIST';
+    staging valueFrom -> rc 1 'from a reference, not a reviewable literal'; no kubectl on PATH -> rc 2 VOID
+  first draft exited 1 SILENTLY (set -e on a failing m5_out=$(...) assignment); fixed to '|| m5_rc=$?' so a read failure is VOID
+
+Render read-back (T-29-87/T-29-88): alertmanager PASSWORD env = [ALERTMANAGER_SMTP_PASSWORD_FILE] -> /mnt/secrets-store/alertmanager-smtp-credentials--password;
+  grafana GF_SECURITY_ADMIN_PASSWORD = secretKeyRef grafana-admin-credentials/admin-password; alertmanager-kv syncs keys [from, username, to] only; rc 0
+  control: a planted ALERTMANAGER_SMTP_PASSWORD literal in a render copy -> rc 1 naming it
+
+Grafana measured locally (grafana/grafana:13.2.4, --read-only, --user 472, tmpfs /var/lib/grafana + /tmp, the three byte copies at the k8s paths):
+  /api/health 200 after 3 polls; anonymous /api/search 401; wrong password 401; POST /api/user/signup 401; dashboards [stomp-relay-dashboard];
+  datasource Prometheus url http://prometheus:9090; 0 error-level log lines. defaults.ini has preinstall_disabled, plugin_admin_enabled,
+  reporting_enabled, check_for_updates, check_for_plugin_updates (the GF_* keys set).
+  FINDING (pre-existing, deferred-items.md): panels name datasource uid 'prometheus'; /api/ds/query -> 'Data source not found'.
+  adding uid to the datasource on an EXISTING store: Grafana exits 1, 'Datasource provisioning error: data source not found'.
+
+Live READ-ONLY probes (jtoye-stg-aks, subscription c483d353; no write):
+  identities: jtoye-staging-alertmanager-id federated to system:serviceaccount:jtoye-staging:alertmanager, jtoye-staging-grafana-id to
+    system:serviceaccount:jtoye-staging:grafana, issuer = azure-identity.yaml aks_oidc_issuer_url
+  DNS: grafana-staging.olajay.co.uk A 51.105.43.14 at dns1 and dns2.registrar-servers.com and public resolution
+  acme-http01-solver-allow live (podSelector acme.cert-manager.io/http01-solver=true, ingress traefik:8089) — the policy mail-staging's cert issued under
+  Secret jtoye-staging-ca present, type kubernetes.io/tls, keys ca.crt tls.crt tls.key
+  staging-secrets-preflight.sh: rc 1, 41 objects, 45 grants, 12 gaps = the 6 new objects MISSING + their 6 MISSING-ACCESS (stripe lines are test-mode info)
+    -> a deploy from this tree is REFUSED by the preflight until 29-25 Task 1 (--generate, --assign-access) and Task 2 (the owner's four Zoho values)
+
+Capacity (4 x B2s, allocatable 2787Mi / 1900m each), measured 2026-10-19 at about 16:26Z (kubectl describe nodes, read-only) — no deploy in this plan:
+  node0 requests 2182Mi/1336m (free 605Mi/564m); node1 1364Mi/899m (free 1423Mi/1001m); node2 2688Mi/1436m (free 99Mi/464m); node3 1638Mi/820m (free 1149Mi/1080m)
+  new requests: alertmanager 20m/64Mi + grafana 50m/128Mi = 70m/192Mi -> fit on node1 or node3; node2 (99Mi) cannot take either
+  rolling headroom after: if both land on node3 it keeps 957Mi (< a 1Gi core-java/keycloak surge); node1 keeps 1423Mi (>= 1Gi) — one 1Gi surge still fits
+  the AFTER measurement belongs to 29-25's deploy

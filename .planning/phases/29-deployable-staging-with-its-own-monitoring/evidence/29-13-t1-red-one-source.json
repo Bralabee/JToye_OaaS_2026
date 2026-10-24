@@ -1,0 +1,10 @@
+{
+  "command": "STAGING_SECRETS_SELFTEST_FORMAT=tap bash scripts/staging-secrets-preflight.sh --selftest",
+  "exitCode": 1,
+  "output": "TAP version 13\n1..10\nok 1 - full\nok 2 - two-missing\nnot ok 3 - operator-script-objects\n  ---\n  message: 'rc=0'\n  ...\nok 4 - ghost\nok 5 - missing-access\nok 6 - disabled\nok 7 - not-test-mode\nnot ok 8 - empty-vault\n  ---\n  message: 'want 31 MISSING lines, got 27'\n  ...\nok 9 - guard-unpinned\nok 10 - void-no-python\n# SELFTEST: 8/10 (derived objects=31, grants=35)\n",
+  "targetTest": "operator-script-objects",
+  "targetFile": "scripts/staging-secrets-preflight.sh",
+  "expected": "rc 1 naming MISSING staging-seed--test-vendor-password and MISSING keycloak-realm--edge-api-client-secret when the stub vault lacks them",
+  "actual": "rc=0: the RED preflight derives only from the render (keyvault-chain.py objects), so the two operator-script objects are never checked",
+  "semanticAssessment": "Target arm executed: the stub vault was full except the seed and realm-import objects, and the RED preflight (render source only) exited 0 on the planned assertion. empty-vault also reds (27 MISSING of 31: the 4 operator-script objects not derived). full, two-missing, ghost, missing-access, disabled, not-test-mode, guard-unpinned and void-no-python pass in the same run, so the harness is sound. Correct RED."
+}

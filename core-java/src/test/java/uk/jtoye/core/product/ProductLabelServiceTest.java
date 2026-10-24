@@ -441,7 +441,55 @@ class ProductLabelServiceTest {
         assertThatThrownBy(() -> productLabelService.generateLabel(productId))
                 .isInstanceOf(IncompleteLabelDataException.class)
                 .hasMessageContaining("shelf life")
-                .hasMessageContaining("durability type");
+                .hasMessageContaining("use-by or best-before");
+    }
+
+    /**
+     * Issue #960 (SW-ADE-03): the 422 detail is for the vendor reading it in a dialog. RED on the unfixed
+     * tree: "Cannot generate PPDS label for product ea66e02b-...: missing shelf life (shelf_life_days),
+     * durability type (durability_type)". The machine-readable twin is the field list, in the names the
+     * product form and CreateProductRequest use.
+     */
+    @Test
+    @DisplayName("generateLabel - 422 detail is plain words: no UUID, no column names; fields listed separately")
+    void generateLabelMessageIsPlainWords() {
+        Product product = compliantProduct();
+        product.setShelfLifeDays(null);
+        product.setDurabilityType(null);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                .thenReturn(Optional.of(compliantShop()));
+
+        assertThatThrownBy(() -> productLabelService.generateLabel(productId))
+                .isInstanceOfSatisfying(IncompleteLabelDataException.class, ex -> {
+                    assertThat(ex.getMessage())
+                            .doesNotContain(productId.toString())
+                            .doesNotContain("shelf_life_days")
+                            .doesNotContain("durability_type")
+                            .doesNotContain("shop_id")
+                            .doesNotContain("PPDS")
+                            .doesNotContainPattern("[0-9a-f]{8}-[0-9a-f]{4}-")
+                            .contains("Add a shelf life (in days) and choose use-by or best-before on the product");
+                    assertThat(ex.getMissingFields()).containsExactly("shelfLifeDays", "durabilityType");
+                    assertThat(ex.getProductId()).isEqualTo(productId);
+                });
+    }
+
+    @Test
+    @DisplayName("generateLabel - 422 names ONE missing durability item alone, in plain words")
+    void generateLabelNamesOnlyTheMissingDurabilityItem() {
+        Product product = compliantProduct();
+        product.setDurabilityType(null);
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                .thenReturn(Optional.of(compliantShop()));
+
+        assertThatThrownBy(() -> productLabelService.generateLabel(productId))
+                .isInstanceOfSatisfying(IncompleteLabelDataException.class, ex -> {
+                    assertThat(ex.getMessage()).contains("Choose use-by or best-before on the product")
+                            .doesNotContain("shelf life");
+                    assertThat(ex.getMissingFields()).containsExactly("durabilityType");
+                });
     }
 
     @Test
@@ -454,8 +502,10 @@ class ProductLabelServiceTest {
         when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> productLabelService.generateLabel(productId))
-                .isInstanceOf(IncompleteLabelDataException.class)
-                .hasMessageContaining("business identity");
+                .isInstanceOfSatisfying(IncompleteLabelDataException.class, ex -> {
+                    assertThat(ex.getMessage()).contains("Choose a shop for the product");
+                    assertThat(ex.getMissingFields()).containsExactly("shopId");
+                });
     }
 
     @Test
@@ -470,7 +520,71 @@ class ProductLabelServiceTest {
                 .hasMessageContaining(missingId.toString());
     }
 
+    // ---- GTM-BLK-06: 62mm Thermal Roll PPDS Label Format ----
+
+    @Test
+    @DisplayName("GTM-BLK-06: generateLabel with THERMAL_62MM emits a single-page 62mm-wide (176pt) PDF containing all Natasha's Law fields")
+    void generateLabelThermal62mmFitsOnePageWith62mmWidth() throws Exception {
+        Product product = compliantProduct();
+        product.setMayContainMask((1 << 10) | (1 << 4)); // Peanuts, Sesame
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                .thenReturn(Optional.of(compliantShop()));
+
+        byte[] pdf = productLabelService.generateLabel(
+                productId,
+                LocalDate.of(2026, 7, 4),
+                ProductLabelService.LabelFormat.THERMAL_62MM);
+
+        assertThat(pageCount(pdf)).as("thermal label pages").isEqualTo(1);
+        com.lowagie.text.Rectangle rect = pageSize(pdf);
+        assertThat(rect.getWidth()).as("62mm thermal roll width in points").isEqualTo(176.0f);
+        assertThat(rect.getHeight()).as("thermal label height in points").isEqualTo(230.0f);
+
+        String text = extractText(pdf);
+        assertThat(text).contains("Yam Pottage 500g");
+        assertThat(text).contains("Ingredients:");
+        assertThat(text).contains("milk");
+        assertThat(text).contains("May contain: Peanuts, Sesame");
+        assertThat(text).contains("Produced: 4 July 2026");
+        assertThat(text).contains("Use by: 7 July 2026");
+        assertThat(text).contains("Test Kitchen Ltd");
+        assertThat(text).contains("12 Market Street, London, E1 6AN");
+    }
+
+    @Test
+    @DisplayName("GTM-BLK-06: LabelFormat.fromQueryParam resolves aliases and rejects unknown formats")
+    void labelFormatFromQueryParamResolvesAliasesAndRejectsUnknown() {
+        assertThat(ProductLabelService.LabelFormat.fromQueryParam(null))
+                .isEqualTo(ProductLabelService.LabelFormat.STANDARD_100X60MM);
+        assertThat(ProductLabelService.LabelFormat.fromQueryParam(""))
+                .isEqualTo(ProductLabelService.LabelFormat.STANDARD_100X60MM);
+        assertThat(ProductLabelService.LabelFormat.fromQueryParam("STANDARD_100X60MM"))
+                .isEqualTo(ProductLabelService.LabelFormat.STANDARD_100X60MM);
+        assertThat(ProductLabelService.LabelFormat.fromQueryParam("A4"))
+                .isEqualTo(ProductLabelService.LabelFormat.STANDARD_100X60MM);
+        assertThat(ProductLabelService.LabelFormat.fromQueryParam("THERMAL_62MM"))
+                .isEqualTo(ProductLabelService.LabelFormat.THERMAL_62MM);
+        assertThat(ProductLabelService.LabelFormat.fromQueryParam("thermal-62mm"))
+                .isEqualTo(ProductLabelService.LabelFormat.THERMAL_62MM);
+        assertThat(ProductLabelService.LabelFormat.fromQueryParam("62mm"))
+                .isEqualTo(ProductLabelService.LabelFormat.THERMAL_62MM);
+
+        assertThatThrownBy(() -> ProductLabelService.LabelFormat.fromQueryParam("invalid-roll"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported label format");
+    }
+
     // ---- Helpers ----
+
+    private static com.lowagie.text.Rectangle pageSize(byte[] pdf) throws Exception {
+        PdfReader reader = new PdfReader(pdf);
+        try {
+            return reader.getPageSize(1);
+        } finally {
+            reader.close();
+        }
+    }
 
     private static int pageCount(byte[] pdf) throws Exception {
         PdfReader reader = new PdfReader(pdf);
@@ -495,3 +609,4 @@ class ProductLabelServiceTest {
         }
     }
 }
+

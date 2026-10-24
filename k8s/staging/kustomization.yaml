@@ -9,6 +9,34 @@ namespace: jtoye-staging
 resources:
   - ../base
   - namespace.yaml
+  # The Azure identifiers of the staging estate (plan 29-09, every value read back
+  # from Azure). It carries config.kubernetes.io/local-config, so kustomize uses it
+  # only as the source of the replacements below and never emits it.
+  - azure-identity.yaml
+
+# In-cluster platform services the login path needs (plan 29-10). Components, not
+# base: k8s/local reaches these on the host compose stack, and production opts in
+# on purpose in Phase 32. Each lives at k8s/components/<name>/ (depth 3, so the
+# render gates' depth-2 target discovery never treats one as a target of its own).
+# kustomize applies a component's resources and transformers BEFORE this overlay's
+# own namespace, labels, patches and replacements, so everything below reaches them.
+components:
+  - ../components/keycloak
+  - ../components/redis
+  - ../components/rabbitmq
+  # The staging mail trap (plan 29-22, D-20): Mailpit with STARTTLS required, its
+  # certificate from the cert-manager internal CA this component also creates.
+  - ../components/mailpit
+  # Its CA, trusted by core-java (JDK cacerts + CA, built at pod start, D-30) and by
+  # Keycloak (KC_TRUSTSTORE_PATHS). AFTER ../keycloak, whose Deployment it patches.
+  - ../components/cluster-ca-truststore
+  # Prometheus and its exporters with the compose rule corpus (plan 29-23, D-16). BEFORE
+  # ../azure-keyvault, whose workload patches reach the two exporter Deployments.
+  - ../components/monitoring
+  # Key Vault -> Secrets Store CSI -> synced Secrets (plan 29-12, D-23). LAST, because
+  # its workload patches reach the keycloak and redis Deployments the components
+  # above add, and kustomize applies components in this order.
+  - ../components/azure-keyvault
 
 # Staging-specific labels.
 # D-17 (Phase 26): the explicit `fields:` list mirrors k8s/base/kustomization.yaml —
@@ -58,9 +86,10 @@ images:
 # behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
 patches:
   - path: configmap-patch.yaml
-  # AKS Workload Identity pod-template label on core-java and pg-backup
-  # (Phase 36 D-02). Two documents in one file, matched by GVK + name.
-  - path: workload-identity-patch.yaml
+  # The AKS Workload Identity pod-template label on core-java and pg-backup (Phase
+  # 36 D-02) used to be a patch file here. Plan 29-12 moved it into
+  # ../components/azure-keyvault (workload-patches.yaml), with the same label at the
+  # same paths, beside the Key Vault mount of every other secret-reading workload.
   # Ingress hostnames. WITHOUT these two, staging rendered the PRODUCTION hosts
   # (api./app.) inside namespace jtoye-staging while configmap-patch.yaml told the
   # app it lived at api-staging./app-staging. — so the app was configured for hosts
@@ -74,15 +103,28 @@ patches:
     target:
       kind: Ingress
       name: jtoye-sse-ingress
+  # HPA floors 1 and drain-safe PDBs (Pitfall 1, plan 29-08). The HPA owns the
+  # replica count; see scale-patch.yaml for why each value is what it is.
+  - path: scale-patch.yaml
+  # core-java exports metrics labelled environment="staging", not the prod profile's
+  # "production" (issue #999). Held by INV-22 in k8s/scripts/check-render-invariants.sh.
+  - path: core-java-metrics-env-patch.yaml
 
-# Staging replicas (reduced for cost savings)
+# Deployment spec.replicas, set EQUAL to the HPA floor above (plan 29-08).
+# The old count 2 was misleading: the base HPA floor (3/5/3) won at runtime, so
+# the list described a scale staging never ran at. It is not deleted outright,
+# because the render would then carry the base spec.replicas 3/5/3, and every
+# `kubectl apply` resets a Deployment to its manifest replicas before the HPA
+# scales it back down (after the HPA's scale-down stabilisation window) — 11
+# pods requested at each deploy on a pool sized for the floors. At 1 the
+# manifest and the HPA floor agree, the same two-mechanism shape k8s/local uses.
 replicas:
   - name: core-java
-    count: 2
+    count: 1
   - name: edge-go
-    count: 2
+    count: 1
   - name: frontend
-    count: 2
+    count: 1
 
 # Issue #271 — the Postgres egress port follows app-config `db.port`.
 #
@@ -110,3 +152,232 @@ replacements:
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # Keycloak's own database is on the same managed server (D-02), so its
+      # Postgres rule follows db.port too. Staging-only: the policy comes from
+      # ../components/keycloak, which base never sees.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
+      # The postgres-exporter reaches the same managed server (plan 29-23,
+      # ../components/monitoring), so its egress.1 follows db.port too.
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
+
+# Plan 29-12 (D-23): the committed Azure identifiers (azure-identity.yaml, plan 29-09)
+# into the SecretProviderClasses of ../components/azure-keyvault and into each
+# workload ServiceAccount's Workload Identity client-id annotation. One user-assigned
+# identity per workload: the SPC a pod mounts and the ServiceAccount it runs as name
+# the SAME client id, which k8s/scripts/check-keyvault-chain.sh asserts. Every value
+# is an identifier, never a secret (T-29-32). A component's placeholder that no entry
+# here replaces stays REPLACED-BY-OVERLAY and fails the chain gate's GUID check.
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.tenant_id
+    targets:
+      - select:
+          kind: SecretProviderClass
+        fieldPaths:
+          - spec.parameters.tenantId
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.keyvault_name
+    targets:
+      - select:
+          kind: SecretProviderClass
+        fieldPaths:
+          - spec.parameters.keyvaultName
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_core_java
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: core-java-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: core-java
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_frontend
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: frontend-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: frontend
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_pg_backup
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: pg-backup-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: pg-backup
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_keycloak
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: keycloak-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: keycloak
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_redis
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: redis-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: redis
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_secret_sync
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: rabbitmq-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      # The testers' mail UI credential (plan 29-22, D-33): mounted by the same
+      # secret-sync pod, so it is fetched as the same identity.
+      - select:
+          kind: SecretProviderClass
+          name: mailpit-ui-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      # The Grafana edge gate credential (#968 item 3): the same pod, so the same identity.
+      - select:
+          kind: SecretProviderClass
+          name: grafana-edge-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: secret-sync
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  # The two monitoring exporters (plan 29-23, ../components/monitoring): each its own identity,
+  # SPC and ServiceAccount, federated by plan 29-09 to system:serviceaccount:jtoye-staging:<name>.
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_postgres_exporter
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: postgres-exporter-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: postgres-exporter
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_redis_exporter
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: redis-exporter-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: redis-exporter
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  # Alertmanager and Grafana (plan 29-24, ../components/monitoring): each its own identity, SPC and
+  # ServiceAccount, federated by plan 29-09 to system:serviceaccount:jtoye-staging:<name> (read back
+  # 2026-10-19: jtoye-staging-alertmanager-id and jtoye-staging-grafana-id on the AKS issuer).
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_alertmanager
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: alertmanager-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: alertmanager
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: azure-identity
+      fieldPath: data.client_id_grafana
+    targets:
+      - select:
+          kind: SecretProviderClass
+          name: grafana-kv
+        fieldPaths:
+          - spec.parameters.clientID
+      - select:
+          kind: ServiceAccount
+          name: grafana
+        fieldPaths:
+          - metadata.annotations.azure\.workload\.identity/client-id
+        options:
+          create: true

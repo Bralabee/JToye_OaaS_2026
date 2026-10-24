@@ -1,0 +1,24 @@
+FAIL staging-test rc=2 (want 0): VOID: not implemented 
+FAIL staging-empty rc=2 (want 1): VOID: not implemented 
+FAIL staging-unset rc=2 (want 1): VOID: not implemented 
+FAIL staging-live rc=2 (want 1): VOID: not implemented 
+FAIL staging-malformed rc=2 (want 1): VOID: not implemented 
+FAIL production-test rc=2 (want 1): VOID: not implemented 
+FAIL production-empty rc=2 (want 1): VOID: not implemented 
+FAIL production-live rc=2 (want 0): VOID: not implemented 
+FAIL bad-environment output lacks 'USAGE ERROR': VOID: not implemented 
+FAIL staging-secret rc=2 (want 1): VOID: not implemented 
+FAIL no-echo staging-test.out does not describe the key, so the scan above proves nothing
+SELFTEST: 0/11
+rc=1
+MISSING PASS staging-test
+MISSING PASS staging-empty
+MISSING PASS staging-unset
+MISSING PASS staging-live
+MISSING PASS staging-malformed
+MISSING PASS production-test
+MISSING PASS production-empty
+MISSING PASS production-live
+MISSING PASS bad-environment
+MISSING PASS no-echo
+missing=10 fail_lines=11

@@ -1,0 +1,8 @@
+# 29-14 Task 1 RED — Playwright collection switch, BEFORE playwright.config.ts gains the STAGING_E2E testIgnore.
+# Command (frontend/): the plan's second Task 1 verify, verbatim.
+list rc off=0 on=0
+switch off: listed=433 staging=1 | switch on: staging=1 desktop=1
+  [desktop] › staging-login.spec.ts:72:5 › staging vendor signs in through the public edge and sees seeded products @desktop-only
+verdict_rc=1
+# Target condition failed as planned: with STAGING_E2E unset the staging spec is still collected once (want 0).
+# Not a harness fault: both listings succeeded (rc 0), listed=433 > 0, and the switch-on half already matches (1, desktop only).

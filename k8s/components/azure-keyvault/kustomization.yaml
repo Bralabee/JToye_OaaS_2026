@@ -1,0 +1,44 @@
+# Azure Key Vault -> Secrets Store CSI -> synced Secrets for jtoye-staging (Phase 29
+# plan 29-12, D-23).
+#
+# A kustomize COMPONENT, listed only by k8s/staging (after ../components/keycloak and
+# ../components/redis, whose Deployments workload-patches.yaml patches; kustomize
+# applies components in list order). k8s/local keeps its out-of-band .env Secrets
+# (scripts/k8s-local-secrets.sh) and has no CSI driver; production repeats the
+# pattern in Phase 32 with its own vault. At k8s/components/<name>/ it sits at depth
+# 3, so the render gates' depth-2 target discovery never treats it as a target.
+#
+#   secretproviderclasses.yaml  one SPC per secret-reading workload (6 at 29-12; 9 since 29-23)
+#   secret-sync.yaml            the always-on consumer of rabbitmq-kv (Pitfall 11)
+#   workload-patches.yaml       the WI label + the csi volume and mount, per workload
+#
+# Every clientID / tenantId / keyvaultName here is the placeholder REPLACED-BY-OVERLAY
+# until the including overlay's replacements write the committed identifiers;
+# k8s/scripts/check-keyvault-chain.sh fails a render where one is left.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - secretproviderclasses.yaml
+  - secret-sync.yaml
+
+patches:
+  - path: workload-patches.yaml
+
+# The same label shape as k8s/base/kustomization.yaml (D-17), so secret-sync carries
+# part-of/managed-by exactly like a base workload.
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+    includeSelectors: false
+    includeTemplates: true
+    fields:
+      - path: spec/selector/matchLabels
+        create: true
+        group: apps
+        kind: Deployment
+      - path: spec/selector
+        create: true
+        version: v1
+        kind: Service

@@ -1,0 +1,102 @@
+# core-java trusts the staging cluster CA (plan 29-22, D-21 / D-30) through a
+# JVM-WIDE truststore that is the JDK's own cacerts PLUS that CA, built at pod start.
+#
+# WHY JVM-WIDE AND WHY cacerts FIRST (D-30, owner ruling). The CA must be trusted by
+# JavaMail's STARTTLS to Mailpit with full chain and host-name validation (no
+# mail.smtp.ssl.trust pinning, D-21). javax.net.ssl.trustStore REPLACES the JDK
+# default for every TLS client in the JVM, so a store holding the CA ALONE would
+# break every public call at once: Entra ID token requests and Azure Blob (start-up,
+# Workload Identity), Stripe, Keycloak's public issuer. The store is therefore a COPY
+# of the image's own $JAVA_HOME/lib/security/cacerts with the CA imported into it.
+# INV-16 (k8s/scripts/check-render-invariants.sh) refuses a render whose builder does
+# not start from that copy.
+#
+# MEASURED on eclipse-temurin:25-jre-alpine (the core-java runtime base) 2026-10-19:
+#   - the JDK cacerts is a PASSWORDLESS PKCS12 (118 entries listed with no store
+#     password); keytool -importcert into the copy keeps it passwordless, so the JVM
+#     (which opens the trust store with no password unless
+#     javax.net.ssl.trustStorePassword is set) reads all 119 entries. So
+#     JAVA_TOOL_OPTIONS names only the path and the type, and no store password is
+#     configured anywhere;
+#   - a NEW store created by keytool -importcert ENCRYPTS its certificate bag under
+#     the store password, so the same JVM reads ZERO anchors from it. That is why the
+#     builder below verifies the PASSWORDLESS entry count, the count the JVM will
+#     see, and fails the pod (fail closed) unless it is the JDK count plus exactly one.
+#   The -storepass value is the JDK's published default store password for its own
+#   cacerts (keytool needs one to write); it protects nothing, the store holds only
+#   public certificates.
+#
+# WHY JAVA_TOOL_OPTIONS. The image ENTRYPOINT is `sh -c "java $JAVA_OPTS -jar
+# app.jar"` and the Dockerfile sets JAVA_OPTS (container sizing, G1, the scrimage
+# WebP binary dir). Setting JAVA_OPTS here would REPLACE those flags; the JVM reads
+# JAVA_TOOL_OPTIONS natively, in addition. It is a literal, render-visible value
+# (INV-11 forbids sourcing JVM options from a Secret; INV-16 forbids JAVA_OPTS here).
+#
+# The init container runs the core-java image, so the images transformer keeps it on
+# the deployed tag and keytool matches the JVM that reads the store. It is a
+# core-java container for INV-11 too.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-java
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: truststore-builder
+        image: ghcr.io/bralabee/jtoye-core-java:2.1.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          cp "$JAVA_HOME/lib/security/cacerts" /truststore/cacerts
+          jdk=$(keytool -list -keystore /truststore/cacerts -storetype PKCS12 </dev/null 2>/dev/null | grep -c trustedCertEntry || true)
+          keytool -importcert -noprompt -alias jtoye-staging-ca -file /cluster-ca/ca.crt -keystore /truststore/cacerts -storetype PKCS12 -storepass changeit
+          entries=$(keytool -list -keystore /truststore/cacerts -storetype PKCS12 </dev/null 2>/dev/null | grep -c trustedCertEntry || true)
+          echo "truststore-builder: jdk-entries=$jdk entries=$entries (read with no store password, as the JVM reads it)"
+          if [ "$jdk" -lt 1 ] || [ "$entries" -ne $((jdk + 1)) ]; then
+            echo "truststore-builder: FAIL: expected jdk-entries + 1 readable entries; refusing to start core-java on this store" >&2
+            exit 1
+          fi
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            memory: "256Mi"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: truststore
+          mountPath: /truststore
+        - name: cluster-ca
+          mountPath: /cluster-ca
+          readOnly: true
+      containers:
+      - name: core-java
+        env:
+        - name: JAVA_TOOL_OPTIONS
+          value: "-Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStoreType=PKCS12"
+        volumeMounts:
+        - name: truststore
+          mountPath: /truststore
+          readOnly: true
+      volumes:
+      - name: truststore
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Mi
+      - name: cluster-ca
+        secret:
+          secretName: jtoye-staging-ca
+          items:
+          - key: ca.crt
+            path: ca.crt

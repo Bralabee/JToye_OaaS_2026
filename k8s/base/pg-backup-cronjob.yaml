@@ -57,30 +57,36 @@ spec:
                 # --- database (dumps as the BYPASSRLS backup role, see
                 #     infra/backups/create-backup-role.sql — the app role would
                 #     capture 0 rows from FORCE-RLS tenant tables) ---
+                # From Secret pg-backup-credentials, this CronJob's OWN Secret
+                # (plan 29-12, D-23): postgres-credentials is core-java's, and in
+                # staging each synced Secret has exactly one producing
+                # SecretProviderClass. host/port/database map to the SAME Key Vault
+                # objects as core-java's (postgres-credentials--host, ...), the
+                # backup pair to postgres-credentials--backup-username/-password.
                 - name: DB_HOST
                   valueFrom:
                     secretKeyRef:
-                      name: postgres-credentials
+                      name: pg-backup-credentials
                       key: host
                 - name: DB_PORT
                   valueFrom:
                     secretKeyRef:
-                      name: postgres-credentials
+                      name: pg-backup-credentials
                       key: port
                 - name: DB_NAME
                   valueFrom:
                     secretKeyRef:
-                      name: postgres-credentials
+                      name: pg-backup-credentials
                       key: database
                 - name: DB_USER
                   valueFrom:
                     secretKeyRef:
-                      name: postgres-credentials
+                      name: pg-backup-credentials
                       key: backup-username
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: postgres-credentials
+                      name: pg-backup-credentials
                       key: backup-password
                 # --- Blob target (Phase 36 D-01/D-02, BLOB-06) ---
                 # All four from app-config backup.blob.*: a DEDICATED backup

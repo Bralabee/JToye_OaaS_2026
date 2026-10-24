@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.exception.AwaitingPaymentException;
 import uk.jtoye.core.exception.BulkCancelTooLargeException;
 import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
@@ -239,6 +240,7 @@ public class OrderService {
             order.setCustomerName(customer.getName());
             order.setCustomerEmail(customer.getEmail());
             order.setCustomerPhone(customer.getPhone());
+            order.setPhoneVerified(customer.isPhoneVerified());
         } else {
             // Fallback: use directly provided fields (backward compatible)
             order.setCustomerName(request.getCustomerName());
@@ -459,6 +461,7 @@ public class OrderService {
             order.setCustomerName(customer.getName());
             order.setCustomerEmail(customer.getEmail());
             order.setCustomerPhone(customer.getPhone());
+            order.setPhoneVerified(customer.isPhoneVerified());
         } else {
             if (request.getCustomerName() != null) order.setCustomerName(request.getCustomerName());
             if (request.getCustomerEmail() != null) order.setCustomerEmail(request.getCustomerEmail());
@@ -792,6 +795,21 @@ public class OrderService {
         // Use StateMachine to validate and execute transition
         OrderStatus newStatus = stateMachineService.sendEvent(orderId, oldStatus, event);
 
+        // Phase 30 (#461 / PAY-04, widened by issue #958 in 30-05): an order still awaiting its card or
+        // payment-link money cannot be submitted (DRAFT -> PENDING), accepted (PENDING -> CONFIRMED) or
+        // prepared (-> PREPARING). The guard used to cover PREPARING only, so an unpaid card DRAFT could be
+        // submitted and confirmed from the dashboard and the customer was emailed "Received" and "Confirmed"
+        // from the outbox rows those transitions write. Evaluated after the state machine has judged the
+        // move legal and BEFORE any mutation: a refusal writes no status, no stock decrement, no outbox row.
+        // D-01: a vendor, REST or MCP order (paymentStatus NONE, no payment reference) is not payment-gated
+        // in Phase 30; the predicate is false for it, so its flow is unchanged. CANCEL is never gated.
+        boolean entersPaidWorkStep = event == OrderEvent.SUBMIT
+                || event == OrderEvent.CONFIRM
+                || newStatus == OrderStatus.PREPARING;
+        if (entersPaidWorkStep && isAwaitingUpfrontOrDepositPayment(order)) {
+            throw new AwaitingPaymentException(order.getOrderNumber());
+        }
+
         // Mutate in memory first; the save happens AFTER stock bookkeeping so a
         // stock failure rolls back the status change (CQ-01 — RESEARCH §11 Q7).
         order.setStatus(newStatus);
@@ -1079,6 +1097,16 @@ public class OrderService {
                 whatsappShareText,
                 waMeUrl
         );
+    }
+
+    private static boolean isAwaitingUpfrontOrDepositPayment(Order order) {
+        PaymentStatus ps = order.getPaymentStatus();
+        if (ps == PaymentStatus.PENDING || ps == PaymentStatus.FAILED) {
+            return true;
+        }
+        return order.getPaymentReference() != null
+                && ps != PaymentStatus.CAPTURED
+                && ps != PaymentStatus.AUTHORIZED;
     }
 
 }
