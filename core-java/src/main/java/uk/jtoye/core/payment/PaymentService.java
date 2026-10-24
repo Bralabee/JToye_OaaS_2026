@@ -53,6 +53,7 @@ public class PaymentService {
     private final RefundService refundService;
     private final StripeConnectService stripeConnectService;
     private final StripeBillingService stripeBillingService;
+    private final StripeChargeClient stripeChargeClient;
 
     // issue #98 [P2-7]: real payment-failure counter behind the Prometheus
     // PaymentFailureSpike alert (rate(jtoye_payment_failed_total[5m])).
@@ -72,7 +73,22 @@ public class PaymentService {
                          ObjectProvider<MeterRegistry> meterRegistryProvider) {
         this(stripeProperties, orderRepository, eventPublisher, paymentEventPublisher,
                 financialTransactionService, jdbcTemplate, refundService, stripeConnectService,
-                meterRegistryProvider, null);
+                meterRegistryProvider, null, new StripeChargeClient());
+    }
+
+    public PaymentService(StripeProperties stripeProperties,
+                         OrderRepository orderRepository,
+                         OrderEventPublisher eventPublisher,
+                         PaymentEventPublisher paymentEventPublisher,
+                         FinancialTransactionService financialTransactionService,
+                         JdbcTemplate jdbcTemplate,
+                         RefundService refundService,
+                         StripeConnectService stripeConnectService,
+                         ObjectProvider<MeterRegistry> meterRegistryProvider,
+                         StripeBillingService stripeBillingService) {
+        this(stripeProperties, orderRepository, eventPublisher, paymentEventPublisher,
+                financialTransactionService, jdbcTemplate, refundService, stripeConnectService,
+                meterRegistryProvider, stripeBillingService, new StripeChargeClient());
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -85,7 +101,8 @@ public class PaymentService {
                          RefundService refundService,
                          StripeConnectService stripeConnectService,
                          ObjectProvider<MeterRegistry> meterRegistryProvider,
-                         StripeBillingService stripeBillingService) {
+                         StripeBillingService stripeBillingService,
+                         StripeChargeClient stripeChargeClient) {
         this.stripeProperties = stripeProperties;
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
@@ -95,6 +112,7 @@ public class PaymentService {
         this.refundService = refundService;
         this.stripeConnectService = stripeConnectService;
         this.stripeBillingService = stripeBillingService;
+        this.stripeChargeClient = stripeChargeClient != null ? stripeChargeClient : new StripeChargeClient();
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
         this.paymentFailedCounter = reg != null
                 ? Counter.builder("jtoye.payment.failed")
@@ -495,18 +513,16 @@ public class PaymentService {
             String paymentMethodDesc = "Card";
             if (intent.getLatestCharge() != null) {
                 try {
-                    com.stripe.model.Charge charge = (event.getAccount() != null && !event.getAccount().isBlank())
-                            ? com.stripe.model.Charge.retrieve(
-                                    intent.getLatestCharge(),
-                                    RequestOptions.builder().setStripeAccount(event.getAccount()).build())
-                            : com.stripe.model.Charge.retrieve(intent.getLatestCharge());
-                    if (charge.getPaymentMethodDetails() != null
+                    com.stripe.model.Charge charge = stripeChargeClient.retrieve(
+                            intent.getLatestCharge(), event.getAccount());
+                    if (charge != null
+                            && charge.getPaymentMethodDetails() != null
                             && charge.getPaymentMethodDetails().getCard() != null) {
                         var card = charge.getPaymentMethodDetails().getCard();
                         paymentMethodDesc = card.getBrand() + " ending " + card.getLast4();
                     }
-                } catch (StripeException e) {
-                    log.warn("Could not retrieve charge details for PI {}", intent.getId(), e);
+                } catch (StripeException | io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
+                    log.warn("Could not retrieve charge details for PI {}: {}", intent.getId(), e.getMessage());
                 }
             }
 
