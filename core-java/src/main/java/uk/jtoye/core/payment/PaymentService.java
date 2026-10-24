@@ -521,15 +521,33 @@ public class PaymentService {
             order.setPaymentStatus(PaymentStatus.CAPTURED);
             order.setPaymentReference(intent.getId());
             order.setPaymentMethod(paymentMethodDesc);
-            order.setStatus(OrderStatus.PENDING); // DRAFT → PENDING on successful payment
+            // Phase 30-05 (issue #958): only a storefront card DRAFT moves (DRAFT → PENDING). A payment link can be
+            // issued and paid at any open status, CONFIRMED and PREPARING included, and this used to reset such an
+            // order to PENDING and announce DRAFT → PENDING again, which re-sent the customer's "Received" email
+            // and put an accepted order back in the kitchen's New lane. Any other status keeps its value: the
+            // money is recorded, the shop's progress is not undone (the asymmetric-ordering rule, AGENTS.md
+            // oaas-money). The payment-succeeded event and the ledger row below are unchanged.
+            OrderStatus statusAtPayment = order.getStatus();
+            boolean movesDraftToPending = statusAtPayment == OrderStatus.DRAFT;
+            if (movesDraftToPending) {
+                order.setStatus(OrderStatus.PENDING);
+            } else if (order.isVoided() || statusAtPayment == OrderStatus.CANCELLED
+                    || statusAtPayment == OrderStatus.REFUNDED) {
+                // T-30-22: money captured on an order the shop has closed. No automatic refund (refunds are the
+                // vendor's decision); the row shows CAPTURED and this line makes it findable. No PII.
+                log.warn("event=payment_on_closed_order order={} status={} intent={}",
+                        order.getOrderNumber(), statusAtPayment, intent.getId());
+            }
             order.setUpdatedAt(java.time.OffsetDateTime.now());
             orderRepository.save(order);
 
-            // Record the state change in the transactional outbox (#93) —
-            // joins the webhook transaction, published post-commit by the flusher.
-            eventPublisher.publishStateChange(
-                    order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
-                    OrderStatus.DRAFT, OrderStatus.PENDING);
+            if (movesDraftToPending) {
+                // Record the state change in the transactional outbox (#93) —
+                // joins the webhook transaction, published post-commit by the flusher.
+                eventPublisher.publishStateChange(
+                        order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
+                        OrderStatus.DRAFT, OrderStatus.PENDING);
+            }
 
             boolean isSplitDepositWithBalance = order.getDepositAmountPennies() != null
                     && order.getBalanceDuePennies() != null

@@ -1,0 +1,24 @@
+# 30-07 Task 1 break arms, bracketed clean -> arm -> clean; restores verified by git blob hash against HEAD 8b104808
+# harness: scratchpad bracket.sh (cp backup, python break, selftest, cp restore, hash-object == HEAD:scripts/staging-seed.sh)
+== task1 break: print the whole order object, not the projection
+-- clean-before: blob b8f43490ceadd4a325325bb6e1026434a55633de head b8f43490ceadd4a325325bb6e1026434a55633de
+   selftest rc=0 pass=27 fail=0
+-- arm: blob 9928996b768fc5a8f1c8d1f54dea0978c0a639f9 (differs from head: yes)
+   selftest rc=1 pass=25 fail=2
+   FAIL list-drafts-no-pii 3 line(s) carry a customer name, email, phone, address or note
+   FAIL list-drafts-ok the candidate lines are not the three projections: DRAFT-CANDIDATE {"id":"bbbbbbbb-0000-4000-8000-00000000000a","shopId":"66666666-7777-4888-9999-000000000000","orderNumber":"ORD-STUB-D001","status":"DRAFT","paymentStatus":"PENDING","paymentReference":"pi_drafta","totalAmountPennies":950,"createdAt":"2026-10-19T10:00:00Z","customerName":"Pii PIIZQ7 Name","customerEmail":"pii
+-- restore: blob b8f43490ceadd4a325325bb6e1026434a55633de == head b8f43490ceadd4a325325bb6e1026434a55633de: yes
+   git diff --quiet: clean
+-- clean-after: selftest rc=0 pass=27 fail=0
+== task1 break: list-drafts makes one write (a cancel POST)
+-- clean-before: blob b8f43490ceadd4a325325bb6e1026434a55633de head b8f43490ceadd4a325325bb6e1026434a55633de
+   selftest rc=0 pass=27 fail=0
+-- arm: blob 9c353d79651c17a0e793f8b6c55c4b3da99274f9 (differs from head: yes)
+   selftest rc=1 pass=26 fail=1
+   FAIL list-drafts-readonly non-GET calls: POST https://auth-staging.olajay.co.uk/realms/jtoye-staging/protocol/openid-connect/token -> 200|POST https://api-staging.olajay.co.uk/api/v1/orders/x/cancel -> 404|
+-- restore: blob b8f43490ceadd4a325325bb6e1026434a55633de == head b8f43490ceadd4a325325bb6e1026434a55633de: yes
+   git diff --quiet: clean
+-- clean-after: selftest rc=0 pass=27 fail=0
+
+# Task 1 <verify> on the committed tree: rc=0 missing=0 fail_lines=0 (27 arms)
+# Tracer gate (end-of-phase, automated-only verify): re-run passed -> expanding

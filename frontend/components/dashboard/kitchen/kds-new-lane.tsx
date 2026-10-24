@@ -25,6 +25,8 @@ import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilmen
 import { KdsScheduledWindowBadge } from "@/components/dashboard/kitchen/kds-cook-sheet-panel"
 import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
 import { UnverifiedContactBadge } from "@/components/dashboard/kitchen/unverified-contact-badge"
+import { AwaitingPaymentBadge } from "@/components/dashboard/orders/awaiting-payment-badge"
+import { AWAITING_PAYMENT_PROBLEM_TYPE } from "@/lib/awaiting-payment"
 import type { OrderDetail, OrderStatus } from "@/types/api"
 
 /**
@@ -104,7 +106,7 @@ const ACCEPTED_STATUSES: OrderStatus[] = ["CONFIRMED", "PREPARING", "READY", "CO
 interface ProblemResponse {
   response?: {
     status?: number
-    data?: { type?: string; productName?: unknown; available?: unknown }
+    data?: { type?: string; detail?: unknown; productName?: unknown; available?: unknown }
   }
 }
 
@@ -130,6 +132,16 @@ async function describeAcceptFailure(orderId: string, error: unknown): Promise<s
   const response = (error as ProblemResponse | null)?.response
   if (!response) return ACCEPT_FAILED_COPY
   const data = response.data
+  // 30-06 (issue #958, UI-SPEC § S2): FIRST, an order still awaiting the customer's payment. The
+  // re-read below would still say PENDING, so without this branch the refusal fell through to
+  // "Check your connection". The server's staff sentence is shown verbatim (a React text node).
+  if (
+    data?.type === AWAITING_PAYMENT_PROBLEM_TYPE &&
+    typeof data.detail === "string" &&
+    data.detail.trim()
+  ) {
+    return data.detail
+  }
   if (
     data?.type === INSUFFICIENT_STOCK_TYPE &&
     typeof data.available === "number" &&
@@ -388,6 +400,13 @@ function KdsNewCard({
           <KdsScheduledWindowBadge
             scheduledWindowLabel={order.scheduledWindowLabel}
             scheduledForDate={order.scheduledForDate}
+          />
+          {/* 30-06 (#958, UI-SPEC § S2): unpaid card / link order. Accept stays enabled: the badge
+              warns before the tap and the server's refusal (the alert below) explains after it. */}
+          <AwaitingPaymentBadge
+            orderStatus={order.status}
+            paymentStatus={order.paymentStatus}
+            paymentReference={order.paymentReference}
           />
         </div>
         <OrderAllergenBanner

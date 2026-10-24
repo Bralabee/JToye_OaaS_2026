@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: Phase 30 executing — 30-03 DONE (3/32); PR 1 = #1029 open (fix/957-card-checkout-payment-step); next 30-04 (D3 review + merge + live proof)
-last_updated: "2026-10-22T11:11:00.000Z"
+stopped_at: Phase 30 executing — 30-05 DONE (5/32); issue #958 server gate + DRAFT-only payment webhook committed on fix/958-awaiting-payment-gate (not pushed); next 30-06
+last_updated: "2026-10-22T19:44:12.000Z"
 last_activity: 2026-10-22
-last_activity_desc: 30-03 done — staging card spec RED at the #957 payment step (DRAFT ORD-1AAC0CDE-20261022-0C094A2C for 30-09); PR #1029 opened; staging pk variable set (guard rc 0); CORS blocker fixed first (issue #1025, PR #1026)
-state_head: 52835de200fd982b5e11036b3e1ee071d57f7611
+last_activity_desc: 30-05 done — typed 409 awaiting-payment gate on SUBMIT/CONFIRM/PREPARING, payment webhook moves only DRAFT (WARN payment_on_closed_order), full core-java suite green, counts 6562
+state_head: 021c0815b358a710ab31ffe4cb3f4f33e9b52636
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 286
-  percent: 90
+  completed_plans: 288
+  percent: 91
 ---
 
 # Project State
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 3/32 plans done (30-01..30-03); PR 1 = #1029 open; next 30-04 (review series, merge, deploy watch, live card proof)
-Last activity: 2026-10-22 — 30-03 complete (SUMMARY 30-03-SUMMARY.md); unplanned prerequisite: ingress CORS omitted Idempotency-Key (issue #1025), fixed by PR #1026 (merged 4208b08e, staging deploy green, live preflight rc 0)
+Status: Executing — 7/32 plans done (30-01..30-07); PR 1 (#1029) merged + deployed + proven live; PR 2 (issue #958) in progress on branch fix/958-awaiting-payment-gate: 30-05 (server gate), 30-06 (staff UI) and 30-07 (D-02 hand tools) done, next 30-08
+Last activity: 2026-10-22 — 30-07 complete (SUMMARY 30-07-SUMMARY.md, evidence/30-07-*): scripts/staging-seed.sh gained --stage list-drafts (read-only, projection only), vendor-order (the D-01 NONE DRAFT control), order-transition (prints TRANSITION http/type/detail), cancel-drafts --orders (intent cancelled in Stripe TEST and read back BEFORE the order; [not-draft]/[paid] refusals; no sweeper, D-02) and stripe-get --path (allowlisted, TEST-only, sanitised; refund/account print LIVEMODE n/a); selftest 20 -> 41 arms, 7 break arms red; gitleaks branch range rc 0 after pinning 3 commit fingerprints (one 30-07 fixture, two 30-05 evidence lines); no live staging or Stripe call; nothing pushed. Before that, 30-06 complete (SUMMARY 30-06-SUMMARY.md, evidence/30-06-*): "Awaiting payment" badge (isAwaitingPayment = the server rule) on the Orders list and both kitchen cards; the list offers no Submit/Confirm for such an order and DRAFT gained Cancel; the kitchen grid toasts "Order not updated" with the server detail and the New lane shows it in the card alert; frontend jest 3207/3207, build rc 0, counts 6593; nothing pushed. Before that, 30-05 (SUMMARY 30-05-SUMMARY.md, evidence/30-05-*): typed 409 https://jtoye.uk/errors/awaiting-payment on SUBMIT/CONFIRM/PREPARING of an unpaid card/link order, D-01 vendor orders unchanged, payment webhook moves only DRAFT; nothing pushed. Staging still leaves paid TEST order ORD-1AAC0CDE-20261022-D69764AE and the 30-03 unpaid DRAFT ORD-1AAC0CDE-20261022-0C094A2C for 30-09
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1523,9 +1523,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-22T11:11:00.000Z
-Stopped at: Phase 30 — 30-03 done (3/32), PR #1029 open; next /gsd-execute-phase 30 resumes at 30-04
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-03-SUMMARY.md`
+Last session: 2026-10-22T17:05:16.000Z
+Stopped at: Phase 30 — 30-04 done (4/32), PR 1 complete; next /gsd-execute-phase 30 resumes at 30-05 on fix/958-awaiting-payment-gate
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-04-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
