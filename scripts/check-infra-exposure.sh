@@ -47,6 +47,7 @@
 # USAGE
 #   scripts/check-infra-exposure.sh              # A + B + C + D
 #   scripts/check-infra-exposure.sh --static     # A only (no running stack needed)
+#   scripts/check-infra-exposure.sh --selftest   # hermetic stub arms for A (no stack, no .env)
 #
 # NOTE ON A DELIBERATE OPT-IN
 #   JTOYE_BIND_HOST=0.0.0.0 in .env republishes everything on all interfaces (for
@@ -57,7 +58,79 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELF_PATH="$REPO_ROOT/scripts/$(basename "${BASH_SOURCE[0]}")"
 cd "$REPO_ROOT" || { echo "VOID: cannot cd to repo root"; exit 2; }
+
+selftest() {
+  local t fails=0 arm want why out rc
+  t=$(umask 077 && mktemp -d "${TMPDIR:-/tmp}/jtoye-infra-exp-st.XXXXXXXX") || { echo "VOID: mktemp -d failed" >&2; return 2; }
+  # shellcheck disable=SC2064
+  trap "rm -rf '$t'" RETURN
+  mkdir -p "$t/scripts" "$t/infra/monitoring" "$t/bin"
+  cp "$SELF_PATH" "$t/scripts/check-infra-exposure.sh"
+  printf 'services: {}\n' > "$t/docker-compose.full-stack.yml"
+  printf 'services: {}\n' > "$t/infra/docker-compose.yml"
+  printf 'services: {}\n' > "$t/infra/monitoring/docker-compose.monitoring.yml"
+
+  cat > "$t/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = "compose" ] && [ "${2:-}" = "version" ]; then
+  echo "Docker Compose version v2.29.0-stub"
+  exit 0
+fi
+if [ "${1:-}" = "compose" ]; then
+  case "${STUB_MODE:-clean}" in
+    warn-stderr-clean)
+      echo 'level=warning msg="The \"POSTGRES_USER\" variable is not set. Defaulting to a blank string."' >&2
+      printf '{"services":{"postgres":{"ports":[{"host_ip":"127.0.0.1","published":"5433","target":5432}]}}}\n'
+      exit 0
+      ;;
+    nonloopback-nonexempt)
+      printf '{"services":{"postgres":{"ports":[{"host_ip":"0.0.0.0","published":"5433","target":5432}]}}}\n'
+      exit 0
+      ;;
+    exempt-app-tier)
+      printf '{"services":{"core-java":{"ports":[{"host_ip":"0.0.0.0","published":"9090","target":9090}]},"postgres":{"ports":[{"host_ip":"127.0.0.1","published":"5433","target":5432}]}}}\n'
+      exit 0
+      ;;
+    zero-ports)
+      printf '{"services":{"postgres":{"ports":[]}}}\n'
+      exit 0
+      ;;
+    compose-rc1)
+      echo "simulated compose parse error" >&2
+      exit 1
+      ;;
+  esac
+fi
+exit 1
+STUB
+  chmod +x "$t/bin/docker"
+
+  _arm() {
+    arm=$1; want=$2; why=$3
+    out=$(PATH="$t/bin:$PATH" STUB_MODE="$arm" bash "$t/scripts/check-infra-exposure.sh" --static 2>&1)
+    rc=$?
+    if [ "$rc" -ne "$want" ]; then
+      echo "FAIL $arm rc=$rc (want $want): $(head -c 200 <<<"$out" | tr '\n' ' ')"
+      fails=$((fails + 1))
+    elif [ "$why" != "-" ] && ! grep -qF -- "$why" <<<"$out"; then
+      echo "FAIL $arm rc=$rc but output does not name '$why': $(head -c 200 <<<"$out" | tr '\n' ' ')"
+      fails=$((fails + 1))
+    else
+      echo "PASS $arm rc=$rc"
+    fi
+  }
+
+  _arm warn-stderr-clean 0 "A: all 3 discovered published ports"
+  _arm exempt-app-tier 0 "EXEMPT (application tier)"
+  _arm nonloopback-nonexempt 1 "ALL INTERFACES"
+  _arm zero-ports 2 "ZERO published ports"
+  _arm compose-rc1 2 "simulated compose parse error"
+  [ "$fails" -eq 0 ]
+}
+
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 
 STATIC_ONLY=0
 [ "${1:-}" = "--static" ] && STATIC_ONLY=1
@@ -158,10 +231,13 @@ for f in "${COMPOSE_FILES[@]}"; do
     void "compose file not found: ${f}"
     exit 2
   fi
-  cfg=$(docker compose -f "$f" config --format json 2>&1)
+  err_file=$(mktemp)
+  cfg=$(docker compose -f "$f" config --format json 2>"$err_file")
   rc=$?
+  err_msg=$(cat "$err_file" 2>/dev/null || true)
+  rm -f "$err_file"
   if [ "$rc" -ne 0 ]; then
-    void "docker compose config failed for ${f} (rc=${rc}): ${cfg}"
+    void "docker compose config failed for ${f} (rc=${rc}): ${err_msg:-$cfg}"
     exit 2
   fi
 

@@ -1852,6 +1852,15 @@ jobs:
       - name: Prove the served-chunk publishable-key check can fail (#957 --selftest)
         run: bash scripts/check-frontend-stripe-key-baked.sh --selftest
 
+      - name: Prove the alert-liveness gate's runtime and sink arms (--selftest #1007)
+        run: bash scripts/check-alert-liveness.sh --selftest
+
+      - name: Prove the infra-exposure gate's compose parse and bind arms (--selftest #1009)
+        run: bash scripts/check-infra-exposure.sh --selftest
+
+      - name: Assert every declared compose port is loopback-bound or exempt (--static #1009)
+        run: bash scripts/check-infra-exposure.sh --static
+
       - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
         run: bash scripts/check-gate-enforcement.sh --selftest
 

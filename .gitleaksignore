@@ -85,3 +85,8 @@ f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/s
 # edited. 30-07 measured its branch-range scan at 2a1de3cb, before this commit existed;
 # 30-08's pre-PR scan found it. Commit-pinned: the same shape anywhere else still fires.
 09beb8698531e55c7a632740c765b34cd9a02c9b:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-07-task3-arms.txt:generic-api-key:7
+# Squash merge of PR #1030 on main (7b117162e80a943af4186f2255c40329cd8d145c): same three
+# synthetic test/stub evidence lines above, now carrying the squash commit's SHA.
+7b117162e80a943af4186f2255c40329cd8d145c:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task1.json:generic-api-key:4
+7b117162e80a943af4186f2255c40329cd8d145c:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task2-it.json:generic-api-key:4
+7b117162e80a943af4186f2255c40329cd8d145c:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-07-task3-arms.txt:generic-api-key:7
