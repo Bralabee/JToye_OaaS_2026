@@ -62,4 +62,17 @@ class StripePropertiesRedactionTest {
         assertTrue(rendered.contains("apiKey=***"));
         assertTrue(rendered.contains("webhookSecret=<unset>"));
     }
+
+    @Test
+    @DisplayName("toString exposes non-secret timeout and retry settings (#108)")
+    void toString_showsTimeoutsAndRetries() {
+        StripeProperties props = new StripeProperties();
+        String rendered = props.toString();
+        assertTrue(rendered.contains("connectTimeoutMs=5000"),
+                "toString should expose connectTimeoutMs; got: " + rendered);
+        assertTrue(rendered.contains("readTimeoutMs=20000"),
+                "toString should expose readTimeoutMs; got: " + rendered);
+        assertTrue(rendered.contains("maxNetworkRetries=2"),
+                "toString should expose maxNetworkRetries; got: " + rendered);
+    }
 }

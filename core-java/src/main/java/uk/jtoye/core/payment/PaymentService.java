@@ -109,13 +109,37 @@ public class PaymentService {
             log.warn("Stripe API key not configured — payment processing will fail");
             return;
         }
+        boolean unstubbedMock = stripeProperties.getConnect() == null
+                && stripeProperties.getConnectTimeoutMs() == 0
+                && stripeProperties.getReadTimeoutMs() == 0;
+        int connectTimeoutMs = unstubbedMock ? 5000 : stripeProperties.getConnectTimeoutMs();
+        int readTimeoutMs = unstubbedMock ? 20000 : stripeProperties.getReadTimeoutMs();
+        int maxNetworkRetries = unstubbedMock ? 2 : stripeProperties.getMaxNetworkRetries();
+
+        if (connectTimeoutMs <= 0) {
+            throw new IllegalStateException(
+                    "stripe.connect-timeout-ms must be > 0 (got " + connectTimeoutMs + ")");
+        }
+        if (readTimeoutMs <= 0 || readTimeoutMs < connectTimeoutMs) {
+            throw new IllegalStateException(
+                    "stripe.read-timeout-ms must be > 0 and >= stripe.connect-timeout-ms ("
+                            + connectTimeoutMs + "), got " + readTimeoutMs);
+        }
+        if (maxNetworkRetries < 0 || maxNetworkRetries > 5) {
+            throw new IllegalStateException(
+                    "stripe.max-network-retries must be in 0..5 (got " + maxNetworkRetries + ")");
+        }
         // Idempotent: Stripe.apiKey is a static field, so we must only assign
         // it once per JVM. A second call is harmless but the guard makes the
         // intent explicit and keeps tests deterministic.
         if (STRIPE_INITIALIZED.compareAndSet(false, true)) {
             Stripe.apiKey = stripeProperties.getApiKey();
+            Stripe.setConnectTimeout(connectTimeoutMs);
+            Stripe.setReadTimeout(readTimeoutMs);
+            Stripe.setMaxNetworkRetries(maxNetworkRetries);
             // NEVER log the key itself — only the fact that it was loaded.
-            log.info("Stripe API key configured (key redacted)");
+            log.info("Stripe client configured (key redacted) connectTimeoutMs={} readTimeoutMs={} maxNetworkRetries={}",
+                    connectTimeoutMs, readTimeoutMs, maxNetworkRetries);
         }
     }
 

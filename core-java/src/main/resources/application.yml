@@ -834,6 +834,11 @@ stripe:
   # destination charges, in basis points (250 = 2.5%). 0 (default) = no fee set;
   # the fee is a business decision injected per environment, never a code literal.
   platform-fee-bps: ${STRIPE_PLATFORM_FEE_BPS:0}
+  # issue #108 — outbound Stripe SDK timeouts and retry cap (stripe-java 34.0.0
+  # defaults: 30000ms connect, 80000ms read, 2 retries).
+  connect-timeout-ms: ${STRIPE_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${STRIPE_READ_TIMEOUT_MS:20000}
+  max-network-retries: ${STRIPE_MAX_NETWORK_RETRIES:2}
   connect:
     # Country for new Express connected accounts (UK platform).
     country: ${STRIPE_CONNECT_COUNTRY:GB}
