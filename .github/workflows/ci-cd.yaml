@@ -1173,6 +1173,9 @@ jobs:
       - name: Prove the Grafana edge probe's arms can fail (#968 --selftest)
         run: bash scripts/staging-grafana-edge.sh --selftest
 
+      - name: Prove the synthesis governance gate can fail (--selftest)
+        run: bash scripts/check-synthesis-gate.sh --selftest
+
       - name: Assert the staging/production render matches its reviewed golden
         run: |
           chmod +x ./k8s/scripts/render-golden.sh
