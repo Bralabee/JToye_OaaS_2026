@@ -16,7 +16,7 @@
   that plants a comment-only reference.
 
 - The primary checkout's `frontend/node_modules` is stale: tailwindcss 3.4.19 installed, 4.3.3 locked
-  status: open
+  status: resolved (30-06, 2026-10-22)
   **Found by:** plan 30-01 (2026-10-22). `node -p "require('tailwindcss/package.json').version"`
   prints 3.4.19 while `frontend/package.json` says ^4.3.3 and `package-lock.json` pins 4.3.3
   (Phase 39 moved to Tailwind v4). Effects on this checkout only: full-program `tsc --noEmit`
@@ -29,3 +29,17 @@
   checkout another session may be driving is an environment change, not a plan task.
   **Route:** `npm --prefix frontend ci` on the primary checkout when no other session is using
   it, then re-run the three suites.
+  **Resolved in 30-06:** `npm --prefix frontend ci` (no other process was using the checkout;
+  `package.json` and `package-lock.json` unchanged) installed tailwindcss 4.3.3, next 16.4.2 and
+  lucide-react 1.59.0. Full-program `tsc --noEmit` then exits 0 and the full Jest run passes
+  3207/3207 tests in 273/273 suites, the three named suites included.
+
+- A bare `catch {}` after `apiClient.post` remains on the dashboard: `frontend/app/dashboard/products/import/page.tsx:337`
+  status: open (recorded, not filed: no gate, no data loss, no observed failure)
+  **Found by:** plan 30-06's Pitfall 8 survey (2026-10-22), `evidence/30-06-task2-arms.txt`. The bulk
+  image scan (`handleScan`) toasts "Scan failed" / "Could not process images" and drops the server's
+  RFC 7807 detail, the shape 30-06 removed from the kitchen grid. The survey's control (the
+  pre-30-06 kitchen page) finds its l.623 catch, so the scan can see the shape; at an 8-line window
+  the dashboard has 0 such catches, at 25 lines this one. Not a payment-gated transition, so out of
+  30-06's scope.
+  **Route:** `catch (error)` -> `describeLoadError(error, "Could not process images").message`.

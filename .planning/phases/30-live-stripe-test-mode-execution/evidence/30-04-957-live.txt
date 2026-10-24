@@ -1,0 +1,243 @@
+30-04 — issue #957 GREEN arms on the delivered staging runtime (merge 43d047fb)
+===============================================================================
+Branch for this record: fix/958-awaiting-payment-gate (cut from origin/main 43d047fb, --no-track)
+Operator host: the primary checkout. All times UTC. No key value, client secret or password appears below.
+
+RESULT IN ONE LINE (2026-10-22T16:59:28Z)
+  STAGING-CARD order=ORD-1AAC0CDE-20261022-D69764AE intent=pi_3UTPKkDpS9ICNeRt0VWSmyrM payment_status=CAPTURED livemode=false at=2026-10-22T16:59:28.309Z
+  The two commands that were RED in plan 30-03 are GREEN on the merge commit's images, and the
+  running pods are proven to be those images.
+
+------------------------------------------------------------------------------------------------
+TASK 1 — review series and merge (owner; recorded from the orchestrator's continuation)
+------------------------------------------------------------------------------------------------
+  PR #1029  https://github.com/Bralabee/JToye_OaaS_2026/pull/1029
+  Round 1 /code-review: 0 admissible of 9, on head c1e5bb50.
+  #1028 then merged to main, so main was merged into the branch (dd0d223b). That merge resolution
+  dropped #1028's doc version claims; fix 24ea1ab3 restored them.
+  Round 2 /review-verify: 0 admissible. The Review-Record names 24ea1ab3604d25541b7890682a4237d54e9aab81.
+  PR CI on 24ea1ab3: all green. "Frontend E2E (public surfaces)" failed once with a Turbopack
+  next/font/google resolve error (a transient Google Fonts fetch); lockfile identical to main's,
+  main passed that job; re-run, passed.
+  Squash-merged with the owner's approval.
+  Read back by this executor, 2026-10-22T16:56Z:
+    gh pr view 1029 --json state,mergeCommit,mergedAt,headRefOid
+    -> state=MERGED mergedAt=2026-10-22T15:15:28Z mergeCommit=43d047fb5514b19a0d24daff1e3ad940e6623d75
+       headRefOid=24ea1ab3604d25541b7890682a4237d54e9aab81 (the head the Review-Record names)
+    git merge-base --is-ancestor 43d047fb origin/main -> yes
+      control: a nonexistent sha -> rc=128 (the check can say no)
+    merge commit committer time 2026-10-22T15:15:27Z
+  Not re-measured here: the step-2 pre-merge outputs (branch-behind rc 0, publishable-key guard
+  rc 0). They were run by the orchestrator/owner before the merge and are not reproduced in this
+  file; the variable passes the guard per 30-03 Task 3, and the deploy's own guard step (below)
+  ran against the same variable and is success.
+  Precondition for Task 2, 2026-10-22T16:56Z: gh variable get DEPLOY_STAGING_ENABLED -> "true", rc=0
+
+------------------------------------------------------------------------------------------------
+TASK 2 — the merge deploys, the live bundle carries the key, a TEST card payment completes
+------------------------------------------------------------------------------------------------
+THE MERGE RUN
+  Run 39803113150  https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/39803113150
+  CI/CD Pipeline, push, main, headSha 43d047fb5514b19a0d24daff1e3ad940e6623d75
+  created 2026-10-22T15:15:33Z, completed 2026-10-22T16:54:23Z, conclusion success
+  Resolver note (instrument): the plan's resolver
+    gh run list --workflow ci-cd.yaml --commit 43d047fb… --json databaseId,status   -> rc=0 []
+    and gh run list --commit 43d047fb… (no workflow filter)                        -> rc=0 []
+  returned EMPTY although the run exists; the plan's rule "none = VOID" was honoured (empty was not
+  read as "no run"). The run was resolved instead by
+    gh run list --workflow ci-cd.yaml --branch main -L 5 --json databaseId,headSha,...
+  whose first row is 39803113150 with headSha 43d047fb…, and confirmed with gh run view 39803113150
+  (headSha 43d047fb…, event push, workflow CI/CD Pipeline). The run was already terminal when this
+  executor started, so no watch loop was needed.
+
+  Per-job conclusions (gh run view 39803113150 --json jobs), 2026-10-22T16:57Z:
+    Security Scan                            success  15:15:39Z -> 15:16:37Z
+    OpenAPI Breaking-Change Gate             success  15:15:38Z -> 15:16:53Z
+    Operational Contracts                    success  15:15:37Z -> 15:17:25Z
+    Classify Changes (doc-only skip)         success  15:15:38Z -> 15:15:48Z
+    K8s Kustomize Secret Guard               success  15:15:38Z -> 15:35:20Z
+    Frontend E2E (public surfaces)           success  15:15:39Z -> 15:20:24Z
+    Run Tests                                success  15:15:38Z -> 15:22:29Z
+    Lint                                     success  15:15:38Z -> 15:17:30Z
+    MCP Server Tests                         success  15:15:39Z -> 15:15:58Z
+    Branch Not Behind Base                   skipped  (PR-only job; this is a push run)
+    Integration Tests (Testcontainers RLS)   success  15:15:50Z -> 16:37:03Z
+    Build and Push Images (edge-go)          success  16:37:06Z -> 16:49:18Z
+    Build and Push Images (frontend)         success  16:37:06Z -> 16:39:47Z
+    Build and Push Images (core-java)        success  16:37:06Z -> 16:38:19Z
+    Build and Push Images (pg-backup)        success  16:37:06Z -> 16:39:32Z
+    Deploy to Staging                        success  16:49:22Z -> 16:53:57Z
+    Deploy to Production                     skipped  (main deploys staging only)
+    Staging Edge Probe                       success  16:54:00Z -> 16:54:22Z
+
+  Deploy to Staging, every step:
+     1 success Set up job                     11 success Azure login (OIDC, jtoye-ci, no stored secret)
+     2 success Checkout code                  12 success Install kubelogin (pinned, checksum-verified)
+     3 success Set up kubectl                 13 success Configure kubeconfig (az aks get-credentials + kubelogin, Entra only)
+     4 success Install kustomize              14 success Pre-flight — every staging Key Vault object present, enabled and granted
+     5 success Prove the CR-02 baked-origin guard can fail (29-21 --selftest)
+     6 success Assert the baked frontend API origin matches this environment (CR-02)
+     7 success Prove the publishable-key guard can fail (#957 --selftest)          <- key step
+     8 success Assert the baked publishable key is a Stripe TEST key (#957, D-06)  <- key step
+     9 success Pre-flight — the deployed realm accepts this overlay's vendor post-logout redirect URI
+    10 success Refuse a subscription that is not J'Toye's
+    15 success Pin full-sha images + deploy staging overlay
+    16 success Wait for rollout
+    17 success Digest parity — the running pods are the images pushed for DEPLOY_TAG (29-14)
+    18 success Health check after core-java deployment
+    19 success Run smoke tests
+    20 success Wait for the other workloads in the render (monitoring, Keycloak, Redis, ...)
+    21 skipped Rollback on failure   (correct: nothing failed, so the rollback rule did not apply)
+  Staging Edge Probe, every step:
+     3 success Probe the live staging edge, read-only arms (headers, csp, cors, admin)
+     4 success Read the publishable key out of the LIVE checkout chunks (#957)     <- live chunk step
+     5 success Probe the live staging CORS preflight admits the browser's headers (#1025)
+
+  Plan verify 1 (the two jobs exactly success), 2026-10-22T16:57:37Z:
+    GREEN  RUN_ID=39803113150 -> rc=0 [Deploy to Staging=success,Staging Edge Probe=success]  verify_rc=0
+    FAIL   RUN_ID=39791106322 (#1029's last PR run, head 24ea1ab3, pull_request: no deploy)
+           -> rc=0 [Deploy to Staging=skipped,Staging Edge Probe=skipped]                    verify_rc=1
+    VOID   RUN_ID empty -> "VOID: RUN_ID not resolved" verify_rc=2
+    VOID   RUN_ID=1 (nonexistent) -> rc=1 [HTTP 404] VOID verify_rc=2
+
+RUNTIME PARITY (operator host, kubectl --context jtoye-stg-aks; the shell's default context is
+jtoye-staging, so every command named the context explicitly)
+  2026-10-22T16:58:09Z
+  $ bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag 43d047fb5514b19a0d24daff1e3ad940e6623d75
+    namespace jtoye-staging, services 3 (core-java edge-go frontend)
+    core-java  sha256:866d52ae69f7b294d75049d1f1bc26be52deb2469316a814740f15665144414b  MATCH
+    edge-go    sha256:a6e7435ff258324a8f37263711c893e439579c530005ecf700800d7f771b90ef  MATCH
+    frontend   sha256:198ae6cadd62dd449a647cf6d5b4d660df7682f913836f954817d48cf308ccab  MATCH
+    PASS (SET form: index digest plus each platform manifest digest)
+    rc=0
+  FAIL arm, 2026-10-22T16:58:20Z: the same command with --tag 11e812ef… (main before the merge)
+    -> frontend sha256:198ae6ca… NOT IN THE EXPECTED SET (and core-java, edge-go likewise)
+    -> FAIL: 3 running container image digest(s) across 3 service(s) are NOT the images built for 11e812ef…
+    rc=1
+  The frontend pod itself, 2026-10-22T16:58:32Z:
+    frontend-6c585fd968-lpsmj phase=Running ready=true
+      image=ghcr.io/bralabee/jtoye-frontend:43d047fb5514b19a0d24daff1e3ad940e6623d75
+      imageID=ghcr.io/bralabee/jtoye-frontend@sha256:198ae6cadd62dd449a647cf6d5b4d660df7682f913836f954817d48cf308ccab
+      started=2026-10-22T16:50:37Z (after Build and Push (frontend) completed 16:39:47Z, inside Deploy to Staging)
+    deployments core-java, edge-go, frontend all pin ...:43d047fb5514b19a0d24daff1e3ad940e6623d75
+  RED-side runtime for comparison (30-03, 10:58:47Z): every pod on ...:4208b08e…, pod frontend-7f8f5bc79c-vcspl.
+
+ARM (a) — served checkout chunks carry the key   [RED in 30-03 -> GREEN now]
+  Same command both times:
+  $ bash scripts/check-frontend-stripe-key-baked.sh --url https://app-staging.olajay.co.uk \
+      --path /shop/staging-test-kitchen/checkout --expect-prefix pk_test_ --control api-staging.olajay.co.uk
+  RED   30-03, 2026-10-22T10:58:47Z, runtime 4208b08e:
+        chunks=22 distinct_pk=0 keys=none expect_prefix=pk_test_ residues=1 secrets=0 control=1
+        FAIL: ... expected exactly 1 distinct publishable key, found 0; 1 un-inlined
+        env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY lookup(s) (the build had no key)
+        rc=1
+  GREEN 30-04, 2026-10-22T16:58:40Z, runtime 43d047fb:
+        chunks=22 distinct_pk=1 keys=pk_test_(length=107) expect_prefix=pk_test_ residues=0 secrets=0 control=1
+        PASS: one publishable key inlined (pk_test_(length=107)), 0 residues, 0 secret literals, control found 1 time(s)
+        rc=0
+  Same-day fail arm on the GREEN bundle, 16:58:43Z: --expect-prefix pk_live_
+        chunks=22 distinct_pk=1 keys=pk_test_(length=107) expect_prefix=pk_live_ ...
+        FAIL: ... 1 key(s) do not start with pk_live_      rc=1
+  VOID arm: --control no-such-host.invalid
+        ... control=0
+        VOID: the control string was found 0 times in 22 chunk(s) ...   rc=2
+  The orchestrator's own run after the deploy gave the same GREEN line (chunks=22 distinct_pk=1
+  keys=pk_test_(length=107) residues=0 secrets=0 control=1, PASS, rc 0); the GREEN above is this
+  executor's independent re-run.
+
+ARM (b) — the staging card-checkout spec   [RED in 30-03 -> GREEN now]
+  Run shape, both times:
+    (cd frontend && STAGING_E2E=1 PLAYWRIGHT_BASE_URL=https://app-staging.olajay.co.uk
+     STAGING_STRIPE_PUBLISHABLE_KEY=<from .env STRIPE_PUBLISHABLE_KEY, through the environment only>
+     STAGING_EVIDENCE_DIR=<abs path of this evidence dir>
+     npx playwright test e2e/staging-card-checkout.spec.ts --project=desktop --reporter=line)
+  Key passed: prefix pk_test_, length 107. Compared in-process (never printed) with the repository
+  variable FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY (gh variable get rc=0, length 107): equal = yes.
+  So the key the spec used is the key CI baked into the image.
+  RED   30-03, 2026-10-22T10:59:11Z -> 10:59:49Z, rc=1:
+        STAGING-CARD-ORDER-CREATED order=ORD-1AAC0CDE-20261022-0C094A2C
+        Error: #957: no Stripe payment step within 30 s after Place order (order ... is an unpaid DRAFT)
+        (spec l.213, the Payment Element expectation)   1 failed
+  GREEN 30-04, ONE attempt, 2026-10-22T16:59:11Z -> 16:59:28Z, rc=0 (output verbatim, npm notices dropped):
+        Running 1 test using 1 worker
+        [1/1] [desktop] › e2e/staging-card-checkout.spec.ts:89:5 › staging card checkout shows the Stripe payment step, pays with 4242 and captures @desktop-only
+        STAGING-CARD-ORDER-CREATED order=ORD-1AAC0CDE-20261022-D69764AE
+        ORDER_REQUEST_FAILED GET app-staging.olajay.co.uk/shop/staging-test-kitchen/orders/ORD-1AAC0CDE-20261022-D69764AE net::ERR_ABORTED
+        TRACK http=200 status=DRAFT paymentStatus=PENDING at=2026-10-22T16:59:22.933Z
+        TRACK http=200 status=PENDING paymentStatus=CAPTURED at=2026-10-22T16:59:27.995Z
+        STAGING-CARD order=ORD-1AAC0CDE-20261022-D69764AE intent=pi_3UTPKkDpS9ICNeRt0VWSmyrM payment_status=CAPTURED livemode=false at=2026-10-22T16:59:28.309Z
+          1 passed (16.6s)
+  Notes on the GREEN output:
+    - ORDER_REQUEST_FAILED is the spec's own requestfailed listener matching any URL whose path
+      contains /orders. It is the browser's GET of the order page, aborted while the client
+      router took over the post-payment redirect; the spec then reached that exact URL
+      (waitForURL) and the payment captured. It is not a failed order POST.
+    - After capture the order reads status=PENDING (from DRAFT). That is the #958 territory this
+      branch exists for (plans 30-05 onward); not asserted here.
+  Plan verify 3 predicate on this run: rc=0, passed=[1 passed], verdict contains
+    " payment_status=CAPTURED livemode=false at=" -> PASS. The RED side of the same predicate is the
+    30-03 run above (rc=1, "1 failed", no STAGING-CARD line).
+  Leak checks over the full run output: occurrences of the key value = 0; client-secret pattern
+    (_secret_<alnum>) = 0. Controls: the same secret pattern counts 1 on a planted
+    "pi_FAKE_secret_abc123" here-string; even the bare prefix "pk_test_" occurs 0 times in the log.
+  Screenshot: evidence/30-04-payment-step.png (170950 bytes), taken by the spec at the payment step
+    BEFORE any card data was typed.
+  Tree after the run: git status --porcelain -- frontend/ -> rc=0 lines=0 (no stray test-results).
+
+STRIPE READ-BACK (fresh, from Stripe's API; never the 2026-10-17 laptop ids)
+  1. By the spec, with the publishable key and the order's client secret (stripe.js
+     retrievePaymentIntent's request): HTTP 200, id=pi_3UTPKkDpS9ICNeRt0VWSmyrM, livemode=false,
+     status=succeeded. A 200 here proves the browser key and the server's key are one account.
+  2. Independently by this executor, 2026-10-22T16:59:51Z, with the staging secret key (.env
+     STRIPE_SECRET_KEY, the pair whose hash equals Key Vault stripe-credentials--api-key; passed to
+     curl through a stdin config, never argv, never printed):
+     GET /v1/payment_intents/pi_3UTPKkDpS9ICNeRt0VWSmyrM?expand[]=latest_charge -> HTTP 200
+       object=payment_intent status=succeeded livemode=False amount=950 currency=gbp
+       capture_method=automatic_async created=1792688358
+       metadata keys [order_id, order_number, tenant_id]; metadata.order_number=ORD-1AAC0CDE-20261022-D69764AE
+       latest_charge=ch_3UTPKkDpS9ICNeRt0HnGrNrd status=succeeded captured=True paid=True livemode=False
+     (the raw response holds the client_secret field; it was parsed in-process and not printed)
+     FAIL arm, 16:59:59Z: the same request with the intent id's last character altered
+       (pi_3UTPKkDpS9ICNeRt0VWSmyrX) -> HTTP 404
+  Amount 950 pennies = the £9.50 basket (1 Pelau) shown on the payment step.
+
+UI A11Y BACKSTOP — the payment step screenshot read by eye (executor's reading; owner backstop)
+  evidence/30-04-payment-step.png: the selected "Card" payment-method tab draws its label, icon and
+  border in the darker orange and reads clearly against white. Computed: #c2410c on #ffffff = 5.18:1
+  (AA for normal text, >= 4.5). Control: the old #f97316 on white = 2.80:1 (would fail AA).
+  Contrast read by eye: pass, for the selected tab.
+  NOT observable in this screenshot: the focused-field ring. The capture is taken before any field
+  is focused (by design: before card data is typed), so the ring's colour is unverified here.
+  Also visible: in the full-page capture the site's sticky header is drawn across the middle of the
+  Payment Element (a fullPage screenshot paints a fixed header at its viewport position); the spec
+  then filled every field and paid through the same page, so it did not block the flow. Recorded,
+  not judged.
+
+STAGING DATA LEFT BY THIS PLAN
+  One TEST-paid storefront order, CAPTURED: ORD-1AAC0CDE-20261022-D69764AE, intent
+  pi_3UTPKkDpS9ICNeRt0VWSmyrM, charge ch_3UTPKkDpS9ICNeRt0HnGrNrd, £9.50, livemode false.
+  Guest address: the spec's per-run guest.staging+957-<UTC stamp at test start>@olajay.co.uk
+  (the exact stamp is not printed by the spec; Stripe metadata ties the intent to the order number).
+  No unpaid DRAFT was left by this run.
+
+------------------------------------------------------------------------------------------------
+TASK 3 — issue #957 evidence comment
+------------------------------------------------------------------------------------------------
+  Body written to the session scratchpad (957.md), not /tmp/claude-30-04/957.md: the session's
+  temp-file rule takes precedence (same deviation as 30-03's PR body). Content unchanged by it.
+  Pre-post scans, 2026-10-22T17:01:54Z:
+    check-dply02-dispositions.sh --scan-text 957.md            -> findings=0, rc=0
+    fail arm: the same body + "Closes #957" + "Co-Authored-By: x" -> findings=2, rc=1
+    own scan (attribution / closing keyword next to #957): body 0/0; planted 1/1
+  gitleaks 8.30.1 dir over 957.md + this evidence file, 17:02:00Z -> no leaks found, rc=0
+    fail arm: a planted sk_test_-shaped fake with realistic entropy -> leaks found: 1, rc=1
+    (a first planted fake made of a-z/0-9 runs was NOT flagged, rc=0: gitleaks' entropy floor
+    drops it. Recorded so nobody reuses that shape as a control.)
+  Posted 2026-10-22T17:02:14Z: gh issue comment 957 -R Bralabee/JToye_OaaS_2026 -F 957.md -> rc=0
+    https://github.com/Bralabee/JToye_OaaS_2026/issues/957#issuecomment-6346480557
+  Read back 2026-10-22T17:02:25Z: gh issue view 957 --json comments --jq '.comments[-1].body'
+    rc=0; diff against the posted file: rc=0, 0 lines
+  Plan verify (Task 3 #1): attribution=0 evidence_lines=2 state=OPEN -> verify_rc=0
+    fail arms of the same predicate: the read-back body + "Co-Authored-By: x" -> attribution=1;
+    the body with STAGING-CARD and pi_ stripped -> evidence_lines=0
+  Issue #957 is left OPEN for the owner to close.

@@ -11253,7 +11253,7 @@
                 }
               }
             },
-            "description" : "Concurrent modification of the same order, or insufficient stock"
+            "description" : "Concurrent modification of the same order, insufficient stock, or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)"
           }
         },
         "security" : [
@@ -11447,7 +11447,7 @@
                 }
               }
             },
-            "description" : "Concurrent modification of the same order, or insufficient stock"
+            "description" : "Concurrent modification of the same order, insufficient stock, or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)"
           }
         },
         "security" : [
@@ -11525,7 +11525,7 @@
                 }
               }
             },
-            "description" : "Concurrent modification of the same order, or insufficient stock"
+            "description" : "Concurrent modification of the same order, insufficient stock, or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)"
           }
         },
         "security" : [

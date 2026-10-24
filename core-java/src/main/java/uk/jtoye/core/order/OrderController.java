@@ -327,7 +327,9 @@ public class OrderController {
     // #434 added an OptimisticLockingFailureException handler for two writers racing the
     // same @Version-bearing order row, and nothing in the published spec said so.
     // InsufficientStockException maps to the same 409, which is why the description
-    // names both causes rather than just the race.
+    // names both causes rather than just the race. Phase 30-05 (#958) adds a third on submit,
+    // confirm and start-preparation only: AwaitingPaymentException, an order still waiting
+    // for its card or link payment (type .../errors/awaiting-payment).
 
     /**
      * Submit draft order for processing.
@@ -342,7 +344,8 @@ public class OrderController {
             @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
             @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
             @ApiResponse(responseCode = "404", description = "Order not found"),
-            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, insufficient stock, "
+                    + "or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)")
     })
     public ResponseEntity<OrderDto> submitOrder(@PathVariable UUID id) {
         OrderDto order = orderService.submitOrder(id);
@@ -362,7 +365,8 @@ public class OrderController {
             @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
             @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
             @ApiResponse(responseCode = "404", description = "Order not found"),
-            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, insufficient stock, "
+                    + "or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)")
     })
     public ResponseEntity<OrderDto> confirmOrder(@PathVariable UUID id) {
         OrderDto order = orderService.confirmOrder(id);
@@ -382,7 +386,8 @@ public class OrderController {
             @ApiResponse(responseCode = "400", description = "Transition not legal from the order's current status"),
             @ApiResponse(responseCode = "403", description = "Caller lacks at least STAFF on the order's shop"),
             @ApiResponse(responseCode = "404", description = "Order not found"),
-            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, or insufficient stock")
+            @ApiResponse(responseCode = "409", description = "Concurrent modification of the same order, insufficient stock, "
+                    + "or the order is awaiting its card or link payment (type https://jtoye.uk/errors/awaiting-payment)")
     })
     public ResponseEntity<OrderDto> startPreparation(@PathVariable UUID id) {
         OrderDto order = orderService.startPreparation(id);
