@@ -73,6 +73,7 @@ export interface AbuseProtectionStats {
 
 export interface MerchantRoiTelemetry {
   plan: BillingPlanPreset
+  activeLocationCount: number
   directGtvPennies: number
   aggregatorCommissionPennies: number
   jtoyeUsageFeePennies: number
@@ -102,21 +103,32 @@ function extractCustomerKey(order: Order): string | null {
 /**
  * Deterministically computes GAP-GTM-07 Merchant Value & ROI Telemetry from the
  * shop-scoped V79 financial summary, ledger rows, and recent orders sample.
+ *
+ * D-04 (#1011): subscription base retainer (£39/mo on Hybrid Standard, £99/mo on
+ * Flat Predictable) is billed per active location, floored at 1.
  */
 export function computeMerchantRoiTelemetry(
   summary: FinancialSummary,
   transactions: FinancialTransaction[],
   orders: Order[],
-  planMode: BillingPlanMode = "SAAS_HYBRID_STANDARD"
+  planMode: BillingPlanMode = "SAAS_HYBRID_STANDARD",
+  locationCount?: number
 ): MerchantRoiTelemetry {
   const plan = BILLING_PLAN_PRESETS[planMode]
+  const distinctOrderShops = new Set(
+    orders.map((o) => o.shopId?.trim()).filter((id): id is string => Boolean(id))
+  ).size
+  const activeLocationCount = Math.max(
+    1,
+    Math.floor(locationCount && locationCount > 0 ? locationCount : distinctOrderShops || 1)
+  )
   const directGtvPennies = Math.max(0, summary.totalRevenuePennies)
 
   const aggregatorCommissionPennies = Math.round(
     (directGtvPennies * AGGREGATOR_COMMISSION_BPS) / 10_000
   )
   const jtoyeUsageFeePennies = Math.round((directGtvPennies * plan.usageBps) / 10_000)
-  const jtoyeMonthlyBasePennies = plan.monthlyBasePennies
+  const jtoyeMonthlyBasePennies = plan.monthlyBasePennies * activeLocationCount
   const jtoyeTotalCostPennies = jtoyeMonthlyBasePennies + jtoyeUsageFeePennies
   const grossCommissionSavedPennies = aggregatorCommissionPennies - jtoyeUsageFeePennies
   const netMonthlySavingsPennies = aggregatorCommissionPennies - jtoyeTotalCostPennies
@@ -174,19 +186,20 @@ export function computeMerchantRoiTelemetry(
     }
   }
 
-  // Upgrade crossover check for BATCH_PAYG_STARTER (£0/mo + 6% vs £39/mo + 0.5%)
+  // Upgrade crossover check for BATCH_PAYG_STARTER (£0/mo + 6% vs £39/location/mo + 0.5%)
   const hybridPreset = BILLING_PLAN_PRESETS.SAAS_HYBRID_STANDARD
   const hybridTotalCostPennies =
-    hybridPreset.monthlyBasePennies +
+    hybridPreset.monthlyBasePennies * activeLocationCount +
     Math.round((directGtvPennies * hybridPreset.usageBps) / 10_000)
   const hybridUpgradeSavingsPennies = Math.max(0, jtoyeTotalCostPennies - hybridTotalCostPennies)
   const recommendHybridUpgrade =
     planMode === "BATCH_PAYG_STARTER" &&
-    directGtvPennies > PAYG_UPGRADE_THRESHOLD_PENNIES &&
+    directGtvPennies > PAYG_UPGRADE_THRESHOLD_PENNIES * activeLocationCount &&
     hybridUpgradeSavingsPennies > 0
 
   return {
     plan,
+    activeLocationCount,
     directGtvPennies,
     aggregatorCommissionPennies,
     jtoyeUsageFeePennies,

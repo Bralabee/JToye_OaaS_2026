@@ -30,6 +30,8 @@ export interface MerchantRoiCardProps {
   orders?: Order[]
   scope: FinanceScope
   defaultPlanMode?: BillingPlanMode
+  /** Number of active locations when viewing tenant-wide ("All shops") totals (D-04, #1011). */
+  locationCount?: number
 }
 
 const PLAN_ORDER: BillingPlanMode[] = [
@@ -44,10 +46,18 @@ export function MerchantRoiCard({
   orders = [],
   scope,
   defaultPlanMode = "SAAS_HYBRID_STANDARD",
+  locationCount,
 }: MerchantRoiCardProps) {
   const [planMode, setPlanMode] = useState<BillingPlanMode>(defaultPlanMode)
 
-  const roi = computeMerchantRoiTelemetry(summary, transactions, orders, planMode)
+  const effectiveLocationCount = scope.shopId ? 1 : locationCount
+  const roi = computeMerchantRoiTelemetry(
+    summary,
+    transactions,
+    orders,
+    planMode,
+    effectiveLocationCount
+  )
   const scopeLabel = scope.shopName || "All shops"
 
   return (
@@ -150,6 +160,9 @@ export function MerchantRoiCard({
                 {formatSignedPennies(roi.netMonthlySavingsPennies)}
               </span>{" "}
               after {roi.plan.shortLabel}
+              {roi.activeLocationCount > 1 && roi.plan.monthlyBasePennies > 0
+                ? ` (${roi.activeLocationCount} locations)`
+                : ""}
             </p>
           </div>
 
