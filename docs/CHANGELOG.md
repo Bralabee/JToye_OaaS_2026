@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### graph.sh Can Show the Graph, Installs the Version It Was Proven On, and Claude Sessions Are Told It Exists (#1042) — 2026-10-25
+
+`scripts/graph.sh` (#1034) was reachable only through the last line of `AGENTS.md`, which Claude Code does not load: across every OaaS session transcript, `CLAUDE.md` was loaded 526 times and `AGENTS.md` never.
+
+- **Pointer where Claude reads it.** `CLAUDE.md` gains a short "Code-structure questions" section, outside the GSD-managed markers.
+- **Pinned install.** The missing-graphify and missing-`[sql]` hints now name `GRAPH_VALIDATED_VERSION` (`uv tool install "graphifyy[sql]==0.9.65"`). An unpinned install takes the newest graphify, which the arms have not validated.
+- **`view`.** `scripts/graph.sh view [--out DIR] [--node-limit N]` writes `graph.html` (aggregated communities above the node limit), `tree.html` and `callflow.html` from the fresh graph, outside the checkout. The default folder is `<cache>/view`, replaced on each run. An `--out` inside the checkout is refused before anything is created. The pages load one CDN library each.
+- **Every `affected` answer is cross-checked.** graphify links calls by name as written, so an answer is a lower bound. Measured misses: a Python call bound to a same-named `except ImportError` fallback (a real miss in another codebase), a Python module-attribute call, and in this repo a fully-qualified `uk.jtoye.core.security.TenantContext.set(...)` in `FinancialTransactionControllerIntegrationTest` and `mock(ShopAccessService.class)` references in tests. `affected` now runs a whole-word `git grep` of the same commit and lists, under a WARNING, every code line naming the symbol outside the answer's files. It uses two tiers, both printed: PROBABLE USES (the name followed by `(`, `.` or `::` outside a string) and other mentions (strings, `patch("...")` targets, re-exports, docstrings). Comments, prose files and lines in files the answer already reaches by a call or reference are not counted. Probable uses: `TenantContext` 3, all real; `ShopAccessService` 5, all real; `JwtTenantFilter` 0. Run on the DQ library that reported the miss, it lists `validation_history.py:165` for `_is_fabric_runtime` and a module-level `get_mssparkutils()` call in `fabric_connector.py:30` that the graph and the hand count both missed. The cross-check reuses the resolver's `explain` output, so `affected` stays inside the 3 s arm (about 2.6 s on `TenantContext`).
+- **Arms.** (f2), the (v) arms and five (x) cross-check arms built on the fallback and module-attribute patterns.
+
+### A Stale Card Checkout's PaymentIntent Is Cancelled Before Its Order Is Deleted (#1041) — 2026-10-25
+
+`ScheduledCleanupService`, the daily 03:00 UTC job behind retention row R-1, deleted every DRAFT order older than 24 hours, including storefront card drafts whose Stripe PaymentIntent was still payable. On staging on 2026-10-24 that left 7 PaymentIntents in `requires_payment_method` with no order behind them (Stripe TEST mode, no money moved). The risk is real money: a customer completing such an intent later would be charged for an order that no longer exists, and the kitchen would see nothing. This is issue #1038.
+
+- **Change.** A card draft (a `pi_` reference) has its intent cancelled at Stripe first, as `abandoned`, with an Idempotency-Key and outside every database transaction. A direct-charge or split-deposit intent is cancelled on the vendor's connected account, resolved inside the tenant-pinned read transaction because the routing reads `shops` and `vendor_onboarding` under FORCE RLS. The order is deleted only once Stripe reports the intent canceled, in its own short transaction, after a re-read shows it is still a DRAFT with the same intent. A draft with no payment is deleted as before. New: `PaymentService.cancelAbandonedPaymentIntent` (stripe circuit breaker) and `PaymentService.directChargeAccountFor`.
+- **Kept.** A draft is kept, with `WARN event=stale_draft_kept` and a reason, and retried at the next run when its intent is `succeeded`, `processing` or `requires_capture` (an authorised hold is never cancelled), when the Stripe call fails or the breaker is open, when Stripe is not configured, when its reference is not an intent, or when it changed between the cancel and the delete. No log line carries a customer field.
+- **Webhook.** `payment_intent.canceled` for a deleted order was already ignored (it reaches the default branch and returns normally). A test now pins that, so cancel-then-delete cannot turn into a 500 and a redelivery loop.
+- **Retention.** R-1 stays 24 hours. Its note in `docs/retention-manifest.json` and the comment above `stale-draft-hours` describe the cancel and the kept cases.
+- **Published wording (/legal/retention).** The R-1 row now says what the job does:
+  - **Period.** "24 hours, cleared at the next daily clean-up (so within 48 hours of starting it)". The old "24 hours" read as an exact deadline that a daily job cannot meet.
+  - **Detail.** It now says that a card payment is cancelled with the provider first, and that the order is kept and retried at each daily clean-up until the cancellation is confirmed.
+  - **Explainer.** The sentence no longer reads "deleted 24 hours after you start it".
+  - **Gates.** The R-1 claims rule moves to the in-sentence form R-14 to R-16 use; it still reads 24, and planting 25 reds it. The manifest's detail and period_display match the page, and changing the manifest text reds the field-by-field table test.
+- **Tests.** `ScheduledCleanupServiceTest` (the keep, cancel and delete matrix, and the cancel-before-delete ordering), `PaymentServiceTest` (the Stripe status matrix, the Stripe-Account header on both calls, the idempotency key, the `pi_` guard, the canceled-webhook pin) and `ScheduledCleanupServiceIntegrationTest` (under NOSUPERUSER: the card draft whose cancel failed is kept, the cancelled one is deleted, both tenants' no-payment drafts are deleted; the class is now order-independent). Every new test was recorded failing on the pre-fix code, and break arms A-H each turned their named test red.
+- **The orphans already on staging.** The 7 existing staging TEST intents have no order left for this job to find, and `staging-seed.sh --stage cancel-drafts` starts from the order, so it cannot reach them either. Two hand tools are added for plan 30-09 (re-routed):
+  - `--stage list-orphan-intents` (read-only). It lists every cancelable TEST intent whose `metadata.order_number` names no order the vendor can see in any of the eight statuses. It VOIDs when the vendor sees no order at all, because an empty read can mean a grant failure.
+  - `--stage cancel-orphan-intents --intents pi_a,pi_b`. It acts on the owner-confirmed ids only. It refuses an intent that is paid or paying, or whose order is visible again (that order goes through cancel-drafts). Otherwise it cancels with Idempotency-Key `d02-orphan-cancel-<pi>` and reads the intent back canceled.
+  - The selftest goes from 41 to 47 arms. Eight break arms each turned their named arm red.
+- **Out of scope.** Issue #1031 (a server CANCEL leaves the intent payable) is separate.
+
+### brotli-libs 1.2.1-r0 in the core-java Runtime Image (#1040) — 2026-10-25
+
+main's pipeline went red at the core-java Trivy image gate on 0f559fc2, c519e689 and f3381c9a with no change to the tree: a new advisory, CVE-2026-111497 (an out-of-bounds write in the Brotli decoder), entered Trivy's database against `brotli-libs` 1.2.0-r1 in the `eclipse-temurin:25-jre-alpine` base. It is fixed in 1.2.1-r0. The image gate failing skipped Build and Push, Deploy to Staging and the edge probe, so staging stayed on the last green commit.
+
+- **Same remedy as libexpat, p11-kit and OpenSSL.** `brotli-libs` joins the named `apk upgrade` in `core-java/Dockerfile`, never a blanket upgrade, with a dated comment entry.
+- **Measured with the gate's own scanner.** A throwaway image of the same base and RUN line, scanned by `aquasec/trivy:0.70.0 image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1`, exits 1 with main's line (1.2.0-r1, exactly this CVE), 0 with this one (1.2.1-r0), and 1 again with main's line.
+
+### mcp-server body-parser 2.4.0 and zod 4.6.7, with Their CVE Floors in the Manifest (#1039) — 2026-10-24
+
+The required Security Scan went red on every PR on 2026-10-24 without any change to the tree: two new advisories entered Trivy's database against `mcp-server/package-lock.json`. body-parser 2.3.0 (GHSA-27r3-jxmh-p828, a DoS via trailing bytes after a compressed request body) is fixed in 2.4.0, and zod 4.4.3 (a DoS via unbounded array validation) is fixed in 4.6.6. This is the daily-DB time-bomb again, as with `fast-uri` (#726).
+
+- **Lockfile.** body-parser 2.4.0 (bringing `content-type` 2.1.0 and `qs` 6.16.1) and zod 4.6.7. Nothing else moves.
+- **Floors stated, not left to resolution luck.** zod's range becomes `^4.6.6`, and an `overrides` entry `body-parser: ^2.4.0` sits beside the fast-uri and hono floors. Starting from main's lockfile, `npm install --package-lock-only` moves to 2.4.0 / 4.6.7 under the new manifest and stays on 2.3.0 / 4.4.3 under the old one.
+- **Measured with the gate's own scanner.** `aquasec/trivy:0.70.0 fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1` over a `git archive` extract exits 1 on main (exactly these two) and 0 on this branch. 70/70 vitest and `tsc --noEmit` pass. Out of scope: 3 moderate advisories and the dev-only `source-map-js` HIGH, which the gate excludes.
+
 ### An Unpaid Card Order Cannot Be Submitted, Accepted or Prepared, and Staff See Why (#958) (#1030) — 2026-10-22
 
 Phase 30, PR 2 (plans 30-05 to 30-07). The payment check guarded only one edge (CONFIRMED -> PREPARING) of the three that take an order to the kitchen. SUBMIT and CONFIRM were unguarded, so staff could push an order nobody had paid for into the kitchen, and each of those transitions sent the customer a "Received" or "Confirmed" email. Separately, `payment_intent.succeeded` reset any order to PENDING, so a link paid on a confirmed order moved it backwards and re-sent "Received", and a payment on a cancelled order re-opened it.

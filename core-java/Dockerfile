@@ -54,8 +54,14 @@ FROM eclipse-temurin:25-jre-alpine
 #   upgrade proven to land 3.5.8-r0 in a throwaway container before this line
 #   was written. This was the Trivy daily-DB time-bomb: it redded three
 #   consecutive main pipelines (incl. a docs-only commit) with no code change.
+#
+# 2026-10-25, same gate, same remedy (eclipse-temurin:25-jre-alpine):
+#   brotli-libs 1.2.0-r1 -> 1.2.1-r0  CVE-2026-111497 (out-of-bounds write in
+#   the Brotli decoder). The time-bomb again: it redded the core-java image gate
+#   on main at 0f559fc2, c519e689 and f3381c9a. Trivy 0.70.0 over the runtime
+#   stage alone exits 1 without this name and 0 with it (1.2.1-r0 installed).
 RUN apk add --no-cache curl libwebp-tools \
- && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs
 
 WORKDIR /app
 

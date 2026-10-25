@@ -1,0 +1,146 @@
+# issue #1038 break arms (quick 261025-8p7) — 2026-10-25T06:43:18Z
+HEAD=55071c627b34185ed6e8731b44e87bf9b909952d
+
+### opening clean run: ./gradlew :core-java:test --rerun --tests uk.jtoye.core.config.ScheduledCleanupServiceTest --tests uk.jtoye.core.payment.PaymentServiceTest
+  rc=0
+  uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=0 errors=0 skipped=0
+  uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=0 errors=0 skipped=0
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM A: no-payment drafts go down the keep path (condition -> false)
+  edited: core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=2 errors=0 skipped=0
+    FAIL  issue #1038: a draft with no payment is deleted without asking Stripe
+          org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | orderRepository.deleteAll(
+    FAIL  Deletes stale DRAFT orders older than threshold
+          org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | orderRepository.deleteAll(
+  RED as required: 'a draft with no payment is deleted' (1 failing)
+  RED as required: 'Deletes stale DRAFT orders older than threshold' (1 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM B: card drafts are deleted in Phase A, before Stripe is called
+  edited: core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=9 errors=0 skipped=0
+    FAIL  issue #1038: a card draft is kept, and Stripe never called, when Stripe is not configured
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  issue #1038: a card draft is kept when the Stripe call fails
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  issue #1038: a card draft is kept when the stripe circuit breaker is open
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  issue #1038: a card draft's intent is cancelled at Stripe before the order is deleted
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  issue #1038: a card draft that changed between the cancel and the delete is kept
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  issue #1038: a card draft gone by the time of the delete is skipped without an error
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  intent "succeeded" -> order kept
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  intent "processing" -> order kept
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+    FAIL  intent "requires_capture" -> order kept
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+  RED as required: 'cancelled at Stripe before the order is deleted' (1 failing)
+  RED as required: 'order kept' (3 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM C: Phase C deletes whatever the re-read finds (DRAFT + same-reference check dropped)
+  edited: core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=1 errors=0 skipped=0
+    FAIL  issue #1038: a card draft that changed between the cancel and the delete is kept
+          org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.delete( | <any uk.jtoye.core.order.Order>
+  RED as required: 'changed between the cancel and the delete' (1 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM D: null passed instead of the resolved direct-charge account
+  edited: core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=1 errors=0 skipped=0
+    FAIL  issue #1038: a direct-charge draft's intent is cancelled on the vendor's connected account
+          org.mockito.exceptions.verification.opentest4j.ArgumentsAreDifferent: org.mockito.exceptions.verification.opentest4j.ArgumentsAreDifferent: | Argument(s) are different! Wanted: | paymentService.cancelAbandonedPaymentIntent(
+  RED as required: 'cancelled on the vendor's connected account' (1 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM E: requires_capture added to the cancelable set
+  edited: core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=1 errors=0 skipped=0
+    FAIL  "requires_capture" is left alone
+          org.opentest4j.AssertionFailedError: org.opentest4j.AssertionFailedError: expected: <requires_capture> but was: <canceled>
+  RED as required: '"requires_capture" is left alone' (1 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM F: setStripeAccount omitted on the cancel options
+  edited: core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=1 errors=0 skipped=0
+    FAIL  issue #1038: a direct-charge intent is retrieved AND cancelled on the connected account
+          org.opentest4j.AssertionFailedError: org.opentest4j.AssertionFailedError: expected: <acct_vendor_1038> but was: <null>
+  RED as required: 'retrieved AND cancelled on the connected account' (1 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM G: pi_ guard removed
+  edited: core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=1 errors=0 skipped=0
+    FAIL  issue #1038: a reference that is not a PaymentIntent id is refused before Stripe
+          org.opentest4j.AssertionFailedError: org.opentest4j.AssertionFailedError: Unexpected exception type thrown, expected: <java.lang.IllegalArgumentException> but was: <java.lang.NullPointerException>
+  RED as required: 'not a PaymentIntent id is refused before Stripe' (1 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### ARM H: webhook switch routes payment_intent.canceled to handlePaymentIntentFailed
+  edited: core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  gradle rc=1 (expected 1)
+  uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=1 errors=0 skipped=0
+    FAIL  issue #1038: payment_intent.canceled for an order that no longer exists completes without reading orders
+          org.opentest4j.AssertionFailedError: org.opentest4j.AssertionFailedError: Unexpected exception thrown: uk.jtoye.core.exception.ResourceNotFoundException: Order not found: 1c7d881e-b1d5-4d50-8f1e-d51796f50645
+  RED as required: 'payment_intent.canceled for an order that no longer exists' (1 failing)
+  restored: git checkout HEAD -- core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+### closing clean run: ./gradlew :core-java:test --rerun --tests uk.jtoye.core.config.ScheduledCleanupServiceTest --tests uk.jtoye.core.payment.PaymentServiceTest
+  rc=0
+  uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=0 errors=0 skipped=0
+  uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=0 errors=0 skipped=0
+  content core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java working=6ef1e84fba31220931a53651c33ac83d1c540a7c HEAD=6ef1e84fba31220931a53651c33ac83d1c540a7c EQUAL
+  content core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java working=83c2df22f14fa02e000e5563b3c3799b66c110a7 HEAD=83c2df22f14fa02e000e5563b3c3799b66c110a7 EQUAL
+
+OVERALL rc=0 (0 = every arm red on its named test, every restore equal to HEAD by content, both clean runs green)
+
+### Harness control
+The arm checker run against the CLOSING clean XML for arm H's test name reports failing=0 (rc=0): on a green test it reports NOT RED, so a 'RED as required' line above is not vacuous.
+
+## REGRESSION — full unit suite
+./gradlew :core-java:test --rerun -> rc=0 (BUILD SUCCESSFUL in 1m 27s)
+aggregate of core-java/build-local/test-results/test/*.xml: files=221 tests=1975 failures=0 errors=0 skipped=1
+  the one skip is pre-existing and unrelated: ProductLabelGoldenFileTest.captureGoldenOnce()
+
+rg -uu -l ScheduledCleanupService core-java/src/test:
+  core-java/src/test/java/uk/jtoye/core/config/ScheduledCleanupServiceTest.java
+  core-java/src/test/java/uk/jtoye/core/config/ScheduledCleanupServiceIntegrationTest.java
+  core-java/src/test/java/uk/jtoye/core/testsupport/IntegrationTestSupport.java
+  -> the only IT naming it is ScheduledCleanupServiceIntegrationTest (run in Task 1, GREEN tests=2 failures=0 errors=0 skipped=0); IntegrationTestSupport only mentions it in a comment:
+    39: * — see {@code ScheduledCleanupServiceIntegrationTest} and
+
+## R-1 retention
+R-1 note check (draft_order_hours==24, period_value==24, '#1038' in note): HEAD-before-edit copy rc=1, edited rc=0
+scripts/check-retention-enforcement.sh rc=0: PASS: 15 published retention row(s) — 9 Automated (7 value comparison(s), 1 literal, 1 negative), 6 Operational (described, deliberately not gated).
+scripts/check-claims.sh rc=0: PASS: all 56 claim(s) across 8 doc(s) match their source of truth.
