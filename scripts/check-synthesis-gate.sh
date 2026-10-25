@@ -52,11 +52,14 @@ resolve_repo_root() {
 
 resolve_active_milestone() {
     local root="$1" ms=""
-    if [ -s "$root/qa/synthesis-ledger.json" ]; then
-        ms=$(jq -r '.current_milestone // empty' "$root/qa/synthesis-ledger.json" 2>/dev/null || true)
-    fi
-    if [ -z "$ms" ] && [ -s "$root/.planning/STATE.md" ]; then
+    # STATE.md is the authority for the active milestone. The ledger's current_milestone is
+    # only a fallback: --record writes it to the milestone just signed off, so preferring it
+    # would keep the gate on an approved milestone after STATE.md has moved on.
+    if [ -s "$root/.planning/STATE.md" ]; then
         ms=$(sed -n 's/^milestone:[[:space:]]*\([^[:space:]]*\).*$/\1/p' "$root/.planning/STATE.md" | head -n 1)
+    fi
+    if [ -z "$ms" ] && [ -s "$root/qa/synthesis-ledger.json" ]; then
+        ms=$(jq -r '.current_milestone // empty' "$root/qa/synthesis-ledger.json" 2>/dev/null || true)
     fi
     if [ -z "$ms" ] && [ -s "$root/.planning/ROADMAP.md" ]; then
         ms=$(sed -n 's/.*\*\*v\([0-9][0-9.]*\).*$/v\1/p' "$root/.planning/ROADMAP.md" | tail -n 1)
@@ -417,6 +420,12 @@ EOF
 
     out=$(printf '{"cwd":"%s","tool_input":{"command":"git tag v2.3.0"}}' "$tmp" | bash "$self" --hook-bash-gate 2>&1); rc=$?
     assert_rc "11 hook-bash-gate allows git tag v2.3.0 when approved" 0 "$rc" "$out" ""
+
+    # 5. The next milestone is not covered by the last one's approval: STATE.md moves on,
+    #    the ledger's current_milestone still names the approved one, and the check must fail.
+    sed -i 's/^milestone: v2\.3$/milestone: v2.4/' "$tmp/.planning/STATE.md"
+    out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+    assert_rc "12 check fails for the next milestone after the previous one was approved" 1 "$rc" "$out" "SYNTHESIS GATE FAIL"
 
     rm -rf "$tmp"
     trap - EXIT
