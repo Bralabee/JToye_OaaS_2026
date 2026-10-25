@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### graph.sh Can Show the Graph, Installs the Version It Was Proven On, and Claude Sessions Are Told It Exists (#1042) — 2026-10-25
+
+`scripts/graph.sh` (#1034) was reachable only through the last line of `AGENTS.md`, which Claude Code does not load: across every OaaS session transcript, `CLAUDE.md` was loaded 526 times and `AGENTS.md` never.
+
+- **Pointer where Claude reads it.** `CLAUDE.md` gains a short "Code-structure questions" section, outside the GSD-managed markers.
+- **Pinned install.** The missing-graphify and missing-`[sql]` hints now name `GRAPH_VALIDATED_VERSION` (`uv tool install "graphifyy[sql]==0.9.65"`). An unpinned install takes the newest graphify, which the arms have not validated.
+- **`view`.** `scripts/graph.sh view [--out DIR] [--node-limit N]` writes `graph.html` (aggregated communities above the node limit), `tree.html` and `callflow.html` from the fresh graph, outside the checkout. The default folder is `<cache>/view`, replaced on each run. An `--out` inside the checkout is refused before anything is created. The pages load one CDN library each.
+- **Every `affected` answer is cross-checked.** graphify links calls by name as written, so an answer is a lower bound. Measured misses: a Python call bound to a same-named `except ImportError` fallback (a real miss in another codebase), a Python module-attribute call, and in this repo a fully-qualified `uk.jtoye.core.security.TenantContext.set(...)` in `FinancialTransactionControllerIntegrationTest` and `mock(ShopAccessService.class)` references in tests. `affected` now runs a whole-word `git grep` of the same commit and lists, under a WARNING, every code line naming the symbol outside the answer's files. It uses two tiers, both printed: PROBABLE USES (the name followed by `(`, `.` or `::` outside a string) and other mentions (strings, `patch("...")` targets, re-exports, docstrings). Comments, prose files and lines in files the answer already reaches by a call or reference are not counted. Probable uses: `TenantContext` 3, all real; `ShopAccessService` 5, all real; `JwtTenantFilter` 0. Run on the DQ library that reported the miss, it lists `validation_history.py:165` for `_is_fabric_runtime` and a module-level `get_mssparkutils()` call in `fabric_connector.py:30` that the graph and the hand count both missed. The cross-check reuses the resolver's `explain` output, so `affected` stays inside the 3 s arm (about 2.6 s on `TenantContext`).
+- **Arms.** (f2), the (v) arms and five (x) cross-check arms built on the fallback and module-attribute patterns.
+
 ### A Stale Card Checkout's PaymentIntent Is Cancelled Before Its Order Is Deleted (#1041) — 2026-10-25
 
 `ScheduledCleanupService`, the daily 03:00 UTC job behind retention row R-1, deleted every DRAFT order older than 24 hours, including storefront card drafts whose Stripe PaymentIntent was still payable. On staging on 2026-10-24 that left 7 PaymentIntents in `requires_payment_method` with no order behind them (Stripe TEST mode, no money moved). The risk is real money: a customer completing such an intent later would be charged for an order that no longer exists, and the kitchen would see nothing. This is issue #1038.
