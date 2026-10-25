@@ -349,7 +349,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
-| 30. The Money Path, Executed | v2.3 | 8/32 | In Progress — PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24) | — |
+| 30. The Money Path, Executed | v2.3 | 9/32 | In Progress — PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -727,7 +727,7 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
 
-**Plans:** 8/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+**Plans:** 9/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
 
 Plans:
 **Wave 1**
@@ -755,7 +755,7 @@ Plans:
 - [x] 30-08-PLAN.md — #958 PR 2: merge, live 409 on an unpaid DRAFT with a paid control
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 30-09-PLAN.md — D-02: owner-confirmed manual cancellation of abandoned staging DRAFTs and their PaymentIntents, read back from Stripe
+- [x] 30-09-PLAN.md — D-02: owner-confirmed manual cancellation of abandoned staging DRAFTs and their PaymentIntents, read back from Stripe
 
 **Wave 10** *(blocked on Wave 9 completion)*
 - [ ] 30-10-PLAN.md — #108 PR 3: Stripe client timeouts/retries from config, charge and refund circuit breakers, typed 503
