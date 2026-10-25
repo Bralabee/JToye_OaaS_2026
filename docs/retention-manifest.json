@@ -31,7 +31,7 @@
           "must_contain": "cleanup.stale-draft-hours"
         }
       },
-      "note": "Deleted, not anonymised. A daily 03:00 UTC job removes every DRAFT order past the cutoff, one transaction per tenant."
+      "note": "Deleted, not anonymised. A daily 03:00 UTC job removes every DRAFT order past the cutoff, in per-tenant transactions. For a card checkout, its Stripe PaymentIntent is cancelled first and the order is deleted only once Stripe reports it canceled (issue #1038). A draft whose intent has taken or is holding money, or whose intent Stripe cannot be reached to cancel, is kept and retried at the next run."
     },
     {
       "id": "R-2",
