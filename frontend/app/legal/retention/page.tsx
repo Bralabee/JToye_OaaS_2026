@@ -69,11 +69,14 @@ export const metadata: Metadata = {
  * data is held until they download it, and the number is the link's lifetime
  * if they never do.
  *
+ * R-1 (issue #1038) has prose around its number too: the number is the age at
+ * which a checkout is cleared, and the sentence states the daily job's ceiling.
+ *
  * R-16 (37-28 / 37-30, D-27) is the same shape again: the keyed pseudonym of a
  * connection on a cash order is removed the moment the order is completed or
  * cancelled, and the number is the daily sweep's ceiling for one that never is.
  */
-const PERIOD_ABANDONED_CHECKOUTS = "24 hours"
+const PERIOD_ABANDONED_CHECKOUTS = "24 hours, cleared at the next daily clean-up (so within 48 hours of starting it)"
 const PERIOD_WEBHOOK_DELIVERY_RECORDS = "30 days"
 const PERIOD_QUARANTINED_IMAGE_UPLOADS = "72 hours"
 const PERIOD_CUSTOMER_SIGN_IN_COOKIES = "30 days"
@@ -90,7 +93,7 @@ export const RETENTION_ROWS: readonly RetentionRow[] = [
     id: "R-1",
     category: "Abandoned checkouts",
     detail:
-      "An order you started but never paid for, including the name, email and phone number typed into the checkout form.",
+      "An order you started but never paid for, including the name, email and phone number typed into the checkout form. If you began paying by card, that payment is cancelled with our payment provider first, and the order is deleted only once the cancellation is confirmed. Until then it is kept and the cancellation is tried again at each daily clean-up, for example while the payment is still being processed or the provider cannot be reached.",
     period: PERIOD_ABANDONED_CHECKOUTS,
     lawfulBasis:
       "Legitimate interests (UK GDPR Art. 6(1)(f)) - holding an in-progress basket long enough for you to come back and finish it, then deleting it.",
@@ -271,7 +274,7 @@ export default function RetentionPage() {
             <span className="font-semibold text-slate-900">Automated</span> — a
             scheduled job, a database rule or your own browser enforces the
             period without anyone deciding to act. An abandoned checkout, for
-            example, is deleted {PERIOD_ABANDONED_CHECKOUTS} after you start it,
+            example, is cleared by a daily job once it is older than its period,
             whether or not anybody looks.
           </li>
           <li>

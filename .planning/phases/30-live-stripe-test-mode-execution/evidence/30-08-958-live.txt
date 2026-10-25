@@ -1,0 +1,184 @@
+# Plan 30-08 — issue #958, Phase 30 PR 2: open, merge, deploy, and the live gate on staging
+# Task 1 (PR open) is recorded here. Tasks 2 (owner review + squash-merge) and 3 (deploy watch,
+# parity, live 409, the vendor NONE DRAFT and paid-order controls) append below. This file is
+# deliberately NOT committed to fix/958-awaiting-payment-gate: nothing is pushed to PR 2 after
+# its review starts. It is committed on fix/108-stripe-timeouts in Task 3.
+
+================================================================================================
+TASK 1 — PR 2 is open, current with main, its body clean            2026-10-22
+================================================================================================
+
+PER-PR SUITE (30-VALIDATION "after every plan (PR)"), all at head 58db5b95 (the 30-07 head),
+recorded before the PR opened. Each rc captured on the same statement as the command.
+
+  ./gradlew :core-java:test :core-java:integrationTest --no-daemon
+      20:28:10Z -> 21:07:06Z  rc=0  BUILD SUCCESSFUL in 39m
+      :core-java:test and :core-java:integrationTest both EXECUTED (not UP-TO-DATE; only the
+      compile tasks were up to date)
+      unit        build-local/test-results/test             221/221 files newer than the start
+                  tests=1947 failures=0 errors=0 skipped=1
+      integration build-local/test-results/integrationTest  226/226 files newer than the start
+                  tests=1369 failures=0 errors=0 skipped=1
+      (equal to 30-05's full-suite run at 791b7a16: 1947 in 221 classes, 1369 in 226)
+  npm --prefix frontend test -- --ci
+      20:28:10Z -> 20:28:37Z  rc=0  Test Suites 273/273, Tests 3207/3207, Snapshots 2/2
+      (= docs/metrics.json jest_blocks 3207, jest_files 273)
+  npm --prefix frontend run lint            20:28:14Z  rc=0  0 errors, 28 warnings (pre-existing)
+  bash scripts/staging-seed.sh --selftest   20:28:53Z  rc=0  (41 arms; last: dry-run-tools PASS)
+  bash k8s/scripts/check-env-contract.sh    20:29:03Z  rc=0  0 violations, 23 allowlisted omissions
+  bash scripts/check-gate-enforcement.sh    20:29:05Z  rc=0  60 gates, 8 workflows, 5 exempt
+  bash scripts/docs-freshness.sh            20:29:06Z  rc=0  6593 logical invocations
+  bash scripts/check-doc-metrics.sh         20:29:07Z  rc=0  37/37 claims across 3 docs
+  bash scripts/check-branch-behind-base.sh  20:29:07Z  rc=0  0 behind origin/main 43d047fb, 37 ahead
+
+SECRET SCAN (gitleaks 8.30.1, repo .gitleaks.toml / .gitleaksignore)
+  gitleaks git --log-opts=origin/main..HEAD at 58db5b95   21:30 local  -> 37 commits, leaks found: 1, rc=1
+      generic-api-key  09beb869  evidence/30-07-task3-arms.txt:7  (redacted match: client_secret": "…")
+      The line is 30-07's own break-arm record quoting the selftest FAIL output of the
+      "walk/del sanitiser removed" arm: the stub PaymentIntent's SYNTHETIC client secret
+      (pi_sg1 + the STUBCS marker). 30-07 measured its branch-range rc 0 at 2a1de3cb, BEFORE
+      09beb869 existed, so its own record was never scanned. CI's gitleaks job would have
+      gone red on the PR.
+  Remedy [Rule 3, blocking]: a commit-pinned fingerprint with its written reason appended
+      to .gitleaksignore (the 30-07 precedent); the recorded evidence is not edited.
+  gitleaks git --log-opts=origin/main..HEAD at fe7e659d   -> no leaks found, rc=0
+  gitleaks dir <the PR body file>                         -> no leaks found, rc=0
+  fail arm: a planted sk_test_-shaped value composed at run time in a scratch dir
+                                                          -> leaks found: 1, rc=1 (dir deleted)
+  CI gitleaks on PR #1030 (run 39854799908)               -> pass
+
+PR BODY SCAN — controls and the real body
+  scratch "Co-Authored-By: x" + "Closes #958"           -> attribution=1 closing=1
+  scratch robot-emoji line                               -> 1
+  the drafted body                                       -> attribution=0 closing=0
+  check-dply02-dispositions.sh --scan-text <body>        -> findings=0, rc=0
+  fail arm: the same body + a planted "Closes #958" line -> findings=1, rc=1
+  Branch commit messages origin/main..HEAD (37 commits)  -> closing=0 attribution=0
+
+COMMITS ON THE PR BRANCH BY THIS PLAN (plan_head_before 58db5b95)
+  fe7e659d chore(30-08): pin 30-07's stub client-secret evidence line in gitleaks; HANDOFF names PR 2
+  29601edf docs(30-08): CHANGELOG entry for PR 2 (#1030); HANDOFF names it
+
+PR: #1030  https://github.com/Bralabee/JToye_OaaS_2026/pull/1030
+  pushed fe7e659d (pre-push: all checks passed; remote head == local), behind-base rc=0
+  opened 2026-10-22T21:08:05Z from fix/958-awaiting-payment-gate, base main
+  title: fix(orders): an unpaid card order cannot be submitted, accepted or prepared (Phase 30 PR 2, issue #958)
+  body file /tmp/claude-30-08/pr-body.md written by a quoted heredoc
+      sha256 8e2e6bde27003cfe6df1fc7678cd54364d6a7786f160eb274ad42066e0f3ec5f
+  CHANGELOG [Unreleased] entry cites (#1030); HANDOFF names #1030; pushed 29601edf (pre-push passed)
+  PR head read back: 29601edf675e26e3fa1319275d7c7391a53b2860 (== local HEAD)
+  closingIssuesReferences = [] (GitHub links no issue to close); state OPEN
+
+POST-PR CONTRACT GATES (at 29601edf)
+  check-changelog-contract.sh  21:08:31Z rc=0  70 merged feat/fix PRs since fbee244d cited
+      (it reads merged history to origin/main, so the (#1030) citation is checked when PR 2 merges)
+  check-handoff-contract.sh    21:08:31Z rc=0  1 gate-count + 34 state claims; 0 behind (budget 3)
+  docs-freshness.sh            21:08:47Z rc=0
+  check-doc-metrics.sh         21:08:48Z rc=0
+  check-branch-behind-base.sh  21:08:48Z rc=0  39 ahead, 0 behind 43d047fb
+
+PLAN VERIFY (Task 1)
+  verify 1  21:08:57Z  check-branch-behind-base rc=0 -> exit 0
+  verify 2  21:08:57Z  PR=1030 stored body: attribution=0 closing=0 -> exit 0
+  stored body vs posted file: diff = 0 lines (10081 bytes; "issue #958" twice)
+
+PR CHECKS SNAPSHOT 21:09Z (not a verdict; CI was still running)
+  pass 7 (Branch Not Behind Base, Classify Changes, GitGuardian, MCP Server Tests, gitleaks,
+  pii-guard, verdict) · pending 9 · skipping 1 (Trivy) · fail 1: review-record, expected
+  ("no review record for head 29601edf675e"); the review series is Task 2, the owner's.
+
+STOPPED at Task 2 (checkpoint:human-action, gate=blocking). No review run, no merge, no staging touch.
+
+================================================================================================
+TASK 2 — D3 review series and squash-merge (orchestrator, under the owner's instruction
+         "conduct the pending steps and proceed to merge upon green")          2026-10-22
+================================================================================================
+
+BEFORE REVIEW
+  f439df8c fix(gates): renumber the api.ts S3 residue allowlist entry 558 -> 564
+      Operational Contracts was red on PR #1030: 30-06 added 6 lines to frontend/types/api.ts,
+      moving an allowlisted "S3" comment from line 558 to 564. residue gate rc 1 before, rc 0 after.
+  The first run's Frontend E2E "Build frontend" red was a CI-runner Google Fonts fetch failure
+      (Turbopack: Can't resolve '@vercel/turbopack-next/internal/font/google/font', 18 errors);
+      green on rerun with no frontend change.
+
+ROUND 1  /code-review 1030 --comment, on f439df8c
+  8 findings; admissible 4:
+    fixed 3 (findings 1, 2, 5): RED 86291e96, GREEN 095b5d30
+      - no one-tap Cancel on an unpaid card DRAFT
+      - the badge is silent on COMPLETED/CANCELLED/REFUNDED (orderStatus prop)
+      - start-preparation gated in the list
+      jest 3212/3212, build rc 0, counts 6593 -> 6598
+    filed 1 as issue #1031 [data]: a late payment_failed overwrites CAPTURED; a server CANCEL
+      leaves the intent payable
+  recorded 4.
+  Resolution: https://github.com/Bralabee/JToye_OaaS_2026/pull/1030#issuecomment-6352032427
+
+ROUND 2  /review-verify 1030, on 095b5d30
+  admissible 0. Review-Record posted naming 095b5d306d98f991fae7a761133b174854ccc028:
+  https://github.com/Bralabee/JToye_OaaS_2026/pull/1030#issuecomment-6352047298
+
+PRE-MERGE  2026-10-22T23:03:57Z
+  local HEAD == PR head 095b5d30
+  check-branch-behind-base.sh rc 0 (0 behind origin/main 43d047fb)
+  no main run in flight; DEPLOY_STAGING_ENABLED=true
+  squash message: check-dply02-dispositions.sh --scan-text rc 0 (findings=0); attribution/closing 0
+
+MERGED  2026-10-22T23:04:16Z  squash  7b117162e80a943af4186f2255c40329cd8d145c
+  Issue #958 left OPEN (the owner closes it).
+
+================================================================================================
+TASK 3 — deploy watch, parity, live arms                                      2026-10-24
+================================================================================================
+
+DEPLOY  ci-cd run 39869345195 on 7b117162 (2026-10-22T23:04:19Z -> 2026-10-23T04:30:28Z)
+  Deploy to Staging success; Staging Edge Probe success; Deploy to Production skipped.
+  Run conclusion failure from ONE job: Frontend E2E (public surfaces), step "Install Playwright
+  chromium": apt 403 Forbidden from packages.microsoft.com ("no longer signed"), exit 100; no
+  test executed. No job needs frontend-e2e (ci-cd.yaml), so that job alone was rerun.
+  Rollback rule not triggered; DEPLOY_STAGING_ENABLED=true.
+
+AUTH  kubelogin's azurecli mode follows the ambient az default; the AKS token was minted with
+  az account get-access-token --subscription c483d353-… (JToye Digital Production) and passed to
+  kubectl as its bearer token through a scratchpad shim. kubeconfig and az default unchanged.
+
+PARITY  2026-10-24T22:1xZ, pod imageID vs ghcr manifest digest for tag 7b117162…
+  core-java  sha256:eb456f806e3d…  ==  registry   Running ready
+  edge-go    sha256:f5cc414cc784…  ==  registry   Running ready
+  frontend   sha256:11f476f73e6a…  ==  registry   Running ready
+
+LIVE ARMS (scripts/staging-seed.sh --context jtoye-stg-aks)
+  22:20:56Z  list-drafts                -> LIST-DRAFTS count=0 card=0, rc 0
+  control    per-status vendor read (scratch copy, read-only): DRAFT 0, PENDING 2 (D69764AE and
+             7FE4E933, both CAPTURED), CONFIRMED 2, COMPLETED 1, CANCELLED 1, others 0, so the
+             listing is not blind. ORD-…0C094A2C is under no status.
+  cause      ScheduledCleanupService.cleanupStaleDraftOrders (03:00Z daily, >24 h) DELETES DRAFTs;
+             Stripe still holds 7 requires_payment_method intents for deleted orders
+             (0C094A2C + six 2026-10-19 swarm DRAFTs). Filed as issue #1038.
+  22:2xZ     vendor-order               -> VENDOR-ORDER order=ORD-1AAC0CDE-20261024-C555E294
+                                           status=DRAFT payment_status=NONE, rc 0
+  22:23:19Z  submit C555E294            -> http=200 (D-01 control: a vendor NONE order is not gated)
+  22:23:23Z  confirm D69764AE           -> http=200 (paid control: CAPTURED is not gated)
+  NOT RUN    submit 0C094A2C -> 409: the target order no longer exists (issue #1038). Owner ruling
+             2026-10-24: prove it on a fresh unpaid order and cancel that order straight after.
+  how        a scratch, uncommitted copy of scripts/staging-seed.sh, two lines different: a one-off
+             ORDER_IDEMPOTENCY_KEY (seed-order-30-08-unpaid-20261024T222519Z) and a return after
+             the intent is read back and asserted TEST mode, before the pm_card_visa confirm.
+  22:25:34Z  unpaid order               -> UNPAID-ORDER order=ORD-1AAC0CDE-20261024-C6DA71F1
+                                           intent=pi_3UUDNZDpS9ICNeRt0Z8y57J5
+                                           pi_status=requires_payment_method livemode=false
+  22:25:37Z  list-drafts                -> DRAFT-CANDIDATE …C6DA71F1 payment_status=PENDING intent=present
+                                           total=950p; LIST-DRAFTS count=1 card=1
+  22:25:40Z  submit C6DA71F1            -> http=409 type=https://jtoye.uk/errors/awaiting-payment
+                                           detail=Order … is awaiting payment. It can't be submitted,
+                                           accepted or prepared until the customer's payment completes.
+  22:25:42Z  list-drafts                -> still DRAFT, payment_status=PENDING; count=1 card=1
+  22:26:02Z  cancel-drafts C6DA71F1     -> SEED-CANCEL intent_status=canceled order_status=CANCELLED
+                                           livemode=false; CANCEL-DRAFTS requested=1 cancelled=1 refused=0
+  22:26:0xZ  stripe-get the intent      -> status canceled, cancellation_reason abandoned, livemode false
+  22:26:08Z  list-drafts                -> LIST-DRAFTS count=0 card=0
+  PII        customer-pattern matches over the arm outputs: 0 (the one "@" line is the staging
+             vendor's own sign-in, "signed in as vendor.staging@…").
+  Left on staging: ORD-…C555E294 (vendor NONE order, now PENDING after its 200 submit) and
+  ORD-…D69764AE (CONFIRMED after its 200 confirm). The 7 orphaned intents of issue #1038 are untouched.
+  E2E rerun  Frontend E2E (public surfaces) success; run 39869345195 conclusion now success.

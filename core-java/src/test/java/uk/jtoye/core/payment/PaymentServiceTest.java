@@ -1,6 +1,8 @@
 package uk.jtoye.core.payment;
 
 import com.stripe.exception.SignatureVerificationException;
+import com.stripe.net.RequestOptions;
+import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.model.Event;
 import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.PaymentIntent;
@@ -11,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
@@ -932,5 +936,183 @@ class PaymentServiceTest {
             paymentService.handleWebhookEvent("{}", "sig_test");
         }
     }
-}
 
+    // ------------------------------------------------------------------
+    // issue #1038: the stale-draft cleanup cancels an abandoned card draft's
+    // PaymentIntent at Stripe before the order is deleted.
+    // ------------------------------------------------------------------
+
+    private static final String ABANDONED_INTENT = "pi_abandoned_1038";
+
+    /** Stubs PaymentIntent.retrieve(ABANDONED_INTENT, options) to an intent in {@code status}. */
+    private PaymentIntent stubRetrieved(MockedStatic<PaymentIntent> piMock, String status) {
+        PaymentIntent retrieved = mock(PaymentIntent.class);
+        when(retrieved.getStatus()).thenReturn(status);
+        piMock.when(() -> PaymentIntent.retrieve(eq(ABANDONED_INTENT), any(RequestOptions.class)))
+                .thenReturn(retrieved);
+        return retrieved;
+    }
+
+    private static PaymentIntent canceledIntent() {
+        PaymentIntent canceled = mock(PaymentIntent.class);
+        lenient().when(canceled.getStatus()).thenReturn(PaymentService.STRIPE_STATUS_CANCELED);
+        return canceled;
+    }
+
+    @ParameterizedTest(name = "{0} is cancelled as abandoned")
+    @ValueSource(strings = {"requires_payment_method", "requires_confirmation", "requires_action"})
+    @DisplayName("issue #1038: an unpaid intent is cancelled with reason abandoned and an idempotency key")
+    void cancelAbandoned_unpaidIntent_isCancelledAsAbandoned(String status) throws Exception {
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            PaymentIntent retrieved = stubRetrieved(piMock, status);
+            PaymentIntent canceled = canceledIntent();
+            when(retrieved.cancel(any(PaymentIntentCancelParams.class), any(RequestOptions.class)))
+                    .thenReturn(canceled);
+
+            String result = paymentService.cancelAbandonedPaymentIntent(ABANDONED_INTENT, null);
+
+            assertEquals(PaymentService.STRIPE_STATUS_CANCELED, result);
+            ArgumentCaptor<PaymentIntentCancelParams> params = ArgumentCaptor.forClass(PaymentIntentCancelParams.class);
+            ArgumentCaptor<RequestOptions> options = ArgumentCaptor.forClass(RequestOptions.class);
+            verify(retrieved, times(1)).cancel(params.capture(), options.capture());
+            assertEquals(PaymentIntentCancelParams.CancellationReason.ABANDONED,
+                    params.getValue().getCancellationReason());
+            // Asserted against the production expression (AGENTS.md oaas-money rule 2).
+            assertEquals(PaymentService.abandonedIntentCancelIdempotencyKey(ABANDONED_INTENT),
+                    options.getValue().getIdempotencyKey());
+            assertTrue(options.getValue().getIdempotencyKey().contains(ABANDONED_INTENT));
+        }
+    }
+
+    @Test
+    @DisplayName("issue #1038: an already-canceled intent reports canceled without a second cancel")
+    void cancelAbandoned_alreadyCanceled_returnsCanceledWithoutCancelling() throws Exception {
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            PaymentIntent retrieved = stubRetrieved(piMock, PaymentService.STRIPE_STATUS_CANCELED);
+
+            String result = paymentService.cancelAbandonedPaymentIntent(ABANDONED_INTENT, null);
+
+            assertEquals(PaymentService.STRIPE_STATUS_CANCELED, result);
+            verify(retrieved, never()).cancel(any(PaymentIntentCancelParams.class), any(RequestOptions.class));
+        }
+    }
+
+    @ParameterizedTest(name = "{0} is left alone")
+    @ValueSource(strings = {"succeeded", "processing", "requires_capture"})
+    @DisplayName("issue #1038: an intent that has taken or is holding money is never cancelled")
+    void cancelAbandoned_moneyMovedOrHeld_isLeftAlone(String status) throws Exception {
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            PaymentIntent retrieved = stubRetrieved(piMock, status);
+            PaymentIntent canceled = canceledIntent();
+            lenient().when(retrieved.cancel(any(PaymentIntentCancelParams.class), any(RequestOptions.class)))
+                    .thenReturn(canceled);
+
+            String result = paymentService.cancelAbandonedPaymentIntent(ABANDONED_INTENT, null);
+
+            assertEquals(status, result);
+            verify(retrieved, never()).cancel(any(PaymentIntentCancelParams.class), any(RequestOptions.class));
+        }
+    }
+
+    @Test
+    @DisplayName("issue #1038: a direct-charge intent is retrieved AND cancelled on the connected account")
+    void cancelAbandoned_directCharge_usesTheConnectedAccountOnBothCalls() throws Exception {
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            PaymentIntent retrieved = stubRetrieved(piMock, "requires_payment_method");
+            PaymentIntent canceled = canceledIntent();
+            when(retrieved.cancel(any(PaymentIntentCancelParams.class), any(RequestOptions.class)))
+                    .thenReturn(canceled);
+
+            paymentService.cancelAbandonedPaymentIntent(ABANDONED_INTENT, "acct_vendor_1038");
+
+            ArgumentCaptor<RequestOptions> retrieveOptions = ArgumentCaptor.forClass(RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.retrieve(eq(ABANDONED_INTENT), retrieveOptions.capture()));
+            assertEquals("acct_vendor_1038", retrieveOptions.getValue().getStripeAccount());
+            ArgumentCaptor<RequestOptions> cancelOptions = ArgumentCaptor.forClass(RequestOptions.class);
+            verify(retrieved).cancel(any(PaymentIntentCancelParams.class), cancelOptions.capture());
+            assertEquals("acct_vendor_1038", cancelOptions.getValue().getStripeAccount());
+        }
+    }
+
+    @Test
+    @DisplayName("issue #1038: a platform intent is retrieved and cancelled with no Stripe-Account header")
+    void cancelAbandoned_platformIntent_sendsNoStripeAccount() throws Exception {
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            PaymentIntent retrieved = stubRetrieved(piMock, "requires_payment_method");
+            PaymentIntent canceled = canceledIntent();
+            when(retrieved.cancel(any(PaymentIntentCancelParams.class), any(RequestOptions.class)))
+                    .thenReturn(canceled);
+
+            paymentService.cancelAbandonedPaymentIntent(ABANDONED_INTENT, null);
+
+            ArgumentCaptor<RequestOptions> retrieveOptions = ArgumentCaptor.forClass(RequestOptions.class);
+            piMock.verify(() -> PaymentIntent.retrieve(eq(ABANDONED_INTENT), retrieveOptions.capture()));
+            assertNull(retrieveOptions.getValue().getStripeAccount());
+            ArgumentCaptor<RequestOptions> cancelOptions = ArgumentCaptor.forClass(RequestOptions.class);
+            verify(retrieved).cancel(any(PaymentIntentCancelParams.class), cancelOptions.capture());
+            assertNull(cancelOptions.getValue().getStripeAccount());
+        }
+    }
+
+    @Test
+    @DisplayName("issue #1038: a reference that is not a PaymentIntent id is refused before Stripe")
+    void cancelAbandoned_nonIntentReference_isRefusedBeforeStripe() {
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> paymentService.cancelAbandonedPaymentIntent("plink_1", null));
+            assertThrows(IllegalArgumentException.class,
+                    () -> paymentService.cancelAbandonedPaymentIntent(null, null));
+            piMock.verifyNoInteractions();
+        }
+    }
+
+    @Test
+    @DisplayName("issue #1038: only direct-charge and split-deposit routing name a connected account")
+    void directChargeAccountFor_onlyDirectAndSplitDepositRoutingNameAnAccount() {
+        when(stripeConnectService.resolveSettlementRouting(testOrder)).thenReturn(Optional.of(
+                new SettlementRoutingDecision(SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR, "acct_v",
+                        1500L, 0L, null, null)));
+        assertEquals(Optional.of("acct_v"), paymentService.directChargeAccountFor(testOrder));
+
+        when(stripeConnectService.resolveSettlementRouting(testOrder)).thenReturn(Optional.of(
+                new SettlementRoutingDecision(SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR, "acct_v",
+                        500L, 0L, 500L, 1000L)));
+        assertEquals(Optional.of("acct_v"), paymentService.directChargeAccountFor(testOrder));
+
+        when(stripeConnectService.resolveSettlementRouting(testOrder)).thenReturn(Optional.of(
+                new SettlementRoutingDecision(SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR, "acct_v",
+                        1500L, 37L, null, null)));
+        assertEquals(Optional.empty(), paymentService.directChargeAccountFor(testOrder));
+
+        when(stripeConnectService.resolveSettlementRouting(testOrder)).thenReturn(Optional.empty());
+        assertEquals(Optional.empty(), paymentService.directChargeAccountFor(testOrder));
+    }
+
+    @Test
+    @DisplayName("issue #1038: payment_intent.canceled for an order that no longer exists completes without reading orders")
+    void webhook_paymentIntentCanceled_forAnOrderThatNoLongerExists_completesWithoutReadingOrders() {
+        // The intent still names its (now deleted) order, so a handler added for
+        // this event later would reach orderRepository and could throw on it.
+        PaymentIntent canceled = mock(PaymentIntent.class);
+        lenient().when(canceled.getId()).thenReturn(ABANDONED_INTENT);
+        lenient().when(canceled.getMetadata()).thenReturn(Map.of(
+                "order_id", orderId.toString(),
+                "tenant_id", tenantId.toString()));
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        lenient().when(deserializer.getObject()).thenReturn(Optional.of(canceled));
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getType()).thenReturn("payment_intent.canceled");
+        when(mockEvent.getId()).thenReturn("evt_canceled_1038");
+        lenient().when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(mockEvent);
+
+            assertDoesNotThrow(() -> paymentService.handleWebhookEvent("{}", "sig_test"));
+
+            verifyNoInteractions(orderRepository);
+        }
+    }
+}
