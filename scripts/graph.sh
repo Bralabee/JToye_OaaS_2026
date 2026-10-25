@@ -33,8 +33,8 @@
 #     uv tool install "graphifyy[sql]==<GRAPH_VALIDATED_VERSION>"
 #   (`scripts/graph.sh status` without graphify prints this command with the version filled in.)
 #   An unpinned install takes the newest release, which these arms have not validated (0.9.94
-#   made every class name ambiguous, measured 2026-10-22). Also git, flock, sha1sum, tar and
-#   realpath (GNU coreutils).
+#   made every class name ambiguous, measured 2026-10-22). Also git, flock, sha1sum and tar;
+#   `view` also needs GNU realpath (coreutils).
 #   Missing or wrong pieces exit 5 and print the repair command.
 #
 #   VIEWING THE GRAPH: `view` writes three self-contained pages from the fresh graph:
@@ -42,8 +42,9 @@
 #                    communities, not single classes (this repo is ~21k nodes)
 #     tree.html      collapsible file/class tree: the quickest way to find one class
 #     callflow.html  Mermaid call-flow diagrams by section
-#   Default folder: <graph cache>/view/, outside the repository, replaced on each run (its
-#   `stamp` file names the commit). The folder is printed; open with: xdg-open <folder>/graph.html
+#   Default folder: <graph cache>/view/, outside the repository, replaced whole on each run
+#   (its `stamp` file names the commit). --out takes a new or empty folder, or one an earlier
+#   view made; it never overwrites anything else. A failed view leaves the previous one intact. The folder is printed; open with: xdg-open <folder>/graph.html
 #   Each page loads one library from a CDN (vis-network, d3, mermaid), so viewing needs internet.
 #
 #   The first line of every answer is the stamp: commit, graphify version, node count, and how
@@ -126,14 +127,28 @@ case "$cmd" in
       elif [ "$1" = --node-limit ] && [ $# -ge 2 ]; then node_limit=$2; shift 2
       else die 2 "unexpected argument for view: $1"; fi
     done
-    [[ "$node_limit" =~ ^[1-9][0-9]{0,5}$ ]] || die 2 "--node-limit must be 1..999999 (got: $node_limit)" ;;
+    [[ "$node_limit" =~ ^[1-9][0-9]{0,5}$ ]] || die 2 "--node-limit must be 1..999999 (got: $node_limit)"
+    [ -z "$view_out" ] || [ "${view_out:0:1}" != - ] || die 2 "--out needs a folder (got: $view_out)" ;;
   ''|-h|--help|help) usage ;;
   *) die 2 "refused: '$cmd' is not an allowed subcommand (affected, explain, path, god-nodes, status, rebuild, view)" ;;
 esac
 
 # ── preconditions (exit 5) ──
-for t in git flock sha1sum tar realpath; do command -v "$t" >/dev/null 2>&1 || die 5 "$t not found"; done
+for t in git flock sha1sum tar; do command -v "$t" >/dev/null 2>&1 || die 5 "$t not found"; done
 top=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null) || die 5 "not inside a git checkout: $SCRIPT_DIR"
+# view's folder is checked here, before any graphify call or rebuild: a refused view executes
+# nothing. GNU `realpath -m` (resolve a path that does not exist yet) is needed by view only.
+if [ "$cmd" = view ]; then
+  realpath -m / >/dev/null 2>&1 || die 5 "view needs GNU realpath (realpath -m); on macOS: brew install coreutils"
+  [ -n "$view_out" ] && {
+    view_out=$(realpath -m -- "$view_out") || die 2 "cannot resolve the view folder: $view_out"
+    case "$view_out/" in "$(realpath -m -- "$top")/"*) die 2 "refused: --out $view_out is inside the checkout; views are written outside the repository" ;; esac
+    # Only an empty folder, or one an earlier view made, is ever replaced: never a user's files.
+    if [ -e "$view_out" ] && [ ! -f "$view_out/.graph-sh-view" ] && [ -n "$(ls -A "$view_out" 2>/dev/null)" ]; then
+      die 2 "refused: --out $view_out is not empty and was not made by graph.sh view; pass a new or empty folder"
+    fi
+  }
+fi
 gbin=$(type -P "$GRAPHIFY_BIN") || die 5 "graphify not found ($GRAPHIFY_BIN); install: uv tool install \"graphifyy[sql]==$GRAPH_VALIDATED_VERSION\""
 # The [sql] extra: without tree-sitter-sql every .sql file yields zero nodes behind a warning at
 # exit 0. Probed in the venv the binary actually runs from, located through its shebang.
@@ -286,29 +301,41 @@ case "$cmd" in
   god-nodes)
     run_query god-nodes --top "$top_n" ;;
   view)
-    # One folder, overwritten on each view, so views never accumulate in the cache (each is
-    # ~2.7 MB of pages; the graph copy they are made from is ~50 MB and is removed after).
     out=${view_out:-$key/view}
-    # Resolved and checked BEFORE anything is created: a refused folder must not be left behind.
-    out=$(realpath -m -- "$out") || die 2 "cannot resolve the view folder: $out"
-    case "$out/" in "$(realpath -m -- "$top")/"*) die 2 "refused: --out $out is inside the checkout; views are written outside the repository" ;; esac
-    mkdir -p "$out" || die 6 "cannot create the view folder: $out"
-    rm -f "$out/graph.html" "$out/tree.html" "$out/callflow.html"
+    parent=$(dirname "$out")
+    mkdir -p "$parent" || die 6 "cannot create $parent"
+    # Built in a fresh folder beside the target, then swapped in, so a failed run leaves the
+    # previous view intact and nothing half-written. Views of one checkout are serialised: two
+    # at once would otherwise race on the swap.
+    exec 7>"$key/view.lock"
+    flock 7 || die 6 "could not lock $key/view.lock"
+    tmp=$(mktemp -d "$parent/.graph-view.XXXXXX") || die 6 "cannot create a build folder in $parent"
+    trap 'rm -rf "$tmp"' EXIT
     # Every export reads a COPY: `export html` writes next to the graph it reads, and the cached
-    # graph directory is swapped on the next rebuild. The exports run from the view folder, so
+    # graph directory is swapped on the next rebuild. The exports run from the build folder, so
     # nothing they default to can land in the repository.
-    cp "$graph" "$out/graph.json" || die 6 "could not copy the graph into $out"
-    ( cd "$out" && gfy export html --graph "$out/graph.json" --node-limit "$node_limit" ) > "$out/view.log" 2>&1 \
-      || die 6 "graphify export html failed; log: $out/view.log"
-    ( cd "$out" && gfy tree --graph "$out/graph.json" --output "$out/tree.html" ) >> "$out/view.log" 2>&1 \
-      || die 6 "graphify tree failed; log: $out/view.log"
-    ( cd "$out" && gfy export callflow-html --graph "$out/graph.json" --output "$out/callflow.html" ) >> "$out/view.log" 2>&1 \
-      || die 6 "graphify export callflow-html failed; log: $out/view.log"
+    cp "$graph" "$tmp/graph.json" || die 6 "could not copy the graph into $tmp"
+    ( cd "$tmp" && gfy export html --graph "$tmp/graph.json" --node-limit "$node_limit" ) > "$tmp/view.log" 2>&1 \
+      || die 6 "graphify export html failed: $(tail -2 "$tmp/view.log")"
+    ( cd "$tmp" && gfy tree --graph "$tmp/graph.json" --output "$tmp/tree.html" ) >> "$tmp/view.log" 2>&1 \
+      || die 6 "graphify tree failed: $(tail -2 "$tmp/view.log")"
+    ( cd "$tmp" && gfy export callflow-html --graph "$tmp/graph.json" --output "$tmp/callflow.html" ) >> "$tmp/view.log" 2>&1 \
+      || die 6 "graphify export callflow-html failed: $(tail -2 "$tmp/view.log")"
     for f in graph.html tree.html callflow.html; do
-      [ -s "$out/$f" ] || die 6 "$f was not written (or is empty); log: $out/view.log"
-      printf 'view: %s\n' "$out/$f"
+      [ -s "$tmp/$f" ] || die 6 "$f was not written (or is empty): $(tail -2 "$tmp/view.log")"
     done
-    rm -f "$out/graph.json"   # the pages embed their data; they never read it back
-    cp "$key/stamp" "$out/stamp" 2>/dev/null || true
+    rm -f "$tmp/graph.json"   # the pages embed their data; they never read it back
+    cp "$key/stamp" "$tmp/stamp" || die 6 "could not record the view's stamp"
+    : > "$tmp/.graph-sh-view"
+    chmod 755 "$tmp"
+    # The target is replaced only if it is empty or an earlier view (re-checked under the lock).
+    if [ -e "$out" ]; then
+      [ -f "$out/.graph-sh-view" ] || [ -z "$(ls -A "$out" 2>/dev/null)" ] \
+        || die 2 "refused: $out is not empty and was not made by graph.sh view"
+      rm -rf "$out" || die 6 "could not replace $out"
+    fi
+    mv "$tmp" "$out" || die 6 "could not move the view into $out"
+    trap - EXIT
+    for f in graph.html tree.html callflow.html; do printf 'view: %s\n' "$out/$f"; done
     echo "open: xdg-open $out/graph.html" ;;
 esac

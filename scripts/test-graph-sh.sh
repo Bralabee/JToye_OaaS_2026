@@ -146,6 +146,20 @@ run "$G" view
   && pass "(v) default folder is <cache>/view" || fail "(v) default view: rc=$rc: $(tail -1 <<< "$out")"
 run "$G" view --node-limit 0
 [ "$rc" -eq 2 ] && grep -q -- '--node-limit must be' <<< "$out" && pass "(v) view refuses --node-limit 0 (rc=2)" || fail "(v) --node-limit 0 -> rc=$rc"
+run "$G" view --out "$T/views"
+[ "$rc" -eq 0 ] && [ -f "$T/views/.graph-sh-view" ] && [ -s "$T/views/graph.html" ] \
+  && pass "(v) a second view replaces an earlier view's folder (rc=0)" || fail "(v) re-view into the same folder: rc=$rc: $(tail -1 <<< "$out")"
+mkdir -p "$T/userdir" && printf 'mine\n' > "$T/userdir/graph.html"; usum=$(sha1sum "$T/userdir/graph.html" | cut -c1-12)
+run "$G" view --out "$T/userdir"
+[ "$rc" -eq 2 ] && [ "$(sha1sum "$T/userdir/graph.html" | cut -c1-12)" = "$usum" ] && [ "$(ls -A "$T/userdir" | wc -l)" -eq 1 ] \
+  && pass "(v) a non-empty folder view did not make is refused rc=2, its files untouched" \
+  || fail "(v) non-empty user folder: rc=$rc, file $( [ "$(sha1sum "$T/userdir/graph.html" 2>/dev/null | cut -c1-12)" = "$usum" ] && echo kept || echo CHANGED)"
+# a refused view executes nothing: on a STALE graph the inside-checkout refusal comes before any rebuild
+git -C "$T/repo" commit -q --allow-empty -m "arms: stale for view"
+run "$G" view --out "$T/repo/view-inside"
+[ "$rc" -eq 2 ] && [ "$(rebuilds "$out")" -eq 0 ] && [ ! -e "$T/repo/view-inside" ] \
+  && pass "(v) refused --out on a stale graph: rc=2, no rebuild, nothing created" \
+  || fail "(v) refused --out on a stale graph: rc=$rc rebuilds=$(rebuilds "$out")"
 unset GRAPH_PATHSPEC
 
 echo "graphify $(graphify --version 2>/dev/null | awk '{print $2}') · wrapper $wrapper · failed arms: $fails"
