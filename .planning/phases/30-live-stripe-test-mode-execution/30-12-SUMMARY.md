@@ -192,7 +192,10 @@ Every break arm was bracketed clean, arm, restore, clean. Each restore was check
 - The tagged-refund unit arm needs the new `RefundService` constructor, so it landed with GREEN. Break arm F shows it can fail.
 - The first Task 1 RED run errored one sub-arm on the test's own fault (the JCE refuses an empty HMAC key). That sub-arm was removed and RED was re-run before the commit.
 
-**Total deviations:** 4 (2 missing tests added, 1 blocking contract regeneration, 1 test-design note). **Impact:** no scope change. The BL-04 guard is now actually tested.
+**5. REQUIREMENTS.md: PAY-03 left unchecked**
+- `requirements.mark-complete PAY-03` ticked the PAY-03 checkbox. That box claims the full onboard → order → capture → payout → refund loop has run on staging, and it has not; this plan is one of its prerequisites. The tick was reverted (`git checkout -- .planning/REQUIREMENTS.md`, then `git diff --quiet` clean). `requirements-completed: [PAY-03]` above follows the plan frontmatter, as 30-11 did; it means "contributes to PAY-03", not "PAY-03 met".
+
+**Total deviations:** 5 (2 missing tests added, 1 blocking contract regeneration, 1 test-design note, 1 requirement tick withheld). **Impact:** no scope change. The BL-04 guard is now actually tested.
 
 ## Notes for later plans
 

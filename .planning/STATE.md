@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing — 30-11 DONE (11/32): PR #1044 merged as 9d204778 and deployed; the staging pod logs connectTimeoutMs=5000 readTimeoutMs=20000 maxNetworkRetries=2 (RED new=0 old=1 -> GREEN new=1 old=0), digest parity on 3 services, issue #108 Stripe half recorded; next 30-12 (PR 4, Connect webhook) on feat/30-connect-webhook"
-last_updated: "2026-10-25T17:10:00.000Z"
+stopped_at: "Phase 30 executing — 30-12 DONE (12/32): Connect webhook route /api/v1/public/payments/webhook/connect (stripe.connect-webhook-secret), environment tagging + foreign/unknown-order acks, Express card_payments+transfers under connect-account-create-<tenantId>; 11 commits on feat/30-connect-webhook (not pushed), full core-java suites green (2007 unit, 1391 IT); next 30-13 (platform wiring for the two new env vars)"
+last_updated: "2026-10-25T22:38:41.320Z"
 last_activity: 2026-10-25
-last_activity_desc: "30-11 done — PR #1044 merged (9d204778) + deployed; live pod line GREEN (5000/20000/2); stripe, stripe-refund, stripe-lookup closed on the pod metrics; issue #108 comment posted, issue stays open for SMTP/axios/S3"
-state_head: 021c0815b358a710ab31ffe4cb3f4f33e9b52636
+last_activity_desc: "30-12 done — Connect route + environment tag + Express capabilities, TDD RED->GREEN per task, 12 break arms recorded; docs counts 6637 -> 6667"
+state_head: 6ee0a5189d48961003f0c1320889ef47b2b92974
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 294
-  percent: 93
+  completed_plans: 295
+  percent: 94
 ---
 
 # Project State
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 11/32 plans done (30-01..30-11); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038) and PR 3 (#1044, issue #108 Stripe half) merged + deployed + proven live; D-02 done (#1043); next 30-12 (PR 4: Connect webhook route) on feat/30-connect-webhook
-Last activity: 2026-10-25 — 30-11 DONE: PR #1044 round 1 admitted 0 of 9 and squash-merged as 9d204778; main run 40208207618 green through Deploy to Staging and the Staging Edge Probe. Digest parity on core-java, edge-go and frontend. The running pod core-java-5d547bb6b6-hdsvs logs the new Stripe line once with 5000/20000/2 and the old line 0 times (before the merge: new 0, old 1); its /actuator/prometheus lists stripe, stripe-refund and stripe-lookup, all closed (the health JSON shows no components on staging). Issue #108 comment 6400501402 records the Stripe half done; SMTP/axios/S3/email-breaker remain (D-10). Next 30-12.
+Status: Executing — 12/32 plans done (30-01..30-12); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038) and PR 3 (#1044, issue #108 Stripe half) merged + deployed + proven live; D-02 done (#1043); PR 4 part 1 (30-12, Connect webhook) committed on feat/30-connect-webhook, not pushed; next 30-13 (PR 4 part 2: Key Vault, SPC, env wiring for STRIPE_CONNECT_WEBHOOK_SECRET and STRIPE_ENVIRONMENT_TAG)
+Last activity: 2026-10-25 — 30-12 DONE: POST /api/v1/public/payments/webhook/connect verifies against stripe.connect-webhook-secret only (blank: refuse all) and refuses account-less events; the platform route refuses account-bearing events; one dispatcher. stripe.environment-tag tags intents, refunds and Express accounts (undeclared = "unset"); foreign-environment events are acknowledged before the dedup row; unknown-order PI events are acknowledged; BL-04 kept and now actually tested. Express accounts request card_payments + transfers under connect-account-create-<tenantId>. Full core-java test (2007) and integrationTest (1391) green. SUMMARY: 30-12-SUMMARY.md
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -999,6 +999,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P33 | 87 min | 2 tasks | 16 files |
 | Phase 37 P56 | 10min | 3 tasks | 16 files |
 | Phase 29 P14 | 85min | 4 tasks | 30 files |
+| Phase 30 P12 | 79min | 3 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -1446,6 +1447,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 29]: 29-28: a rollout that reported success is not a settled pod set; a deploy-time gate that reads pods must wait out the terminating ones, and the wait must be under test (a misspelt filter key kept the first selftest at 25/25)
 - [Phase 29]: 29-28: a non-green first deploy is answered by the rollback rule, not by re-labelling: DEPLOY_STAGING_ENABLED false and read back, no issue touched, the fix through a reviewed PR; applied on attempt 1 and #99 closed only on attempt 2's green run
 - [Phase 29]: 29-28: the Keycloak in-cluster forwarded-header residual is accepted, not fixed here: a public spoofed X-Forwarded-Host left token_endpoint unchanged (Traefik overwrites it) while the same header sent direct to keycloak:8080 moved it to evil.example; trusted proxies are tracked in their own PR
+- [Phase 30]: 30-12: one webhook route and one secret per Stripe scope; the Connect route is /api/v1/public/payments/webhook/connect (stripe.connect-webhook-secret), and the platform route refuses events carrying account
+- [Phase 30]: 30-12: stripe.environment-tag (empty fallback, written as 'unset') tags every PaymentIntent, Refund and Express Account; foreign-environment events are acknowledged before the dedup row, unknown-order PI events are acknowledged, BL-04 kept for same-environment refunds
+- [Phase 30]: 30-12: Express accounts request card_payments + transfers under idempotency key connect-account-create-<tenantId>; reused accounts missing either get both requested before the onboarding link
 
 ### Pending Todos
 
@@ -1524,9 +1528,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-22T17:05:16.000Z
-Stopped at: Phase 30 — 30-04 done (4/32), PR 1 complete; next /gsd-execute-phase 30 resumes at 30-05 on fix/958-awaiting-payment-gate
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-04-SUMMARY.md`
+Last session: 2026-10-25T22:40:00.000Z
+Stopped at: Phase 30 — 30-12 done (12/32); next /gsd-execute-phase 30 resumes at 30-13 on feat/30-connect-webhook
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-12-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
