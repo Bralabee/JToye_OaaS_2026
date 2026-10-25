@@ -41,6 +41,9 @@ const apiClient = axios.create({
 const SESSION_BURST_TTL_MS = 2_000
 let requestSessionPromise: Promise<Session | null> | null = null
 let cachedSession: { session: Session; expiresAt: number } | null = null
+// Bumped by every 401 refresh. A request-path read that started before a refresh may resolve
+// after it with the pre-refresh session; it must not overwrite the refreshed one in the cache.
+let sessionGeneration = 0
 
 function getRequestSession(): Promise<Session | null> {
   const now = Date.now()
@@ -48,8 +51,10 @@ function getRequestSession(): Promise<Session | null> {
     return Promise.resolve(cachedSession.session)
   }
   if (!requestSessionPromise) {
-    requestSessionPromise = getSession()
+    const generation = sessionGeneration
+    const pending: Promise<Session | null> = getSession()
       .then((s) => {
+        if (generation !== sessionGeneration) return s
         if (s?.accessToken) {
           cachedSession = { session: s, expiresAt: Date.now() + SESSION_BURST_TTL_MS }
         } else {
@@ -58,8 +63,9 @@ function getRequestSession(): Promise<Session | null> {
         return s
       })
       .finally(() => {
-        requestSessionPromise = null
+        if (requestSessionPromise === pending) requestSessionPromise = null
       })
+    requestSessionPromise = pending
   }
   return requestSessionPromise
 }
@@ -131,6 +137,9 @@ function sleep(ms: number): Promise<void> {
 let refreshPromise: Promise<Session | null> | null = null
 function refreshSessionOnce(): Promise<Session | null> {
   cachedSession = null
+  sessionGeneration += 1
+  // A request-path read already in flight would hand later requests the pre-refresh session.
+  requestSessionPromise = null
   if (!refreshPromise) {
     refreshPromise = getSession()
       .then((s) => {
