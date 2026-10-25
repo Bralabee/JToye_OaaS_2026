@@ -50,7 +50,7 @@ function getRequestSession(): Promise<Session | null> {
   if (!requestSessionPromise) {
     requestSessionPromise = getSession()
       .then((s) => {
-        if (s?.accessToken && !s.error) {
+        if (s?.accessToken) {
           cachedSession = { session: s, expiresAt: Date.now() + SESSION_BURST_TTL_MS }
         } else {
           cachedSession = null
@@ -134,7 +134,7 @@ function refreshSessionOnce(): Promise<Session | null> {
   if (!refreshPromise) {
     refreshPromise = getSession()
       .then((s) => {
-        if (s?.accessToken && !s.error) {
+        if (s?.accessToken) {
           cachedSession = { session: s, expiresAt: Date.now() + SESSION_BURST_TTL_MS }
         }
         return s
