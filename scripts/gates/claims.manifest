@@ -102,13 +102,13 @@ rule	gradle	-	frontend/package-lock.json	lock packages[""]	jq:.packages[""].vers
 #
 # ONLY SIX OF THE FOURTEEN ROWS ARE GATED HERE, and that is a statement of coverage
 # rather than an omission: exactly six rows carry a claim_key because exactly six
-# publish an integer (R-14 and R-15 inside a sentence: "..., or 168 hours if you never confirm it",
+# publish an integer (R-1, R-14, R-15 and R-16 inside a sentence: "..., or 168 hours if you never confirm it",
 # so its rule reads the integer in front of " hours" wherever it sits after the anchor).
 # The other eight publish prose ("Kept indefinitely"), which an
 # int-comparing engine cannot hold. They are gated instead by the field-by-field
 # comparison against the manifest in retention-table.a11y.test.tsx.
 source	retention	json	docs/retention-manifest.json	int
-rule	retention	draft_order_hours	frontend/app/legal/retention/page.tsx	R-1 abandoned checkouts	PERIOD_ABANDONED_CHECKOUTS = "\K[0-9]+(?= hours")
+rule	retention	draft_order_hours	frontend/app/legal/retention/page.tsx	R-1 abandoned checkouts	PERIOD_ABANDONED_CHECKOUTS = "[^"]*?\K[0-9]+(?= hours)
 rule	retention	webhook_delivery_days	frontend/app/legal/retention/page.tsx	R-2 webhook delivery records	PERIOD_WEBHOOK_DELIVERY_RECORDS = "\K[0-9]+(?= days")
 rule	retention	media_quarantine_hours	frontend/app/legal/retention/page.tsx	R-3 quarantined image uploads	PERIOD_QUARANTINED_IMAGE_UPLOADS = "\K[0-9]+(?= hours")
 rule	retention	customer_refresh_cookie_days	frontend/app/legal/retention/page.tsx	R-4 customer sign-in cookies	PERIOD_CUSTOMER_SIGN_IN_COOKIES = "\K[0-9]+(?= days")
