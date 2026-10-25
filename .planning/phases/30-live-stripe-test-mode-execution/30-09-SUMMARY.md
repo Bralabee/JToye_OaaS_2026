@@ -12,7 +12,7 @@ provides:
   - "PR #1041 (issue #1038 fix + Task 0 orphan-intent stages) reviewed to zero admissible findings over 4 rounds, squash-merged as b728254e"
   - "Staging runs b728254e by digest (core-java, edge-go, frontend); ci-cd run 40176504077 green through Deploy to Staging and the Staging Edge Probe"
   - "D-02 executed by owner choice (all-listed): the 6 orphaned TEST intents are canceled at Stripe, read back canceled/livemode=false"
-  - "No payable TEST intent on staging is left without an order; the one open intent left (C97DCE79) has an order (issue #1031 class)"
+  - "No payable TEST intent on the platform account for the staging vendor's tenant is left without an order; the one open intent left (C97DCE79) has an order (issue #1031 class). Connected-account (direct-charge) intents are outside what the stages can see"
 affects: [30-10, 30-32]
 
 actuals:
@@ -32,7 +32,7 @@ requirements-completed: []
 
 # Plan 30-09 Summary: the orphaned TEST intents are cancelled, and Stripe says so
 
-**No payable Stripe TEST intent on staging is left without an order.** The issue #1038 fix shipped first: PR #1041 merged as `b728254e`, and staging runs those images by digest. Without it, the cleanup job could have created new orphans while this plan ran. The listing then found 0 abandoned DRAFTs and 6 orphaned intents. The owner chose to cancel all six. Stripe accepted every cancel, with none refused, and independent read-backs show `canceled`, `livemode=false`.
+**No payable Stripe TEST intent on the platform account for the staging vendor's tenant is left without an order.** (The stages see only platform-account intents carrying this tenant's `metadata.tenant_id`; see "Left on staging".) The issue #1038 fix shipped first: PR #1041 merged as `b728254e`, and staging runs those images by digest. Without it, the cleanup job could have created new orphans while this plan ran. The listing then found 0 abandoned DRAFTs and 6 orphaned intents. The owner chose to cancel all six. Stripe accepted every cancel, with none refused. The stage read each intent back as `canceled`, `livemode=false`, and an independent `stripe-get` of the first and last intent agrees.
 
 ## Task 0: orphan-intent stages (shipped in PR #1041)
 

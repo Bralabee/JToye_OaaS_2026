@@ -2,18 +2,19 @@
 # Recorded 2026-10-25T09:36:21Z on staging, after PR #1041 (b728254e) deployed; pod imageIDs equal the ghcr digests CI pushed for b728254e:
 #   core-java sha256:d5ef2a60bb81  frontend sha256:4e67b9329537  edge-go sha256:0f8f1ec8477e
 
+# Transcripts below are the script's output verbatim except where a line is marked [REDACTED: …]; the only redaction is the vendor sign-in line, whose address is not recorded.
 ## list-drafts (rc 0)
 OK: context 'jtoye-stg-aks' passed staging_kube_guard
 OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
 OK: read 2 Key Vault objects from jtoye-stg-kv (values not shown)
-OK: signed in as the staging vendor test account (address not recorded)
+[REDACTED: the line "OK: signed in as <staging vendor test account address>"]
 LIST-DRAFTS count=0 card=0 at=2026-10-25T09:36:31Z
 
 ## list-orphan-intents (rc 0)
 OK: context 'jtoye-stg-aks' passed staging_kube_guard
 OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
 OK: read 2 Key Vault objects from jtoye-stg-kv (values not shown)
-OK: signed in as the staging vendor test account (address not recorded)
+[REDACTED: the line "OK: signed in as <staging vendor test account address>"]
 OK: read the Stripe TEST key from jtoye-stg-kv/stripe-credentials--api-key (sk_test_; value not shown)
 VENDOR-ORDERS total=8
 ORPHAN-INTENT intent=pi_3UTJiNDpS9ICNeRt0AoBCcK2 order_number=ORD-1AAC0CDE-20261022-0C094A2C status=requires_payment_method created=2026-10-22T10:59:19Z amount=950p
@@ -47,7 +48,7 @@ Limit: the orphan stages see platform-account intents only; a direct-charge inte
 - STRONGER form: drop exactly that one sign-in line (grep -vx on the full literal), then count lines matching the plan's PII regex (at-sign, or a UK mobile 07nnn nnnnnn): 0.
   Fail direction: an email planted on each ORPHAN-INTENT line counts 6; a sign-in line naming any other address counts 1.
 - PII regex positive control over a here-string holding one example email and one 07700 test mobile (the plan's literal): 1.
-- This file: pii regex 0 lines (the sign-in address is not recorded).
+- This file: pii regex 0 lines. This certifies the recorded (redacted) file only; that the LIVE output carries no PII besides the sign-in line is shown by the STRONGER form above, which ran on the unredacted output.
 - staging-secrets.sh --leak-scan on this file (jtoye-ops): rc 0, "31 objects checked, 0 found (12 estate identifiers not secret, skipped)".
   Fail direction: staging-secrets.sh --selftest 13/13, "PASS leak-scan hit=1-named clean=0 missing=VOID empty=VOID".
   (A first run outside the conda env was VOID rc 2 from the python shim, not a pass.)
@@ -63,6 +64,7 @@ pi_3USL6jDpS9ICNeRt0JVz7owF, pi_3USL6GDpS9ICNeRt4ZY43HH1, pi_3USL4KDpS9ICNeRt25N
 OK: context 'jtoye-stg-aks' passed staging_kube_guard
 OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
 OK: read 2 Key Vault objects from jtoye-stg-kv (values not shown)
+[REDACTED: the line "OK: signed in as <staging vendor test account address>"]
 OK: read the Stripe TEST key from jtoye-stg-kv/stripe-credentials--api-key (sk_test_; value not shown)
 OK: Stripe accepted the cancel of pi_3UTJiNDpS9ICNeRt0AoBCcK2 (Idempotency-Key d02-orphan-cancel-pi_3UTJiNDpS9ICNeRt0AoBCcK2)
 SEED-ORPHAN-CANCEL intent=pi_3UTJiNDpS9ICNeRt0AoBCcK2 order_number=ORD-1AAC0CDE-20261022-0C094A2C intent_status=canceled livemode=false at=2026-10-25T10:05:39Z
@@ -94,5 +96,5 @@ Plan verify 2: rc=0 still_listed=0. Fail direction: the same loop over the Task 
 open=1 is C97DCE79's intent (pi_3USL6GDpS9ICNeRt3mZUuGVa), deliberately out of D-02's scope; its order exists. It is the issue #1031 class.
 
 ## Final scans of this file
-- PII regex: 0 lines. Control: the same file with the plan's literal appended counts 1.
+- PII regex: 0 lines (of the redacted file; see the STRONGER form for the live output). Control: the same file with the plan's literal appended counts 1.
 - staging-secrets.sh --leak-scan (jtoye-ops): rc 0, 31 objects checked, 0 found. Control: --selftest 13/13 (leak-scan hit=1-named).

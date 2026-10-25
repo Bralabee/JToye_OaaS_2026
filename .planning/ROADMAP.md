@@ -349,7 +349,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
-| 30. The Money Path, Executed | v2.3 | 9/32 | In Progress — PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24) | — |
+| 30. The Money Path, Executed | v2.3 | 9/32 | In Progress — PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24); PR #1041 (issue #1038 cleanup fix) merged b728254e and deployed with digest parity, D-02 done (2026-10-25) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
