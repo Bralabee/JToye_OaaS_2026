@@ -3,7 +3,7 @@
 # TAB-separated. Generated from the rule tables of check-doc-metrics.sh and
 # check-project-version.sh so the translation is mechanical, not retyped.
 #
-# ADDITIVE FOR NOW: this manifest runs the same 43 assertions as check-doc-metrics.sh
+# ADDITIVE FOR NOW: of its rules, 43 are the same assertions as check-doc-metrics.sh
 # (37) + check-project-version.sh (6), which REMAIN in CI as a cross-check while the
 # engine earns trust. Consolidation is DEFERRED to a dated re-check (2026-09-30) in
 # .planning/phases/27-operational-maturity/deferred-items.md §13 — issue #362 was closed
@@ -54,6 +54,18 @@ rule	metrics	playwright_specs	AGENTS.md	playwright_specs	Playwright .test\(\). b
 rule	metrics	mcp_test_blocks	AGENTS.md	mcp_test_blocks	\K[0-9]+(?= MCP-server vitest .it/test. blocks across)
 rule	metrics	mcp_test_files	AGENTS.md	mcp_test_files	MCP-server vitest .it/test. blocks across \K[0-9]+
 
+# ── archify diagram cards: docs/metrics.json -> the counted claims on the core-java diagram ──
+# Graph tooling plan Step 3 (2026-10-22). DIAGRAMS.md used to say these counts "go stale
+# silently" - they had (25 controllers / 66 migrations against 33 / V88). Not mirrored in
+# check-doc-metrics.sh. The JSON is the source; the HTML rules catch a JSON edit whose
+# `archify deliver` was never re-run. Counts with no metric (services, repositories) were
+# dropped from the card rather than left unchecked.
+rule	metrics	java_controllers	docs/architecture/core-java.architecture.json	core-java card: controllers node	"sublabel": "\K[0-9]+(?= classes")
+rule	metrics	java_controllers	docs/architecture/core-java.architecture.json	core-java card: controller count	"\K[0-9]+(?= controllers")
+rule	metrics	schema_version	docs/architecture/core-java.architecture.json	core-java card: postgres node	"sublabel": "RLS [^"]* schema at V\K[0-9]+(?=")
+rule	metrics	schema_version	docs/architecture/core-java.architecture.json	core-java card: schema line	"Schema at V\K[0-9]+(?=; V2 installs)
+rule	metrics	java_controllers	docs/architecture/core-java.architecture.html	core-java diagram: controllers node	data-node-sublabel="\K[0-9]+(?= classes")
+rule	metrics	schema_version	docs/architecture/core-java.architecture.html	core-java diagram: postgres node	data-node-sublabel="RLS [^"]* schema at V\K[0-9]+(?=")
 # ── project version: build.gradle.kts -> every site that claims it ──
 rule	gradle	-	frontend/package.json	npm package version	^\s*"version":\s*"\K[0-9]+\.[0-9]+\.[0-9]+(?=")
 rule	gradle	-	README.md	version badge	badge/version-\K[0-9]+\.[0-9]+\.[0-9]+(?=(--dev)?-)
@@ -90,13 +102,13 @@ rule	gradle	-	frontend/package-lock.json	lock packages[""]	jq:.packages[""].vers
 #
 # ONLY SIX OF THE FOURTEEN ROWS ARE GATED HERE, and that is a statement of coverage
 # rather than an omission: exactly six rows carry a claim_key because exactly six
-# publish an integer (R-14 and R-15 inside a sentence: "..., or 168 hours if you never confirm it",
+# publish an integer (R-1, R-14, R-15 and R-16 inside a sentence: "..., or 168 hours if you never confirm it",
 # so its rule reads the integer in front of " hours" wherever it sits after the anchor).
 # The other eight publish prose ("Kept indefinitely"), which an
 # int-comparing engine cannot hold. They are gated instead by the field-by-field
 # comparison against the manifest in retention-table.a11y.test.tsx.
 source	retention	json	docs/retention-manifest.json	int
-rule	retention	draft_order_hours	frontend/app/legal/retention/page.tsx	R-1 abandoned checkouts	PERIOD_ABANDONED_CHECKOUTS = "\K[0-9]+(?= hours")
+rule	retention	draft_order_hours	frontend/app/legal/retention/page.tsx	R-1 abandoned checkouts	PERIOD_ABANDONED_CHECKOUTS = "[^"]*?\K[0-9]+(?= hours)
 rule	retention	webhook_delivery_days	frontend/app/legal/retention/page.tsx	R-2 webhook delivery records	PERIOD_WEBHOOK_DELIVERY_RECORDS = "\K[0-9]+(?= days")
 rule	retention	media_quarantine_hours	frontend/app/legal/retention/page.tsx	R-3 quarantined image uploads	PERIOD_QUARANTINED_IMAGE_UPLOADS = "\K[0-9]+(?= hours")
 rule	retention	customer_refresh_cookie_days	frontend/app/legal/retention/page.tsx	R-4 customer sign-in cookies	PERIOD_CUSTOMER_SIGN_IN_COOKIES = "\K[0-9]+(?= days")

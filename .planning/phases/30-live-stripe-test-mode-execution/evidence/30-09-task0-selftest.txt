@@ -1,0 +1,25 @@
+# 30-09 Task 0: staging-seed.sh orphan-intent stages (issue #1038 re-route), recorded 2026-10-25
+## clean selftest (scripts/staging-seed.sh --selftest): rc=0
+PASS orphan-list rc=0 orphans=1 known+paid+no-metadata=excluded status_reads=8 writes=0
+PASS orphan-list-blind rc=2 void orphans=0
+PASS orphan-cancel-one rc=0 read<recheck<cancel<readback stripe_cancels=1 vendor_cancels=0 verdict=SEED-ORPHAN-CANCEL
+PASS orphan-cancel-refusals rc=1 order-exists+paid+no-metadata=refused refused_cancels=0 next_cancelled=1
+PASS orphan-cancel-already-canceled rc=0 stripe_posts=0
+PASS orphan-cancel-args rc=2 absent+malformed+twice+elsewhere=usage-error az_calls=0 curl_calls=0
+PASS dry-run-tools rc=0 stages=7 az_calls=0 curl_calls=0
+total PASS=47 (41 before)
+## break arms (scratch copy per arm; the tree was never edited); each must turn its named arm red
+ARM order-exists rc=1 fails=1 red=[FAIL orphan-cancel-refusals order-exists: rc=0 (want 1)]
+ARM paid rc=1 fails=1 red=[FAIL orphan-cancel-refusals paid: stderr lacks 'REFUSED [paid]': DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendo]
+ARM blind rc=1 fails=1 red=[FAIL orphan-list-blind rc=0 (want 2)]
+ARM filter rc=1 fails=1 red=[FAIL orphan-list ORPHAN-INTENT lines=2 (want exactly 1: pi_orphana)]
+ARM statuses rc=1 fails=4 red=[FAIL orphan-list rc=2 (want 0): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --query value -o tsv -]
+ARM idem rc=1 fails=1 red=[FAIL orphan-cancel-one the Stripe cancel lacks Idempotency-Key d02-orphan-cancel-pi_orphana or cancellation_reason=abandoned]
+ARM elsewhere rc=1 fails=1 red=[FAIL orphan-cancel-args elsewhere: rc=0 (want 2): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --qu]
+ARM recheck rc=1 fails=2 red=[FAIL orphan-cancel-one order status reads=8 (want 16: the stage control, then the per-intent re-check)]
+clean-again rc=0 pass=47
+
+## PR #1041 round 1 fix: tenant scoping (2026-10-25); orphan-list and orphan-cancel-refusals gained an other-tenant case
+ARM tenant-filter rc=1 fails=1 red=[FAIL orphan-list ORPHAN-INTENT lines=2 (want exactly 1: pi_orphana)]
+ARM tenant-refusal rc=1 fails=1 red=[FAIL orphan-cancel-refusals other-tenant: rc=0 (want 1)]
+clean-again rc=0 pass=47
