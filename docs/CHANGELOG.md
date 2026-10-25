@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### graph.sh Can Show the Graph, Installs the Version It Was Proven On, and Claude Sessions Are Told It Exists (#1042) — 2026-10-25
+
+`scripts/graph.sh` (#1034) was reachable only through the last line of `AGENTS.md`, which Claude Code does not load: across every OaaS session transcript, `CLAUDE.md` was loaded 526 times and `AGENTS.md` never.
+
+- **Pointer where Claude reads it.** `CLAUDE.md` gains a short "Code-structure questions" section, outside the GSD-managed markers.
+- **Pinned install.** The missing-graphify and missing-`[sql]` hints now name `GRAPH_VALIDATED_VERSION` (`uv tool install "graphifyy[sql]==0.9.65"`). An unpinned install takes the newest graphify, which the arms have not validated.
+- **`view`.** `scripts/graph.sh view [--out DIR] [--node-limit N]` writes `graph.html` (aggregated communities above the node limit), `tree.html` and `callflow.html` from the fresh graph, outside the checkout. The default folder is `<cache>/view`, replaced on each run. An `--out` inside the checkout is refused before anything is created. The pages load one CDN library each.
+- **Arms.** (f2) and five (v) arms: 0 failed on this branch, 5 on main's wrapper, 3 on an intermediate commit that created the refused folder.
+
 ### brotli-libs 1.2.1-r0 in the core-java Runtime Image (#1040) — 2026-10-25
 
 main's pipeline went red at the core-java Trivy image gate on 0f559fc2, c519e689 and f3381c9a with no change to the tree: a new advisory, CVE-2026-111497 (an out-of-bounds write in the Brotli decoder), entered Trivy's database against `brotli-libs` 1.2.0-r1 in the `eclipse-temurin:25-jre-alpine` base. It is fixed in 1.2.1-r0. The image gate failing skipped Build and Push, Deploy to Staging and the edge probe, so staging stayed on the last green commit.
