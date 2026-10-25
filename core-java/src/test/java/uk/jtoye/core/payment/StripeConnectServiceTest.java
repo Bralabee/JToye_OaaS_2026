@@ -200,6 +200,8 @@ class StripeConnectServiceTest {
         AccountCreateParams params = created.get();
         assertNotNull(params, "Account.create was not called");
         assertNotNull(params.getCapabilities(), "capabilities must be requested explicitly, not left to platform defaults");
+        assertNotNull(params.getCapabilities().getCardPayments(), "card_payments capability not requested");
+        assertNotNull(params.getCapabilities().getTransfers(), "transfers capability not requested");
         assertEquals(Boolean.TRUE, params.getCapabilities().getCardPayments().getRequested());
         assertEquals(Boolean.TRUE, params.getCapabilities().getTransfers().getRequested());
         @SuppressWarnings("unchecked")
