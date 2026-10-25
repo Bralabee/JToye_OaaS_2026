@@ -113,6 +113,20 @@ describe("computeMerchantRoiTelemetry (GAP-GTM-07)", () => {
     expect(roi30k.jtoyeTotalCostPennies).toBe(18_900) // £189.00
     expect(roi30k.grossCommissionSavedPennies).toBe(825_000) // £8,250.00
     expect(roi30k.netMonthlySavingsPennies).toBe(821_100) // £8,211.00
+
+    // D-04 (#1011): £39/mo is per active location, not per tenant. A two-shop tenant at £15k GTV
+    // pays 2 * £39.00 = £78.00 base + £75.00 usage = £153.00 total, netting £4,047.00 vs £4,200.00.
+    const roi15kTwoShops = computeMerchantRoiTelemetry(
+      makeSummary({ totalRevenuePennies: 1_500_000, transactionCount: 600 }),
+      [],
+      [],
+      "SAAS_HYBRID_STANDARD",
+      2
+    )
+    expect(roi15kTwoShops.activeLocationCount).toBe(2)
+    expect(roi15kTwoShops.jtoyeMonthlyBasePennies).toBe(7_800)
+    expect(roi15kTwoShops.jtoyeTotalCostPennies).toBe(15_300)
+    expect(roi15kTwoShops.netMonthlySavingsPennies).toBe(404_700)
   })
 
   it("computes SAAS_FLAT_PREDICTABLE (£99/mo + 0%) and BATCH_PAYG_STARTER (£0/mo + 6%) with the £710 upgrade crossover", () => {
@@ -267,13 +281,14 @@ describe("MerchantRoiCard component (GAP-GTM-07)", () => {
     expect(screen.getByTestId("roi-hybrid-upgrade-tip")).toBeInTheDocument()
   })
 
-  it("renders a truthful empty-sample message when no customer orders are present", () => {
+  it("renders a truthful empty-sample message when no customer orders are present and scales subscription cost across locations (#1011)", () => {
     render(
       <MerchantRoiCard
-        summary={makeSummary({ totalRevenuePennies: 0, transactionCount: 0 })}
+        summary={makeSummary({ totalRevenuePennies: 500_000, transactionCount: 200 })}
         transactions={[]}
         orders={[]}
         scope={{ shopId: null, shopName: "All shops", from: null, to: null }}
+        locationCount={2}
       />
     )
 
@@ -281,6 +296,10 @@ describe("MerchantRoiCard component (GAP-GTM-07)", () => {
     expect(screen.getByTestId("roi-repeat-buyers")).toHaveTextContent(
       "No identified buyers in sample"
     )
+    // £5,000 GTV across 2 shops under £39/location/mo + 0.5%:
+    // 28% aggregator = £1,400.00; J'Toye = 2 * £39.00 (£78.00) + £25.00 = £103.00 -> net £1,297.00
+    expect(screen.getByTestId("roi-net-savings")).toHaveTextContent("£1,297.00")
+    expect(screen.getByTestId("roi-net-savings")).toHaveTextContent("2 locations")
   })
 })
 

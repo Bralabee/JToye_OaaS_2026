@@ -443,6 +443,7 @@ export default function FinancePage() {
             transactions={transactions}
             orders={ordersSample}
             scope={scope ?? { shopId: null, shopName: null, from: null, to: null }}
+            locationCount={switcher?.shops?.length}
           />
         </m.div>
       )}

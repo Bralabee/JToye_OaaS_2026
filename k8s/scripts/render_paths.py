@@ -31,9 +31,11 @@ THE CONTRACT (unchanged; every consumer of the path tables reads exactly this)
                   written double-quoted with \\t \\n \\r \\xNN escapes whatever its source style,
                   so a value can never break the TSV (the awk walker had no encoding for this).
                   A key containing one of those characters is escaped the same way (unquoted).
-  * block scalar (| or >)   the INDICATOR only (`|`, `|-`, `|+`, `>`...), never the content. This
-                  is deliberate and kept from the awk walker: INV-20 refuses a block scalar in
-                  Keycloak's command as unreadable, and its text must never be read as keys.
+  * block scalar (| or >)   the indicator followed by the double-quoted escaped content
+                  (e.g. `|"line1\nline2\n"`, `|-"..."`). INV-20 still detects the indicator
+                  prefix and refuses a block scalar in Keycloak's command, while INV-15
+                  (configuration-snippet) and INV-16 (truststore-builder command) read the
+                  parsed lines from the path table without re-parsing raw YAML in awk.
   * flow collection ([..] / {..})   one record whose value is the flow text with each scalar
                   written as above; the walk does not descend, as before. `kubectl kustomize`
                   emits flow style only for empty collections: `{}` and `[]`.
@@ -103,7 +105,7 @@ def scalar_text(node):
     """A scalar in the raw spelling the consumers expect."""
     v, st = node.value, node.style
     if st in ("|", ">"):
-        return block_indicator(node)
+        return block_indicator(node) + '"' + esc_ctrl(v) + '"'
     if st == '"' or has_ctrl(v):
         return '"' + esc_ctrl(v) + '"'
     if st == "'":

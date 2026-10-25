@@ -371,8 +371,8 @@
 #            a. every init container of Deployment core-java that runs the
 #               core-java image and runs keytool -importcert COPIES a path ending
 #               lib/security/cacerts into /truststore/cacerts on an earlier,
-#               uncommented line of its command (read from the raw render, since
-#               the command is a block scalar the path walker skips);
+#               uncommented line of its command (read from the path table via
+#               render_paths.py, which emits block scalar bodies after their indicator);
 #            b. the core-java container's JAVA_TOOL_OPTIONS is exactly one literal
 #               `value:` naming -Djavax.net.ssl.trustStore=/truststore/cacerts
 #               (never valueFrom; INV-11 refuses a Secret source as well), and it
@@ -2364,6 +2364,207 @@ if [[ "${1:-}" == "--selftest-inv24" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# --selftest-fold (#992): prove that none of the seven former raw-YAML awk
+# readers can be evaded by kustomize scalar folding or multi-line scalar
+# injection. Each arm plants a defect that the old line-oriented awk readers
+# passed (rc 0) because kustomize folded a long scalar or split a multi-line
+# string across lines, and asserts the PyYAML-backed reader fails (rc 1) with
+# the expected invariant message.
+# ---------------------------------------------------------------------------
+fold_selftest() {
+    local st arm rc out pat bad=0
+    st="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$st'" EXIT
+    cp -a "$K8S_DIR" "$st/pristine" || { echo "PARSE ERROR: --selftest-fold could not copy $K8S_DIR" >&2; exit 2; }
+
+    for arm in inv1-missing-valuefrom inv2-multiline-value inv3-multiline-label \
+               inv6-folded-backend inv12-folded-cidr inv15-folded-snippet \
+               inv16-folded-image loc3-folded-connstr loc2-block-spoof; do
+        selftest_stage "$st/pristine" "$st/arm"
+        case "$arm" in
+            inv1-missing-valuefrom)
+                python3 - "$st/arm/k8s/base/core-java-deployment.yaml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+old = """        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: port"""
+new = """        - name: DB_PORT
+        - name: "AAAA_PAD_0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789\\n            valueFrom:\\n            secretKeyRef:\\n            key: port"
+          value: "1\""""
+s = p.read_text()
+assert old in s, "DB_PORT block not found"
+p.write_text(s.replace(old, new, 1))
+PY
+                pat='FAIL \[k8s/base\] INV-1: DB_PORT .* has NO .valueFrom:.'
+                ;;
+            inv2-multiline-value)
+                python3 - "$st/arm/k8s/base/core-java-deployment.yaml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+old = """        - name: DB_PORT
+          valueFrom:"""
+new = """        - name: DB_PORT
+          value: "5432\\n            pad: x"
+          valueFrom:"""
+s = p.read_text()
+assert old in s, "DB_PORT block not found"
+p.write_text(s.replace(old, new, 1))
+PY
+                pat='FAIL \[k8s/base\] INV-2: EnvVar .DB_PORT. .* carries BOTH .value:. and .valueFrom:.'
+                ;;
+            inv3-multiline-label)
+                python3 - "$st/arm/k8s/base/networkpolicies/20-core-java.yaml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+old = """          podSelector:
+            matchLabels:
+              k8s-app: kube-dns"""
+new = """          podSelector:
+            matchLabels:
+              environment: base
+              k8s-app: |-
+                kube-dns"""
+s = p.read_text()
+assert old in s, "kube-dns podSelector not found"
+p.write_text(s.replace(old, new, 1))
+PY
+                pat='FAIL \[k8s/base\] INV-3: the kube-dns podSelector'
+                ;;
+            inv6-folded-backend)
+                python3 - "$st/arm/k8s/base/sse-ingress.yaml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+long_svc = "core-java-long-prefix-0123456789-abcdefghijklmnopqrstuvwxyz-0123456789"
+s = p.read_text()
+assert "            name: core-java\n" in s, "core-java backend not found"
+s = s.replace("            name: core-java\n", f'            name: "{long_svc} dangling-tail"\n', 1)
+s += f"""---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {long_svc}
+spec:
+  selector:
+    app: core-java
+  ports:
+  - port: 9090
+    targetPort: 9090
+"""
+p.write_text(s)
+PY
+                pat="FAIL \\[k8s/base\\] INV-6: Ingress 'jtoye-sse-ingress' .* does NOT exist"
+                ;;
+            inv12-folded-cidr)
+                python3 - "$st/arm/k8s/staging/configmap-patch.yaml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+old = '  security.trusted-proxies: "10.244.0.0/16"'
+new = '  security.trusted-proxies: "10.0.0.0/8,10.1.0.0/16,10.2.0.0/16,10.3.0.0/16,10.4.0.0/16,10.5.0.0/16,10.6.0.0/16, 0.0.0.0/0"'
+assert old in s, "security.trusted-proxies not found"
+p.write_text(s.replace(old, new, 1))
+PY
+                pat="FAIL \\[k8s/staging\\] INV-12: security\\.trusted-proxies entry '0\\.0\\.0\\.0/0'"
+                ;;
+            inv15-folded-snippet)
+                cat >> "$st/arm/k8s/production/workload-identity-patch.yaml" <<'EOF'
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jtoye-sse-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/configuration-snippet: 'more_set_headers "X-Content-Type-Options: nosniff"; more_set_headers "X-Robots-Tag: noindex";'
+EOF
+                pat="FAIL \\[k8s/production\\] INV-15: Ingress 'jtoye-sse-ingress' serves X-Robots-Tag noindex in k8s/production"
+                ;;
+            inv16-folded-image)
+                python3 - "$st/arm/k8s/components/cluster-ca-truststore/core-java-truststore-patch.yaml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+old_img = "image: ghcr.io/bralabee/jtoye-core-java:2.1.0"
+old_cp = 'cp "$JAVA_HOME/lib/security/cacerts" /truststore/cacerts\n'
+assert old_img in s and old_cp in s, "truststore patch anchors not found"
+s = s.replace(
+    old_img,
+    'image: "ghcr.io/bralabee/jtoye-core-java-long-prefix-0123456789-abcdefghijklmnop /jtoye-core-java:2.1.0"',
+    1,
+)
+s = s.replace(old_cp, "", 1)
+p.write_text(s)
+PY
+                pat="FAIL \\[k8s/staging\\] INV-16: Deployment core-java init container 'truststore-builder' builds a CA-only truststore"
+                ;;
+            loc3-folded-connstr)
+                python3 - "$st/arm/k8s/local/configmap-patch.yaml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+old = '  backup.blob.connection-string: "UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://host.minikube.internal"'
+new = '  backup.blob.connection-string: "UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://host.minikube.internal ;AccountKey=evil"'
+assert old in s, "backup.blob.connection-string not found"
+p.write_text(s.replace(old, new, 1))
+PY
+                pat='FAIL \[k8s/local\] LOC-3: app-config'
+                ;;
+            loc2-block-spoof)
+                python3 - "$st/arm/k8s/base/core-java-deployment.yaml" "$st/arm/k8s/local/scale-patch.yaml" <<'PY'
+import pathlib, sys
+b = pathlib.Path(sys.argv[1])
+bs = b.read_text()
+old_b = "  minAvailable: 2  # Always keep 2 pods running during disruptions\n"
+assert old_b in bs, "base PDB minAvailable not found"
+b.write_text(bs.replace(old_b, "", 1))
+
+p = pathlib.Path(sys.argv[2])
+s = p.read_text()
+old = """kind: PodDisruptionBudget
+metadata:
+  name: core-java-pdb
+spec:
+  minAvailable: 1"""
+new = """kind: PodDisruptionBudget
+metadata:
+  name: core-java-pdb
+  annotations:
+    spoof: "|\\n  minAvailable: 1"
+spec: {}"""
+assert old in s, "core-java-pdb scale patch not found"
+p.write_text(s.replace(old, new, 1))
+PY
+                pat='FAIL \[k8s/local\] LOC-2: expected 3 PodDisruptionBudget'
+                ;;
+        esac
+        if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+        if (( rc == 1 )) && grep -qE "$pat" <<<"$out"; then
+            echo "HOLE [$arm] rc=$rc — caught: $(grep -m1 -E "$pat" <<<"$out")"
+        else
+            echo "HOLE [$arm] UNCAUGHT: expected rc=1 matching /$pat/, got rc=$rc" >&2
+            awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+            bad=$((bad + 1))
+        fi
+    done
+
+    selftest_stage "$st/pristine" "$st/arm"
+    if out=$(bash "$st/arm/k8s/scripts/check-render-invariants.sh" 2>&1); then rc=0; else rc=$?; fi
+    echo "CLEAN rc=$rc"
+    if (( rc != 0 )); then
+        awk '/FAIL|PARSE ERROR/ && c < 5 { print; c++ }' <<<"$out" >&2
+        bad=$((bad + 1))
+    fi
+    (( bad == 0 ))
+}
+
+if [[ "${1:-}" == "--selftest-fold" ]]; then
+    fold_selftest; exit $?
+fi
+
+# ---------------------------------------------------------------------------
 # INV-4 exclusion list.
 #
 # Matched on the EXACT repo-relative target path, never as a substring, so a
@@ -2649,45 +2850,48 @@ END {
 }
 '
 TRUSTSTORE_PATH="/truststore/cacerts"
-# INIT_ITEMS_AWK: one record per initContainers item of Deployment <want>, read
-# from the RAW render because the builder's command is a block scalar:
+# init_items_from_paths <paths.tsv> <want_deployment> <truststore_path>:
+# one record per initContainers item of Deployment <want>, read from the PyYAML
+# path table (render_paths.py emits block scalar bodies after their indicator):
 #   INIT <TAB> <index> <TAB> <name> <TAB> <image> <TAB> <cp line> <TAB> <import line>
-# <cp line> is the 1-based line (within the item) of the first uncommented line
-# that starts `cp`, names lib/security/cacerts and the trust store path; <import
-# line> the first uncommented line running keytool ... -importcert. 0 = none.
-# kustomize emits a sequence at its parent key's indent, so items are `      - `
-# under `      initContainers:` (Deployment spec.template.spec) and an item's own
-# keys sit at 8 spaces; sorted keys put `name:` after `command:`, which is why the
-# whole item is collected before it is judged.
-INIT_ITEMS_AWK='
-function probe(l) {
-    if (l ~ /^        name: /)  { nm2 = l; sub(/^        name:[[:space:]]*/, "", nm2) }
-    if (l ~ /^        image: /) { img = l; sub(/^        image:[[:space:]]*/, "", img) }
-}
-function flush_item(   n, i, L, t, cpl, impl) {
-    if (!open) return
-    n = split(text, L, "\n"); cpl = 0; impl = 0
-    for (i = 1; i <= n; i++) {
-        t = L[i]; sub(/^[[:space:]]+/, "", t); sub(/^-[[:space:]]+/, "", t)
-        if (t ~ /^#/) continue
-        if (!cpl && t ~ /^cp[[:space:]]/ && index(t, "lib/security/cacerts") && index(t, tsp)) cpl = i
-        if (!impl && t ~ /(^|[[:space:]])keytool[[:space:]].*-importcert/) impl = i
+init_items_from_paths() {
+    awk -F'\t' -v want="$2" -v tsp="$3" '
+    function unq(v) {
+        if (v ~ /^[|>][-+0-9]*".*"$/ || v ~ /^".*"$/) {
+            sub(/^[|>][-+0-9]*"/, "", v); sub(/^"/, "", v); sub(/"$/, "", v)
+            gsub(/[\\][\\]/, "\001", v); gsub(/[\\]"/, "\"", v); gsub(/[\\]n/, "\n", v); gsub(/[\\]r/, "", v); gsub(/[\\]t/, "\t", v); gsub(/\001/, "\\", v)
+        } else if (v ~ /^\047.*\047$/) {
+            v = substr(v, 2, length(v) - 2); gsub(/\047\047/, "\047", v)
+        }
+        return v
     }
-    printf "INIT\t%d\t%s\t%s\t%d\t%d\n", idx, nm2, img, cpl, impl
-    open = 0; text = ""; nm2 = ""; img = ""
+    $1 == "Deployment" && $2 == want && $3 ~ /^spec::template::spec::initContainers::\[[0-9]+\]::/ {
+        rest = $3; sub(/^spec::template::spec::initContainers::\[/, "", rest)
+        idx = rest; sub(/\].*$/, "", idx)
+        tail = rest; sub(/^[0-9]+\]::/, "", tail)
+        if (!(idx in seen)) { seen[idx] = 1; order[++ni] = idx }
+        if (tail == "name") nm[idx] = unq($4)
+        else if (tail == "image") img[idx] = unq($4)
+        else if (tail ~ /^(command|args)::\[[0-9]+\]$/) {
+            v = unq($4)
+            cmd[idx] = cmd[idx] (cmd[idx] == "" ? "" : "\n") v
+        }
+    }
+    END {
+        for (k = 1; k <= ni; k++) {
+            idx = order[k]
+            n = split(cmd[idx], L, "\n"); cpl = 0; impl = 0
+            for (i = 1; i <= n; i++) {
+                t = L[i]
+                sub(/^[[:space:]]+/, "", t)
+                if (t ~ /^#/) continue
+                if (!cpl && t ~ /^cp[[:space:]]/ && index(t, "lib/security/cacerts") && index(t, tsp)) cpl = i
+                if (!impl && t ~ /(^|[[:space:]])keytool[[:space:]].*-importcert/) impl = i
+            }
+            printf "INIT\t%s\t%s\t%s\t%d\t%d\n", idx, nm[idx], img[idx], cpl, impl
+        }
+    }' "$1"
 }
-/^---[[:space:]]*$/ { flush_item(); insec = 0; kind = ""; dn = ""; top = ""; next }
-/^kind: / { kind = $2 }
-/^[^ ]/ { top = $0; sub(/:.*$/, "", top) }
-top == "metadata" && /^  name: / { dn = $0; sub(/^  name:[[:space:]]*/, "", dn) }
-kind == "Deployment" && dn == want && /^      initContainers:[[:space:]]*$/ { insec = 1; idx = -1; next }
-insec {
-    if ($0 ~ /^      - /) { flush_item(); idx++; open = 1; text = substr($0, 9) "\n"; probe("        " substr($0, 9)); next }
-    if ($0 ~ /^        / || $0 ~ /^[[:space:]]*$/) { if (open) { text = text $0 "\n"; probe($0) }; next }
-    flush_item(); insec = 0
-}
-END { flush_item() }
-'
 
 # INV-17 (Phase 29 plan 29-26, #859 / T-29-95): the customer realm's
 # anti-impersonation gate. jtoye.security.customer-jwt.require-verified-email
@@ -2889,181 +3093,125 @@ FAILED=0
 # ===========================================================================
 # Per-target render assertions: INV-1, INV-2, INV-3, INV-4, INV-6
 # ===========================================================================
+# All rendered YAML structure and scalar values are read through render_paths.py
+# (PyYAML). None of the helpers below parse raw YAML text; each projects the
+# path table (<kind> TAB <metadata.name> TAB <path> TAB <value>) into the record
+# layout its invariant consumes (#992).
 
-# --- awk: emit one record per rendered EnvVar (name, line, has value, has
-#     valueFrom). An EnvVar is a `- name: X` sequence item whose IMMEDIATE
-#     children include `value` or `valueFrom` — restricting to immediate
-#     children is what stops a container's `- name: <container>` block from
-#     swallowing its own nested env items.
-ENVVAR_AWK='
-function endenv() {
-    if (in_item && (has_value || has_valuefrom))
-        printf "%s\t%d\t%d\t%d\n", name, start_line, has_value, has_valuefrom
-    in_item = 0; has_value = 0; has_valuefrom = 0
-}
-{
-    if ($0 ~ /^[[:space:]]*$/) { endenv(); next }
-    ind = match($0, /[^ ]/) - 1
-    if (in_item && ind <= item_ind) endenv()
-    if ($0 ~ /^[[:space:]]*- name: /) {
-        endenv()
-        in_item = 1; item_ind = ind; start_line = NR
-        name = $0
-        sub(/^[[:space:]]*- name:[[:space:]]*/, "", name)
-        next
+# envvars_from_paths <paths.tsv> — emit `<name>\t<kind/name:path>\t<has_value>\t<has_valueFrom>`
+# for every rendered EnvVar item.
+envvars_from_paths() {
+    awk -F'\t' '
+    function unq(v) {
+        if (v ~ /^[|>][-+0-9]*".*"$/) { sub(/^[|>][-+0-9]*"/, "", v); sub(/"$/, "", v) }
+        else if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2)
+        return v
     }
-    if (in_item && ind == item_ind + 2) {
-        key = $0
-        sub(/^[[:space:]]*/, "", key)
-        sub(/:.*$/, "", key)
-        if (key == "value")     has_value = 1
-        if (key == "valueFrom") has_valuefrom = 1
+    $3 ~ /::env::\[[0-9]+\]::(name|value|valueFrom)($|::)/ {
+        p = $3
+        sub(/::(name|value|valueFrom)($|::.*)/, "", p)
+        tail = substr($3, length(p) + 3)
+        sub(/::.*$/, "", tail)
+        id = $1 "/" $2 ":" p
+        if (!(id in seen)) { seen[id] = 1; order[++n] = id }
+        if (tail == "name") nm[id] = unq($4)
+        else if (tail == "value") hv[id] = 1
+        else if (tail == "valueFrom") hvf[id] = 1
     }
-}
-END { endenv() }
-'
-
-# --- awk: walk every `matchLabels:` block by indentation and emit
-#     "<start-line>\t<key-count>\t<is-kube-dns>\t<comma-joined keys>".
-#     Block-scoped BY CONSTRUCTION: a forward grep -A scan cannot work because
-#     kustomize sorts map keys alphabetically, so injected labels sort BEFORE
-#     `k8s-app` and land ABOVE the anchor line.
-MATCHLABELS_AWK='
-function endblock() {
-    if (in_block)
-        printf "%d\t%d\t%d\t%s\n", start_line, nkeys, is_dns, keys
-    in_block = 0; nkeys = 0; is_dns = 0; keys = ""
-}
-{
-    if ($0 ~ /^[[:space:]]*$/) { endblock(); next }
-    ind = match($0, /[^ ]/) - 1
-    if (in_block && ind <= block_ind) endblock()
-    if ($0 ~ /^[[:space:]]*matchLabels:[[:space:]]*$/) {
-        endblock()
-        in_block = 1; block_ind = ind; start_line = NR; nkeys = 0; is_dns = 0; keys = ""
-        next
-    }
-    if (in_block) {
-        key = $0; sub(/^[[:space:]]*/, "", key); sub(/:.*$/, "", key)
-        val = $0; sub(/^[^:]*:[[:space:]]*/, "", val)
-        nkeys++
-        keys = keys (keys == "" ? "" : ",") key
-        if (key == "k8s-app" && val == "kube-dns") is_dns = 1
-    }
-}
-END { endblock() }
-'
-
-# --- awk: per-DOCUMENT walk emitting the Service inventory and every Ingress
-#     backend reference of a render.
-#
-#     DOCUMENT-SCOPED BY CONSTRUCTION, and that is load-bearing: `kubectl
-#     kustomize` emits each document's top-level keys ALPHABETICALLY, so a
-#     ConfigMap's `data:` block precedes its own `kind:` line. A "track the last
-#     kind seen" scan therefore attributes those lines to the PREVIOUS document
-#     (a real mis-attribution hit in plan 26-02). This buffers each
-#     `---`-delimited document and resolves kind + metadata.name from the buffer.
-#
-#     Output records:
-#       SVC <TAB> <service name>
-#       ING <TAB> <ingress name> <TAB> <host|(default)> <TAB> <backend service name>
-INGRESS_BACKEND_AWK='
-function meta_name(  i, v) {
-    # The FIRST 2-space `name:` in a document is metadata.name: in a rendered
-    # document only the metadata block has a key at that indent, while backend
-    # service names sit far deeper.
-    for (i = 1; i <= n; i++)
-        if (buf[i] ~ /^  name: /) { v = buf[i]; sub(/^  name:[[:space:]]*/, "", v); return v }
-    return "(unnamed)"
-}
-function flush(  i, kind, nm, host, insvc, b, l) {
-    if (n == 0) return
-    kind = ""
-    for (i = 1; i <= n; i++)
-        if (buf[i] ~ /^kind: /) { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
-
-    if (kind == "Service") {
-        printf "SVC\t%s\n", meta_name()
-    } else if (kind == "Ingress") {
-        nm = meta_name(); host = "(default)"; insvc = 0
+    END {
         for (i = 1; i <= n; i++) {
-            l = buf[i]
-            if (l ~ /^[[:space:]]*- host: /) {
-                host = l; sub(/^[[:space:]]*- host:[[:space:]]*/, "", host)
-            }
-            if (l ~ /^[[:space:]]*service:[[:space:]]*$/) { insvc = 1; continue }
-            if (insvc && l ~ /^[[:space:]]*name:[[:space:]]*/) {
-                b = l; sub(/^[[:space:]]*name:[[:space:]]*/, "", b)
-                printf "ING\t%s\t%s\t%s\n", nm, host, b
-                insvc = 0
-            }
+            id = order[i]
+            if (nm[id] != "")
+                printf "%s\t%s\t%d\t%d\n", nm[id], id, hv[id] + 0, hvf[id] + 0
         }
-    }
-    n = 0; delete buf
+    }' "$1"
 }
-/^---[[:space:]]*$/ { flush(); next }
-{ buf[++n] = $0 }
-END { flush() }
-'
 
-# --- awk: per-DOCUMENT walk emitting the scale-relevant top-level spec scalars.
-#     Output: <kind> <TAB> <name> <TAB> <field> <TAB> <value>
-SCALE_AWK='
-function meta_name(  i, v) {
-    for (i = 1; i <= n; i++)
-        if (buf[i] ~ /^  name: /) { v = buf[i]; sub(/^  name:[[:space:]]*/, "", v); return v }
-    return "(unnamed)"
-}
-function flush(  i, kind, nm, l, f, v) {
-    if (n == 0) return
-    kind = ""
-    for (i = 1; i <= n; i++)
-        if (buf[i] ~ /^kind: /) { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
-    nm = meta_name()
-    for (i = 1; i <= n; i++) {
-        l = buf[i]
-        if (l ~ /^  (replicas|minReplicas|maxReplicas|minAvailable): /) {
-            f = l; sub(/^  /, "", f); sub(/:.*$/, "", f)
-            v = l; sub(/^  [a-zA-Z]+:[[:space:]]*/, "", v)
-            printf "%s\t%s\t%s\t%s\n", kind, nm, f, v
-        }
+# matchlabels_from_paths <paths.tsv> — emit `<kind/name:path>\t<key-count>\t<is-kube-dns>\t<comma-joined keys>`
+# for every `matchLabels` map in the path table.
+matchlabels_from_paths() {
+    awk -F'\t' '
+    function unq(v) {
+        if (v ~ /^[|>][-+0-9]*".*"$/) { sub(/^[|>][-+0-9]*"/, "", v); sub(/"$/, "", v) }
+        else if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2)
+        return v
     }
-    n = 0; delete buf
-}
-/^---[[:space:]]*$/ { flush(); next }
-{ buf[++n] = $0 }
-END { flush() }
-'
-
-# --- awk: emit `<key>\t<value>` for every entry in the rendered app-config
-#     ConfigMap `data:` map. Document-scoped for the same alphabetical-key reason.
-CONFIGMAP_DATA_AWK='
-function flush(  i, kind, nm, indata, l, k, v) {
-    if (n == 0) return
-    kind = ""; nm = ""
-    for (i = 1; i <= n; i++) {
-        if (buf[i] ~ /^kind: /)   { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
-        if (buf[i] ~ /^  name: /) { if (nm == "") { nm = buf[i]; sub(/^  name:[[:space:]]*/, "", nm) } }
+    $3 ~ /(^|::)matchLabels::[^:]+$/ {
+        p = $3
+        sub(/::[^:]+$/, "", p)
+        k = substr($3, length(p) + 3)
+        id = $1 "/" $2 ":" p
+        if (!(id in seen)) { seen[id] = 1; order[++n] = id }
+        nkeys[id]++
+        keys[id] = keys[id] (keys[id] == "" ? "" : ",") k
+        if (k == "k8s-app" && unq($4) == "kube-dns") is_dns[id] = 1
     }
-    if (kind == "ConfigMap" && nm == "app-config") {
-        indata = 0
+    END {
         for (i = 1; i <= n; i++) {
-            l = buf[i]
-            if (l ~ /^data:[[:space:]]*$/) { indata = 1; continue }
-            if (indata && l ~ /^[^ ]/)     { indata = 0; continue }
-            if (indata && l ~ /^  [^ ].*:/) {
-                k = l; sub(/^  /, "", k); sub(/:.*$/, "", k)
-                v = l; sub(/^  [^:]*:[[:space:]]*/, "", v)
-                printf "%s\t%s\n", k, v
-            }
+            id = order[i]
+            printf "%s\t%d\t%d\t%s\n", id, nkeys[id], is_dns[id] + 0, keys[id]
         }
-    }
-    n = 0; delete buf
+    }' "$1"
 }
-/^---[[:space:]]*$/ { flush(); next }
-{ buf[++n] = $0 }
-END { flush() }
-'
+
+# ingress_backends_from_paths <paths.tsv> — emit the Service inventory and every
+# Ingress backend reference from the PyYAML path table:
+#   SVC <TAB> <service name>
+#   ING <TAB> <ingress name> <TAB> <host|(default)> <TAB> <backend service name>
+ingress_backends_from_paths() {
+    awk -F'\t' '
+    function unq(v) {
+        if (v ~ /^[|>][-+0-9]*".*"$/) { sub(/^[|>][-+0-9]*"/, "", v); sub(/"$/, "", v) }
+        else if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2)
+        return v
+    }
+    $1 == "Service" && $3 == "kind" {
+        printf "SVC\t%s\n", $2
+    }
+    $1 == "Ingress" && $3 ~ /^spec::rules::\[[0-9]+\]::host$/ {
+        r = $3; sub(/::host$/, "", r)
+        hosts[$2 SUBSEP r] = unq($4)
+    }
+    $1 == "Ingress" && $3 ~ /^spec::rules::\[[0-9]+\]::http::paths::\[[0-9]+\]::backend::service::name$/ {
+        r = $3; sub(/::http::paths::.*$/, "", r)
+        nb++
+        ing[nb] = $2; rule[nb] = r; svc[nb] = unq($4)
+    }
+    $1 == "Ingress" && $3 == "spec::defaultBackend::service::name" {
+        nb++
+        ing[nb] = $2; rule[nb] = ""; svc[nb] = unq($4)
+    }
+    END {
+        for (i = 1; i <= nb; i++) {
+            h = (rule[i] != "" && ((ing[i] SUBSEP rule[i]) in hosts)) ? hosts[ing[i] SUBSEP rule[i]] : "(default)"
+            printf "ING\t%s\t%s\t%s\n", ing[i], h, svc[i]
+        }
+    }' "$1"
+}
+
+# scale_from_paths <paths.tsv> — emit `<kind>\t<name>\t<field>\t<value>` for the
+# top-level spec scale scalars from the PyYAML path table.
+scale_from_paths() {
+    awk -F'\t' '
+    function unq(v) {
+        if (v ~ /^[|>][-+0-9]*".*"$/) { sub(/^[|>][-+0-9]*"/, "", v); sub(/"$/, "", v) }
+        else if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2)
+        return v
+    }
+    $3 ~ /^spec::(replicas|minReplicas|maxReplicas|minAvailable)$/ {
+        f = $3; sub(/^spec::/, "", f)
+        printf "%s\t%s\t%s\t%s\n", $1, $2, f, unq($4)
+    }' "$1"
+}
+
+# cfg_from_paths <paths.tsv> — emit `<key>\t<raw_value>` for every entry in the
+# rendered app-config ConfigMap `data:` map from the PyYAML path table.
+cfg_from_paths() {
+    awk -F'\t' '$1 == "ConfigMap" && $2 == "app-config" && index($3, "data::") == 1 {
+        k = $3; sub(/^data::/, "", k)
+        if (index(k, "::") == 0) printf "%s\t%s\n", k, $4
+    }' "$1"
+}
 
 # --- render_paths.py: walk every document into full key PATHS (INV-7/8/9/10/11/16/18/20, LOC-7).
 #     Output: <kind> <TAB> <metadata.name> <TAB> <path> <TAB> <value>
@@ -3233,12 +3381,22 @@ END {
 '
 
 # cfg_get <cfg.tsv> <key> — the app-config value with ONE pair of surrounding
-# quotes removed, or "(ABSENT)". kustomize quotes values that would otherwise
-# parse as non-strings ("false", "", "5432") and leaves URLs bare, so comparing
-# raw tokens would make an assertion depend on YAML quoting rather than content.
+# quotes (or block-scalar indicator + quotes) removed and control escapes decoded,
+# or "(ABSENT)". kustomize quotes values that would otherwise parse as non-strings
+# ("false", "", "5432") and leaves URLs bare, so comparing raw tokens would make
+# an assertion depend on YAML quoting rather than content.
 cfg_get() {
     awk -F'\t' -v k="$2" '
-        $1 == k { v = $2; if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2); print v; found = 1; exit }
+        $1 == k {
+            v = $2
+            if (v ~ /^[|>][-+0-9]*".*"$/ || v ~ /^".*"$/) {
+                sub(/^[|>][-+0-9]*"/, "", v); sub(/^"/, "", v); sub(/"$/, "", v)
+                gsub(/[\\][\\]/, "\001", v); gsub(/[\\]"/, "\"", v); gsub(/[\\]n/, "\n", v); gsub(/[\\]r/, "\r", v); gsub(/[\\]t/, "\t", v); gsub(/\001/, "\\", v)
+            } else if (v ~ /^\047.*\047$/) {
+                v = substr(v, 2, length(v) - 2); gsub(/\047\047/, "\047", v)
+            }
+            print v; found = 1; exit
+        }
         END { if (!found) print "(ABSENT)" }' "$1"
 }
 
@@ -3281,7 +3439,7 @@ unq() {
 # A configMapKeyRef is followed into ANY ConfigMap in the render.
 # ---------------------------------------------------------------------------
 INV20_MENTION_RE='--proxy(-headers|-trusted-addresses)?([^a-z0-9_-]|$)|kc[._]proxy([-_](headers|trusted[-_]addresses))?([^a-z0-9_-]|$)'
-INV20_BLOCK_RE='^[|>][-+0-9]*$'
+INV20_BLOCK_RE='^[|>][-+0-9]*(".*"|$)'
 INV20_JAVAOPTS_NORM_RE='^(javaopts[a-z0-9]*|javatooloptions|jdkjavaoptions)$'
 
 inv20_fail() { echo "  FAIL [$rel] INV-20: $who20 $1" >&2; inv20_bad=1; }
@@ -3314,7 +3472,7 @@ inv20_word() {
 inv20_token() {
     local t o="$2"
     if [[ "$1" =~ $INV20_BLOCK_RE ]]; then
-        inv20_fail "has a block scalar ('$1') in its $o, whose text this check cannot read, so a proxy option inside it would go unseen. Write each argument as its own plain list item."
+        inv20_fail "has a block scalar ('${1%%\"*}') in its $o, whose text this check cannot read, so a proxy option inside it would go unseen. Write each argument as its own plain list item."
         I20_UNJ=1; return
     fi
     unq "$1"; t="$UNQ"
@@ -3470,74 +3628,60 @@ fi
 # ---------------------------------------------------------------------------
 # INV-15 inputs (29-08). Read once, before any target is judged.
 #
-# INGRESS_AWK: one record per fact about each rendered Ingress, every one keyed
-# by the Ingress name, read from the YAML structure (top-level key, then the
-# child section) rather than by a forward scan, because kustomize sorts keys.
+# ingress_from_paths <paths.tsv>: one record per fact about each rendered Ingress,
+# every one keyed by the Ingress name, read from the PyYAML path table:
 #   ING  <name>
 #   ANN  <name> <annotation key>
-#   SNIP <name> <one trimmed line of the configuration-snippet block scalar>
+#   SNIP <name> <one trimmed line of the configuration-snippet scalar>
 #   TLS  <name> <entry index> <host count> <secretName or "">
-# Continuation lines of a wrapped plain scalar (cors-allow-methods wraps) are
-# deeper than a key line and are skipped; a block scalar is consumed whole.
 # ---------------------------------------------------------------------------
-INGRESS_AWK='
-function tls_end() { if (ti >= 0 && tls_open) printf "TLS\t%s\t%d\t%d\t%s\n", nm, ti, nh, sec; tls_open = 0 }
-function flush(  i, l, k, v, top, sect, blk, bkey, s, sub2) {
-    if (n == 0) return
-    kind = ""; nm = ""; top = ""
-    for (i = 1; i <= n; i++) {
-        l = buf[i]
-        if (l ~ /^kind: /) { kind = l; sub(/^kind:[[:space:]]*/, "", kind) }
-        if (l ~ /^[^ ]/) { top = l; sub(/:.*$/, "", top); continue }
-        if (top == "metadata" && l ~ /^  name: /) { nm = l; sub(/^  name:[[:space:]]*/, "", nm) }
+ingress_from_paths() {
+    awk -F'\t' '
+    function unq(v) {
+        if (v ~ /^[|>][-+0-9]*".*"$/ || v ~ /^".*"$/) {
+            sub(/^[|>][-+0-9]*"/, "", v); sub(/^"/, "", v); sub(/"$/, "", v)
+            gsub(/[\\][\\]/, "\001", v); gsub(/[\\]"/, "\"", v); gsub(/[\\]n/, "\n", v); gsub(/[\\]r/, "", v); gsub(/[\\]t/, "\t", v); gsub(/\001/, "\\", v)
+        } else if (v ~ /^\047.*\047$/) {
+            v = substr(v, 2, length(v) - 2); gsub(/\047\047/, "\047", v)
+        }
+        return v
     }
-    if (kind != "Ingress") { n = 0; delete buf; return }
-    printf "ING\t%s\n", nm
-    top = ""; sect = ""; blk = 0; ti = -1; tls_open = 0; sub2 = ""
-    for (i = 1; i <= n; i++) {
-        l = buf[i]
-        if (blk) {
-            if (l ~ /^      / || l ~ /^[[:space:]]*$/) {
-                if (bkey ~ /\/configuration-snippet$/) {
-                    s = l; sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s)
-                    if (s != "") printf "SNIP\t%s\t%s\n", nm, s
+    $1 == "Ingress" {
+        nm = $2
+        if (!(nm in iseen)) { iseen[nm] = 1; iorder[++ni] = nm }
+        if ($3 ~ /^metadata::annotations::/) {
+            k = $3; sub(/^metadata::annotations::/, "", k)
+            if (index(k, "::") == 0) {
+                printf "ANN\t%s\t%s\n", nm, k
+                if (k ~ /\/configuration-snippet$/) {
+                    v = unq($4)
+                    n = split(v, L, "\n")
+                    for (i = 1; i <= n; i++) {
+                        s = L[i]
+                        sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s)
+                        if (s != "") printf "SNIP\t%s\t%s\n", nm, s
+                    }
                 }
-                continue
             }
-            blk = 0
         }
-        if (l ~ /^[^ ]/) { tls_end(); top = l; sub(/:.*$/, "", top); sect = ""; continue }
-        if (l ~ /^  [^ -]/) {
-            tls_end(); sect = l; sub(/^  /, "", sect); sub(/:.*$/, "", sect); continue
-        }
-        if (top == "metadata" && sect == "annotations" && l ~ /^    [^ ]/) {
-            k = l; sub(/^    /, "", k)
-            v = k
-            if (match(k, /:( |$)/)) { k = substr(k, 1, RSTART - 1); v = substr(v, RSTART + 1); sub(/^ /, "", v) }
-            printf "ANN\t%s\t%s\n", nm, k
-            if (v ~ /^[|>][-+]?$/) { blk = 1; bkey = k }
-            continue
-        }
-        if (top == "spec" && sect == "tls") {
-            if (l ~ /^  - /) {
-                tls_end(); ti++; tls_open = 1; nh = 0; sec = ""; sub2 = ""
-                s = l; sub(/^  - /, "", s)
-                if (s ~ /^hosts:/) sub2 = "hosts"
-                else if (s ~ /^secretName:/) { sec = s; sub(/^secretName:[[:space:]]*/, "", sec) }
-                continue
-            }
-            if (l ~ /^    hosts:/) { sub2 = "hosts"; continue }
-            if (l ~ /^    secretName:/) { sec = l; sub(/^    secretName:[[:space:]]*/, "", sec); sub2 = ""; continue }
-            if (sub2 == "hosts" && l ~ /^    - /) { nh++; continue }
+        if ($3 ~ /^spec::tls::\[[0-9]+\]::/) {
+            rest = $3; sub(/^spec::tls::\[/, "", rest)
+            ti = rest; sub(/\].*$/, "", ti)
+            tail = rest; sub(/^[0-9]+\]::/, "", tail)
+            tk = nm SUBSEP ti
+            if (!(tk in tseen)) { tseen[tk] = 1; torder[++nt] = tk; ting[tk] = nm; tidx[tk] = ti }
+            if (tail == "secretName") tsec[tk] = unq($4)
+            else if (tail ~ /^hosts::\[[0-9]+\]$/) thosts[tk]++
         }
     }
-    tls_end()
-    n = 0; delete buf
+    END {
+        for (i = 1; i <= ni; i++) printf "ING\t%s\n", iorder[i]
+        for (i = 1; i <= nt; i++) {
+            tk = torder[i]
+            printf "TLS\t%s\t%s\t%d\t%s\n", ting[tk], tidx[tk], thosts[tk] + 0, tsec[tk]
+        }
+    }' "$1"
 }
-/^---[[:space:]]*$/ { flush(); next }
-{ buf[++n] = $0 }
-END { flush() }
-'
 # The Traefik provider's documented annotation suffixes (plan 29-03). Missing,
 # or nothing but its header, is a PARSE ERROR: an empty list would fail every
 # annotation, and a gate that reads no list is blind.
@@ -3556,8 +3700,9 @@ if ! kubectl kustomize "$K8S_DIR/base" > "$TMP/inv15_base.yaml" 2> "$TMP/stderr"
     cat "$TMP/stderr" >&2
     parse_fail "INV-15: the k8s/base render failed, so the base security-header lines cannot be read."
 fi
-awk "$INGRESS_AWK" "$TMP/inv15_base.yaml" | awk -F'\t' '$1 == "SNIP" && $2 == "jtoye-ingress" && $3 ~ /^more_set_headers / { print $3 }' > "$TMP/inv15_base_headers"
-(( $(wc -l < "$TMP/inv15_base_headers") > 0 )) || parse_fail "INV-15: found 0 more_set_headers lines in base jtoye-ingress's configuration-snippet. Either base lost its security headers or INGRESS_AWK is blind; the staging drift check would pass on anything. Fix it, do not delete the invariant."
+render_paths "$TMP/inv15_base.yaml" > "$TMP/inv15_base_paths.tsv" || parse_fail "INV-15: path walker could not read $TMP/inv15_base.yaml safely."
+ingress_from_paths "$TMP/inv15_base_paths.tsv" | awk -F'\t' '$1 == "SNIP" && $2 == "jtoye-ingress" && $3 ~ /^more_set_headers / { print $3 }' > "$TMP/inv15_base_headers"
+(( $(wc -l < "$TMP/inv15_base_headers") > 0 )) || parse_fail "INV-15: found 0 more_set_headers lines in base jtoye-ingress's configuration-snippet. Either base lost its security headers or ingress_from_paths is blind; the staging drift check would pass on anything. Fix it, do not delete the invariant."
 
 is_noindex_target() {
     local rel="$1" t
@@ -3692,8 +3837,15 @@ for dir in "${TARGETS[@]}"; do
         exit 2
     fi
 
+    # Walk the render into full PyYAML paths ONCE per target (#992); every
+    # invariant below reads from this path table.
+    render_paths "$render" > "$TMP/paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
+    (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] the path walker emitted 0 records for the render — it is blind, and every path-based assertion below would pass vacuously. Fix render_paths.py, do not delete the invariants."
+    cp "$TMP/paths.tsv" "$TMP/inv7_paths.tsv"
+    cp "$TMP/paths.tsv" "$TMP/inv11_paths.tsv"
+
     # ---------------- INV-2 ----------------
-    awk "$ENVVAR_AWK" "$render" > "$TMP/envvars.tsv"
+    envvars_from_paths "$TMP/paths.tsv" > "$TMP/envvars.tsv"
     envvar_count=$(wc -l < "$TMP/envvars.tsv")
     (( envvar_count > 0 )) || parse_fail "[$rel] INV-2 found 0 EnvVar items in the render — the EnvVar shape changed and this assertion is now blind. Fix the parser, do not delete the invariant."
     if ! grep -qP '^DB_PORT\t' "$TMP/envvars.tsv"; then
@@ -3751,7 +3903,7 @@ for dir in "${TARGETS[@]}"; do
     fi
 
     # ---------------- INV-3 ----------------
-    awk "$MATCHLABELS_AWK" "$render" > "$TMP/matchlabels.tsv"
+    matchlabels_from_paths "$TMP/paths.tsv" > "$TMP/matchlabels.tsv"
     dns_blocks=$(awk -F'\t' '$3 == 1' "$TMP/matchlabels.tsv" | wc -l)
     (( dns_blocks > 0 )) || parse_fail "[$rel] INV-3 found 0 matchLabels blocks selecting 'k8s-app: kube-dns' — either the DNS egress rules vanished or the parser is blind. Either way this assertion would pass vacuously; investigate, do not delete the invariant."
 
@@ -3808,7 +3960,7 @@ for dir in "${TARGETS[@]}"; do
     # Every Ingress backend Service name must resolve to a Service in this SAME
     # render. Runs for EVERY target (base, local, staging, production): the
     # defect it pins was a production defect, not a local-overlay one.
-    awk "$INGRESS_BACKEND_AWK" "$render" > "$TMP/ingress.tsv"
+    ingress_backends_from_paths "$TMP/paths.tsv" > "$TMP/ingress.tsv"
     awk -F'\t' '$1 == "SVC" { print $2 }' "$TMP/ingress.tsv" | sort -u > "$TMP/services.txt"
     awk -F'\t' '$1 == "ING"' "$TMP/ingress.tsv" > "$TMP/backends.tsv"
 
@@ -3859,13 +4011,14 @@ for dir in "${TARGETS[@]}"; do
     # ---------------- INV-7 ----------------
     # Issue #271 + Phase 29: the rendered NetworkPolicy set equals the declared
     # allow-list exactly, in every target (see the INV-7 header).
-    awk "$CONFIGMAP_DATA_AWK" "$render" > "$TMP/cfg.tsv"
+    cfg_from_paths "$TMP/paths.tsv" > "$TMP/cfg.tsv"
     (( $(wc -l < "$TMP/cfg.tsv") > 0 )) || parse_fail "[$rel] INV-7 found no app-config data keys in the render — the ConfigMap shape changed and the port comparison has no source. Fix the parser, do not delete the invariant."
     # The rendered ConfigMap value keeps its quotes — kustomize QUOTES a
     # numeric-looking string so it stays a string (`db.port: "5432"`), which is
     # correct for a ConfigMap and is exactly why the NetworkPolicy side has to be
     # checked for the opposite property (bare digits, i.e. a real integer port).
-    db_port=$(awk -F'\t' '$1 == "db.port" { v = $2; gsub(/^["\047]|["\047]$/, "", v); print v; found = 1 } END { if (!found) print "" }' "$TMP/cfg.tsv")
+    db_port=$(cfg_get "$TMP/cfg.tsv" "db.port")
+    [[ "$db_port" != "(ABSENT)" ]] || db_port=""
     if [[ -z "$db_port" ]]; then
         parse_fail "[$rel] INV-7 found no app-config key 'db.port' in the render. That key is the single RENDER-TIME declaration of the Postgres port and the source of the kustomize replacement that drives both NetworkPolicies (issue #271). Without it the comparison has nothing to compare against and would pass vacuously — restore the key, do not delete the invariant."
     fi
@@ -3880,7 +4033,6 @@ for dir in "${TARGETS[@]}"; do
         parse_fail "[$rel] INV-7: app-config 'ingress.controller-namespace' is '$ingress_ns', which is not a valid namespace name, so no namespaceSelector carrying it can match anything."
     fi
 
-    render_paths "$render" > "$TMP/inv7_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     awk "$NETPOL_TUPLES_AWK" "$TMP/inv7_paths.tsv" > "$TMP/netpol.tsv"
     mapfile -t inv7_pols < <(awk -F'\t' '$1 == "DOC" && $2 == "NetworkPolicy" { print $3 }' "$TMP/netpol.tsv" | LC_ALL=C sort -u)
     (( ${#inv7_pols[@]} > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships seven; zero means the parser is blind and every rule assertion below would pass vacuously. Fix the parser, do not delete the invariant."
@@ -3998,8 +4150,6 @@ for dir in "${TARGETS[@]}"; do
     # or exact PATH, never by a forward scan (kustomize sorts map keys).
     if is_wi_target "$rel"; then
         WI_TARGET_SEEN["$rel"]=1
-        render_paths "$render" > "$TMP/paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
-        (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] INV-8..INV-10: the path walker emitted 0 records for the render — it is blind, and every storage assertion below would pass vacuously. Fix render_paths.py, do not delete the invariants."
         if [[ "$(path_get "$TMP/paths.tsv" Deployment core-java 'spec::template::spec::containers::[0]::name')" == "(ABSENT)" ]]; then
             parse_fail "[$rel] INV-8..INV-10: no Deployment core-java container found by path — either the render lost core-java (a far bigger problem) or the path walker is blind. Fix it, do not delete the invariants."
         fi
@@ -4185,7 +4335,6 @@ for dir in "${TARGETS[@]}"; do
         inv11_bad=1
     fi
     # (b) + (c) per core-java container, by exact path.
-    render_paths "$render" > "$TMP/inv11_paths.tsv" || parse_fail "path walker could not read $render safely (see the PARSE ERROR above): refusing to judge a truncated value."
     inv11_ctrs=$(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" \
         '$3 ~ /::(containers|initContainers)::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
         "$TMP/inv11_paths.tsv")
@@ -4389,11 +4538,11 @@ for dir in "${TARGETS[@]}"; do
     # Traefik provider documents.
     if is_wi_target "$rel"; then
         inv15_bad=0
-        awk "$INGRESS_AWK" "$render" > "$TMP/ing.tsv"
+        ingress_from_paths "$TMP/paths.tsv" > "$TMP/ing.tsv"
         mapfile -t inv15_ings < <(awk -F'\t' '$1 == "ING" { print $2 }' "$TMP/ing.tsv")
-        (( ${#inv15_ings[@]} > 0 )) || parse_fail "[$rel] INV-15 found 0 Ingress documents in the render. A deployed target always renders jtoye-ingress, so either the render lost it or INGRESS_AWK is blind; every TLS and annotation check would pass vacuously. Fix it, do not delete the invariant."
+        (( ${#inv15_ings[@]} > 0 )) || parse_fail "[$rel] INV-15 found 0 Ingress documents in the render. A deployed target always renders jtoye-ingress, so either the render lost it or ingress_from_paths is blind; every TLS and annotation check would pass vacuously. Fix it, do not delete the invariant."
         inv15_tls=$(awk -F'\t' '$1 == "TLS"' "$TMP/ing.tsv" | wc -l)
-        (( inv15_tls > 0 )) || parse_fail "[$rel] INV-15 found 0 tls entries across ${#inv15_ings[@]} Ingress(es). Deployed Ingresses terminate TLS, so INGRESS_AWK is blind (or every tls block vanished). Fix it, do not delete the invariant."
+        (( inv15_tls > 0 )) || parse_fail "[$rel] INV-15 found 0 tls entries across ${#inv15_ings[@]} Ingress(es). Deployed Ingresses terminate TLS, so ingress_from_paths is blind (or every tls block vanished). Fix it, do not delete the invariant."
         # (a) exactly one host per entry, and a Secret named
         while IFS=$'\t' read -r _ ing idx nh sec; do
             if [[ "$nh" != "1" ]]; then
@@ -4451,7 +4600,7 @@ for dir in "${TARGETS[@]}"; do
                 inv15_bad=1
             fi
         done < <(awk -F'\t' '$1 == "ANN"' "$TMP/ing.tsv")
-        (( inv15_ann > 0 )) || parse_fail "[$rel] INV-15 found 0 nginx.ingress.kubernetes.io annotations. jtoye-ingress always carries them, so INGRESS_AWK is blind. Fix it, do not delete the invariant."
+        (( inv15_ann > 0 )) || parse_fail "[$rel] INV-15 found 0 nginx.ingress.kubernetes.io annotations. jtoye-ingress always carries them, so ingress_from_paths is blind. Fix it, do not delete the invariant."
         if (( inv15_bad != 0 )); then
             FAILED=1
             inv15_msg="FAIL"
@@ -4471,7 +4620,7 @@ for dir in "${TARGETS[@]}"; do
     inv16_required=0
     for t in "${TRUSTSTORE_TARGETS[@]}"; do [[ "$rel" == "$t" ]] && inv16_required=1; done
     (( inv16_required )) && TRUSTSTORE_TARGET_SEEN["$rel"]=1
-    awk -v want=core-java -v tsp="$TRUSTSTORE_PATH" "$INIT_ITEMS_AWK" "$render" > "$TMP/inv16_init.tsv"
+    init_items_from_paths "$TMP/paths.tsv" core-java "$TRUSTSTORE_PATH" > "$TMP/inv16_init.tsv"
     inv16_builders=$(awk -F'\t' '$1 == "INIT" && $3 == "truststore-builder"' "$TMP/inv16_init.tsv" | wc -l)
     # Env of every container (main and init) of Deployment core-java, by exact path:
     # <container path> TAB <env item path> TAB <env name>
@@ -5200,12 +5349,17 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
       'keycloak.admin.base-url'
     )
 
-    awk "$CONFIGMAP_DATA_AWK" "$LOCAL_RENDER" > "$TMP/loc_cfg.tsv"
+    render_paths "$LOCAL_RENDER" > "$TMP/loc_paths.tsv" || parse_fail "path walker could not read $LOCAL_RENDER safely (see the PARSE ERROR above): refusing to judge a truncated value."
+    (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-1/LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix render_paths.py, do not delete the invariant."
+    render_paths "$BASE_RENDER" > "$TMP/base_paths.tsv" || parse_fail "path walker could not read $BASE_RENDER safely (see the PARSE ERROR above): refusing to judge a truncated value."
+    (( $(wc -l < "$TMP/base_paths.tsv") > 0 )) || parse_fail "LOC-2: the path walker emitted 0 records for the k8s/base render — it is blind. Fix render_paths.py, do not delete the invariant."
+
+    cfg_from_paths "$TMP/loc_paths.tsv" > "$TMP/loc_cfg.tsv"
     cfg_keys=$(wc -l < "$TMP/loc_cfg.tsv")
     (( cfg_keys > 0 )) || parse_fail "LOC-1 found no app-config data keys in the k8s/local render — the ConfigMap shape changed and every LOC-1/LOC-3 assertion would pass vacuously. Fix the parser, do not delete the invariant."
 
     cfg_value() {
-        awk -F'\t' -v k="$1" '$1 == k { print $2; found=1 } END { if (!found) print "(ABSENT)" }' "$TMP/loc_cfg.tsv"
+        cfg_get "$TMP/loc_cfg.tsv" "$1"
     }
 
     # ---------------- LOC-1 ----------------
@@ -5238,8 +5392,8 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
     fi
 
     # ---------------- LOC-2 ----------------
-    awk "$SCALE_AWK" "$LOCAL_RENDER" > "$TMP/loc_scale.tsv"
-    awk "$SCALE_AWK" "$BASE_RENDER"  > "$TMP/base_scale.tsv"
+    scale_from_paths "$TMP/loc_paths.tsv"  > "$TMP/loc_scale.tsv"
+    scale_from_paths "$TMP/base_paths.tsv" > "$TMP/base_scale.tsv"
 
     dep_replicas=$(awk -F'\t' '$1=="Deployment" && $3=="replicas"'                 "$TMP/loc_scale.tsv" | wc -l)
     dep_ones=$(awk -F'\t'     '$1=="Deployment" && $3=="replicas" && $4=="1"'      "$TMP/loc_scale.tsv" | wc -l)
@@ -5411,8 +5565,6 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
     # ---------------- LOC-7 ----------------
     # Phase 36: the emulator path is WIRED, not just configured. The connection
     # strings exist only in k8s/local, so an unwired key is a silently ignored value.
-    render_paths "$LOCAL_RENDER" > "$TMP/loc_paths.tsv" || parse_fail "path walker could not read $LOCAL_RENDER safely (see the PARSE ERROR above): refusing to judge a truncated value."
-    (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix render_paths.py, do not delete the invariant."
     loc7_bad=0
     loc_mode="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.auth-mode)"
     loc_create="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.create-containers)"

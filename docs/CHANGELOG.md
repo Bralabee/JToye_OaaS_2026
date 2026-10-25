@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Four Finished Antigravity Fixes Land Together: Shop-Scoped Order Picker, Per-Location ROI, One Session Read per Page Load, PyYAML Render Readers (#1045) — 2026-10-25
+
+These four branches were finished in Antigravity worktrees and never pushed. They are bundled into one PR.
+
+- **Frontend (issues #1016, #1011, #963).**
+  - The create-order product picker lists only the selected shop's products.
+  - The ROI card multiplies the subscription by the number of locations.
+  - Concurrent `getSession()` calls share one request and reuse a valid session for 2 s, so a dashboard load no longer makes 20+ `/api/auth/session` calls.
+- **Ops gates (issues #1007, #1008, #1009).**
+  - `check-gate-enforcement.sh` and `check-infra-exposure.sh` are hardened.
+  - Alert rules match between `infra/` and `k8s/`.
+  - The gitleaks allowlist is updated.
+  - CI runs the alert-liveness and infra-exposure selftests and a static check that every compose port is bound to loopback or exempt.
+- **Render invariants (issue #992).** Every rendered-YAML reader goes through PyYAML (`render_paths.py`), so a folded or multi-line scalar can no longer slip past an awk line reader. `--selftest-fold` plants nine such evasions in CI, and each one must fail.
+- **Synthesis governance gate.** `scripts/check-synthesis-gate.sh` and `qa/synthesis-ledger.json` record the milestone synthesis review, and CI runs the gate's selftest. Its session hooks are not wired: that waits for an owner ruling under the guard freeze.
+
 ### Stripe Calls Are Bounded in Time, and Only a Provider Outage Opens a Stripe Breaker (#1044) — 2026-10-25
 
 Issue #108, the Stripe half. No Stripe timeout was set, so stripe-java's defaults applied (30 s connect, 80 s read): one hung call could hold a checkout request thread for minutes. Refunds and the webhook's charge lookup sat outside every breaker, and the one `stripe` breaker counted every exception, so rejected refunds could open it and 503 every card checkout (PR #1018 review finding 1).

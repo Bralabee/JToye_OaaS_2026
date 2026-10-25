@@ -939,10 +939,13 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 61 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 62 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-25 (PR #1045, the Antigravity bundle): 61 -> 62. check-synthesis-gate is rc 1 in
+# this bare loop until the active milestone's synthesis review (/qa-council + persona test)
+# is recorded in qa/synthesis-ledger.json with --record; CI runs only its --selftest.
 # 2026-10-22 (fix/957-card-checkout-payment-step, Phase 30 PR 1): 59 -> 61.
 # Both take arguments, so in this bare loop each prints rc=2 (usage error, measured
 # 2026-10-22): run them as CI does. check-stripe-pk-var refuses a deploy whose publishable

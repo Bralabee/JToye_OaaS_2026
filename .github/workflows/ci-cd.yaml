@@ -1007,6 +1007,14 @@ jobs:
       - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
 
+      # Issue #992: every rendered-YAML reader in check-render-invariants.sh now reads
+      # through render_paths.py (PyYAML) instead of line-oriented awk. Nine planted
+      # folded/multi-line scalar evasions (INV-1, INV-2, INV-3, INV-6, INV-12, INV-15,
+      # INV-16, LOC-3, LOC-2) that previously passed the raw-YAML awk readers must each
+      # fail (rc 1) on the PyYAML path table.
+      - name: Prove render invariants catch folded/multi-line YAML scalar evasions (--selftest-fold)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-fold
+
       # The live half of #1025 runs in staging-edge-probe after a deploy; its judge is proven
       # here on every change against synthetic preflight responses (today's staging list must
       # fail, the fixed list pass, a wildcard / missing header / wrong origin / non-2xx status /
@@ -1172,6 +1180,9 @@ jobs:
       # http, and a DNS mismatch (VOID) each FAIL alone; stubbed curl/dig/kubectl/az.
       - name: Prove the Grafana edge probe's arms can fail (#968 --selftest)
         run: bash scripts/staging-grafana-edge.sh --selftest
+
+      - name: Prove the synthesis governance gate can fail (--selftest)
+        run: bash scripts/check-synthesis-gate.sh --selftest
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |
@@ -1851,6 +1862,15 @@ jobs:
 
       - name: Prove the served-chunk publishable-key check can fail (#957 --selftest)
         run: bash scripts/check-frontend-stripe-key-baked.sh --selftest
+
+      - name: Prove the alert-liveness gate's runtime and sink arms (--selftest #1007)
+        run: bash scripts/check-alert-liveness.sh --selftest
+
+      - name: Prove the infra-exposure gate's compose parse and bind arms (--selftest #1009)
+        run: bash scripts/check-infra-exposure.sh --selftest
+
+      - name: Assert every declared compose port is loopback-bound or exempt (--static #1009)
+        run: bash scripts/check-infra-exposure.sh --static
 
       - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
         run: bash scripts/check-gate-enforcement.sh --selftest
