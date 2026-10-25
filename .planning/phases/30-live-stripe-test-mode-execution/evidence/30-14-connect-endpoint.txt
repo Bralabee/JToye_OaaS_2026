@@ -119,3 +119,22 @@ Task 3's acceptance.
   PR #1046  https://github.com/Bralabee/JToye_OaaS_2026/pull/1046  (base main, head feat/30-connect-webhook)
   CHANGELOG entry (#1046): check-changelog-contract.sh rc=0. HANDOFF names #1046 OPEN: check-handoff-contract.sh rc=0
   (35 state claims, up from 34).
+
+### CI on #1046 at 85b7bd1d: Operational Contracts red, two line-anchored references moved by this branch
+
+  CI run 40245736618 failed "Assert every doc citation resolves to what it claims". Locally,
+  check-doc-citations.sh gave rc=1:
+    FAIL C-3 .planning/codebase/INTEGRATIONS.md:14 cites application.yml:978-984
+  30-12 inserted 11 lines at application.yml:831, so the `stripe` breaker block moved from 978-984 to 989-995.
+  Fix: 978-984 -> 989-995. check-doc-citations.sh rc=0 (46 verified, 7 uncheckable).
+  Same shift, not caught by the gate: STACK.md:84 cited application.yml:962-1014 with "`resilience4j:` at 962". That
+  was already wrong on main (the key is at 975 there). It is now 986-1056 with "at 986" (block end 1056, next key
+  `cleanup:` at 1058).
+  The failed step hid the later steps, so every later step of that job was run locally (41 commands). One more was red:
+    check-no-object-store-residue.sh rc=1: VIOLATION .env.example:575 [R-1] (the stale-Secret delete line), with
+    1 stale allowlist entry. 30-13 added 9 lines above it in .env.example, so the line-anchored allowlist entry
+    .env.example:566 pointed at the wrong line.
+  Fix: allowlist 566 -> 575, justification unchanged. Residue gate rc=0, its selftest rc=0. The other 40 commands
+  were rc 0.
+  The CI jobs Lint, K8s Kustomize Secret Guard, OpenAPI Breaking-Change Gate, Run Tests and Security Scan passed at
+  85b7bd1d.
