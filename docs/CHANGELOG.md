@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### brotli-libs 1.2.1-r0 in the core-java Runtime Image (#1040) — 2026-10-25
+
+main's pipeline went red at the core-java Trivy image gate on 0f559fc2, c519e689 and f3381c9a with no change to the tree: a new advisory, CVE-2026-111497 (an out-of-bounds write in the Brotli decoder), entered Trivy's database against `brotli-libs` 1.2.0-r1 in the `eclipse-temurin:25-jre-alpine` base. It is fixed in 1.2.1-r0. The image gate failing skipped Build and Push, Deploy to Staging and the edge probe, so staging stayed on the last green commit.
+
+- **Same remedy as libexpat, p11-kit and OpenSSL.** `brotli-libs` joins the named `apk upgrade` in `core-java/Dockerfile`, never a blanket upgrade, with a dated comment entry.
+- **Measured with the gate's own scanner.** A throwaway image of the same base and RUN line, scanned by `aquasec/trivy:0.70.0 image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1`, exits 1 with main's line (1.2.0-r1, exactly this CVE), 0 with this one (1.2.1-r0), and 1 again with main's line.
+
 ### mcp-server body-parser 2.4.0 and zod 4.6.7, with Their CVE Floors in the Manifest (#1039) — 2026-10-24
 
 The required Security Scan went red on every PR on 2026-10-24 without any change to the tree: two new advisories entered Trivy's database against `mcp-server/package-lock.json`. body-parser 2.3.0 (GHSA-27r3-jxmh-p828, a DoS via trailing bytes after a compressed request body) is fixed in 2.4.0, and zod 4.4.3 (a DoS via unbounded array validation) is fixed in 4.6.6. This is the daily-DB time-bomb again, as with `fast-uri` (#726).
