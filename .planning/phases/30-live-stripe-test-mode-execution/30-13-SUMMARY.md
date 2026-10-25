@@ -174,3 +174,8 @@ None. A scan of the lines added outside `.planning/` (160 lines) for TODO, FIXME
 ## Threat Flags
 
 None beyond the plan's register. T-30-51 is mitigated: the class is whsec_ and the preflight covers the object. T-30-52 is carried to 30-14. T-30-53: `check-no-plaintext-secrets.sh` passes and the goldens hold names only. T-30-54: the grant is derived from the SPC in 30-14.
+
+## Self-Check: PASSED
+
+- All 4 evidence files and this SUMMARY exist under the phase directory. `secretproviderclasses.yaml` names `stripe-credentials--connect-webhook-secret` 3 times (object, secretObjects entry, comment), and `staging-secrets-common.sh` names it once (the class row).
+- Commits 292543da, 55d56a7f, b551dea6, f067ecbc and 90a49dc1 are all ancestors of HEAD (`git merge-base --is-ancestor`, each FOUND).
