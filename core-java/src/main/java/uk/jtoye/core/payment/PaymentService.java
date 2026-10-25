@@ -4,6 +4,7 @@ import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
+import com.stripe.model.MetadataStore;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
 import com.stripe.net.RequestOptions;
@@ -24,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.order.Order;
@@ -225,6 +225,7 @@ public class PaymentService {
                 .putMetadata("order_id", order.getId().toString())
                 .putMetadata("order_number", order.getOrderNumber())
                 .putMetadata("tenant_id", order.getTenantId().toString())
+                .putMetadata("environment", stripeProperties.effectiveEnvironmentTag())
                 .setAutomaticPaymentMethods(
                         PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
                                 .setEnabled(true)
@@ -342,6 +343,7 @@ public class PaymentService {
                 .putMetadata("order_number", order.getOrderNumber())
                 .putMetadata("tenant_id", order.getTenantId().toString())
                 .putMetadata("payment_stage", "BALANCE")
+                .putMetadata("environment", stripeProperties.effectiveEnvironmentTag())
                 .setAutomaticPaymentMethods(
                         PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
                                 .setEnabled(true)
@@ -579,6 +581,18 @@ public class PaymentService {
      * the caller's transaction.
      */
     private void dispatch(Event event) {
+        // PAY-03 (plan 30-12), Pitfall 5: every endpoint on a Stripe account receives every event
+        // on it, so a laptop or CI stack sharing the account sends staging events for objects
+        // staging never created. Acknowledge those (200 to Stripe) BEFORE the dedup row and before
+        // any side effect, so they leave no trace and cannot fail and retry. Objects with no
+        // environment metadata (created before the tag existed) are processed as before.
+        String foreignEnvironment = foreignEnvironmentOf(event);
+        if (foreignEnvironment != null) {
+            log.warn("event=stripe_event_foreign_environment id={} type={} env={}",
+                    event.getId(), event.getType(), foreignEnvironment);
+            return;
+        }
+
         // AUDIT-W0-03 — TOCTOU-safe idempotency guard.
         //
         // Single SQL statement; INSERT ... ON CONFLICT DO NOTHING is atomic in
@@ -645,6 +659,28 @@ public class PaymentService {
         }
     }
 
+    /**
+     * The {@code environment} metadata of the event's data object when it names an environment
+     * other than this runtime's {@link StripeProperties#effectiveEnvironmentTag()}; {@code null}
+     * when it names this one, names none, or the object cannot be read.
+     */
+    private String foreignEnvironmentOf(Event event) {
+        if (event.getDataObjectDeserializer() == null) {
+            return null;
+        }
+        Optional<com.stripe.model.StripeObject> object = event.getDataObjectDeserializer().getObject();
+        if (object == null || object.isEmpty() || !(object.get() instanceof MetadataStore<?> store)) {
+            return null;
+        }
+        java.util.Map<String, String> metadata = store.getMetadata();
+        String environment = metadata != null ? metadata.get("environment") : null;
+        if (environment == null || environment.isBlank()
+                || environment.equals(stripeProperties.effectiveEnvironmentTag())) {
+            return null;
+        }
+        return environment;
+    }
+
     private void handlePaymentIntentSucceeded(Event event) {
         PaymentIntent intent = (PaymentIntent) event.getDataObjectDeserializer()
                 .getObject().orElseThrow(() -> new IllegalStateException("Failed to deserialize PaymentIntent"));
@@ -662,8 +698,14 @@ public class PaymentService {
         }
 
         try {
-            Order order = orderRepository.findById(java.util.UUID.fromString(orderId))
-                    .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+            // Pitfall 5: an intent for an order this database does not hold (deleted, or created by
+            // an untagged stack sharing the account) is acknowledged, never a 5xx retry storm.
+            Optional<Order> found = orderRepository.findById(java.util.UUID.fromString(orderId));
+            if (found.isEmpty()) {
+                log.warn("event=stripe_event_unknown_order id={} order={}", event.getId(), orderId);
+                return;
+            }
+            Order order = found.get();
 
             // Build payment method description
             String paymentMethodDesc = "Card";
@@ -807,8 +849,14 @@ public class PaymentService {
         }
 
         try {
-            Order order = orderRepository.findById(java.util.UUID.fromString(orderId))
-                    .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+            // Pitfall 5: an intent for an order this database does not hold (deleted, or created by
+            // an untagged stack sharing the account) is acknowledged, never a 5xx retry storm.
+            Optional<Order> found = orderRepository.findById(java.util.UUID.fromString(orderId));
+            if (found.isEmpty()) {
+                log.warn("event=stripe_event_unknown_order id={} order={}", event.getId(), orderId);
+                return;
+            }
+            Order order = found.get();
 
             boolean isBalanceStage = "BALANCE".equals(intent.getMetadata().get("payment_stage"));
             if (!isBalanceStage) {

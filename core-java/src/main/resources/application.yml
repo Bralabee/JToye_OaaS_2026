@@ -832,6 +832,13 @@ stripe:
   # posts to /api/v1/public/payments/webhook/connect. Each endpoint has its own secret; blank means
   # the Connect route refuses every request.
   connect-webhook-secret: ${STRIPE_CONNECT_WEBHOOK_SECRET:}
+  # PAY-03 (plan 30-12): this runtime's environment name, written as metadata `environment` on every
+  # PaymentIntent, Refund and Express Account, and compared with every verified webhook event: an event
+  # from another environment sharing the Stripe account is acknowledged and ignored. EMPTY fallback on
+  # purpose (the CLIENT_IP_HMAC_KEY / DSAR_ENCRYPTION_KEY precedent): blank means NOT DECLARED and is
+  # written as "unset", which plan 30-17's OTP guard refuses. Declared per runtime by plan 30-13.
+  # Never default it to a real environment name.
+  environment-tag: ${STRIPE_ENVIRONMENT_TAG:}
   # issue #102 — PaymentIntent currency, formerly a hardcoded "gbp" literal.
   currency: ${STRIPE_CURRENCY:gbp}
   # issue #102 (ADR-0001 Decision 2) — platform application fee on MARKETPLACE

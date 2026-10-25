@@ -584,4 +584,17 @@ class RefundServiceTest {
         assertThat(metadataOf(params)).containsEntry("environment", "unset");
         assertThat(metadataOf(params)).containsKeys("refund_id", "tenant_id", "order_id");
     }
+
+    @Test
+    @DisplayName("PAY-03: a refund carries metadata environment = stripe.environment-tag of the wired StripeProperties")
+    void createRefund_declaredEnvironment_writesTheTag() throws StripeException {
+        StripeProperties props = new StripeProperties();
+        props.setEnvironmentTag("staging");
+        RefundService tagged = new RefundService(refundRepository, orderRepository, stateMachineService,
+                refundMapper, stripeRefundClient, refundEventPublisher, stripeConnectService, props);
+
+        RefundCreateParams params = createRefundAndCaptureParams(tagged);
+
+        assertThat(metadataOf(params)).containsEntry("environment", "staging");
+    }
 }
