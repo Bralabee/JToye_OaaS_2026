@@ -386,6 +386,11 @@ function OrdersPageInner() {
   const selectedShopId = watch("shopId")
   const selectedFulfilment = watch("fulfilmentType")
 
+  // #1016: offer only the selected shop's available products, and nothing until a shop is chosen.
+  const pickerProducts = selectedShopId
+    ? products.filter((p) => p.shopId === selectedShopId && p.available !== false)
+    : []
+
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
 
@@ -1036,7 +1041,21 @@ function OrdersPageInner() {
               {/* D-08: pinned to the selected shop outside the All-shops context. */}
               <Select
                 value={selectedShopId}
-                onValueChange={(value) => setValue("shopId", value)}
+                onValueChange={(value) => {
+                  setValue("shopId", value)
+                  const allowedIds = new Set(
+                    products
+                      .filter((p) => p.shopId === value && p.available !== false)
+                      .map((p) => p.id)
+                  )
+                  setOrderItems((prev) =>
+                    prev.map((it) =>
+                      it.productId && !allowedIds.has(it.productId)
+                        ? { ...it, productId: "" }
+                        : it
+                    )
+                  )
+                }}
                 disabled={!!contextShopId}
               >
                 <SelectTrigger aria-label="Shop for this order">
@@ -1234,7 +1253,7 @@ function OrdersPageInner() {
                         <SelectValue placeholder="Select product" />
                       </SelectTrigger>
                       <SelectContent>
-                        {products.map((product) => (
+                        {pickerProducts.map((product) => (
                           <SelectItem key={product.id} value={product.id}>
                             {product.title} - £{((product.pricePennies || 0) / 100).toFixed(2)}
                           </SelectItem>

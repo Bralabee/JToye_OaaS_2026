@@ -130,7 +130,7 @@ beforeEach(() => {
 })
 
 describe("api-client interceptors", () => {
-  it("injects Authorization and X-Tenant-Id headers on requests", async () => {
+  it("injects Authorization and X-Tenant-Id headers on requests and coalesces a 20-request page-load burst into one getSession() call (#963)", async () => {
     queueAdapter([{ kind: "resolve", data: { ok: true } }])
     await apiClient.get("/anything")
     expect(adapter).toHaveBeenCalledTimes(1)
@@ -146,6 +146,12 @@ describe("api-client interceptors", () => {
         : sentConfig.headers["X-Tenant-Id"]
     expect(authHeader).toBe("Bearer token-1")
     expect(tenantHeader).toBe("tenant-42")
+
+    // #963: a dashboard reload fires ~20 API requests within 1.5s; they must share
+    // the in-flight / burst-cached session rather than firing 20 GET /api/auth/session calls.
+    await Promise.all(Array.from({ length: 20 }, (_, i) => apiClient.get(`/burst-${i}`)))
+    expect(adapter).toHaveBeenCalledTimes(21)
+    expect(getSession).toHaveBeenCalledTimes(1)
   })
 
   it("retries a 500 response exactly twice then rejects", async () => {
@@ -193,10 +199,9 @@ describe("api-client interceptors", () => {
     ]
     const results = await Promise.all(calls)
     expect(results).toEqual(["rejected", "rejected", "rejected"])
-    // getSession is called by (a) the request interceptor for each call, plus
-    // (b) the 401 refresh path. The 401 refresh path must be deduped — so the
-    // total count is 3 (request interceptor) + 1 (single refresh) = 4.
-    expect((getSession as jest.Mock).mock.calls.length).toBe(4)
+    // getSession is called by (a) the request interceptor once for the concurrent
+    // burst (#963), plus (b) the 401 refresh path once for the stampede = 2.
+    expect((getSession as jest.Mock).mock.calls.length).toBe(2)
   })
 })
 

@@ -43,7 +43,7 @@ beforeEach(() => {
     }
     if (url.startsWith("/api/v1/products")) {
       return Promise.resolve({
-        data: { content: [{ id: PRODUCT_ID, title: "Jollof Rice", pricePennies: 899 }] },
+        data: { content: [{ id: PRODUCT_ID, title: "Jollof Rice", pricePennies: 899, shopId: SHOP_ID, available: true }] },
       })
     }
     return Promise.resolve({ data: { content: [] } })
