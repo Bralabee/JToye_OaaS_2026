@@ -26,6 +26,25 @@
 #   scripts/graph.sh status                                     stamp + freshness, never builds
 #   scripts/graph.sh rebuild [--accept-shrink]                  force a rebuild now; --accept-shrink
 #                                                                takes a graph under half the old size
+#   scripts/graph.sh view [--out DIR] [--node-limit N]          write browsable HTML views (below)
+#
+#   PREREQUISITES: graphify (PyPI `graphifyy`) with its [sql] extra, at the version pinned as
+#   GRAPH_VALIDATED_VERSION in scripts/graph.conf. Install exactly that version:
+#     uv tool install "graphifyy[sql]==<GRAPH_VALIDATED_VERSION>"
+#   (`scripts/graph.sh status` without graphify prints this command with the version filled in.)
+#   An unpinned install takes the newest release, which these arms have not validated (0.9.94
+#   made every class name ambiguous, measured 2026-10-22). Also git, flock, sha1sum, tar and
+#   realpath (GNU coreutils).
+#   Missing or wrong pieces exit 5 and print the repair command.
+#
+#   VIEWING THE GRAPH: `view` writes three self-contained pages from the fresh graph:
+#     graph.html     interactive network; above --node-limit nodes (default 1500) it shows
+#                    communities, not single classes (this repo is ~21k nodes)
+#     tree.html      collapsible file/class tree: the quickest way to find one class
+#     callflow.html  Mermaid call-flow diagrams by section
+#   Default folder: <graph cache>/view/, outside the repository, replaced on each run (its
+#   `stamp` file names the commit). The folder is printed; open with: xdg-open <folder>/graph.html
+#   Each page loads one library from a CDN (vis-network, d3, mermaid), so viewing needs internet.
 #
 #   The first line of every answer is the stamp: commit, graphify version, node count, and how
 #   many uncommitted files the graph does NOT contain (it is built from HEAD).
@@ -33,6 +52,8 @@
 #   a fuzzy match to the wrong node is visible.
 #   For security-relevant impact, also run `git grep -w <Symbol>`: the graph has no
 #   cross-service edges (HTTP boundaries are invisible) and links by identifier only.
+#   A path is a link by name (an import, a reference), not proof of a runtime call: the
+#   shortest undirected path between two classes often runs through a test file.
 #
 # EXIT CODES
 #
@@ -42,7 +63,8 @@
 #
 # INVARIANTS
 #
-#   - Nothing is written inside the repository. The graph lives under GRAPH_CACHE_ROOT.
+#   - Nothing is written inside the repository. The graph lives under GRAPH_CACHE_ROOT, and
+#     `view --out` refuses a folder inside the checkout.
 #   - No LLM or network spend: only `update` and read-only queries run, with every *_API_KEY,
 #     *_AUTH_TOKEN, AWS_*, OLLAMA_* and AZURE_OPENAI_* variable removed from graphify's
 #     environment. `label`, `cluster-only`, `query`, `watch`, `hook`, `install`, `add`, `clone`,
@@ -51,7 +73,9 @@
 #   - At most one rebuild per (HEAD, graphify version, pathspec); concurrent callers share it.
 #
 # Configuration: scripts/graph.conf (every key overridable from the environment).
-# Plan and measurements: ~/GRAPH-TOOLING-PLAN.md (approved 2026-09-23), Step 2.
+# Acceptance arms: scripts/test-graph-sh.sh (needs graphify; not run in CI).
+# Plan and measurements: the owner's ~/GRAPH-TOOLING-PLAN.md (approved 2026-09-23), Step 2. It
+# is not in this repository; the decisions it holds are restated in the comments here.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,7 +92,7 @@ usage() {
 
 # ── argument validation first: a refused command must execute nothing ──
 cmd=${1:-}; [ $# -gt 0 ] && shift
-depth=1; top_n=10; undirected=0; args=(); accept_shrink=0
+depth=1; top_n=10; undirected=0; args=(); accept_shrink=0; view_out=''; node_limit=1500
 case "$cmd" in
   affected|explain)
     [ $# -ge 1 ] || usage
@@ -96,19 +120,26 @@ case "$cmd" in
     accept_shrink=0
     if [ "${1:-}" = --accept-shrink ]; then accept_shrink=1; shift; fi
     [ $# -eq 0 ] || die 2 "rebuild takes only --accept-shrink" ;;
+  view)
+    while [ $# -gt 0 ]; do
+      if [ "$1" = --out ] && [ $# -ge 2 ]; then view_out=$2; shift 2
+      elif [ "$1" = --node-limit ] && [ $# -ge 2 ]; then node_limit=$2; shift 2
+      else die 2 "unexpected argument for view: $1"; fi
+    done
+    [[ "$node_limit" =~ ^[1-9][0-9]{0,5}$ ]] || die 2 "--node-limit must be 1..999999 (got: $node_limit)" ;;
   ''|-h|--help|help) usage ;;
-  *) die 2 "refused: '$cmd' is not an allowed subcommand (affected, explain, path, god-nodes, status, rebuild)" ;;
+  *) die 2 "refused: '$cmd' is not an allowed subcommand (affected, explain, path, god-nodes, status, rebuild, view)" ;;
 esac
 
 # ── preconditions (exit 5) ──
-for t in git flock sha1sum tar; do command -v "$t" >/dev/null 2>&1 || die 5 "$t not found"; done
+for t in git flock sha1sum tar realpath; do command -v "$t" >/dev/null 2>&1 || die 5 "$t not found"; done
 top=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null) || die 5 "not inside a git checkout: $SCRIPT_DIR"
-gbin=$(type -P "$GRAPHIFY_BIN") || die 5 "graphify not found ($GRAPHIFY_BIN); install: uv tool install \"graphifyy[sql]\""
+gbin=$(type -P "$GRAPHIFY_BIN") || die 5 "graphify not found ($GRAPHIFY_BIN); install: uv tool install \"graphifyy[sql]==$GRAPH_VALIDATED_VERSION\""
 # The [sql] extra: without tree-sitter-sql every .sql file yields zero nodes behind a warning at
 # exit 0. Probed in the venv the binary actually runs from, located through its shebang.
 venv=$(head -1 "$(readlink -f "$gbin")" | sed -n 's|^#!\(.*\)/bin/python[0-9.]*$|\1|p')
 [ -n "$venv" ] && compgen -G "$venv/lib/python*/site-packages/tree_sitter_sql/__init__.py" >/dev/null \
-  || die 5 "graphify's [sql] extra is missing (or its venv could not be located from $gbin); repair: uv tool install \"graphifyy[sql]\""
+  || die 5 "graphify's [sql] extra is missing (or its venv could not be located from $gbin); repair: uv tool install --force \"graphifyy[sql]==$GRAPH_VALIDATED_VERSION\""
 # graphify's environment: no credentials, so nothing can reach a paid backend. Built before
 # the first graphify call, so even `--version` never sees them.
 scrub=()
@@ -254,4 +285,30 @@ case "$cmd" in
     if [ "$undirected" -eq 1 ]; then run_query path "$a" "$b" --undirected; else run_query path "$a" "$b"; fi ;;
   god-nodes)
     run_query god-nodes --top "$top_n" ;;
+  view)
+    # One folder, overwritten on each view, so views never accumulate in the cache (each is
+    # ~2.7 MB of pages; the graph copy they are made from is ~50 MB and is removed after).
+    out=${view_out:-$key/view}
+    # Resolved and checked BEFORE anything is created: a refused folder must not be left behind.
+    out=$(realpath -m -- "$out") || die 2 "cannot resolve the view folder: $out"
+    case "$out/" in "$(realpath -m -- "$top")/"*) die 2 "refused: --out $out is inside the checkout; views are written outside the repository" ;; esac
+    mkdir -p "$out" || die 6 "cannot create the view folder: $out"
+    rm -f "$out/graph.html" "$out/tree.html" "$out/callflow.html"
+    # Every export reads a COPY: `export html` writes next to the graph it reads, and the cached
+    # graph directory is swapped on the next rebuild. The exports run from the view folder, so
+    # nothing they default to can land in the repository.
+    cp "$graph" "$out/graph.json" || die 6 "could not copy the graph into $out"
+    ( cd "$out" && gfy export html --graph "$out/graph.json" --node-limit "$node_limit" ) > "$out/view.log" 2>&1 \
+      || die 6 "graphify export html failed; log: $out/view.log"
+    ( cd "$out" && gfy tree --graph "$out/graph.json" --output "$out/tree.html" ) >> "$out/view.log" 2>&1 \
+      || die 6 "graphify tree failed; log: $out/view.log"
+    ( cd "$out" && gfy export callflow-html --graph "$out/graph.json" --output "$out/callflow.html" ) >> "$out/view.log" 2>&1 \
+      || die 6 "graphify export callflow-html failed; log: $out/view.log"
+    for f in graph.html tree.html callflow.html; do
+      [ -s "$out/$f" ] || die 6 "$f was not written (or is empty); log: $out/view.log"
+      printf 'view: %s\n' "$out/$f"
+    done
+    rm -f "$out/graph.json"   # the pages embed their data; they never read it back
+    cp "$key/stamp" "$out/stamp" 2>/dev/null || true
+    echo "open: xdg-open $out/graph.html" ;;
 esac

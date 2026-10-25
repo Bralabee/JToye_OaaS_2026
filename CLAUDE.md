@@ -408,6 +408,10 @@ The falsifiability dimension differs from the surface-scoped ones in an importan
 
 Accessibility stays contracted via the existing UI standards + QA Phase 4. When a dimension genuinely doesn't apply to a phase, record it **N/A** — never silently drop it (same rule as the QA council roster).
 
+## Code-structure questions
+
+Text search answers "where does this string appear", never "who calls this" or "what breaks if this changes". For those, use `scripts/graph.sh affected|explain|path|god-nodes` (`--help` for usage): it answers from a graph rebuilt from the current commit, prints which commit and which file it resolved, and exits non-zero rather than guess when a name is unknown or ambiguous. For security-relevant impact, also run `git grep -w <Symbol>`: the graph cannot see calls across services. The same pointer is in `AGENTS.md`, which Claude Code does not load.
+
 <!-- GSD:profile-start -->
 ## Developer Profile
 
