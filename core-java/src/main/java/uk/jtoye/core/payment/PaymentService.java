@@ -365,6 +365,26 @@ public class PaymentService {
         return retrieveClientSecret(paymentIntentId);
     }
 
+    /** Stripe's status string for a cancelled PaymentIntent (issue #1038). */
+    public static final String STRIPE_STATUS_CANCELED = "canceled";
+
+    /** Idempotency key for the stale-draft cancel of {@code paymentIntentId} (issue #1038). */
+    static String abandonedIntentCancelIdempotencyKey(String paymentIntentId) {
+        return "abandoned-draft-cancel-" + paymentIntentId;
+    }
+
+    /** RED scaffold for issue #1038; replaced by the fix commit. */
+    public Optional<String> directChargeAccountFor(Order order) {
+        throw new UnsupportedOperationException("issue #1038: not implemented yet");
+    }
+
+    /** RED scaffold for issue #1038; replaced by the fix commit. */
+    @CircuitBreaker(name = "stripe")
+    public String cancelAbandonedPaymentIntent(String paymentIntentId, String connectedAccountId)
+            throws StripeException {
+        throw new UnsupportedOperationException("issue #1038: not implemented yet");
+    }
+
     /**
      * Process a Stripe webhook event.
      * Verifies the signature and dispatches to appropriate handler.

@@ -1,0 +1,83 @@
+# issue #1038 TDD evidence (quick 261025-8p7)
+
+## STEP 0 baseline
+BASE=48d21c7eecb81c74f9dfd38921daa4f953ec7b6d
+git status --short at start:
+ M .planning/phases/30-live-stripe-test-mode-execution/30-09-PLAN.md
+?? .planning/milestone.lock
+?? .planning/quick/261025-8p7-fix-issue-1038-stale-draft-cleanup-orpha/
+?? .planning/ui-reviews/
+
+## RED (pre-fix cleanup + scaffold) — 2026-10-25
+Tree: ScheduledCleanupService.java unchanged from BASE; PaymentService.java carries the compile scaffold (two bodies throw UnsupportedOperationException).
+
+### Unit: ./gradlew :core-java:test --rerun --tests ScheduledCleanupServiceTest --tests PaymentServiceTest -> rc=1 (57 tests completed, 26 failed)
+uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=15 errors=0 skipped=0
+  FAIL  issue #1038: a card draft is kept, and Stripe never called, when Stripe is not configured
+        org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+  PASS  issue #1038: a draft with no payment is deleted without asking Stripe
+  FAIL  issue #1038: a card draft is kept when the Stripe call fails
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | paymentService.cancelAbandonedPaymentIntent(
+  FAIL  issue #1038: a card draft is kept when the stripe circuit breaker is open
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | paymentService.cancelAbandonedPaymentIntent(
+  FAIL  issue #1038: a card draft's intent is cancelled at Stripe before the order is deleted
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | paymentService.cancelAbandonedPaymentIntent(
+  FAIL  issue #1038: a direct-charge draft's intent is cancelled on the vendor's connected account
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | paymentService.cancelAbandonedPaymentIntent(
+  FAIL  issue #1038: a card draft that changed between the cancel and the delete is kept
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | orderRepository.findById(
+  FAIL  issue #1038: a card draft gone by the time of the delete is skipped without an error
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | orderRepository.findById(
+  FAIL  intent "succeeded" -> order kept
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | paymentService.cancelAbandonedPaymentIntent(
+  FAIL  intent "processing" -> order kept
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | paymentService.cancelAbandonedPaymentIntent(
+  FAIL  intent "requires_capture" -> order kept
+        org.mockito.exceptions.verification.WantedButNotInvoked: org.mockito.exceptions.verification.WantedButNotInvoked: | Wanted but not invoked: | paymentService.cancelAbandonedPaymentIntent(
+  FAIL  reference="plink_test_1", paymentStatus="PENDING" -> kept
+        org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+  FAIL  reference=null, paymentStatus="PENDING" -> kept
+        org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+  FAIL  reference=null, paymentStatus="AUTHORIZED" -> kept
+        org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+  FAIL  reference=null, paymentStatus="CAPTURED" -> kept
+        org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+  FAIL  reference=null, paymentStatus="FAILED" -> kept
+        org.mockito.exceptions.verification.NeverWantedButInvoked: org.mockito.exceptions.verification.NeverWantedButInvoked: | orderRepository.deleteAll(<any>); | Never wanted here:
+uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=11 errors=0 skipped=0
+  FAIL  issue #1038: an already-canceled intent reports canceled without a second cancel
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  issue #1038: only direct-charge and split-deposit routing name a connected account
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  "requires_payment_method" is cancelled as abandoned
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  "requires_confirmation" is cancelled as abandoned
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  "requires_action" is cancelled as abandoned
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  issue #1038: a reference that is not a PaymentIntent id is refused before Stripe
+        org.opentest4j.AssertionFailedError: org.opentest4j.AssertionFailedError: Unexpected exception type thrown, expected: <java.lang.IllegalArgumentException> but was: <java.lang.UnsupportedOperationException>
+  PASS  issue #1038: payment_intent.canceled for an order that no longer exists completes without reading orders
+  FAIL  "succeeded" is left alone
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  "processing" is left alone
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  "requires_capture" is left alone
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  issue #1038: a direct-charge intent is retrieved AND cancelled on the connected account
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+  FAIL  issue #1038: a platform intent is retrieved and cancelled with no Stripe-Account header
+        java.lang.UnsupportedOperationException: java.lang.UnsupportedOperationException: issue #1038: not implemented yet
+
+Every FAIL above is a new test (26 invocations: 15 in ScheduledCleanupServiceTest, 11 in PaymentServiceTest). Every pre-existing test passes at RED.
+Passes pre-fix by design (pins preserved behaviour; fail direction in Task 2 arms A and H):
+  - noPaymentDraft_isDeletedWithoutAskingStripe (arm A)
+  - webhook_paymentIntentCanceled_forAnOrderThatNoLongerExists_completesWithoutReadingOrders (arm H)
+The PaymentService matrix fails here by the scaffold's UnsupportedOperationException, not by an assertion; Task 2 arms E, F and G give those tests assertion-level fail directions.
+
+### IT: ./gradlew :core-java:integrationTest --rerun --tests ScheduledCleanupServiceIntegrationTest -> rc=1 (2 tests completed, 1 failed)
+uk.jtoye.core.config.ScheduledCleanupServiceIntegrationTest: tests=2 failures=1 errors=0 skipped=0
+  FAIL  cardDraftsAreDeletedOnlyAfterTheirIntentIsCancelled_andKeptWhenTheCancelFails()
+        org.opentest4j.AssertionFailedError: org.opentest4j.AssertionFailedError: [Tenant A keeps only the card draft Stripe could not cancel] | expected: 1 | but was: 0
+  (pre-existing cleanupAcrossMultipleTenantsCompletesAndDeletesEachTenantsDrafts PASSES at RED; skipped=0, so the Testcontainers class executed)
+  The old job deleted the tenant-A card draft whose cancel would have failed: expected 1 draft left, was 0.
