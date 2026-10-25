@@ -140,15 +140,26 @@ class StripeConnectServiceTest {
 
         AccountLink mockLink = mock(AccountLink.class);
         when(mockLink.getUrl()).thenReturn("https://connect.stripe.com/setup/y");
+        // PAY-03 (plan 30-12): the reuse path now reads the account; this one already has both
+        // capabilities, so nothing is requested.
+        Account existing = mock(Account.class);
+        Account.Capabilities caps = new Account.Capabilities();
+        caps.setCardPayments("active");
+        caps.setTransfers("pending");
+        when(existing.getCapabilities()).thenReturn(caps);
 
         try (MockedStatic<Account> accountMock = mockStatic(Account.class);
              MockedStatic<AccountLink> linkMock = mockStatic(AccountLink.class)) {
+            accountMock.when(() -> Account.retrieve("acct_existing")).thenReturn(existing);
             linkMock.when(() -> AccountLink.create(any(AccountLinkCreateParams.class))).thenReturn(mockLink);
 
             ConnectAccountDto dto = service.createOrResumeExpressOnboarding(tenantId);
 
             assertEquals("acct_existing", dto.stripeAccountId());
-            accountMock.verifyNoInteractions(); // no second Stripe account created
+            // no second Stripe account created, and no capability update for a complete account
+            accountMock.verify(() -> Account.create(any(AccountCreateParams.class)), never());
+            accountMock.verify(() -> Account.create(any(AccountCreateParams.class), any(RequestOptions.class)), never());
+            verify(existing, never()).update(any(AccountUpdateParams.class));
             verify(tenantRepository, never()).save(any());
         }
     }
@@ -197,6 +208,7 @@ class StripeConnectServiceTest {
         assertEquals("staging", metadata.get("environment"));
         assertNotNull(options.get(), "Account.create must carry RequestOptions (an idempotency key)");
         assertEquals("connect-account-create-" + tenantId, options.get().getIdempotencyKey());
+        assertEquals(StripeConnectService.accountCreateIdempotencyKey(tenantId), options.get().getIdempotencyKey());
     }
 
     @Test
