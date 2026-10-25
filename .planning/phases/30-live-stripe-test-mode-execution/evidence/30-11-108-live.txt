@@ -1,0 +1,21 @@
+# Plan 30-11 evidence: issue #108 (Stripe half) on the delivered runtime
+
+## Task 1, RED on today's staging (before PR 3 merges)
+
+Read at 2026-10-25T12:45:48Z with kubectl --context jtoye-stg-aks, namespace jtoye-staging. The token
+was minted with --subscription c483d353-5f61-4587-a790-addb9ab5fb94 through the session's PATH shim.
+
+Ready core-java pods with label app=core-java: 1
+  core-java-7b7b7b59d-8296h   image sha256:42e5f537f5c6b22844c702ea91e58b59eb88e7731340819c451de5dbfd3e27f2
+    new_lines (Stripe client configured (key redacted) connectTimeoutMs=)   0
+    old_lines (Stripe API key configured (key redacted))                    1   logged 2026-10-25 12:09:15.441
+pods=[core-java-7b7b7b59d-8296h] new_lines=0 old_lines=1 -> verdict rc=0 (expected new=0, old>=1)
+
+The old line is present, so the read can see the startup log, and the new line is absent. Task 3
+repeats the same read on the merged deploy, expecting the opposite.
+
+## Task 1, doc counts
+
+Before the update: docs-freshness.sh rc=1 (java_test_files 422 -> 425, java_test_methods 3026 -> 3049,
+total 6613 -> 6636), and check-doc-metrics.sh rc=1 (10 FAIL lines: README.md 4, CLAUDE.md 3, AGENTS.md 3).
+After metrics.json --write and the prose update: both rc=0.

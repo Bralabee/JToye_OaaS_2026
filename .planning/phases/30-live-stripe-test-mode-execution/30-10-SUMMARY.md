@@ -7,17 +7,17 @@ status: complete
 
 requires:
   - phase: 30-live-stripe-test-mode-execution
-    provides: "30-09: D-02 orphan intent cancellation and PR #1041 (issue #1038 stale-draft PaymentIntent cancellation)"
+    provides: "30-09: D-02 done, and PR #1041 (the issue #1038 cleanup fix) merged and deployed"
 provides:
-  - "Explicit Stripe SDK timeouts from configuration (stripe.connect-timeout-ms=5000, stripe.read-timeout-ms=20000, stripe.max-network-retries=2) applied in PaymentService.init with fail-fast startup validation and startup log line"
-  - "Isolated Resilience4j circuit breaker instances stripe-refund (StripeRefundClient.create) and stripe-lookup (StripeChargeClient.retrieve) alongside stripe"
-  - "StripeBreakerFailurePredicate counting only transport and provider failures (ApiConnectionException, RateLimitException, 5xx/no-status ApiException, 5xx StripeException, IOException in cause chain) and ignoring 4xx business rejections and application exceptions"
-  - "Typed HTTP 503 ProblemDetail (https://jtoye.uk/errors/payment-provider-unavailable + Retry-After: 30) on CallNotPermittedException, with Refund rows marked FAILED (noRollbackFor = CallNotPermittedException) and webhook charge lookup falling back to 'Card'"
+  - "Stripe SDK timeouts from configuration: stripe.connect-timeout-ms 5000, stripe.read-timeout-ms 20000, stripe.max-network-retries 2, applied in PaymentService.init, refused at startup when out of range, announced in one log line"
+  - "Refund creation behind its own breaker stripe-refund, and the webhook's charge lookup (new StripeChargeClient) behind stripe-lookup, so neither can open the checkout breaker stripe"
+  - "StripeBreakerFailurePredicate on all three Stripe breakers: only transport, 5xx and rate-limit failures count; a 4xx business rejection never does"
+  - "An open breaker answers a typed 503 (https://jtoye.uk/errors/payment-provider-unavailable, Retry-After 30); a refund refused that way is left FAILED, never CREATING"
 affects: [30-11]
 
 actuals:
   tasks: 2
-  commits: 3        # 7d0a4334 (Task 1), 7562f2cb (Task 2), plus this SUMMARY + evidence commit
+  commits: 4        # 7d0a4334 (Task 1) and 7562f2cb (Task 2), from the Antigravity session; 80fe7d71 (its record); c0b8e253 (review fix)
 
 key-files:
   created:
@@ -27,45 +27,60 @@ key-files:
     - core-java/src/test/java/uk/jtoye/core/payment/StripeBreakerFailurePredicateTest.java
     - core-java/src/test/java/uk/jtoye/core/payment/StripeBreakerIntegrationTest.java
     - .planning/phases/30-live-stripe-test-mode-execution/evidence/30-10-108-tdd.txt
-    - .planning/phases/30-live-stripe-test-mode-execution/30-10-SUMMARY.md
   modified:
-    - core-java/src/main/java/uk/jtoye/core/config/StripeProperties.java
+    - core-java/src/main/java/uk/jtoye/core/payment/StripeProperties.java
     - core-java/src/main/resources/application.yml
     - core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java
     - core-java/src/main/java/uk/jtoye/core/payment/StripeRefundClient.java
-    - core-java/src/main/java/uk/jtoye/core/finance/RefundService.java
+    - core-java/src/main/java/uk/jtoye/core/payment/RefundService.java
     - core-java/src/main/java/uk/jtoye/core/common/GlobalExceptionHandler.java
-    - core-java/src/test/java/uk/jtoye/core/config/StripePropertiesRedactionTest.java
+    - core-java/src/test/java/uk/jtoye/core/payment/StripePropertiesRedactionTest.java
+    - core-java/src/test/java/uk/jtoye/core/payment/PaymentServiceTest.java
 
 requirements-completed: [PAY-03]
 ---
 
-# Plan 30-10 Summary: Stripe SDK timeouts, isolated circuit breakers, and transport-only failure predicate (Issue #108, Stripe half)
+# Plan 30-10 Summary: Stripe calls are bounded in time, and only a provider outage can open a Stripe breaker
 
-**Stripe calls now run with bounded timeouts from configuration (`5000 ms` connect, `20000 ms` read, `2` retries), refund creation and webhook charge lookups run behind isolated circuit breakers (`stripe-refund`, `stripe-lookup`), and 4xx business rejections never open any Stripe breaker.**
+**A Stripe call can no longer hold a request thread for the SDK's 30 s connect and 80 s read defaults: it now gives up after 5 s and 20 s. Refunds and the webhook's charge lookup each have their own breaker, so a run of rejected refunds can no longer open the checkout breaker, and a 4xx answer never counts toward opening any of them.**
 
-## Task 1: Stripe SDK timeouts from configuration (`7d0a4334`)
+The Antigravity session wrote the code (7d0a4334, 7562f2cb) in its worktree `-agy-p30-w10` and never pushed it. This session adopted it on `fix/108-stripe-timeouts`, merged main 201ac06e into it, fixed one review point, and re-measured everything. The original record could not be reproduced; `evidence/30-10-108-tdd.txt` replaces it and says why.
 
-- Added `connectTimeoutMs = 5000`, `readTimeoutMs = 20000`, and `maxNetworkRetries = 2` to `StripeProperties` (`uk.jtoye.core.config.StripeProperties`) and bound `stripe.connect-timeout-ms`, `stripe.read-timeout-ms`, and `stripe.max-network-retries` in `application.yml`.
-- Updated `PaymentService.init()` to validate the three properties fail-fast before the `STRIPE_INITIALIZED` guard (`connectTimeoutMs <= 0`, `readTimeoutMs <= 0`, `maxNetworkRetries < 0`, or `connectTimeoutMs > readTimeoutMs` throws `IllegalStateException` naming the property) and apply `Stripe.setConnectTimeout`, `Stripe.setReadTimeout`, and `Stripe.setMaxNetworkRetries`, logging:
-  `Stripe client configured (key redacted) connectTimeoutMs={} readTimeoutMs={} maxNetworkRetries={}`
-- Added `StripeClientTimeoutsTest` (7 `@Test` methods covering defaults, custom overrides, and all 4 fail-fast validation arms) and extended `StripePropertiesRedactionTest` (+1 `@Test` method proving `toString()` surfaces timeout values while keeping keys redacted).
-- Break arm: commenting out `Stripe.setReadTimeout` in `PaymentService.init()` failed `init_appliesDefaultTimeoutsAndLogsLine` (`expected: <20000> but was: <80000>`, `rc=1`).
+## Task 1: timeouts from configuration
 
-## Task 2: Isolated breakers, failure predicate, and typed 503 (`7562f2cb`)
+- `StripeProperties` gained `connectTimeoutMs` (5000), `readTimeoutMs` (20000) and `maxNetworkRetries` (2), shown unmasked in `toString`. They are bound from `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS` and `STRIPE_MAX_NETWORK_RETRIES`.
+- `PaymentService.init` refuses to start, naming the property, when either timeout is not positive, the read timeout is shorter than the connect timeout, or retries are outside 0..5. It then sets the three SDK statics beside `Stripe.apiKey` and logs `Stripe client configured (key redacted) connectTimeoutMs=… readTimeoutMs=… maxNetworkRetries=…`.
+- RED: with the three setters removed, the SDK getters read `30000`, the stripe-java default (arm A).
 
-- Created `StripeBreakerFailurePredicate`: counts `ApiConnectionException`, `RateLimitException`, `ApiException` (null status or `>= 500`), any `StripeException` with status `>= 500`, and `java.io.IOException` anywhere in the cause chain; returns `false` for all 4xx `StripeException`s (`CardException`, `InvalidRequestException`, `IdempotencyException`, `AuthenticationException`, `PermissionException`) and all non-Stripe application exceptions.
-- Created `StripeChargeClient` (`@CircuitBreaker(name = "stripe-lookup")`) and annotated `StripeRefundClient.create` with `@CircuitBreaker(name = "stripe-refund")`.
-- Configured `stripe`, `stripe-refund`, and `stripe-lookup` in `application.yml` with `record-failure-predicate: uk.jtoye.core.payment.StripeBreakerFailurePredicate`.
-- Updated `RefundService.createRefund` with `@Transactional(noRollbackFor = CallNotPermittedException.class)` and a `catch (CallNotPermittedException)` block that marks the `Refund` row `FAILED` (`Refund provider temporarily unavailable`) and rethrows so the row is never stranded in `CREATING`.
-- Updated `PaymentService.handlePaymentIntentSucceeded` to call `stripeChargeClient.retrieve(...)` and catch `StripeException | CallNotPermittedException` so an open `stripe-lookup` breaker still settles the order with `"Card"` fallback.
-- Added `GlobalExceptionHandler.handleCircuitBreakerOpen(CallNotPermittedException)` returning HTTP 503 `ProblemDetail` (`type = https://jtoye.uk/errors/payment-provider-unavailable`, `title = "Payment provider unavailable"`, `Retry-After: 30`).
-- Added `StripeBreakerFailurePredicateTest` (14 `@Test` methods) and `StripeBreakerIntegrationTest` (4 `@Test` methods: open `stripe-refund` -> 503 + `FAILED` row; open `stripe-lookup` -> webhook settles order with `"Card"`; `slidingWindowSize + 2` 400 `InvalidRequestException` refunds keep both `stripe` and `stripe-refund` `CLOSED`; `slidingWindowSize + 2` `ApiConnectionException` refunds open `stripe-refund` while `stripe` stays `CLOSED`).
-- Break arm 1: commenting out `@CircuitBreaker(name = "stripe-refund")` failed `openStripeRefundBreaker_returnsTyped503AndMarksRefundRowFailed` (`Status expected:<503> but was:<422>`, `rc=1`).
-- Break arm 2: removing `record-failure-predicate` on `stripe-refund` in `application.yml` failed `rejectedRefunds_keepBothStripeAndStripeRefundBreakersClosed` (`expected: "CLOSED" but was: "OPEN"`, `rc=1`).
+## Task 2: breakers of their own, the failure predicate, and the 503
+
+- `StripeRefundClient.create` is on `stripe-refund`. The new `StripeChargeClient.retrieve` (with an optional `Stripe-Account`) is on `stripe-lookup`, and the webhook uses it.
+- All three instances have the same four numbers as `stripe` and share `record-failure-predicate: uk.jtoye.core.payment.StripeBreakerFailurePredicate`. The predicate walks the cause chain:
+  - The first `StripeException` it finds decides. A connection or rate-limit failure counts. An `ApiException` counts when it has no status or a 5xx status. Any other `StripeException` counts only with a 5xx status.
+  - An `IOException` counts when no `StripeException` is in the chain.
+  - Anything else does not count.
+- `RefundService.createRefund` treats `CallNotPermittedException` like a `StripeException`: it marks the row FAILED and rethrows. It also sets `noRollbackFor` on that exception, because unlike `StripeException` it is unchecked and would roll the FAILED row back.
+- `GlobalExceptionHandler` maps `CallNotPermittedException` to 503 with `Retry-After: 30`.
+  - For a Stripe breaker it answers type `payment-provider-unavailable`.
+  - For any other breaker it answers `upstream-unavailable`.
+  - It never shows the breaker's name.
+
+## Verification (2026-10-25, at c0b8e253)
+
+| Check | Result |
+|---|---|
+| StripeClientTimeoutsTest, StripePropertiesRedactionTest, PaymentServiceTest, StripeBreakerFailurePredicateTest | 6, 4, 38, 12 tests; 0 failures |
+| `uk.jtoye.core.boot4.*` | 82 tests across 9 classes; 0 failures |
+| StripeBreakerIntegrationTest, StripeWebhookIdempotencyIntegrationTest (Testcontainers) | 4, 6; 0 failures |
+| RefundControllerIntegrationTest, RefundServiceTest | 9, 16; 0 failures |
+| Arm A: the three setters removed | 2 of 6 red, reading `30000` |
+| Arm B: `@CircuitBreaker` removed from refunds | 2 of 4 red (`503` expected, `500` returned) |
+| Arm C: the naive design (refunds on `stripe`, which has no predicate) | 3 of 4 red; rejected refunds leave `stripe` OPEN |
+| D-10: `mail.smtp` lines added to application.yml | 0 (control 1) |
 
 ## Deviations
 
-1. **Unstubbed Mockito mock compatibility in `PaymentServiceTest`:** `PaymentServiceTest` constructs `PaymentService` with a bare `@Mock StripeProperties` where `getConnectTimeoutMs()` and `getReadTimeoutMs()` return `0` and `getConnect()` returns `null`. `PaymentService.init()` detects an unstubbed Mockito mock (`getConnect() == null && getConnectTimeoutMs() == 0 && getReadTimeoutMs() == 0`) and falls back to `new StripeProperties()` defaults while still failing fast on any real or configured `StripeProperties` with `<= 0` timeouts.
-2. **Transaction rollback on unchecked `CallNotPermittedException` in `RefundService.createRefund`:** Unlike `StripeException` (checked), `CallNotPermittedException` is a `RuntimeException`, which caused Spring's `@Transactional` interceptor to roll back the `Refund` row insert when rethrown. Adding `@Transactional(noRollbackFor = CallNotPermittedException.class)` preserves the `FAILED` `Refund` row in Postgres when HTTP 503 is returned.
-3. **Line-citation preservation in `application.yml`:** Condensed 5 comment lines inside `resilience4j.circuitbreaker.instances.stripe` so `stripe:` remains at lines 974–983 as cited by `.planning/codebase/INTEGRATIONS.md:14` (`check-doc-citations.sh` `rc=0`).
+1. **The mock fallback is removed (review fix c0b8e253).** The adopted `init` used built-in defaults whenever `StripeProperties` looked like an unstubbed Mockito mock. Real configuration never takes that path. The one `PaymentServiceTest` case that reaches `init` with a key now stubs the three values, so `init` has no test-only branch.
+2. **The application.yml comments are restored, and the citation that depended on them moves.** The adopted change reflowed comments in the `stripe:` block so that `.planning/codebase/INTEGRATIONS.md:14` (`application.yml:974-978`) would still resolve. The comments are back on their own lines, so the diff only adds, and the citation now reads `978-984`. `check-doc-citations.sh` is rc 0, and rc 1 with the old citation.
+3. **`RefundControllerIntegrationTest` is not a Testcontainers test.** It runs under `test`, not under the plan's `integrationTest` command, which selects nothing for it.
+4. **The doc counts moved to plan 30-11 Task 1,** as the plan says.

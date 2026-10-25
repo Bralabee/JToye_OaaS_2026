@@ -1,8 +1,27 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 8/32 plans done; next 30-09
+# Handoff: Phase 30 (The Money Path, Executed) executing, 10/32 plans done; next 30-11 (PR 3)
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-24 delta (RESUME HERE; everything below is history).**
+**2026-10-25 delta (RESUME HERE; everything below is history).**
+- **Phase 30 is executing: 10/32 plans done.** Merged and deployed on 2026-10-25:
+  - PR #1041 (issue #1038: a stale card DRAFT's PaymentIntent is cancelled before its order is deleted), squash b728254e.
+  - PR #1043 (30-09, D-02 done: 6 orphaned TEST intents cancelled at Stripe and read back `canceled`, `livemode=false`), squash 201ac06e.
+  - Both main runs were green through Deploy to Staging and the Staging Edge Probe. The #1043 run's Frontend E2E failed once on a Google Fonts fetch and passed on rerun, with no code change.
+- **Plan 30-10 (issue #108, Stripe half) is done on `fix/108-stripe-timeouts`, and PR 3 is that branch.** The Antigravity session built it in worktree `-agy-p30-w10` (`agy/30-10-stripe-timeouts`) and never pushed it. This session adopted it and re-measured it; the original evidence could not be reproduced. See `30-10-SUMMARY.md` and `evidence/30-10-108-tdd.txt`.
+- **Resume:** plan 30-11.
+  - Task 1 (staging RED read, counts 6636, PR open) is done or in progress on this branch.
+  - Task 2: D3 review series, then squash-merge.
+  - Task 3: watch the deploy, read `Stripe client configured (key redacted) connectTimeoutMs=5000 readTimeoutMs=20000 maxNetworkRetries=2` from the new pods, and comment on issue #108.
+- **Other Antigravity work, still local, with no PRs, on branches each one commit behind main:**
+  - `fix/1016-1011-963-frontend-swarm`
+  - `fix/1007-1008-1009-ops-gates-and-gitleaks`
+  - `fix/992-render-invariants-pyyaml`
+  - `feature/synthesis-governance-gate`
+
+  The plan is one integration PR with one review round, after PR 3 is merged and deployed.
+- **Staging residue:** C97DCE79's order is CONFIRMED and unpaid, and its intent is still payable (issue #1031 class). `DEPLOY_STAGING_ENABLED` is still true.
+
+**2026-10-24 delta (history; superseded by the 2026-10-25 block above).**
 - **Phase 30 is executing: 8/32 plans done. PR 1 (#1029, 43d047fb) and PR 2 (#1030, issue #958, squash 7b117162) are merged, deployed and proven on staging.** Plan 30-08's record: `.planning/phases/30-live-stripe-test-mode-execution/30-08-SUMMARY.md` and `evidence/30-08-958-live.txt`.
   - Live on staging 2026-10-24: a fresh unpaid card DRAFT's SUBMIT is refused 409 `https://jtoye.uk/errors/awaiting-payment` and stays DRAFT (then cancelled, intent canceled); a vendor NONE DRAFT submits 200; the paid ORD-1AAC0CDE-20261022-D69764AE confirms 200. Pod digests equal the ghcr digests of tag 7b117162 for core-java, edge-go and frontend.
   - Review: round 1 admitted 4 (3 fixed, 1 filed as issue #1031), round 2 admitted 0.
