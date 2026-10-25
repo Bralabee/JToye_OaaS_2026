@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A Stale Card Checkout's PaymentIntent Is Cancelled Before Its Order Is Deleted (#1038) — 2026-10-25
+### A Stale Card Checkout's PaymentIntent Is Cancelled Before Its Order Is Deleted (#1041) — 2026-10-25
 
 `ScheduledCleanupService`, the daily 03:00 UTC job behind retention row R-1, deleted every DRAFT order older than 24 hours, including storefront card drafts whose Stripe PaymentIntent was still payable. On staging on 2026-10-24 that left 7 PaymentIntents in `requires_payment_method` with no order behind them (Stripe TEST mode, no money moved). The risk is real money: a customer completing such an intent later would be charged for an order that no longer exists, and the kitchen would see nothing. This is issue #1038.
 
