@@ -812,3 +812,7 @@ Any confirmed cross-tenant read or write. Tell Sanmi what the exposure window wa
 production data was reachable, before proposing a patch.
 
 <!-- ORGOS:agents-end -->
+
+## Code-structure questions
+
+Impact/structure questions: `scripts/graph.sh affected|explain|path|god-nodes`: fresh, bounded, exits non-zero when it cannot answer. For security-relevant impact, also run `git grep -w`.
