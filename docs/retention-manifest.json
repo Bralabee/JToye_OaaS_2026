@@ -14,10 +14,10 @@
     {
       "id": "R-1",
       "category": "Abandoned checkouts",
-      "detail": "An order you started but never paid for, including the name, email and phone number typed into the checkout form.",
+      "detail": "An order you started but never paid for, including the name, email and phone number typed into the checkout form. If you began paying by card, that payment is cancelled with our payment provider first, and the order is deleted only once the cancellation is confirmed. Until then it is kept and the cancellation is tried again at each daily clean-up, for example while the payment is still being processed or the provider cannot be reached.",
       "period_value": 24,
       "period_unit": "hours",
-      "period_display": "24 hours",
+      "period_display": "24 hours, cleared at the next daily clean-up (so within 48 hours of starting it)",
       "lawful_basis": "Legitimate interests (UK GDPR Art. 6(1)(f)) - holding an in-progress basket long enough for you to come back and finish it, then deleting it.",
       "enforcement": "Automated",
       "claim_key": "draft_order_hours",
@@ -31,7 +31,7 @@
           "must_contain": "cleanup.stale-draft-hours"
         }
       },
-      "note": "Deleted, not anonymised. A daily 03:00 UTC job removes every DRAFT order past the cutoff, one transaction per tenant."
+      "note": "Deleted, not anonymised. A daily 03:00 UTC job removes every DRAFT order past the cutoff, in per-tenant transactions. For a card checkout, its Stripe PaymentIntent is cancelled first and the order is deleted only once Stripe reports it canceled (issue #1038). A draft whose intent has taken or is holding money, or whose intent Stripe cannot be reached to cancel, is kept and retried at the next run."
     },
     {
       "id": "R-2",

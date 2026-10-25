@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A Stale Card Checkout's PaymentIntent Is Cancelled Before Its Order Is Deleted (#1041) — 2026-10-25
+
+`ScheduledCleanupService`, the daily 03:00 UTC job behind retention row R-1, deleted every DRAFT order older than 24 hours, including storefront card drafts whose Stripe PaymentIntent was still payable. On staging on 2026-10-24 that left 7 PaymentIntents in `requires_payment_method` with no order behind them (Stripe TEST mode, no money moved). The risk is real money: a customer completing such an intent later would be charged for an order that no longer exists, and the kitchen would see nothing. This is issue #1038.
+
+- **Change.** A card draft (a `pi_` reference) has its intent cancelled at Stripe first, as `abandoned`, with an Idempotency-Key and outside every database transaction. A direct-charge or split-deposit intent is cancelled on the vendor's connected account, resolved inside the tenant-pinned read transaction because the routing reads `shops` and `vendor_onboarding` under FORCE RLS. The order is deleted only once Stripe reports the intent canceled, in its own short transaction, after a re-read shows it is still a DRAFT with the same intent. A draft with no payment is deleted as before. New: `PaymentService.cancelAbandonedPaymentIntent` (stripe circuit breaker) and `PaymentService.directChargeAccountFor`.
+- **Kept.** A draft is kept, with `WARN event=stale_draft_kept` and a reason, and retried at the next run when its intent is `succeeded`, `processing` or `requires_capture` (an authorised hold is never cancelled), when the Stripe call fails or the breaker is open, when Stripe is not configured, when its reference is not an intent, or when it changed between the cancel and the delete. No log line carries a customer field.
+- **Webhook.** `payment_intent.canceled` for a deleted order was already ignored (it reaches the default branch and returns normally). A test now pins that, so cancel-then-delete cannot turn into a 500 and a redelivery loop.
+- **Retention.** R-1 stays 24 hours. Its note in `docs/retention-manifest.json` and the comment above `stale-draft-hours` describe the cancel and the kept cases.
+- **Published wording (/legal/retention).** The R-1 row now says what the job does:
+  - **Period.** "24 hours, cleared at the next daily clean-up (so within 48 hours of starting it)". The old "24 hours" read as an exact deadline that a daily job cannot meet.
+  - **Detail.** It now says that a card payment is cancelled with the provider first, and that the order is kept and retried at each daily clean-up until the cancellation is confirmed.
+  - **Explainer.** The sentence no longer reads "deleted 24 hours after you start it".
+  - **Gates.** The R-1 claims rule moves to the in-sentence form R-14 to R-16 use; it still reads 24, and planting 25 reds it. The manifest's detail and period_display match the page, and changing the manifest text reds the field-by-field table test.
+- **Tests.** `ScheduledCleanupServiceTest` (the keep, cancel and delete matrix, and the cancel-before-delete ordering), `PaymentServiceTest` (the Stripe status matrix, the Stripe-Account header on both calls, the idempotency key, the `pi_` guard, the canceled-webhook pin) and `ScheduledCleanupServiceIntegrationTest` (under NOSUPERUSER: the card draft whose cancel failed is kept, the cancelled one is deleted, both tenants' no-payment drafts are deleted; the class is now order-independent). Every new test was recorded failing on the pre-fix code, and break arms A-H each turned their named test red.
+- **The orphans already on staging.** The 7 existing staging TEST intents have no order left for this job to find, and `staging-seed.sh --stage cancel-drafts` starts from the order, so it cannot reach them either. Two hand tools are added for plan 30-09 (re-routed):
+  - `--stage list-orphan-intents` (read-only). It lists every cancelable TEST intent whose `metadata.order_number` names no order the vendor can see in any of the eight statuses. It VOIDs when the vendor sees no order at all, because an empty read can mean a grant failure.
+  - `--stage cancel-orphan-intents --intents pi_a,pi_b`. It acts on the owner-confirmed ids only. It refuses an intent that is paid or paying, or whose order is visible again (that order goes through cancel-drafts). Otherwise it cancels with Idempotency-Key `d02-orphan-cancel-<pi>` and reads the intent back canceled.
+  - The selftest goes from 41 to 47 arms. Eight break arms each turned their named arm red.
+- **Out of scope.** Issue #1031 (a server CANCEL leaves the intent payable) is separate.
+
 ### brotli-libs 1.2.1-r0 in the core-java Runtime Image (#1040) — 2026-10-25
 
 main's pipeline went red at the core-java Trivy image gate on 0f559fc2, c519e689 and f3381c9a with no change to the tree: a new advisory, CVE-2026-111497 (an out-of-bounds write in the Brotli decoder), entered Trivy's database against `brotli-libs` 1.2.0-r1 in the `eclipse-temurin:25-jre-alpine` base. It is fixed in 1.2.1-r0. The image gate failing skipped Build and Push, Deploy to Staging and the edge probe, so staging stayed on the last green commit.
