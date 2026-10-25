@@ -1,0 +1,53 @@
+# 30-12 Task 3: Express capabilities and the account-create idempotency key.
+# Measured 2026-10-25 21:49Z-21:54Z on feat/30-connect-webhook. Counts read from JUnit XML under core-java/build-local/.
+
+## RED (commit 8b28bdec)
+StripeConnectServiceTest rc=1 tests=22 fail=2   (30-12-red-task3.json, RED_EVIDENCE_OK)
+  create arm: "capabilities must be requested explicitly, not left to platform defaults ==> expected: not <null>"
+  reuse arm:  WantedButNotInvoked account.update(...) — "there were zero interactions with this mock"
+  Both Account.create overloads are stubbed, so the old one-argument call is captured, not turned into a null.
+
+## GREEN (commit 17d451f8; assertion tightened in 35db22bd)
+./gradlew :core-java:cleanTest :core-java:test --tests StripeConnectServiceTest   rc=0  tests=22 failures=0 errors=0
+  The create arm asserts card_payments and transfers requested=true, metadata tenant_id + environment=staging,
+  and the idempotency key equal to both the literal "connect-account-create-<tenantId>" and the production
+  expression StripeConnectService.accountCreateIdempotencyKey.
+
+## Break arms (clean -> arm -> restore -> clean; restore verified by blob hash)
+== I-create-without-transfers
+-- clean-before: blob 042afa45a7e27709ddbb33b1387a8a6233d35a2e head 042afa45a7e27709ddbb33b1387a8a6233d35a2e match
+   anchors replaced: 1
+-- arm: blob 487c78cb850733851d3c3575f8dc1dfa50855ced (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.StripeConnectServiceTest tests=22 failures=1 errors=0 skipped=0 mtime=21:53:07Z
+   xmlsum rc=1
+   FAIL PAY-03: a new Express account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId> :: org.opentest4j.AssertionFailedError: transfers capability not requested ==> expected: not <null>
+-- restore: blob 042afa45a7e27709ddbb33b1387a8a6233d35a2e == head 042afa45a7e27709ddbb33b1387a8a6233d35a2e: yes
+   git diff --quiet: clean
+== J-create-without-idempotency-key
+-- clean-before: blob 042afa45a7e27709ddbb33b1387a8a6233d35a2e head 042afa45a7e27709ddbb33b1387a8a6233d35a2e match
+   anchors replaced: 1
+-- arm: blob ff16c64da2fa7c5e8b064c1c4ee4395b9927cd23 (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.StripeConnectServiceTest tests=22 failures=1 errors=0 skipped=0 mtime=21:52:13Z
+   xmlsum rc=1
+   FAIL PAY-03: a new Express account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId> :: org.opentest4j.AssertionFailedError: expected: <connect-account-create-6f172277-4b27-4c66-9265-cd099ef6f2c3> but was: <null>
+-- restore: blob 042afa45a7e27709ddbb33b1387a8a6233d35a2e == head 042afa45a7e27709ddbb33b1387a8a6233d35a2e: yes
+   git diff --quiet: clean
+== K-reuse-without-capability-check
+-- clean-before: blob 042afa45a7e27709ddbb33b1387a8a6233d35a2e head 042afa45a7e27709ddbb33b1387a8a6233d35a2e match
+   anchors replaced: 1
+-- arm: blob 9c3ac08b65de1701b6f055fc1c74a8d05f3984bc (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.StripeConnectServiceTest tests=22 failures=2 errors=0 skipped=0 mtime=21:52:28Z
+   xmlsum rc=1
+   FAIL PAY-03: a reused account missing transfers has both capabilities requested before the onboarding link is minted :: org.mockito.exceptions.verification.WantedButNotInvoked:  Wanted but not invoked: account.update(     <Capturing argument: AccountUpdateParams> ); -> at com.str
+   FAIL createOrResumeExpressOnboarding reuses an already-linked account (idempotent) and only mints a new link :: org.mockito.exceptions.misusing.UnnecessaryStubbingException:  Unnecessary stubbings detected. Clean & maintainable test code requires zero unnecessary code. Fo
+-- restore: blob 042afa45a7e27709ddbb33b1387a8a6233d35a2e == head 042afa45a7e27709ddbb33b1387a8a6233d35a2e: yes
+   git diff --quiet: clean
+  (Arm I first ran before 35db22bd and failed through a NullPointerException on getTransfers(); the assertion
+  was tightened so the failure names the capability, and arm I was re-run: the run above is the re-run.)
+  (Arm K also reds the pre-existing reuse test through Mockito's strict-stubs check: its retrieve stub goes unused.)
+
+## Clean after the arms
+./gradlew :core-java:cleanTest :core-java:test --tests StripeConnectServiceTest   rc=0  tests=22 failures=0 errors=0
