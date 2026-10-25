@@ -1171,4 +1171,133 @@ class PaymentServiceTest {
         }
         verifyNoInteractions(jdbcTemplate, stripeConnectService);
     }
+
+    // --- PAY-03 (plan 30-12) Task 2: objects carry their environment; foreign events are acknowledged ---
+
+    /**
+     * A PaymentService over a REAL StripeProperties bound through Spring's Binder, so the arms
+     * exercise the configuration key itself ({@code stripe.environment-tag}); {@code null} leaves
+     * the tag undeclared, as a runtime without STRIPE_ENVIRONMENT_TAG would.
+     */
+    private PaymentService serviceWithEnvironmentTag(String tag) {
+        java.util.Map<String, String> source = new java.util.HashMap<>();
+        source.put("stripe.webhook-secret", "whsec_test");
+        if (tag != null) {
+            source.put("stripe.environment-tag", tag);
+        }
+        StripeProperties props = new StripeProperties();
+        new org.springframework.boot.context.properties.bind.Binder(
+                new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(source))
+                .bind("stripe", org.springframework.boot.context.properties.bind.Bindable.ofInstance(props));
+        return new PaymentService(props, orderRepository, eventPublisher, paymentEventPublisher,
+                financialTransactionService, jdbcTemplate, refundService, stripeConnectService,
+                providerOf(meterRegistry));
+    }
+
+    private com.stripe.param.PaymentIntentCreateParams capturedIntentParams(MockedStatic<PaymentIntent> piMock) {
+        ArgumentCaptor<com.stripe.param.PaymentIntentCreateParams> paramsCaptor =
+                ArgumentCaptor.forClass(com.stripe.param.PaymentIntentCreateParams.class);
+        piMock.verify(() -> PaymentIntent.create(paramsCaptor.capture(), any(com.stripe.net.RequestOptions.class)));
+        return paramsCaptor.getValue();
+    }
+
+    @Test
+    @DisplayName("PAY-03: createPaymentIntent tags the intent with metadata environment = stripe.environment-tag")
+    void createPaymentIntent_carriesEnvironmentTag() throws Exception {
+        PaymentService service = serviceWithEnvironmentTag("staging");
+        when(stripeConnectService.resolveDestinationAccount(tenantId)).thenReturn(Optional.empty());
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                    any(com.stripe.net.RequestOptions.class))).thenReturn(mockIntent);
+
+            service.createPaymentIntent(testOrder);
+
+            assertEquals("staging", capturedIntentParams(piMock).getMetadata().get("environment"));
+        }
+    }
+
+    @Test
+    @DisplayName("PAY-03: createBalancePaymentIntent tags the balance intent with metadata environment")
+    void createBalancePaymentIntent_carriesEnvironmentTag() throws Exception {
+        PaymentService service = serviceWithEnvironmentTag("staging");
+        testOrder.setStatus(OrderStatus.CONFIRMED);
+        testOrder.setBalanceDuePennies(700L);
+        when(stripeConnectService.resolveSettlementRouting(testOrder)).thenReturn(Optional.empty());
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                    any(com.stripe.net.RequestOptions.class))).thenReturn(mockIntent);
+
+            service.createBalancePaymentIntent(testOrder);
+
+            assertEquals("staging", capturedIntentParams(piMock).getMetadata().get("environment"));
+        }
+    }
+
+    @Test
+    @DisplayName("PAY-03: an undeclared environment tag is written as \"unset\", never as a real environment name")
+    void createPaymentIntent_undeclaredTag_writesUnset() throws Exception {
+        PaymentService service = serviceWithEnvironmentTag(null);
+        when(stripeConnectService.resolveDestinationAccount(tenantId)).thenReturn(Optional.empty());
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                    any(com.stripe.net.RequestOptions.class))).thenReturn(mockIntent);
+
+            service.createPaymentIntent(testOrder);
+
+            assertEquals("unset", capturedIntentParams(piMock).getMetadata().get("environment"));
+        }
+    }
+
+    private Event succeededEventWithEnvironment(String eventId, String environment) {
+        Map<String, String> metadata = new java.util.HashMap<>();
+        metadata.put("order_id", orderId.toString());
+        metadata.put("tenant_id", tenantId.toString());
+        if (environment != null) {
+            metadata.put("environment", environment);
+        }
+        PaymentIntent intent = mock(PaymentIntent.class);
+        lenient().when(intent.getId()).thenReturn("pi_env_" + eventId);
+        lenient().when(intent.getMetadata()).thenReturn(metadata);
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        lenient().when(deserializer.getObject()).thenReturn(Optional.of(intent));
+        Event event = mock(Event.class);
+        lenient().when(event.getId()).thenReturn(eventId);
+        lenient().when(event.getType()).thenReturn("payment_intent.succeeded");
+        lenient().when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+        return event;
+    }
+
+    @Test
+    @DisplayName("PAY-03: a verified event whose object names ANOTHER environment is acknowledged with no dedup row and no side effect")
+    void webhook_foreignEnvironment_isAcknowledgedWithoutTrace() {
+        PaymentService service = serviceWithEnvironmentTag("staging");
+        Event event = succeededEventWithEnvironment("evt_env_foreign", "ci");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(event);
+            assertDoesNotThrow(() -> service.handleWebhookEvent("{}", "sig"));
+        }
+        verifyNoInteractions(jdbcTemplate, orderRepository, paymentEventPublisher, financialTransactionService);
+    }
+
+    @Test
+    @DisplayName("PAY-03: an event tagged \"unset\" is same-environment for a runtime whose tag is undeclared")
+    void webhook_unsetTaggedEvent_onUndeclaredRuntime_isProcessed() {
+        PaymentService service = serviceWithEnvironmentTag(null);
+        Event event = succeededEventWithEnvironment("evt_env_unset", "unset");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(testOrder));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(event);
+            service.handleWebhookEvent("{}", "sig");
+        }
+        assertEquals(PaymentStatus.CAPTURED, testOrder.getPaymentStatus());
+    }
 }

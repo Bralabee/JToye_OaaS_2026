@@ -539,4 +539,49 @@ class RefundServiceTest {
         assertThat(optsCaptor.getValue().getStripeAccount()).isNull();
         assertThat(paramsCaptor.getValue().getReverseTransfer()).isTrue();
     }
+
+    // --- PAY-03 (plan 30-12) Task 2: a refund carries its environment ---
+
+    private RefundCreateParams createRefundAndCaptureParams(RefundService service) throws StripeException {
+        Order order = buildOrder(OrderStatus.CONFIRMED, 1000L, "pi_env_refund");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(refundRepository.sumLiveAmountByOrderId(orderId)).thenReturn(0L);
+        when(refundRepository.saveAndFlush(any(Refund.class))).thenAnswer(inv -> {
+            Refund r = inv.getArgument(0);
+            try {
+                Field idField = Refund.class.getDeclaredField("id");
+                idField.setAccessible(true);
+                if (r.getId() == null) idField.set(r, UUID.randomUUID());
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException(e);
+            }
+            return r;
+        });
+        when(refundRepository.save(any(Refund.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(stripeRefundClient.create(any(RefundCreateParams.class), any(RequestOptions.class)))
+                .thenReturn(stripeRefund("re_env_01", "succeeded"));
+        when(stateMachineService.sendEvent(orderId, OrderStatus.CONFIRMED, OrderEvent.REFUND_REQUESTED))
+                .thenReturn(OrderStatus.REFUNDED);
+        when(refundMapper.toDto(any(Refund.class))).thenReturn(stubDto(UUID.randomUUID()));
+
+        service.createRefund(orderId, req(500L, RefundReason.REQUESTED_BY_CUSTOMER, null), "idem-env-1");
+
+        ArgumentCaptor<RefundCreateParams> paramsCaptor = ArgumentCaptor.forClass(RefundCreateParams.class);
+        verify(stripeRefundClient).create(paramsCaptor.capture(), any(RequestOptions.class));
+        return paramsCaptor.getValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, String> metadataOf(RefundCreateParams params) {
+        return (java.util.Map<String, String>) params.getMetadata();
+    }
+
+    @Test
+    @DisplayName("PAY-03: a refund created with no environment declaration carries metadata environment=unset")
+    void createRefund_undeclaredEnvironment_writesUnset() throws StripeException {
+        RefundCreateParams params = createRefundAndCaptureParams(refundService);
+
+        assertThat(metadataOf(params)).containsEntry("environment", "unset");
+        assertThat(metadataOf(params)).containsKeys("refund_id", "tenant_id", "order_id");
+    }
 }
