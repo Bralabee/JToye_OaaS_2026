@@ -205,6 +205,15 @@ regexes = [
   '''^37-42-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
 ]
 
+[[allowlists]]
+description = "Phase 30-05/30-07 RED-arm and break-arm evidence (30-05-red-task1.json, 30-05-red-task2-it.json, 30-07-task3-arms.txt; squash 7b117162): OrderAwaitingPaymentGateIntegrationTest sends Idempotency-Key 30-05-<uuid> (the 37-40/37-42 shape with this plan's literal prefix and a lower-case UUID tail), and 30-07's break-arm output records the stub PaymentIntent's synthetic client_secret pi_sg1_secret_STUBCSsg1. Content-anchored at both ends so squash merges and branch merges stay clean while any other prefix, non-UUID tail or client secret still fires (12 hits on 7b117162 before, 0 after)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^30-05-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
+  '''^pi_sg1_secret_STUBCSsg1$''',
+]
+
 # ---- Phase 29 staging-estate identifiers (plans 29-09, 29-13, 2026-10-19) ----
 # k8s/staging/azure-identity.yaml holds the IDENTIFIERS of the staging estate, read
 # back from Azure (threat T-29-32, accepted: a client id, an object id or the AKS

@@ -171,8 +171,8 @@ groups:
       # `jtoye_orders_created_total`. The Prometheus exporter strips the reserved `_created`
       # suffix from a counter's name (it is the OpenMetrics sample suffix), so the meter
       # `jtoye.orders.created` is exposed as `jtoye_orders_total` (HELP "Total orders
-      # created"). Measured on the live staging pod, 2026-10-21:
-      # `jtoye_orders_total{application="core-java",environment="production"} 0.0`; there is
+      # created"). Measured on the live staging pod (#999/#1019 fixed the profile tag):
+      # `jtoye_orders_total{application="core-java",environment="staging"} 0.0`; there is
       # no `jtoye_orders_created_total`. Renaming the selector would make the rule blind
       # again, and check-alert-metrics.sh M-1 would say so.
       #
