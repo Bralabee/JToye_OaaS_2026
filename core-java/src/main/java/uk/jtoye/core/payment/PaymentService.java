@@ -514,14 +514,57 @@ public class PaymentService {
     }
 
     /**
-     * Process a Stripe webhook event.
-     * Verifies the signature and dispatches to appropriate handler.
+     * Process a Stripe webhook event from the platform ("Your account") endpoint.
+     *
+     * <p>Verifies against {@code stripe.webhook-secret} only, and refuses an event that carries
+     * {@code account}: a Connected-accounts event belongs on {@link #handleConnectWebhookEvent},
+     * which has its own endpoint and secret (PAY-03, plan 30-12). Each scope has exactly one route
+     * and one secret.
      */
     @Transactional
     public void handleWebhookEvent(String payload, String sigHeader) {
-        Event event;
+        Event event = verify(payload, sigHeader, stripeProperties.getWebhookSecret());
+        if (event.getAccount() != null && !event.getAccount().isBlank()) {
+            log.warn("event=stripe_event_wrong_endpoint id={} type={} scope=connect endpoint=platform",
+                    event.getId(), event.getType());
+            throw new IllegalArgumentException("Connect event sent to the platform endpoint");
+        }
+        dispatch(event);
+    }
+
+    /**
+     * Process a Stripe webhook event from the "Connected accounts" endpoint (PAY-03, plan 30-12).
+     *
+     * <p>Stripe delivers Express {@code account.updated} and every direct-charge
+     * {@code payment_intent.*} / {@code refund.*} event only to an endpoint registered for the
+     * Connected-accounts scope, signed with that endpoint's own secret. This entry verifies against
+     * {@code stripe.connect-webhook-secret} only (blank: refuse everything), requires
+     * {@code event.account}, and then runs the SAME dispatcher as the platform route: one dedup
+     * table, one switch. A direct-charge intent's {@code event.account} is what the charge lookup in
+     * {@code handlePaymentIntentSucceeded} sends as the {@code Stripe-Account} header.
+     */
+    @Transactional
+    public void handleConnectWebhookEvent(String payload, String sigHeader) {
+        Event event = verify(payload, sigHeader, stripeProperties.getConnectWebhookSecret());
+        if (event.getAccount() == null || event.getAccount().isBlank()) {
+            log.warn("event=stripe_event_wrong_endpoint id={} type={} scope=platform endpoint=connect",
+                    event.getId(), event.getType());
+            throw new IllegalArgumentException("Not a Connect event");
+        }
+        dispatch(event);
+    }
+
+    /**
+     * Verify {@code sigHeader} over {@code payload} with {@code secret}. A blank secret refuses
+     * before any verification (fail closed): an unconfigured endpoint must never accept anything.
+     */
+    private Event verify(String payload, String sigHeader, String secret) {
+        if (secret == null || secret.isBlank()) {
+            log.warn("Stripe webhook refused: the endpoint's signing secret is not configured");
+            throw new IllegalArgumentException("Webhook endpoint not configured");
+        }
         try {
-            event = Webhook.constructEvent(payload, sigHeader, stripeProperties.getWebhookSecret());
+            return Webhook.constructEvent(payload, sigHeader, secret);
         } catch (SignatureVerificationException e) {
             log.warn("Stripe webhook signature verification failed: {}", e.getMessage());
             throw new IllegalArgumentException("Invalid Stripe signature");
@@ -529,7 +572,13 @@ public class PaymentService {
             log.error("Failed to parse Stripe webhook event", e);
             throw new IllegalArgumentException("Invalid webhook payload");
         }
+    }
 
+    /**
+     * The one dispatcher behind both webhook routes: the dedup INSERT, then the switch. Runs inside
+     * the caller's transaction.
+     */
+    private void dispatch(Event event) {
         // AUDIT-W0-03 — TOCTOU-safe idempotency guard.
         //
         // Single SQL statement; INSERT ... ON CONFLICT DO NOTHING is atomic in
@@ -571,10 +620,11 @@ public class PaymentService {
                     event.getId());
             // issue #102 (ADR-0001 Decision 2) — Connect connected-account
             // capability sync. Sits AFTER the same dedup guard, so re-delivered
-            // account.updated events short-circuit above. In a live topology the
-            // Connect webhook endpoint must be pointed at the SAME URL/secret as
-            // the platform endpoint (or this handler split per-secret — deferred
-            // to the keyed environment).
+            // account.updated events short-circuit above. Express account.updated
+            // events arrive on the Connected-accounts endpoint
+            // (/api/v1/public/payments/webhook/connect, stripe.connect-webhook-secret);
+            // the platform endpoint refuses any event carrying `account` (PAY-03, plan
+            // 30-12), so do NOT point a Connect endpoint at the platform URL.
             case "account.updated" -> stripeConnectService.handleAccountUpdated(event);
             case "invoice.paid" -> {
                 if (stripeBillingService != null) {

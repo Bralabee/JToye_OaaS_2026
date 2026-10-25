@@ -1118,4 +1118,57 @@ class PaymentServiceTest {
             verifyNoInteractions(orderRepository);
         }
     }
+
+    // --- PAY-03 (plan 30-12): one route and one secret per Stripe event scope ---
+
+    @Test
+    @DisplayName("T-30-50: a blank Connect secret refuses before any signature verification is attempted")
+    void connectWebhook_blankSecret_refusesBeforeVerification() {
+        when(stripeProperties.getConnectWebhookSecret()).thenReturn("");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                    () -> paymentService.handleConnectWebhookEvent("{}", "t=1,v1=00"));
+            assertEquals("Webhook endpoint not configured", refused.getMessage());
+            webhookMock.verifyNoInteractions();
+        }
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
+    @DisplayName("the Connect route verifies with the Connect secret only and dispatches an event carrying account")
+    void connectWebhook_verifiesWithConnectSecretAndDispatches() {
+        when(stripeProperties.getConnectWebhookSecret()).thenReturn("whsec_connect");
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getAccount()).thenReturn("acct_connected_1");
+        when(mockEvent.getType()).thenReturn("account.updated");
+        when(mockEvent.getId()).thenReturn("evt_connect_unit_1");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent("{}", "sig", "whsec_connect")).thenReturn(mockEvent);
+
+            paymentService.handleConnectWebhookEvent("{}", "sig");
+
+            webhookMock.verify(() -> Webhook.constructEvent("{}", "sig", "whsec_connect"));
+        }
+        verify(stripeProperties, never()).getWebhookSecret();
+        verify(stripeConnectService).handleAccountUpdated(mockEvent);
+    }
+
+    @Test
+    @DisplayName("the platform route refuses an event carrying account before the dedup INSERT")
+    void platformWebhook_eventWithAccount_isRefusedBeforeDedup() {
+        when(stripeProperties.getWebhookSecret()).thenReturn("whsec_test");
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getAccount()).thenReturn("acct_connected_1");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(mockEvent);
+
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                    () -> paymentService.handleWebhookEvent("{}", "sig"));
+            assertEquals("Connect event sent to the platform endpoint", refused.getMessage());
+        }
+        verifyNoInteractions(jdbcTemplate, stripeConnectService);
+    }
 }

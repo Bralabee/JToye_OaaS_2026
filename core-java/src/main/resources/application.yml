@@ -828,6 +828,10 @@ ai:
 stripe:
   api-key: ${STRIPE_API_KEY:}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  # PAY-03 (plan 30-12): signing secret of the "Connected accounts" webhook endpoint, which Stripe
+  # posts to /api/v1/public/payments/webhook/connect. Each endpoint has its own secret; blank means
+  # the Connect route refuses every request.
+  connect-webhook-secret: ${STRIPE_CONNECT_WEBHOOK_SECRET:}
   # issue #102 — PaymentIntent currency, formerly a hardcoded "gbp" literal.
   currency: ${STRIPE_CURRENCY:gbp}
   # issue #102 (ADR-0001 Decision 2) — platform application fee on MARKETPLACE
