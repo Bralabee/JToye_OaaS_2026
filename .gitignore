@@ -212,6 +212,7 @@ edge-go/coverage.out
 
 # archify visual-check evidence (regenerable, not artifacts)
 docs/architecture/*.visual-check.*
+docs/architecture/*.delivery.json
 
 # graphify knowledge-graph output. KEPT ON PURPOSE although nothing should create these
 # any more: GSD's graphify integration is disabled (.planning/config.json, 2026-10-22),
