@@ -30,3 +30,49 @@ compose_config_rc=0 tag_local=1 connect_lines=1
 == docs-freshness
 docs-freshness OK: metrics match source (total logical invocations: 6667).
 rc=0
+== golden diff since origin/main
+ k8s/goldens/production.yaml | 12 ++++++++++++
+ k8s/goldens/staging.yaml    | 17 +++++++++++++++++
+ 2 files changed, 29 insertions(+)
+rc=0
+== golden changed lines since origin/main
++  stripe.environment-tag: production
++        - name: STRIPE_ENVIRONMENT_TAG
++          valueFrom:
++            configMapKeyRef:
++              key: stripe.environment-tag
++              name: app-config
++        - name: STRIPE_CONNECT_WEBHOOK_SECRET
++          valueFrom:
++            secretKeyRef:
++              key: connect-webhook-secret
++              name: stripe-credentials
++              optional: true
++  stripe.environment-tag: staging
++        - name: STRIPE_ENVIRONMENT_TAG
++          valueFrom:
++            configMapKeyRef:
++              key: stripe.environment-tag
++              name: app-config
++        - name: STRIPE_CONNECT_WEBHOOK_SECRET
++          valueFrom:
++            secretKeyRef:
++              key: connect-webhook-secret
++              name: stripe-credentials
++              optional: true
++        - |
++          objectName: stripe-credentials--connect-webhook-secret
++          objectType: secret
++    - key: connect-webhook-secret
++      objectName: stripe-credentials--connect-webhook-secret
+== k8s-local-secrets stripe block, stubbed apply_secret (key names only)
+-- connect set
+apply stripe-credentials keys: api-key webhook-secret connect-webhook-secret
+  - stripe-credentials: api-key, webhook-secret, connect-webhook-secret
+-- connect empty
+apply stripe-credentials keys: api-key webhook-secret
+  - stripe-credentials: api-key, webhook-secret
+-- api key empty
+skip stripe-credentials
+  - stripe-credentials: api-key, webhook-secret, connect-webhook-secret
+stub_rc=0
