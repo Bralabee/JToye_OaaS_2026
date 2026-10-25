@@ -18,3 +18,8 @@ ARM idem rc=1 fails=1 red=[FAIL orphan-cancel-one the Stripe cancel lacks Idempo
 ARM elsewhere rc=1 fails=1 red=[FAIL orphan-cancel-args elsewhere: rc=0 (want 2): DRY-RUN az keyvault secret show --vault-name jtoye-stg-kv -n staging-seed--test-vendor-password --qu]
 ARM recheck rc=1 fails=2 red=[FAIL orphan-cancel-one order status reads=8 (want 16: the stage control, then the per-intent re-check)]
 clean-again rc=0 pass=47
+
+## PR #1041 round 1 fix: tenant scoping (2026-10-25); orphan-list and orphan-cancel-refusals gained an other-tenant case
+ARM tenant-filter rc=1 fails=1 red=[FAIL orphan-list ORPHAN-INTENT lines=2 (want exactly 1: pi_orphana)]
+ARM tenant-refusal rc=1 fails=1 red=[FAIL orphan-cancel-refusals other-tenant: rc=0 (want 1)]
+clean-again rc=0 pass=47

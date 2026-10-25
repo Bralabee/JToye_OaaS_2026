@@ -63,9 +63,12 @@
 #   The orphan tools (plan 30-09, issue #1038: the stale-DRAFT cleanup deleted
 #   card DRAFTs and left their intents payable, so cancel-drafts cannot reach them):
 #     --stage list-orphan-intents
-#                              READ-ONLY: every TEST intent still cancelable whose
+#                              READ-ONLY: every TEST intent still cancelable, of the
+#                              vendor's tenant (metadata.tenant_id), whose
 #                              metadata.order_number names no order the vendor can
-#                              see in ANY status. VENDOR-ORDERS total=… (the control:
+#                              see in ANY status. Platform-account intents only (a
+#                              direct-charge intent on a connected account is not
+#                              listed). VENDOR-ORDERS total=… (the control:
 #                              VOID rc 2 when it is 0, since an empty read can be a
 #                              grant failure), ORPHAN-INTENT intent=… order_number=…
 #                              status=… created=… amount=…p, then LIST-ORPHANS
@@ -74,7 +77,8 @@
 #                              D-02 for the order-less: the owner-confirmed ids ONLY.
 #                              Per intent: read (livemode false), refused [paid] if
 #                              succeeded|processing|requires_capture, refused
-#                              [order-exists] if its order is visible again (that
+#                              [other-tenant] unless metadata.tenant_id is the
+#                              vendor's, refused [order-exists] if its order is visible again (that
 #                              order's route is cancel-drafts), cancelled
 #                              (Idempotency-Key d02-orphan-cancel-<pi>) and read back
 #                              canceled (SEED-ORPHAN-CANCEL …); ends CANCEL-ORPHANS
@@ -1399,9 +1403,20 @@ all_order_numbers() {
     || void "the vendor sees no order in any status; an empty read may be a grant failure, so nothing is called an orphan"
 }
 
+# vendor_tenant — sets VENDOR_TENANT from the signed-in vendor's token. One
+# platform Stripe account serves every staging tenant, so an intent is only this
+# tenant's to list or cancel when its metadata.tenant_id says so (PR #1041 round 1):
+# without it another tenant's live checkout would read as an orphan here.
+VENDOR_TENANT=""
+vendor_tenant() {
+  VENDOR_TENANT=$(jwt_claim vendor tenant_id)
+  [[ "$VENDOR_TENANT" =~ ^[0-9a-f-]{36}$ ]] \
+    || void "the vendor's token carries no tenant_id claim; an intent cannot be attributed to this tenant"
+}
+
 # open_intents OUT — every TEST intent still cancelable (requires_payment_method,
-# requires_confirmation, requires_action) that carries metadata.order_number, all
-# pages, projected to id, order_number, status, created, amount (no customer field).
+# requires_confirmation, requires_action) that carries metadata.order_number and
+# this tenant's metadata.tenant_id (VENDOR_TENANT), all pages, projected to id, order_number, status, created, amount (no customer field).
 open_intents() {
   local out="$1" code after="" pages=0
   printf '[]' | body "$out"
@@ -1409,9 +1424,10 @@ open_intents() {
     code=$(stripe_api GET "/v1/payment_intents?limit=100${after:+&starting_after=$after}" "$WORKDIR/pi-page.json")
     [ "$code" = 200 ] || stripe_fail "GET /v1/payment_intents" "$code" "$WORKDIR/pi-page.json"
     assert_test_mode "$WORKDIR/pi-page.json" "GET /v1/payment_intents"
-    jq -s '.[0] + [.[1].data[]
+    jq -s --arg t "$VENDOR_TENANT" '.[0] + [.[1].data[]
             | select(.status == "requires_payment_method" or .status == "requires_confirmation" or .status == "requires_action")
             | select((.metadata.order_number // "") != "")
+            | select((.metadata.tenant_id // "") == $t)
             | {id, order_number: .metadata.order_number, status, created, amount}]' "$out" "$WORKDIR/pi-page.json" | body "$out.next"
     cp "$out.next" "$out"; rm -f "$out.next"
     [ "$(jq -r '.has_more // false' "$WORKDIR/pi-page.json")" = true ] || break
@@ -1428,6 +1444,7 @@ open_intents() {
 list_orphan_intents_stage() {
   local count open
   vendor_login
+  vendor_tenant
   read_stripe_key
   all_order_numbers "$WORKDIR/known.json"
   echo "VENDOR-ORDERS total=$(jq 'length' "$WORKDIR/known.json")"
@@ -1452,6 +1469,8 @@ cancel_orphan_one() {
   assert_test_mode "$WORKDIR/o-pi.json" "PaymentIntent $pi"
   on=$(jq -r '.metadata.order_number // ""' "$WORKDIR/o-pi.json")
   [ -n "$on" ] || refuse not-orphan-candidate "$pi carries no metadata.order_number; only an intent a storefront order made is cancelled here"
+  [ "$(jq -r '.metadata.tenant_id // ""' "$WORKDIR/o-pi.json")" = "$VENDOR_TENANT" ] \
+    || refuse other-tenant "$pi ($on) names tenant '$(jq -r '.metadata.tenant_id // ""' "$WORKDIR/o-pi.json")', not this vendor's; its orders are invisible here, so it is never called an orphan"
   pist=$(jq -r '.status // ""' "$WORKDIR/o-pi.json")
   case "$pist" in
     succeeded|processing|requires_capture)
@@ -1485,6 +1504,7 @@ cancel_orphan_intents_stage() {
   local pi rc requested=0 cancelled=0 refused=0
   local -a list=()
   vendor_login
+  vendor_tenant
   read_stripe_key
   all_order_numbers "$WORKDIR/known.json"
   IFS=, read -r -a list <<<"$INTENTS"
@@ -2373,11 +2393,12 @@ IDF
     printf '%s\n' "$@" | jq -R 'select(. != "")' | jq -s '{content: [.[] | {id: ("oid-" + .), orderNumber: ., status: "CANCELLED",
         customerEmail: "piizq7@example.invalid"}], totalPages: 1, number: 0, last: true}' > "$ast/resp/orders-status-CANCELLED.json"
   }
-  # _st_opi ID STATUS LIVEMODE ORDER_NUMBER(or "") — one intent fixture, and its canceled twin
+  # _st_opi ID STATUS LIVEMODE ORDER_NUMBER(or "") [TENANT] — one intent fixture (the
+  # vendor's tenant unless named), and its canceled twin
   _st_opi() {
-    jq -n --arg id "$1" --arg st "$2" --argjson lm "$3" --arg n "$4" --arg cs "${1}_secret_STUBCS77" '{id: $id,
+    jq -n --arg id "$1" --arg st "$2" --argjson lm "$3" --arg n "$4" --arg t "${5:-$tid}" --arg cs "${1}_secret_STUBCS77" '{id: $id,
         object: "payment_intent", status: $st, livemode: $lm, amount: 950, currency: "gbp", created: 1760000000,
-        client_secret: $cs, receipt_email: "piizq7@example.invalid", metadata: (if $n == "" then {} else {order_number: $n} end)}' \
+        client_secret: $cs, receipt_email: "piizq7@example.invalid", metadata: ((if $n == "" then {} else {order_number: $n} end) + {tenant_id: $t})}' \
       > "$ast/resp/pi-$1.json"
     jq '.status = "canceled" | .cancellation_reason = "abandoned"' "$ast/resp/pi-$1.json" > "$ast/resp/pi-$1-canceled.json"
   }
@@ -2391,8 +2412,9 @@ IDF
   _st_opi pi_known requires_payment_method false ORD-STUB-K001
   _st_opi pi_paidx succeeded false ORD-STUB-G002
   _st_opi pi_nometa requires_payment_method false ""
+  _st_opi pi_othert requires_payment_method false ORD-STUB-T001 99999999-9999-9999-9999-999999999999
   jq -s '{object: "list", has_more: false, data: .}' "$ast/resp/pi-pi_orphana.json" "$ast/resp/pi-pi_known.json" \
-    "$ast/resp/pi-pi_paidx.json" "$ast/resp/pi-pi_nometa.json" > "$ast/resp/pi-list.json"
+    "$ast/resp/pi-pi_paidx.json" "$ast/resp/pi-pi_nometa.json" "$ast/resp/pi-pi_othert.json" > "$ast/resp/pi-list.json"
   _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${lo_args[@]}"
   why=""
   if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
@@ -2405,7 +2427,7 @@ IDF
   elif [ "$(_st_leaks)" -ne 0 ]; then why="a key or client secret was printed or put in argv"
   elif [ "$(_st_pii)" -ne 0 ]; then why="a customer field was printed"
   fi
-  if [ -z "$why" ]; then _st_result "PASS orphan-list rc=0 orphans=1 known+paid+no-metadata=excluded status_reads=8 writes=0"
+  if [ -z "$why" ]; then _st_result "PASS orphan-list rc=0 orphans=1 known+paid+no-metadata+other-tenant=excluded status_reads=8 writes=0"
   else _st_result "FAIL orphan-list $why"; fails=$((fails + 1)); fi
 
   # --- orphan-list-blind: a vendor that sees no order at all VOIDs, lists nothing
@@ -2447,13 +2469,14 @@ IDF
 
   # --- orphan-cancel-refusals: order visible, paid, no metadata; the next still goes
   why=""
-  for sub in order-exists paid no-metadata; do
+  for sub in order-exists paid no-metadata other-tenant; do
     _st_orders_fx ORD-STUB-K001
     _st_opi pi_orphana requires_payment_method false ORD-STUB-G001
     case "$sub" in
       order-exists) _st_opi pi_refx requires_payment_method false ORD-STUB-K001; tag='order-exists' ;;
       paid)         _st_opi pi_refx succeeded false ORD-STUB-G002; tag='paid' ;;
       no-metadata)  _st_opi pi_refx requires_payment_method false ""; tag='not-orphan-candidate' ;;
+      other-tenant) _st_opi pi_refx requires_payment_method false ORD-STUB-T001 99999999-9999-9999-9999-999999999999; tag='other-tenant' ;;
     esac
     _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${co_args[@]}" --intents pi_refx,pi_orphana
     if [ "$ST_RC" -ne 1 ]; then why="$sub: rc=$ST_RC (want 1)"
@@ -2464,7 +2487,7 @@ IDF
     fi
     [ -z "$why" ] || break
   done
-  if [ -z "$why" ]; then _st_result "PASS orphan-cancel-refusals rc=1 order-exists+paid+no-metadata=refused refused_cancels=0 next_cancelled=1"
+  if [ -z "$why" ]; then _st_result "PASS orphan-cancel-refusals rc=1 order-exists+paid+no-metadata+other-tenant=refused refused_cancels=0 next_cancelled=1"
   else _st_result "FAIL orphan-cancel-refusals $why"; fails=$((fails + 1)); fi
 
   # --- orphan-cancel-already-canceled: no Stripe write, still a verdict --------
