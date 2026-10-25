@@ -1,0 +1,77 @@
+# Plan 30-10 evidence: issue #108 (Stripe half), timeouts, isolated breakers, failure predicate
+
+Measured 2026-10-25 between 12:30Z and 12:45Z on branch fix/108-stripe-timeouts at c0b8e253, which is
+the Antigravity session's 30-10 commits (7d0a4334, 7562f2cb), main 201ac06e merged in, and the
+review fix c0b8e253. Every result below comes from that run, read from the JUnit XML under
+core-java/build-local/test-results/, not from Gradle's summary line.
+
+This file replaces the version committed in 80fe7d71, which could not be reproduced:
+- It ran StripeBreakerIntegrationTest under :core-java:test. That class is @Tag("testcontainers"),
+  which the test task excludes, so that run could not have executed it.
+- It named a method that does not exist (rejectedRefunds_keepBothStripeAndStripeRefundBreakersClosed;
+  the method is rejectedRefunds_4xxInvalidRequest_keepBothStripeBreakersClosed).
+- It gave counts of 7 and 14 for StripeClientTimeoutsTest and StripeBreakerFailurePredicateTest; the
+  XML reads 6 and 12.
+- Its Task 1 RED was "No tests found", not the getters reading the SDK defaults the plan asks for.
+- Its second break arm removed the predicate from stripe-refund, not the plan's naive design.
+
+## Review fix (c0b8e253)
+
+PaymentService.init used built-in defaults whenever StripeProperties looked like an unstubbed
+Mockito mock (no Connect block, zero timeouts). Real configuration never takes that path; it existed
+so PaymentServiceTest would pass. init now reads the three values as configured, and the one
+PaymentServiceTest case that reaches init with a key stubs them. The stripe: block's existing comments
+were reflowed onto the end of their lines; they are restored, so the application.yml diff against
+main is additions only (0 removed lines).
+
+## GREEN
+
+./gradlew :core-java:cleanTest :core-java:test --tests StripeClientTimeoutsTest --tests StripePropertiesRedactionTest
+  --tests PaymentServiceTest --tests StripeBreakerFailurePredicateTest --tests 'uk.jtoye.core.boot4.*'   rc=0
+  StripeClientTimeoutsTest            tests=6  failures=0 errors=0
+  StripePropertiesRedactionTest       tests=4  failures=0 errors=0
+  PaymentServiceTest                  tests=38 failures=0 errors=0
+  StripeBreakerFailurePredicateTest   tests=12 failures=0 errors=0
+  boot4.* (9 classes)                 tests=82 failures=0 errors=0
+    (ConfigKeyContractTest 9, RenamedConfigKeysBindingTest 8: no Boot config-key regression from the new keys)
+
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests StripeBreakerIntegrationTest
+  --tests StripeWebhookIdempotencyIntegrationTest   rc=0
+  StripeBreakerIntegrationTest              tests=4 failures=0 errors=0
+  StripeWebhookIdempotencyIntegrationTest   tests=6 failures=0 errors=0
+
+RefundControllerIntegrationTest carries no testcontainers tag, so the plan's integrationTest command
+selects nothing for it (no XML). It runs under the test task:
+./gradlew :core-java:cleanTest :core-java:test --tests RefundControllerIntegrationTest --tests RefundServiceTest   rc=0
+  RefundControllerIntegrationTest   tests=9  failures=0 errors=0   (breaker CLOSED: refund path unchanged)
+  RefundServiceTest                 tests=16 failures=0 errors=0
+
+## Break arms (each on the committed tree; restored with git checkout, then git diff --quiet rc=0)
+
+ARM A, the Task 1 RED shape: the three Stripe.set* calls deleted from PaymentService.init
+  StripeClientTimeoutsTest   rc=1, 6 tests, 2 failed
+    "init applies default 5000/20000/2 …"   expected: 5000  but was: 30000
+    "init applies custom timeout …"          expected: 3500  but was: 30000
+  30000 is stripe-java 34.0.0's default connect timeout: without the setters the SDK keeps its defaults.
+
+ARM B: @CircuitBreaker(name = "stripe-refund") deleted from StripeRefundClient.create
+  StripeBreakerIntegrationTest   rc=1, 4 tests, 2 failed
+    "stripe-refund OPEN -> POST /refund returns 503 …"   Status expected:<503> but was:<500>
+    "transport-failures-isolated …"                       expected: OPEN but was: CLOSED
+
+ARM C, the plan's naive design (PR #1018 review finding 1): StripeRefundClient.create on
+@CircuitBreaker(name = "stripe") AND the stripe instance's record-failure-predicate line deleted
+(predicate lines 3 -> 2)
+  StripeBreakerIntegrationTest   rc=1, 4 tests, 3 failed
+    "rejected-refunds-keep-breakers-closed …"
+      [checkout breaker 'stripe' must stay CLOSED after 4xx refund rejections] expected: CLOSED but was: OPEN
+    "stripe-refund OPEN -> POST /refund returns 503 …"   Status expected:<503> but was:<500>
+    "transport-failures-isolated …"                       expected: OPEN but was: CLOSED
+  On the naive design, rejected refunds open the checkout breaker, which would 503 every card checkout.
+
+Clean again after the arms: StripeBreakerIntegrationTest rc=0, tests=4 failures=0 errors=0.
+
+## D-10: the SMTP half untouched
+
+git diff origin/main...HEAD -- core-java/src/main/resources/application.yml > "$t"; rc=0, 41 lines
+added lines matching mail.smtp: 0   (control: the same file with one planted "+ mail.smtp…" line: 1)

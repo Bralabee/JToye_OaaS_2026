@@ -108,7 +108,7 @@ public class RefundService {
      * @return RefundDto for either the newly-created or replayed Refund
      * @throws StripeException if Stripe rejects the create call
      */
-    @Transactional
+    @Transactional(noRollbackFor = io.github.resilience4j.circuitbreaker.CallNotPermittedException.class)
     public RefundDto createRefund(UUID orderId, CreateRefundRequest request, String clientIdempotencyKey)
             throws StripeException {
         UUID tenantId = TenantContext.get()
@@ -221,7 +221,7 @@ public class RefundService {
             }
 
             stripeRefund = stripeRefundClient.create(paramsBuilder.build(), optsBuilder.build());
-        } catch (StripeException ex) {
+        } catch (StripeException | io.github.resilience4j.circuitbreaker.CallNotPermittedException ex) {
             log.warn("Stripe.Refund.create failed for refund {}: {}", refund.getId(), ex.getMessage());
             markRefundFailed(refund.getId(), ex.getMessage());
             throw ex;

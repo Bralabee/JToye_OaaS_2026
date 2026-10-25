@@ -26,6 +26,21 @@ public class StripeProperties {
      */
     private int platformFeeBps = 0;
 
+    /**
+     * Outbound Stripe HTTP connect timeout in milliseconds (issue #108; SDK default is 30_000).
+     */
+    private int connectTimeoutMs = 5000;
+
+    /**
+     * Outbound Stripe HTTP read timeout in milliseconds (issue #108; SDK default is 80_000).
+     */
+    private int readTimeoutMs = 20000;
+
+    /**
+     * Maximum automatic SDK network retries on idempotent/transport failures (issue #108; SDK default is 2).
+     */
+    private int maxNetworkRetries = 2;
+
     private final Connect connect = new Connect();
     private final Billing billing = new Billing();
 
@@ -40,6 +55,15 @@ public class StripeProperties {
 
     public int getPlatformFeeBps() { return platformFeeBps; }
     public void setPlatformFeeBps(int platformFeeBps) { this.platformFeeBps = platformFeeBps; }
+
+    public int getConnectTimeoutMs() { return connectTimeoutMs; }
+    public void setConnectTimeoutMs(int connectTimeoutMs) { this.connectTimeoutMs = connectTimeoutMs; }
+
+    public int getReadTimeoutMs() { return readTimeoutMs; }
+    public void setReadTimeoutMs(int readTimeoutMs) { this.readTimeoutMs = readTimeoutMs; }
+
+    public int getMaxNetworkRetries() { return maxNetworkRetries; }
+    public void setMaxNetworkRetries(int maxNetworkRetries) { this.maxNetworkRetries = maxNetworkRetries; }
 
     public Connect getConnect() { return connect; }
 
@@ -158,6 +182,9 @@ public class StripeProperties {
                 + ", webhookSecret=" + mask(webhookSecret)
                 + ", currency=" + currency
                 + ", platformFeeBps=" + platformFeeBps
+                + ", connectTimeoutMs=" + connectTimeoutMs
+                + ", readTimeoutMs=" + readTimeoutMs
+                + ", maxNetworkRetries=" + maxNetworkRetries
                 + ", connect.country=" + connect.country
                 + ", connect.returnUrl=" + connect.returnUrl
                 + ", connect.refreshUrl=" + connect.refreshUrl + ")";

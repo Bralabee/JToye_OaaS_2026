@@ -552,6 +552,35 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Phase 30-10 (issue #108, T-30-38, T-30-40): map an open Resilience4j circuit breaker
+     * to a typed HTTP 503 with {@code Retry-After: 30}. Never echoes the internal breaker
+     * name in the response body.
+     */
+    @ExceptionHandler(io.github.resilience4j.circuitbreaker.CallNotPermittedException.class)
+    public ResponseEntity<ProblemDetail> handleCircuitBreakerOpen(
+            io.github.resilience4j.circuitbreaker.CallNotPermittedException ex) {
+        String breaker = ex.getCausingCircuitBreakerName();
+        boolean isStripeBreaker = "stripe".equals(breaker)
+                || (breaker != null && breaker.startsWith("stripe-"));
+        log.warn("Circuit breaker open: isStripe={}", isStripeBreaker);
+        String detail = isStripeBreaker
+                ? "Card payments are temporarily unavailable. Please try again shortly."
+                : "A service this request depends on is temporarily unavailable. Please try again shortly.";
+        String title = isStripeBreaker
+                ? "Payment provider unavailable"
+                : "Service temporarily unavailable";
+        String type = isStripeBreaker
+                ? "https://jtoye.uk/errors/payment-provider-unavailable"
+                : "https://jtoye.uk/errors/upstream-unavailable";
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, detail);
+        problem.setTitle(title);
+        problem.setType(URI.create(type));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "30")
+                .body(problem);
+    }
+
+    /**
      * QA-council BE-04 — classify common request-shape faults as their correct
      * 4xx status instead of letting them fall through to the catch-all 500.
      * Bodies stay generic RFC-7807 (no internal detail leaked).

@@ -834,6 +834,10 @@ stripe:
   # destination charges, in basis points (250 = 2.5%). 0 (default) = no fee set;
   # the fee is a business decision injected per environment, never a code literal.
   platform-fee-bps: ${STRIPE_PLATFORM_FEE_BPS:0}
+  # issue #108 — outbound Stripe SDK timeouts and retry cap (SDK defaults: 30000ms / 80000ms / 2).
+  connect-timeout-ms: ${STRIPE_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${STRIPE_READ_TIMEOUT_MS:20000}
+  max-network-retries: ${STRIPE_MAX_NETWORK_RETRIES:2}
   connect:
     # Country for new Express connected accounts (UK platform).
     country: ${STRIPE_CONNECT_COUNTRY:GB}
@@ -977,6 +981,25 @@ resilience4j:
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 3
         register-health-indicator: true
+        record-failure-predicate: uk.jtoye.core.payment.StripeBreakerFailurePredicate
+      # issue #108, PR #1018 review finding 1 (T-30-126): checkout ('stripe'), refund
+      # ('stripe-refund'), and webhook charge lookup ('stripe-lookup') sit on isolated
+      # breaker instances and share StripeBreakerFailurePredicate so 4xx business/card
+      # rejections never count toward opening any Stripe circuit breaker.
+      stripe-refund:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+        record-failure-predicate: uk.jtoye.core.payment.StripeBreakerFailurePredicate
+      stripe-lookup:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+        record-failure-predicate: uk.jtoye.core.payment.StripeBreakerFailurePredicate
       # Phase 18: gate-client breakers (18-03 FHRS, 18-04 Companies House) —
       # defined here so the later gate slices need not touch application.yml.
       fhrs:

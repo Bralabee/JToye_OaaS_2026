@@ -4,6 +4,7 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Refund;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.RefundCreateParams;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class StripeRefundClient {
 
+    @CircuitBreaker(name = "stripe-refund")
     public Refund create(RefundCreateParams params, RequestOptions opts) throws StripeException {
         return Refund.create(params, opts);
     }

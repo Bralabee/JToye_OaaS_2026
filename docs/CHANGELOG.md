@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Stripe Calls Are Bounded in Time, and Only a Provider Outage Opens a Stripe Breaker (#1044) — 2026-10-25
+
+Issue #108, the Stripe half. No Stripe timeout was set, so stripe-java's defaults applied (30 s connect, 80 s read): one hung call could hold a checkout request thread for minutes. Refunds and the webhook's charge lookup sat outside every breaker, and the one `stripe` breaker counted every exception, so rejected refunds could open it and 503 every card checkout (PR #1018 review finding 1).
+
+- **Timeouts from configuration.**
+  - The values: `stripe.connect-timeout-ms` 5000, `stripe.read-timeout-ms` 20000, `stripe.max-network-retries` 2 (env `STRIPE_CONNECT_TIMEOUT_MS`, `STRIPE_READ_TIMEOUT_MS`, `STRIPE_MAX_NETWORK_RETRIES`).
+  - Applied once in `PaymentService.init` and announced in one startup line.
+  - Startup is refused, naming the property, when a value is out of range.
+- **Breakers of their own.** Refund creation is on `stripe-refund`, and the webhook's charge lookup (new `StripeChargeClient`) is on `stripe-lookup`. Neither can open the checkout breaker `stripe`.
+- **Only provider failures count.**
+  - `StripeBreakerFailurePredicate` is on all three breakers.
+  - It counts connection failures, rate limits, 5xx answers and an `IOException` in the cause chain.
+  - It never counts a 4xx business rejection or an application exception.
+- **Typed 503.**
+  - An open breaker answers 503 with `Retry-After: 30`: type `payment-provider-unavailable` for Stripe, `upstream-unavailable` otherwise, never naming the breaker.
+  - A refund refused this way is marked FAILED, never left CREATING.
+  - A payment still settles while `stripe-lookup` is open, with "Card" as its method description.
+- **Out of scope.** SMTP, axios, S3 and the email breaker, the other half of issue #108.
+
 ### graph.sh Can Show the Graph, Installs the Version It Was Proven On, and Claude Sessions Are Told It Exists (#1042) — 2026-10-25
 
 `scripts/graph.sh` (#1034) was reachable only through the last line of `AGENTS.md`, which Claude Code does not load: across every OaaS session transcript, `CLAUDE.md` was loaded 526 times and `AGENTS.md` never.
