@@ -1,0 +1,100 @@
+# 30-09 Task 1: abandoned DRAFTs and orphaned TEST intents, read-only
+# Recorded 2026-10-25T09:36:21Z on staging, after PR #1041 (b728254e) deployed; pod imageIDs equal the ghcr digests CI pushed for b728254e:
+#   core-java sha256:d5ef2a60bb81  frontend sha256:4e67b9329537  edge-go sha256:0f8f1ec8477e
+
+# Transcripts below are the script's output verbatim except where a line is marked [REDACTED: …]; the only redaction is the vendor sign-in line, whose address is not recorded.
+## list-drafts (rc 0)
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+OK: read 2 Key Vault objects from jtoye-stg-kv (values not shown)
+[REDACTED: the line "OK: signed in as <staging vendor test account address>"]
+LIST-DRAFTS count=0 card=0 at=2026-10-25T09:36:31Z
+
+## list-orphan-intents (rc 0)
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+OK: read 2 Key Vault objects from jtoye-stg-kv (values not shown)
+[REDACTED: the line "OK: signed in as <staging vendor test account address>"]
+OK: read the Stripe TEST key from jtoye-stg-kv/stripe-credentials--api-key (sk_test_; value not shown)
+VENDOR-ORDERS total=8
+ORPHAN-INTENT intent=pi_3UTJiNDpS9ICNeRt0AoBCcK2 order_number=ORD-1AAC0CDE-20261022-0C094A2C status=requires_payment_method created=2026-10-22T10:59:19Z amount=950p
+ORPHAN-INTENT intent=pi_3USL7bDpS9ICNeRt0edO3QBa order_number=ORD-1AAC0CDE-20261019-2EF64EBB status=requires_payment_method created=2026-10-19T18:17:19Z amount=950p
+ORPHAN-INTENT intent=pi_3USL6jDpS9ICNeRt0JVz7owF order_number=ORD-1AAC0CDE-20261019-2CC1DDB5 status=requires_payment_method created=2026-10-19T18:16:25Z amount=950p
+ORPHAN-INTENT intent=pi_3USL6GDpS9ICNeRt4ZY43HH1 order_number=ORD-1AAC0CDE-20261019-FAF8357A status=requires_payment_method created=2026-10-19T18:15:56Z amount=950p
+ORPHAN-INTENT intent=pi_3USL4KDpS9ICNeRt25NQv6HV order_number=ORD-1AAC0CDE-20261019-E3835327 status=requires_payment_method created=2026-10-19T18:13:56Z amount=950p
+ORPHAN-INTENT intent=pi_3USJ3ZDpS9ICNeRt3sp6oJsJ order_number=ORD-1AAC0CDE-20261019-750F976B status=requires_payment_method created=2026-10-19T16:05:01Z amount=950p
+LIST-ORPHANS count=6 open=7 at=2026-10-25T09:36:44Z
+
+## Against issue #1038's seven
+| order_number suffix | intent | listed | note |
+|---|---|---|---|
+| 20261022-0C094A2C | pi_3UTJiNDpS9ICNeRt0AoBCcK2 | yes | named by the issue |
+| 20261019-2EF64EBB | pi_3USL7bDpS9ICNeRt0edO3QBa | yes | named by the issue |
+| 20261019-2CC1DDB5 | pi_3USL6jDpS9ICNeRt0JVz7owF | yes | named by the issue |
+| 20261019-FAF8357A | pi_3USL6GDpS9ICNeRt4ZY43HH1 | yes | named by the issue |
+| 20261019-E3835327 | pi_3USL4KDpS9ICNeRt25NQv6HV | yes | named by the issue |
+| 20261019-750F976B | pi_3USJ3ZDpS9ICNeRt3sp6oJsJ | yes | named by the issue |
+| 20261019-C97DCE79 | pi_3USL6GDpS9ICNeRt3mZUuGVa | NO (correctly) | the order still exists outside DRAFT: the 2026-10-19 swarm confirmed it unpaid (swarm HANDOFF: "Jordan C97DCE79 CONFIRMED unpaid"). It is one of the 7 open intents but not an orphan; its order is visible, so cancel-orphan-intents would refuse it [order-exists]. It is the issue #1031 class (a non-DRAFT order with a payable intent), not issue #1038's. |
+
+Extra orphans not named by the issue: none.
+Open intents of the tenant: 7 (6 orphans + C97DCE79). Other intents on the account (stripe-get /v1/payment_intents?limit=100, has_more=false):
+3 succeeded (7FE4E933, D69764AE, 4D3B23A2) and 1 canceled/abandoned (20261024-C6DA71F1, the 30-08 fresh unpaid order).
+Limit: the orphan stages see platform-account intents only; a direct-charge intent on a connected account is not listed.
+
+## Verification (both directions)
+- Plan verify AS WRITTEN on a re-run at 2026-10-25T09:39:03Z: rc=0 [LIST-ORPHANS count=6 open=7] [VENDOR-ORDERS total=8] pii_lines=1, verdict 1.
+  The one line is the script's own "OK: signed in as <the staging vendor test account>", which contains an at-sign. The check as written
+  fails on a correct listing, so it is replaced by a strictly stronger form, recorded here, not silently substituted:
+- STRONGER form: drop exactly that one sign-in line (grep -vx on the full literal), then count lines matching the plan's PII regex (at-sign, or a UK mobile 07nnn nnnnnn): 0.
+  Fail direction: an email planted on each ORPHAN-INTENT line counts 6; a sign-in line naming any other address counts 1.
+- PII regex positive control over a here-string holding one example email and one 07700 test mobile (the plan's literal): 1.
+- This file: pii regex 0 lines. This certifies the recorded (redacted) file only; that the LIVE output carries no PII besides the sign-in line is shown by the STRONGER form above, which ran on the unredacted output.
+- staging-secrets.sh --leak-scan on this file (jtoye-ops): rc 0, "31 objects checked, 0 found (12 estate identifiers not secret, skipped)".
+  Fail direction: staging-secrets.sh --selftest 13/13, "PASS leak-scan hit=1-named clean=0 missing=VOID empty=VOID".
+  (A first run outside the conda env was VOID rc 2 from the python shim, not a pass.)
+
+## Next: Task 2 (blocking owner checkpoint)
+Candidates: 0 card DRAFTs; 6 orphan intents listed above. C97DCE79's intent is out of D-02's scope (its order exists).
+
+## Task 2: owner choice (recorded 2026-10-25T10:05:28Z, before Task 3 ran)
+all-listed. Exclusions: none. Cancel set (6): pi_3UTJiNDpS9ICNeRt0AoBCcK2, pi_3USL7bDpS9ICNeRt0edO3QBa,
+pi_3USL6jDpS9ICNeRt0JVz7owF, pi_3USL6GDpS9ICNeRt4ZY43HH1, pi_3USL4KDpS9ICNeRt25NQv6HV, pi_3USJ3ZDpS9ICNeRt3sp6oJsJ. DRAFTs: none to cancel.
+
+## Task 3: cancel-orphan-intents --intents <the 6 above> (rc 0)
+OK: context 'jtoye-stg-aks' passed staging_kube_guard
+OK: all 1 Ready core-java pod(s) run SPRING_PROFILES_ACTIVE=prod
+OK: read 2 Key Vault objects from jtoye-stg-kv (values not shown)
+[REDACTED: the line "OK: signed in as <staging vendor test account address>"]
+OK: read the Stripe TEST key from jtoye-stg-kv/stripe-credentials--api-key (sk_test_; value not shown)
+OK: Stripe accepted the cancel of pi_3UTJiNDpS9ICNeRt0AoBCcK2 (Idempotency-Key d02-orphan-cancel-pi_3UTJiNDpS9ICNeRt0AoBCcK2)
+SEED-ORPHAN-CANCEL intent=pi_3UTJiNDpS9ICNeRt0AoBCcK2 order_number=ORD-1AAC0CDE-20261022-0C094A2C intent_status=canceled livemode=false at=2026-10-25T10:05:39Z
+OK: Stripe accepted the cancel of pi_3USL7bDpS9ICNeRt0edO3QBa (Idempotency-Key d02-orphan-cancel-pi_3USL7bDpS9ICNeRt0edO3QBa)
+SEED-ORPHAN-CANCEL intent=pi_3USL7bDpS9ICNeRt0edO3QBa order_number=ORD-1AAC0CDE-20261019-2EF64EBB intent_status=canceled livemode=false at=2026-10-25T10:05:47Z
+OK: Stripe accepted the cancel of pi_3USL6jDpS9ICNeRt0JVz7owF (Idempotency-Key d02-orphan-cancel-pi_3USL6jDpS9ICNeRt0JVz7owF)
+SEED-ORPHAN-CANCEL intent=pi_3USL6jDpS9ICNeRt0JVz7owF order_number=ORD-1AAC0CDE-20261019-2CC1DDB5 intent_status=canceled livemode=false at=2026-10-25T10:05:50Z
+OK: Stripe accepted the cancel of pi_3USL6GDpS9ICNeRt4ZY43HH1 (Idempotency-Key d02-orphan-cancel-pi_3USL6GDpS9ICNeRt4ZY43HH1)
+SEED-ORPHAN-CANCEL intent=pi_3USL6GDpS9ICNeRt4ZY43HH1 order_number=ORD-1AAC0CDE-20261019-FAF8357A intent_status=canceled livemode=false at=2026-10-25T10:05:53Z
+OK: Stripe accepted the cancel of pi_3USL4KDpS9ICNeRt25NQv6HV (Idempotency-Key d02-orphan-cancel-pi_3USL4KDpS9ICNeRt25NQv6HV)
+SEED-ORPHAN-CANCEL intent=pi_3USL4KDpS9ICNeRt25NQv6HV order_number=ORD-1AAC0CDE-20261019-E3835327 intent_status=canceled livemode=false at=2026-10-25T10:05:55Z
+OK: Stripe accepted the cancel of pi_3USJ3ZDpS9ICNeRt3sp6oJsJ (Idempotency-Key d02-orphan-cancel-pi_3USJ3ZDpS9ICNeRt3sp6oJsJ)
+SEED-ORPHAN-CANCEL intent=pi_3USJ3ZDpS9ICNeRt3sp6oJsJ order_number=ORD-1AAC0CDE-20261019-750F976B intent_status=canceled livemode=false at=2026-10-25T10:05:59Z
+CANCEL-ORPHANS requested=6 cancelled=6 refused=0
+
+Plan verify 1: rc=0 requested=6 ok=6.
+DRAFT orders: none were confirmed, so cancel-drafts was not run.
+Refusals: none.
+
+## Independent read-back (stripe-get), first and last
+STRIPE-GET pi_3UTJiNDpS9ICNeRt0AoBCcK2 rc=0 status=canceled livemode=false cancellation_reason=abandoned canceled_at=2026-10-25T10:05:39Z
+STRIPE-GET pi_3USJ3ZDpS9ICNeRt3sp6oJsJ rc=0 status=canceled livemode=false cancellation_reason=abandoned canceled_at=2026-10-25T10:05:58Z
+
+## Re-run listings after the cancel
+VENDOR-ORDERS total=8
+LIST-ORPHANS count=0 open=1 at=2026-10-25T10:06:35Z
+LIST-DRAFTS count=0 card=0 at=2026-10-25T10:06:41Z
+Plan verify 2: rc=0 still_listed=0. Fail direction: the same loop over the Task 1 listing counts 6.
+open=1 is C97DCE79's intent (pi_3USL6GDpS9ICNeRt3mZUuGVa), deliberately out of D-02's scope; its order exists. It is the issue #1031 class.
+
+## Final scans of this file
+- PII regex: 0 lines (of the redacted file; see the STRONGER form for the live output). Control: the same file with the plan's literal appended counts 1.
+- staging-secrets.sh --leak-scan (jtoye-ops): rc 0, 31 objects checked, 0 found. Control: --selftest 13/13 (leak-scan hit=1-named).
