@@ -19,3 +19,43 @@ repeats the same read on the merged deploy, expecting the opposite.
 Before the update: docs-freshness.sh rc=1 (java_test_files 422 -> 425, java_test_methods 3026 -> 3049,
 total 6613 -> 6636), and check-doc-metrics.sh rc=1 (10 FAIL lines: README.md 4, CLAUDE.md 3, AGENTS.md 3).
 After metrics.json --write and the prose update: both rc=0.
+
+## Task 2, merge
+
+PR #1044 squash-merged as 9d20477800f16f941b26b5cf1dab4d96a329c563 after round 1 (/code-review) admitted 0 of 9
+(Review-Record on 99363f074eca1a1e74dc9836c95d9b092e64e147). Before merging: behind=0, 0 active main runs, the stored
+squash message scanned 0 attribution lines and 0 closing keywords.
+
+Main run 40208207618: completed success. Deploy to Staging success, Staging Edge Probe success, every build job success
+(Branch Not Behind Base skipped on main, Deploy to Production skipped). The rollback rule was armed and not needed.
+
+## Task 3, GREEN on the merged deploy
+
+Read at 2026-10-25T16:57:43Z with kubectl --context jtoye-stg-aks, namespace jtoye-staging, token minted with
+--subscription c483d353-5f61-4587-a790-addb9ab5fb94.
+
+Digest parity (pod imageID vs `docker buildx imagetools inspect ghcr.io/bralabee/jtoye-<svc>:9d204778…`):
+  core-java  sha256:0aa0d3c84ba4442b2a531eb289e43c91e511f05aa1d9c9d4b191495c5ea4cf98  MATCH
+  edge-go    sha256:8921d22cd939f9148ebada60cd26ef2c00ecbddf9879054591c8f3bc3ab0e062  MATCH
+  frontend   sha256:fa1ab4a165ffd7c71ae33b9b0c5777a0fd70dd644de271ef0360b5937de97e83  MATCH
+  control: the Task 1 pod ran sha256:42e5f537…, which differs from the new core-java digest.
+
+Startup line, per Ready core-java pod (logs rc=0, 134 lines):
+                                RED (Task 1, 12:45:48Z)          GREEN (Task 3, 16:57:43Z)
+  pod                           core-java-7b7b7b59d-8296h        core-java-5d547bb6b6-hdsvs
+  new line (exact 5000/20000/2) 0                                1   logged 2026-10-25 16:54:30.862
+  old line                      1                                0
+  pods_missing_line=0 -> plan verify rc=0
+
+Health inside the pod (management port 9091): /actuator/health returns {"status":"UP"} with no component detail, so
+no circuitBreakers component is visible there (details are not shown on staging); /actuator/health/circuitBreakers
+is 404 and /actuator/circuitbreakers is 401. The breaker state is read instead from the pod's own
+/actuator/prometheus, resilience4j_circuitbreaker_state:
+  stripe         closed=1 open=0
+  stripe-refund  closed=1 open=0
+  stripe-lookup  closed=1 open=0
+  (also ai, companies-house, email, fhrs, webhook, all closed). stripe-refund and stripe-lookup exist only in the
+  merged code, so their presence is a second identity check on the running build.
+
+Issue #108 comment: issuecomment-6400501402. Read back: attribution=0 (planted control counts 1), names the remaining
+SMTP/axios/S3/email-breaker half, closing keywords 0, state OPEN.
