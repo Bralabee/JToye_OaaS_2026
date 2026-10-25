@@ -5,10 +5,10 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing — 30-08 DONE (8/32); quick 261025-8p7 (issue #1038 cleanup fix) + 30-09 Task 0 (orphan-intent stages) committed on fix/1038-stale-draft-intents, not pushed; next ship that PR, then 30-09 Task 1"
-last_updated: "2026-10-25T07:00:00.000Z"
+stopped_at: "Phase 30 executing — 30-08 DONE (8/32); PR #1041 (issue #1038 fix + 30-09 Task 0) merged b728254e and deployed with digest parity; 30-09 Task 1 done (6 orphan intents, 0 drafts); waiting at the Task 2 owner checkpoint"
+last_updated: "2026-10-25T09:45:00.000Z"
 last_activity: 2026-10-25
-last_activity_desc: "quick 261025-8p7 done — the stale-DRAFT cleanup cancels a card DRAFT's PaymentIntent before deleting the order (issue #1038); 30-09 re-routed (Task 0 orphan-intent stages committed)"
+last_activity_desc: "30-09 Task 1 — listings read-only on staging: 0 DRAFTs, 6 orphan TEST intents; C97DCE79 excluded (its order exists, CONFIRMED unpaid)"
 state_head: 021c0815b358a710ab31ffe4cb3f4f33e9b52636
 progress:
   total_phases: 20
