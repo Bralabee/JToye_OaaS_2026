@@ -81,3 +81,23 @@ uk.jtoye.core.config.ScheduledCleanupServiceIntegrationTest: tests=2 failures=1 
         org.opentest4j.AssertionFailedError: org.opentest4j.AssertionFailedError: [Tenant A keeps only the card draft Stripe could not cancel] | expected: 1 | but was: 0
   (pre-existing cleanupAcrossMultipleTenantsCompletesAndDeletesEachTenantsDrafts PASSES at RED; skipped=0, so the Testcontainers class executed)
   The old job deleted the tenant-A card draft whose cancel would have failed: expected 1 draft left, was 0.
+
+## STEP 2
+RED_SHA=a0c46e38109c83de7e773a3d66059cf283d8b0f2
+
+## GREEN (fix applied) — 2026-10-25
+Unit: ./gradlew :core-java:test --rerun --tests ScheduledCleanupServiceTest --tests PaymentServiceTest -> rc=0
+uk.jtoye.core.config.ScheduledCleanupServiceTest: tests=19 failures=0 errors=0 skipped=0
+uk.jtoye.core.payment.PaymentServiceTest: tests=38 failures=0 errors=0 skipped=0
+IT: ./gradlew :core-java:integrationTest --rerun --tests ScheduledCleanupServiceIntegrationTest -> rc=0
+uk.jtoye.core.config.ScheduledCleanupServiceIntegrationTest: tests=2 failures=0 errors=0 skipped=0
+IT log lines (NOSUPERUSER sweep):
+  event=stale_draft_kept reason=stripe_error order=ORD-00000000-20261025-227BE4C6 intent=pi_it1038_a_cancel_fails error=ApiConnectionException code=null
+  Cleaned up 1 stale DRAFT orders for tenant 00000000-0000-0000-0000-000000000001 (deletedWithoutPayment=1 deletedAfterCancel=0 kept=1)
+  Cleaned up 2 stale DRAFT orders for tenant 00000000-0000-0000-0000-000000000002 (deletedWithoutPayment=1 deletedAfterCancel=1 kept=0)
+  Cleaned up 1 stale DRAFT orders for tenant 00000000-0000-0000-0000-000000000001 (deletedWithoutPayment=1 deletedAfterCancel=0 kept=0)
+  Cleaned up 1 stale DRAFT orders for tenant 00000000-0000-0000-0000-000000000002 (deletedWithoutPayment=1 deletedAfterCancel=0 kept=0)
+
+Scaffold proof: git show RED_SHA:PaymentService.java | grep -c UnsupportedOperationException = 2 (rc=0); working file = 0 (rc=1)
+
+Note: noPaymentDraft_isDeletedWithoutAskingStripe was extended in the GREEN commit with a NULL-paymentStatus, no-reference draft (deleted as before) and a never-directChargeAccountFor check; it still passes pre-fix by design (old code deleted every stale draft).

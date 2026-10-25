@@ -147,12 +147,16 @@ class ScheduledCleanupServiceTest {
     @DisplayName("issue #1038: a draft with no payment is deleted without asking Stripe")
     void noPaymentDraft_isDeletedWithoutAskingStripe() throws Exception {
         Order draft = staleDraft(null, PaymentStatus.NONE);
-        when(orderRepository.findByStatus(OrderStatus.DRAFT)).thenReturn(List.of(draft));
+        // A NULL payment_status (the V22 column is nullable, default NONE) with no
+        // reference carries no Stripe object either, so it is cleaned as before.
+        Order legacyDraft = staleDraft(null, null);
+        when(orderRepository.findByStatus(OrderStatus.DRAFT)).thenReturn(List.of(draft, legacyDraft));
 
         cleanupService.cleanupStaleDraftOrders();
 
-        verify(orderRepository).deleteAll(List.of(draft));
+        verify(orderRepository).deleteAll(List.of(draft, legacyDraft));
         verify(paymentService, never()).cancelAbandonedPaymentIntent(any(), any());
+        verify(paymentService, never()).directChargeAccountFor(any());
     }
 
     @Test
