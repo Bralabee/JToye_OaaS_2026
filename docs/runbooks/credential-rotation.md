@@ -293,8 +293,10 @@ deploy that introduces the gate) is `scripts/staging-secrets.sh`, not this proce
 
 ## 6.2 Staging Key Vault objects, by class (plan 29-27, 2026-10-20)
 
-Staging holds 43 objects in `jtoye-stg-kv` (`bash scripts/staging-secrets.sh --list` prints the
-names and classes, offline). The list is derived from the render, never typed. **Key Vault is
+The staging render names 44 objects for `jtoye-stg-kv` (43 until plan 30-13 added
+`stripe-credentials--connect-webhook-secret`, which the owner stores in plan 30-14;
+`bash scripts/staging-secrets.sh --list` prints the names and classes, and for an external object
+the prefix or validator its value must meet, offline). The list is derived from the render, never typed. **Key Vault is
 write-once by construction:** `scripts/staging-secrets.sh` never writes an object that exists, in
 any mode, so it is never the rotation tool. Rotation is a deliberate act by the operator that writes
 a **new version** of an object, then restarts what reads it, as shown for the mail UI in section 6.1
@@ -314,7 +316,7 @@ section 3. Day-to-day access to the objects: the same page, section 2.
 | **random, broker and cache** | `rabbitmq-credentials--password`, `redis-credentials--password` | New version, then restart the broker or cache and every consumer. The RabbitMQ composites (`rabbitmq-credentials--stomp-passcode`, `rabbitmq-default-user--default-user-conf`) are derived from `rabbitmq-credentials--password` and must be rewritten in the same step, in that order; the broker reads `rabbitmq-default-user` through `secret-sync`. |
 | **random, admin logins** | `grafana-admin-credentials--admin-password`, `keycloak-credentials--admin-password`, `staging-seed--test-vendor-password`, `smtp-credentials--password` | Grafana applies `GF_SECURITY_ADMIN_*` on every fresh start and keeps no state, so a new version and `rollout restart deploy/grafana` is enough (login: old refused, new accepted). Keycloak applies its admin password only when it first creates the admin, and the seed password is a Keycloak user's, so for those two a new vault version changes nothing until the value is also changed in the running Keycloak (the trap of section 2). Mailpit takes no SMTP auth in staging. |
 | **composite** | `mailpit-ui-credentials--auth`, `grafana-edge-credentials--auth`, the RabbitMQ composites | Derived from other objects: rotate the input, then rewrite the composite. The mail UI is section 6.1, the Grafana edge gate section 6.1a. |
-| **external** | `stripe-credentials--api-key`, `stripe-credentials--webhook-secret`, `alertmanager-smtp-credentials--from/username/password/to` | Supplied by the owner. The value is created at the provider (Stripe test mode, Zoho), then written as a new version by hand with the same prefix rule the writer enforces: `sk_test_` and `whsec_` only, because a live Stripe key never enters staging (D-28); no whitespace; an address object is one address. Restart `core-java` for Stripe and `deploy/alertmanager` for the mail objects, then re-run `scripts/check-alert-liveness.sh` (section 5 of the staging operations page). |
+| **external** | `stripe-credentials--api-key`, `stripe-credentials--webhook-secret`, `stripe-credentials--connect-webhook-secret`, `alertmanager-smtp-credentials--from/username/password/to` | Supplied by the owner. The value is created at the provider (Stripe test mode, Zoho), then written as a new version by hand with the same prefix rule the writer enforces: `sk_test_` and `whsec_` only, because a live Stripe key never enters staging (D-28); no whitespace; an address object is one address. Restart `core-java` for Stripe (all three objects, including the Connect endpoint's `stripe-credentials--connect-webhook-secret`, which the Stripe dashboard shows on the Connected-accounts endpoint, not the platform one) and `deploy/alertmanager` for the mail objects, then re-run `scripts/check-alert-liveness.sh` (section 5 of the staging operations page). |
 
 Never use `scripts/staging-secrets.sh --set-external` for a rotation: it refuses an existing object.
 

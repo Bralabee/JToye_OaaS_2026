@@ -641,6 +641,17 @@ spec:
               name: stripe-credentials
               key: webhook-secret
               optional: true
+        # PAY-03 Connected-accounts scope: the signing secret of the Connect endpoint
+        # (/api/v1/public/payments/webhook/connect). Absent -> empty -> that route refuses
+        # every event (fails closed). In staging the key is synced from the Key Vault object
+        # stripe-credentials--connect-webhook-secret, which must exist in Key Vault before
+        # this renders to staging: a missing SPC object fails the CSI mount (plan 30-14).
+        - name: STRIPE_CONNECT_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: stripe-credentials
+              key: connect-webhook-secret
+              optional: true
         # --- Webhook delivery knobs (Phase 22) ---
         - name: WEBHOOK_DELIVERY_MAX_ATTEMPTS
           valueFrom:

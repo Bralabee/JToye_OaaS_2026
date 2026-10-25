@@ -4191,6 +4191,12 @@ spec:
               key: webhook-secret
               name: stripe-credentials
               optional: true
+        - name: STRIPE_CONNECT_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: connect-webhook-secret
+              name: stripe-credentials
+              optional: true
         - name: WEBHOOK_DELIVERY_MAX_ATTEMPTS
           valueFrom:
             configMapKeyRef:
@@ -7496,6 +7502,9 @@ spec:
         - |
           objectName: stripe-credentials--webhook-secret
           objectType: secret
+        - |
+          objectName: stripe-credentials--connect-webhook-secret
+          objectType: secret
     tenantId: b56df236-36b2-49ab-a25f-050cbaa9787c
     usePodIdentity: "false"
   provider: azure
@@ -7567,6 +7576,8 @@ spec:
       objectName: stripe-credentials--api-key
     - key: webhook-secret
       objectName: stripe-credentials--webhook-secret
+    - key: connect-webhook-secret
+      objectName: stripe-credentials--connect-webhook-secret
     secretName: stripe-credentials
     type: Opaque
 ---

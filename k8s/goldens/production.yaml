@@ -676,6 +676,12 @@ spec:
               key: webhook-secret
               name: stripe-credentials
               optional: true
+        - name: STRIPE_CONNECT_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: connect-webhook-secret
+              name: stripe-credentials
+              optional: true
         - name: WEBHOOK_DELIVERY_MAX_ATTEMPTS
           valueFrom:
             configMapKeyRef:
