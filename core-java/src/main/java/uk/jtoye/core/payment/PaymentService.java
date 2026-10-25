@@ -129,12 +129,9 @@ public class PaymentService {
             log.warn("Stripe API key not configured — payment processing will fail");
             return;
         }
-        boolean unstubbedMock = stripeProperties.getConnect() == null
-                && stripeProperties.getConnectTimeoutMs() == 0
-                && stripeProperties.getReadTimeoutMs() == 0;
-        int connectTimeoutMs = unstubbedMock ? 5000 : stripeProperties.getConnectTimeoutMs();
-        int readTimeoutMs = unstubbedMock ? 20000 : stripeProperties.getReadTimeoutMs();
-        int maxNetworkRetries = unstubbedMock ? 2 : stripeProperties.getMaxNetworkRetries();
+        int connectTimeoutMs = stripeProperties.getConnectTimeoutMs();
+        int readTimeoutMs = stripeProperties.getReadTimeoutMs();
+        int maxNetworkRetries = stripeProperties.getMaxNetworkRetries();
 
         if (connectTimeoutMs <= 0) {
             throw new IllegalStateException(

@@ -828,14 +828,19 @@ ai:
 stripe:
   api-key: ${STRIPE_API_KEY:}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
-  currency: ${STRIPE_CURRENCY:gbp} # issue #102 — PaymentIntent currency (default gbp).
-  platform-fee-bps: ${STRIPE_PLATFORM_FEE_BPS:0} # issue #102 (ADR-0001 Decision 2) — MARKETPLACE fee bps.
+  # issue #102 — PaymentIntent currency, formerly a hardcoded "gbp" literal.
+  currency: ${STRIPE_CURRENCY:gbp}
+  # issue #102 (ADR-0001 Decision 2) — platform application fee on MARKETPLACE
+  # destination charges, in basis points (250 = 2.5%). 0 (default) = no fee set;
+  # the fee is a business decision injected per environment, never a code literal.
+  platform-fee-bps: ${STRIPE_PLATFORM_FEE_BPS:0}
   # issue #108 — outbound Stripe SDK timeouts and retry cap (SDK defaults: 30000ms / 80000ms / 2).
   connect-timeout-ms: ${STRIPE_CONNECT_TIMEOUT_MS:5000}
   read-timeout-ms: ${STRIPE_READ_TIMEOUT_MS:20000}
   max-network-retries: ${STRIPE_MAX_NETWORK_RETRIES:2}
   connect:
-    country: ${STRIPE_CONNECT_COUNTRY:GB} # Country for new Express connected accounts (UK platform).
+    # Country for new Express connected accounts (UK platform).
+    country: ${STRIPE_CONNECT_COUNTRY:GB}
     # Where Stripe returns the vendor after Express onboarding / on link expiry.
     return-url: ${STRIPE_CONNECT_RETURN_URL:http://localhost:3000/dashboard/payments/connect/return}
     refresh-url: ${STRIPE_CONNECT_REFRESH_URL:http://localhost:3000/dashboard/payments/connect/refresh}

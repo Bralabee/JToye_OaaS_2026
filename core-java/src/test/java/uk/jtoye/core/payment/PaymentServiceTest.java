@@ -130,6 +130,9 @@ class PaymentServiceTest {
     @DisplayName("init sets Stripe API key when configured")
     void init_setsApiKey() {
         when(stripeProperties.getApiKey()).thenReturn("sk_test_123");
+        when(stripeProperties.getConnectTimeoutMs()).thenReturn(5000);
+        when(stripeProperties.getReadTimeoutMs()).thenReturn(20000);
+        when(stripeProperties.getMaxNetworkRetries()).thenReturn(2);
         paymentService.init();
         // No exception = success (Stripe.apiKey is a static field, we just verify no NPE)
     }
