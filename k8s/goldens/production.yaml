@@ -144,6 +144,7 @@ data:
   storefront.client-ip-digest.retention-hours: "72"
   stripe.connect.refresh-url: https://app.olajay.co.uk/dashboard/payments/connect/refresh
   stripe.connect.return-url: https://app.olajay.co.uk/dashboard/payments/connect/return
+  stripe.environment-tag: production
   vendor.logout-complete.enabled: "false"
   webhook.delivery.max-attempts: "8"
   webhook.delivery.retention-days: "30"
@@ -663,6 +664,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: stripe.connect.refresh-url
+              name: app-config
+        - name: STRIPE_ENVIRONMENT_TAG
+          valueFrom:
+            configMapKeyRef:
+              key: stripe.environment-tag
               name: app-config
         - name: STRIPE_API_KEY
           valueFrom:

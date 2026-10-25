@@ -1,0 +1,32 @@
+== T2-V1 static suite
+PASS: INV-1..INV-7, INV-11 and INV-12 hold across 4 kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on k8s/staging k8s/production; INV-16 holds on k8s/staging (not applicable elsewhere); INV-18 holds wherever the mailpit component renders; INV-20 holds wherever Keycloak renders (required on k8s/staging); INV-21 holds wherever the grafana component renders; INV-23 holds wherever the mailpit component renders; INV-24 holds on every CORS-enabled Ingress (required on k8s/staging k8s/production); LOC-1..LOC-6, LOC-7, LOC-8 checked on k8s/local.
+PASS: core-java 91 injected / 198 read; edge-go 9 injected / 17 read; frontend 13 injected / 8 build-arg / 32 read. Both directions hold for all three services, with 23 allowlisted omission(s), of which 0 are tracked OPEN DEFECTS listed above.
+PASS: connection-pool math fits every target's Postgres budget with >=20% headroom (compose 200/3, k8s-staging 429/15, k8s-production 200/3 as max_connections/reserved).
+rc=0 fail_or_parse_lines=0 output_lines=80
+== T2-V2 per-overlay tag
+staging tag_value=1 env_entry=1
+production tag_value=1 env_entry=1
+local tag_value=1 env_entry=1
+miss=0
+== T2-AC base declares no environment
+base render_rc=0 bytes=51814 tag_key_count=0 env_entry_count=1
+== T2 chain selftests still green
+rc=0 fail_lines=0
+== env-example contract
+check-env-example-contract  (2026-10-25T22:50:33Z)
+  template : .env.example
+  required : 20 name(s) from scripts/verify-env.sh --list-required
+  missing  : 0
+PASS: all 20 required variable(s) have a line in the template.
+rc=0
+== gate enforcement
+  workflows : 8
+  exempt    : 5 declared
+  selftests : 32 scripts dispatch a --selftest
+PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run.
+rc=0
+== compose config renders both vars
+compose_config_rc=0 tag_local=1 connect_lines=1
+== docs-freshness
+docs-freshness OK: metrics match source (total logical invocations: 6667).
+rc=0

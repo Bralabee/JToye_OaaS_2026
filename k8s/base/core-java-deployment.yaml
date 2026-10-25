@@ -626,6 +626,16 @@ spec:
             configMapKeyRef:
               name: app-config
               key: stripe.connect.refresh-url
+        # PAY-03 (plan 30-13): which Stripe environment this runtime is. The key is declared
+        # by each overlay and never by base, and this ref is deliberately NOT optional: an
+        # overlay that forgot it fails the pod at start (CreateContainerConfigError) instead
+        # of running under another environment's name (PR #1018 review finding 2; plan
+        # 30-17's OTP guard trusts this value).
+        - name: STRIPE_ENVIRONMENT_TAG
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: stripe.environment-tag
         # OPTIONAL Secret (stripe-credentials). Absent → env unset → the
         # application.yml empty defaults apply and the payment path behaves
         # exactly as it does today.

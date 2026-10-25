@@ -434,6 +434,11 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       STRIPE_API_KEY: ${STRIPE_API_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # PAY-03 (plan 30-13): the Connected-accounts endpoint's signing secret (empty: the
+      # /webhook/connect route refuses every event) and this runtime's Stripe environment
+      # name, written as metadata.environment and compared on inbound events.
+      STRIPE_CONNECT_WEBHOOK_SECRET: ${STRIPE_CONNECT_WEBHOOK_SECRET:-}
+      STRIPE_ENVIRONMENT_TAG: ${STRIPE_ENVIRONMENT_TAG:-local}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3100}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     # Port range allows --scale core-java=2 (each replica gets a unique host port)
