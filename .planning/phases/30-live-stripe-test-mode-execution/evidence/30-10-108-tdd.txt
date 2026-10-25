@@ -1,0 +1,76 @@
+# Plan 30-10 Evidence — Issue #108 (Stripe half): timeouts, isolated breakers, failure predicate
+
+## Task 1: Stripe SDK timeouts from configuration (commit 7d0a4334)
+
+### 1. RED (before implementation)
+Command:
+  ./gradlew :core-java:test --tests "uk.jtoye.core.payment.StripeClientTimeoutsTest"
+Result:
+  rc=1 (No tests found for given includes: [uk.jtoye.core.payment.StripeClientTimeoutsTest])
+
+### 2. GREEN (after implementation)
+Command:
+  ./gradlew :core-java:test --tests "uk.jtoye.core.payment.StripeClientTimeoutsTest" --tests "uk.jtoye.core.config.StripePropertiesRedactionTest" --tests "uk.jtoye.core.payment.PaymentServiceTest"
+Result:
+  BUILD SUCCESSFUL (rc=0)
+  - StripeClientTimeoutsTest: 7 passed, 0 failed
+  - StripePropertiesRedactionTest: 4 passed, 0 failed
+  - PaymentServiceTest: passed, 0 failed
+
+### 3. Break Arm (Stripe.setReadTimeout commented out in PaymentService.init)
+Command:
+  ./gradlew :core-java:test --tests "uk.jtoye.core.payment.StripeClientTimeoutsTest"
+Result:
+  StripeClientTimeoutsTest > init_appliesDefaultTimeoutsAndLogsLine() FAILED
+    org.opentest4j.AssertionFailedError:
+    expected: 20000
+     but was: 80000
+  break_arm_rc=1
+Restored:
+  restored_green_rc=0
+
+---
+
+## Task 2: Isolated Stripe breakers (stripe-refund, stripe-lookup), failure predicate, and typed 503 (commit 7562f2cb)
+
+### 1. RED (before implementation)
+Command:
+  ./gradlew :core-java:test --tests "uk.jtoye.core.payment.StripeBreakerFailurePredicateTest" --tests "uk.jtoye.core.payment.StripeBreakerIntegrationTest"
+Result:
+  rc=1 (classes absent before Task 2)
+
+### 2. GREEN (after implementation)
+Command:
+  ./gradlew :core-java:test --tests "uk.jtoye.core.payment.StripeBreakerFailurePredicateTest" --tests "uk.jtoye.core.payment.StripeBreakerIntegrationTest"
+Result:
+  BUILD SUCCESSFUL (rc=0)
+  - StripeBreakerFailurePredicateTest: 14 passed, 0 failed
+  - StripeBreakerIntegrationTest: 4 passed, 0 failed
+
+### 3. Break Arm 1 (@CircuitBreaker(name = "stripe-refund") removed from StripeRefundClient.create)
+Command:
+  ./gradlew :core-java:test --tests "uk.jtoye.core.payment.StripeBreakerIntegrationTest.openStripeRefundBreaker_returnsTyped503AndMarksRefundRowFailed"
+Result:
+  StripeBreakerIntegrationTest > openStripeRefundBreaker_returnsTyped503AndMarksRefundRowFailed() FAILED
+    java.lang.AssertionError: Status expected:<503> but was:<422>
+  break_arm_1_rc=1
+
+### 4. Break Arm 2 (record-failure-predicate removed from stripe-refund in application.yml)
+Command:
+  ./gradlew :core-java:test --tests "uk.jtoye.core.payment.StripeBreakerIntegrationTest.rejectedRefunds_keepBothStripeAndStripeRefundBreakersClosed"
+Result:
+  StripeBreakerIntegrationTest > rejectedRefunds_keepBothStripeAndStripeRefundBreakersClosed() FAILED
+    org.opentest4j.AssertionFailedError:
+    expected: "CLOSED"
+     but was: "OPEN"
+  break_arm_2_rc=1
+
+### 5. Restored GREEN + Contract Gates (re-verified after merging origin/main 3f61567e / PR #1041 b728254e)
+Commands:
+  ./gradlew :core-java:test --tests "*PaymentServiceTest" --tests "*StripeClientTimeoutsTest" --tests "*StripePropertiesRedactionTest" --tests "*StripeBreakerFailurePredicateTest" --tests "*StripeBreakerIntegrationTest"
+  bash scripts/check-doc-citations.sh
+  bash scripts/check-claims.sh
+  bash scripts/check-boot-config-keys.sh
+  bash k8s/scripts/check-env-contract.sh
+Result:
+  All rc=0
