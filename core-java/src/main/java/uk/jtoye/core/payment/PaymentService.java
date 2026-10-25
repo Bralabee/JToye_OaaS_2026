@@ -8,6 +8,7 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
+import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
@@ -405,6 +407,113 @@ public class PaymentService {
             }
         }
         return retrieveClientSecret(paymentIntentId);
+    }
+
+    /** Stripe's status string for a cancelled PaymentIntent (issue #1038). */
+    public static final String STRIPE_STATUS_CANCELED = "canceled";
+
+    /**
+     * The PaymentIntent statuses in which no money has moved and none is held, so the
+     * intent may be cancelled as abandoned (issue #1038). {@code requires_capture} is
+     * deliberately absent: it is an authorised hold the shop may still capture, and the
+     * webhook owns that order. {@code succeeded} and {@code processing} have taken money.
+     */
+    private static final Set<String> CANCELABLE_UNPAID_STATUSES =
+            Set.of("requires_payment_method", "requires_confirmation", "requires_action");
+
+    /**
+     * Stripe idempotency key for the stale-draft cancel of {@code paymentIntentId}
+     * (issue #1038). Package-private so {@code PaymentServiceTest} asserts the SAME
+     * expression the production call uses, like {@link #intentIdempotencyKey(Order)}.
+     */
+    static String abandonedIntentCancelIdempotencyKey(String paymentIntentId) {
+        return "abandoned-draft-cancel-" + paymentIntentId;
+    }
+
+    /**
+     * The connected account an order's PaymentIntent lives on, when its routing is a
+     * direct charge (DIRECT_CHARGE_VENDOR_MOR or SPLIT_DEPOSIT_VENDOR_MOR); empty for a
+     * platform-account intent, including a destination charge (issue #1038).
+     *
+     * <p>The caller MUST hold a tenant-pinned transaction. The routing reads {@code shops}
+     * and {@code vendor_onboarding} under FORCE RLS, and its {@code @Transactional}
+     * overload is self-invoked from the Order overload, so it opens no transaction of its
+     * own; TenantSetLocalAspect pins the tenant GUC only inside one. Called without it,
+     * every connected-account vendor would resolve empty, its intent would be looked up on
+     * the platform account (404 {@code resource_missing}) and the draft kept for ever.
+     * {@link #retrieveClientSecret(Order, String)} follows the same rule (A-1, PR #949).
+     *
+     * <p>Deliberately NOT {@code @Transactional}: a read-only participation must not be
+     * able to change the flush behaviour of the caller's read-write transaction.
+     */
+    public Optional<String> directChargeAccountFor(Order order) {
+        return stripeConnectService.resolveSettlementRouting(order)
+                .filter(SettlementRoutingDecision::usesDirectChargeHeader)
+                .map(SettlementRoutingDecision::connectedAccountId);
+    }
+
+    /**
+     * Cancel an abandoned checkout's PaymentIntent as {@code abandoned}, if and only if no
+     * money has moved and none is held, and return its Stripe status after the call
+     * (issue #1038: the stale-draft cleanup deleted card drafts while their intents were
+     * still payable, leaving 7 orphaned {@code requires_payment_method} intents on staging
+     * 2026-10-24; a later payment would capture money for an order that no longer exists).
+     *
+     * <ul>
+     *   <li>The intent is retrieved first: a cancel on an already-canceled intent errors,
+     *       and an intent carrying money must be left alone without a failed call.</li>
+     *   <li>{@code succeeded}, {@code processing}, {@code requires_capture} and any status
+     *       not in {@link #CANCELABLE_UNPAID_STATUSES} are returned untouched.
+     *       {@code requires_capture} is never cancelled: the hold is the shop's, and the
+     *       webhook owns that order.</li>
+     *   <li>The cancel rides an Idempotency-Key (AGENTS.md oaas-money rule 2). Stripe may
+     *       replay a stored failure for the same key for about 24 h; that only delays a
+     *       deletion by a run, it can never cause one.</li>
+     * </ul>
+     *
+     * @param paymentIntentId    the order's {@code pi_...} reference
+     * @param connectedAccountId the direct-charge account from {@link #directChargeAccountFor(Order)},
+     *                           or {@code null} for a platform-account intent
+     * @throws IllegalArgumentException if the reference is not a PaymentIntent id; thrown
+     *                                  before any Stripe call
+     */
+    @CircuitBreaker(name = "stripe")
+    public String cancelAbandonedPaymentIntent(String paymentIntentId, String connectedAccountId)
+            throws StripeException {
+        if (paymentIntentId == null || !paymentIntentId.startsWith("pi_")) {
+            throw new IllegalArgumentException(
+                    "issue #1038: only a PaymentIntent (pi_) reference can be cancelled as abandoned");
+        }
+        boolean onConnectedAccount = connectedAccountId != null && !connectedAccountId.isBlank();
+
+        RequestOptions.RequestOptionsBuilder retrieveOptions = RequestOptions.builder();
+        if (onConnectedAccount) {
+            retrieveOptions.setStripeAccount(connectedAccountId);
+        }
+        PaymentIntent intent = PaymentIntent.retrieve(paymentIntentId, retrieveOptions.build());
+
+        String status = intent.getStatus();
+        if (STRIPE_STATUS_CANCELED.equals(status)) {
+            return status;
+        }
+        if (!CANCELABLE_UNPAID_STATUSES.contains(status)) {
+            return status;
+        }
+
+        RequestOptions.RequestOptionsBuilder cancelOptions = RequestOptions.builder()
+                .setIdempotencyKey(abandonedIntentCancelIdempotencyKey(paymentIntentId));
+        if (onConnectedAccount) {
+            cancelOptions.setStripeAccount(connectedAccountId);
+        }
+        PaymentIntent canceled = intent.cancel(
+                PaymentIntentCancelParams.builder()
+                        .setCancellationReason(PaymentIntentCancelParams.CancellationReason.ABANDONED)
+                        .build(),
+                cancelOptions.build());
+
+        log.info("event=abandoned_intent_canceled intent={} connectedAccount={}",
+                paymentIntentId, onConnectedAccount ? connectedAccountId : "none");
+        return canceled.getStatus();
     }
 
     /**

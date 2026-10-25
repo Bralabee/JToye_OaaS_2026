@@ -1045,6 +1045,11 @@ cleanup:
   # gated by scripts/check-retention-enforcement.sh, which asserts BOTH that this
   # key holds the published value AND that a consumer actually reads it.
   #
+  # issue #1038: a card checkout's Stripe PaymentIntent is cancelled first, and its
+  # order is deleted only once Stripe reports it canceled. A draft whose intent has
+  # taken or is holding money, or that Stripe cannot be reached to cancel, is kept
+  # and retried at the next run; a draft with no payment is deleted as before.
+  #
   # A sibling key for orphaned product images was removed from this block on
   # 2026-08-16 (plan 31-06). It declared a 7-day deletion that nothing performed:
   # verified two-arm with an identically shaped live control — zero Java consumers
