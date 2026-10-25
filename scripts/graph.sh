@@ -51,8 +51,15 @@
 #   many uncommitted files the graph does NOT contain (it is built from HEAD).
 #   Every symbol is resolved once and its node's source file is printed before the answer, so
 #   a fuzzy match to the wrong node is visible.
-#   For security-relevant impact, also run `git grep -w <Symbol>`: the graph has no
-#   cross-service edges (HTTP boundaries are invisible) and links by identifier only.
+#   AN ANSWER IS A LOWER BOUND, NOT THE COMPLETE LIST. The graph links calls by name as written
+#   and misses, measured: a fully-qualified call (`uk.jtoye.core.security.TenantContext.set(..)`),
+#   a class literal (`mock(ShopAccessService.class)`), a Python module-attribute call
+#   (`storage.f()`), and a call bound to a same-named local fallback (`try: from .utils import f
+#   / except ImportError: def f()`). So `affected` cross-checks itself against a whole-word text
+#   search of the same commit: code lines naming the symbol outside the answer's files are
+#   listed under the answer, with a WARNING first. Check each one. A call through a RENAMED
+#   import names nothing; its file shows only as an [imports] line. The graph also has no
+#   cross-service edges: an HTTP boundary is invisible to both the graph and the cross-check.
 #   A path is a link by name (an import, a reference), not proof of a runtime call: the
 #   shortest undirected path between two classes often runs through a test file.
 #
@@ -251,7 +258,11 @@ resolve() {
   id=$(sed -n 's/^  ID: *//p' <<< "$out" | head -1)
   [ -n "$id" ] || die 6 "could not read a node id from graphify explain for '$q'"
   printf 'resolved: %s -> %s\n' "$q" "$(sed -n 's/^  Source: *//p' <<< "$out" | head -1)" >&2
+  # The node's label and source line, for the cross-check, without a second explain (each
+  # explain loads the whole graph: ~1-2 s on this repo).
   printf '%s\n' "$id"
+  printf '%s\n' "$(sed -n 's/^Node: *//p' <<< "$out" | head -1)"
+  printf '%s\n' "$(sed -n 's/^  Source: *//p' <<< "$out" | head -1)"
 }
 
 run_query() {
@@ -261,6 +272,70 @@ run_query() {
   grep -q -E "^No node matching|^No unique node match" <<< "$out" && die 3 "SYMBOL NOT IN GRAPH: $(head -1 <<< "$out")"
   [ -n "$out" ] || die 6 "graphify $1 returned nothing"
   printf '%s\n' "$out"
+}
+
+# The graph links calls by name as written, so it misses real callers it cannot bind: a call
+# through a module attribute (`storage.f()`), and a call bound to a same-named local fallback
+# (`try: from .utils import f / except ImportError: def f()`, where the graph links the call to
+# the fallback). Measured on graphify 0.9.65, the second on a real codebase. So every `affected`
+# answer is cross-checked against a whole-word text search of the same commit and pathspec:
+# each line that names the symbol but is neither in the answer nor the definition is listed as
+# a possible missed caller. Comments and strings show up too; a quiet cross-check proves only
+# that no line names the symbol outside the answer. A call through a RENAMED import does not
+# name the symbol at all: its file shows in the answer as an [imports] line, never its method.
+xc_report=''
+cross_check() {
+  local nid=$1 ans=$2 name=$3 src=$4 def covered hits
+  name=${name%%(*}; name=${name#.}; name=${name##*.}
+  [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+    || { xc_report="cross-check: NOT RUN (no plain identifier for $nid); verify with: git grep -nw <symbol>"; return; }
+  def=$(sed -n 's/^\(.*\) L[0-9][0-9]*$/\1/p' <<< "$src")
+  # Explained: a line the answer cites, any line in the definition's own file, and any line in
+  # a file where the answer already has a call/reference edge. A file the answer reaches only by
+  # an [imports] line is NOT explained: that is how a call bound to a local fallback looks.
+  covered=$(sed -n 's/^- .* \([^ ]*\):L\([0-9][0-9]*\)$/\1:\2/p' <<< "$ans" | sort -u)
+  edge_files=$( { sed -n 's/^- .*\[\([a-z_]*\)\] \([^ ]*\):L[0-9][0-9]*$/\1 \2/p' <<< "$ans" \
+                  | awk '$1 != "imports" && $1 != "imports_from" {print $2}'; printf '%s\n' "$def"; } | sort -u)
+  # Code lines only: prose files and comment lines name a symbol without calling it.
+  hits=$(git -C "$top" grep -n -w -F -e "$name" "$head_sha" -- "${pathspec[@]}" 2>/dev/null | sed "s|^$head_sha:||" \
+         | grep -E '^[^:]+\.(java|kt|go|ts|tsx|js|jsx|mjs|cjs|py|sql):[0-9]+:' \
+         | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*|#|--)')
+  # One awk pass (a per-line grep loop took 9 s on a hub like TenantContext). Explained lines
+  # are dropped; the rest are split into two tiers, both printed. A PROBABLE USE is the name
+  # followed by `(`, `.` or `::` (a call, member access such as `TenantContext.set(` or
+  # `X.class`, a method reference) with an even number of quotes before it on the line, so not
+  # inside a string. Everything else is a MENTION (docstrings, mock.patch("...") targets,
+  # re-exports, strings); mentions still matter, because a rename breaks a patch("...") target.
+  local tiers nc nm
+  tiers=$(awk -v name="$name" -v cov="$covered" -v ef="$edge_files" '
+    BEGIN {
+      n = split(cov, a, "\n"); for (i = 1; i <= n; i++) if (a[i] != "") C[a[i]] = 1
+      n = split(ef, b, "\n");  for (i = 1; i <= n; i++) if (b[i] != "") E[b[i]] = 1
+      use = "(^|[^A-Za-z0-9_])" name "[ \t]*(\\(|\\.|::)"
+    }
+    $0 == "" { next }
+    {
+      f = $0; sub(/:.*/, "", f)
+      rest = substr($0, length(f) + 2); ln = rest; sub(/:.*/, "", ln)
+      code = substr(rest, length(ln) + 2)
+      if ((f ":" ln) in C || f in E) next
+      line = "  " substr($0, 1, 200)
+      if (match(code, use)) {
+        pre = substr(code, 1, RSTART); q = gsub(/["\047]/, "", pre)
+        if (q % 2 == 0) { print "U" line; next }
+      }
+      print "M" line
+    }' <<< "$hits")
+  if [ -z "$tiers" ]; then
+    xc_report="cross-check: no code line naming '$name' lies outside the answer's files (comments and prose not counted)"
+    return
+  fi
+  nc=$(grep -c '^U' <<< "$tiers"); nm=$(grep -c '^M' <<< "$tiers")
+  note "WARNING: $nc probable use(s) and $nm other mention(s) of '$name' are not in the graph's answer; listed under the answer"
+  xc_report="cross-check: $nc PROBABLE USE(S) of '$name' NOT in the answer (calls or member access the graph did not link; check each):"
+  [ "$nc" -eq 0 ] || xc_report+=$'\n'"$(sed -n 's/^U//p' <<< "$tiers")"
+  xc_report+=$'\n'"cross-check: $nm other mention(s) outside the answer (strings, patch targets, re-exports, docstrings):"
+  [ "$nm" -eq 0 ] || xc_report+=$'\n'"$(sed -n 's/^M//p' <<< "$tiers")"
 }
 
 case "$cmd" in
@@ -281,9 +356,13 @@ flock -s 8 || die 6 "could not lock $key/lock"
 print_stamp
 case "$cmd" in
   affected)
-    id=$(resolve "${args[0]}") || exit $?
+    r=$(resolve "${args[0]}") || exit $?
+    id=$(sed -n 1p <<< "$r"); xc_label=$(sed -n 2p <<< "$r"); xc_source=$(sed -n 3p <<< "$r")
     [ "$depth" = 2 ] && note "depth 2 is noisy (a hub's dependents' dependents); prefer depth 1"
-    run_query affected "$id" --depth "$depth" ;;
+    answer=$(run_query affected "$id" --depth "$depth") || exit $?
+    cross_check "$id" "$answer" "$xc_label" "$xc_source"
+    printf '%s\n' "$answer"
+    [ -z "$xc_report" ] || printf '%s\n' "$xc_report" ;;
   explain)
     # explain IS the resolver: one call, its own Source line names the node it chose.
     out=$(gfy explain "${args[0]}" --graph "$graph" 2>&1); rc=$?
@@ -295,8 +374,8 @@ case "$cmd" in
     printf '%s\n' "$out" ;;
   path)
     # Resolved first because graphify's own path matcher only WARNS on an ambiguous name.
-    a=$(resolve "${args[0]}") || exit $?
-    b=$(resolve "${args[1]}") || exit $?
+    a=$(resolve "${args[0]}") || exit $?; a=$(sed -n 1p <<< "$a")
+    b=$(resolve "${args[1]}") || exit $?; b=$(sed -n 1p <<< "$b")
     if [ "$undirected" -eq 1 ]; then run_query path "$a" "$b" --undirected; else run_query path "$a" "$b"; fi ;;
   god-nodes)
     run_query god-nodes --top "$top_n" ;;

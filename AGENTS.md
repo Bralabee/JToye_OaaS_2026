@@ -815,4 +815,4 @@ production data was reachable, before proposing a patch.
 
 ## Code-structure questions
 
-Impact/structure questions: `scripts/graph.sh affected|explain|path|god-nodes`: fresh, bounded, exits non-zero when it cannot answer. For security-relevant impact, also run `git grep -w`.
+Impact/structure questions: `scripts/graph.sh affected|explain|path|god-nodes`: fresh, bounded, exits non-zero when it cannot answer. An `affected` answer is a lower bound: read its `cross-check:` list (code lines naming the symbol that the graph did not link) before relying on it. For security-relevant impact, also run `git grep -w`.

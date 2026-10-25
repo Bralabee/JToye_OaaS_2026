@@ -162,5 +162,29 @@ run "$G" view --out "$T/repo/view-inside"
   || fail "(v) refused --out on a stale graph: rc=$rc rebuilds=$(rebuilds "$out")"
 unset GRAPH_PATHSPEC
 
+# (x) the text cross-check: graphify binds calls by name, so it misses a call through a module
+# attribute and a call bound to a same-named local fallback (the real miss of 2026-10-25, a
+# try-import fallback in a Python library). Both must be LISTED under the answer, never silent.
+# Own cache and pathspec, so the small fixture graph cannot trip the shrink guard above.
+mkdir -p "$T/repo/xcfix/dq"
+printf '' > "$T/repo/xcfix/dq/__init__.py"
+printf 'def probe_runtime():\n    return False\n\ndef get_store():\n    return probe_runtime()\n' > "$T/repo/xcfix/dq/utils.py"
+printf 'try:\n    from .utils import probe_runtime\nexcept ImportError:\n    def probe_runtime():\n        return False\n\nclass History:\n    def __init__(self):\n        self.f = probe_runtime()\n' > "$T/repo/xcfix/dq/history.py"
+printf 'from dq import utils\n\nclass Viaattr:\n    def __init__(self):\n        self.f = utils.probe_runtime()\n' > "$T/repo/xcfix/dq/viaattr.py"
+printf 'from dq.utils import get_store\n\ndef use():\n    return get_store()\n' > "$T/repo/xcfix/dq/clean.py"
+git -C "$T/repo" add xcfix && git -C "$T/repo" commit -q -m "arms: cross-check fixture"
+xc_env=(env GRAPH_CACHE_ROOT="$T/cache-xc" GRAPH_PATHSPEC="xcfix")
+run "${xc_env[@]}" "$G" affected xcfix_dq_utils_probe_runtime
+[ "$rc" -eq 0 ] && grep -q "^cross-check: [1-9][0-9]* PROBABLE USE(S) of 'probe_runtime' NOT in the answer" <<< "$out" \
+  && pass "(x) cross-check reports probable uses outside the graph's answer" || fail "(x) no cross-check report: rc=$rc: $(tail -2 <<< "$out")"
+sed -n '/PROBABLE USE/,/other mention/p' <<< "$out" | grep -q '^  xcfix/dq/history.py:9:' && pass "(x) the call bound to a local fallback is listed (history.py:9)" \
+  || fail "(x) fallback-bound call not listed"
+sed -n '/PROBABLE USE/,/other mention/p' <<< "$out" | grep -q '^  xcfix/dq/viaattr.py:5:' && pass "(x) the module-attribute call is listed (viaattr.py:5)" \
+  || fail "(x) module-attribute call not listed"
+grep -q "WARNING: [1-9][0-9]* probable use(s)" <<< "$out" && pass "(x) a WARNING precedes the answer" || fail "(x) no WARNING line"
+run "${xc_env[@]}" "$G" affected xcfix_dq_utils_get_store
+[ "$rc" -eq 0 ] && grep -q "^cross-check: no code line naming 'get_store'" <<< "$out" \
+  && pass "(x) a fully-found symbol reports a quiet cross-check" || fail "(x) quiet case: rc=$rc: $(tail -2 <<< "$out")"
+
 echo "graphify $(graphify --version 2>/dev/null | awk '{print $2}') · wrapper $wrapper · failed arms: $fails"
 [ "$fails" -eq 0 ]
