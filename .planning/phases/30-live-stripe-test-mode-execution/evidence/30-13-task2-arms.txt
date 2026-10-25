@@ -1,0 +1,34 @@
+=== CLEAN (before)
+CLEAN git_diff_quiet_rc=0
+staging tag_value=1 env_entry=1
+production tag_value=1 env_entry=1
+local tag_value=1 env_entry=1
+miss=0
+overlay_check_rc=0
+base render_rc=0 tag_key_count=0 env_entry_count=1
+=== ARM A (the plan's named arm): production tag set to "staging"
+staging tag_value=1 env_entry=1
+production tag_value=0 env_entry=1
+local tag_value=1 env_entry=1
+miss=1
+overlay_check_rc=1
+restored k8s/production/configmap-patch.yaml blob=95d75cf2438a12c5d10734480d1a951fa594ab38 (matches HEAD)
+=== ARM B: the tag removed from the local overlay (the key the non-optional ref needs)
+staging tag_value=1 env_entry=1
+production tag_value=1 env_entry=1
+local tag_value=0 env_entry=1
+miss=1
+overlay_check_rc=1
+B static(render-invariants+env-contract) rc=0
+restored k8s/local/configmap-patch.yaml blob=ac47a7c6d919322ef2cbc48b0cce1029a49715a4 (matches HEAD)
+=== ARM C: a base value added (what the acceptance criterion forbids)
+base render_rc=0 tag_key_count=1 env_entry_count=1
+restored k8s/base/configmap.yaml blob=c94df73398d9dac55103bb5aeb1ac93468f07ec7 (matches HEAD)
+=== CLEAN (after)
+CLEAN git_diff_quiet_rc=0
+staging tag_value=1 env_entry=1
+production tag_value=1 env_entry=1
+local tag_value=1 env_entry=1
+miss=0
+overlay_check_rc=0
+base render_rc=0 tag_key_count=0 env_entry_count=1

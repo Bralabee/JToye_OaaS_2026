@@ -43,3 +43,17 @@
   the dashboard has 0 such catches, at 25 lines this one. Not a payment-gated transition, so out of
   30-06's scope.
   **Route:** `catch (error)` -> `describeLoadError(error, "Could not process images").message`.
+
+- No CI gate holds each overlay's `stripe.environment-tag` to the overlay's own name
+  status: open (recorded, not filed: no gate broken, no data loss, no observed failure)
+  **Found by:** plan 30-13 Task 2 break arms (2026-10-25), `evidence/30-13-task2-arms.txt`. With the
+  production patch's tag set to "staging" (arm A), or with the local patch's tag deleted (arm B),
+  only the plan's own per-overlay render check fails (`miss=1`). `check-render-invariants.sh` and
+  `check-env-contract.sh` stay rc 0 in arm B, so a non-optional `configMapKeyRef` whose key no
+  overlay declares is not caught by any static gate (it fails at pod start instead, by design).
+  The per-overlay check is a plan command, not a CI step, and plans 30-17 (OTP seam allow-list) and
+  30-20 trust the value. A production render tagged "staging" would pass every CI gate.
+  **Route:** a render invariant beside INV-22 (k8s/staging -> staging, k8s/production ->
+  production, k8s/local -> local, k8s/base -> the key ABSENT, an unlisted target fails), with a
+  `--selftest-inv25` that plants arms A and B and a base value, wired into ci-cd.yaml so
+  `check-gate-enforcement.sh` sees the selftest run. Candidate home: plan 30-14 Task 1 or 30-20.
