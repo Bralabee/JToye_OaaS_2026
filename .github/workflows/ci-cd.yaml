@@ -1007,6 +1007,14 @@ jobs:
       - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
         run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
 
+      # Issue #992: every rendered-YAML reader in check-render-invariants.sh now reads
+      # through render_paths.py (PyYAML) instead of line-oriented awk. Nine planted
+      # folded/multi-line scalar evasions (INV-1, INV-2, INV-3, INV-6, INV-12, INV-15,
+      # INV-16, LOC-3, LOC-2) that previously passed the raw-YAML awk readers must each
+      # fail (rc 1) on the PyYAML path table.
+      - name: Prove render invariants catch folded/multi-line YAML scalar evasions (--selftest-fold)
+        run: ./k8s/scripts/check-render-invariants.sh --selftest-fold
+
       # The live half of #1025 runs in staging-edge-probe after a deploy; its judge is proven
       # here on every change against synthetic preflight responses (today's staging list must
       # fail, the fixed list pass, a wildcard / missing header / wrong origin / non-2xx status /
