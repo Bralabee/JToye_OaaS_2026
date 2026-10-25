@@ -35,9 +35,44 @@ const apiClient = axios.create({
 
 // --- Request interceptor: Bearer token + X-Tenant-Id ----------------------
 
+// Coalesce concurrent getSession() calls and hold a valid session for a short
+// page-load burst window (#963: a dashboard page load fires ~20 API requests
+// within 1.5s, which previously triggered 20+ GET /api/auth/session calls).
+const SESSION_BURST_TTL_MS = 2_000
+let requestSessionPromise: Promise<Session | null> | null = null
+let cachedSession: { session: Session; expiresAt: number } | null = null
+// Bumped by every 401 refresh. A request-path read that started before a refresh may resolve
+// after it with the pre-refresh session; it must not overwrite the refreshed one in the cache.
+let sessionGeneration = 0
+
+function getRequestSession(): Promise<Session | null> {
+  const now = Date.now()
+  if (cachedSession && cachedSession.expiresAt > now) {
+    return Promise.resolve(cachedSession.session)
+  }
+  if (!requestSessionPromise) {
+    const generation = sessionGeneration
+    const pending: Promise<Session | null> = getSession()
+      .then((s) => {
+        if (generation !== sessionGeneration) return s
+        if (s?.accessToken) {
+          cachedSession = { session: s, expiresAt: Date.now() + SESSION_BURST_TTL_MS }
+        } else {
+          cachedSession = null
+        }
+        return s
+      })
+      .finally(() => {
+        if (requestSessionPromise === pending) requestSessionPromise = null
+      })
+    requestSessionPromise = pending
+  }
+  return requestSessionPromise
+}
+
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
-    const session = await getSession()
+    const session = await getRequestSession()
     if (session?.accessToken) {
       config.headers.set("Authorization", `Bearer ${session.accessToken}`)
     }
@@ -101,10 +136,21 @@ function sleep(ms: number): Promise<void> {
 // only hit /api/auth/session once per stampede.
 let refreshPromise: Promise<Session | null> | null = null
 function refreshSessionOnce(): Promise<Session | null> {
+  cachedSession = null
+  sessionGeneration += 1
+  // A request-path read already in flight would hand later requests the pre-refresh session.
+  requestSessionPromise = null
   if (!refreshPromise) {
-    refreshPromise = getSession().finally(() => {
-      refreshPromise = null
-    })
+    refreshPromise = getSession()
+      .then((s) => {
+        if (s?.accessToken) {
+          cachedSession = { session: s, expiresAt: Date.now() + SESSION_BURST_TTL_MS }
+        }
+        return s
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
   }
   return refreshPromise
 }
@@ -183,6 +229,8 @@ apiClient.interceptors.response.use(
 export const __testing = {
   resetRefresh: () => {
     refreshPromise = null
+    requestSessionPromise = null
+    cachedSession = null
   },
 }
 

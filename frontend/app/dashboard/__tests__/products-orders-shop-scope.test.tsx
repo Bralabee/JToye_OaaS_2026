@@ -238,8 +238,12 @@ describe("VSA-03 — shop-context scoping on Products & Orders", () => {
 describe("#485 — pickers are followed to the end of the list", () => {
   const SHOPS = manyShops(150)
   const TAIL_SHOP = SHOPS[SHOPS.length - 1]
-  const CATALOGUE = manyProducts(150, SHOPS[0].id)
-  const TAIL_PRODUCT = CATALOGUE[CATALOGUE.length - 1]
+  const SHOP_0_PRODUCTS = manyProducts(150, SHOPS[0].id)
+  const TAIL_PRODUCT = SHOP_0_PRODUCTS[SHOP_0_PRODUCTS.length - 1]
+  const OTHER_SHOP_PRODUCT = product("p-other-shop", "SKU-OTHER", "Other Shop Dish", SHOPS[1].id)
+  const SHOPLESS_PRODUCT = { ...product("p-shopless", "SKU-NONE", "Shopless Dish", ""), shopId: null }
+  const UNAVAILABLE_PRODUCT = { ...product("p-unavail", "SKU-UNAVAIL", "Sold Out Dish", SHOPS[0].id), available: false }
+  const CATALOGUE = [...SHOP_0_PRODUCTS, OTHER_SHOP_PRODUCT, SHOPLESS_PRODUCT, UNAVAILABLE_PRODUCT]
 
   /** Requests issued against an endpoint, in order, as `?page=` values. */
   const pagesRequested = (prefix: string) =>
@@ -317,15 +321,29 @@ describe("#485 — pickers are followed to the end of the list", () => {
       ).toBeInTheDocument()
       fireEvent.keyDown(shopTrigger, { key: "Escape" })
 
+      // #1016: before a shop is chosen, the product picker offers nothing.
       fireEvent.click(screen.getByRole("button", { name: /add item/i }))
       const productTrigger = await screen.findByRole("combobox", {
         name: /product for order item 1/i,
       })
       fireEvent.keyDown(productTrigger, { key: "ArrowDown" })
+      expect(screen.queryByRole("option", { name: new RegExp(`^${TAIL_PRODUCT.title} `) })).not.toBeInTheDocument()
+      expect(screen.queryByRole("option", { name: /Other Shop Dish/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("option", { name: /Shopless Dish/ })).not.toBeInTheDocument()
+      fireEvent.keyDown(productTrigger, { key: "Escape" })
+
+      // Choose Shop 1 -> only Shop 1's available products are offered (#1016).
+      fireEvent.keyDown(shopTrigger, { key: "ArrowDown" })
+      fireEvent.click(await screen.findByRole("option", { name: SHOPS[0].name }))
+
+      fireEvent.keyDown(productTrigger, { key: "ArrowDown" })
       // Product 150 could not be added as a line item while the list stopped at 100.
       expect(
         await screen.findByRole("option", { name: new RegExp(`^${TAIL_PRODUCT.title} `) })
       ).toBeInTheDocument()
+      expect(screen.queryByRole("option", { name: /Other Shop Dish/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("option", { name: /Shopless Dish/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole("option", { name: /Sold Out Dish/ })).not.toBeInTheDocument()
       // Explicit generous timeout: this test does ~4.2s of work; under the
       // parallel CPU load added by the new dashboard-a11y-axe scan it can
       // brush the default 5s ceiling and flake. Raise the ceiling rather

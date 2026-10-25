@@ -2613,8 +2613,8 @@ data:
           # `jtoye_orders_created_total`. The Prometheus exporter strips the reserved `_created`
           # suffix from a counter's name (it is the OpenMetrics sample suffix), so the meter
           # `jtoye.orders.created` is exposed as `jtoye_orders_total` (HELP "Total orders
-          # created"). Measured on the live staging pod, 2026-10-21:
-          # `jtoye_orders_total{application="core-java",environment="production"} 0.0`; there is
+          # created"). Measured on the live staging pod (#999/#1019 fixed the profile tag):
+          # `jtoye_orders_total{application="core-java",environment="staging"} 0.0`; there is
           # no `jtoye_orders_created_total`. Renaming the selector would make the rule blind
           # again, and check-alert-metrics.sh M-1 would say so.
           #
@@ -3076,7 +3076,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
-  name: prometheus-alerts-t6b8mfh99d
+  name: prometheus-alerts-hh4kb7fg45
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -5397,7 +5397,7 @@ spec:
           - configMap:
               name: prometheus-config-db96d5tfkf
           - configMap:
-              name: prometheus-alerts-t6b8mfh99d
+              name: prometheus-alerts-hh4kb7fg45
       - name: data
         persistentVolumeClaim:
           claimName: prometheus-data

@@ -130,7 +130,7 @@ beforeEach(() => {
 })
 
 describe("api-client interceptors", () => {
-  it("injects Authorization and X-Tenant-Id headers on requests", async () => {
+  it("injects Authorization and X-Tenant-Id headers on requests and coalesces a 20-request page-load burst into one getSession() call (#963)", async () => {
     queueAdapter([{ kind: "resolve", data: { ok: true } }])
     await apiClient.get("/anything")
     expect(adapter).toHaveBeenCalledTimes(1)
@@ -146,6 +146,12 @@ describe("api-client interceptors", () => {
         : sentConfig.headers["X-Tenant-Id"]
     expect(authHeader).toBe("Bearer token-1")
     expect(tenantHeader).toBe("tenant-42")
+
+    // #963: a dashboard reload fires ~20 API requests within 1.5s; they must share
+    // the in-flight / burst-cached session rather than firing 20 GET /api/auth/session calls.
+    await Promise.all(Array.from({ length: 20 }, (_, i) => apiClient.get(`/burst-${i}`)))
+    expect(adapter).toHaveBeenCalledTimes(21)
+    expect(getSession).toHaveBeenCalledTimes(1)
   })
 
   it("retries a 500 response exactly twice then rejects", async () => {
@@ -193,10 +199,52 @@ describe("api-client interceptors", () => {
     ]
     const results = await Promise.all(calls)
     expect(results).toEqual(["rejected", "rejected", "rejected"])
-    // getSession is called by (a) the request interceptor for each call, plus
-    // (b) the 401 refresh path. The 401 refresh path must be deduped — so the
-    // total count is 3 (request interceptor) + 1 (single refresh) = 4.
-    expect((getSession as jest.Mock).mock.calls.length).toBe(4)
+    // getSession is called by (a) the request interceptor once for the concurrent
+    // burst (#963), plus (b) the 401 refresh path once for the stampede = 2.
+    expect((getSession as jest.Mock).mock.calls.length).toBe(2)
+  })
+
+  it("a session read that started before a 401 refresh cannot overwrite the refreshed session in the burst cache (#963)", async () => {
+    const user = { tenantId: "tenant-42", id: "u-1", name: "Test", email: "t@t" }
+    const stale = { accessToken: "token-old", user, expires: "2099-12-31" }
+    const fresh = { accessToken: "token-new", user, expires: "2099-12-31" }
+    let resolveSlowRead: (s: unknown) => void = () => {}
+    ;(getSession as jest.Mock)
+      .mockReset()
+      .mockResolvedValueOnce(stale) // /first's request read
+      .mockImplementationOnce(() => new Promise((r) => { resolveSlowRead = r })) // /second's read, slow
+      .mockResolvedValueOnce(fresh) // the 401 refresh
+
+    const auth = (cfg: { headers: { get: (k: string) => string } }) => cfg.headers.get("Authorization")
+    const sent: string[] = []
+    let rejectFirst: (() => void) | null = null
+    adapter.mockImplementation((cfg: { url: string; headers: { get: (k: string) => string } }) => {
+      sent.push(`${cfg.url} ${auth(cfg)}`)
+      if (cfg.url === "/first" && auth(cfg) === "Bearer token-old") {
+        return new Promise((_, reject) => { rejectFirst = () => reject(err(401, cfg)) })
+      }
+      return Promise.resolve({ ...ok({}), config: cfg })
+    })
+    const flush = () => new Promise((r) => setTimeout(r, 0))
+
+    let t = 1_000_000
+    const now = jest.spyOn(Date, "now").mockImplementation(() => t)
+    try {
+      const first = apiClient.get("/first")
+      while (!rejectFirst) await flush()
+      t += 3_000 // /first's burst-cached session has expired
+      const second = apiClient.get("/second") // its session read is now in flight
+      await flush()
+      ;(rejectFirst as () => void)()
+      await first // refreshed to token-new and retried
+      resolveSlowRead(stale) // the read that started before the refresh lands last
+      await second
+      await apiClient.get("/third")
+    } finally {
+      now.mockRestore()
+    }
+    expect(sent).toContain("/first Bearer token-new")
+    expect(sent[sent.length - 1]).toBe("/third Bearer token-new")
   })
 })
 

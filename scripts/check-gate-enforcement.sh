@@ -88,8 +88,8 @@ selftest() {
     # looked for in the output when WANT_RC is not 0 ("-" = none).
     _arm() {
         arm=$1; want=$2; why=$3
-        # The planted tree holds a copy of this very gate, which pass 1 requires a workflow to name.
-        printf '%s\n      - run: bash scripts/check-gate-enforcement.sh\n' "$4" > "$t/.github/workflows/ci.yml"
+        # The planted tree holds a copy of this very gate, which pass 1 and pass 2 require a workflow to name.
+        printf '%s\n      - run: bash scripts/check-gate-enforcement.sh --selftest\n      - run: bash scripts/check-gate-enforcement.sh\n' "$4" > "$t/.github/workflows/ci.yml"
         out=$(bash "$t/scripts/check-gate-enforcement.sh" 2>&1); rc=$?
         if [ "$rc" -ne "$want" ]; then
             echo "FAIL $arm rc=$rc (want $want): $(head -c 200 <<<"$out" | tr '\n' ' ')"; fails=$((fails + 1))
@@ -107,6 +107,13 @@ selftest() {
     _arm script-wired-without-selftest 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/foo.sh apply')"
     _arm name-suffix-collision 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: bash scripts/xfoo.sh --selftest')"
     _arm static-gate-unwired 1 check-a.sh "$wired_st"
+    _arm static-gate-comment-only 1 check-a.sh "$(printf '%s\n%s' '      # run: bash scripts/check-a.sh' "$wired_st")"
+
+    # Issue #1007: a scripts/check-*.sh that dispatches --selftest must also have `<name>.sh --selftest` wired.
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = "--selftest" ] && { echo selftest; exit 0; }\necho gate\n' > "$t/scripts/check-b.sh"
+    _arm check-script-selftest-unwired 1 check-b.sh "$(printf '%s\n%s\n%s' "$wired_gate" "$wired_st" '      - run: bash scripts/check-b.sh')"
+    _arm check-script-selftest-wired 0 - "$(printf '%s\n%s\n%s' "$wired_gate" "$wired_st" '      - run: bash scripts/check-b.sh --selftest')"
+    rm -f "$t/scripts/check-b.sh"
 
     # Review round 1 on #1005. F5: a TRAILING comment on a code line is a comment too.
     _arm selftest-inline-comment-only 1 foo.sh "$(printf '%s\n%s' "$wired_gate" '      - run: echo skip  # bash scripts/foo.sh --selftest')"
@@ -132,6 +139,7 @@ selftest() {
     _arm calls-another-scripts-selftest-not-a-selftest 0 - "$(printf '%s\n%s' "$wired_gate" "$wired_st")"
     rm -f "$t/scripts/caller.sh"
     rm -f "$t/scripts/foo.sh"
+    sed -i '1,/^if \[/{s/--selftest/--no-st/g}' "$t/scripts/check-gate-enforcement.sh"
     _arm no-selftest-script-in-tree 2 "dispatches a --selftest" "$wired_gate"
     [ "$fails" -eq 0 ]
 }
@@ -143,12 +151,34 @@ command -v find >/dev/null 2>&1 || void "find not found"
 [ -d "$WF_DIR" ] || void "no .github/workflows directory under $REPO_ROOT"
 [ -f "$CONF" ]   || void "missing $CONF — the exemption table is required, not optional"
 
+# strip_comments: stdin -> stdout without `#` comments, full-line or trailing. A `#` starts a
+# comment only outside single and double quotes and at the start of the line or after whitespace,
+# so "a #b" and ${#arr} and $# survive. A line with an unbalanced quote keeps its tail, which can
+# only make something count as code, never hide it.
+strip_comments() {
+    awk '{
+        line = $0; out = ""; sq = 0; dq = 0; n = length(line)
+        for (i = 1; i <= n; i++) {
+            c = substr(line, i, 1)
+            if (c == "\"" && !sq) dq = !dq
+            else if (c == "\047" && !dq) sq = !sq
+            else if (c == "#" && !sq && !dq && (i == 1 || substr(line, i - 1, 1) ~ /[ \t]/)) break
+            out = out c
+        }
+        print out }'
+}
+
 # --- collect workflow files (named, so the search cannot silently under-read) -------
 WF_FILES=()
 while IFS= read -r f; do WF_FILES+=("$f"); done < <(
     find "$WF_DIR" -type f \( -name '*.yml' -o -name '*.yaml' \) | sort
 )
 [ "${#WF_FILES[@]}" -gt 0 ] || void "no workflow files found under $WF_DIR — a scan with no inputs proves nothing"
+
+WF_CODE=""
+for wf in "${WF_FILES[@]}"; do
+    WF_CODE+="$(strip_comments < "$wf")"$'\n'
+done
 
 # --- collect gates ------------------------------------------------------------------
 GATES=()
@@ -194,11 +224,9 @@ for g in "${GATES[@]}"; do
             | sort -u | tr '\n' ' '
     )"
 
-    # Is it referenced by any workflow? Named files only.
+    # Is it referenced by any workflow on a non-comment line? (#1007)
     refs=0
-    for wf in "${WF_FILES[@]}"; do
-        if grep -qF -- "$base" "$wf" </dev/null; then refs=$((refs + 1)); fi
-    done
+    if grep -qF -- "$base" <<<"$WF_CODE"; then refs=1; fi
 
     exempt="${EXEMPT_REASON[$base]+set}"
 
@@ -223,15 +251,11 @@ for g in "${GATES[@]}"; do
     FAILED=1
 done
 
-# --- pass 2: a --selftest that runs nowhere is a check nobody ever asks (issue #970) ---
+# --- pass 2: a --selftest that runs nowhere is a check nobody ever asks (issues #970, #1007) ---
 #
-# Pass 1 reads scripts/check-*.sh only. The staging operator scripts (staging-secrets.sh,
-# staging-secrets-preflight.sh, staging-db-bootstrap.sh and their siblings, deploy.sh,
-# seed-order-metric.sh, wait-other-workloads.sh) are not named check-*, carry their proof in a
-# --selftest, and were invoked by no workflow: staging-secrets-preflight sat at 8/16 for a plan and
-# nobody saw it, because nothing ran it. So every .sh under scripts/ (recursively: scripts/gates/
-# and the rest) and under k8s/scripts/, other than the scripts/check-*.sh pass 1 owns, that
-# DISPATCHES a --selftest must be INVOKED with it by a workflow, as `<name>.sh --selftest`, on a
+# Pass 1 checks whether each scripts/check-*.sh is referenced at all (or exempted). Every .sh under
+# scripts/ (recursively: scripts/check-*.sh, scripts/gates/, and the rest) and under k8s/scripts/
+# that DISPATCHES a --selftest must be INVOKED with it by a workflow, as `<name>.sh --selftest`, on a
 # non-comment workflow line. Default-deny, like pass 1; no exemption table: a selftest that cannot
 # run on a hosted runner is a selftest that proves nothing in CI, and the script should say so by
 # being rewritten, not by being listed.
@@ -245,38 +269,15 @@ done
 # (that is the real thing, not its proof), and a longer name that merely ends in this one
 # (xfoo.sh --selftest is not foo.sh --selftest).
 
-# strip_comments: stdin -> stdout without `#` comments, full-line or trailing. A `#` starts a
-# comment only outside single and double quotes and at the start of the line or after whitespace,
-# so "a #b" and ${#arr} and $# survive. A line with an unbalanced quote keeps its tail, which can
-# only make something count as code, never hide it.
-strip_comments() {
-    awk '{
-        line = $0; out = ""; sq = 0; dq = 0; n = length(line)
-        for (i = 1; i <= n; i++) {
-            c = substr(line, i, 1)
-            if (c == "\"" && !sq) dq = !dq
-            else if (c == "\047" && !dq) sq = !sq
-            else if (c == "#" && !sq && !dq && (i == 1 || substr(line, i - 1, 1) ~ /[ \t]/)) break
-            out = out c
-        }
-        print out }'
-}
-
 SELFTEST_CASE_RE='(^|[[:space:]|(])["'"'"']?--selftest["'"'"']?[[:space:]]*(\||\))'
 SELFTEST_EQ_RE='(==|=|-eq)[[:space:]]*["'"'"']?--selftest["'"'"']?([[:space:];]|\]|$)'
 
-WF_CODE=""
-for wf in "${WF_FILES[@]}"; do
-    WF_CODE+="$(strip_comments < "$wf")"$'\n'
-done
 SELFTEST_SCRIPTS=0
 UNRUN_SELFTESTS=()
 SELFTEST_DIRS=("$REPO_ROOT/scripts")
 [ -d "$REPO_ROOT/k8s/scripts" ] && SELFTEST_DIRS+=("$REPO_ROOT/k8s/scripts")
 while IFS= read -r f; do
     base="$(basename "$f")"
-    # scripts/check-*.sh are pass 1's; the same name under k8s/scripts/ is not covered by it.
-    if [ "$(dirname "$f")" = "$REPO_ROOT/scripts" ] && [[ "$base" == check-*.sh ]]; then continue; fi
     body="$(strip_comments < "$f")"
     grep -qE -- "$SELFTEST_CASE_RE" <<<"$body" || grep -qE -- "$SELFTEST_EQ_RE" <<<"$body" || continue
     SELFTEST_SCRIPTS=$((SELFTEST_SCRIPTS + 1))
