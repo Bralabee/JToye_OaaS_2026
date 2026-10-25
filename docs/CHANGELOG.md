@@ -16,7 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Webhook.** `payment_intent.canceled` for a deleted order was already ignored (it reaches the default branch and returns normally). A test now pins that, so cancel-then-delete cannot turn into a 500 and a redelivery loop.
 - **Retention.** R-1 stays 24 hours. Its note in `docs/retention-manifest.json` and the comment above `stale-draft-hours` describe the cancel and the kept cases.
 - **Tests.** `ScheduledCleanupServiceTest` (the keep, cancel and delete matrix, and the cancel-before-delete ordering), `PaymentServiceTest` (the Stripe status matrix, the Stripe-Account header on both calls, the idempotency key, the `pi_` guard, the canceled-webhook pin) and `ScheduledCleanupServiceIntegrationTest` (under NOSUPERUSER: the card draft whose cancel failed is kept, the cancelled one is deleted, both tenants' no-payment drafts are deleted; the class is now order-independent). Every new test was recorded failing on the pre-fix code, and break arms A-H each turned their named test red.
-- **Out of scope.** The 7 existing staging TEST intents have no order left for this job to find; cancelling them is plan 30-09's work. Issue #1031 (a server CANCEL leaves the intent payable) is separate.
+- **The orphans already on staging.** The 7 existing staging TEST intents have no order left for this job to find, and `staging-seed.sh --stage cancel-drafts` starts from the order, so it cannot reach them either. Two hand tools are added for plan 30-09 (re-routed):
+  - `--stage list-orphan-intents` (read-only). It lists every cancelable TEST intent whose `metadata.order_number` names no order the vendor can see in any of the eight statuses. It VOIDs when the vendor sees no order at all, because an empty read can mean a grant failure.
+  - `--stage cancel-orphan-intents --intents pi_a,pi_b`. It acts on the owner-confirmed ids only. It refuses an intent that is paid or paying, or whose order is visible again (that order goes through cancel-drafts). Otherwise it cancels with Idempotency-Key `d02-orphan-cancel-<pi>` and reads the intent back canceled.
+  - The selftest goes from 41 to 47 arms. Eight break arms each turned their named arm red.
+- **Out of scope.** Issue #1031 (a server CANCEL leaves the intent payable) is separate.
 
 ### brotli-libs 1.2.1-r0 in the core-java Runtime Image (#1040) — 2026-10-25
 
