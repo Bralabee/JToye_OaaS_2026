@@ -108,3 +108,14 @@ Measured at HEAD 91f97f81 (22 ahead of origin/main 5fa3a955, 0 behind), 2026-10-
 That is a refusal, not a scan result. A planted random whsec_ line also gave rc 0. That is not a valid control: the scan
 matches the vault's own values (grep -F over each object's value), not shapes. The control with a real value is part of
 Task 3's acceptance.
+
+### PR 4 opened
+
+  Before the push (fetched): `git log HEAD..origin/main` was empty (0 behind origin/main 5fa3a955).
+  Push: 8101b10f..cf633c72, a fast-forward. The remote branch already held 30-11's tip from an earlier push. Pre-push
+  P-2, P-3 and P-4 were ok.
+  Body scan before posting: attribution=0, closing=0, precondition_named=3. Control "Fixes #12" + "Co-Authored-By"
+  gave closing=1, attribution=1.
+  PR #1046  https://github.com/Bralabee/JToye_OaaS_2026/pull/1046  (base main, head feat/30-connect-webhook)
+  CHANGELOG entry (#1046): check-changelog-contract.sh rc=0. HANDOFF names #1046 OPEN: check-handoff-contract.sh rc=0
+  (35 state claims, up from 34).

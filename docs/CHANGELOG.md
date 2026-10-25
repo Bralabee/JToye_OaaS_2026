@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Stripe Connect Events Get Their Own Webhook Route and Secret, and Every Stripe Object Names Its Environment (#1046) — 2026-10-25
+
+This is Phase 30 PR 4, the prerequisite for PAY-03. Stripe sends events from two scopes, the platform's own account and connected accounts. Each scope is a separate endpoint registration with its own signing secret, so one route with one secret could not verify both.
+
+- **The Connect route.** `POST /api/v1/public/payments/webhook/connect` (plus the `/public` alias) verifies only against `stripe.connect-webhook-secret`. It refuses any event that carries no `account`.
+- **The platform route.** It now refuses any event that carries `account`.
+- **Shared handling.** Both routes share one dispatcher (the dedup INSERT and the event switch). A blank secret refuses the request before verification.
+- **Environment tag.** `stripe.environment-tag` is written as `metadata.environment` on PaymentIntents, Refunds and Express accounts. If it is not declared, the value is `unset`.
+  - An event whose object names another environment is acknowledged with 200 and a WARN, and leaves no row.
+  - A `payment_intent.*` event for an order this database does not hold is also acknowledged with 200 and a WARN, so Stripe no longer retries it.
+  - Same-environment refund handling (BL-04) is unchanged.
+- **Express capabilities.** New Express accounts request `card_payments` and `transfers` under the idempotency key `connect-account-create-<tenantId>`. If a reused account is missing either, both are requested before the onboarding link.
+- **Wiring.**
+  - The new Key Vault object `stripe-credentials--connect-webhook-secret` (an external `whsec_`) reaches core-java as `STRIPE_CONNECT_WEBHOOK_SECRET`.
+  - The tag is declared per overlay (local, staging, production), never in base, and is read through a non-optional `configMapKeyRef`.
+  - Compose, `.env.example` and the local k8s secrets script carry both variables.
+- **Merge order.** The PR merges only after the owner has stored the Key Vault object, because the CSI mount fails without it.
+
 ### Four Finished Antigravity Fixes Land Together: Shop-Scoped Order Picker, Per-Location ROI, One Session Read per Page Load, PyYAML Render Readers (#1045) — 2026-10-25
 
 These four branches were finished in Antigravity worktrees and never pushed. They are bundled into one PR.

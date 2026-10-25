@@ -4,7 +4,7 @@
 
 **2026-10-25 late delta (RESUME HERE; everything below is history).**
 - **Phase 30 is executing: 13/32 plans done.** PR 3 (issue #108, Stripe half) merged as #1044, squash 9d204778, and was proven on staging by 30-11: pod digests equal the ghcr digests of that tag, and the new startup line reads `connectTimeoutMs=5000 readTimeoutMs=20000 maxNetworkRetries=2`. #1045 (the bundle of four finished Antigravity branches) merged after it as 5fa3a955.
-- **PR 4 is open from `feat/30-connect-webhook`** (plans 30-12, 30-13, 30-14). It holds the Connected-accounts webhook route, the per-overlay `stripe.environment-tag`, the Express capabilities and the Key Vault, SPC and env wiring. See `30-12-SUMMARY.md`, `30-13-SUMMARY.md` and `evidence/30-14-connect-endpoint.txt`.
+- **PR 4 is #1046, OPEN, from `feat/30-connect-webhook`** (plans 30-12, 30-13, 30-14). It holds the Connected-accounts webhook route, the per-overlay `stripe.environment-tag`, the Express capabilities and the Key Vault, SPC and env wiring. See `30-12-SUMMARY.md`, `30-13-SUMMARY.md` and `evidence/30-14-connect-endpoint.txt`.
 - **Do not merge PR 4 until `stripe-credentials--connect-webhook-secret` exists in `jtoye-stg-kv`.** The SecretProviderClass names that object, so the CSI mount fails without it.
 - **Owner actions pending (30-14 Task 2):**
   - Register a Connected-accounts webhook endpoint in Stripe TEST, pinned to API version 2026-09-30.endive, at `https://api-staging.olajay.co.uk/api/v1/public/payments/webhook/connect`.
