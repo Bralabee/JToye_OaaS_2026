@@ -19,7 +19,8 @@ Three scheduled lanes on main were red at 5fa3a955. Each fix carries its own red
 - **Order detail page: a live update refreshes in place (E2E Nightly runs 40153383032 and 40258034071, 'G-37-6 item 4').**
   - Every SSE event for the open order set the page's loading state. The loading branch replaces the page, so an open Void dialog unmounted, and a staff member typing a void reason lost it whenever any event for that order arrived.
   - A re-read of the order on screen is now a background refresh. It never shows the spinner or the error page, so the panel, the dialog and the typed reason stay.
-  - If a background refresh fails, the order stays on screen and one toast says why (access ended, no longer available, or could not refresh).
+  - If a background refresh fails transiently, the order stays on screen and a toast says so. A 403 or 404 still replaces it with the error page, so a deleted order, or one the user can no longer reach, does not keep its Void and Refund actions live (review round 1).
+  - Every read takes a ticket and only the latest may paint the order, so an older read that lands last, including one started before a void, cannot repaint a newer state (review round 1).
   - The first load for a route id still shows the spinner and the status-specific error page.
 - **Kitchen lapse E2E waits out the session burst cache (nightly 40258034071, 'lapse...' and 'INSTRUMENT...').**
   - #1045 added a 2 s in-memory session cache in the api-client (`SESSION_BURST_TTL_MS`, #963, intended).
