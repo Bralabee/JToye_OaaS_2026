@@ -12,8 +12,9 @@
  * - A: an SSE event for the order on screen refreshes it IN PLACE. No spinner,
  *   the same dialog node stays connected, the typed reason survives, and the
  *   refreshed data then renders.
- * - B: a failed background refresh keeps the loaded order and says so in a
- *   toast, never the error page.
+ * - B: a TRANSIENT failed background refresh keeps the loaded order and says
+ *   so in a toast; a 403/404 still shows the error page (review round 1).
+ * - D: an older read that lands last never paints over a newer one.
  * - C: a different route id is a fresh load (spinner, the old order gone). This
  *   is what keeps the background decision keyed on WHICH order is on screen
  *   rather than on "some order is loaded".
@@ -184,7 +185,7 @@ describe("Order detail page: a live update refreshes in place", () => {
     expect(within(dialog).getByLabelText(VOID_REASON_LABEL)).toHaveValue(TYPED_REASON)
   })
 
-  it("a failed background refresh keeps the loaded order on screen and says so in a toast, not the error page", async () => {
+  it("a transient failed background refresh keeps the loaded order on screen and says so in a toast, not the error page", async () => {
     mockedApiClient.get.mockResolvedValueOnce({ data: makeOrder() })
     renderPage()
     await settled()
@@ -202,6 +203,61 @@ describe("Order detail page: a live update refreshes in place", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
     expect(mockToast).toHaveBeenCalledTimes(1)
     expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" }))
+  })
+
+  it("a background 403 or 404 still replaces the order with the error page (the order is gone or no longer yours)", async () => {
+    // Review round 1, finding 2: keeping a dead order on screen would leave its
+    // Void and Refund actions live. Only a transient failure is toast-only.
+    for (const [status, message] of [
+      [404, "Order not found."],
+      [403, "You do not have access to this order."],
+    ] as const) {
+      mockToast.mockClear()
+      mockedApiClient.get.mockReset()
+      mockedApiClient.get.mockResolvedValueOnce({ data: makeOrder() })
+      const view = renderPage()
+      await settled()
+      expect((await screen.findAllByText(ORDER_NUMBER)).length).toBeGreaterThan(0)
+
+      mockedApiClient.get.mockRejectedValueOnce({ response: { status } })
+      await fireOrderEvent(ORDER_ID)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(mockedApiClient.get).toHaveBeenCalledTimes(2)
+      expect(await screen.findByRole("alert")).toHaveTextContent(message)
+      expect(screen.queryByRole("button", { name: "Void order" })).not.toBeInTheDocument()
+      expect(mockToast).not.toHaveBeenCalled()
+      view.unmount()
+    }
+  })
+
+  it("an older background read that lands last never paints over a newer one", async () => {
+    // Review round 1, finding 1: the same race lets a read started before a void
+    // repaint the pre-void order after onVoided set the voided one.
+    mockedApiClient.get.mockResolvedValueOnce({ data: makeOrder() })
+    renderPage()
+    await settled()
+    expect((await screen.findAllByText(ORDER_NUMBER)).length).toBeGreaterThan(0)
+
+    const older = deferred<{ data: OrderDetail }>()
+    const newer = deferred<{ data: OrderDetail }>()
+    mockedApiClient.get.mockReturnValueOnce(older.promise as never)
+    await fireOrderEvent(ORDER_ID)
+    mockedApiClient.get.mockReturnValueOnce(newer.promise as never)
+    await fireOrderEvent(ORDER_ID)
+    expect(mockedApiClient.get).toHaveBeenCalledTimes(3)
+
+    await act(async () => {
+      newer.resolve({ data: makeOrder({ customerName: "Newer Read" }) })
+    })
+    expect(await screen.findByText("Newer Read")).toBeInTheDocument()
+    await act(async () => {
+      older.resolve({ data: makeOrder({ customerName: "Older Read" }) })
+    })
+    expect(screen.getByText("Newer Read")).toBeInTheDocument()
+    expect(screen.queryByText("Older Read")).not.toBeInTheDocument()
   })
 
   it("a different route id is a fresh load, not a background refresh", async () => {
