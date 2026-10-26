@@ -1,0 +1,129 @@
+# Task 3 evidence: curl/libcurl in the core-java runtime image (CVE-2026-92392)
+
+## (1) Static list check
+### RED: origin/main:core-java/Dockerfile
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs
+MISSING curl
+static_main_rc=1
+### GREEN: working tree core-java/Dockerfile
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs curl libcurl
+ALL_NAMED
+static_tree_rc=0
+
+## (2) Fail direction on a real image
+docker pull ghcr.io/bralabee/jtoye-core-java:latest -> pull_rc=0 (anonymous pull allowed), digest sha256:6977d661b28e5b925d867a19a79157c9518db9adf71befc41e40b2f54bbda186, created 15 hours ago
+### ghcr.io/bralabee/jtoye-core-java:latest (docker run rc=0)
+curl-8.22.0-r0
+libcurl-8.22.0-r0
+alpine-release-3.24.3-r0
+### jtoye_oaas_2026-core-java:latest (docker run rc=0)
+curl-8.22.0-r0
+libcurl-8.22.0-r0
+alpine-release-3.24.2-r0
+### eclipse-temurin:25-jre-alpine (docker run rc=0)
+(no curl/libcurl installed)
+alpine-release-3.24.3-r0
+
+## (3) GREEN on the runtime-stage text
+empty dir: /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/96393424-eee1-4ba4-b6d7-0c1e7e14ce73/scratchpad/curl-proof-runtime (0 entries before extract)
+$ awk '/^FROM eclipse-temurin:25-jre-alpine$/{p=1} p{print} p && /^ *&& apk upgrade/{exit}' core-java/Dockerfile > $D/Dockerfile
+awk_rc=0, lines=47 (38 planned + the 9-line 2026-10-26 entry)
+last 2 lines of the extract:
+RUN apk add --no-cache curl libwebp-tools \
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs curl libcurl
+$ docker build --pull --no-cache -t jtoye-curl-proof:runtime $D -> build_rc=0
+#5 [2/2] RUN apk add --no-cache curl libwebp-tools  && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs curl libcurl
+#5 1.310 ( 7/15) Installing libcurl (8.23.0-r0)
+#5 1.344 ( 8/15) Installing curl (8.23.0-r0)
+#5 1.601 OK: 31.8 MiB in 59 packages
+#5 2.192 OK: 31.8 MiB in 59 packages
+#6 naming to docker.io/library/jtoye-curl-proof:runtime done
+#6 unpacking to docker.io/library/jtoye-curl-proof:runtime 0.0s done
+docker run rc=0
+curl-8.23.0-r0
+curl_exact_rc=0
+libcurl-8.23.0-r0
+libcurl_exact_rc=0
+alpine-release-3.24.3-r0
+
+## (4) Cached-layer mechanism pair, FROM ghcr.io/bralabee/jtoye-core-java:latest (curl 8.22.0-r0)
+old list (origin/main line): libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs
+new list (tree): libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs curl libcurl
+### jtoye-curl-proof:old-list build_rc=0 run_rc=0
+curl-8.22.0-r0
+libcurl-8.22.0-r0
+### jtoye-curl-proof:new-list build_rc=0 run_rc=0
+curl-8.23.0-r0
+libcurl-8.23.0-r0
+
+Measured honestly: on top of the published image the OLD list leaves 8.22.0-r0 and the NEW list lands 8.23.0-r0. Note a cache-busted fresh 'apk add' alone would also install 8.23.0-r0 (the (3) build installs it at the add step); the named upgrade is what makes the version explicit and busts the gha-cached layer.
+
+## (5) Trivy aquasec/trivy:0.70.0 (docker socket mounted), CI gate flags: image --format table --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1
+### trivy-ghcr.io_bralabee_jtoye-core-java_latest.txt
+Report Summary
+┌─────────────────────────────────────────────────────────┬────────┬─────────────────┬─────────┐
+│                         Target                          │  Type  │ Vulnerabilities │ Secrets │
+├─────────────────────────────────────────────────────────┼────────┼─────────────────┼─────────┤
+│ ghcr.io/bralabee/jtoye-core-java:latest (alpine 3.24.3) │ alpine │        2        │    -    │
+├─────────────────────────────────────────────────────────┼────────┼─────────────────┼─────────┤
+│ app/app.jar                                             │  jar   │        0        │    -    │
+└─────────────────────────────────────────────────────────┴────────┴─────────────────┴─────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+ghcr.io/bralabee/jtoye-core-java:latest (alpine 3.24.3)
+=======================================================
+Total: 2 (HIGH: 2, CRITICAL: 0)
+┌─────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬────────────────────────────────────────────┐
+│ Library │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                   Title                    │
+├─────────┼────────────────┼──────────┼────────┼───────────────────┼───────────────┼────────────────────────────────────────────┤
+│ curl    │ CVE-2026-92392 │ HIGH     │ fixed  │ 8.22.0-r0         │ 8.23.0-r0     │ curl: curl: HTTP/2 upload Use-After-Free   │
+│         │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-92392 │
+├─────────┤                │          │        │                   │               │                                            │
+│ libcurl │                │          │        │                   │               │                                            │
+│         │                │          │        │                   │               │                                            │
+└─────────┴────────────────┴──────────┴────────┴───────────────────┴───────────────┴────────────────────────────────────────────┘
+📣 [34mNotices:[0m
+### trivy-jtoye-curl-proof_runtime.txt
+Report Summary
+┌──────────────────────────────────────────┬────────┬─────────────────┬─────────┐
+│                  Target                  │  Type  │ Vulnerabilities │ Secrets │
+├──────────────────────────────────────────┼────────┼─────────────────┼─────────┤
+│ jtoye-curl-proof:runtime (alpine 3.24.3) │ alpine │        0        │    -    │
+└──────────────────────────────────────────┴────────┴─────────────────┴─────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+📣 [34mNotices:[0m
+trivy ghcr.io/bralabee/jtoye-core-java:latest rc=1 (HIGH x2: curl, libcurl CVE-2026-92392, fixed 8.23.0-r0; app.jar 0)
+trivy jtoye-curl-proof:runtime rc=0 (0 fixable HIGH/CRITICAL: no other package needs naming)
+
+
+## Task 3 verify (after docs commit 7c8d443e)
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs curl libcurl
+ALL_NAMED
+curl-8.23.0-r0
+libcurl-8.23.0-r0
+list=0 dockerfile_cve=0 docker_run=0 curl=0 libcurl=0 docs_freshness=0 doc_metrics=0 behind_base=0 changelog=0
+verify_rc=0
+Fail-direction controls: rg CVE-2026-92392 over origin/main docs/CHANGELOG.md rc=1; grep CVE-2026-92392 over origin/main core-java/Dockerfile rc=1
+
+## Docs gates
+docs-freshness.sh before --write rc=1; --write rc=0: jest_blocks 3213->3217, jest_files 273->274, total 6637->6641
+check-doc-metrics.sh BEFORE prose edits rc=1:
+FAIL: README.md [total_logical_invocations]: doc says 6637, docs/metrics.json says 6641
+FAIL: README.md [total_logical_invocations]: doc says 6637, docs/metrics.json says 6641
+FAIL: README.md [jest_blocks]: doc says 3213, docs/metrics.json says 3217
+FAIL: README.md [jest_files]: doc says 273, docs/metrics.json says 274
+FAIL: CLAUDE.md [total_logical_invocations]: doc says 6637, docs/metrics.json says 6641
+FAIL: CLAUDE.md [jest_blocks]: doc says 3213, docs/metrics.json says 3217
+FAIL: CLAUDE.md [jest_files]: doc says 273, docs/metrics.json says 274
+FAIL: AGENTS.md [total_logical_invocations]: doc says 6637, docs/metrics.json says 6641
+FAIL: AGENTS.md [jest_blocks]: doc says 3213, docs/metrics.json says 3217
+FAIL: AGENTS.md [jest_files]: doc says 273, docs/metrics.json says 274
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.
+check-doc-metrics.sh after rc=0 (PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.)
+docs-freshness.sh after rc=0 (docs-freshness OK: metrics match source (total logical invocations: 6641).)
+check-branch-behind-base.sh rc=0 (0 behind origin/main 5fa3a955)
+check-changelog-contract.sh rc=0 (76/76 cited)
+## (6) Cleanup: jtoye-curl-proof:{runtime,old-list,new-list} removed after verify; jtoye_oaas_2026-core-java:latest untouched (695a963acbec). Pulled ghcr.io/bralabee/jtoye-core-java:latest and aquasec/trivy:0.70.0 are left in the local image store.
