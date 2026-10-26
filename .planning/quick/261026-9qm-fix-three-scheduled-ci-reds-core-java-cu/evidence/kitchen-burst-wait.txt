@@ -1,0 +1,105 @@
+# Task 2 evidence: kitchen lapse spec waits out the api-client session burst cache
+# commit d5af11ca
+
+## GREEN: three api-client suites
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 3 passed, 3 total
+Tests:       26 passed, 26 total
+Snapshots:   0 total
+Time:        1.857 s, estimated 2 s
+Ran all test suites within paths "lib/__tests__/api-client-session-lapse.test.ts", "lib/__tests__/api-client.test.ts", "lib/__tests__/api-client-interceptors.test.ts".
+jest_rc=0
+Per-test, api-client-session-lapse.test.ts (jest --json):
+   passed | dispatches a cancellable jtoye:session-lapsed event on a 401 the refresh cannot fix
+   passed | redirects to /auth/signin when no listener claims the lapse (every other route, as today)
+   passed | does not navigate when a listener claims the lapse, and the request still rejects
+   passed | announces nothing and does not navigate when the silent refresh fixes the 401
+   passed | never announces a lapse for a 403: access ending is a different signal
+   passed | the kitchen lapse E2E waits out the session burst cache
+
+## playwright test --list (stack-free compile check)
+Listing tests:
+  [mobile] › kitchen-session-lapse.spec.ts:144:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › lapse: overlay, unchanged URL, 'Signed out' pill, STOPPED title; Sign in again returns to the kitchen
+  [mobile] › kitchen-session-lapse.spec.ts:178:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › a deliberate Sign out shows no overlay (P2-TUN-14)
+  [mobile] › kitchen-session-lapse.spec.ts:211:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › INSTRUMENT: on a page that cannot claim the lapse, the overlay is absent and the browser goes to sign-in
+  [mobile] › kitchen-session-lapse.spec.ts:304:7 › Kitchen: the board-stopped overlay fits a small screen at 130% text (K2 backstop) › signed-out variant at 375x667, root 130%: nothing clipped, both buttons reachable
+  [mobile] › kitchen-session-lapse.spec.ts:320:7 › Kitchen: the board-stopped overlay fits a small screen at 130% text (K2 backstop) › access-ended variant at 375x667, root 130%: nothing clipped, both buttons reachable
+  [desktop] › kitchen-session-lapse.spec.ts:144:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › lapse: overlay, unchanged URL, 'Signed out' pill, STOPPED title; Sign in again returns to the kitchen
+  [desktop] › kitchen-session-lapse.spec.ts:178:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › a deliberate Sign out shows no overlay (P2-TUN-14)
+  [desktop] › kitchen-session-lapse.spec.ts:211:7 › Kitchen: a lapsed session stops the board loudly (37-18, K2) › INSTRUMENT: on a page that cannot claim the lapse, the overlay is absent and the browser goes to sign-in
+  [desktop] › kitchen-session-lapse.spec.ts:304:7 › Kitchen: the board-stopped overlay fits a small screen at 130% text (K2 backstop) › signed-out variant at 375x667, root 130%: nothing clipped, both buttons reachable
+  [desktop] › kitchen-session-lapse.spec.ts:320:7 › Kitchen: the board-stopped overlay fits a small screen at 130% text (K2 backstop) › access-ended variant at 375x667, root 130%: nothing clipped, both buttons reachable
+Total: 10 tests in 1 file
+pw_list_rc=0
+
+## tsc / eslint
+npx tsc --noEmit -> tsc_rc=0
+npx eslint lib/api-client.ts lib/__tests__/api-client-session-lapse.test.ts e2e/kitchen-session-lapse.spec.ts -> eslint_rc=0 (no findings)
+
+## SESSION_BURST_TTL_MS unchanged
+41:const SESSION_BURST_TTL_MS = 2_000
+git diff origin/main -- frontend/lib/api-client.ts: only the __testing addition (3 lines: 2 comment + SESSION_BURST_TTL_MS,)
+
+## Break arms (run after commit d5af11ca; each restored by git checkout and verified by git diff --exit-code)
+### Arm A
+-const SESSION_BURST_WAIT_MS = 2_500
++const SESSION_BURST_WAIT_MS = 1_500
+  ● api-client: the kitchen lapse E2E outlasts the session burst cache (#963, #1045) › the kitchen lapse E2E waits out the session burst cache
+    expect(received).toBeGreaterThan(expected)
+    Expected: > 2000
+    Received:   1500
+      162 |     expect(ttl).toBeGreaterThan(0)
+    > 163 |     expect(wait).toBeGreaterThan(ttl)
+      at Object.toBeGreaterThan (lib/__tests__/api-client-session-lapse.test.ts:163:18)
+Tests:       1 failed, 5 passed, 6 total
+arm_A_jest_rc=1
+restore: git checkout -- frontend/e2e/kitchen-session-lapse.spec.ts; git diff --exit-code rc=0
+Tests:       6 passed, 6 total
+green_after_A_rc=0
+
+### Arm B
+-  await page.waitForTimeout(SESSION_BURST_WAIT_MS)
+  ● api-client: the kitchen lapse E2E outlasts the session burst cache (#963, #1045) › the kitchen lapse E2E waits out the session burst cache
+    expect(received).toContain(expected) // indexOf
+    Expected substring: "waitForTimeout(SESSION_BURST_WAIT_MS)"
+    Received string:    "async function dropAppSession(page: Page, context: BrowserContext) {
+      expect(initial.length, \"no NextAuth session cookie to drop: the login did not land\").toBeGreaterThan(0)
+      167 |     expect(body).not.toBeNull()
+    > 168 |     expect(body![0]).toContain("waitForTimeout(SESSION_BURST_WAIT_MS)")
+      at Object.toContain (lib/__tests__/api-client-session-lapse.test.ts:168:22)
+Tests:       1 failed, 5 passed, 6 total
+arm_B_jest_rc=1
+restore: git checkout -- frontend/e2e/kitchen-session-lapse.spec.ts; git diff --exit-code rc=0
+Tests:       6 passed, 6 total
+green_after_B_rc=0
+
+### Arm C
+-const SESSION_BURST_TTL_MS = 2_000
++const SESSION_BURST_TTL_MS = 3_000
+  ● api-client: the kitchen lapse E2E outlasts the session burst cache (#963, #1045) › the kitchen lapse E2E waits out the session burst cache
+    expect(received).toBeGreaterThan(expected)
+    Expected: > 3000
+    Received:   2500
+      162 |     expect(ttl).toBeGreaterThan(0)
+    > 163 |     expect(wait).toBeGreaterThan(ttl)
+      at Object.toBeGreaterThan (lib/__tests__/api-client-session-lapse.test.ts:163:18)
+Tests:       1 failed, 5 passed, 6 total
+arm_C_jest_rc=1
+restore: git checkout -- frontend/lib/api-client.ts; git diff --exit-code rc=0
+Tests:       6 passed, 6 total
+green_after_C_rc=0
+
+### Arm D (extra): constant renamed SESSION_BURST_WAIT_MS -> SESSION_CACHE_WAIT_MS everywhere in the spec
+3	3	frontend/e2e/kitchen-session-lapse.spec.ts
+arm_D_jest_rc=1
+    expect(received).not.toBeNull()
+    Received: null
+    > 158 |     expect(declared).not.toBeNull()
+Tests:       1 failed, 5 passed, 6 total
+restore diff rc=0
+green_after_D_rc=0
+Tests:       6 passed, 6 total
+
+## Optional live Playwright run: NOT RUN
+Reason: needs a frontend image rebuild on the shared running compose stack (build frontend also retags dependency images) plus vendor credentials; skipped deliberately. The fix is NOT claimed proven live; the next E2E Nightly is the live check.
