@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Three Scheduled-CI Reds Fixed: curl/libcurl in the Core Image, an Order Page That Keeps an Open Dialog Through a Live Update, a Kitchen Lapse Spec That Waits Out the Session Cache — 2026-10-26
+### Three Scheduled-CI Reds Fixed: curl/libcurl in the Core Image, an Order Page That Keeps an Open Dialog Through a Live Update, a Kitchen Lapse Spec That Waits Out the Session Cache (#1047) — 2026-10-26
 
 Three scheduled lanes on main were red at 5fa3a955. Each fix carries its own red and green proof.
 
