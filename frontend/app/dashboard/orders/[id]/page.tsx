@@ -53,6 +53,11 @@ export default function OrderDetailPage() {
   // hooks/use-order-events.ts). Putting `toast` in fetchDetail's deps would make
   // fetchDetail change whenever toast's identity does, and re-fire the mount
   // effect: a test double that builds a new function per render loops for ever.
+  // Every read takes a ticket; only the latest ticket may write. Reads for the
+  // same id can land out of order (two quick SSE events), and a read started
+  // before a void must not repaint the pre-void order after onVoided set the
+  // voided one (review round 1, finding 1). onVoided takes a ticket too.
+  const readSeqRef = useRef(0)
   const toastRef = useRef(toast)
   useEffect(() => {
     toastRef.current = toast
@@ -61,6 +66,8 @@ export default function OrderDetailPage() {
   const fetchDetail = useCallback(async () => {
     if (!orderId) return
     const background = shownOrderIdRef.current === orderId
+    const seq = ++readSeqRef.current
+    const current = () => routeIdRef.current === orderId && readSeqRef.current === seq
     if (!background) {
       shownOrderIdRef.current = null
       setLoading(true)
@@ -70,35 +77,34 @@ export default function OrderDetailPage() {
       const res = await apiClient.get<OrderDetail>(
         `/api/v1/orders/${orderId}/detail`
       )
-      if (routeIdRef.current !== orderId) return
+      if (!current()) return
       setOrder(res.data)
       shownOrderIdRef.current = orderId
     } catch (e: unknown) {
-      if (routeIdRef.current !== orderId) return
+      if (!current()) return
       const err = e as { response?: { status?: number } }
       const status = err.response?.status
-      if (background) {
-        // Keep what is on screen and say the refresh failed. The 403/404
-        // meaning the error page used to carry is kept in the title.
+      if (background && status !== 403 && status !== 404) {
+        // A transient failure: keep what is on screen and say the refresh failed.
+        // A 403/404 falls through to the error page as before: the order is gone
+        // or no longer this user's, so its Void and Refund actions must not stay
+        // live (review round 1, finding 2).
         toastRef.current({
           variant: "destructive",
-          title:
-            status === 403
-              ? "You no longer have access to this order"
-              : status === 404
-                ? "This order is no longer available"
-                : "Couldn't refresh this order",
+          title: "Couldn't refresh this order",
           description: "Showing what was last loaded.",
         })
       } else if (status === 404) {
+        shownOrderIdRef.current = null
         setError("Order not found.")
       } else if (status === 403) {
+        shownOrderIdRef.current = null
         setError("You do not have access to this order.")
       } else {
         setError("Failed to load order. Please try again.")
       }
     } finally {
-      if (!background && routeIdRef.current === orderId) setLoading(false)
+      if (!background && current()) setLoading(false)
     }
   }, [orderId])
 
@@ -200,7 +206,10 @@ export default function OrderDetailPage() {
         onRefundIssued={handleRefundIssued}
         // 37-12: the void's 200 IS the order detail (37-10), so the page keeps it as its own.
         onVoided={(detail) => {
-          if (detail?.id === order.id) setOrder(detail)
+          if (detail?.id === order.id) {
+            readSeqRef.current += 1
+            setOrder(detail)
+          }
         }}
       />
     </div>
