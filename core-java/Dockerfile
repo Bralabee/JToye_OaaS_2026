@@ -60,8 +60,17 @@ FROM eclipse-temurin:25-jre-alpine
 #   the Brotli decoder). The time-bomb again: it redded the core-java image gate
 #   on main at 0f559fc2, c519e689 and f3381c9a. Trivy 0.70.0 over the runtime
 #   stage alone exits 1 without this name and 0 with it (1.2.1-r0 installed).
+#
+# 2026-10-26, same gate, same remedy (eclipse-temurin:25-jre-alpine, Alpine 3.24.3):
+#   curl/libcurl 8.22.0-r0 -> 8.23.0-r0  CVE-2026-92392 (HIGH). Fix confirmed in
+#   the Alpine v3.24 `main` repo. The base does not ship curl (the `apk add`
+#   above installs it), but ci-cd.yaml builds with `cache-from: type=gha`, so
+#   this layer was served from cache and kept 8.22.0-r0; Base Image Freshness
+#   run 40282256007 reported it on the published image. Naming the packages both
+#   rebuilds the layer and keeps the fixed version explicit; the names become a
+#   no-op once the cached layer and the base carry >= 8.23.0-r0.
 RUN apk add --no-cache curl libwebp-tools \
- && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl brotli-libs curl libcurl
 
 WORKDIR /app
 
