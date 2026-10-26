@@ -41,6 +41,17 @@ const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
 const KITCHEN = `${BASE}/dashboard/kitchen`
 const LAPSE_EVENT = "jtoye:session-lapsed"
 const HEADLINE = "Signed out: new orders are NOT showing"
+/**
+ * How long dropAppSession waits after the session endpoint has read `null` twice.
+ *
+ * frontend/lib/api-client.ts holds a freshly read session in memory for SESSION_BURST_TTL_MS
+ * (2 s, #963, shipped in #1045), so for that long after the cookie is gone a request still goes
+ * out with the old Bearer. Measured on nightly 40258034071: the kitchen read came 1545 ms after
+ * the last api-client session read (741740 -> 743285 ms), still carried the old Bearer, got 200,
+ * so nothing lapsed, and the board's next poll was 60 s away. The wait must stay ABOVE the TTL;
+ * frontend/lib/__tests__/api-client-session-lapse.test.ts fails if it does not.
+ */
+const SESSION_BURST_WAIT_MS = 2_500
 
 async function vendorLogin(page: Page) {
   skipWithoutVendorPassword()
@@ -102,6 +113,9 @@ const readSession = (page: Page) =>
  * answers with a fresh `Set-Cookie` and the session comes straight back; the next board read then
  * got 200 and nothing lapsed. So: clear, read the session, and require `null` twice, a beat apart,
  * so a late in-flight response cannot resurrect it after the check.
+ *
+ * "Dropped" also covers the api-client's in-memory session: the helper then waits out its burst
+ * cache (SESSION_BURST_WAIT_MS), so the next read goes out with no Bearer at all.
  */
 async function dropAppSession(page: Page, context: BrowserContext) {
   const initial = (await context.cookies()).filter((c) => c.name.includes("authjs.session-token"))
@@ -115,6 +129,8 @@ async function dropAppSession(page: Page, context: BrowserContext) {
   await expect.poll(clearAndRead, { timeout: 15_000, intervals: [500] }).toBe("null")
   await page.waitForTimeout(1_500)
   await expect.poll(clearAndRead, { timeout: 10_000, intervals: [500] }).toBe("null")
+  // Outlast the api-client's session burst cache, or the next read still carries the old Bearer.
+  await page.waitForTimeout(SESSION_BURST_WAIT_MS)
 }
 
 /** Make the board read now: it re-reads on the browser's `online` event (#106). */

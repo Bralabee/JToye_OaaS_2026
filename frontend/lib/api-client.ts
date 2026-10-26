@@ -227,6 +227,9 @@ apiClient.interceptors.response.use(
 
 // Expose for tests — not part of the public contract
 export const __testing = {
+  // Read-only: e2e/kitchen-session-lapse.spec.ts must wait longer than this after dropping the
+  // session cookie, and lib/__tests__/api-client-session-lapse.test.ts holds the two together.
+  SESSION_BURST_TTL_MS,
   resetRefresh: () => {
     refreshPromise = null
     requestSessionPromise = null

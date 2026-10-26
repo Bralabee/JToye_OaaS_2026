@@ -17,12 +17,17 @@ jest.mock("@/lib/session-lapse", () => ({
   navigateToSignIn: jest.fn(),
 }))
 
+import { readFileSync } from "fs"
+import { join } from "path"
 import { getSession } from "next-auth/react"
 import { navigateToSignIn, SESSION_LAPSED_EVENT } from "@/lib/session-lapse"
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const apiClientModule = require("../api-client")
 const apiClient = apiClientModule.default as import("axios").AxiosInstance
-const __testing = apiClientModule.__testing as { resetRefresh: () => void }
+const __testing = apiClientModule.__testing as {
+  resetRefresh: () => void
+  SESSION_BURST_TTL_MS: number
+}
 
 const adapter = jest.fn()
 apiClient.defaults.adapter = adapter
@@ -139,5 +144,27 @@ describe("api-client: a lapsed session is announced before anything navigates (D
 
     expect(seen).toHaveLength(0)
     expect(navigateToSignIn).not.toHaveBeenCalled()
+  })
+})
+
+describe("api-client: the kitchen lapse E2E outlasts the session burst cache (#963, #1045)", () => {
+  // Read as TEXT: the spec imports @playwright/test and cannot be loaded under jest.
+  const SPEC_PATH = join(__dirname, "..", "..", "e2e", "kitchen-session-lapse.spec.ts")
+
+  it("the kitchen lapse E2E waits out the session burst cache", () => {
+    const spec = readFileSync(SPEC_PATH, "utf8")
+
+    const declared = spec.match(/^const SESSION_BURST_WAIT_MS = ([0-9_]+)\s*$/m)
+    expect(declared).not.toBeNull()
+    const wait = Number(declared![1].replace(/_/g, ""))
+    const ttl = __testing.SESSION_BURST_TTL_MS
+    expect(typeof ttl).toBe("number")
+    expect(ttl).toBeGreaterThan(0)
+    expect(wait).toBeGreaterThan(ttl)
+
+    // The body of dropAppSession, up to its closing brace at the start of a line.
+    const body = spec.match(/^async function dropAppSession\([\s\S]*?^}/m)
+    expect(body).not.toBeNull()
+    expect(body![0]).toContain("waitForTimeout(SESSION_BURST_WAIT_MS)")
   })
 })
