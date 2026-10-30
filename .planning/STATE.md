@@ -1529,6 +1529,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 50 | fix(e2e): 5b resolves the live app tree by its main, not body's first non-hidden div (cookie-notice host since #924) | 2026-10-18 | 9159f9ee | — |
 | 51 | fix(e2e): G-37-6 defect 3 expects the clamped min(5,totalPages) window; CHANGELOG entry for the nightly fix | 2026-10-18 | fbfaffb8 | — |
 | 261025-8p7 | fix(cleanup): issue #1038, a stale card DRAFT's PaymentIntent is cancelled before its order is deleted | 2026-10-25 | 55071c62 | [261025-8p7-fix-issue-1038-stale-draft-cleanup-orpha](./quick/261025-8p7-fix-issue-1038-stale-draft-cleanup-orpha/) |
+| 261026-9qm | fix: three scheduled-CI reds on main: core-java curl/libcurl CVE-2026-92392 (named apk upgrade, GHA layer cache kept 8.22.0), the order page keeps an open Void dialog through an SSE refresh (E2E G-37-6 item 4), and the kitchen lapse spec waits out the 2 s session burst cache (#1045) | 2026-10-26 | 7c8d443e | [261026-9qm-fix-three-scheduled-ci-reds-core-java-cu](./quick/261026-9qm-fix-three-scheduled-ci-reds-core-java-cu/) |
 
 ## Session Continuity
 

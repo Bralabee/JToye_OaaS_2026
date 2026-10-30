@@ -25,6 +25,26 @@ This is Phase 30 PR 4, the prerequisite for PAY-03. Stripe sends events from two
   - Compose, `.env.example` and the local k8s secrets script carry both variables.
 - **Merge order.** The PR merges only after the owner has stored the Key Vault object, because the CSI mount fails without it.
 
+### Three Scheduled-CI Reds Fixed: curl/libcurl in the Core Image, an Order Page That Keeps an Open Dialog Through a Live Update, a Kitchen Lapse Spec That Waits Out the Session Cache (#1047) — 2026-10-26
+
+Three scheduled lanes on main were red at 5fa3a955. Each fix carries its own red and green proof.
+
+- **core-java image: curl and libcurl 8.23.0-r0 (CVE-2026-92392, HIGH).**
+  - Base Image Freshness run 40282256007 found curl/libcurl 8.22.0-r0 in the published image.
+  - The Temurin base does not ship curl; our `apk add` installs it. CI builds with `cache-from: type=gha`, so that layer stayed cached at 8.22.0-r0.
+  - `core-java/Dockerfile` now names `curl libcurl` in its existing `apk upgrade` list, with a dated rationale entry.
+  - A build of the runtime stage installs 8.23.0-r0 for both. Trivy 0.70.0 with the CI gate's flags exits 0 on it and 1 on the published image.
+- **Order detail page: a live update refreshes in place (E2E Nightly runs 40153383032 and 40258034071, 'G-37-6 item 4').**
+  - Every SSE event for the open order set the page's loading state. The loading branch replaces the page, so an open Void dialog unmounted, and a staff member typing a void reason lost it whenever any event for that order arrived.
+  - A re-read of the order on screen is now a background refresh. It never shows the spinner or the error page, so the panel, the dialog and the typed reason stay.
+  - If a background refresh fails transiently, the order stays on screen and a toast says so. A 403 or 404 still replaces it with the error page, so a deleted order, or one the user can no longer reach, does not keep its Void and Refund actions live (review round 1).
+  - Every read takes a ticket and only the latest may paint the order, so an older read that lands last, including one started before a void, cannot repaint a newer state (review round 1).
+  - The first load for a route id still shows the spinner and the status-specific error page.
+- **Kitchen lapse E2E waits out the session burst cache (nightly 40258034071, 'lapse...' and 'INSTRUMENT...').**
+  - #1045 added a 2 s in-memory session cache in the api-client (`SESSION_BURST_TTL_MS`, #963, intended).
+  - The kitchen read came 1545 ms after the last session read, still carried the old Bearer and got 200, so nothing lapsed.
+  - `dropAppSession` now waits `SESSION_BURST_WAIT_MS` (2.5 s). A jest block fails if that wait falls to or below the TTL, is renamed, or leaves the helper.
+
 ### Four Finished Antigravity Fixes Land Together: Shop-Scoped Order Picker, Per-Location ROI, One Session Read per Page Load, PyYAML Render Readers (#1045) — 2026-10-25
 
 These four branches were finished in Antigravity worktrees and never pushed. They are bundled into one PR.

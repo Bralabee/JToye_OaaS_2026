@@ -1,0 +1,150 @@
+# Task 1 evidence: order detail page live update refreshes in place
+# base: 5fa3a955 (origin/main 5fa3a955)
+
+## RED (pre-fix page.tsx)
+$ npx jest --runTestsByPath app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' --runTestsByPath app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx
+  Using tsconfig file: tsconfig.build.json
+FAIL app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx
+  ● Order detail page: a live update refreshes in place › an SSE event for the open order refreshes it in place: the Void dialog stays open with its typed reason
+
+    expect(received).toBeNull()
+
+    Received: <div class="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-orange-500" />
+
+      173 |     expect(mockedApiClient.get).toHaveBeenNthCalledWith(2, detailPath(ORDER_ID))
+      174 |     // In flight: no spinner, the SAME dialog node, the reason intact.
+    > 175 |     expect(spinner()).toBeNull()
+          |                       ^
+      176 |     expect(dialog.isConnected).toBe(true)
+      177 |     expect(within(dialog).getByLabelText(VOID_REASON_LABEL)).toHaveValue(TYPED_REASON)
+      178 |
+
+      at Object.toBeNull (app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx:175:23)
+
+  ● Order detail page: a live update refreshes in place › a failed background refresh keeps the loaded order on screen and says so in a toast, not the error page
+
+    TestingLibraryElementError: Unable to find an element with the text: ORD-00000000-20261026-ABCDEF01. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+    Ignored nodes: comments, script, style
+    <body
+      style=""
+    >
+      <div>
+        <div
+          class="mx-auto max-w-detail space-y-4 p-6"
+          data-width-tier="detail"
+        >
+          <button
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 gap-2"
+          >
+            <svg
+              aria-hidden="true"
+              class="lucide lucide-arrow-left h-4 w-4"
+              fill="none"
+              height="24"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="m12 19-7-7 7-7"
+              />
+              <path
+                d="M19 12H5"
+              />
+            </svg>
+            Back to orders
+          </button>
+          <div
+            class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            role="alert"
+          >
+            Failed to load order. Please try again.
+          </div>
+        </div>
+      </div>
+    </body>
+
+      198 |
+      199 |     expect(mockedApiClient.get).toHaveBeenCalledTimes(2)
+    > 200 |     expect(screen.getAllByText(ORDER_NUMBER).length).toBeGreaterThan(0)
+          |                   ^
+      201 |     expect(screen.queryByText("Failed to load order. Please try again.")).not.toBeInTheDocument()
+      202 |     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+      203 |     expect(mockToast).toHaveBeenCalledTimes(1)
+
+      at Object.getElementError (node_modules/@testing-library/dom/dist/config.js:37:19)
+      at node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+      at node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+      at Object.getAllByText (app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx:200:19)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 1 passed, 3 total
+Snapshots:   0 total
+Time:        0.836 s
+Ran all test suites within paths "app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx".
+jest_rc=1
+Result: A FAILS (spinner rendered at line 175), B FAILS (order number gone, error page 'Failed to load order. Please try again.' shown, line 200), C passes.
+
+## GREEN (fixed page.tsx), four suites
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' --runTestsByPath app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx app/dashboard/orders/[id]/__tests__/detail-tier.test.tsx components/dashboard/orders/__tests__/void-order-dialog.test.tsx components/dashboard/orders/__tests__/OrderDetailPanel.test.tsx
+  Using tsconfig file: tsconfig.build.json
+
+Test Suites: 4 passed, 4 total
+Tests:       76 passed, 76 total
+Snapshots:   0 total
+Time:        1.729 s, estimated 3 s
+Ran all test suites within paths "app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx", "app/dashboard/orders/[id]/__tests__/detail-tier.test.tsx", "components/dashboard/orders/__tests__/void-order-dialog.test.tsx", "components/dashboard/orders/__tests__/OrderDetailPanel.test.tsx".
+jest_rc=0
+Per-test (jest --json, background-refresh.test.tsx):
+   passed | an SSE event for the open order refreshes it in place: the Void dialog stays open with its typed reason
+   passed | a failed background refresh keeps the loaded order on screen and says so in a toast, not the error page
+   passed | a different route id is a fresh load, not a background refresh
+act() warnings in output: 0
+
+## detail-tier.test.tsx unmodified
+$ git diff --exit-code origin/main -- frontend/app/dashboard/orders/[id]/__tests__/detail-tier.test.tsx
+rc=0
+
+## tsc / eslint
+$ npx tsc --noEmit -> tsc_rc=0
+$ npx eslint app/dashboard/orders/[id]/page.tsx app/dashboard/orders/[id]/__tests__/background-refresh.test.tsx -> eslint_rc=0 (no output)
+
+## Break arm B1 (after commit 6e7dad8b): predicate -> shownOrderIdRef.current !== null
+-    const background = shownOrderIdRef.current === orderId
++    const background = shownOrderIdRef.current !== null
+   passed | an SSE event for the open order refreshes it in place: the Void dialog stays open with its typed reason
+   passed | a failed background refresh keeps the loaded order on screen and says so in a toast, not the error page
+   failed | a different route id is a fresh load, not a background refresh
+  ● Order detail page: a live update refreshes in place › a different route id is a fresh load, not a background refresh
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      222 |
+      223 |     expect(mockedApiClient.get).toHaveBeenLastCalledWith(detailPath(OTHER_ID))
+    > 224 |     expect(spinner()).not.toBeNull()
+          |                           ^
+      225 |     expect(screen.queryByText(ORDER_NUMBER)).not.toBeInTheDocument()
+      226 |     expect(screen.queryByText(OTHER_NUMBER)).not.toBeInTheDocument()
+      227 |   })
+b1_jest_rc=1  (Test C RED: no spinner on a different route id)
+
+## Restore
+$ git checkout -- frontend/app/dashboard/orders/[id]/page.tsx; git diff --exit-code -- <path>
+restore_diff_rc=0
+63:    const background = shownOrderIdRef.current === orderId
+## GREEN again, four suites
+Test Suites: 4 passed, 4 total
+Tests:       76 passed, 76 total
+regreen_rc=0
+
+## Full frontend jest (after all commits): Test Suites 274 passed / 274; Tests 3217 passed / 3217; full_jest_rc=0 (runtime count equals metrics.json jest_blocks 3217)
