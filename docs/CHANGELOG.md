@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Shop Cards Named by Their Own Text: the Stretched Link, and the Last axe 4.14 Exception Deleted (#1027) (#1053) — 2026-10-30
+
+axe-core 4.14 enables `label-content-name-mismatch` (WCAG 2.5.3, level A). A link that wraps a whole card and borrows its name through `aria-labelledby` can never contain its own visible text, so the `/shop` card failed it and `e2e/public-a11y.spec.ts` carried one scoped exception, `DESIGN_EXCEPTION_1027`. Owner ruling 2026-10-22, option 1, both cards.
+
+- **`/shop` directory card and the landing row's `ShopCard`:** the `<article>` is the card (`relative`, and the `group` its hover styles read), and the link wraps only the shop name, named by that text. Its `after:` overlay keeps the whole card clickable; `aria-describedby` (open state, distance) is unchanged. A keyboard focus ring is drawn on the overlay, so focus still outlines the card.
+- **`e2e/public-a11y.spec.ts`:** the exception, its filter and its must-fire assertion are deleted; every surface is held to the full rule set. 42 passed on a production build; with the old `/shop` card rebuilt, exactly the two `/shop` cases fail on `label-content-name-mismatch`.
+- **Tests:** the UXT-082 Jest describes assert the link's text is exactly the shop name and the rest of the card is outside it (red on the old card). The `a11y-storefront` F2 instrument plants card text inside the link and expects Chrome's name to change; the CDP probe reads the heading a stretched link sits in, with a stack-free positive control. `e2e/helpers/public-surface.ts` finds a card as a link inside its `<article>` (the old selector found none: 14 of 42 red).
+- **Re-proven on main, no code change here:** the four Antigravity branches (issues #1007, #1008, #1009, #992, #1011, #1016, #963 and the synthesis gate) were already merged by #1045. Each fix was shown red with its pre-fix file from `9d204778` and green restored; the record is in #1053.
+
 ### Three Scheduled-CI Reds Fixed: curl/libcurl in the Core Image, an Order Page That Keeps an Open Dialog Through a Live Update, a Kitchen Lapse Spec That Waits Out the Session Cache (#1047) — 2026-10-26
 
 Three scheduled lanes on main were red at 5fa3a955. Each fix carries its own red and green proof.
