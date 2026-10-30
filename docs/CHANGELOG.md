@@ -16,7 +16,7 @@ This is Phase 30 PR 4, the prerequisite for PAY-03. Stripe sends events from two
 - **Shared handling.** Both routes share one dispatcher (the dedup INSERT and the event switch). A blank secret refuses the request before verification.
 - **Environment tag.** `stripe.environment-tag` is written as `metadata.environment` on PaymentIntents, Refunds and Express accounts. If it is not declared, the value is `unset`.
   - An event whose object names another environment is acknowledged with 200 and a WARN, and leaves no row.
-  - A `payment_intent.*` event for an order this database does not hold is also acknowledged with 200 and a WARN, so Stripe no longer retries it.
+  - A `payment_intent.*` event for an order this database does not hold is acknowledged with 200 and a WARN only when the intent carries no environment tag. If it carries this runtime's own tag, the handler throws, so the dedup row rolls back and Stripe retries; acknowledging it would lose a real payment (review round 1, finding 1).
   - Same-environment refund handling (BL-04) is unchanged.
 - **Express capabilities.** New Express accounts request `card_payments` and `transfers` under the idempotency key `connect-account-create-<tenantId>`. If a reused account is missing either, both are requested before the onboarding link.
 - **Wiring.**

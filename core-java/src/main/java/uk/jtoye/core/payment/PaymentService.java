@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.order.Order;
@@ -681,6 +682,28 @@ public class PaymentService {
         return environment;
     }
 
+    /**
+     * The order an intent's {@code order_id} names. An intent tagged with THIS runtime's environment
+     * was created here, so a missing order is a lag or a bug: throw, which rolls back the dedup row
+     * and lets Stripe retry (BL-04, as RefundService does for its own refunds). Acknowledging it would
+     * commit the dedup row and lose a real payment for good. An untagged intent (created before the
+     * tag existed, or by an untagged stack sharing the account) stays acknowledged with a WARN
+     * (Pitfall 5); foreign-tagged intents never reach here ({@link #foreignEnvironmentOf}).
+     */
+    private Optional<Order> findOrderForIntent(Event event, PaymentIntent intent, String orderId) {
+        Optional<Order> found = orderRepository.findById(java.util.UUID.fromString(orderId));
+        if (found.isPresent()) {
+            return found;
+        }
+        String environment = intent.getMetadata().get("environment");
+        if (environment != null && environment.equals(stripeProperties.effectiveEnvironmentTag())) {
+            throw new ResourceNotFoundException("Order not found for this environment's intent "
+                    + intent.getId() + " (event " + event.getId() + "): " + orderId);
+        }
+        log.warn("event=stripe_event_unknown_order id={} order={}", event.getId(), orderId);
+        return Optional.empty();
+    }
+
     private void handlePaymentIntentSucceeded(Event event) {
         PaymentIntent intent = (PaymentIntent) event.getDataObjectDeserializer()
                 .getObject().orElseThrow(() -> new IllegalStateException("Failed to deserialize PaymentIntent"));
@@ -698,11 +721,8 @@ public class PaymentService {
         }
 
         try {
-            // Pitfall 5: an intent for an order this database does not hold (deleted, or created by
-            // an untagged stack sharing the account) is acknowledged, never a 5xx retry storm.
-            Optional<Order> found = orderRepository.findById(java.util.UUID.fromString(orderId));
+            Optional<Order> found = findOrderForIntent(event, intent, orderId);
             if (found.isEmpty()) {
-                log.warn("event=stripe_event_unknown_order id={} order={}", event.getId(), orderId);
                 return;
             }
             Order order = found.get();
@@ -849,11 +869,8 @@ public class PaymentService {
         }
 
         try {
-            // Pitfall 5: an intent for an order this database does not hold (deleted, or created by
-            // an untagged stack sharing the account) is acknowledged, never a 5xx retry storm.
-            Optional<Order> found = orderRepository.findById(java.util.UUID.fromString(orderId));
+            Optional<Order> found = findOrderForIntent(event, intent, orderId);
             if (found.isEmpty()) {
-                log.warn("event=stripe_event_unknown_order id={} order={}", event.getId(), orderId);
                 return;
             }
             Order order = found.get();

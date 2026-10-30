@@ -21,6 +21,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
@@ -375,39 +376,62 @@ class StripeWebhookIdempotencyIntegrationTest {
     }
 
     @Test
-    void succeededEventForAnUnknownOrderIsAcknowledgedNotThrown(CapturedOutput output) {
+    void succeededEventForAnUnknownOrderOfThisEnvironmentThrowsAndLeavesNoDedupRow() {
+        // Review round 1, finding 1: this runtime created the intent, so a missing order is a lag or a
+        // bug. Acknowledging it would commit the dedup row and lose a real payment; the throw rolls the
+        // row back so Stripe retries (BL-04, as RefundService does).
         UUID missingOrder = UUID.randomUUID();
         Event event = buildSucceededEvent("evt_unknown_order", "pi_unknown_order", missingOrder, TENANT_ID,
                 RUNTIME_ENVIRONMENT);
 
-        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
-            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(event);
-            org.assertj.core.api.Assertions.assertThatCode(() -> paymentService.handleWebhookEvent("payload", "sig"))
-                    .as("Pitfall 5: an unknown order must be a 200 to Stripe, not a 5xx retry storm")
-                    .doesNotThrowAnyException();
-        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> deliver(event))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(dedupRows("evt_unknown_order"))
+                .as("the dedup row must roll back so Stripe's retry is processed, not skipped as a duplicate")
+                .isZero();
         verify(paymentEventPublisher, never()).publishSucceeded(any(), any(), any(), any(), anyLong(), any());
-        assertThat(output.getOut() + output.getErr())
-                .containsPattern("WARN\\s+\\S*PaymentService - event=stripe_event_unknown_order "
-                        + "id=evt_unknown_order order=" + missingOrder);
     }
 
     @Test
-    void failedEventForAnUnknownOrderIsAcknowledgedNotThrown(CapturedOutput output) {
+    void failedEventForAnUnknownOrderOfThisEnvironmentThrowsAndLeavesNoDedupRow() {
         UUID missingOrder = UUID.randomUUID();
         Event event = buildSucceededEvent("evt_unknown_order_failed", "pi_unknown_order_failed", missingOrder,
                 TENANT_ID, RUNTIME_ENVIRONMENT);
         when(event.getType()).thenReturn("payment_intent.payment_failed");
 
-        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
-            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(event);
-            org.assertj.core.api.Assertions.assertThatCode(() -> paymentService.handleWebhookEvent("payload", "sig"))
-                    .doesNotThrowAnyException();
-        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> deliver(event))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(dedupRows("evt_unknown_order_failed")).isZero();
+        verify(paymentEventPublisher, never()).publishFailed(any(), any(), any(), any(), anyLong(), any(), any());
+    }
+
+    @Test
+    void succeededEventForAnUnknownUntaggedOrderIsAcknowledgedNotThrown(CapturedOutput output) {
+        // Pitfall 5: an untagged intent (pre-tag, or an untagged stack sharing the account) for an order
+        // this database does not hold is a 200 to Stripe, not a 5xx retry storm.
+        UUID missingOrder = UUID.randomUUID();
+        Event event = buildSucceededEvent("evt_unknown_untagged", "pi_unknown_untagged", missingOrder, TENANT_ID,
+                null);
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> deliver(event)).doesNotThrowAnyException();
+        verify(paymentEventPublisher, never()).publishSucceeded(any(), any(), any(), any(), anyLong(), any());
+        assertThat(output.getOut() + output.getErr())
+                .containsPattern("WARN\\s+\\S*PaymentService - event=stripe_event_unknown_order "
+                        + "id=evt_unknown_untagged order=" + missingOrder);
+    }
+
+    @Test
+    void failedEventForAnUnknownUntaggedOrderIsAcknowledgedNotThrown(CapturedOutput output) {
+        UUID missingOrder = UUID.randomUUID();
+        Event event = buildSucceededEvent("evt_unknown_untagged_failed", "pi_unknown_untagged_failed",
+                missingOrder, TENANT_ID, null);
+        when(event.getType()).thenReturn("payment_intent.payment_failed");
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> deliver(event)).doesNotThrowAnyException();
         verify(paymentEventPublisher, never()).publishFailed(any(), any(), any(), any(), anyLong(), any(), any());
         assertThat(output.getOut() + output.getErr())
                 .containsPattern("WARN\\s+\\S*PaymentService - event=stripe_event_unknown_order "
-                        + "id=evt_unknown_order_failed order=" + missingOrder);
+                        + "id=evt_unknown_untagged_failed order=" + missingOrder);
     }
 
     // --- helpers -------------------------------------------------------
