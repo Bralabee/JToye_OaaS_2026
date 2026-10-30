@@ -271,7 +271,7 @@ describe("ShopCard — what the card says about delivery (37-G)", () => {
  * was the concatenated card text ("Peckham Jollof Co. logo Open 0.7 miles away Peckham Jollof Co. ...").
  * Open state and distance are the description.
  *
- * Issue #1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the shop name and is named by
+ * Issue 1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the shop name and is named by
  * that content, not by aria-labelledby (axe-core 4.14 label-content-name-mismatch, WCAG 2.5.3). A
  * stretched `after:` overlay keeps the whole card clickable.
  */

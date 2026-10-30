@@ -88,7 +88,7 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
   // 37-52 (UI-SPEC F2, UXT-082): the name is the shop; the open state and the distance are the
   // description. Ids per render (useId).
   //
-  // Issue #1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the shop name and is named
+  // Issue 1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the shop name and is named
   // by that content, not by aria-labelledby, so its accessible name contains its visible text
   // (WCAG 2.5.3, axe-core 4.14 label-content-name-mismatch). The whole card stays clickable through
   // the link's `after:` overlay, positioned against the `relative` <article>.
