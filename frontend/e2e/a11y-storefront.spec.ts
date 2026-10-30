@@ -52,11 +52,12 @@ interface AxLink {
 
 /**
  * Every link in Chrome's accessibility tree whose href is a single shop page (`/shop/{slug}`), with
- * the name CHROME computed for it and the text of the card's name element: the element the link's
+ * the name CHROME computed for it and the card's expected name: the element the link's
  * aria-labelledby points at, else an `h2` inside the link (a link wrapping the whole card), else the
- * `h2` the link sits in (the stretched link of issue #1027, which wraps only the heading's text).
- * Read with `Accessibility.getFullAXTree`; each AX node is resolved back to its DOM node to read the
- * href.
+ * `data-shop-name` of the card the link sits in (the stretched link of issue #1027, which wraps only
+ * the heading's text). The stretched case must NOT read the heading around the link: anything that
+ * leaks into the link lands in that heading too, and the comparison could never fail. Read with
+ * `Accessibility.getFullAXTree`; each AX node is resolved back to its DOM node to read the href.
  */
 async function shopCardLinksFromChrome(page: Page): Promise<AxLink[]> {
   const cdp = await page.context().newCDPSession(page)
@@ -84,8 +85,9 @@ async function shopCardLinksFromChrome(page: Page): Promise<AxLink[]> {
         functionDeclaration: `function () {
           const href = this.getAttribute("href") || ""
           const ref = this.getAttribute("aria-labelledby")
-          const named = (ref && document.getElementById(ref)) || this.querySelector("h2") || this.closest("h2")
-          return { href, cardName: named ? (named.textContent || "").replace(/\\s+/g, " ").trim() : "" }
+          const named = (ref && document.getElementById(ref)) || this.querySelector("h2")
+          const raw = named ? named.textContent || "" : this.closest("[data-shop-name]")?.getAttribute("data-shop-name") || ""
+          return { href, cardName: raw.replace(/\\s+/g, " ").trim() }
         }`,
       })) as { result: { value?: { href: string; cardName: string } } }
       const v = result.value
@@ -345,7 +347,8 @@ test.describe("live storefront @mobile-only", () => {
     const after = await shopCardLinksFromChrome(page)
     const plantedName = after.find((l) => l.href === `/shop/${SHOP_SLUG}`)?.name
     expect(plantedName, "the planted card is still in Chrome's tree").toBeTruthy()
-    expect(plantedName, "the name probe missed a card link named by more than its shop").not.toBe(SHOP_NAME)
+    expect(plantedName, "Chrome's name for the planted card link is no longer the shop").not.toBe(SHOP_NAME)
+    expect(() => expectCardsNamedByShop(after), "the name probe missed a card link named by more than its shop").toThrow()
   })
 
   test("F3: Add moves focus to '+' and announces the dish once; the last Remove returns focus to Add; INSTRUMENT: no region, no record", async ({ page }) => {
@@ -478,7 +481,8 @@ test.describe("live storefront on an iPhone 13 @mobile-only", () => {
 
 const CARDS = `
   <main>
-    <article style="position:relative"><span id="stretched-d">Open</span><h2><a id="stretched" href="/shop/stretched-kitchen" aria-describedby="stretched-d">Stretched Kitchen</a></h2><p>Suya</p></article>
+    <article data-shop-name="Stretched Kitchen" style="position:relative"><span id="stretched-d">Open</span><h2><a id="stretched" href="/shop/stretched-kitchen" aria-describedby="stretched-d">Stretched Kitchen</a></h2><p>Suya</p></article>
+    <article data-shop-name="Leaky Kitchen" style="position:relative"><h2><a id="leaky" href="/shop/leaky-kitchen">Leaky Kitchen <span>Open</span></a></h2><p>Grill</p></article>
     <a id="named" href="/shop/named-kitchen" aria-labelledby="named-h" aria-describedby="named-d">
       <article><img alt="Named Kitchen banner" src="data:,"><span id="named-d">Open</span><h2 id="named-h">Named Kitchen</h2><p>Jollof · Halal</p></article>
     </a>
@@ -498,6 +502,7 @@ test.describe("instruments can fail @stack-free", () => {
     const stretched = links.find((l) => l.href === "/shop/stretched-kitchen")
     const named = links.find((l) => l.href === "/shop/named-kitchen")
     const bare = links.find((l) => l.href === "/shop/bare-kitchen")
+    const leaky = links.find((l) => l.href === "/shop/leaky-kitchen")
     // Positive controls: the stretched link (issue #1027) is named by its content and its heading is
     // found around it; the labelled one is named by its heading.
     expect(stretched?.name).toBe("Stretched Kitchen")
@@ -508,6 +513,11 @@ test.describe("instruments can fail @stack-free", () => {
     expect(bare!.name).not.toBe("Bare Kitchen")
     expect(() => expectCardsNamedByShop(links)).toThrow()
     expect(() => expectCardsNamedByShop(links.filter((l) => l === named || l === stretched))).not.toThrow()
+    // Broken input: a stretched link whose content is more than the shop. Its heading holds the same
+    // leaked text, so the expected name must come from outside the link, or this cannot fail.
+    expect(leaky, "the leaky stretched link is in Chrome's tree").toBeTruthy()
+    expect(leaky!.name).toBe("Leaky Kitchen Open")
+    expect(() => expectCardsNamedByShop([leaky!]), "a stretched link named by more than its shop").toThrow()
   })
 
   test("recorder and announcement assertion: the new sentence passes; the old doubled count and silence fail", async ({ page }) => {

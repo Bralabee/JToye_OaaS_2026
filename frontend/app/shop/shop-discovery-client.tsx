@@ -50,13 +50,17 @@ function ShopCard({ shop }: { shop: PublicShop }) {
   // contain its own visible text, which axe-core 4.14's label-content-name-mismatch (WCAG 2.5.3)
   // fails. The whole card stays clickable through the link's `after:` overlay, which is positioned
   // against the `relative` <article>; the card has no other interactive descendant for it to cover.
+  // `outline-hidden`, not `outline-none`: the visible ring is a box-shadow on the overlay, which
+  // forced-colors mode drops, and a transparent outline is what that mode paints instead.
+  // `data-shop-name` is the name the a11y probe expects (e2e/a11y-storefront.spec.ts), read from
+  // outside the link so text that leaks into the link cannot change it.
   const badgeId = useId()
   const distanceId = useId()
   const hasDistance = shop.distanceKm != null
   const describedBy = [badge ? badgeId : null, hasDistance ? distanceId : null].filter(Boolean).join(" ")
 
   return (
-    <article className="group relative bg-white rounded-2xl overflow-hidden shadow-sm border border-cream-100 transition-all duration-200 hover:shadow-md hover:border-amber-200 hover:-translate-y-0.5">
+    <article data-shop-name={shop.name} className="group relative bg-white rounded-2xl overflow-hidden shadow-sm border border-cream-100 transition-all duration-200 hover:shadow-md hover:border-amber-200 hover:-translate-y-0.5">
       {/* Banner */}
       <div className="relative h-36 sm:h-44 bg-gradient-to-br from-amber-300 via-amber-500 to-oxblood-600 overflow-hidden">
         {shop.bannerUrl && (
@@ -131,7 +135,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
             <Link
               href={`/shop/${shop.slug}`}
               aria-describedby={describedBy || undefined}
-              className="focus-visible:outline-none after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-amber-500"
+              className="focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-amber-500"
             >
               {shop.name}
             </Link>

@@ -91,7 +91,8 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
   // Issue 1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the shop name and is named
   // by that content, not by aria-labelledby, so its accessible name contains its visible text
   // (WCAG 2.5.3, axe-core 4.14 label-content-name-mismatch). The whole card stays clickable through
-  // the link's `after:` overlay, positioned against the `relative` <article>.
+  // the link's `after:` overlay, positioned against the `relative` <article>. `outline-hidden`, not
+  // `outline-none`, so forced-colors mode (which drops the overlay's box-shadow ring) still paints one.
   const badgeId = useId()
   const distanceId = useId()
   const describedBy = [badge ? badgeId : null, shop.distanceKm != null ? distanceId : null]
@@ -100,6 +101,7 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
 
   return (
     <article
+      data-shop-name={shop.name}
       // `grow basis-[220px]` with a matching `min-w` is what lets THREE cards
       // fill the container instead of huddling left as if two were missing,
       // while a longer list still overflows and scrolls. Do not swap this for a
@@ -161,7 +163,7 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
           <Link
             href={`/shop/${shop.slug}`}
             aria-describedby={describedBy || undefined}
-            className="focus-visible:outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-amber-500"
+            className="focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-amber-500"
           >
             {shop.name}
           </Link>
