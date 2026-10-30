@@ -163,7 +163,7 @@ dependencies:
     owner: maintainer
     eol_slug: rabbitmq
     eol_cycle: "4.3"
-    eol_date: "false"
+    eol_date: "2027-01-31"
     eol_source: vendor
     vendor_eol: "2027-01-31"
     vendor_source: "https://www.rabbitmq.com/release-information"
@@ -674,7 +674,7 @@ dependencies:
     owner: maintainer
     eol_slug: rabbitmq
     eol_cycle: "4.3"
-    eol_date: "false"
+    eol_date: "2027-01-31"
     eol_source: vendor
     vendor_eol: "2027-01-31"
     vendor_source: "https://www.rabbitmq.com/release-information"
