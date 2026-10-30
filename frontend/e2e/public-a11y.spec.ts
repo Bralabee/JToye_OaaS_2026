@@ -295,6 +295,35 @@ test.describe(`public surfaces — ${CLAIM}`, () => {
     })
   })
 
+  /**
+   * Issue 1027's stretched card link draws its focus ring as a box-shadow on the `::after` overlay.
+   * Forced-colors mode (Windows High Contrast) drops box-shadow, so the link must also keep a real
+   * outline there (`outline-hidden`: transparent normally, painted in the system colour when forced).
+   * `outline-none` is outline-style none and leaves a keyboard user nothing to see (WCAG 2.4.7).
+   * axe cannot see this: it is a computed style under an emulated media feature, after a real Tab.
+   */
+  test("a /shop card link keeps a visible focus outline in forced-colors mode", async ({ page }) => {
+    await page.emulateMedia({ forcedColors: "active" })
+    await open(page, "/shop")
+    const card = page.locator('article:visible a[href^="/shop/"]').first()
+    await expect(card, "/shop rendered no card link to focus").toBeVisible()
+
+    let focused = false
+    for (let i = 0; i < 80 && !focused; i++) {
+      await page.keyboard.press("Tab")
+      focused = await page.evaluate(() => !!document.activeElement?.matches('article a[href^="/shop/"]'))
+    }
+    expect(focused, "Tab never reached a /shop card link").toBe(true)
+
+    const outline = await page.evaluate(() => {
+      const cs = getComputedStyle(document.activeElement as Element)
+      return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) }
+    })
+    console.log(`  [control] forced-colors focus outline: ${outline.style} ${outline.width}px`)
+    expect(outline.style, "the focused card link has no outline in forced-colors mode").not.toBe("none")
+    expect(outline.width).toBeGreaterThan(0)
+  })
+
   test(`a storefront has no ${CLAIM} violations`, async ({ page }) => {
     // Resolved at runtime, never a hardcoded slug: the fixture slug 404s the
     // moment a real backend is reachable, and a "Shop not found" page satisfies
