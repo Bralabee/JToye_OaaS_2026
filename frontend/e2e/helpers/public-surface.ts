@@ -153,13 +153,11 @@ export async function resolveStorefrontPath(page: Page): Promise<string> {
   // `auth` and `orders`, and the storefront nav's "Sign in" button is an
   // `a[href^="/shop/"]` sitting above the grid — picking it navigated to
   // `/shop/signin` and produced exactly the empty page this helper guards
-  // against. `has: article` is the structural definition of a card
-  // (`shop-discovery-client.tsx` wraps each `<article>` in its `<Link>`), so it
-  // cannot drift into matching a nav control.
-  const link = page
-    .locator('a[href^="/shop/"]:visible')
-    .filter({ has: page.locator("article") })
-    .first()
+  // against. A link INSIDE an `<article>` is the structural definition of a card
+  // (`shop-discovery-client.tsx`: since issue #1027 the `<article>` is the card and
+  // its `<Link>` is the stretched link around the heading's text), so it cannot
+  // drift into matching a nav control.
+  const link = page.locator('article:visible a[href^="/shop/"]').first()
   await expect(
     link,
     "the shop directory listed no storefront to open — neither the fixture stub " +
