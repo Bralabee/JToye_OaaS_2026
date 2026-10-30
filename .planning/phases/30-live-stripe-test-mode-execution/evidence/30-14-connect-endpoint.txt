@@ -138,3 +138,22 @@ Task 3's acceptance.
   were rc 0.
   The CI jobs Lint, K8s Kustomize Secret Guard, OpenAPI Breaking-Change Gate, Run Tests and Security Scan passed at
   85b7bd1d.
+
+== 30-14 Task 2 + Task 3 (2026-10-30, owner-approved; endpoint created through the Stripe CLI, not the Dashboard)
+Account match: the CLI profile "staging" (acct_1U0tklDpS9ICNeRt, "J'Toye Digital Ltd sandbox") lists exactly
+  [we_1USBcpDpS9ICNeRt3kIwcIvC], the same list core-java's own key returns through stripe-get. A second CLI profile
+  (acct_1U0tkUDBRetDCIGQ) answered "No such webhook endpoint" for we_1USBcp... and was NOT used.
+Step 0: none. The only endpoint at the platform URL is we_1USBcpDpS9ICNeRt3kIwcIvC (api 2026-09-30.endive, enabled, test).
+Step 1: created we_1UWN2NDpS9ICNeRtxSQMsc2M — connect=true, url .../api/v1/public/payments/webhook/connect,
+  api_version 2026-09-30.endive, status enabled, livemode false, 7 events.
+Step 2: the create response's secret was piped on stdin into
+  `staging-secrets.sh --set-external stripe-credentials--connect-webhook-secret` (never printed, never on disk):
+  written, version 387fbbc4233945d2b31e8dffbb8f82a9, rc 0.
+Task 3 verify (RED before: at session start the pod list held no /connect endpoint and the vault no connect object):
+  V1 [api=2026-09-30.endive status=enabled livemode=false events_ok=true]  PASS
+  V2 has_more=false platform_url_endpoints=[we_1USBcpDpS9ICNeRt3kIwcIvC]  PASS
+  V3 rc=0 connect_object=1 control_platform_object=1  PASS
+2026-10-30T21:08:56Z --assign-access: assigned Key Vault Secrets User on stripe-credentials--connect-webhook-secret to
+  033b06e0-d670-4009-a820-af379b62f27c; 47 grants, 1 created, 46 existing, 0 deferred; rc 0
+2026-10-30T21:09:16Z preflight: test-mode yes (stripe-credentials--api-key), yes (stripe-credentials--connect-webhook-secret),
+  yes (stripe-credentials--webhook-secret); 44 objects, 47 grants, 0 gap(s); rc 0
