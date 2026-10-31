@@ -745,6 +745,34 @@ than one that could not be evaluated. There is deliberately **no** bypass flag â
 `--allow-unverified` switch is how a check earns a `|| true`; a deliberate subset
 run scopes itself with `--compose-file`.
 
+### Key Vault objects reach the pod â€” `scripts/csi-secret-sync.sh` (issue #1054)
+
+Digest parity proves the right IMAGE runs. It cannot prove the pod got its SECRETS. On 2026-10-31, #1046's deploy passed every gate while core-java ran without `STRIPE_CONNECT_WEBHOOK_SECRET`, and three things combined to hide it:
+
+- **Order.** `kubectl apply -k` renders every Deployment before every SecretProviderClass, so the rollout's new pod mounted the OLD object list.
+- **No resync.** The AKS Key Vault addon runs with `enableSecretRotation=false`. The driver creates a synced Secret on the first mount and never adds a key to it afterwards, even when a later pod mounts the full set.
+- **Optional ref.** The env reference is `optional: true`, so the pod is Ready with the variable unset.
+
+The staging deploy now handles this in four steps:
+
+| Step | Command | What it does |
+|---|---|---|
+| Before the overlay apply | `--prepare` | Applies only the SecretProviderClasses. Deletes any synced Secret that a SecretProviderClass names and that lacks a declared key, so the next mount recreates it complete. |
+| After the apply | `--restart` | Restarts the workloads that mount those SecretProviderClasses. |
+| After digest parity | `--check` | The gate. It fails when a synced Secret lacks a declared key (`STALE-SECRET`), when a running consumer has no synced Secret (`MISSING-SECRET`), or when a consumer pod's mount holds a different object count from its SecretProviderClass (`STALE-MOUNT`). Exit 2 is VOID. |
+| On every PR | `--selftest` | Runs the check on fixtures. |
+
+`--prepare` deletes a Secret only if the driver made it: it must carry the driver's managed label or an owner reference. A hand-made Secret of the same name is refused, not deleted. Values are never read: Secret JSON is reduced to key names before it reaches the disk.
+
+**Repair by hand** (what `--prepare` automates):
+
+```bash
+kubectl -n jtoye-staging delete secret <name>
+kubectl -n jtoye-staging rollout restart deploy/<consumer>
+```
+
+**Production:** the production deploy job does not run these steps yet. The script fails closed outside `jtoye-staging`, which is the only namespace with an identity file for the context guard. Wire it in, and give it a production guard, before production deploys are enabled.
+
 ### Golden-render workflow (required after any intentional `k8s/base` change)
 
 The goldens are the reviewable record of what a base edit does to the shipped
