@@ -25,7 +25,8 @@ import type { PaymentLinkPreview, PaymentLinkPurpose, RedeemedPaymentLink } from
  *      press it stays, so a reload of an unused link still works.
  *   4. Nothing is written to local or session storage (T-30-73). The replaceState carries a
  *      `jtoyePayResume` entry in history.state — the PaymentIntent's client secret plus display fields,
- *      never the token — so a reload before paying remounts the form instead of stranding the
+ *      never the token — and nothing else: Next's patched replaceState adds its own router keys and
+ *      syncs its canonical URL only for a payload without `__NA`. A reload before paying remounts the form instead of stranding the
  *      customer (PR #1018 review finding 5). Tab-scoped history state, removed on payment received,
  *      on already paid and when the intent cannot be read (T-30-129).
  *
@@ -350,7 +351,9 @@ export function PayClient() {
     const query = new URLSearchParams(window.location.search)
     const clientSecret = query.get("payment_intent_client_secret")
     const redirectStatus = query.get("redirect_status")
-    if (clientSecret || redirectStatus) {
+    // Only a return carrying an intent to read is Stripe's return. A bare redirect_status, typed by
+    // hand, has nothing to fall back from and must not read as a payment (PR #1064 round 1, finding 3).
+    if (clientSecret) {
       runReturn(clientSecret, redirectStatus, query.get("acct") || null)
       return
     }
@@ -424,8 +427,13 @@ export function PayClient() {
       const stripeAccountId =
         typeof redeemed.stripeAccountId === "string" && redeemed.stripeAccountId ? redeemed.stripeAccountId : null
       const entry: ResumeEntry = { clientSecret: redeemed.clientSecret, stripeAccountId, ...display }
-      // 2d: the token leaves the address bar before Stripe mounts. Next's router keys are kept.
-      window.history.replaceState({ ...currentState(), [PAY_RESUME_KEY]: entry }, "", "/pay")
+      // 2d: the token leaves the address bar before Stripe mounts. The entry is the ONLY key written:
+      // Next's patched replaceState (app-router.js) copies its own `__NA` and tree keys in and records
+      // "/pay" as the router's canonical URL. Spreading the current state here would carry `__NA`, which
+      // that patch reads as one of Next's own internal writes — no router sync, the canonical URL would
+      // keep "/pay#token=…", and Next's next history write would put the token back in the bar
+      // (PR #1064 review round 1, finding 1).
+      window.history.replaceState({ [PAY_RESUME_KEY]: entry }, "", "/pay")
       await mountIntent(display, redeemed.clientSecret, stripeAccountId, false)
     } finally {
       inFlight.current = false

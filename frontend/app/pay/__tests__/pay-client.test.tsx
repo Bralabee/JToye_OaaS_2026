@@ -332,8 +332,10 @@ describe("a customer opens a payment link, sees who and how much, presses Contin
         redirect: "if_required",
       })
     )
-    // Paid: the resume entry is gone, Next's keys are not.
-    expect(window.history.state).toEqual({ __NA: true, routerKey: "kept" })
+    // Paid: the resume entry is gone.
+    // jsdom has no Next history patch, so nothing re-adds Next's keys after the page's own writes: what
+    // this proves is that the page's entry is gone and the page wrote nothing else of its own.
+    expect(window.history.state).toEqual({})
   })
 
   it("a destination-charge link (no account): one platform load serves both steps, and the return URL carries an empty acct", async () => {
@@ -521,7 +523,9 @@ describe("after redeem: the intent's own status decides", () => {
     await screen.findByRole("heading", { level: 1, name: DEAD.paid.heading })
     expect(screen.getByText(DEAD.paid.body)).toBeInTheDocument()
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
-    expect(window.history.state).toEqual({ __NA: true, routerKey: "kept" })
+    // jsdom has no Next history patch, so nothing re-adds Next's keys after the page's own writes: what
+    // this proves is that the page's entry is gone and the page wrote nothing else of its own.
+    expect(window.history.state).toEqual({})
   })
 
   it("an intent that is processing reads 'Payment processing' with the amount", async () => {
@@ -700,7 +704,9 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
 
     fireEvent.click(screen.getByRole("button", { name: "Pay £12.50" }))
     await screen.findByRole("heading", { level: 1, name: COPY.received })
-    expect(window.history.state).toEqual({ __NA: true, routerKey: "kept" })
+    // jsdom has no Next history patch, so nothing re-adds Next's keys after the page's own writes: what
+    // this proves is that the page's entry is gone and the page wrote nothing else of its own.
+    expect(window.history.state).toEqual({})
   })
 
   it("reload after redeem when the intent has succeeded: 'This order is already paid' and the entry is dropped", async () => {
