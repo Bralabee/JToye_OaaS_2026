@@ -5,7 +5,8 @@
 **2026-10-31 delta (RESUME HERE; everything below is history).**
 - **PR 4 (#1046, plans 30-12 to 30-14) merged 2026-10-31 as squash `ec73ddee`.** 30-14 Task 2/3 done 2026-10-30: Connect endpoint `we_1UWN2NDpS9ICNeRtxSQMsc2M` (TEST, API 2026-09-30.endive, 7 events), its secret stored as `stripe-credentials--connect-webhook-secret` in `jtoye-stg-kv`, V1-V3, `--assign-access` and the preflight green; see `evidence/30-14-connect-endpoint.txt`. Review series 1 -> 0 -> 0 admissible.
 - **#1053 (issue #1027 shop-card stretched link, plus the rabbitmq 4.3 horizon refresh) merges after #1046**, with main merged in.
-- **Resume:** 30-15, the staging proof for PR 4: pod digests equal the ghcr digests of the merge tag, and the Connect route answers a signed TEST event. Then close issue #1027 and the hand-closes listed on the PRs.
+- **Phase 30 is 15/32: 30-14 and 30-15 are done** (`30-14-SUMMARY.md`, `30-15-SUMMARY.md`, `evidence/30-15-connect-live.txt`, on `feat/30-pay-link-page`). 30-15's own env/Secret verify read `secret_key=0` after a fully green deploy: core-java ran without the Connect secret, because Deployments were applied before SecretProviderClasses and the addon never resyncs a synced Secret. Repaired on staging, and fixed in CI by #1055/#1056; issue #1054 is CLOSED. Re-read on the `480782d7` pod: secret present, unsigned and forged Connect events 400 with 0 ledger rows beside a 1-row positive control, and the staging card checkout CAPTURED.
+- **Resume:** 30-16 (PR 5, PAY-04 `/pay/{token}` page) on `feat/30-pay-link-page`. It opens with two owner decisions: the token in the path or the fragment, and how staging handles the OTP. Issue #1027 is still OPEN for the owner's hand-close.
 - **Watch:** RabbitMQ 4.3 EOL is 2027-01-31; the H-2 90-day warn window opens about 2026-11-02, so plan the 4.4 upgrade.
 
 **2026-10-25 late delta (history; superseded by the 2026-10-31 block above).**

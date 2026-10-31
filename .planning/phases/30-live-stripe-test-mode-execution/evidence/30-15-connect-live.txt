@@ -48,9 +48,61 @@ Repair (staging only; core-java is the only consumer of stripe-credentials, Roll
 env/Secret: rc=0 krc=0 connect_env=1 tag_env=1 control_env=1 secret_key=1 verify_rc=0    (was secret_key=0 at 02:08Z, before the repair)
 probe:      code=400 curl_rc=0 verify_rc=0 
 
-## OUTSTANDING (not done in this sitting)
-- The ledger query (processed_stripe_events for both forged ids plus a positive control, one session, as jtoye_backup through the
-  29-18 relay pattern). By the code path no row can exist (the dedup INSERT follows verification, and both arms were refused
-  before it), but the plan requires the read and it is not recorded here.
-- Task 3: staging-card-checkout.spec.ts (the platform route still settles a real TEST payment) and the STAGING-CARD line.
-- The deploy-ordering defect above needs a fix in ci-cd.yaml before ANY later SecretProviderClass change; issue #1054.
+## RESOLVED 2026-10-31 evening (the items the 03:47Z sitting left outstanding), on main 480782d7
+Since the sitting above, #1055/#1056 (issue #1054, CLOSED) fixed the deploy ordering, and #1057's run 41229393959 deployed
+480782d7 green through Deploy to Staging and Staging Edge Probe. Everything below was read after that rollout.
+
+### Task 2 wiring re-read on the current pod (the repair survived the later rollouts)
+2026-10-31T19:08:12Z  the plan's env/Secret verify, verbatim:
+  rc=0 krc=0 connect_env=1 tag_env=1 control_env=1 secret_key=1   verify_rc=0
+  pod core-java-546cf6b45b-wmvx5 imageID ghcr.io/bralabee/jtoye-core-java@sha256:7d68931c5606218f88a8ba87e9380e46adaa501668d37a88143e2f509da12794 restarts 0
+  STRIPE_CONNECT_WEBHOOK_SECRET in the container: connect_secret_len=38 prefix_ok=yes (whsec_; value not printed)
+  the plan's unsigned probe: code=400 curl_rc=0
+
+### Task 3 - the platform route still settles a real TEST card payment (positive control for the account-presence rule)
+2026-10-31T19:08:28Z..19:08:46Z  frontend/e2e/staging-card-checkout.spec.ts --project=desktop (the plan's command, run from the
+main checkout at 480782d7; the spec and the lock file are identical to this branch):
+  rc=0 passed=[1 passed] verdict=[STAGING-CARD order=ORD-1AAC0CDE-20261031-9BBA6DE2 intent=pi_3UWhdoDpS9ICNeRt4B0SR5BX payment_status=CAPTURED livemode=false at=2026-10-31T19:08:46.416Z]
+  verify_rc=0
+  The intent's payment_intent.succeeded event, read from Stripe TEST through `staging-seed.sh --stage stripe-get
+  --path '/v1/events?type=payment_intent.succeeded&limit=5'` (rc 0; sk_test_ key from jtoye-stg-kv, value not shown):
+  evt_3UWhdoDpS9ICNeRt4WyI0zjZ  data.object.id=pi_3UWhdoDpS9ICNeRt4B0SR5BX
+
+### Task 2 - the ledger read (processed_stripe_events), ONE session, the SAME prepared statement for every id
+As jtoye_backup (rolbypassrls=t, so RLS cannot blind it), through the staging-db-bootstrap.sh relay pattern: staging_kube_guard
+jtoye-stg-aks -> one busybox relay pod (by digest) in namespace default -> port-forward -> psql in postgres:18 (by digest),
+hostaddr=127.0.0.1, host=jtoye-stg-pg.postgres.database.azure.com, sslmode=verify-full. The password came from Key Vault
+postgres-credentials--backup-password via az_read into the container ENVIRONMENT only. The positive control is Task 3's real event.
+  relay: pod default/jtoye-30-15-relay-20261031190931-625076 -> jtoye-stg-pg.postgres.database.azure.com:5432, port-forward pid 628145 on 127.0.0.1:38993; psql as jtoye_backup, sslmode=verify-full
+  session_at|who|bypassrls
+  2026-10-31T19:09:36Z|jtoye_backup|t
+  (1 row)
+  PREPARE
+  -- positive control
+  event_id|processed_at
+  evt_3UWhdoDpS9ICNeRt4WyI0zjZ|2026-10-31 19:08:41.276397+00
+  (1 row)
+  -- forged arm 1: unsigned
+  event_id|processed_at
+  (0 rows)
+  -- forged arm 2: wrong-secret signature
+  event_id|processed_at
+  (0 rows)
+  -- same session: rows whose id is a forged/probe id
+  processed_stripe_events_total|forged_or_probe_rows
+  4|0
+  (1 row)
+  psql_rc=0
+  Relay pod deleted on exit: `get pods -l app.kubernetes.io/name=jtoye-dbboot-relay -n default` -> "No resources found" (rc 0).
+Result: the positive control has 1 row (processed 19:08:41Z, five seconds before the spec read CAPTURED); unsigned 0 rows;
+forged 0 rows; 0 forged or probe ids anywhere in the table. The positive control is what makes the two zero-row reads evidence:
+the same statement, in the same session, does see a row that exists.
+
+### Note (not a defect; recorded for 30-17 onward)
+An event LISTED through /v1/events renders at the account default version (api_version 2026-07-29.dahlia). That says nothing
+about delivery: each endpoint receives payloads at its own pinned version, and both are 2026-09-30.endive (30-14 Task 3).
+
+### Evidence leak-scan (this file, 2026-10-31T19:1xZ, JTOYE_AZURE_SUBSCRIPTION_ID pinned)
+  real:    `staging-secrets.sh --leak-scan <this file>` -> "32 objects checked, 0 found" rc 0
+  control: a scratch copy with the real stripe-credentials--connect-webhook-secret value appended (read by az_read, never
+           printed) -> "LEAK stripe-credentials--connect-webhook-secret", "1 found", rc 1; the copy shredded afterwards

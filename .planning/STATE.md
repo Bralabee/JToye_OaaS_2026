@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing — 30-13 DONE (13/32): Connect secret chain (Key Vault stripe-credentials--connect-webhook-secret external whsec_ -> core-java-kv SPC -> stripe-credentials/connect-webhook-secret -> STRIPE_CONNECT_WEBHOOK_SECRET optional) and per-overlay stripe.environment-tag (local/staging/production, never base, non-optional ref); 5 commits on feat/30-connect-webhook (not pushed); next 30-14 (owner stores the Key Vault object BEFORE PR 4 merges)"
-last_updated: "2026-10-25T22:56:00.000Z"
-last_activity: 2026-10-25
-last_activity_desc: "30-13 done — Connect secret Key Vault/SPC/env chain + per-overlay environment tag + compose/.env.example/local wiring; 7 break arms recorded; gate gap (no CI check of the tag value) deferred"
+stopped_at: "Phase 30 executing — 30-15 DONE (15/32): PR 4 (#1046, ec73ddee) merged + deployed; Connect secret mounted (issue #1054 found by the plan's verify, fixed by #1055/#1056); live Connect route refuses unsigned + forged (400, 0 ledger rows beside a 1-row positive control); platform card checkout CAPTURED; next 30-16 on feat/30-pay-link-page (two owner decisions first)"
+last_updated: "2026-10-31T19:20:00.000Z"
+last_activity: 2026-10-31
+last_activity_desc: "30-14 closed out (SUMMARY recovered via the safe-resume gate) and 30-15 done — ledger read + platform card control completed on the 480782d7 deploy"
 state_head: 6ee0a5189d48961003f0c1320889ef47b2b92974
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 296
-  percent: 94
+  completed_plans: 298
+  percent: 95
 ---
 
 # Project State
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 13/32 plans done (30-01..30-13); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038) and PR 3 (#1044, issue #108 Stripe half) merged + deployed + proven live; D-02 done (#1043); PR 4 parts 1-2 (30-12 Connect webhook, 30-13 platform wiring) committed on feat/30-connect-webhook, not pushed; next 30-14 (owner stores stripe-credentials--connect-webhook-secret in jtoye-stg-kv BEFORE the merge: the new SPC object fails the CSI mount when absent)
-Last activity: 2026-10-25 — 30-13 DONE: stripe-credentials--connect-webhook-secret classified external whsec_ (writer refuses other values; preflight checks it as a TEST object), in the core-java SPC objects and stripe-credentials secretObjects, read as STRIPE_CONNECT_WEBHOOK_SECRET (optional). stripe.environment-tag declared per overlay (local/staging/production) and never in base, read as STRIPE_ENVIRONMENT_TAG through a non-optional configMapKeyRef. Compose, .env.example and k8s-local-secrets.sh wired. Goldens +29/-0. Finding deferred: no CI gate holds the tag to the overlay name. SUMMARY: 30-13-SUMMARY.md
+Status: Executing — 15/32 plans done (30-01..30-15); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038), PR 3 (#1044, issue #108 Stripe half) and PR 4 (#1046, PAY-03 Connect webhook, ec73ddee) merged + deployed + proven live; D-02 done (#1043); next 30-16 (PR 5, PAY-04 /pay page) on feat/30-pay-link-page — two owner decisions first (token path vs fragment; staging OTP)
+Last activity: 2026-10-31 — 30-14 closed out after the fact (endpoint we_1UWN2NDpS9ICNeRtxSQMsc2M, 2026-09-30.endive; secret in jtoye-stg-kv; done 2026-10-30, SUMMARY was missing). 30-15 DONE: #1046 merged; the plan's env/Secret verify read secret_key=0 after a green deploy (Deployments applied before SPCs + no addon resync) -> issue #1054, fixed by #1055/#1056; re-read on 480782d7: secret_key=1, 38-char whsec_; unsigned + forged Connect events 400 with 0 ledger rows beside positive control evt_3UWhdoDpS9ICNeRt4WyI0zjZ (1 row); staging card checkout CAPTURED (ORD-1AAC0CDE-20261031-9BBA6DE2).
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
