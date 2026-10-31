@@ -254,7 +254,10 @@ class PhoneVerificationAndPaymentLinkTest {
         assertThat(issued.purpose()).isEqualTo("UPFRONT");
         assertThat(issued.amountPennies()).isEqualTo(4200L);
         assertThat(issued.stripePaymentIntentId()).isEqualTo("pi_live_link_01");
-        assertThat(issued.paymentUrl()).startsWith("https://shop.jtoye.co.uk/pay/");
+        // 30-16 owner decision (Task 1 = fragment): the token rides in the URL fragment, never a path segment,
+        // so it is never in a request line or an access log (the V75 / V77 bearer-token rule).
+        assertThat(issued.paymentUrl()).isEqualTo("https://shop.jtoye.co.uk/pay#token=" + issued.token());
+        assertThat(issued.paymentUrl()).doesNotContain("/pay/");
         assertThat(order.isPhoneVerified()).isTrue();
         assertThat(order.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
 
