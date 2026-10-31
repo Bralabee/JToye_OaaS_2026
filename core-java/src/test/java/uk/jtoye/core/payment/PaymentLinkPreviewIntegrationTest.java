@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -24,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.customer.PhoneVerificationService;
+import uk.jtoye.core.order.Order;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
@@ -37,6 +39,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -84,6 +91,8 @@ class PaymentLinkPreviewIntegrationTest {
     @Autowired private JsonMapper jsonMapper;
     @Autowired private PlatformTransactionManager txManager;
     @Autowired private OrderPaymentLinkService paymentLinkService;
+    // 30-17: a spy, so the settlement routing stays real; only the Stripe calls are answered.
+    @MockitoSpyBean private PaymentService paymentService;
 
     private UUID tenantA;
     private UUID tenantB;
@@ -304,6 +313,61 @@ class PaymentLinkPreviewIntegrationTest {
         assertThat(r.getResponse().getStatus()).isEqualTo(200);
         assertThat(json(r).path("orderNumber").asString()).isEqualTo(one.orderNumber);
         assertThat(json(r).path("amountPennies").asLong()).isEqualTo(1111L);
+    }
+
+    // ------------------------------------------------------------------ 30-17: the owning account
+
+    @Test
+    @DisplayName("30-17: redeem of a link whose order routes DIRECT names the connected account and fetches the secret for that order")
+    void redeem_directChargeOrder_namesConnectedAccount() throws Exception {
+        String account = "acct_it_direct_" + tenantA.toString().substring(0, 6);
+        Seeded s = seedPayableLink("DIRECT_CHARGE_VENDOR_MOR", account, "pi_it_direct");
+
+        MvcResult r = postToken(REDEEM, s.rawToken, null);
+        assertThat(r.getResponse().getStatus()).as(body(r)).isEqualTo(200);
+        JsonNode json = json(r);
+        assertThat(json.path("clientSecret").asString()).isEqualTo("pi_it_direct_secret_30_17");
+        assertThat(json.has("stripeAccountId")).as("the redeem response carries stripeAccountId: " + json).isTrue();
+        assertThat(json.path("stripeAccountId").asString())
+                .as("UI-SPEC § S1: Stripe.js must be initialised on the account that owns the intent")
+                .isEqualTo(account);
+        verify(paymentService).retrieveClientSecret(
+                argThat((Order o) -> o != null && s.orderId.equals(o.getId())), eq("pi_it_direct"));
+    }
+
+    @Test
+    @DisplayName("30-17: redeem of a link whose order routes DESTINATION carries stripeAccountId as JSON null — present, not the destination")
+    void redeem_destinationChargeOrder_carriesJsonNull() throws Exception {
+        String account = "acct_it_dest_" + tenantA.toString().substring(0, 6);
+        Seeded s = seedPayableLink("DESTINATION_CHARGE_PLATFORM_MOR", account, "pi_it_dest");
+
+        MvcResult r = postToken(REDEEM, s.rawToken, null);
+        assertThat(r.getResponse().getStatus()).as(body(r)).isEqualTo(200);
+        JsonNode json = json(r);
+        assertThat(json.has("stripeAccountId")).as("present as null, not absent: " + json).isTrue();
+        assertThat(json.get("stripeAccountId").isNull())
+                .as("a destination intent lives on the platform account, never on " + account + ": " + json)
+                .isTrue();
+    }
+
+    /**
+     * An ACTIVE link with a PaymentIntent id, on an order whose shop settles under {@code mode} through
+     * tenant A's ENABLED connected account. Stripe is the spy's: the platform is "configured" and the
+     * order-aware secret retrieve answers without a network call; the ROUTING is the real one, read
+     * from the database under the link's pinned tenant.
+     */
+    private Seeded seedPayableLink(String mode, String account, String intentId) throws Exception {
+        assertThat(jdbc.update("UPDATE tenants SET stripe_account_id = ?, stripe_connect_status = 'ENABLED' WHERE id = ?",
+                account, tenantA)).isEqualTo(1);
+        assertThat(asTenant(tenantA, () -> jdbc.update(
+                "UPDATE shops SET settlement_policy_mode = ? WHERE id = ?", mode, shopA))).isEqualTo(1);
+        Seeded s = seedLink("UPFRONT", 3500, "PENDING", null, Instant.now().plus(30, ChronoUnit.MINUTES), null, null);
+        assertThat(asTenant(tenantA, () -> jdbc.update(
+                "UPDATE order_payment_links SET stripe_payment_intent_id = ? WHERE id = ?", intentId, s.linkId)))
+                .isEqualTo(1);
+        doReturn(true).when(paymentService).isConfigured();
+        doReturn(intentId + "_secret_30_17").when(paymentService).retrieveClientSecret(any(Order.class), eq(intentId));
+        return s;
     }
 
     // ------------------------------------------------------------------ helpers
