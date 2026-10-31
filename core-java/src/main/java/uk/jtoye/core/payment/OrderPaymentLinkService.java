@@ -118,7 +118,10 @@ public class OrderPaymentLinkService {
             long amountPennies,
             String stripePaymentIntentId,
             String clientSecret,
-            OffsetDateTime usedAt
+            OffsetDateTime usedAt,
+            @Schema(description = "Connected Stripe account that owns the PaymentIntent; pass as stripeAccount to "
+                    + "Stripe.js. Null for platform and destination charges.")
+            String stripeAccountId
     ) {}
 
     /**
@@ -303,8 +306,12 @@ public class OrderPaymentLinkService {
             link.setUsedAt(now);
 
             String clientSecret = null;
+            String stripeAccountId = null;
             if (link.getStripePaymentIntentId() != null && paymentService.isConfigured()) {
                 Order order = orderRepository.findById(link.getOrderId()).orElse(null);
+                // 30-17 (UI-SPEC § S1): the account the secret below is retrieved on, from the same
+                // routing rule (direct-charge header only), read under this link's pinned tenant.
+                stripeAccountId = order == null ? null : paymentService.directChargeAccountFor(order).orElse(null);
                 try {
                     // A-1: order-aware retrieve carries the Stripe-Account header for
                     // direct-charge / split-deposit intents on the vendor's connected account.
@@ -327,7 +334,8 @@ public class OrderPaymentLinkService {
                     link.getAmountPennies(),
                     link.getStripePaymentIntentId(),
                     clientSecret,
-                    now
+                    now,
+                    stripeAccountId
             );
         });
     }

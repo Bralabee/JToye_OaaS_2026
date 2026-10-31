@@ -240,7 +240,7 @@ class PhoneVerificationAndPaymentLinkTest {
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentService.isConfigured()).thenReturn(true);
         when(paymentService.createPaymentIntent(order))
-                .thenReturn(new PaymentIntentResult("pi_live_link_01", "pi_live_link_01_secret_xyz"));
+                .thenReturn(new PaymentIntentResult("pi_live_link_01", "pi_live_link_01_secret_xyz", null));
 
         List<OrderPaymentLink> storedLinks = new ArrayList<>();
         when(linkRepository.findByTenantIdAndOrderIdOrderByCreatedAtDesc(tenantId, orderId))

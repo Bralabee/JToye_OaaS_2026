@@ -920,7 +920,8 @@ public class PublicStorefrontService {
                     order.getDepositAmountPennies(),
                     order.getBalanceDuePennies(),
                     result.paymentIntentId(),
-                    result.clientSecret()
+                    result.clientSecret(),
+                    result.stripeAccountId()
             );
         } catch (com.stripe.exception.StripeException e) {
             log.error("Failed to create balance PaymentIntent for order {}: {}", order.getOrderNumber(), e.getMessage());
@@ -1189,12 +1190,21 @@ public class PublicStorefrontService {
                     "Idempotency-Key reused with a different request payload");
         }
         String existingClientSecret = null;
+        // 30-17 (UI-SPEC § S1): an order with a PaymentIntent names the account that intent lives on,
+        // resolved the way retrieveClientSecret(order, ...) resolves it (direct-charge header only), so
+        // the replay says what the first response said. No intent (COD): null, as the first response was.
+        String replayedStripeAccountId = existingOrder.getPaymentReference() != null
+                ? paymentService.directChargeAccountFor(existingOrder).orElse(null)
+                : null;
         if (existingOrder.getStatus() == OrderStatus.DRAFT
                 && existingOrder.getPaymentReference() != null
                 && paymentService.isConfigured()) {
             try {
+                // 30-17 / A-1 (PR #949): order-aware, so a direct-charge or split-deposit intent is
+                // retrieved ON the connected account. The platform-account retrieve answered 404
+                // resource_missing for those, and the retry got a null secret it could never pay with.
                 existingClientSecret = paymentService.retrieveClientSecret(
-                        existingOrder.getPaymentReference());
+                        existingOrder, existingOrder.getPaymentReference());
             } catch (com.stripe.exception.StripeException e) {
                 log.warn("Could not re-fetch client secret for idempotent retry of order {}",
                         existingOrder.getOrderNumber(), e);
@@ -1224,7 +1234,8 @@ public class PublicStorefrontService {
                 existingOrder.getAllergenAckMask(),
                 acknowledgedAllergenNames(existingOrder),
                 replayedSnapshot.declaredNames(),
-                replayedSnapshot.flags()
+                replayedSnapshot.flags(),
+                replayedStripeAccountId
         );
         confirmation.setFulfilmentSlotId(existingOrder.getFulfilmentSlotId());
         confirmation.setScheduledForDate(existingOrder.getScheduledForDate());
@@ -1547,6 +1558,9 @@ public class PublicStorefrontService {
         // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
         // If not configured, fall back to COD — order goes straight to PENDING.
         String clientSecret = null;
+        // 30-17 (UI-SPEC § S1): the account the intent was created on, from the same routing decision
+        // that chose the Stripe-Account header. Null for a platform or destination intent and for COD.
+        String stripeAccountId = null;
         if (paymentService.isConfigured()) {
             // ORDERING (issue #538) — PERSIST BEFORE PAYING.
             //
@@ -1568,6 +1582,7 @@ public class PublicStorefrontService {
             try {
                 PaymentIntentResult intent = paymentService.createPaymentIntent(order);
                 clientSecret = intent.clientSecret();
+                stripeAccountId = intent.stripeAccountId();
                 // Persist the Stripe object id (dirty-checked into this same
                 // transaction). Two things depend on it: the WR-02 idempotent
                 // retry above, which can only re-fetch a client secret when
@@ -1689,7 +1704,8 @@ public class PublicStorefrontService {
                 order.getAllergenAckMask(),
                 acknowledgedAllergenNames(order),
                 recordedSnapshot.declaredNames(),
-                recordedSnapshot.flags()
+                recordedSnapshot.flags(),
+                stripeAccountId
         );
         confirmation.setFulfilmentSlotId(order.getFulfilmentSlotId());
         confirmation.setScheduledForDate(order.getScheduledForDate());

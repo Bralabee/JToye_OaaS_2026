@@ -28,6 +28,17 @@ public class GuestOrderConfirmation {
      */
     private Integer unitCount;
     private String clientSecret;
+
+    /**
+     * 30-17 (UI-SPEC § S1): the connected account a direct-charge or split-deposit PaymentIntent was
+     * created on, for Stripe.js's {@code stripeAccount}. Serialised as JSON null — present, never
+     * omitted — for a platform or destination intent and for an order with no intent, so a client can
+     * tell "the platform owns it" from an older server that does not say.
+     */
+    @Schema(description = "Connected Stripe account that owns the PaymentIntent; pass as stripeAccount to Stripe.js. "
+            + "Null for platform and destination charges.")
+    private String stripeAccountId;
+
     private List<String> allergenWarnings;
 
     // ------------------------------------------------------------------
@@ -83,7 +94,8 @@ public class GuestOrderConfirmation {
                                   Long totalAmountPennies, String shopName, int itemCount,
                                   Integer unitCount, String clientSecret, List<String> allergenWarnings,
                                   Integer acknowledgedAllergenMask, List<String> acknowledgedAllergens,
-                                  List<String> recordedAllergens, List<OrderAllergenFlagDto> recordedAllergenFlags) {
+                                  List<String> recordedAllergens, List<OrderAllergenFlagDto> recordedAllergenFlags,
+                                  String stripeAccountId) {
         this.orderNumber = orderNumber;
         this.status = status;
         this.subtotalPennies = subtotalPennies;
@@ -100,6 +112,7 @@ public class GuestOrderConfirmation {
         this.acknowledgedAllergens = acknowledgedAllergens;
         this.recordedAllergens = recordedAllergens;
         this.recordedAllergenFlags = recordedAllergenFlags;
+        this.stripeAccountId = stripeAccountId;
     }
 
     public String getOrderNumber() { return orderNumber; }
@@ -113,6 +126,7 @@ public class GuestOrderConfirmation {
     public int getItemCount() { return itemCount; }
     public Integer getUnitCount() { return unitCount; }
     public String getClientSecret() { return clientSecret; }
+    public String getStripeAccountId() { return stripeAccountId; }
     public List<String> getAllergenWarnings() { return allergenWarnings; }
     public Integer getAcknowledgedAllergenMask() { return acknowledgedAllergenMask; }
     public List<String> getAcknowledgedAllergens() { return acknowledgedAllergens; }

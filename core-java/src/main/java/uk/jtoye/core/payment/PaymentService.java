@@ -283,7 +283,7 @@ public class PaymentService {
                     intent.getId(), order.getOrderNumber(), chargeAmountPennies);
         }
 
-        return new PaymentIntentResult(intent.getId(), intent.getClientSecret());
+        return new PaymentIntentResult(intent.getId(), intent.getClientSecret(), owningAccount(routingOpt));
     }
 
     /**
@@ -297,6 +297,19 @@ public class PaymentService {
      */
     static String intentIdempotencyKey(Order order) {
         return "order-payment-intent-" + order.getId();
+    }
+
+    /**
+     * The connected account an intent was created ON (30-17, UI-SPEC § S1): the account named
+     * in the {@code Stripe-Account} header when the decision uses one, else {@code null}. Read
+     * from the SAME decision that chose the header, so the browser is told the account the
+     * intent actually lives on (T-30-71). A destination charge lives on the platform: null.
+     */
+    private static String owningAccount(java.util.Optional<SettlementRoutingDecision> routingOpt) {
+        return routingOpt
+                .filter(SettlementRoutingDecision::usesDirectChargeHeader)
+                .map(SettlementRoutingDecision::connectedAccountId)
+                .orElse(null);
     }
 
     /**
@@ -375,7 +388,7 @@ public class PaymentService {
         PaymentIntent intent = PaymentIntent.create(builder.build(), requestOptionsBuilder.build());
         log.info("Created BALANCE PaymentIntent {} for order {} (balanceDue: {} pennies)",
                 intent.getId(), order.getOrderNumber(), balanceDue);
-        return new PaymentIntentResult(intent.getId(), intent.getClientSecret());
+        return new PaymentIntentResult(intent.getId(), intent.getClientSecret(), owningAccount(routingOpt));
     }
 
     /**

@@ -192,7 +192,7 @@ class PublicStorefrontServiceTest {
             Order order = inv.getArgument(0);
             assertNotNull(order.getId(),
                     "#538: the order must be persisted (id assigned) BEFORE its PaymentIntent is created");
-            return new PaymentIntentResult("pi_test_1", "cs_test_secret");
+            return new PaymentIntentResult("pi_test_1", "cs_test_secret", null);
         });
     }
 
@@ -892,7 +892,7 @@ class PublicStorefrontServiceTest {
         when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
                 .thenReturn(Optional.of(existingOrder(OrderStatus.DRAFT, "pi_123")));
         when(paymentService.isConfigured()).thenReturn(true);
-        when(paymentService.retrieveClientSecret("pi_123")).thenReturn("pi_123_secret_real");
+        when(paymentService.retrieveClientSecret(any(Order.class), eq("pi_123"))).thenReturn("pi_123_secret_real");
 
         GuestOrderConfirmation confirmation =
                 service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
@@ -1867,7 +1867,7 @@ class PublicStorefrontServiceTest {
                 .thenReturn(Optional.of(order));
         when(paymentService.isConfigured()).thenReturn(true);
         when(paymentService.createBalancePaymentIntent(order))
-                .thenReturn(new uk.jtoye.core.payment.PaymentIntentResult("pi_bal_99", "pi_bal_99_secret"));
+                .thenReturn(new uk.jtoye.core.payment.PaymentIntentResult("pi_bal_99", "pi_bal_99_secret", null));
 
         var sessionDto = service.createBalancePaymentSession("ORD-11112222-20261017-AABBCCDD", "customer@example.com");
 

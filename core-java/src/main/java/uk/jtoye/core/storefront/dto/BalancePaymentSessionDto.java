@@ -14,6 +14,8 @@ public record BalancePaymentSessionDto(
         @Schema(description = "Upfront deposit amount in pennies") Long depositAmountPennies,
         @Schema(description = "Remaining balance due in pennies") Long balanceDuePennies,
         @Schema(description = "Stripe PaymentIntent ID for the remaining balance") String paymentIntentId,
-        @Schema(description = "Stripe PaymentIntent client secret for Stripe Elements") String clientSecret
+        @Schema(description = "Stripe PaymentIntent client secret for Stripe Elements") String clientSecret,
+        @Schema(description = "Connected Stripe account that owns the PaymentIntent; pass as stripeAccount to "
+                + "Stripe.js. Null for platform and destination charges.") String stripeAccountId
 ) {
 }
