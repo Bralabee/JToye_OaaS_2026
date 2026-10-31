@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing — 30-15 DONE (15/32): PR 4 (#1046, ec73ddee) merged + deployed; Connect secret mounted (issue #1054 found by the plan's verify, fixed by #1055/#1056); live Connect route refuses unsigned + forged (400, 0 ledger rows beside a 1-row positive control); platform card checkout CAPTURED; next 30-16 on feat/30-pay-link-page (two owner decisions first)"
-last_updated: "2026-10-31T19:20:00.000Z"
+stopped_at: "Phase 30 executing — 30-16 DONE (16/32): owner chose fragment + expose-on-staging (a6a7c202); payment-link preview POST /payment-links/preview + body redeem, issued URL /pay#token= (19d5bb13 RED, c7dc7594 GREEN, 40df8c7f evidence + counts 6686); OpenApiSnapshotTest red by design until 30-20 Task 1; next 30-17 on feat/30-pay-link-page (not pushed)"
+last_updated: "2026-10-31T19:50:00.000Z"
 last_activity: 2026-10-31
-last_activity_desc: "30-14 closed out (SUMMARY recovered via the safe-resume gate) and 30-15 done — ledger read + platform card control completed on the 480782d7 deploy"
+last_activity_desc: "30-16 done — owner decisions recorded, non-consuming payment-link preview (body token) and fragment links, proven under NOSUPERUSER with break arms"
 state_head: 6ee0a5189d48961003f0c1320889ef47b2b92974
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 298
+  completed_plans: 299
   percent: 95
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 15/32 plans done (30-01..30-15); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038), PR 3 (#1044, issue #108 Stripe half) and PR 4 (#1046, PAY-03 Connect webhook, ec73ddee) merged + deployed + proven live; D-02 done (#1043); next 30-16 (PR 5, PAY-04 /pay page) on feat/30-pay-link-page — two owner decisions first (token path vs fragment; staging OTP)
-Last activity: 2026-10-31 — 30-14 closed out after the fact (endpoint we_1UWN2NDpS9ICNeRtxSQMsc2M, 2026-09-30.endive; secret in jtoye-stg-kv; done 2026-10-30, SUMMARY was missing). 30-15 DONE: #1046 merged; the plan's env/Secret verify read secret_key=0 after a green deploy (Deployments applied before SPCs + no addon resync) -> issue #1054, fixed by #1055/#1056; re-read on 480782d7: secret_key=1, 38-char whsec_; unsigned + forged Connect events 400 with 0 ledger rows beside positive control evt_3UWhdoDpS9ICNeRt4WyI0zjZ (1 row); staging card checkout CAPTURED (ORD-1AAC0CDE-20261031-9BBA6DE2).
+Status: Executing — 16/32 plans done (30-01..30-16); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038), PR 3 (#1044, issue #108 Stripe half) and PR 4 (#1046, PAY-03 Connect webhook, ec73ddee) merged + deployed + proven live; D-02 done (#1043); PR 5 (PAY-04 /pay page) in progress on feat/30-pay-link-page (not pushed): 30-16 done, next 30-17 (stripeAccountId on intent results; OTP production refusal)
+Last activity: 2026-10-31 — 30-16 DONE: owner decisions 19:16:23Z (token = fragment; staging OTP = expose-on-staging, applied by 30-20 Task 1, production refusal by 30-17). POST /api/v1/public/payment-links/preview {token} returns shop, order number, amount, currency, purpose, expiry and state (PAID > USED > REVOKED > EXPIRED > ACTIVE) without stamping used_at or calling Stripe; POST /payment-links/redeem {token} beside the unchanged path redeem; issued URLs are /pay#token=. RED_EVIDENCE_OK x2; break arms A1-E red, clean before/after; unit suite 2010/0; OpenApiSnapshotTest red on 4 added paths + 2 schemas only, left for 30-20 Task 1. Earlier the same day: 30-14 closed out after the fact and 30-15 DONE (#1046 merged; issue #1054 fixed by #1055/#1056; Connect route refuses unsigned + forged live; staging card checkout CAPTURED).
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1533,9 +1533,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-25T22:56:00.000Z
-Stopped at: Phase 30 — 30-13 done (13/32); next /gsd-execute-phase 30 resumes at 30-14 on feat/30-connect-webhook
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-13-SUMMARY.md`
+Last session: 2026-10-31T19:50:00.000Z
+Stopped at: Phase 30 — 30-16 done (16/32); next /gsd-execute-phase 30 resumes at 30-17 on feat/30-pay-link-page (worktree JToye_OaaS_2026-p30-15, not pushed)
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-16-SUMMARY.md`
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
