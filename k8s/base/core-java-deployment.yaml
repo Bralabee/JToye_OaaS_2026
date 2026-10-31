@@ -626,6 +626,16 @@ spec:
             configMapKeyRef:
               name: app-config
               key: stripe.connect.refresh-url
+        # PAY-03 (plan 30-13): which Stripe environment this runtime is. The key is declared
+        # by each overlay and never by base, and this ref is deliberately NOT optional: an
+        # overlay that forgot it fails the pod at start (CreateContainerConfigError) instead
+        # of running under another environment's name (PR #1018 review finding 2; plan
+        # 30-17's OTP guard trusts this value).
+        - name: STRIPE_ENVIRONMENT_TAG
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: stripe.environment-tag
         # OPTIONAL Secret (stripe-credentials). Absent → env unset → the
         # application.yml empty defaults apply and the payment path behaves
         # exactly as it does today.
@@ -640,6 +650,17 @@ spec:
             secretKeyRef:
               name: stripe-credentials
               key: webhook-secret
+              optional: true
+        # PAY-03 Connected-accounts scope: the signing secret of the Connect endpoint
+        # (/api/v1/public/payments/webhook/connect). Absent -> empty -> that route refuses
+        # every event (fails closed). In staging the key is synced from the Key Vault object
+        # stripe-credentials--connect-webhook-secret, which must exist in Key Vault before
+        # this renders to staging: a missing SPC object fails the CSI mount (plan 30-14).
+        - name: STRIPE_CONNECT_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: stripe-credentials
+              key: connect-webhook-secret
               optional: true
         # --- Webhook delivery knobs (Phase 22) ---
         - name: WEBHOOK_DELIVERY_MAX_ATTEMPTS

@@ -2,6 +2,11 @@ package uk.jtoye.core.payment;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -74,5 +79,24 @@ class StripePropertiesRedactionTest {
                 "toString should expose readTimeoutMs; got: " + rendered);
         assertTrue(rendered.contains("maxNetworkRetries=2"),
                 "toString should expose maxNetworkRetries; got: " + rendered);
+    }
+
+    @Test
+    @DisplayName("toString masks the Connect webhook secret bound from stripe.connect-webhook-secret (PAY-03, T-30-49)")
+    void toString_redactsConnectWebhookSecret() {
+        // Bound through Spring's Binder, the path the application context takes, so the arm also
+        // proves the property name binds at all: an unbound key would leave no slot to mask.
+        StripeProperties props = new StripeProperties();
+        new Binder(new MapConfigurationPropertySource(Map.of(
+                "stripe.connect-webhook-secret", "whsec_connect_secret_value_DO_NOT_LEAK_4242")))
+                .bind("stripe", Bindable.ofInstance(props));
+
+        String rendered = props.toString();
+        assertFalse(rendered.contains("whsec_connect_secret_value_DO_NOT_LEAK_4242"),
+                "toString must not contain the raw Connect webhook secret; got: " + rendered);
+        assertTrue(rendered.contains("connectWebhookSecret=***"),
+                "toString should mask connectWebhookSecret with ***; got: " + rendered);
+        assertTrue(new StripeProperties().toString().contains("connectWebhookSecret=<unset>"),
+                "a blank connectWebhookSecret should render <unset>");
     }
 }

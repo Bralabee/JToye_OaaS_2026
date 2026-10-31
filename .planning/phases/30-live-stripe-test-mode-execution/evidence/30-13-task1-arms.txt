@@ -1,0 +1,60 @@
+=== CLEAN (before)
+CLEAN git_diff_quiet_rc=0
+CLEAN list_rc=0 0 unclassified
+V2 render_rc=0 spc_object_refs=2 secret_key_refs=2 env_entries=1
+V2 verdict_rc=0
+=== ARM A: remove the classification row
+A list_rc=1
+stripe-credentials--connect-webhook-secret	UNCLASSIFIED
+list: 44 objects, 1 unclassified
+A writer_selftest_rc=1
+FAIL write-once-generate --generate rc=1: REFUSED [unclassified]: stripe-credentials--connect-webhook-secret matches no class in scripts/lib/staging-secrets-common.sh; classify it (estate, random, composite or external) before anything is written 
+FAIL value-shapes hmac key is not 64 hexunsubscribe secret is not 64 hex; role password is not 32 alnum; nextauth secret is not 32-byte base64url; vendor password misses the realm policy; host is not pg_host; default_user.conf does not carry the rabbitmq user and password; 
+FAIL htpasswd-composite grafana-edge-credentials--auth: the grafana-edge-credentials--password write (line none) does not precede the grafana-edge-credentials--auth write (line none); mailpit-ui-credentials--auth: the mailpit-ui-credentials--password write (line none) does not precede the mailpit-ui-credentials--auth write (line none); 
+FAIL second-generate-noop rc=1
+FAIL external-prefix connect whsec_ rc=1: REFUSED [external]: stripe-credentials--connect-webhook-secret is unclassified
+FAIL external-validators the Grafana admin user was not generated as the estate literal
+FAIL leak-scan leaky rc=2
+A preflight_selftest_rc=1
+FAIL full want 3 test-mode lines, got 2
+FAIL connect-not-test-mode rc=0
+PASS void-no-python rc=2
+restored scripts/lib/staging-secrets-common.sh blob=c4f256d17e25cc2e5d6e11474d44a9a32845e67c (matches HEAD)
+=== ARM B: classify it external sk_test_ (wrong prefix rule)
+B writer_selftest_rc=1
+FAIL external-prefix connect webhook secret without whsec_ rc=0
+B preflight_selftest_rc=1
+FAIL full rc=1: NOT-TEST-MODE stripe-credentials--connect-webhook-secret test-mode: yes (stripe-credentials--webhook-secret) preflight: 44 objects, 47 grants, 1 gap(s) 
+FAIL two-missing gap lines were: MISSING nextauth-secret--secret|MISSING redis-credentials--password|NOT-TEST-MODE stripe-credentials--connect-webhook-secret
+FAIL operator-script-objects gap lines were: MISSING keycloak-realm--edge-api-client-secret|MISSING staging-seed--test-vendor-password|NOT-TEST-MODE stripe-credentials--connect-webhook-secret
+FAIL ghost gaps other than the ghost object
+FAIL missing-access gap lines were: MISSING-ACCESS redis-credentials--password p0000000-91d7-42cf-9b23-8d40d799a9c1|NOT-TEST-MODE stripe-credentials--connect-webhook-secret
+FAIL disabled gap lines were: MISSING postgres-credentials--host|NOT-TEST-MODE stripe-credentials--connect-webhook-secret|
+FAIL not-test-mode gap lines were: NOT-TEST-MODE stripe-credentials--api-key|NOT-TEST-MODE stripe-credentials--connect-webhook-secret|
+FAIL invalid-external-value gap lines were: INVALID-VALUE alertmanager-smtp-credentials--password|INVALID-VALUE alertmanager-smtp-credentials--to|NOT-TEST-MODE stripe-credentials--connect-webhook-secret
+FAIL forbidden-read-detector-control rc=1
+restored scripts/lib/staging-secrets-common.sh blob=c4f256d17e25cc2e5d6e11474d44a9a32845e67c (matches HEAD)
+=== ARM C: remove the env entry from the deployment
+V2 render_rc=0 spc_object_refs=2 secret_key_refs=1 env_entries=0
+V2 verdict_rc=1
+C render_golden_rc=1
+FAIL [staging]: render DRIFTED from k8s/goldens/staging.yaml
+FAIL [production]: render DRIFTED from k8s/goldens/production.yaml
+restored k8s/base/core-java-deployment.yaml blob=e10d7ac4ca5a9fa26ce4c33db42a95880c6ee271 (matches HEAD)
+=== ARM D: remove the secretObjects key (env ref with no producer)
+V2 render_rc=0 spc_object_refs=1 secret_key_refs=1 env_entries=1
+V2 verdict_rc=1
+D keyvault_chain_rc=1
+FAIL [k8s/staging]
+FAIL: Deployment/core-java reads stripe-credentials/connect-webhook-secret (env STRIPE_CONNECT_WEBHOOK_SECRET): SecretProviderClass core-java-kv produces Secret stripe-credentials without key connect-webhook-secret
+FAIL: 1 break(s) in the Key Vault chain
+FAIL: the Key Vault chain is broken in at least one of 1 target(s) — see above.
+restored k8s/components/azure-keyvault/secretproviderclasses.yaml blob=fdd8219c427eedba3c0d4d144d2ef82de9eea9f9 (matches HEAD)
+=== CLEAN (after)
+CLEAN git_diff_quiet_rc=0
+CLEAN list_rc=0 0 unclassified
+V2 render_rc=0 spc_object_refs=2 secret_key_refs=2 env_entries=1
+V2 verdict_rc=0
+=== TRACER GATE re-run (end-of-phase mode, automated-only verify)
+V1 rc=0 fail_or_parse_lines=0 output_lines=80
+V3 rc=0 classified=1 fail_lines=0

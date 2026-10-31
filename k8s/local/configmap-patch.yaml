@@ -25,6 +25,13 @@
 #   STORAGE_CONNECTION_STRING env that consumes each of them — and LOC-7 asserts
 #   that wiring is present, so neither key can become a silently ignored value.
 #
+#   THE SECOND DELIBERATE EXCEPTION (PAY-03, plan 30-13): stripe.environment-tag
+#   exists in every overlay and NEVER in base, because a base value would be
+#   inherited by an overlay that forgot its own and a production render could then
+#   say "staging" (k8s/base/configmap.yaml says why). Its env wiring IS in base
+#   (core-java STRIPE_ENVIRONMENT_TAG, a configMapKeyRef that is not optional), so
+#   the key is consumed, and an overlay without it fails the pod at start.
+#
 # WHY host.minikube.internal AND NOT AN IP
 #   The local cluster consumes the docker-compose backing services running on the
 #   HOST. minikube maintains the host-gateway mapping under the name
@@ -258,6 +265,8 @@ data:
   staff.invite.accept-base-url: "http://app.jtoye.local/invite"
   stripe.connect.return-url: "http://app.jtoye.local/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "http://app.jtoye.local/dashboard/payments/connect/refresh"
+  # PAY-03 (plan 30-13): the second deliberate overlay-only key (see the header).
+  stripe.environment-tag: "local"
 
   # --- Log path (26-RESEARCH.md PIT-5) --------------------------------------
   # Under the prod profile (D-10 keeps it) application-prod.yml:91 logs to

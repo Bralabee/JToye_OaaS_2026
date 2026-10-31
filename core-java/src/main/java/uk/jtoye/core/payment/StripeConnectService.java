@@ -6,6 +6,8 @@ import com.stripe.model.AccountLink;
 import com.stripe.model.Event;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
+import com.stripe.param.AccountUpdateParams;
+import com.stripe.net.RequestOptions;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,6 +93,15 @@ public class StripeConnectService {
      * Create the tenant's Express connected account if none is linked yet
      * (idempotent: an already-linked tenant reuses its account), then mint a
      * fresh single-use onboarding link. Only ACTIVE tenants may connect.
+     *
+     * <p>PAY-03 (plan 30-12): the account is created requesting the {@code card_payments} and
+     * {@code transfers} capabilities explicitly rather than relying on the platform's Connect
+     * defaults (research assumption A3), so a vendor who completes the hosted onboarding ends
+     * with an account that can take direct charges and receive destination transfers. The create
+     * call rides the Stripe idempotency key {@link #accountCreateIdempotencyKey(UUID)}, so an SDK
+     * network retry cannot leave a second Express account. A reused account missing either
+     * capability has both requested before the link is minted. The account is tagged with
+     * metadata {@code environment}, like every other Stripe object this app creates.
      */
     @CircuitBreaker(name = "stripe")
     @Transactional
@@ -110,11 +121,20 @@ public class StripeConnectService {
             AccountCreateParams.Builder params = AccountCreateParams.builder()
                     .setType(AccountCreateParams.Type.EXPRESS)
                     .setCountry(stripeProperties.getConnect().getCountry())
-                    .putMetadata("tenant_id", tenantId.toString());
+                    .setCapabilities(AccountCreateParams.Capabilities.builder()
+                            .setCardPayments(AccountCreateParams.Capabilities.CardPayments.builder()
+                                    .setRequested(true).build())
+                            .setTransfers(AccountCreateParams.Capabilities.Transfers.builder()
+                                    .setRequested(true).build())
+                            .build())
+                    .putMetadata("tenant_id", tenantId.toString())
+                    .putMetadata("environment", stripeProperties.effectiveEnvironmentTag());
             if (tenant.getContactEmail() != null && !tenant.getContactEmail().isBlank()) {
                 params.setEmail(tenant.getContactEmail());
             }
-            Account account = Account.create(params.build());
+            Account account = Account.create(params.build(), RequestOptions.builder()
+                    .setIdempotencyKey(accountCreateIdempotencyKey(tenantId))
+                    .build());
             accountId = account.getId();
             tenant.setStripeAccountId(accountId);
             tenant.setStripeConnectStatus(StripeConnectStatus.PENDING);
@@ -123,6 +143,7 @@ public class StripeConnectService {
             log.info("event=stripe_connect_account_created tenant={} account={}", tenantId, accountId);
         } else {
             log.info("event=stripe_connect_account_reused tenant={} account={}", tenantId, accountId);
+            requestMissingCapabilities(tenantId, accountId);
         }
 
         AccountLink link = AccountLink.create(AccountLinkCreateParams.builder()
@@ -133,6 +154,40 @@ public class StripeConnectService {
                 .build());
 
         return new ConnectAccountDto(accountId, tenant.getStripeConnectStatus(), link.getUrl());
+    }
+
+    /**
+     * Stripe idempotency key for a tenant's Express account creation (PAY-03, plan 30-12).
+     * Package-private so the test asserts the production expression, not a copy of it.
+     */
+    static String accountCreateIdempotencyKey(UUID tenantId) {
+        return "connect-account-create-" + tenantId;
+    }
+
+    /**
+     * Request {@code card_payments} and {@code transfers} on a reused account that lacks either
+     * (an account created before plan 30-12 relied on platform defaults). A capability Stripe
+     * reports in any status (active, inactive, pending) has been requested; an absent one has not.
+     * Requesting an already-requested capability is a no-op, so both are always sent together.
+     */
+    private void requestMissingCapabilities(UUID tenantId, String accountId) throws StripeException {
+        Account account = Account.retrieve(accountId);
+        Account.Capabilities capabilities = account.getCapabilities();
+        boolean hasCardPayments = capabilities != null && capabilities.getCardPayments() != null;
+        boolean hasTransfers = capabilities != null && capabilities.getTransfers() != null;
+        if (hasCardPayments && hasTransfers) {
+            return;
+        }
+        account.update(AccountUpdateParams.builder()
+                .setCapabilities(AccountUpdateParams.Capabilities.builder()
+                        .setCardPayments(AccountUpdateParams.Capabilities.CardPayments.builder()
+                                .setRequested(true).build())
+                        .setTransfers(AccountUpdateParams.Capabilities.Transfers.builder()
+                                .setRequested(true).build())
+                        .build())
+                .build());
+        log.info("event=stripe_connect_capabilities_requested tenant={} account={} cardPayments={} transfers={}",
+                tenantId, accountId, hasCardPayments ? "present" : "requested", hasTransfers ? "present" : "requested");
     }
 
     // ------------------------------------------------------------------

@@ -6,6 +6,8 @@ import com.stripe.model.Event;
 import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.param.AccountCreateParams;
 import com.stripe.param.AccountLinkCreateParams;
+import com.stripe.param.AccountUpdateParams;
+import com.stripe.net.RequestOptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -85,7 +87,17 @@ class StripeConnectServiceTest {
 
         try (MockedStatic<Account> accountMock = mockStatic(Account.class);
              MockedStatic<AccountLink> linkMock = mockStatic(AccountLink.class)) {
-            accountMock.when(() -> Account.create(any(AccountCreateParams.class))).thenReturn(mockAccount);
+            java.util.concurrent.atomic.AtomicReference<AccountCreateParams> created =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            accountMock.when(() -> Account.create(any(AccountCreateParams.class))).thenAnswer(inv -> {
+                created.set(inv.getArgument(0));
+                return mockAccount;
+            });
+            accountMock.when(() -> Account.create(any(AccountCreateParams.class), any(RequestOptions.class)))
+                    .thenAnswer(inv -> {
+                        created.set(inv.getArgument(0));
+                        return mockAccount;
+                    });
             linkMock.when(() -> AccountLink.create(any(AccountLinkCreateParams.class))).thenReturn(mockLink);
 
             ConnectAccountDto dto = service.createOrResumeExpressOnboarding(tenantId);
@@ -100,14 +112,13 @@ class StripeConnectServiceTest {
             verify(tenantRepository).save(tenant);
 
             // Account params: Express, GB, contact email, tenant_id metadata (all config/data-driven)
-            ArgumentCaptor<AccountCreateParams> accountCaptor = ArgumentCaptor.forClass(AccountCreateParams.class);
-            accountMock.verify(() -> Account.create(accountCaptor.capture()));
-            assertEquals(AccountCreateParams.Type.EXPRESS, accountCaptor.getValue().getType());
-            assertEquals("GB", accountCaptor.getValue().getCountry());
-            assertEquals("vendor@example.com", accountCaptor.getValue().getEmail());
+            assertNotNull(created.get(), "Account.create was not called");
+            assertEquals(AccountCreateParams.Type.EXPRESS, created.get().getType());
+            assertEquals("GB", created.get().getCountry());
+            assertEquals("vendor@example.com", created.get().getEmail());
             @SuppressWarnings("unchecked")
             java.util.Map<String, String> metadata =
-                    (java.util.Map<String, String>) accountCaptor.getValue().getMetadata();
+                    (java.util.Map<String, String>) created.get().getMetadata();
             assertEquals(tenantId.toString(), metadata.get("tenant_id"));
 
             // Link params: account onboarding with the config-injected URLs
@@ -129,16 +140,118 @@ class StripeConnectServiceTest {
 
         AccountLink mockLink = mock(AccountLink.class);
         when(mockLink.getUrl()).thenReturn("https://connect.stripe.com/setup/y");
+        // PAY-03 (plan 30-12): the reuse path now reads the account; this one already has both
+        // capabilities, so nothing is requested.
+        Account existing = mock(Account.class);
+        Account.Capabilities caps = new Account.Capabilities();
+        caps.setCardPayments("active");
+        caps.setTransfers("pending");
+        when(existing.getCapabilities()).thenReturn(caps);
 
         try (MockedStatic<Account> accountMock = mockStatic(Account.class);
              MockedStatic<AccountLink> linkMock = mockStatic(AccountLink.class)) {
+            accountMock.when(() -> Account.retrieve("acct_existing")).thenReturn(existing);
             linkMock.when(() -> AccountLink.create(any(AccountLinkCreateParams.class))).thenReturn(mockLink);
 
             ConnectAccountDto dto = service.createOrResumeExpressOnboarding(tenantId);
 
             assertEquals("acct_existing", dto.stripeAccountId());
-            accountMock.verifyNoInteractions(); // no second Stripe account created
+            // no second Stripe account created, and no capability update for a complete account
+            accountMock.verify(() -> Account.create(any(AccountCreateParams.class)), never());
+            accountMock.verify(() -> Account.create(any(AccountCreateParams.class), any(RequestOptions.class)), never());
+            verify(existing, never()).update(any(AccountUpdateParams.class));
             verify(tenantRepository, never()).save(any());
+        }
+    }
+
+    // --- PAY-03 (plan 30-12) Task 3: the capabilities onboarding needs, requested explicitly ---
+
+    @Test
+    @DisplayName("PAY-03: a new Express account requests card_payments + transfers, is tagged with its environment, under connect-account-create-<tenantId>")
+    void createExpressAccount_requestsCapabilitiesUnderTheTenantIdempotencyKey() throws Exception {
+        stripeProperties.setEnvironmentTag("staging");
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(tenantRepository.save(any(Tenant.class))).thenAnswer(inv -> inv.getArgument(0));
+        Account mockAccount = mock(Account.class);
+        when(mockAccount.getId()).thenReturn("acct_new_caps");
+        AccountLink mockLink = mock(AccountLink.class);
+
+        java.util.concurrent.atomic.AtomicReference<AccountCreateParams> created =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<RequestOptions> options =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        try (MockedStatic<Account> accountMock = mockStatic(Account.class);
+             MockedStatic<AccountLink> linkMock = mockStatic(AccountLink.class)) {
+            accountMock.when(() -> Account.create(any(AccountCreateParams.class))).thenAnswer(inv -> {
+                created.set(inv.getArgument(0));
+                return mockAccount;
+            });
+            accountMock.when(() -> Account.create(any(AccountCreateParams.class), any(RequestOptions.class)))
+                    .thenAnswer(inv -> {
+                        created.set(inv.getArgument(0));
+                        options.set(inv.getArgument(1));
+                        return mockAccount;
+                    });
+            linkMock.when(() -> AccountLink.create(any(AccountLinkCreateParams.class))).thenReturn(mockLink);
+
+            service.createOrResumeExpressOnboarding(tenantId);
+        }
+
+        AccountCreateParams params = created.get();
+        assertNotNull(params, "Account.create was not called");
+        assertNotNull(params.getCapabilities(), "capabilities must be requested explicitly, not left to platform defaults");
+        assertNotNull(params.getCapabilities().getCardPayments(), "card_payments capability not requested");
+        assertNotNull(params.getCapabilities().getTransfers(), "transfers capability not requested");
+        assertEquals(Boolean.TRUE, params.getCapabilities().getCardPayments().getRequested());
+        assertEquals(Boolean.TRUE, params.getCapabilities().getTransfers().getRequested());
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> metadata = (java.util.Map<String, String>) params.getMetadata();
+        assertEquals(tenantId.toString(), metadata.get("tenant_id"));
+        assertEquals("staging", metadata.get("environment"));
+        assertNotNull(options.get(), "Account.create must carry RequestOptions (an idempotency key)");
+        assertEquals("connect-account-create-" + tenantId, options.get().getIdempotencyKey());
+        assertEquals(StripeConnectService.accountCreateIdempotencyKey(tenantId), options.get().getIdempotencyKey());
+    }
+
+    @Test
+    @DisplayName("PAY-03: a reused account missing transfers has both capabilities requested before the onboarding link is minted")
+    void reusedAccount_missingTransfers_requestsBothBeforeTheLink() throws Exception {
+        tenant.setStripeAccountId("acct_existing_caps");
+        tenant.setStripeConnectStatus(StripeConnectStatus.PENDING);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+
+        Account existing = mock(Account.class);
+        Account.Capabilities caps = new Account.Capabilities();
+        caps.setCardPayments("active");
+        caps.setTransfers(null);
+        when(existing.getCapabilities()).thenReturn(caps);
+        java.util.concurrent.atomic.AtomicBoolean updated = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean linkMintedAfterUpdate = new java.util.concurrent.atomic.AtomicBoolean(false);
+        lenient().when(existing.update(any(AccountUpdateParams.class))).thenAnswer(inv -> {
+            updated.set(true);
+            return existing;
+        });
+        AccountLink mockLink = mock(AccountLink.class);
+        when(mockLink.getUrl()).thenReturn("https://connect.stripe.com/setup/caps");
+
+        try (MockedStatic<Account> accountMock = mockStatic(Account.class);
+             MockedStatic<AccountLink> linkMock = mockStatic(AccountLink.class)) {
+            accountMock.when(() -> Account.retrieve("acct_existing_caps")).thenReturn(existing);
+            linkMock.when(() -> AccountLink.create(any(AccountLinkCreateParams.class))).thenAnswer(inv -> {
+                linkMintedAfterUpdate.set(updated.get());
+                return mockLink;
+            });
+
+            ConnectAccountDto dto = service.createOrResumeExpressOnboarding(tenantId);
+
+            assertEquals("acct_existing_caps", dto.stripeAccountId());
+            ArgumentCaptor<AccountUpdateParams> update = ArgumentCaptor.forClass(AccountUpdateParams.class);
+            verify(existing).update(update.capture());
+            assertEquals(Boolean.TRUE, update.getValue().getCapabilities().getCardPayments().getRequested());
+            assertEquals(Boolean.TRUE, update.getValue().getCapabilities().getTransfers().getRequested());
+            assertTrue(linkMintedAfterUpdate.get(), "the capabilities must be requested BEFORE the onboarding link is minted");
+            accountMock.verify(() -> Account.create(any(AccountCreateParams.class)), never());
+            accountMock.verify(() -> Account.create(any(AccountCreateParams.class), any(RequestOptions.class)), never());
         }
     }
 

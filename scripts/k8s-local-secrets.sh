@@ -415,10 +415,18 @@ else
   skip_secret notification-credentials "NOTIFICATION_UNSUBSCRIBE_SECRET is empty; the manifest ref is optional, so one-click unsubscribe stays inert"
 fi
 
+# connect-webhook-secret (PAY-03, plan 30-13) is added only when .env sets
+# STRIPE_CONNECT_WEBHOOK_SECRET: the manifest ref is optional, and an absent key leaves
+# the Connect route refusing every event, which is right for a stack no Connect endpoint
+# (or `stripe listen --forward-connect-to`) serves.
+STRIPE_LITERALS=("--from-literal=api-key=${STRIPE_API_KEY:-}" "--from-literal=webhook-secret=${STRIPE_WEBHOOK_SECRET:-}")
+STRIPE_KEYS="api-key, webhook-secret"
+if [ -n "${STRIPE_CONNECT_WEBHOOK_SECRET:-}" ]; then
+  STRIPE_LITERALS+=("--from-literal=connect-webhook-secret=$STRIPE_CONNECT_WEBHOOK_SECRET")
+  STRIPE_KEYS="api-key, webhook-secret, connect-webhook-secret"
+fi
 if [ -n "${STRIPE_API_KEY:-}" ]; then
-  apply_secret stripe-credentials \
-    "--from-literal=api-key=$STRIPE_API_KEY" \
-    "--from-literal=webhook-secret=${STRIPE_WEBHOOK_SECRET:-}"
+  apply_secret stripe-credentials "${STRIPE_LITERALS[@]}"
 else
   skip_secret stripe-credentials "STRIPE_API_KEY is empty; the manifest ref is optional, so payments stay inert locally"
 fi
@@ -445,7 +453,7 @@ for s in "${CREATED[@]}"; do
     dsar-credentials)       echo "  - $s: encryption-key" ;;
     client-ip-credentials)  echo "  - $s: hmac-key" ;;
     notification-credentials) echo "  - $s: unsubscribe-signing-secret" ;;
-    stripe-credentials)     echo "  - $s: api-key, webhook-secret" ;;
+    stripe-credentials)     echo "  - $s: $STRIPE_KEYS" ;;
     *)                      echo "  - $s" ;;
   esac
 done

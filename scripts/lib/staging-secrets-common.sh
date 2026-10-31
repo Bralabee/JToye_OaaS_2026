@@ -129,6 +129,9 @@ ss_classify() {
     rabbitmq-default-user--default-user-conf)           echo "composite rabbitmq-conf" ;;
     stripe-credentials--api-key)                        echo "external sk_test_" ;;
     stripe-credentials--webhook-secret)                 echo "external whsec_" ;;
+    # The Connected-accounts endpoint's own signing secret (PAY-03, plan 30-13): the same
+    # whsec_ rule as the platform endpoint's, so no other value can be written (D-28).
+    stripe-credentials--connect-webhook-secret)         echo "external whsec_" ;;
     nextauth-secret--secret)                            echo "random b64url32" ;;
     # core-java refuses to start without a valid 64-hex DSAR key (V70).
     dsar-credentials--encryption-key)                   echo "random hex64" ;;

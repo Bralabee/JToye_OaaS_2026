@@ -442,6 +442,14 @@ data:
   # from the OPTIONAL stripe-credentials Secret.
   stripe.connect.return-url: "https://app.olajay.co.uk/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "https://app.olajay.co.uk/dashboard/payments/connect/refresh"
+  # stripe.environment-tag (STRIPE_ENVIRONMENT_TAG, PAY-03, plan 30-13) is DELIBERATELY NOT
+  # HERE. It names the Stripe environment a runtime is (written as metadata.environment on
+  # every PaymentIntent, Refund and Express account, and compared on every inbound event),
+  # and plan 30-17's OTP guard trusts it. A base value would be inherited by any overlay
+  # that forgot its own, so a production render could say "staging". Each overlay declares
+  # it (k8s/local "local", k8s/staging "staging", k8s/production "production"), and the
+  # core-java configMapKeyRef is NOT optional, so an overlay without the key fails the pod
+  # at start (CreateContainerConfigError) instead of running under another environment's name.
 
   # --- Webhook delivery knobs — Phase 22 COMMS-* -----------------------------
   # SOURCE: all three byte-identical to their application.yml defaults

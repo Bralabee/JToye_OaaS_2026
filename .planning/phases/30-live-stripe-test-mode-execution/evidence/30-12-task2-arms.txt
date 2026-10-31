@@ -1,0 +1,92 @@
+# 30-12 Task 2: environment tagging, foreign-environment and unknown-order acknowledgement.
+# Measured 2026-10-25 21:31Z-21:49Z on feat/30-connect-webhook. Counts read from JUnit XML under core-java/build-local/.
+
+## RED (commit c02c7a26)
+PaymentServiceTest  rc=1 tests=46 fail=4   (30-12-red-task2-unit.json, RED_EVIDENCE_OK)
+  createPaymentIntent / createBalancePaymentIntent environment: expected <staging> but was <null>
+  undeclared tag: expected <unset> but was <null>
+  foreign-environment unit arm: the event was dispatched (reached the order lookup and threw)
+  control passing on the old tree: an "unset"-tagged event on an undeclared runtime is processed
+RefundServiceTest   rc=1 tests=17 fail=1   (30-12-red-task2-refund.json, RED_EVIDENCE_OK)
+  metadata {order_id, refund_id, tenant_id}: no environment entry
+StripeWebhookIdempotencyIntegrationTest rc=1 tests=11 fail=3 (30-12-red-task2-it.json, RED_EVIDENCE_OK)
+  foreign environment: processed_stripe_events expected 0L but was 1L
+  unknown order (succeeded and payment_failed): ResourceNotFoundException escaped handleWebhookEvent
+  positive controls for the same count query, passing: same-environment 1 row, no-metadata 1 row
+
+## GREEN (commit a7b79c62)
+test rc=0: PaymentServiceTest tests=46 failures=0; RefundServiceTest tests=18 failures=0 (+1 tagged-refund arm,
+  which needs the new constructor and so lands with GREEN; arm F shows it can fail)
+integrationTest rc=0: StripeWebhookIdempotencyIntegrationTest tests=11 failures=0;
+  RefundWebhookHandlingIntegrationTest tests=9 failures=0 (+2 arms: BL-04 same-environment throw, foreign refund ack)
+  Deviation: the plan names RefundWebhookHandlingIntegrationTest as the BL-04 guard, but it had no arm for the
+  metadata-bearing missing-row throw; arm H below would have passed without the added arm.
+
+## Break arms (committed tree a7b79c62; clean -> arm -> restore -> clean; restore verified by blob hash)
+== D-no-environment-check
+-- clean-before: blob 716e4c14545865cd175ca4939d6f02f6ae5a8a7e head 716e4c14545865cd175ca4939d6f02f6ae5a8a7e match
+   anchors replaced: 1
+-- arm: blob 5e43d34389f40523d01f6d5134f6d7592b4412b2 (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.StripeWebhookIdempotencyIntegrationTest tests=11 failures=1 errors=0 skipped=0 mtime=21:41:34Z
+   xmlsum rc=1
+   FAIL foreignEnvironmentEventIsAcknowledgedWithNoRowAndNoSideEffect(CapturedOutput) :: org.opentest4j.AssertionFailedError: [a foreign-environment event must leave no processed_stripe_events row]  expected: 0L  but was: 1L
+-- restore: blob 716e4c14545865cd175ca4939d6f02f6ae5a8a7e == head 716e4c14545865cd175ca4939d6f02f6ae5a8a7e: yes
+   git diff --quiet: clean
+== D2-no-environment-check-refunds
+-- clean-before: blob 716e4c14545865cd175ca4939d6f02f6ae5a8a7e head 716e4c14545865cd175ca4939d6f02f6ae5a8a7e match
+   anchors replaced: 1
+-- arm: blob 5e43d34389f40523d01f6d5134f6d7592b4412b2 (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.RefundWebhookHandlingIntegrationTest tests=9 failures=1 errors=0 skipped=0 mtime=21:42:56Z
+   xmlsum rc=1
+   FAIL foreignEnvironmentRefundEvent_isAcknowledgedWithNoRowAndNoRefundChange() :: uk.jtoye.core.exception.ResourceNotFoundException: Refund not found for webhook event evt_refund_foreign_env: 1126138c-de43-4dbf-87f9-f056fd2d4088
+-- restore: blob 716e4c14545865cd175ca4939d6f02f6ae5a8a7e == head 716e4c14545865cd175ca4939d6f02f6ae5a8a7e: yes
+   git diff --quiet: clean
+== E-unknown-order-throws-again
+-- clean-before: blob 716e4c14545865cd175ca4939d6f02f6ae5a8a7e head 716e4c14545865cd175ca4939d6f02f6ae5a8a7e match
+   anchors replaced: 2
+-- arm: blob 6148aca87beee5e1d6bec6bb1b7ffef13841973e (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.StripeWebhookIdempotencyIntegrationTest tests=11 failures=2 errors=0 skipped=0 mtime=21:44:34Z
+   xmlsum rc=1
+   FAIL failedEventForAnUnknownOrderIsAcknowledgedNotThrown(CapturedOutput) :: java.lang.AssertionError:  Expecting code not to raise a throwable but caught   "uk.jtoye.core.exception.ResourceNotFoundException: Order not found: 8c025f03-91
+   FAIL succeededEventForAnUnknownOrderIsAcknowledgedNotThrown(CapturedOutput) :: java.lang.AssertionError: [Pitfall 5: an unknown order must be a 200 to Stripe, not a 5xx retry storm]  Expecting code not to raise a throwable but caught   "uk
+-- restore: blob 716e4c14545865cd175ca4939d6f02f6ae5a8a7e == head 716e4c14545865cd175ca4939d6f02f6ae5a8a7e: yes
+   git diff --quiet: clean
+== H-BL04-throw-removed
+-- clean-before: blob 92e9e1b48fbf633c0e991f31bf4f07e879bca10a head 92e9e1b48fbf633c0e991f31bf4f07e879bca10a match
+   anchors replaced: 1
+-- arm: blob 23f739b2e80bc3d2e123f6361ff07792b0fccbda (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.RefundWebhookHandlingIntegrationTest tests=9 failures=1 errors=0 skipped=0 mtime=21:45:55Z
+   xmlsum rc=1
+   FAIL sameEnvironmentRefundEventForAMissingLocalRow_stillThrowsForARetry_BL04() :: java.lang.AssertionError:  Expecting code to raise a throwable.
+-- restore: blob 92e9e1b48fbf633c0e991f31bf4f07e879bca10a == head 92e9e1b48fbf633c0e991f31bf4f07e879bca10a: yes
+   git diff --quiet: clean
+== F-refund-not-tagged
+-- clean-before: blob 92e9e1b48fbf633c0e991f31bf4f07e879bca10a head 92e9e1b48fbf633c0e991f31bf4f07e879bca10a match
+   anchors replaced: 1
+-- arm: blob a1bb554911c155dc6426429a59f34db8329ee96c (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.RefundServiceTest tests=18 failures=2 errors=0 skipped=0 mtime=21:46:26Z
+   xmlsum rc=1
+   FAIL PAY-03: a refund carries metadata environment = stripe.environment-tag of the wired StripeProperties :: java.lang.AssertionError:  Expecting map:   {"environment_x"="staging", "order_id"="8eb14ec4-9590-411e-95bd-72501c831705", "refund_id"="09bacd66-4277-40a4-8304-
+   FAIL PAY-03: a refund created with no environment declaration carries metadata environment=unset :: java.lang.AssertionError:  Expecting map:   {"environment_x"="unset", "order_id"="21a98c29-8fea-4c18-a859-88607069c06a", "refund_id"="24956731-0379-4fc7-823e-08
+-- restore: blob 92e9e1b48fbf633c0e991f31bf4f07e879bca10a == head 92e9e1b48fbf633c0e991f31bf4f07e879bca10a: yes
+   git diff --quiet: clean
+== G-undeclared-reads-as-local
+-- clean-before: blob eea10102c9ccb6645e0bbfa3f3e1d55029154e63 head eea10102c9ccb6645e0bbfa3f3e1d55029154e63 match
+   anchors replaced: 1
+-- arm: blob 685f4d535631b9757e008ad0a3db1a423a200801 (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.PaymentServiceTest tests=46 failures=2 errors=0 skipped=0 mtime=21:46:46Z
+   xmlsum rc=1
+   FAIL PAY-03: an undeclared environment tag is written as "unset", never as a real environment name :: org.opentest4j.AssertionFailedError: expected: <unset> but was: <local>
+   FAIL PAY-03: an event tagged "unset" is same-environment for a runtime whose tag is undeclared :: org.opentest4j.AssertionFailedError: expected: <CAPTURED> but was: <PENDING>
+-- restore: blob eea10102c9ccb6645e0bbfa3f3e1d55029154e63 == head eea10102c9ccb6645e0bbfa3f3e1d55029154e63: yes
+   git diff --quiet: clean
+
+## Clean after the arms
+test rc=0: PaymentServiceTest tests=46 failures=0; RefundServiceTest tests=18 failures=0
+integrationTest rc=0: StripeWebhookIdempotencyIntegrationTest tests=11 failures=0; RefundWebhookHandlingIntegrationTest tests=9 failures=0
