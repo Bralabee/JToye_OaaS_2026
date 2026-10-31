@@ -1,0 +1,21 @@
+# 30-19 Task 1 break arm: /pay entry moved BEFORE the '/:path*' default
+HEAD=53fbcfaf next.config sha256=79d911e480657170
+## clean (tracer gate re-run)
+Tests:       24 passed, 24 total
+rc=0
+## arm
+Tests:       5 failed, 19 passed, 24 total
+rc=1
+restored sha256=79d911e480657170 (expect 79d911e480657170)
+## clean again
+Tests:       24 passed, 24 total
+rc=0
+## arm again, failing test names
+  ● next.config.mjs static security headers › returns the all-paths default first, plus only the /invite and /pay overrides
+  ● next.config.mjs static security headers › emits X-Content-Type-Options nosniff, Referrer-Policy, and Permissions-Policy
+  ● Security headers snapshot (regression guard) › static headers match snapshot
+  ● Security headers snapshot (regression guard) › /invite gets Referrer-Policy no-referrer, after (so over) the default
+  ● Security headers snapshot (regression guard) › /pay gets Referrer-Policy no-referrer, after (so over) the default
+rc=1
+restored sha256=79d911e480657170 (expect 79d911e480657170)
+status-empty=0
