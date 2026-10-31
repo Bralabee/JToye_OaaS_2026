@@ -444,7 +444,7 @@ services:
     # Port range allows --scale core-java=2 (each replica gets a unique host port)
     # Replica 1 → localhost:9090, Replica 2 → localhost:9091
     ports:
-      - "9090-9091:9090"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9090-9091:9090"
     depends_on:
       postgres:
         condition: service_healthy
@@ -519,7 +519,7 @@ services:
       # exposure this closes, one port to the left.
       EDGE_MANAGEMENT_PORT: ${EDGE_GO_METRICS_PORT:-9101}
     ports:
-      - "8089:8080"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:8089:8080"
     depends_on:
       core-java:
         condition: service_healthy
@@ -621,7 +621,7 @@ services:
       PORT: 3000
       HOSTNAME: "0.0.0.0"
     ports:
-      - "3000:3000"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:3000:3000"
     extra_hosts:
       - "localhost:host-gateway"
     depends_on:
@@ -657,7 +657,7 @@ services:
       TZ: Europe/London
       CORE_BASE_URL: http://core-java:9090
     ports:
-      - "9100:9100"
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:9100:9100"
     depends_on:
       core-java:
         condition: service_healthy
