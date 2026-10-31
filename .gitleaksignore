@@ -103,3 +103,8 @@ f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/s
 # #1037 lesson), carried by plan 30-15.
 55d56a7fa6d5be0916726f9b793599d2b26df2f9:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-13-task1-arms.txt:generic-api-key:22
 55d56a7fa6d5be0916726f9b793599d2b26df2f9:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-13-task1-arms.txt:generic-api-key:36
+
+# The same pair under #1046's squash commit on main (the 30-13 note above): without it main's
+# gitleaks run on ec73ddee is red and P-3 refuses every branch merged up to date with main.
+ec73ddeeae4bf967c402b830b6b34350faf497ce:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-13-task1-arms.txt:generic-api-key:22
+ec73ddeeae4bf967c402b830b6b34350faf497ce:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-13-task1-arms.txt:generic-api-key:36
