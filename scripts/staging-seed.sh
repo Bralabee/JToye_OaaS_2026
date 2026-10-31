@@ -22,6 +22,7 @@
 #   scripts/staging-seed.sh --context NAME --stage cancel-orphan-intents --intents pi_a,pi_b [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage stripe-get --path /v1/<object>/<id>
 #                           [--account acct_…] [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage pay-link --link-out FILE [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -95,6 +96,13 @@
 #                        request plan; no Azure, Keycloak or API call is made.
 #     --list-kv-objects  the Key Vault object names the stages read, one per
 #                        line, C-locale sorted (offline; plan 29-13 writes them).
+#     --stage pay-link --link-out FILE
+#                        one real payable payment link (plan 30-19, PAY-04/D-03):
+#                        the public phone challenge (refused [otp-hidden] unless
+#                        staging returns the OTP), a vendor order with that phone,
+#                        the public verify, then the vendor's payment link. Prints
+#                        PAY-LINK order=… link=… expires=…; the URL goes ONLY to
+#                        FILE, mode 600, never to stdout, stderr or evidence.
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -270,7 +278,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -293,6 +301,14 @@ print_tool_plan() {
       echo "  03 GET        /api/v1/shops?size=100 (the ${SHOP_SLUG} id), /api/v1/public/shops/${SHOP_SLUG}/products (first available dish)"
       echo "  04 POST       /api/v1/orders   {shopId, items: [{productId, quantity: 1}]}, no customer field, submit unset; Idempotency-Key vendor-order-<UTC stamp>"
       echo "  05 print      VENDOR-ORDER order=… status=DRAFT payment_status=NONE (refused unless the 201 is a DRAFT with paymentStatus NONE)" ;;
+    pay-link)
+      echo "  03 GET        /api/v1/shops?size=100 (the ${SHOP_SLUG} id), /api/v1/public/shops/${SHOP_SLUG}/products (first available dish)"
+      echo "  04 POST       /api/v1/public/shops/${SHOP_SLUG}/phone-verification/send   {phone: ${PAY_LINK_PHONE}, channel: SMS}; REFUSED [otp-hidden] if no testPreviewOtp (nothing written)"
+      echo "  05 POST       /api/v1/orders   {shopId, customerName, customerPhone, customerEmail, COLLECTION, 1 item}; Idempotency-Key pay-link-<UTC stamp>"
+      echo "  06 POST       /api/v1/public/shops/${SHOP_SLUG}/phone-verification/verify   {phone, otp} (the OTP is never printed)"
+      echo "  07 POST       /api/v1/orders/{id}/payment-links   {purpose: UPFRONT}"
+      echo "  08 write      the paymentUrl to ${LINK_OUT} (mode 600; never printed)"
+      echo "  09 print      PAY-LINK order=… link=… expires=…" ;;
     order-transition)
       echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
       echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
@@ -1559,6 +1575,110 @@ stripe_get_stage() {
 }
 
 # ===========================================================================
+# --stage pay-link --link-out FILE — plan 30-19 (PAY-04 / D-03, T-30-78, T-30-79).
+# A real, payable payment link on staging, made the way a vendor and a customer
+# make one, so the staging /pay proof (frontend/e2e/staging-pay-link.spec.ts)
+# starts from a link nobody fabricated:
+#   1. the customer's phone challenge, through the PUBLIC storefront endpoint.
+#      Staging returns the OTP in testPreviewOtp only under the owner's
+#      expose-on-staging decision (30-16 Task 2; core-java refuses that switch
+#      outside local/test/staging). No OTP -> REFUSED [otp-hidden], and nothing
+#      has been written: the send is the probe, so it runs BEFORE the order.
+#   2. a vendor order carrying that phone (Idempotency-Key pay-link-<UTC stamp>),
+#      one line of the first available dish, COLLECTION, a DRAFT;
+#   3. the public verify with the OTP, which marks the tenant's open orders with
+#      that phone verified;
+#   4. the vendor's POST /api/v1/orders/{id}/payment-links {purpose: UPFRONT}.
+# The issued URL is a bearer credential (its token pays the order): it is written
+# ONLY to FILE, chmod 600 before a byte of it lands there, and never to stdout,
+# stderr or evidence. The OTP, the token and the client secret are read with jq
+# into variables that are never printed; the response files are removed at once.
+PAY_LINK_PHONE="+447700900123"
+PAY_LINK_NAME="Staging Pay Link"
+PAY_LINK_EMAIL="guest.staging+paylink@olajay.co.uk"
+pay_link_stage() {
+  local code shop_id pid stamp otp oid order_no ost link_id link_order expires url
+  vendor_login
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/shops.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/shops" "$code" "$WORKDIR/shops.json"
+  shop_id=$(jq -r --arg s "$SHOP_SLUG" '[.content[]? | select(.slug == $s)][0].id // empty' "$WORKDIR/shops.json")
+  [ -n "$shop_id" ] || { echo "FAIL: the vendor holds no shop $SHOP_SLUG" >&2; exit 1; }
+  code=$(pub_api GET "/api/v1/public/shops/$SHOP_SLUG/products" "$WORKDIR/pub-products.json")
+  [ "$code" = 200 ] || fail_http "GET /api/v1/public/shops/$SHOP_SLUG/products" "$code" "$WORKDIR/pub-products.json"
+  pid=$(jq -r '[(if type == "object" and has("content") then .content[] elif type == "object" then .[][] else .[] end)
+                | select(.inStock == true)][0].id // empty' "$WORKDIR/pub-products.json")
+  [ -n "$pid" ] || { echo "FAIL: $SHOP_SLUG has no available product on its public menu" >&2; exit 1; }
+
+  # 1. The challenge. The answer holds the OTP: read, then removed.
+  jq -n --arg ph "$PAY_LINK_PHONE" '{phone: $ph, channel: "SMS"}' | body "$WORKDIR/pl-send.json"
+  code=$(pub_api POST "/api/v1/public/shops/$SHOP_SLUG/phone-verification/send" "$WORKDIR/pl-send-out.json" "$WORKDIR/pl-send.json")
+  if [ "$code" != 200 ]; then
+    jq '{type, title, detail}' "$WORKDIR/pl-send-out.json" > "$WORKDIR/pl-send-problem.json" 2>/dev/null || printf '{}' > "$WORKDIR/pl-send-problem.json"
+    rm -f "$WORKDIR/pl-send-out.json"
+    fail_http "POST /api/v1/public/shops/$SHOP_SLUG/phone-verification/send" "$code" "$WORKDIR/pl-send-problem.json"
+  fi
+  otp=$(jq -r '.testPreviewOtp // empty' "$WORKDIR/pl-send-out.json" 2>/dev/null || true)
+  rm -f "$WORKDIR/pl-send-out.json"
+  if [ -z "$otp" ]; then
+    refuse otp-hidden "staging did not return the OTP (testPreviewOtp is absent): jtoye.phone-verification.expose-otp-for-test is off, the owner's keep-hidden posture. No order and no link were made; the staging /pay proof is not met on staging"
+  fi
+  [[ "$otp" =~ ^[0-9]{6}$ ]] || { otp=""; echo "FAIL: the send answered an OTP that is not 6 digits (not shown)" >&2; exit 1; }
+  echo "OK: phone challenge sent for $PAY_LINK_PHONE (the OTP was returned by the staging seam; not shown)"
+
+  # 2. The vendor order with that phone.
+  jq -n --arg s "$shop_id" --arg p "$pid" --arg n "$PAY_LINK_NAME" --arg ph "$PAY_LINK_PHONE" --arg e "$PAY_LINK_EMAIL" \
+    '{shopId: $s, customerName: $n, customerPhone: $ph, customerEmail: $e, fulfilmentType: "COLLECTION",
+      items: [{productId: $p, quantity: 1}]}' | body "$WORKDIR/pl-order.json"
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  API_EXTRA_HEADER="Idempotency-Key: pay-link-$stamp"
+  code=$(api vendor POST /api/v1/orders "$WORKDIR/pl-order-out.json" "$WORKDIR/pl-order.json")
+  API_EXTRA_HEADER=""
+  [ "$code" = 201 ] || fail_http "POST /api/v1/orders (pay-link order)" "$code" "$WORKDIR/pl-order-out.json"
+  oid=$(jq -r '.id // empty' "$WORKDIR/pl-order-out.json"); order_no=$(jq -r '.orderNumber // empty' "$WORKDIR/pl-order-out.json")
+  ost=$(jq -r '.status // empty' "$WORKDIR/pl-order-out.json")
+  rm -f "$WORKDIR/pl-order-out.json"
+  [ -n "$oid" ] && [ -n "$order_no" ] || { echo "FAIL: the order 201 carried no id or orderNumber" >&2; exit 1; }
+  echo "OK: vendor order $order_no status $ost (Idempotency-Key pay-link-$stamp)"
+
+  # 3. The customer's verification with the OTP. The request file holds it: removed after.
+  jq -n --arg ph "$PAY_LINK_PHONE" --arg o "$otp" '{phone: $ph, otp: $o}' | body "$WORKDIR/pl-verify.json"
+  otp=""
+  code=$(pub_api POST "/api/v1/public/shops/$SHOP_SLUG/phone-verification/verify" "$WORKDIR/pl-verify-out.json" "$WORKDIR/pl-verify.json")
+  rm -f "$WORKDIR/pl-verify.json"
+  [ "$code" = 200 ] || fail_http "POST /api/v1/public/shops/$SHOP_SLUG/phone-verification/verify" "$code" "$WORKDIR/pl-verify-out.json"
+  [ "$(jq -r '.verified' "$WORKDIR/pl-verify-out.json")" = true ] \
+    || { echo "FAIL: the verify answered 200 without verified=true" >&2; exit 1; }
+  echo "OK: phone $PAY_LINK_PHONE verified for the tenant's open orders"
+
+  # 4. The vendor's link. The answer holds the URL, the token and the client secret.
+  jq -n '{purpose: "UPFRONT"}' | body "$WORKDIR/pl-issue.json"
+  code=$(api vendor POST "/api/v1/orders/$oid/payment-links" "$WORKDIR/pl-issue-out.json" "$WORKDIR/pl-issue.json")
+  if [ "$code" != 201 ]; then
+    jq '{type, title, detail}' "$WORKDIR/pl-issue-out.json" > "$WORKDIR/pl-issue-problem.json" 2>/dev/null || printf '{}' > "$WORKDIR/pl-issue-problem.json"
+    rm -f "$WORKDIR/pl-issue-out.json"
+    fail_http "POST /api/v1/orders/$oid/payment-links" "$code" "$WORKDIR/pl-issue-problem.json"
+  fi
+  url=$(jq -r '.paymentUrl // empty' "$WORKDIR/pl-issue-out.json")
+  link_id=$(jq -r '.id // empty' "$WORKDIR/pl-issue-out.json")
+  link_order=$(jq -r '.orderNumber // empty' "$WORKDIR/pl-issue-out.json")
+  expires=$(jq -r '.expiresAt // empty' "$WORKDIR/pl-issue-out.json")
+  rm -f "$WORKDIR/pl-issue-out.json"
+  [ -n "$url" ] && [ -n "$link_id" ] && [ -n "$expires" ] || { url=""; echo "FAIL: the link 201 lacked paymentUrl, id or expiresAt" >&2; exit 1; }
+  [ "$link_order" = "$order_no" ] || { url=""; echo "FAIL: the link names order '$link_order', not $order_no" >&2; exit 1; }
+  # The fragment form (owner decision 30-16 Task 1): a path token means the
+  # running core-java predates 30-16, and its URL would leak through access logs.
+  case "$url" in
+    https://*/pay\#token=?*) ;;
+    *) url=""; echo "FAIL: the issued URL is not https://<host>/pay#token=… (shape only; not shown)" >&2; exit 1 ;;
+  esac
+  (umask 077 && : > "$LINK_OUT") || { url=""; echo "FAIL: could not create --link-out $LINK_OUT" >&2; exit 1; }
+  chmod 600 "$LINK_OUT" || { url=""; echo "FAIL: could not chmod 600 $LINK_OUT" >&2; exit 1; }
+  printf '%s\n' "$url" > "$LINK_OUT"
+  url=""
+  echo "OK: the link URL is in $LINK_OUT (mode 600; not shown)"
+  echo "PAY-LINK order=$order_no link=$link_id expires=$expires"
+}
+
 # --selftest
 # ===========================================================================
 _ST_RESULTS=()
@@ -2703,12 +2823,13 @@ IDF
 
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
   why=""
-  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get; do
+  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link; do
     case "$sub" in
       order-transition) set -- --orders ORD-STUB-D001 --event submit ;;
       cancel-drafts)    set -- --orders ORD-STUB-D001,ORD-STUB-D002 ;;
       cancel-orphan-intents) set -- --intents pi_orphana,pi_orphanb ;;
       stripe-get)       set -- --path /v1/balance ;;
+      pay-link)         set -- --link-out "$ast/link-out/dry.url" ;;
       *)                set -- ;;
     esac
     _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${tool_args[@]}" --stage "$sub" "$@" --dry-run
@@ -2720,7 +2841,7 @@ IDF
     [ -z "$why" ] || break
   done
   set --
-  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=7 az_calls=0 curl_calls=0"
+  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=8 az_calls=0 curl_calls=0"
   else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
   _st_render
@@ -2741,6 +2862,7 @@ INTENTS=""
 EVENT=""
 STRIPE_PATH=""
 STRIPE_ACCOUNT=""
+LINK_OUT=""
 STRIPE_PATH_RE='^/v1/(webhook_endpoints|payment_intents|charges|refunds|transfers|payouts|accounts|subscriptions|invoices|events|balance)(/[A-Za-z0-9_]+)*(\?[]A-Za-z0-9_.=&[-]*)?$'
 
 while [ "$#" -gt 0 ]; do
@@ -2754,6 +2876,7 @@ while [ "$#" -gt 0 ]; do
     --event)           shift; [ "$#" -gt 0 ] || usage_error "--event needs submit|confirm|start-preparation"; EVENT="$1" ;;
     --path)            shift; [ "$#" -gt 0 ] || usage_error "--path needs a Stripe path (/v1/…)"; STRIPE_PATH="$1" ;;
     --account)         shift; [ "$#" -gt 0 ] || usage_error "--account needs a connected account id (acct_…)"; STRIPE_ACCOUNT="$1" ;;
+    --link-out)        shift; [ "$#" -gt 0 ] || usage_error "--link-out needs a file path"; LINK_OUT="$1" ;;
     --dry-run)         DRY_RUN=1 ;;
     --list-kv-objects) ACTION="list-kv-objects" ;;
     --selftest)        ACTION="selftest" ;;
@@ -2771,12 +2894,15 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents or stripe-get" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get or pay-link" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
+fi
+if [ "$STAGE" != pay-link ]; then
+  [ -z "$LINK_OUT" ] || usage_error "--link-out is taken by --stage pay-link only"
 fi
 if [ "$STAGE" != stripe-get ]; then
   [ -z "$STRIPE_PATH" ] || usage_error "--path is taken by --stage stripe-get only"
@@ -2833,6 +2959,12 @@ case "$STAGE" in
       || refuse stripe-path "'$STRIPE_PATH' is not an allowlisted evidence path (webhook_endpoints, payment_intents, charges, refunds, transfers, payouts, accounts, subscriptions, invoices, events, balance); nothing was called"
     [ -z "$STRIPE_ACCOUNT" ] || [[ "$STRIPE_ACCOUNT" =~ ^acct_[A-Za-z0-9]+$ ]] \
       || usage_error "--account must be a connected account id (acct_ followed by letters and digits)" ;;
+  pay-link)
+    [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage pay-link"
+    [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only"
+    [ -n "$LINK_OUT" ] || usage_error "--stage pay-link needs --link-out FILE (the payment-link URL is a bearer credential and is written only there, mode 600)"
+    [ ! -d "$LINK_OUT" ] || usage_error "--link-out '$LINK_OUT' is a directory; name a file"
+    [ -d "$(dirname "$LINK_OUT")" ] || usage_error "--link-out: the directory of '$LINK_OUT' does not exist" ;;
   *)
     [ -z "$ORDERS" ] || usage_error "--orders is not taken by --stage $STAGE"
     [ -z "$EVENT" ] || usage_error "--event is taken by --stage order-transition only" ;;
@@ -2853,6 +2985,7 @@ case "$STAGE" in
   list-orphan-intents)   list_orphan_intents_stage ;;
   cancel-orphan-intents) cancel_orphan_intents_stage ;;
   stripe-get)       stripe_get_stage ;;
+  pay-link)         pay_link_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
