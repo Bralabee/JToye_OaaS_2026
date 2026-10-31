@@ -23,11 +23,11 @@
 #   ("true" in compose, "false" in every k8s overlay) and why this script runs in
 #   the deploy jobs against the deployed realm before the flag may be flipped.
 #
-#   Open #299 is the same deployed-realm blind spot from the other side: the
-#   CUSTOMER realm (jtoye-customers / storefront-client) is unconfigured in every
-#   k8s environment, so nothing here can be said about its redirect URIs at all.
-#   This script checks ONE client of ONE realm per run; point it at the customer
-#   realm with KC_ISSUER/KC_CLIENT_ID/POST_LOGOUT_REDIRECT_URI once #299 is closed.
+#   Issue #299 shipped in plan 29-26: the CUSTOMER realm (jtoye-customers /
+#   storefront-client) is now wired as a split-horizon set across every k8s
+#   environment (#979). This script checks ONE client of ONE realm per run;
+#   point it at the customer realm with KC_ISSUER/KC_CLIENT_ID/POST_LOGOUT_REDIRECT_URI
+#   to verify its post-logout redirect URIs as well.
 #
 # WHAT IT ASSERTS (three arms, all three required — one passing arm proves nothing)
 #

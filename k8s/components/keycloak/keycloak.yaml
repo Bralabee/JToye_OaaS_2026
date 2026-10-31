@@ -96,9 +96,8 @@ spec:
               key: db-password
         # Issue #94 [P2-3]: the Agroal pool defaults to 100 and could exhaust the
         # shared server by itself. 20 is the Keycloak line item of the connection
-        # budget. NOTE: k8s/scripts/check-connection-math.sh reads that line item
-        # from docker-compose.full-stack.yml, not from here, so the two values must
-        # be changed together.
+        # budget; k8s/scripts/check-connection-math.sh reads both this value and
+        # docker-compose.full-stack.yml's KC_DB_POOL_MAX_SIZE and fails on drift (#979).
         - name: KC_DB_POOL_MAX_SIZE
           value: "20"
         # First-boot admin of the master realm (Keycloak 26 names; the KEYCLOAK_ADMIN
