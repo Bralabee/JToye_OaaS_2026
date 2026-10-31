@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The Key Vault Sync Gate Can Read What It Checks, and a `--prepare` Failure No Longer Rolls Staging Back (#1054) (#PRNUM) — 2026-10-31
+
+#1055's own merge deploy (run 41186785839) VOIDed in `--prepare`: `jtoye-ci` "cannot list resource secretproviderclasspodstatuses". My local proofs had run as the cluster admin, so this denial never showed.
+
+That run also exposed a wiring bug. `applied=true` was set before `--prepare`, so the rollback step fired. Its `rollout undo` stepped edge-go and frontend back to `ec73ddee`, the build before #1053, and core-java onto the same image. A second `rollout undo` restored all three to `d837b295`; digest parity: 3 MATCH, rc 0.
+
+- **`k8s/platform/rbac/ci-deployer.yaml`:** get and list on `secretproviderclasspodstatuses`, read-only. Applied with `staging-bootstrap.sh --stage ci-rbac`, and only the Role changed. `kubectl auth can-i --as jtoye-ci`:
+
+  | Verb | Before | After |
+  |---|---|---|
+  | list | no | yes |
+  | get | – | yes |
+  | create | – | no |
+  | delete | – | no |
+
+- **`ci-cd.yaml`:** `applied=true` moves after `--prepare` and before the apply. `--prepare` changes no Deployment, so its failure must not trigger `rollout undo`. `check-deploy-rollback-guard` and its selftest still pass.
+
+
 ### A Key Vault Object Added to a SecretProviderClass Reaches the Pod on the Deploy That Adds It (#1054) (#1055) — 2026-10-31
 
 On 2026-10-31, #1046's staging deploy passed every gate while core-java ran without `STRIPE_CONNECT_WEBHOOK_SECRET`, so the new Connect webhook route refused every event. 30-15's own verify caught it, and staging was repaired by hand. Three things combined:

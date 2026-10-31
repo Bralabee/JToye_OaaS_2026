@@ -2579,13 +2579,16 @@ jobs:
           done
           # From here on a failure means a deploy was STARTED, so the rollback step may undo it.
           # Set before the apply, not after: an apply that fails half way has changed Deployments.
-          echo "applied=true" >> "$GITHUB_OUTPUT"
           # Issue #1054: `apply -k` renders every Deployment before every SecretProviderClass, so a
           # rollout's new pod mounted the OLD object list, and with rotation off the driver never
           # adds a key to a synced Secret it already made. Apply the SecretProviderClasses first and
           # delete any driver-made Secret missing a declared key (the next mount recreates it);
           # then restart the consumers whose template the apply leaves unchanged.
+          # --prepare changes no Deployment, so `applied` is set AFTER it: a --prepare failure must
+          # not trigger the rollback, whose `rollout undo` would step a healthy release back one
+          # revision. Run 41186785839 did exactly that (edge-go and frontend to the previous build).
           bash scripts/csi-secret-sync.sh --prepare --context jtoye-stg-aks --overlay k8s/staging --state "$RUNNER_TEMP/csi-restart.txt"
+          echo "applied=true" >> "$GITHUB_OUTPUT"
           kubectl apply -k k8s/staging
           bash scripts/csi-secret-sync.sh --restart --context jtoye-stg-aks --state "$RUNNER_TEMP/csi-restart.txt"
 

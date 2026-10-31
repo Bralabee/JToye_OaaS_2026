@@ -77,6 +77,14 @@ rules:
   - apiGroups: ["secrets-store.csi.x-k8s.io"]
     resources: ["secretproviderclasses"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # READ ONLY (issue #1054): scripts/csi-secret-sync.sh reads each pod's mount status to prove
+  # every Key Vault object reached it. The driver writes these objects; CI never does. Evidence:
+  # run 41186785839 VOIDed on `cannot list resource "secretproviderclasspodstatuses"`, and
+  # `kubectl auth can-i list secretproviderclasspodstatuses --as <jtoye-ci>` read "no" before
+  # this rule while the same check on secretproviderclasses read "yes".
+  - apiGroups: ["secrets-store.csi.x-k8s.io"]
+    resources: ["secretproviderclasspodstatuses"]
+    verbs: ["get", "list"]
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates", "issuers"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
