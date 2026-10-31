@@ -367,3 +367,312 @@ describe("a customer opens a payment link, sees who and how much, presses Contin
     expect(document.body.innerHTML).not.toContain(TOKEN)
   })
 })
+
+// ---------------------------------------------------------------------------------------------
+// Task 2: every dead, failed and returning link says what happened, and nothing the page does
+// spends a link it should not. States are chosen from HTTP status and the preview's state enum only;
+// the server's prose (`problem()` detail) is never shown and never branched on (T-30-75).
+// ---------------------------------------------------------------------------------------------
+
+const DEAD = {
+  used: {
+    heading: "This payment link has already been opened",
+    body: "Each link opens once. If you haven't finished paying, ask the shop to send you a new link.",
+  },
+  gone: {
+    heading: "This payment link no longer works",
+    body: "It has expired, or the shop has sent you a newer one. Use the newest link you were sent, or ask the shop for a new one.",
+  },
+  notFound: {
+    heading: "We can't find this payment link",
+    body: "Check you opened the whole link from your message. If it still doesn't work, ask the shop to send it again.",
+  },
+  paid: {
+    heading: "This order is already paid",
+    body: `There's nothing more to pay for order ${ORDER_NUMBER}. You can close this page.`,
+  },
+}
+const NOT_USED = "Card payment isn't available right now. Your link hasn't been used, so you can try again later."
+const LINK_OPENED =
+  "We couldn't load the card form, and this link has now been opened. Ask the shop to send you a new link. Nothing has been charged."
+const CHECK_FAILED = "We couldn't check this link just now. Please try again."
+const PROCESSING = { heading: "Payment processing", body: "Your payment of £12.50 is being processed. You don't need to do anything else." }
+const REDIRECT_FAILED = {
+  heading: "Your payment didn't go through",
+  body: "Nothing has been charged. Ask the shop to send you a new link to try again.",
+}
+const NO_LINK = { heading: "Open your payment link", body: "To pay, open the link the shop sent you by text or message." }
+const SERVER_PROSE = "server prose the page must not branch on"
+
+const RESUME = {
+  clientSecret: CLIENT_SECRET,
+  stripeAccountId: ACCOUNT,
+  shopName: SHOP_NAME,
+  purpose: "UPFRONT",
+  amountPennies: 1250,
+  orderNumber: ORDER_NUMBER,
+}
+
+/** The alert carrying `text`, asserted to be role=alert with the amber inline-alert classes. */
+async function findAlert(text: string) {
+  const alert = await screen.findByRole("alert")
+  expect(alert).toHaveTextContent(text)
+  expect(alert).toHaveClass("rounded-lg", "bg-amber-50", "p-3", "text-sm", "text-amber-900")
+  return alert
+}
+
+const noContinue = () => expect(screen.queryByRole("button", { name: COPY.continue })).toBeNull()
+
+async function pressContinue() {
+  await activeLink()
+  fireEvent.click(screen.getByRole("button", { name: COPY.continue }))
+}
+
+describe("before redeem: a card form that cannot load never spends the link", () => {
+  it("with NO publishable key: the 'link hasn't been used' alert with Try again, and redeem is never called", async () => {
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    serve(ok(PREVIEW), ok(REDEEMED))
+    await pressContinue()
+
+    await findAlert(NOT_USED)
+    expect(screen.getByRole("button", { name: "Try again" })).toHaveClass("h-11")
+    expect(mockedRedeem).toHaveBeenCalledTimes(0)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+    // The customer still sees who and how much; the link is still in the address bar.
+    expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
+    expect(window.location.hash).toBe(`#token=${TOKEN}`)
+  })
+
+  it("when Stripe.js resolves null: the same alert, zero redeems, and Try again loads again and then pays", async () => {
+    serve(ok(PREVIEW), ok({ ...REDEEMED, stripeAccountId: null }))
+    mockedLoadStripe.mockImplementationOnce(() => Promise.resolve(null))
+    await pressContinue()
+
+    await findAlert(NOT_USED)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(1)
+    expect(mockedRedeem).toHaveBeenCalledTimes(0)
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    await screen.findByTestId("stripe-elements")
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(2)
+    expect(mockedRedeem).toHaveBeenCalledTimes(1)
+    expect(mockedLoadStripe.mock.invocationCallOrder[1]).toBeLessThan(mockedRedeem.mock.invocationCallOrder[0])
+  })
+
+  it("when Stripe.js REJECTS (network, CSP): the same alert and zero redeems", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    mockedLoadStripe.mockImplementationOnce(() => Promise.reject(new Error("Failed to load Stripe.js")))
+    await pressContinue()
+
+    await findAlert(NOT_USED)
+    expect(mockedRedeem).toHaveBeenCalledTimes(0)
+  })
+})
+
+describe("redeem refused: each status reads as its own state, without the server's prose", () => {
+  it.each([
+    [409, DEAD.used],
+    [410, DEAD.gone],
+    [404, DEAD.notFound],
+  ])("redeem %i", async (status, copy) => {
+    serve(ok(PREVIEW), () => Promise.reject(problem(status)))
+    await pressContinue()
+
+    const h1 = await screen.findByRole("heading", { level: 1, name: copy.heading })
+    expect(theOneH1()).toBe(h1)
+    expect(screen.getByText(copy.body)).toBeInTheDocument()
+    noContinue()
+    expect(screen.queryByTestId("stripe-elements")).toBeNull()
+    expect(screen.queryByText(SERVER_PROSE)).toBeNull()
+  })
+
+  it("redeem 502: the 'link has now been opened… Nothing has been charged' alert, no Continue", async () => {
+    serve(ok(PREVIEW), () => Promise.reject(problem(502)))
+    await pressContinue()
+
+    await findAlert(LINK_OPENED)
+    noContinue()
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+    expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
+  })
+
+  it("the Payment Element fails to load after redeem: the 'link has now been opened' alert replaces the form", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    await pressContinue()
+    await screen.findByTestId("stripe-elements")
+    fireEvent.click(screen.getByRole("button", { name: /simulate payment element load error/i }))
+
+    await findAlert(LINK_OPENED)
+    expect(screen.queryByTestId("stripe-elements")).toBeNull()
+    noContinue()
+  })
+})
+
+describe("after redeem: the intent's own status decides", () => {
+  it("an intent that already succeeded reads 'This order is already paid', no form, and the resume entry is dropped", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    mockedLoadStripe.mockImplementation(() => Promise.resolve(fakeStripe("succeeded")))
+    await pressContinue()
+
+    await screen.findByRole("heading", { level: 1, name: DEAD.paid.heading })
+    expect(screen.getByText(DEAD.paid.body)).toBeInTheDocument()
+    expect(screen.queryByTestId("stripe-elements")).toBeNull()
+    expect(window.history.state).toEqual({ __NA: true, routerKey: "kept" })
+  })
+
+  it("an intent that is processing reads 'Payment processing' with the amount", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    mockedLoadStripe.mockImplementation(() => Promise.resolve(fakeStripe("processing")))
+    await pressContinue()
+
+    await screen.findByRole("heading", { level: 1, name: PROCESSING.heading })
+    expect(screen.getByText(PROCESSING.body)).toBeInTheDocument()
+    expect(screen.queryByTestId("stripe-elements")).toBeNull()
+  })
+
+  it("a declined card keeps the form mounted with Stripe's own message, and Pay re-enables", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    mockStripeInstance = {
+      confirmPayment: jest.fn(() => Promise.resolve({ error: { message: "Your card was declined." } })),
+    }
+    await pressContinue()
+    await screen.findByTestId("stripe-elements")
+    fireEvent.click(screen.getByRole("button", { name: "Pay £12.50" }))
+
+    await screen.findByText("Your card was declined.")
+    expect(screen.getByTestId("stripe-elements")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pay £12.50" })).toBeEnabled())
+  })
+})
+
+describe("the preview itself: dead links read correctly and a failed check offers no Continue", () => {
+  it.each([
+    ["USED", DEAD.used],
+    ["EXPIRED", DEAD.gone],
+    ["REVOKED", DEAD.gone],
+    ["PAID", DEAD.paid],
+  ])("preview state %s", async (state, copy) => {
+    serve(ok({ ...PREVIEW, state }))
+    render(<PayClient />)
+
+    const h1 = await screen.findByRole("heading", { level: 1, name: copy.heading })
+    expect(theOneH1()).toBe(h1)
+    expect(screen.getByText(copy.body)).toBeInTheDocument()
+    noContinue()
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+    expect(mockedRedeem).toHaveBeenCalledTimes(0)
+  })
+
+  it("preview 404 reads 'We can't find this payment link'", async () => {
+    serve(() => Promise.reject(problem(404)))
+    render(<PayClient />)
+    await screen.findByRole("heading", { level: 1, name: DEAD.notFound.heading })
+    noContinue()
+    expect(screen.queryByText(SERVER_PROSE)).toBeNull()
+  })
+
+  it.each([
+    ["429", () => Promise.reject(problem(429))],
+    ["a network error", () => Promise.reject(new Error("Network Error"))],
+    ["503", () => Promise.reject(problem(503))],
+  ])("preview %s: 'Pay for your order' with no amount, the check-failed alert, and Try again re-asks the preview", async (_label, failure) => {
+    mockedPreview.mockReset()
+    serve(failure)
+    render(<PayClient />)
+
+    await findAlert(CHECK_FAILED)
+    expect(theOneH1()).toHaveTextContent("Pay for your order")
+    expect(screen.queryByText("£12.50")).toBeNull()
+    noContinue()
+
+    mockedPreview.mockImplementation(ok(PREVIEW))
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    await screen.findByRole("heading", { level: 1, name: `Pay ${SHOP_NAME}` })
+    expect(mockedPreview).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole("button", { name: COPY.continue })).toBeInTheDocument()
+    expect(mockedRedeem).toHaveBeenCalledTimes(0)
+  })
+
+  it("long shop names and order numbers wrap anywhere", async () => {
+    serve(ok(PREVIEW))
+    await activeLink()
+    expect(screen.getByText(SHOP_NAME, { selector: "p" })).toHaveClass("[overflow-wrap:anywhere]")
+    expect(screen.getByText(`Order ${ORDER_NUMBER}`)).toHaveClass("[overflow-wrap:anywhere]")
+    expect(theOneH1()).toHaveClass("[overflow-wrap:anywhere]")
+  })
+})
+
+describe("/pay with no link: Stripe's return, the reload resume, and the empty state", () => {
+  it.each([
+    ["succeeded", "succeeded", COPY.received, "You've paid £12.50. You can close this page."],
+    ["processing", "processing", PROCESSING.heading, PROCESSING.body],
+    ["failed", "requires_payment_method", REDIRECT_FAILED.heading, REDIRECT_FAILED.body],
+  ])("a redirect return with redirect_status=%s reads the intent on its account and shows the outcome", async (redirectStatus, piStatus, heading, body) => {
+    openLink(
+      `/pay?acct=${ACCOUNT}&payment_intent=pi_3018&payment_intent_client_secret=${CLIENT_SECRET}&redirect_status=${redirectStatus}`,
+      null
+    )
+    mockedLoadStripe.mockImplementation(() => Promise.resolve(fakeStripe(piStatus)))
+    render(<PayClient />)
+
+    await screen.findByRole("heading", { level: 1, name: heading })
+    expect(screen.getByText(body)).toBeInTheDocument()
+    expect(mockedLoadStripe).toHaveBeenCalledWith(PUBLISHABLE_KEY, { stripeAccount: ACCOUNT })
+    const stripe = await mockedLoadStripe.mock.results[0].value
+    expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith(CLIENT_SECRET)
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+  })
+
+  it("no token, no redirect query and no resume entry: 'Open your payment link', and nothing is asked of anyone", async () => {
+    openLink("/pay", null)
+    render(<PayClient />)
+
+    const h1 = await screen.findByRole("heading", { level: 1, name: NO_LINK.heading })
+    expect(theOneH1()).toBe(h1)
+    expect(screen.getByText(NO_LINK.body)).toBeInTheDocument()
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+    noContinue()
+  })
+
+  it("reload after redeem: the resume entry remounts the card form on the vendor's account, and paying drops the entry", async () => {
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    mockStripeInstance = { confirmPayment: jest.fn(() => Promise.resolve({})) }
+    render(<PayClient />)
+
+    await screen.findByTestId("stripe-elements")
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+    expect(mockedLoadStripe).toHaveBeenCalledWith(PUBLISHABLE_KEY, { stripeAccount: ACCOUNT })
+    const stripe = await mockedLoadStripe.mock.results[0].value
+    expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith(CLIENT_SECRET)
+    expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
+    expect(screen.getByText("£12.50")).toBeInTheDocument()
+    expect(screen.getByText(`Order ${ORDER_NUMBER}`)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Pay £12.50" }))
+    await screen.findByRole("heading", { level: 1, name: COPY.received })
+    expect(screen.getByText(COPY.receivedBody)).toBeInTheDocument()
+    expect(window.history.state).toEqual({ __NA: true })
+  })
+
+  it("reload after redeem when the intent has succeeded: 'This order is already paid' and the entry is dropped", async () => {
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    mockedLoadStripe.mockImplementation(() => Promise.resolve(fakeStripe("succeeded")))
+    render(<PayClient />)
+
+    await screen.findByRole("heading", { level: 1, name: DEAD.paid.heading })
+    expect(window.history.state).toEqual({ __NA: true })
+    expect(screen.queryByTestId("stripe-elements")).toBeNull()
+  })
+
+  it("reload after redeem when the intent cannot be read: the entry is dropped and the page asks for the link", async () => {
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    mockedLoadStripe.mockImplementation(() =>
+      Promise.resolve({ retrievePaymentIntent: jest.fn(() => Promise.reject(new Error("network"))) })
+    )
+    render(<PayClient />)
+
+    await screen.findByRole("heading", { level: 1, name: NO_LINK.heading })
+    expect(window.history.state).toEqual({ __NA: true })
+  })
+})
