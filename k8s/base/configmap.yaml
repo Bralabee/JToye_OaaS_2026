@@ -451,6 +451,15 @@ data:
   # core-java configMapKeyRef is NOT optional, so an overlay without the key fails the pod
   # at start (CreateContainerConfigError) instead of running under another environment's name.
 
+  # --- PAY-04 phone-verification OTP test seam (owner decision 30-16, plan 30-20) ---
+  # Consumed as core JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST -> application.yml
+  # jtoye.phone-verification.expose-otp-for-test. "true" returns the OTP in the public
+  # challenge response (testPreviewOtp). OFF here, so any overlay that does not say
+  # otherwise inherits OFF; only k8s/staging turns it on, and k8s/production states
+  # "false" explicitly. PhoneVerificationService refuses to start with it on unless
+  # stripe.environment-tag is local, test or staging (plan 30-17).
+  jtoye.phone-verification.expose-otp-for-test: "false"
+
   # --- Webhook delivery knobs — Phase 22 COMMS-* -----------------------------
   # SOURCE: all three byte-identical to their application.yml defaults
   # (`${WEBHOOK_DELIVERY_MAX_ATTEMPTS:8}`,
