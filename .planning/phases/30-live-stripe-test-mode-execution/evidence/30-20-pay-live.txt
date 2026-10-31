@@ -83,5 +83,18 @@
                             test 225 files tests=2045 failures=0 errors=0 skipped=1;
                             integrationTest 229 files tests=1402 failures=0 errors=0 skipped=1)
 
-## 6. PR
-<!-- pr -->
+## 6. Push and PR
+  2026-10-31T21:48 first push REFUSED by pre-push P-3 (gitleaks 8.30.1, range bd4a0159..HEAD, 37 commits): 2 generic-api-key hits
+    a) this file, line 61: the probe JSON body written in key/value form. My own unpushed commit: reworded and amended
+       (control: the old shape in a scratch dir -> gitleaks dir rc=1; reworded file -> rc=0).
+    b) frontend/app/pay/__tests__/pay-client.test.tsx:85 CLIENT_SECRET = "pi_3018_secret_abc" (30-18 commit 25126b7f, already
+       in history). Deviation Rule 3: ONE exact-value content allowlist in .gitleaks.toml, ^pi_3018_secret_abc$, regexTarget secret
+       (commit 6536d143). Controls on 8.30.1: pi_3018_secret_abc rc=0 ; pi_3018_secret_abd rc=1 ; a real-shaped
+       pi_<24>_secret_<25> rc=1. CI pins 8.27.2 (gitleaks.yml), so the CI job is the 8.27.2 read.
+    range rescan after both fixes: rc=0.
+  2026-10-31T21:50:05Z check-branch-behind-base.sh rc=0 (0 behind origin/main eff54aa0), immediately before the push.
+  2026-10-31T21:50:09Z push rc=0: bd4a0159..6536d143 (remote head bd4a0159 = the earlier 30-16 push, an ancestor: fast-forward).
+    pre-push: P-2 ok, P-3 ok (no secrets), P-4 ok.
+  2026-10-31T21:50:30Z gh pr create rc=0: PR #1064 https://github.com/Bralabee/JToye_OaaS_2026/pull/1064
+    body scan before create: attribution=0 closing=0 (positive control: "Co-Authored-By: x" + "Closes #957" -> 1 and 1).
+<!-- pr-after -->

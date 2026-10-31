@@ -1,8 +1,28 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 19/32 plans done; PR 5 (/pay page) built, 30-20 next (owner checkpoint)
+# Handoff: Phase 30 (The Money Path, Executed) executing, 19/32 plans done; PR 5 (/pay page) is #1064 OPEN, 30-20 Task 2 (owner review + squash-merge) next
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-31 late-night delta (RESUME HERE; everything below is history).**
+**2026-10-31 midnight delta (RESUME HERE; everything below is history).**
+- **PR 5 is #1064, OPEN, from `feat/30-pay-link-page`** (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 is done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
+  - Merged from the base: `e310356b` (picking up #1058). `HANDOFF.md` was resolved by hand with both sides kept (checked by content).
+  - OTP seam (owner decision expose-on-staging, `27ffb459`): base `"false"`, staging `"true"`, production `"false"`. Env `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`, plus a `${}` placeholder in `application.yml`. Production render: `true`=0, tag=1. Staging render: `true`=1.
+  - OpenAPI snapshot (`fd6250de`): red before (rc 1), green after (rc 0). Additive only: 4 paths, 2 schemas, 3 `stripeAccountId`.
+  - `.gitleaks.toml` (`6536d143`): one exact-value entry for the 30-18 fixture `pi_3018_secret_abc`. The pre-push range scan refused the first push because of it.
+  - RED on today's staging: `/pay` 404 with `strict-origin-when-cross-origin`; the preview returns 404 `not-found` "Resource not found".
+  - Per-PR suite all rc 0: core-java test+integrationTest (2045 + 1402), Jest 3260/3260, lint, and the script gates.
+- **Next: 30-20 Task 2, the owner's.** Run the D3 review series on #1064 from the repo checkout:
+  - round 1 `/code-review 1064 --comment`, with `oaas-tenancy-security` on the preview's tenant pinning;
+  - a resolution comment after every round;
+  - `/review-verify 1064` until a round admits zero.
+  - Then squash-merge per plan 30-04 Task 1 steps 1-4, and reply "merged <sha>".
+- **Then 30-20 Task 3.** Watch Deploy to Staging and the Staging Edge Probe, then check digest parity. Then the GREEN reads:
+  - `/pay` 200 with `no-referrer`;
+  - robots `Disallow: /pay`;
+  - an unknown-token preview returns 404 with detail "Payment link not found.". Status and type alone are identical to today's route-absent 404, so they cannot tell the two apart; or GET on the preview returns 405 (404 today).
+  - After that, the two `--stage pay-link` runs and the spec, as in the block below.
+- **Gap found:** no gate checks that a non-optional configMapKeyRef names a key present in every render. Deleting the base key left the whole render chain at rc 0, while the local render had no key. This is recorded only, not filed.
+
+**2026-10-31 late-night delta (history; superseded by the 2026-10-31 midnight block above).**
 - **Phase 30 is 19/32.** 30-16 to 30-19 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open. **Next is 30-20, the owner checkpoint for PR 5.**
   - **30-19 (`30-19-SUMMARY.md`).**
     - `robots.ts` disallows `/pay`.
