@@ -76,6 +76,17 @@ const nextConfig = {
         source: '/invite/:path*',
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
       },
+      // The payment-link page (PAY-04 / D-03, plan 30-19, T-30-77). Its link carries a
+      // single-use bearer token in the URL fragment; the page strips it to /pay, and
+      // no-referrer means not even /pay is handed to Stripe.js or anything else it loads.
+      //
+      // ORDER IS LOAD-BEARING, as for /invite: Next applies the LAST entry that sets a key
+      // for a path, so this must stay after the '/:path*' default.
+      // __tests__/header-snapshot.test.ts asserts the order and the match.
+      {
+        source: '/pay/:path*',
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      },
     ]
   },
 };
