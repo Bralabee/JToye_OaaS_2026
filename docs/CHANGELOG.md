@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A Key Vault Object Added to a SecretProviderClass Reaches the Pod on the Deploy That Adds It (#1054) (#1055) — 2026-10-31
+
+On 2026-10-31, #1046's staging deploy passed every gate while core-java ran without `STRIPE_CONNECT_WEBHOOK_SECRET`, so the new Connect webhook route refused every event. 30-15's own verify caught it, and staging was repaired by hand. Three things combined:
+
+- `kubectl apply -k` renders Deployments before SecretProviderClasses, so the new pod mounted the old object list.
+- The AKS addon runs with rotation off, so the driver never adds a key to a synced Secret it already made.
+- The env ref is optional, so the pod was Ready without the variable.
+
+The fix:
+
+- **`scripts/csi-secret-sync.sh`** (new):
+  - `--prepare` applies only the SecretProviderClasses before the overlay apply. It deletes any driver-made synced Secret that lacks a declared key, so the next mount recreates it.
+  - `--restart` restarts that Secret's consumers.
+  - `--check` is the gate: every synced Secret holds every declared key, and every running consumer pod mounted the full object set. Exit 2 is VOID.
+  - Values are never read, and a hand-made Secret is never deleted.
+- **`ci-cd.yaml`:** the staging deploy runs `--prepare`, the apply, then `--restart`. After digest parity it runs `--check`. The `--selftest` runs on every PR with 17 arms: the comparison (including the observed shape), `--prepare` refusing to read a VOID as clean, and which Secrets may be deleted.
+- **Proof:**
+
+  | Run | Result |
+  |---|---|
+  | `--check` on live staging | rc 0 |
+  | The same live reads with the Connect key removed | `STALE-SECRET … missing=connect-webhook-secret`, rc 1 |
+  | The same live reads with core-java's mount cut to 21 objects | `STALE-MOUNT … mounted=21 declared=22`, rc 1 |
+  | `--prepare` and `--restart` on staging | 12 SecretProviderClasses unchanged, 0 Secrets deleted, 0 restarts |
+
+  The first live run also caught a defect in the check itself, which is fixed here. Staging's `rabbitmq-default-user` is driver-made but carries no managed label, and the label-only read reported it missing.
+- **Review round 1 fixes (#1055):** `--restart` skips a workload the apply already rolled, so the job's `rollout undo` still reaches the previous release. `--prepare` VOIDs when its comparison could not run. Deletion requires the managed label or only workload owners, so an operator-owned Secret is never deleted.
+- **`frontend/package-lock.json`:** `follow-redirects` (via axios) bumped 1.16.1 → 1.16.2 for CVE-2026-116689 (HIGH, published after #1053). It failed this PR's Trivy gate and would fail `main`'s next run. Only the lockfile changes.
+- **Production:** not wired yet. The script fails closed outside `jtoye-staging`.
+
+
 ### Shop Cards Named by Their Own Text: the Stretched Link, and the Last axe 4.14 Exception Deleted (#1027) (#1053) — 2026-10-30
 
 axe-core 4.14 enables `label-content-name-mismatch` (WCAG 2.5.3, level A). A link that wraps a whole card and borrows its name through `aria-labelledby` can never contain its own visible text, so the `/shop` card failed it and `e2e/public-a11y.spec.ts` carried one scoped exception, `DESIGN_EXCEPTION_1027`. Owner ruling 2026-10-22, option 1, both cards.

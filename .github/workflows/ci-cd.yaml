@@ -1117,6 +1117,12 @@ jobs:
       - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
         run: bash scripts/check-deploy-digest-parity.sh --selftest
 
+      # Issue #1054: the Key Vault sync gate on fixtures — the observed 2026-10-31 shape (2 of 3
+      # keys, 21 of 22 objects) and each single defect red, a complete set green, empty or
+      # unreadable input VOID.
+      - name: Prove the Key Vault sync gate can fail (#1054 --selftest)
+        run: bash scripts/csi-secret-sync.sh --selftest
+
       # PR #984 review round 1 (F2): the staging rollback step must be gated on the apply step's
       # `applied` output, or any pre-apply failure (Key Vault pre-flight, kubeconfig, origin
       # guard) undoes healthy live staging. The check reads the workflow; the selftest plants
@@ -2574,7 +2580,14 @@ jobs:
           # From here on a failure means a deploy was STARTED, so the rollback step may undo it.
           # Set before the apply, not after: an apply that fails half way has changed Deployments.
           echo "applied=true" >> "$GITHUB_OUTPUT"
+          # Issue #1054: `apply -k` renders every Deployment before every SecretProviderClass, so a
+          # rollout's new pod mounted the OLD object list, and with rotation off the driver never
+          # adds a key to a synced Secret it already made. Apply the SecretProviderClasses first and
+          # delete any driver-made Secret missing a declared key (the next mount recreates it);
+          # then restart the consumers whose template the apply leaves unchanged.
+          bash scripts/csi-secret-sync.sh --prepare --context jtoye-stg-aks --overlay k8s/staging --state "$RUNNER_TEMP/csi-restart.txt"
           kubectl apply -k k8s/staging
+          bash scripts/csi-secret-sync.sh --restart --context jtoye-stg-aks --state "$RUNNER_TEMP/csi-restart.txt"
 
       - name: Wait for rollout
         run: |
@@ -2593,6 +2606,14 @@ jobs:
         # from the Configure kubeconfig step above (az aks get-credentials + kubelogin).
         run: |
           bash scripts/check-deploy-digest-parity.sh --context jtoye-stg-aks --tag "$DEPLOY_TAG"
+
+      - name: Key Vault objects reached the pods (issue #1054)
+        # Every synced Secret holds every key its SecretProviderClass declares, and every running
+        # consumer pod mounted the full object set. #1046's deploy passed every gate above while
+        # core-java ran without STRIPE_CONNECT_WEBHOOK_SECRET (an optional env ref, pod Ready).
+        # Exit 1 names the Secret or pod; exit 2 is VOID (nothing read) and fails the job too.
+        run: |
+          bash scripts/csi-secret-sync.sh --check --context jtoye-stg-aks
 
       - name: Health check after core-java deployment
         # issue #98 [P2-7] item 4: actuator now lives on the INTERNAL management
