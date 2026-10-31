@@ -1,0 +1,59 @@
+# 30-17 Task 1 break arms (clean -> A..E -> clean). Script: arms1.sh (scratchpad); each arm edits one committed
+# file, runs the named suite, restores the file from HEAD and compares the blob hash. Third run shown;
+# runs 1 and 2 gave identical rc and failure counts but printed no test names (summary grep bug).
+== 30-17 Task 1 break arms, HEAD b892c61c, 2026-10-31T20:20:15Z
+-- CLEAN (before)
+  unit rc=0
+name="uk.jtoye.core.payment.PaymentServiceTest" tests="53" skipped="0" failures="0" errors="0"
+name="uk.jtoye.core.storefront.GuestOrderStripeAccountTest" tests="7" skipped="0" failures="0" errors="0"
+  it rc=0
+name="uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest" tests="9" skipped="0" failures="0" errors="0"
+-- ARM A: owningAccount returns the account for ANY routing (destination included)
+  arm applied (sentinel present: ARM-A)
+  unit rc=1
+  RED: PaymentServiceTest > 30-17: a BALANCE intent under destination routing carries null FAILED
+  RED: PaymentServiceTest > 30-17: a DESTINATION charge lives on the platform — the result carries null, not the destination account FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.payment.PaymentServiceTest" tests="53" skipped="0" failures="2" errors="0"
+name="uk.jtoye.core.storefront.GuestOrderStripeAccountTest" tests="7" skipped="0" failures="0" errors="0"
+  restored core-java/src/main/java/uk/jtoye/core/payment/PaymentService.java blob=8a14da315e1fce7f46d32034dece0a5adaf3c7d8 (= HEAD)
+-- ARM B: replay retrieves the secret on the PLATFORM account again (single-argument retrieve)
+  arm applied (sentinel present: ARM-B)
+  unit rc=1
+  RED: GuestOrderStripeAccountTest > replay: a payable direct-charge DRAFT re-fetches its secret ON the connected account and names that account FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.payment.PaymentServiceTest" tests="53" skipped="0" failures="0" errors="0"
+name="uk.jtoye.core.storefront.GuestOrderStripeAccountTest" tests="7" skipped="0" failures="1" errors="0"
+  restored core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java blob=25c7191a3e2fa1b42c2f1e6e8a47acde595ef505 (= HEAD)
+-- ARM C: replay names the account even when the order has no intent
+  arm applied (sentinel present: ARM-C)
+  unit rc=1
+  RED: GuestOrderStripeAccountTest > replay: an order with no PaymentIntent (cash) carries null even where the shop now routes direct — as its first response did FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.payment.PaymentServiceTest" tests="53" skipped="0" failures="0" errors="0"
+name="uk.jtoye.core.storefront.GuestOrderStripeAccountTest" tests="7" skipped="0" failures="1" errors="0"
+  restored core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java blob=25c7191a3e2fa1b42c2f1e6e8a47acde595ef505 (= HEAD)
+-- ARM D: GuestOrderConfirmation omits a null stripeAccountId (NON_NULL)
+  arm applied (sentinel present: ARM-D)
+  unit rc=1
+  RED: GuestOrderStripeAccountTest > replay: an order with no PaymentIntent (cash) carries null even where the shop now routes direct — as its first response did FAILED
+  RED: GuestOrderStripeAccountTest > first response: a destination (platform) intent's confirmation carries stripeAccountId as JSON null — present, not absent FAILED
+  RED: GuestOrderStripeAccountTest > replay: a destination (platform) DRAFT carries stripeAccountId as JSON null FAILED
+  RED: > Task :core-java:test FAILED
+name="uk.jtoye.core.payment.PaymentServiceTest" tests="53" skipped="0" failures="0" errors="0"
+name="uk.jtoye.core.storefront.GuestOrderStripeAccountTest" tests="7" skipped="0" failures="3" errors="0"
+  restored core-java/src/main/java/uk/jtoye/core/storefront/dto/GuestOrderConfirmation.java blob=90c77be2ea90a206956eef032294f0f69d3ddd09 (= HEAD)
+-- ARM E: redeem never names the account
+  arm applied (sentinel present: ARM-E)
+  it rc=1
+  RED: PaymentLinkPreviewIntegrationTest > 30-17: redeem of a link whose order routes DIRECT names the connected account and fetches the secret for that order FAILED
+  RED: > Task :core-java:integrationTest FAILED
+name="uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest" tests="9" skipped="0" failures="1" errors="0"
+  restored core-java/src/main/java/uk/jtoye/core/payment/OrderPaymentLinkService.java blob=3eebc7ce08f9169bdff2db9fad83e345583b22a2 (= HEAD)
+-- CLEAN (after)
+  unit rc=0
+name="uk.jtoye.core.payment.PaymentServiceTest" tests="53" skipped="0" failures="0" errors="0"
+name="uk.jtoye.core.storefront.GuestOrderStripeAccountTest" tests="7" skipped="0" failures="0" errors="0"
+  it rc=0
+name="uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest" tests="9" skipped="0" failures="0" errors="0"
+== done 2026-10-31T20:23:43Z
