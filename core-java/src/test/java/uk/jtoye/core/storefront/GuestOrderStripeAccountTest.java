@@ -34,7 +34,6 @@ import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Optional;
@@ -56,8 +55,7 @@ import static org.mockito.Mockito.*;
  * on an idempotent replay and on the balance session, and that the field is PRESENT as JSON null —
  * not absent — when the intent lives on the platform.
  *
- * <p>Assertions read the serialised JSON, so they compile on a tree whose DTOs lack the field and
- * fail there on an assertion (30-17 RED).
+ * <p>Assertions read the serialised JSON, so "present as null" is distinguishable from "absent".
  */
 @ExtendWith(MockitoExtension.class)
 class GuestOrderStripeAccountTest {
@@ -133,7 +131,7 @@ class GuestOrderStripeAccountTest {
     @Test
     @DisplayName("first response: a direct-charge card order's confirmation names the connected account")
     void firstResponse_directCharge_namesConnectedAccount() throws Exception {
-        JsonNode json = placeCardOrder(intentResult("pi_first_direct", "pi_first_direct_secret_a", "acct_first_direct"));
+        JsonNode json = placeCardOrder(new PaymentIntentResult("pi_first_direct", "pi_first_direct_secret_a", "acct_first_direct"));
 
         assertEquals("pi_first_direct_secret_a", json.path("clientSecret").asString());
         assertTrue(json.has("stripeAccountId"), "the confirmation must carry stripeAccountId: " + json);
@@ -144,7 +142,7 @@ class GuestOrderStripeAccountTest {
     @Test
     @DisplayName("first response: a destination (platform) intent's confirmation carries stripeAccountId as JSON null — present, not absent")
     void firstResponse_destinationCharge_carriesJsonNull() throws Exception {
-        JsonNode json = placeCardOrder(intentResult("pi_first_dest", "pi_first_dest_secret_b", null));
+        JsonNode json = placeCardOrder(new PaymentIntentResult("pi_first_dest", "pi_first_dest_secret_b", null));
 
         assertTrue(json.has("stripeAccountId"),
                 "absent and null are different statements: null says 'platform', absent says nothing: " + json);
@@ -210,8 +208,7 @@ class GuestOrderStripeAccountTest {
     @Test
     @DisplayName("balance session: a split-deposit balance intent's session names the connected account")
     void balanceSession_namesConnectedAccount() throws Exception {
-        // Built BEFORE when(): an assertion thrown inside an unfinished stubbing poisons the next test.
-        PaymentIntentResult intent = intentResult("pi_bal_acct", "pi_bal_acct_secret_e", "acct_balance_split");
+        PaymentIntentResult intent = new PaymentIntentResult("pi_bal_acct", "pi_bal_acct_secret_e", "acct_balance_split");
         Order order = depositOrder();
         when(paymentService.isConfigured()).thenReturn(true);
         when(paymentService.createBalancePaymentIntent(order)).thenReturn(intent);
@@ -227,7 +224,7 @@ class GuestOrderStripeAccountTest {
     @Test
     @DisplayName("balance session: a platform balance intent's session carries stripeAccountId as JSON null")
     void balanceSession_platformIntent_carriesJsonNull() throws Exception {
-        PaymentIntentResult intent = intentResult("pi_bal_plat", "pi_bal_plat_secret_f", null);
+        PaymentIntentResult intent = new PaymentIntentResult("pi_bal_plat", "pi_bal_plat_secret_f", null);
         Order order = depositOrder();
         when(paymentService.isConfigured()).thenReturn(true);
         when(paymentService.createBalancePaymentIntent(order)).thenReturn(intent);
@@ -240,24 +237,6 @@ class GuestOrderStripeAccountTest {
     }
 
     // ------------------------------------------------------------------ helpers
-
-    /**
-     * Builds a {@link PaymentIntentResult} through its canonical three-component constructor,
-     * reflectively, so this file compiles on a tree whose record has two components and FAILS there
-     * on an assertion instead of a compile error (30-17 RED).
-     */
-    private static PaymentIntentResult intentResult(String id, String secret, String account) {
-        try {
-            Constructor<PaymentIntentResult> ctor =
-                    PaymentIntentResult.class.getDeclaredConstructor(String.class, String.class, String.class);
-            return ctor.newInstance(id, secret, account);
-        } catch (NoSuchMethodException e) {
-            fail("30-17: PaymentIntentResult must carry (paymentIntentId, clientSecret, stripeAccountId)");
-            return null;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-    }
 
     private JsonNode placeCardOrder(PaymentIntentResult intent) throws Exception {
         Product product = new Product();

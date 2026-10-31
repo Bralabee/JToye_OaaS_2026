@@ -1308,21 +1308,6 @@ class PaymentServiceTest {
     // platform charge live on the platform, so their result carries null — never the destination.
     // ------------------------------------------------------------------
 
-    /**
-     * Reads {@code PaymentIntentResult.stripeAccountId()} reflectively so this arm compiles on a tree
-     * whose record has no such component, and fails there on an ASSERTION (30-17 RED).
-     */
-    private static String stripeAccountIdOf(PaymentIntentResult result) {
-        try {
-            return (String) PaymentIntentResult.class.getMethod("stripeAccountId").invoke(result);
-        } catch (NoSuchMethodException e) {
-            fail("30-17: PaymentIntentResult must carry a stripeAccountId component naming the account that owns the intent");
-            return null;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
     private PaymentIntentResult createWithRouting(Optional<SettlementRoutingDecision> routing, boolean balance)
             throws Exception {
         when(stripeConnectService.resolveSettlementRouting(testOrder)).thenReturn(routing);
@@ -1357,7 +1342,7 @@ class PaymentServiceTest {
     void createPaymentIntent_directCharge_resultNamesConnectedAccount() throws Exception {
         PaymentIntentResult result = createWithRouting(
                 routing(SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR, "acct_30_17_direct"), false);
-        assertEquals("acct_30_17_direct", stripeAccountIdOf(result));
+        assertEquals("acct_30_17_direct", result.stripeAccountId());
     }
 
     @Test
@@ -1365,7 +1350,7 @@ class PaymentServiceTest {
     void createPaymentIntent_splitDeposit_resultNamesConnectedAccount() throws Exception {
         PaymentIntentResult result = createWithRouting(
                 routing(SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR, "acct_30_17_split"), false);
-        assertEquals("acct_30_17_split", stripeAccountIdOf(result));
+        assertEquals("acct_30_17_split", result.stripeAccountId());
     }
 
     @Test
@@ -1373,8 +1358,7 @@ class PaymentServiceTest {
     void createPaymentIntent_destinationCharge_resultCarriesNullAccount() throws Exception {
         PaymentIntentResult result = createWithRouting(
                 routing(SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR, "acct_30_17_dest"), false);
-        // Reflective read first: on a tree without the component this FAILS rather than passing on a null.
-        String account = stripeAccountIdOf(result);
+        String account = result.stripeAccountId();
         assertNull(account, "a destination intent is created on the platform account");
         assertNotEquals("acct_30_17_dest", account);
     }
@@ -1384,7 +1368,7 @@ class PaymentServiceTest {
     void createPaymentIntent_noRouting_resultCarriesNullAccount() throws Exception {
         when(stripeConnectService.resolveDestinationAccount(tenantId)).thenReturn(Optional.of("acct_30_17_legacy"));
         PaymentIntentResult result = createWithRouting(Optional.empty(), false);
-        String account = stripeAccountIdOf(result);
+        String account = result.stripeAccountId();
         assertNull(account, "a platform intent, destination or not, is not on a connected account");
     }
 
@@ -1393,7 +1377,7 @@ class PaymentServiceTest {
     void createBalancePaymentIntent_accountFollowsTheSameRule() throws Exception {
         PaymentIntentResult split = createWithRouting(
                 routing(SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR, "acct_30_17_bal"), true);
-        assertEquals("acct_30_17_bal", stripeAccountIdOf(split));
+        assertEquals("acct_30_17_bal", split.stripeAccountId());
     }
 
     @Test
@@ -1401,13 +1385,13 @@ class PaymentServiceTest {
     void createBalancePaymentIntent_destination_carriesNullAccount() throws Exception {
         PaymentIntentResult dest = createWithRouting(
                 routing(SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR, "acct_30_17_bal_dest"), true);
-        assertNull(stripeAccountIdOf(dest));
+        assertNull(dest.stripeAccountId());
     }
 
     @Test
     @DisplayName("30-17: a BALANCE intent with no routing carries null")
     void createBalancePaymentIntent_noRouting_carriesNullAccount() throws Exception {
         PaymentIntentResult none = createWithRouting(Optional.empty(), true);
-        assertNull(stripeAccountIdOf(none));
+        assertNull(none.stripeAccountId());
     }
 }
