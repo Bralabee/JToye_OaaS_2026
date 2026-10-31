@@ -1,0 +1,56 @@
+# 30-15 — PR 4 live on staging: the Connect secret reaches core-java, and payments/webhook/connect refuses forgeries
+# Recorded 2026-10-31 (UTC). Context jtoye-stg-aks, namespace jtoye-staging. No secret value printed anywhere below.
+
+## Task 1 — merge
+- PR 4 = #1046, squash-merged 2026-10-31 as ec73ddeeae4bf967c402b830b6b34350faf497ce (review series 1 -> 0 -> 0 admissible).
+- DEVIATION: the plan asks for the Key Vault object to be re-read IMMEDIATELY before the merge. That was not done in the same
+  sitting; the last pre-merge read was 30-14 Task 3 (2026-10-30, preflight 0 gaps). Re-read after the merge, 2026-10-31T00:37:15Z:
+  stripe-credentials--connect-webhook-secret  enabled=True  updated=2026-10-30T21:08:39+00:00   (az keyvault secret list, names only)
+- Merge run 41150777130 (ec73ddee): completed success, incl. Deploy to Staging and Staging Edge Probe. #1053 merged after it as
+  d837b2954ac3b5e888961a6d539c39c4e36b2722, run 41158741810 completed success, incl. Deploy to Staging and Staging Edge Probe.
+
+## Task 2 — digest parity (tag ec73ddee, read after its rollout)
+  core-java    sha256:053fe5b6eec4c57b280fc2744a88ac503d842eae97d6180cd7bbecd95d56e78b  MATCH
+  edge-go      sha256:cd7271c247b88befdeb690ca10a041a86124950899049db35cf5b803606eb96b  MATCH
+  frontend     sha256:bff8f844d237e8edd65762dccec3c737183a2f01f3b299d7c8ab3b1aca1a0184  MATCH
+PASS: every running container image digest across 3 service(s) is in the set of digests
+break arm, same run: --plant-stale -> rc 1 ("the Phase 26 stale-runtime shape, caught"). Real: rc 0.
+
+## Task 2 — FINDING: the green deploy did NOT deliver the Connect secret (observed, then repaired)
+02:08Z read after the ec73ddee rollout, the plan's own verify:
+  rc=0 krc=0 connect_env=1 tag_env=1 control_env=1 secret_key=0      <- the verify FAILS on secret_key
+  synced Secret stripe-credentials keys: api-key webhook-secret (created 2026-10-19T09:44:05Z)
+  pod core-java-57d6585656-gtc6p: SecretProviderClassPodStatus objects=21; /mnt/secrets-store had no connect object;
+  STRIPE_CONNECT_WEBHOOK_SECRET unset in the container (printenv | wc -c = 0). Pod Ready, 0 restarts: the env ref is optional: true.
+  live SPC core-java-kv: 22 objects, secretObjects maps connect-webhook-secret <- stripe-credentials--connect-webhook-secret.
+Cause 1 (ordering): `kubectl apply -k k8s/staging` renders every Deployment (lines 3605-5631) before every SecretProviderClass
+  (from line 7389), so the new core-java pod mounted the OLD 21-object SPC before the 22-object one was applied.
+Cause 2 (no resync): AKS addon azureKeyvaultSecretsProvider enableSecretRotation=false (driver v1.5.7). After #1053's rollout the
+  new pod core-java-5fd99bb4bd-qhfjn mounted 22 objects and the file was present, but the synced Secret kept its 2 keys and the
+  env stayed unset: an existing synced Secret is not updated on a later mount.
+Repair (staging only; core-java is the only consumer of stripe-credentials, RollingUpdate maxUnavailable 0):
+  2026-10-31T03:43:25Z kubectl delete secret stripe-credentials; rollout restart deploy/core-java -> rolled out 03:45:00Z, rc 0
+  synced Secret now: api-key connect-webhook-secret webhook-secret (created 2026-10-31T03:43:29Z)
+  STRIPE_CONNECT_WEBHOOK_SECRET in the container: 38 characters, prefix whsec_
+  the plan's verify re-run: see below.
+
+## Task 2 — the two negative arms (after the repair), payload carries `account`
+2026-10-31T03:45:50Z ARM1 unsigned  id=evt_forged_connect_unsigned_20261031T034550Z  code=400 curl_rc=0
+  body: type https://jtoye.uk/errors/missing-header, "Required request header 'Stripe-Signature' ... is not present"
+2026-10-31T03:45:50Z ARM2 forged    id=evt_forged_connect_signed_20261031T034550Z  Stripe-Signature t=<now>,v1=<HMAC-SHA256 of "t.payload" under a random 32-byte wrong secret, unprinted>  code=400 curl_rc=0
+  body: {"error":"Invalid Stripe signature"}
+  core-java log 03:45:50.589 WARN PaymentService "Stripe webhook signature verification failed: No signatures found matching the expected signature for payload"
+  core-java log 03:45:50.595 WARN PaymentController "Connect webhook rejected: Invalid Stripe signature"
+  This is why ARM2 is not vacuous: a blank Connect secret refuses BEFORE verification (the 30-12 dispatcher), so reaching
+  Stripe's signature check proves a non-blank secret was loaded. Before the repair the same request could not tell the two apart.
+
+## the plan's <automated> verifies, verbatim, 2026-10-31T03:46:42Z
+env/Secret: rc=0 krc=0 connect_env=1 tag_env=1 control_env=1 secret_key=1 verify_rc=0    (was secret_key=0 at 02:08Z, before the repair)
+probe:      code=400 curl_rc=0 verify_rc=0 
+
+## OUTSTANDING (not done in this sitting)
+- The ledger query (processed_stripe_events for both forged ids plus a positive control, one session, as jtoye_backup through the
+  29-18 relay pattern). By the code path no row can exist (the dedup INSERT follows verification, and both arms were refused
+  before it), but the plan requires the read and it is not recorded here.
+- Task 3: staging-card-checkout.spec.ts (the platform route still settles a real TEST payment) and the STAGING-CARD line.
+- The deploy-ordering defect above needs a fix in ci-cd.yaml before ANY later SecretProviderClass change; issue #1054.
