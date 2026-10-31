@@ -285,11 +285,15 @@ describe("a customer opens a payment link, sees who and how much, presses Contin
     expect(window.location.pathname).toBe("/pay")
     expect(window.location.hash).toBe("")
 
-    // The resume entry: Next's own keys kept, the client secret and display fields added, never the token.
+    // The resume entry is the ONLY key the page writes: the client secret and display fields, never the
+    // token. Next's own keys are NOT copied in: next/dist/client/components/app-router.js's patched
+    // replaceState treats any payload carrying `__NA` as one of its own internal writes and skips the
+    // router sync, so the router's canonical URL would keep "/pay#token=…" and its next history write
+    // would put the token back in the bar (PR #1064 review round 1, finding 1). Without `__NA` Next
+    // copies its keys itself and records "/pay" as the canonical URL.
     const state = replaceState.mock.calls[strip][0]
+    expect(state).not.toHaveProperty("__NA")
     expect(state).toEqual({
-      __NA: true,
-      routerKey: "kept",
       jtoyePayResume: {
         clientSecret: CLIENT_SECRET,
         stripeAccountId: ACCOUNT,
@@ -630,6 +634,22 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
     const h1 = await screen.findByRole("heading", { level: 1, name: NO_LINK.heading })
     expect(theOneH1()).toBe(h1)
     expect(screen.getByText(NO_LINK.body)).toBeInTheDocument()
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+    noContinue()
+  })
+
+  it("a bare redirect_status with no client secret is not Stripe's return: 'Open your payment link', never 'Payment received'", async () => {
+    // PR #1064 review round 1, finding 3: https://…/pay?redirect_status=succeeded, typed by hand, carried
+    // no intent to read, and the fallback `status ?? redirectStatus` rendered a success state on the
+    // public host with no payment behind it. redirect_status is only a fallback for an intent that
+    // cannot be read; with no payment_intent_client_secret there is nothing to fall back from.
+    openLink("/pay?redirect_status=succeeded", null)
+    render(<PayClient />)
+
+    const h1 = await screen.findByRole("heading", { level: 1, name: NO_LINK.heading })
+    expect(theOneH1()).toBe(h1)
+    expect(screen.queryByText(COPY.received)).not.toBeInTheDocument()
     expect(mockedPost).toHaveBeenCalledTimes(0)
     expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
     noContinue()
