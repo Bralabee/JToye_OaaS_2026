@@ -19,7 +19,10 @@
 #   (b) the custom-resource kinds the staging render applies: SecretProviderClass
 #       (D-23 Key Vault CSI), cert-manager Certificate and Issuer (D-20 Mailpit CA),
 #       and RabbitmqCluster (D-09). Built-in Writer does not cover CRD kinds, so a
-#       Role in jtoye-staging grants CRUD on exactly those four.
+#       Role in jtoye-staging grants CRUD on exactly those four;
+#   (c) READ ONLY on secretproviderclasspodstatuses, needed not by the apply but by the
+#       Key Vault sync gate (scripts/csi-secret-sync.sh, issue #1054), which proves every
+#       consumer pod mounted its full object set. The driver writes these; CI never does.
 # These are the measured minimum for the render as planned (D-32: "unless a step is
 # shown to need more"). Plan 29-11 records `kubectl auth can-i --as` for each verb
 # before and after this file is applied. A step that needs more adds a rule here

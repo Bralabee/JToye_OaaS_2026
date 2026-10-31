@@ -22,7 +22,9 @@ That run also exposed a wiring bug. `applied=true` was set before `--prepare`, s
   | create | – | no |
   | delete | – | no |
 
-- **`ci-cd.yaml`:** `applied=true` moves after `--prepare` and before the apply. `--prepare` changes no Deployment, so its failure must not trigger `rollout undo`. `check-deploy-rollback-guard` and its selftest still pass.
+- **`ci-cd.yaml`:** `applied=true` moves after `--prepare` and before the apply. `--prepare` changes no Deployment, so its failure must not trigger `rollout undo`.
+- **`check-deploy-rollback-guard.sh` R-6:** a step that runs `csi-secret-sync.sh --prepare` must set its output after that call. It reds on `origin/main`'s workflow (`applied` at line 2582, before `--prepare` at 2588) and on its own selftest plant, and it passes on this tree.
+- **`--prepare` plans, then deletes:** every refusal and workload lookup happens before the first delete. If a delete fails part way, the consumers of the Secrets already deleted are restarted, so their mounts recreate them.
 
 
 ### A Key Vault Object Added to a SecretProviderClass Reaches the Pod on the Deploy That Adds It (#1054) (#1055) — 2026-10-31
