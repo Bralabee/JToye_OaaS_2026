@@ -157,7 +157,7 @@ if [ "$MODE" = selftest ]; then
     jq -n --argjson i "$4" '{items:$i}' > "$1/pods.json"
     jq -n --argjson i "$5" '{items:$i}' > "$1/podstatus.json"
   }
-  S3="[$(spc core-java-kv stripe-credentials "api-key webhook-secret connect-webhook-secret" 22)]"
+  SPC3="[$(spc core-java-kv stripe-credentials "api-key webhook-secret connect-webhook-secret" 22)]"
   SEC3='[{"metadata":{"name":"stripe-credentials"},"data":{"api-key":"x","webhook-secret":"x","connect-webhook-secret":"x"}}]'
   SEC2='[{"metadata":{"name":"stripe-credentials"},"data":{"api-key":"x","webhook-secret":"x"}}]'
   P="[$(pod core-java-a core-java-kv)]"
@@ -175,15 +175,15 @@ if [ "$MODE" = selftest ]; then
       log "BAD  $1 -> rc $rc, wanted $2 matching '$3'; output: $out"; bad=$((bad+1))
     fi
   }
-  build "$T/green"        "$S3" "$SEC3" "$P" "$ST22";  arm "green: 3 keys, mount 22 of 22"                 0 ""                 "$T/green"
-  build "$T/2026-10-31"   "$S3" "$SEC2" "$P" "$ST21";  arm "the observed shape: 2 keys, mount 21 of 22"    1 "STALE-SECRET stripe-credentials core-java-kv missing=connect-webhook-secret" "$T/2026-10-31"
-  build "$T/stale-secret" "$S3" "$SEC2" "$P" "$ST22";  arm "remount alone (#1053's rollout): 2 keys, 22"   1 "^STALE-SECRET .*missing=connect-webhook-secret$" "$T/stale-secret"
-  build "$T/stale-mount"  "$S3" "$SEC3" "$P" "$ST21";  arm "Secret complete, pod mounted the old SPC"      1 "^STALE-MOUNT core-java-a core-java-kv mounted=21 declared=22$" "$T/stale-mount"
-  build "$T/no-secret"    "$S3" '[]'    "$P" "$ST22";  arm "consumer running, synced Secret absent"        1 "^MISSING-SECRET stripe-credentials core-java-kv pods=1$" "$T/no-secret"
-  build "$T/no-status"    "$S3" "$SEC3" "$P" '[]';     arm "consumer running with no pod status"           1 "^NO-POD-STATUS core-java-a core-java-kv$" "$T/no-status"
-  build "$T/pending"      "$S3" '[]'    "$PEND" '[]';  arm "control: only a Pending pod, no Secret yet"    0 ""                 "$T/pending"
+  build "$T/green"        "$SPC3" "$SEC3" "$P" "$ST22";  arm "green: 3 keys, mount 22 of 22"                 0 ""                 "$T/green"
+  build "$T/2026-10-31"   "$SPC3" "$SEC2" "$P" "$ST21";  arm "the observed shape: 2 keys, mount 21 of 22"    1 "STALE-SECRET stripe-credentials core-java-kv missing=connect-webhook-secret" "$T/2026-10-31"
+  build "$T/stale-secret" "$SPC3" "$SEC2" "$P" "$ST22";  arm "remount alone (#1053's rollout): 2 keys, 22"   1 "^STALE-SECRET .*missing=connect-webhook-secret$" "$T/stale-secret"
+  build "$T/stale-mount"  "$SPC3" "$SEC3" "$P" "$ST21";  arm "Secret complete, pod mounted the old SPC"      1 "^STALE-MOUNT core-java-a core-java-kv mounted=21 declared=22$" "$T/stale-mount"
+  build "$T/no-secret"    "$SPC3" '[]'    "$P" "$ST22";  arm "consumer running, synced Secret absent"        1 "^MISSING-SECRET stripe-credentials core-java-kv pods=1$" "$T/no-secret"
+  build "$T/no-status"    "$SPC3" "$SEC3" "$P" '[]';     arm "consumer running with no pod status"           1 "^NO-POD-STATUS core-java-a core-java-kv$" "$T/no-status"
+  build "$T/pending"      "$SPC3" '[]'    "$PEND" '[]';  arm "control: only a Pending pod, no Secret yet"    0 ""                 "$T/pending"
   build "$T/no-spc"       '[]'  "$SEC3" "$P" "$ST22";  arm "no SecretProviderClass read"                   2 "VOID"             "$T/no-spc"
-  build "$T/garbled"      "$S3" "$SEC3" "$P" "$ST22"; echo 'not json' > "$T/garbled/pods.json"
+  build "$T/garbled"      "$SPC3" "$SEC3" "$P" "$ST22"; echo 'not json' > "$T/garbled/pods.json"
                                                        arm "an unreadable pod list"                        2 "VOID"             "$T/garbled"
   # --prepare's reading of the comparison: a VOID is a VOID, never "nothing stale" (round 1, F3).
   pf() { local rc; prepare_findings "$2" 2>/dev/null; rc=$?

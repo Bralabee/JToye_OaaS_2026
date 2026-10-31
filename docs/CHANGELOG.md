@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A Key Vault Object Added to a SecretProviderClass Reaches the Pod on the Deploy That Adds It (#1054) — 2026-10-31
+### A Key Vault Object Added to a SecretProviderClass Reaches the Pod on the Deploy That Adds It (#1054) (#1055) — 2026-10-31
 
 On 2026-10-31, #1046's staging deploy passed every gate while core-java ran without `STRIPE_CONNECT_WEBHOOK_SECRET`, so the new Connect webhook route refused every event. 30-15's own verify caught it, and staging was repaired by hand. Three things combined:
 
@@ -34,6 +34,7 @@ The fix:
 
   The first live run also caught a defect in the check itself, which is fixed here. Staging's `rabbitmq-default-user` is driver-made but carries no managed label, and the label-only read reported it missing.
 - **Review round 1 fixes (#1055):** `--restart` skips a workload the apply already rolled, so the job's `rollout undo` still reaches the previous release. `--prepare` VOIDs when its comparison could not run. Deletion requires the managed label or only workload owners, so an operator-owned Secret is never deleted.
+- **`frontend/package-lock.json`:** `follow-redirects` (via axios) bumped 1.16.1 → 1.16.2 for CVE-2026-116689 (HIGH, published after #1053). It failed this PR's Trivy gate and would fail `main`'s next run. Only the lockfile changes.
 - **Production:** not wired yet. The script fails closed outside `jtoye-staging`.
 
 
