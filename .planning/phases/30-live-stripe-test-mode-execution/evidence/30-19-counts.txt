@@ -1,0 +1,22 @@
+# 30-19 counts
+## before --write
+7c7
+<   "jest_blocks": 3259,
+---
+>   "jest_blocks": 3260,
+11,12c11,12
+<   "playwright_blocks": 194,
+<   "playwright_specs": 48,
+---
+>   "playwright_blocks": 196,
+>   "playwright_specs": 49,
+14c14
+<   "total_logical_invocations": 6750
+---
+>   "total_logical_invocations": 6753
+(above: HEAD metrics vs written; docs-freshness was rc 1 before --write, check-doc-metrics rc 1 with 13 FAIL lines before the prose edit)
+## after
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+rc=0
