@@ -1694,6 +1694,10 @@ case "$method $base" in
   # The hand tools (plan 30-07): the vendor's order lists and transitions.
   "GET /api/v1/orders/status/"*) key="orders-status-${base##*/}"; code=200 ;;
   "POST /api/v1/orders") key=vendor-order-out; code=201 ;;
+  # pay-link (plan 30-19): the public phone verification, then the vendor's link.
+  "POST /api/v1/public/shops/staging-test-kitchen/phone-verification/send") key=pay-send; code=200 ;;
+  "POST /api/v1/public/shops/staging-test-kitchen/phone-verification/verify") key=pay-verify; code="${STUB_VERIFY_CODE:-200}" ;;
+  "POST /api/v1/orders/"*"/payment-links") key=pay-link-issue; code=201 ;;
   "GET /api/v1/orders/"*"/detail")
     oid="${base#/api/v1/orders/}"; oid="${oid%/detail}"
     if [ -f "$STUB_LOG_DIR/order-cancelled-$oid" ]; then key="detail-$oid-after"; else key="detail-$oid"; fi; code=200 ;;
@@ -2256,6 +2260,96 @@ IDF
         re_vcancel='^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/[^ ]+/cancel -> ' \
         cancel_re='^SEED-CANCEL order=ORD-STUB-D001 intent=pi_drafta intent_status=canceled order_status=CANCELLED livemode=false at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'
   local cd_args=("${tool_args[@]}" --stage cancel-drafts)
+
+  # ===== pay-link (plan 30-19, PAY-04 / D-03): a real payable link, made as a vendor
+  # and a customer would make it. The OTP, the token, the URL and the client secret
+  # each carry a marker (583961, STUBTOKpl77, STUBCSpl77), so a print is detectable.
+  local pl_out_dir="$ast/link-out" pl_oid="cccccccc-0000-4000-8000-000000000001" pl_lid="dddddddd-0000-4000-8000-000000000001"
+  local pl_url="https://app-staging.olajay.co.uk/pay#token=STUBTOKpl77"
+  local pl_leak_re='583961|STUBTOKpl77|STUBCSpl77|pay#token'
+  local pl_args=("${tool_args[@]}" --stage pay-link)
+  mkdir -p "$pl_out_dir"
+  _st_pay_fx() {   # OTP(or "") — the send answer; verify and issue are fixed
+    jq -n --arg o "$1" '{challengeId: "eeeeeeee-0000-4000-8000-000000000001", phoneNormalized: "+447700900123",
+        channel: "SMS", expiresAt: "2026-11-01T11:10:00Z", testPreviewOtp: (if $o == "" then null else $o end)}' \
+      > "$ast/resp/pay-send.json"
+    jq -n '{verified: true, phoneNormalized: "+447700900123", verifiedAt: "2026-11-01T11:01:00Z"}' > "$ast/resp/pay-verify.json"
+    jq -n --arg id "$pl_lid" --arg oid "$pl_oid" --arg u "$pl_url" '{id: $id, orderId: $oid, orderNumber: "ORD-STUB-V001",
+        purpose: "UPFRONT", amountPennies: 950, paymentUrl: $u, token: "STUBTOKpl77", stripePaymentIntentId: "pi_paylink",
+        clientSecret: "pi_paylink_secret_STUBCSpl77", expiresAt: "2026-11-01T12:00:00Z"}' > "$ast/resp/pay-link-issue.json"
+    _st_vendor_order DRAFT NONE
+  }
+  _st_pl_leaks() { command grep -cE "$pl_leak_re" <<<"$ST_OUT$ST_ERR$(cat "$ast/logs/curl.log")" || true; }
+
+  # --- pay-link-ok: send, order, verify, issue; the URL reaches only the mode-600 file
+  _st_pay_fx 583961
+  rm -f "$pl_out_dir/ok.url"; printf 'stale\n' > "$pl_out_dir/ok.url"; chmod 644 "$pl_out_dir/ok.url"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${pl_args[@]}" --link-out "$pl_out_dir/ok.url"
+  why=""
+  local pl_body pl_vbody pl_mode l_send l_ord l_ver l_iss
+  pl_body=$(command grep -F '"customerPhone"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  pl_vbody=$(command grep -F '"otp"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  pl_mode=$(stat -c %a "$pl_out_dir/ok.url" 2>/dev/null || echo none)
+  l_send=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/phone-verification/send -> 200$')
+  l_ord=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders -> 201$')
+  l_ver=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/phone-verification/verify -> 200$')
+  l_iss=$(_st_line "^POST https://api-staging\.olajay\.co\.uk/api/v1/orders/$pl_oid/payment-links -> 201$")
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "PAY-LINK order=ORD-STUB-V001 link=$pl_lid expires=2026-11-01T12:00:00Z" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ -z "$l_send" ] || [ -z "$l_ord" ] || [ -z "$l_ver" ] || [ -z "$l_iss" ]; then why="a call is missing: send=$l_send order=$l_ord verify=$l_ver issue=$l_iss"
+  elif ! { [ "$l_send" -lt "$l_ord" ] && [ "$l_ord" -lt "$l_ver" ] && [ "$l_ver" -lt "$l_iss" ]; }; then why="call order is not send<order<verify<issue: $l_send $l_ord $l_ver $l_iss"
+  elif [ "$(jq -cS 'del(.items)' <<<"${pl_body:-null}" 2>/dev/null)" != "$(jq -cnS --arg s "$sid" '{shopId: $s, customerName: "Staging Pay Link",
+        customerPhone: "+447700900123", customerEmail: "guest.staging+paylink@olajay.co.uk", fulfilmentType: "COLLECTION"}')" ]; then
+    why="the order body is not the pay-link customer: ${pl_body:-<none>}"
+  elif [ "$(jq -c '.items' <<<"$pl_body")" != "$(jq -cn --arg p "$p1" '[{productId: $p, quantity: 1}]')" ]; then why="the order is not one line of the first available dish"
+  elif ! command grep -qE 'Idempotency-Key: pay-link-[0-9]{8}T[0-9]{6}Z( |$)' "$ast/logs/curl.log"; then why="the order POST carries no Idempotency-Key pay-link-<UTC stamp>"
+  elif [ "$(jq -cS . <<<"${pl_vbody:-null}" 2>/dev/null)" != '{"otp":"583961","phone":"+447700900123"}' ]; then why="the verify body is not {phone, the OTP send returned}: ${pl_vbody:-<none>}"
+  elif [ "$(command grep -cF '"purpose":"UPFRONT"' "$ast/logs/bodies.log" || true)" -ne 1 ]; then why="the issue body is not {purpose: UPFRONT}"
+  elif [ "$pl_mode" != 600 ]; then why="the --link-out file is mode $pl_mode (want 600)"
+  elif [ "$(cat "$pl_out_dir/ok.url")" != "$pl_url" ]; then why="the --link-out file does not hold exactly the issued URL"
+  elif [ "$(_st_pl_leaks)" -ne 0 ]; then why="the OTP, token, URL or client secret was printed or put in argv ($(_st_pl_leaks) hit(s))"
+  elif [ "$(_st_leaks)" -ne 0 ]; then why="a secret marker was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS pay-link-ok rc=0 order=send<order<verify<issue file_mode=600 printed_otp_token_url_cs=0"
+  else _st_result "FAIL pay-link-ok $why"; fails=$((fails + 1)); fi
+
+  # --- pay-link-otp-hidden: staging keeps the OTP hidden (owner keep-hidden) -> refuse
+  _st_pay_fx ""
+  rm -f "$pl_out_dir/hidden.url"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${pl_args[@]}" --link-out "$pl_out_dir/hidden.url"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [otp-hidden]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [otp-hidden]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/public/shops/staging-test-kitchen/phone-verification/send ')" -ne 1 ]; then why="the send was not called exactly once (the refusal was not reached through it)"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/orders')" -ne 0 ]; then why="an order or a link was written before the refusal: $(command grep -E '/api/v1/orders' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ "$(_st_flow '/phone-verification/verify ')" -ne 0 ]; then why="verify was called"
+  elif [ -e "$pl_out_dir/hidden.url" ]; then why="the --link-out file was created"
+  elif command grep -q '^PAY-LINK ' <<<"$ST_OUT"; then why="a PAY-LINK line was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS pay-link-otp-hidden rc=1 tag=otp-hidden order_posts=0 issue_calls=0"
+  else _st_result "FAIL pay-link-otp-hidden $why"; fails=$((fails + 1)); fi
+
+  # --- pay-link-no-out: no --link-out -> usage error before any guard or call ------
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${pl_args[@]}"
+  if why=$(_st_refusal 2 "USAGE ERROR: --stage pay-link needs --link-out" 0 0); then _st_result "PASS pay-link-no-out rc=2 az_calls=0 curl_calls=0"
+  else _st_result "FAIL pay-link-no-out $why"; fails=$((fails + 1)); fi
+
+  # --- pay-link-unverified: the verify answers 422 -> rc 1, no link is issued -------
+  _st_pay_fx 583961
+  jq -n '{type: "about:blank", title: "Unprocessable Entity", status: 422, detail: "Invalid verification code."}' > "$ast/resp/pay-verify.json"
+  rm -f "$pl_out_dir/unverified.url"
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" STUB_VERIFY_CODE=422 -- "${pl_args[@]}" --link-out "$pl_out_dir/unverified.url"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '/phone-verification/verify -> 422$')" -ne 1 ]; then why="the verify was not answered 422 exactly once"
+  elif [ "$(_st_flow '/payment-links -> ')" -ne 0 ]; then why="a payment link was requested after a failed verification"
+  elif [ -e "$pl_out_dir/unverified.url" ]; then why="the --link-out file was created"
+  elif command grep -q '^PAY-LINK ' <<<"$ST_OUT"; then why="a PAY-LINK line was printed"
+  elif [ "$(_st_pl_leaks)" -ne 0 ]; then why="the OTP was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS pay-link-unverified rc=1 verify=422 issue_calls=0"
+  else _st_result "FAIL pay-link-unverified $why"; fails=$((fails + 1)); fi
+
 
   # --- cancel-one: GET order, GET intent, cancel intent, read back, cancel order, read back
   _st_cancel_fx "$oA" ORD-STUB-D001 pi_drafta DRAFT PENDING requires_payment_method false
