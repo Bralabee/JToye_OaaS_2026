@@ -419,8 +419,8 @@ dependencies:
     pin: "go-version: '1.27'"
     sites:
       - ".github/workflows/ci-cd.yaml:235"
-      - ".github/workflows/ci-cd.yaml:1432"
-      - ".github/workflows/ci-cd.yaml:1965"
+      - ".github/workflows/ci-cd.yaml:1453"
+      - ".github/workflows/ci-cd.yaml:1986"
     kind: toolchain
     owner: maintainer
     eol_slug: go

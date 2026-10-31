@@ -901,9 +901,6 @@ jobs:
           chmod +x ./k8s/scripts/check-connection-math.sh
           ./k8s/scripts/check-connection-math.sh
 
-      - name: Prove the connection-math gate can fail (D-25 per-target reserve, parse arms)
-        run: ./k8s/scripts/check-connection-math.sh --selftest
-
       - name: Assert the core-java, edge-go and frontend env contracts hold in both directions (D-07/D-08)
         run: |
           chmod +x ./k8s/scripts/check-env-contract.sh
@@ -913,129 +910,6 @@ jobs:
         run: |
           chmod +x ./k8s/scripts/check-render-invariants.sh
           ./k8s/scripts/check-render-invariants.sh
-
-      # INV-7 asserts the WHOLE NetworkPolicy allow-list (Phase 29, plan 29-02).
-      # This proves it can fail: five holes planted in a copy of k8s/ (an extra
-      # egress port, the dropped 9091 scrape rule, an undeclared policy, an
-      # undeclared ipBlock shape, a CiliumNetworkPolicy), each must exit 1 with
-      # the message naming it, and the clean copy must exit 0.
-      - name: Prove INV-7 catches planted NetworkPolicy holes (--selftest-inv7)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv7
-
-      # Plan 29-08: the same shape for INV-15 (per-host TLS, one cert-manager
-      # owner per Secret, staging noindex with no base-header drift, production
-      # indexable, every nginx annotation Traefik-documented). Each planted hole
-      # must exit with its expected rc and name the hole; the clean copy exits 0.
-      - name: Prove INV-15 catches planted Ingress holes (--selftest-inv15)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv15
-
-      # Plan 29-22: the same shape for INV-16 (core-java's truststore is the JDK
-      # cacerts PLUS the cluster CA, never the CA alone; JVM flags arrive as a
-      # literal JAVA_TOOL_OPTIONS, never JAVA_OPTS; staging must build it).
-      - name: Prove INV-16 catches planted truststore holes (--selftest-inv16)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv16
-
-      # Plan 29-26 (#859): INV-17 keeps the customer realm's require-verified-email
-      # gate on in every deployed core-java (a literal, an app-config value, a
-      # relaxed-binding spelling, the dev profile, application.yml's default).
-      # Six planted holes; the default line removed is a PARSE ERROR (rc 2).
-      - name: Prove INV-17 catches a disabled require-verified-email (--selftest-inv17)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv17
-
-      # Plan 29-22 (D-33): INV-18 keeps the testers' public mail UI authenticated
-      # and on 8025 only, keeps every mailpit Service ClusterIP and keeps Mailpit
-      # from sending (no relay/forward, Send API locked). Six planted holes.
-      - name: Prove INV-18 catches planted mail-UI holes (--selftest-inv18)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv18
-
-      # #976: INV-20 keeps Keycloak from believing X-Forwarded-* from every source
-      # address. A Keycloak container with proxy headers on, in ANY spelling (env,
-      # -D in JAVA_OPTS*, command/args, envFrom, any ConfigMap), must carry exactly
-      # one trusted-addresses setting that resolves, in the render, to a non-empty
-      # private CIDR list without whitespace (never /0, never public); the legacy
-      # KC_PROXY and any source the render cannot read are refused.
-      # 39 planted arms (the two long-value controls must PASS, including the value
-      # folded before a `#`) and 5 unit probes (the unquoting helpers, the image
-      # finder and the path walker); the clean copy must exit 0. The path walker is
-      # k8s/scripts/render_paths.py: python3 with PyYAML is the runner's (the Key
-      # Vault chain gate below needs the same); a missing one is a PARSE ERROR.
-      - name: Prove INV-20 catches planted Keycloak proxy-trust holes (--selftest-inv20)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv20
-
-      # #968 item 3: INV-21 keeps staging Grafana behind the same Traefik basic-auth chain as
-      # the mail UI: every Ingress route to Service grafana carries auth-type basic and an
-      # auth-secret that a SecretProviderClass syncs as key `auth`, and every Service reaching Grafana's
-      # pod is ClusterIP. Ten planted holes (an open route, a cross-namespace secret, the wrong
-      # secret type, an unsynced secret, the wrong synced key, a second open route, no route at
-      # all, which is a PARSE ERROR, rc 2, a LoadBalancer Service, a second Service behind an
-      # open Ingress, and an open spec.defaultBackend).
-      - name: Prove INV-21 catches planted Grafana edge-auth holes (--selftest-inv21)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv21
-
-      # #999: INV-22 keeps staging core-java's metrics labelled environment="staging" (the prod
-      # profile it runs says "production"): the overlay must set MANAGEMENT_METRICS_TAGS_ENVIRONMENT
-      # to its label, once, from a source the render can read, and production may not override it.
-      # Ten planted holes (the override removed, a wrong value, an empty one, a misspelt name
-      # that binds nothing, two spellings, an unreadable Secret source, base bleeding "staging"
-      # into production, application-prod.yml losing the key, which is a PARSE ERROR, rc 2, an
-      # overlay INV22_EXPECTED does not name, and k8s/local losing its override).
-      - name: Prove INV-22 catches planted environment-label holes (--selftest-inv22)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv22
-
-      # Issue #972: INV-23 keeps Mailpit's certificate-reload supervisor in the render (Mailpit
-      # reads its TLS certificate only at start, so without it a cert-manager renewal leaves the
-      # running process serving the old certificate until it expires and every STARTTLS fails)
-      # and keeps MP_SMTP_REQUIRE_STARTTLS true. Eight planted holes (no supervisor, an exec of
-      # Mailpit, a hash of the wrong file, no comparison, no stop, STARTTLS off, the markers in a
-      # sidecar only, a quoted exec).
-      - name: Prove INV-23 catches planted Mailpit cert-reload holes (--selftest-inv23)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv23
-
-      # Issue #1025: INV-24 keeps every CORS-enabled Ingress admitting every header the browser
-      # sends cross-origin (the inventory is scanned from frontend/ on each run; server-only code
-      # is excluded). Base shipped ingress-nginx's default list, without Idempotency-Key, so every
-      # storefront order POST on staging died at the preflight. Seventeen planted holes (a base drop,
-      # an SSE drop, an overlay putting the old list back, a wildcard, the annotation removed, and a
-      # new browser header in each shape the scanner reads: headers object, headers.set, bracket
-      # assignment, an object built first and passed later, headers["X"] =, headers.X =, new
-      # Headers pairs on one line and across lines, a *-server.ts file with no server-only import, a
-      # route.ts outside app/, a stale allow-list entry, and an unquoted single-word header key such
-      # as { Prefer: v }), three controls that must PASS (two server-only files and an object of
-      # ordinary unquoted keys), and two PARSE ERRORs (rc 2): a blind scan, and a scanner regex
-      # that some awk refuses (the gawk-only break of run 39742059553; the gate runs the scanner
-      # under every awk on the machine and refuses disagreement).
-      - name: Prove INV-24 catches planted CORS allow-header holes (--selftest-inv24)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-inv24
-
-      # Issue #992: every rendered-YAML reader in check-render-invariants.sh now reads
-      # through render_paths.py (PyYAML) instead of line-oriented awk. Nine planted
-      # folded/multi-line scalar evasions (INV-1, INV-2, INV-3, INV-6, INV-12, INV-15,
-      # INV-16, LOC-3, LOC-2) that previously passed the raw-YAML awk readers must each
-      # fail (rc 1) on the PyYAML path table.
-      - name: Prove render invariants catch folded/multi-line YAML scalar evasions (--selftest-fold)
-        run: ./k8s/scripts/check-render-invariants.sh --selftest-fold
-
-      # The live half of #1025 runs in staging-edge-probe after a deploy; its judge is proven
-      # here on every change against synthetic preflight responses (today's staging list must
-      # fail, the fixed list pass, a wildcard / missing header / wrong origin / non-2xx status /
-      # no POST in allow-methods / no credentials true / a repeated ACAO or ACAH fail, empty VOID).
-      - name: Prove the CORS preflight probe can fail (check-cors-preflight.sh --selftest)
-        run: bash scripts/check-cors-preflight.sh --selftest
-
-      # Plan 29-12 (D-23): the Key Vault chain of every target that includes
-      # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
-      # has exactly one producing SecretProviderClass that the consuming pod mounts,
-      # each SPC's clientID is its pod's ServiceAccount client-id, and every
-      # identifier is GUID-shaped (an unreplaced placeholder fails). The selftest
-      # runs first: six planted breaks into a copy of the real staging render
-      # (an undeclared key, two producers, a clientID mismatch, a consumer that
-      # does not mount its producer, two workloads sharing one identity, an
-      # objectName not mounted) must each exit 1,
-      # three VOID arms (no SPC, no PyYAML, no kubectl) must exit 2, and the real
-      # render must exit 0. python3 here is the runner's, with PyYAML (the same
-      # interpreter ops-contracts' horizons gate uses).
-      - name: Prove the Key Vault chain gate catches planted breaks (29-12 --selftest)
-        run: bash k8s/scripts/check-keyvault-chain.sh --selftest
 
       - name: Assert the Key Vault chain holds on every azure-keyvault target (29-12)
         run: bash k8s/scripts/check-keyvault-chain.sh
@@ -1061,134 +935,275 @@ jobs:
           echo "platform_kustomizations=$n bad=$bad"
           [ "$n" -ge 4 ] && [ "$bad" -eq 0 ]
 
-      # The staging bootstrap's guards are shown refusing before anything trusts
-      # them (29-03): no context, the employer's sipbihs2aks, an unreadable or
-      # ambiguous identity file, a stale or re-pointed server URL, a tampered
-      # upstream manifest, a missing kubelogin, and a dry run that mutates nothing
-      # — each against stub kubectl/kubelogin/curl, so no cluster and no network.
-      - name: Prove the staging bootstrap guards refuse (29-03 --selftest)
-        run: bash scripts/staging-bootstrap.sh --selftest
-
-      # Plan 29-04: the staging realm assertion suite refuses the raw dev template
-      # and passes the staging transform of BOTH templates, built-in tokens survive,
-      # a surviving secret placeholder is named, and --apply refuses no context, the
-      # employer context and a stale server before the Azure guard is sourced (stub
-      # kubectl/kubelogin/curl/az, so no cluster, no network, no Azure).
-      - name: Prove the staging realm transform and import guards (29-04 --selftest)
-        run: bash scripts/staging-realm-import.sh --selftest
-
-      # Plan 29-06: the staging seed refuses the production and local API bases,
-      # no context, a stale server URL (the shared staging_kube_guard), and any
-      # Ready core-java pod not running SPRING_PROFILES_ACTIVE=prod (a dev pod, a
-      # mixed rollout, no Ready pod: DemoDataSeeder must never run on staging);
-      # its dry run calls nothing; and its per-run realm-admin operator is
-      # DELETEd after a failing step and after a successful run, with no Key
-      # Vault value in any curl argv or output (stubs only: no cluster, no Azure).
-      - name: Prove the staging seed guards and operator cleanup (29-06 --selftest)
-        run: bash scripts/staging-seed.sh --selftest
-
-      # Plan 29-14: deploy.sh refuses no --context, the employer's sipbihs2aks, a
-      # context whose server is not the staging API server, a non-40-hex
-      # --image-tag and a failed (or VOID) staging preflight, all before any apply;
-      # --render-only retags exactly core-java/frontend/edge-go through a wrapper
-      # and leaves the committed overlay byte-identical; a failed rollout is undone
-      # with no DEPLOYED_SHA record, and a green one ends on that record (stub
-      # kubectl/kubelogin and a stub preflight: no cluster, no Azure).
-      - name: Prove the deploy script's guards and DEPLOYED_SHA record (29-14 --selftest)
-        run: bash scripts/deploy.sh --selftest
-
-      # Issue #969: the CI deploy-staging job's wait on every workload it did not retag. The same
-      # library deploy.sh uses; a prometheus Deployment on an unpullable image exits 1 (the
-      # three-app wait it replaces certifies the same render), nothing is undone, a render that
-      # fails or lacks a retagged name is VOID (rc 2).
-      - name: Prove the other-workloads wait can fail (#969 --selftest)
-        run: bash scripts/wait-other-workloads.sh --selftest
-
-      # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
-      # mismatch, plant-stale, empty actual, zero services, no context, employer
-      # context, short tag, fixture-with-context) against fixtures: no cluster.
-      # Issue #985: the drain arms feed the terminating-pod filter (POD_JQ) pod-list
-      # JSON: an old pod that drains (pass), one that stays (fail, and the other
-      # services are still compared), an old image on a live pod (fail), and a
-      # zero or non-numeric --drain-timeout (VOID). Needs jq (present on the runner).
-      # C-9: a running or ready container whose imageID has no @sha256 digest is VOID
-      # naming the pod and container (three arms), and a Pending/ContainerCreating
-      # container with an empty imageID is not (two control arms).
-      - name: Prove the deploy digest-parity gate can fail (29-14 --selftest)
-        run: bash scripts/check-deploy-digest-parity.sh --selftest
-
-      # Issue #1054: the Key Vault sync gate on fixtures — the observed 2026-10-31 shape (2 of 3
-      # keys, 21 of 22 objects) and each single defect red, a complete set green, empty or
-      # unreadable input VOID.
-      - name: Prove the Key Vault sync gate can fail (#1054 --selftest)
-        run: bash scripts/csi-secret-sync.sh --selftest
-
       # PR #984 review round 1 (F2): the staging rollback step must be gated on the apply step's
       # `applied` output, or any pre-apply failure (Key Vault pre-flight, kubeconfig, origin
       # guard) undoes healthy live staging. The check reads the workflow; the selftest plants
       # each hole (bare failure(), wrong output, output set after the apply, no step id, no
       # rollback step) and requires the check to catch every one.
       - name: Assert the staging rollback only runs once the apply was reached (r1 F2)
+        run: bash scripts/check-deploy-rollback-guard.sh
+
+      # Run all 22 hermetic --selftest* suites in parallel across all runner vCPUs (LPT-ordered so
+      # the longest suites --selftest-inv20 and --selftest-inv24 start immediately). Every suite
+      # operates inside its own mktemp -d directory and shares zero mutable state; each invocation
+      # keeps its exact `<path>/<script>.sh --selftest` token on its own non-comment line so
+      # scripts/check-gate-enforcement.sh Pass 2 verifies every one.
+      - name: Prove all K8s and staging gate selftests can fail (parallel across vCPUs)
         run: |
-          bash scripts/check-deploy-rollback-guard.sh
-          bash scripts/check-deploy-rollback-guard.sh --selftest
+          st_dir=$(mktemp -d)
+          trap 'rm -rf "$st_dir"' EXIT
+          max_jobs=$(nproc 2>/dev/null || echo 4)
+          [ "$max_jobs" -ge 2 ] || max_jobs=2
+          idx=0
+          pids=()
+          labels=()
+          run_st() {
+            idx=$((idx + 1))
+            local my_idx=$idx
+            labels[$my_idx]="$*"
+            while [ "$(jobs -rp | wc -l)" -ge "$max_jobs" ]; do
+              wait -n 2>/dev/null || true
+            done
+            (
+              set +e; "$@" >"$st_dir/$my_idx.log" 2>&1
+              echo $? >"$st_dir/$my_idx.rc"
+            ) &
+            pids[$my_idx]=$!
+          }
 
-      # Plan 29-22 (D-33): every live mail-UI probe arm (UI-1..UI-8) FAILS on a
-      # planted wrong response (an open UI, a wrong password accepted, http serving
-      # the UI, SMTP published, the default certificate, relay on, the Send API
-      # open, no 429) and passes on the right one; stubbed curl/openssl/dig/
-      # kubectl/az and TCP connect: no cluster, no Azure, no network.
-      - name: Prove the mail-UI probe's arms can fail (29-22 --selftest)
-        run: bash scripts/staging-mail-ui.sh --selftest
+          # #976: INV-20 keeps Keycloak from believing X-Forwarded-* from every source
+          # address. A Keycloak container with proxy headers on, in ANY spelling (env,
+          # -D in JAVA_OPTS*, command/args, envFrom, any ConfigMap), must carry exactly
+          # one trusted-addresses setting that resolves, in the render, to a non-empty
+          # private CIDR list without whitespace (never /0, never public); the legacy
+          # KC_PROXY and any source the render cannot read are refused.
+          # 39 planted arms (the two long-value controls must PASS, including the value
+          # folded before a `#`) and 5 unit probes (the unquoting helpers, the image
+          # finder and the path walker); the clean copy must exit 0. The path walker is
+          # k8s/scripts/render_paths.py: python3 with PyYAML is the runner's (the Key
+          # Vault chain gate below needs the same); a missing one is a PARSE ERROR.
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv20
 
-      # C-1 (Phase 29 follow-ups, plan item 4): the four staging operator scripts below each have
-      # a --selftest that was written, run by hand and then wired nowhere, so none of them could
-      # fail a pull request. Each is stub-only (no cluster, no Azure, no network) and runs here
-      # because this job already has kubectl, python3 with PyYAML and the runner's openssl.
-      # Each was shown red on a planted break and clean again before being wired.
-      #
-      # Plan 29-12/29-22: the Key Vault secret generator, against a stub vault. Generate and
-      # set-external are write-once (a second run writes nothing), no secret value reaches argv,
-      # every value shape holds (hex64, alnum32, b64url32, the htpasswd-apr1 composite), an
-      # unclassified object refuses before any write, the leak scan names a hit, and a missing
-      # python is VOID (rc 2).
-      - name: Prove the staging secret generator's arms can fail (--selftest)
-        run: bash scripts/staging-secrets.sh --selftest
+          # Issue #1025: INV-24 keeps every CORS-enabled Ingress admitting every header the browser
+          # sends cross-origin (the inventory is scanned from frontend/ on each run; server-only code
+          # is excluded). Base shipped ingress-nginx's default list, without Idempotency-Key, so every
+          # storefront order POST on staging died at the preflight. Seventeen planted holes (a base drop,
+          # an SSE drop, an overlay putting the old list back, a wildcard, the annotation removed, and a
+          # new browser header in each shape the scanner reads: headers object, headers.set, bracket
+          # assignment, an object built first and passed later, headers["X"] =, headers.X =, new
+          # Headers pairs on one line and across lines, a *-server.ts file with no server-only import, a
+          # route.ts outside app/, a stale allow-list entry, and an unquoted single-word header key such
+          # as { Prefer: v }), three controls that must PASS (two server-only files and an object of
+          # ordinary unquoted keys), and two PARSE ERRORs (rc 2): a blind scan, and a scanner regex
+          # that some awk refuses (the gawk-only break of run 39742059553; the gate runs the scanner
+          # under every awk on the machine and refuses disagreement).
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv24
 
-      # The Key Vault pre-flight that decides whether a deploy may mount: against a stub vault
-      # it must name a missing object, a missing access grant, a disabled or empty object, a
-      # stale identity file, a wrong-prefix Stripe key and an invalid external value, and
-      # --names-only must read no value at all (the detector is shown to fire in full mode).
-      - name: Prove the staging secrets pre-flight's arms can fail (--selftest)
-        run: bash scripts/staging-secrets-preflight.sh --selftest
+          # Plan 29-12 (D-23): the Key Vault chain of every target that includes
+          # k8s/components/azure-keyvault, on the render. Every consumed (Secret, key)
+          # has exactly one producing SecretProviderClass that the consuming pod mounts,
+          # each SPC's clientID is its pod's ServiceAccount client-id, and every
+          # identifier is GUID-shaped (an unreplaced placeholder fails). The selftest
+          # runs first: six planted breaks into a copy of the real staging render
+          # (an undeclared key, two producers, a clientID mismatch, a consumer that
+          # does not mount its producer, two workloads sharing one identity, an
+          # objectName not mounted) must each exit 1,
+          # three VOID arms (no SPC, no PyYAML, no kubectl) must exit 2, and the real
+          # render must exit 0. python3 here is the runner's, with PyYAML (the same
+          # interpreter ops-contracts' horizons gate uses).
+          run_st bash k8s/scripts/check-keyvault-chain.sh --selftest
 
-      # Plan 29-20: the PITR drill's own safety predicates, against stubs (no cluster, no
-      # restore, no Azure): a write to the SOURCE server is refused before any kubectl call, only
-      # the drill-<digits> server is admitted, the cleanup trap is installed before the restore
-      # is requested, a zero-byte or junk dump is refused by the size floor, and per-table counts
-      # compare by name (reordered equal; differing, missing or empty do not).
-      - name: Prove the staging PITR drill's predicates can fail (--selftest)
-        run: bash scripts/staging-pitr-drill.sh --selftest
+          # Issue #992: every rendered-YAML reader in check-render-invariants.sh now reads
+          # through render_paths.py (PyYAML) instead of line-oriented awk. Nine planted
+          # folded/multi-line scalar evasions (INV-1, INV-2, INV-3, INV-6, INV-12, INV-15,
+          # INV-16, LOC-3, LOC-2) that previously passed the raw-YAML awk readers must each
+          # fail (rc 1) on the PyYAML path table.
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-fold
 
-      # Plan 29-17 (DPLY-05, #297): the NetworkPolicy-enforcement VERDICT logic. The live probe
-      # (agnhost pods, a probe namespace, a run-scoped egress policy) needs a cluster credential
-      # and an enforcing CNI and stays operator-run, so scripts/gates/gate-enforcement.conf no
-      # longer lists it, but the live arm is NOT in CI. What runs here is the classifier, 22 TAP
-      # arms with no cluster: a timeout is DENIED, a reset is not, a control that does not
-      # connect is VOID, a denied arm that connects is FAIL, and a foreign or miscounted
-      # artefact is refused. They are what stops a false "enforced" verdict.
-      - name: Prove the NetworkPolicy-enforcement verdict classifier can fail (--selftest)
-        run: bash scripts/check-networkpolicy-enforcement.sh --selftest
+          # #968 item 3: INV-21 keeps staging Grafana behind the same Traefik basic-auth chain as
+          # the mail UI: every Ingress route to Service grafana carries auth-type basic and an
+          # auth-secret that a SecretProviderClass syncs as key `auth`, and every Service reaching Grafana's
+          # pod is ClusterIP. Ten planted holes (an open route, a cross-namespace secret, the wrong
+          # secret type, an unsynced secret, the wrong synced key, a second open route, no route at
+          # all, which is a PARSE ERROR, rc 2, a LoadBalancer Service, a second Service behind an
+          # open Ingress, and an open spec.defaultBackend).
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv21
 
-      # #968 item 3: the same for the Grafana edge gate's probe (G-1..G-4): an open page, no
-      # Basic challenge, a page leaked in the 401 body, a wrong password accepted, the
-      # credential refused, a title-only or other-app 200, http serving the page, a redirect to
-      # http, and a DNS mismatch (VOID) each FAIL alone; stubbed curl/dig/kubectl/az.
-      - name: Prove the Grafana edge probe's arms can fail (#968 --selftest)
-        run: bash scripts/staging-grafana-edge.sh --selftest
+          # #999: INV-22 keeps staging core-java's metrics labelled environment="staging" (the prod
+          # profile it runs says "production"): the overlay must set MANAGEMENT_METRICS_TAGS_ENVIRONMENT
+          # to its label, once, from a source the render can read, and production may not override it.
+          # Ten planted holes (the override removed, a wrong value, an empty one, a misspelt name
+          # that binds nothing, two spellings, an unreadable Secret source, base bleeding "staging"
+          # into production, application-prod.yml losing the key, which is a PARSE ERROR, rc 2, an
+          # overlay INV22_EXPECTED does not name, and k8s/local losing its override).
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv22
 
-      - name: Prove the synthesis governance gate can fail (--selftest)
-        run: bash scripts/check-synthesis-gate.sh --selftest
+          # Issue #972: INV-23 keeps Mailpit's certificate-reload supervisor in the render (Mailpit
+          # reads its TLS certificate only at start, so without it a cert-manager renewal leaves the
+          # running process serving the old certificate until it expires and every STARTTLS fails)
+          # and keeps MP_SMTP_REQUIRE_STARTTLS true. Eight planted holes (no supervisor, an exec of
+          # Mailpit, a hash of the wrong file, no comparison, no stop, STARTTLS off, the markers in a
+          # sidecar only, a quoted exec).
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv23
+
+          # INV-7 asserts the WHOLE NetworkPolicy allow-list (Phase 29, plan 29-02).
+          # This proves it can fail: five holes planted in a copy of k8s/ (an extra
+          # egress port, the dropped 9091 scrape rule, an undeclared policy, an
+          # undeclared ipBlock shape, a CiliumNetworkPolicy), each must exit 1 with
+          # the message naming it, and the clean copy must exit 0.
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv7
+
+          # Plan 29-08: the same shape for INV-15 (per-host TLS, one cert-manager
+          # owner per Secret, staging noindex with no base-header drift, production
+          # indexable, every nginx annotation Traefik-documented). Each planted hole
+          # must exit with its expected rc and name the hole; the clean copy exits 0.
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv15
+
+          # Plan 29-22: the same shape for INV-16 (core-java's truststore is the JDK
+          # cacerts PLUS the cluster CA, never the CA alone; JVM flags arrive as a
+          # literal JAVA_TOOL_OPTIONS, never JAVA_OPTS; staging must build it).
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv16
+
+          # Plan 29-26 (#859): INV-17 keeps the customer realm's require-verified-email
+          # gate on in every deployed core-java (a literal, an app-config value, a
+          # relaxed-binding spelling, the dev profile, application.yml's default).
+          # Six planted holes; the default line removed is a PARSE ERROR (rc 2).
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv17
+
+          # Plan 29-22 (D-33): INV-18 keeps the testers' public mail UI authenticated
+          # and on 8025 only, keeps every mailpit Service ClusterIP and keeps Mailpit
+          # from sending (no relay/forward, Send API locked). Six planted holes.
+          run_st ./k8s/scripts/check-render-invariants.sh --selftest-inv18
+
+          # Prove the connection-math gate can fail (D-25 per-target reserve, parse arms)
+          run_st ./k8s/scripts/check-connection-math.sh --selftest
+
+          # The live half of #1025 runs in staging-edge-probe after a deploy; its judge is proven
+          # here on every change against synthetic preflight responses (today's staging list must
+          # fail, the fixed list pass, a wildcard / missing header / wrong origin / non-2xx status /
+          # no POST in allow-methods / no credentials true / a repeated ACAO or ACAH fail, empty VOID).
+          run_st bash scripts/check-cors-preflight.sh --selftest
+
+          # The staging bootstrap's guards are shown refusing before anything trusts
+          # them (29-03): no context, the employer's sipbihs2aks, an unreadable or
+          # ambiguous identity file, a stale or re-pointed server URL, a tampered
+          # upstream manifest, a missing kubelogin, and a dry run that mutates nothing
+          # — each against stub kubectl/kubelogin/curl, so no cluster and no network.
+          run_st bash scripts/staging-bootstrap.sh --selftest
+
+          # Plan 29-04: the staging realm assertion suite refuses the raw dev template
+          # and passes the staging transform of BOTH templates, built-in tokens survive,
+          # a surviving secret placeholder is named, and --apply refuses no context, the
+          # employer context and a stale server before the Azure guard is sourced (stub
+          # kubectl/kubelogin/curl/az, so no cluster, no network, no Azure).
+          run_st bash scripts/staging-realm-import.sh --selftest
+
+          # Plan 29-06: the staging seed refuses the production and local API bases,
+          # no context, a stale server URL (the shared staging_kube_guard), and any
+          # Ready core-java pod not running SPRING_PROFILES_ACTIVE=prod (a dev pod, a
+          # mixed rollout, no Ready pod: DemoDataSeeder must never run on staging);
+          # its dry run calls nothing; and its per-run realm-admin operator is
+          # DELETEd after a failing step and after a successful run, with no Key
+          # Vault value in any curl argv or output (stubs only: no cluster, no Azure).
+          run_st bash scripts/staging-seed.sh --selftest
+
+          # Plan 29-14: deploy.sh refuses no --context, the employer's sipbihs2aks, a
+          # context whose server is not the staging API server, a non-40-hex
+          # --image-tag and a failed (or VOID) staging preflight, all before any apply;
+          # --render-only retags exactly core-java/frontend/edge-go through a wrapper
+          # and leaves the committed overlay byte-identical; a failed rollout is undone
+          # with no DEPLOYED_SHA record, and a green one ends on that record (stub
+          # kubectl/kubelogin and a stub preflight: no cluster, no Azure).
+          run_st bash scripts/deploy.sh --selftest
+
+          # Issue #969: the CI deploy-staging job's wait on every workload it did not retag. The same
+          # library deploy.sh uses; a prometheus Deployment on an unpullable image exits 1 (the
+          # three-app wait it replaces certifies the same render), nothing is undone, a render that
+          # fails or lacks a retagged name is VOID (rc 2).
+          run_st bash scripts/wait-other-workloads.sh --selftest
+
+          # Plan 29-14: the digest-parity gate's comparison and refusal arms (match,
+          # mismatch, plant-stale, empty actual, zero services, no context, employer
+          # context, short tag, fixture-with-context) against fixtures: no cluster.
+          # Issue #985: the drain arms feed the terminating-pod filter (POD_JQ) pod-list
+          # JSON: an old pod that drains (pass), one that stays (fail, and the other
+          # services are still compared), an old image on a live pod (fail), and a
+          # zero or non-numeric --drain-timeout (VOID). Needs jq (present on the runner).
+          # C-9: a running or ready container whose imageID has no @sha256 digest is VOID
+          # naming the pod and container (three arms), and a Pending/ContainerCreating
+          # container with an empty imageID is not (two control arms).
+          run_st bash scripts/check-deploy-digest-parity.sh --selftest
+
+          # Issue #1054: the Key Vault sync gate on fixtures — the observed 2026-10-31 shape (2 of 3
+          # keys, 21 of 22 objects) and each single defect red, a complete set green, empty or
+          # unreadable input VOID.
+          run_st bash scripts/csi-secret-sync.sh --selftest
+
+          # Prove check-deploy-rollback-guard.sh catches planted breaks (r1 F2)
+          run_st bash scripts/check-deploy-rollback-guard.sh --selftest
+
+          # Plan 29-22 (D-33): every live mail-UI probe arm (UI-1..UI-8) FAILS on a
+          # planted wrong response (an open UI, a wrong password accepted, http serving
+          # the UI, SMTP published, the default certificate, relay on, the Send API
+          # open, no 429) and passes on the right one; stubbed curl/openssl/dig/
+          # kubectl/az and TCP connect: no cluster, no Azure, no network.
+          run_st bash scripts/staging-mail-ui.sh --selftest
+
+          # C-1 (Phase 29 follow-ups, plan item 4): the four staging operator scripts below each have
+          # a --selftest that was written, run by hand and then wired nowhere, so none of them could
+          # fail a pull request. Each is stub-only (no cluster, no Azure, no network) and runs here
+          # because this job already has kubectl, python3 with PyYAML and the runner's openssl.
+          # Each was shown red on a planted break and clean again before being wired.
+          #
+          # Plan 29-12/29-22: the Key Vault secret generator, against a stub vault. Generate and
+          # set-external are write-once (a second run writes nothing), no secret value reaches argv,
+          # every value shape holds (hex64, alnum32, b64url32, the htpasswd-apr1 composite), an
+          # unclassified object refuses before any write, the leak scan names a hit, and a missing
+          # python is VOID (rc 2).
+          run_st bash scripts/staging-secrets.sh --selftest
+
+          # The Key Vault pre-flight that decides whether a deploy may mount: against a stub vault
+          # it must name a missing object, a missing access grant, a disabled or empty object, a
+          # stale identity file, a wrong-prefix Stripe key and an invalid external value, and
+          # --names-only must read no value at all (the detector is shown to fire in full mode).
+          run_st bash scripts/staging-secrets-preflight.sh --selftest
+
+          # Plan 29-20: the PITR drill's own safety predicates, against stubs (no cluster, no
+          # restore, no Azure): a write to the SOURCE server is refused before any kubectl call, only
+          # the drill-<digits> server is admitted, the cleanup trap is installed before the restore
+          # is requested, a zero-byte or junk dump is refused by the size floor, and per-table counts
+          # compare by name (reordered equal; differing, missing or empty do not).
+          run_st bash scripts/staging-pitr-drill.sh --selftest
+
+          # Plan 29-17 (DPLY-05, #297): the NetworkPolicy-enforcement VERDICT logic. The live probe
+          # (agnhost pods, a probe namespace, a run-scoped egress policy) needs a cluster credential
+          # and an enforcing CNI and stays operator-run, so scripts/gates/gate-enforcement.conf no
+          # longer lists it, but the live arm is NOT in CI. What runs here is the classifier, 22 TAP
+          # arms with no cluster: a timeout is DENIED, a reset is not, a control that does not
+          # connect is VOID, a denied arm that connects is FAIL, and a foreign or miscounted
+          # artefact is refused. They are what stops a false "enforced" verdict.
+          run_st bash scripts/check-networkpolicy-enforcement.sh --selftest
+
+          # #968 item 3: the same for the Grafana edge gate's probe (G-1..G-4): an open page, no
+          # Basic challenge, a page leaked in the 401 body, a wrong password accepted, the
+          # credential refused, a title-only or other-app 200, http serving the page, a redirect to
+          # http, and a DNS mismatch (VOID) each FAIL alone; stubbed curl/dig/kubectl/az.
+          run_st bash scripts/staging-grafana-edge.sh --selftest
+
+          run_st bash scripts/check-synthesis-gate.sh --selftest
+
+          wait
+          bad=0
+          for i in $(seq 1 "$idx"); do
+            rc=$(cat "$st_dir/$i.rc" 2>/dev/null || echo 2)
+            echo "=== [$i/$idx] ${labels[$i]} (rc=$rc) ==="
+            cat "$st_dir/$i.log"
+            if [ "$rc" -ne 0 ]; then
+              bad=$((bad + 1))
+            fi
+          done
+          echo "selftests_total=$idx failed=$bad"
+          [ "$bad" -eq 0 ]
 
       - name: Assert the staging/production render matches its reviewed golden
         run: |
@@ -2219,14 +2234,10 @@ jobs:
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # frontend is amd64-only: its arm64 build runs under QEMU emulation
-          # (Next.js npm-install + next build) and took ~30 min vs ~1-7 min for
-          # the Go/Java services, whose arm64 builds are cheap. Drop arm64 for
-          # frontend, keep multi-arch for core-java/edge-go. pg-backup is amd64-only
-          # too: its Dockerfile compiles blobctl in the TARGET platform's stage (no
-          # BUILDPLATFORM cross-compile), so arm64 would be an emulated Go build, and
-          # an amd64-only frontend already means the cluster's nodes are amd64.
-          platforms: ${{ (matrix.service == 'frontend' || matrix.service == 'pg-backup') && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          # All four service images target linux/amd64 exclusively to match the AKS
+          # cluster's Standard_B2s amd64 node pool and avoid ~7-8 min of QEMU arm64
+          # emulation per push for core-java Gradle and edge-go Go builds.
+          platforms: linux/amd64
 
       - name: Scan Docker image with Trivy (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
