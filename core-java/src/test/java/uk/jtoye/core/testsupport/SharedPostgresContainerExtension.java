@@ -16,6 +16,7 @@ import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ContextCustomizer;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -37,6 +38,7 @@ import java.nio.charset.Charset;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -185,6 +187,9 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
             mergedConfigField.setAccessible(true);
             MergedContextConfiguration mergedConfig =
                     (MergedContextConfiguration) mergedConfigField.get(tc);
+            if (!Arrays.equals(mergedConfig.getActiveProfiles(), new String[]{"test"})) {
+                return;
+            }
 
             Set<ContextCustomizer> currentCustomizers = mergedConfig.getContextCustomizers();
             ContextCustomizer targetCustomizer = null;
@@ -260,6 +265,12 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
                 }
                 if (appCtx instanceof ConfigurableApplicationContext cac && !cac.isActive()) {
                     continue;
+                }
+                try {
+                    appCtx.getBeansOfType(ScheduledAnnotationBeanPostProcessor.class)
+                            .values()
+                            .forEach(ScheduledAnnotationBeanPostProcessor::destroy);
+                } catch (Exception ignored) {
                 }
                 try {
                     appCtx.getBeansOfType(CacheManager.class)
