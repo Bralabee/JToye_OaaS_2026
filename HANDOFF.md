@@ -1,8 +1,28 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 19/32 plans done; PR 5 (/pay page) is #1064 OPEN, 30-20 Task 2 (owner review + squash-merge) next
+# Handoff: Phase 30 (The Money Path, Executed) executing, 20/32 plans done; PR 5 (/pay page, #1064) merged and paid on staging; 30-21 (refund e2e) next; issue #1071 (edge Referrer-Policy) open
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-31 midnight delta (RESUME HERE; everything below is history).**
+**2026-11-01 small-hours delta (RESUME HERE; everything below is history).**
+- **PR 5 (#1064, /pay) is MERGED** as `bff82097` (2026-10-31T23:01:48Z), after a two-round D3 series ending in a Review-Record on `e6df7cd3`. It is deployed: run 41250761893 succeeded, and digest parity is rc 0 for core-java, edge-go and frontend.
+- **30-20 is DONE.** See `30-20-SUMMARY.md` and `evidence/30-20-pay-live.txt` §7–8. **Phase 30 is 20/32.**
+  - GREEN beside RED:
+    - `/pay` is 200 (was 404);
+    - robots has `Disallow: /pay`;
+    - the unknown-token preview returns 404 with detail "Payment link not found." (was "Resource not found"), and GET on it is 405 (was 404);
+    - the OTP seam WARN appears on staging.
+  - A real link was paid through `/pay` on staging: `STAGING-PAY … intent=pi_3UWm0PDpS9ICNeRt2UOAYD7l status=succeeded livemode=false account=none`, and `stripe-get` agrees. The mobile arm reads `scroll_width=360 pointer=coarse`. The mobile order was cancelled, and both link files were deleted.
+  - **FAIL, open: issue #1071 (WINDOWS 52).** The edge sends `Referrer-Policy: strict-origin-when-cross-origin` on `/pay`. The frontend sends `no-referrer`, but the ingress `more_set_headers` (`k8s/base/ingress.yaml:38`, `k8s/staging/ingress-hosts-patch.yaml:56`) replaces it. A fix PR is needed, and the options are in the issue. The WINDOWS ledger blocks `/gsd-ship` until it is resolved.
+- **Next: 30-21 (PR 6, refund e2e)** on `feat/30-pay01-refund-e2e` in this worktree. The branch is cut from `origin/main` `bff82097`, carries the 30-20 evidence, SUMMARY and tracking, and is NOT pushed.
+  - **Before 30-21 starts:** Antigravity's `JToye_OaaS_2026-agy-p30-w21` worktree holds a parallel 30-21/22 attempt on `agy/30-21-22-refund-e2e`. Reconcile it first; do not run both.
+- **Owner items:**
+  1. Eyeball `evidence/30-20-pay-360.png`: does it fit 360 px, with tabs visible and no clipped controls? The cookie banner is drawn over Expiry and Security code.
+  2. Choose the #1071 fix.
+  3. Decide whether to persist the owning Stripe account on the order at intent creation (30-17, round-1 finding 2).
+  4. UI review of the "You've paid £X" redirect copy and the resume-path dead-end copy.
+  5. Round-2 residual (display-only): `/pay?payment_intent_client_secret=<garbage>&redirect_status=succeeded`, with the retrieve rejecting, still shows "Payment received".
+- **Recurring flake (recorded, not filed):** Frontend E2E (public surfaces) fails on the Turbopack `next/font/google` resolve (a Google Fonts fetch on the runner). It hit PR attempt 1 and main's run for `eff54aa0`. It does not gate Deploy to Staging.
+
+**2026-10-31 midnight delta (history; superseded by the 2026-11-01 small-hours block above).**
 - **PR 5 is #1064, OPEN, from `feat/30-pay-link-page`** (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 is done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
   - Merged from the base: `e310356b` (picking up #1058). `HANDOFF.md` was resolved by hand with both sides kept (checked by content).
   - OTP seam (owner decision expose-on-staging, `27ffb459`): base `"false"`, staging `"true"`, production `"false"`. Env `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`, plus a `${}` placeholder in `application.yml`. Production render: `true`=0, tag=1. Staging render: `true`=1.

@@ -174,6 +174,7 @@ STAGING-PAY order=ORD-1AAC0CDE-20261031-A22F26BE intent=pi_3UWm0PDpS9ICNeRt2UOAY
 
 - The edge Referrer-Policy fix is out of this plan's scope (Rule 4). It is surfaced to the owner and filed, not patched inside an evidence-only task.
 - The screenshot was renamed to the plan's artifact name. The merged spec was left untouched.
+- `requirements.mark-complete PAY-04` was deliberately NOT run. In `REQUIREMENTS.md`, PAY-04 is unticked "pending owner acceptance", and its scope (delivery to a real phone, the WhatsApp bridge) is wider than this plan. `requirements-completed` above names the plan's requirement, not the tick.
 
 ## Deviations from Plan
 
