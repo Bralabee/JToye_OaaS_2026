@@ -1907,9 +1907,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
-      contents: read
-    env:
-      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1944,14 +1942,19 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
-      - name: Run Snyk security scan
-        # Real gate on HIGH+ vulns. Skipped (not failed) when SNYK_TOKEN is
-        # unset, so an unconfigured secret does not hard-fail every build.
-        if: ${{ env.SNYK_TOKEN != '' }}
-        uses: snyk/actions/gradle@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
+      - name: Set up JDK 25 (for Gradle dependency graph resolution)
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
-          command: test
-          args: --all-projects --severity-threshold=high
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Submit Gradle dependency graph to GitHub Dependency Graph (R2a / UC-1)
+        uses: gradle/actions/dependency-submission@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-disabled: true
+          dependency-graph: ${{ github.event_name == 'push' && 'generate-submit-and-upload' || 'generate-and-upload' }}
+          artifact-retention-days: 5
 
   # Job 2b: Lint gate (#99 do-now). Resurrects linting that was silently dead —
   # `npm run lint` used to be `next lint` (removed in Next 16) and the installed

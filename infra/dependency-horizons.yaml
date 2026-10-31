@@ -420,7 +420,7 @@ dependencies:
     sites:
       - ".github/workflows/ci-cd.yaml:235"
       - ".github/workflows/ci-cd.yaml:1453"
-      - ".github/workflows/ci-cd.yaml:1986"
+      - ".github/workflows/ci-cd.yaml:1989"
     kind: toolchain
     owner: maintainer
     eol_slug: go

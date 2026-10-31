@@ -78,7 +78,7 @@ func run(args []string, env func(string) string, stdout, stderr io.Writer, newSt
 		return exitUsage
 	}
 	for i, a := range rest {
-		if a == "" && !(cmd == "list" && i == 1) { // only list's prefix may be empty
+		if a == "" && (cmd != "list" || i != 1) { // only list's prefix may be empty
 			fmt.Fprint(stderr, usageText)
 			return exitUsage
 		}

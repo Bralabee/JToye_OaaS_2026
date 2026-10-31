@@ -94,6 +94,16 @@ updates:
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
 
+  # --- MCP server (npm) ---
+  - package-ecosystem: "npm"
+    directory: "/mcp-server"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
   # --- Container base images (Docker) ---
   #
   # ONE ENTRY PER DIRECTORY THAT CONTAINS A Dockerfile. There must be no gap:
