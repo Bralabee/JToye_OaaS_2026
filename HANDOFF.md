@@ -4,7 +4,7 @@
 
 **2026-10-31 delta (RESUME HERE; everything below is history).**
 - **PR 4 (#1046, plans 30-12 to 30-14) merged 2026-10-31 as squash `ec73ddee`.** 30-14 Task 2/3 done 2026-10-30: Connect endpoint `we_1UWN2NDpS9ICNeRtxSQMsc2M` (TEST, API 2026-09-30.endive, 7 events), its secret stored as `stripe-credentials--connect-webhook-secret` in `jtoye-stg-kv`, V1-V3, `--assign-access` and the preflight green; see `evidence/30-14-connect-endpoint.txt`. Review series 1 -> 0 -> 0 admissible.
-- **#1053 (issue #1027 shop-card stretched link, plus the rabbitmq 4.3 horizon refresh) merges after #1046**, with main merged in.
+- **#1053 (`d837b295`), #1055 (`e09d322e`), #1056 (`502e3383`), and #1057 (`480782d7`) merged 2026-10-31** (stretched shop-card link for issue #1027, Key Vault CSI secret-sync gate for issue #1054, and CI Testcontainers/k8s-validate/buildx speedup).
 - **Resume:** 30-15, the staging proof for PR 4: pod digests equal the ghcr digests of the merge tag, and the Connect route answers a signed TEST event. Then close issue #1027 and the hand-closes listed on the PRs.
 - **Watch:** RabbitMQ 4.3 EOL is 2027-01-31; the H-2 90-day warn window opens about 2026-11-02, so plan the 4.4 upgrade.
 

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Toolchain Audit Gaps R2a-c, R5b, and R10a: Gradle Dependency Submission, `/mcp-server` Dependabot Coverage, Go Linting Baselines, and Loopback Port Bindings (#1058) — 2026-10-31
+
+Closes the OaaS-scoped findings (`R2a–c`, `R5b`, `R10a`) from the 2026-10-31 rev-2 toolchain audit (`~/machine-reset/toolchain-audit-2026-10-31/HANDOFF.md`):
+
+- **`.github/workflows/ci-cd.yaml` (`security-scan`, `R2a–b` / `UC-1`):** Replaced the inert Snyk step (`SNYK_TOKEN` unset) with `gradle/actions/dependency-submission@ed408507eac070d1f99cc633dbcf757c94c7933a` (`# v4`) under JDK 25 (`actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad` `# v6`). On `pull_request` runs it executes `generate-and-upload` to validate Gradle dependency graph generation without mutating default-branch snapshots; on `push` runs it executes `generate-submit-and-upload` to submit the resolved dependency graph to GitHub's Dependency Submission API (paired with repository vulnerability alerts enabled via `PUT /repos/Bralabee/JToye_OaaS_2026/vulnerability-alerts`).
+- **`.github/dependabot.yml` (`R2c` / `UC-1`):** Added a weekly `npm` ecosystem entry for `/mcp-server` (`open-pull-requests-limit: 5`, `minor-and-patch` grouped) alongside `/frontend` and `/mcp-server`'s existing `docker` entry.
+- **`infra/backups/blobctl/commands.go`, `edge-go/.golangci.yml`, `infra/backups/blobctl/.golangci.yml` (`R5b` / `TD-02`):** Simplified `if a == "" && !(cmd == "list" && i == 1)` to `if a == "" && (cmd != "list" || i != 1)` (`staticcheck` `QF1001`) at `infra/backups/blobctl/commands.go:81` and added `.golangci.yml` (`version: "2"`, `default: standard`, `disable: [errcheck]`) baselines for both Go modules (`0 issues.` under `golangci-lint v2.15.0`).
+- **`docker-compose.full-stack.yml` (`R10a` / `UC-3`):** Bound `core-java` (`9090-9091:9090`), `edge-go` (`8089:8080`), `frontend` (`3000:3000`), and `mcp-server` (`9100:9100`) to `${JTOYE_BIND_HOST:-127.0.0.1}`, bringing all 22 published ports across all 3 Compose files onto loopback by default (`scripts/check-infra-exposure.sh --static` `rc=0`).
+
 ### The Key Vault Sync Gate Can Read What It Checks, and a `--prepare` Failure No Longer Rolls Staging Back (#1054) (#1056) — 2026-10-31
 
 #1055's own merge deploy (run 41186785839) VOIDed in `--prepare`: `jtoye-ci` "cannot list resource secretproviderclasspodstatuses". My local proofs had run as the cluster admin, so this denial never showed.
