@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### The Key Vault Sync Gate Can Read What It Checks, and a `--prepare` Failure No Longer Rolls Staging Back (#1054) (#PRNUM) — 2026-10-31
+### The Key Vault Sync Gate Can Read What It Checks, and a `--prepare` Failure No Longer Rolls Staging Back (#1054) (#1056) — 2026-10-31
 
 #1055's own merge deploy (run 41186785839) VOIDed in `--prepare`: `jtoye-ci` "cannot list resource secretproviderclasspodstatuses". My local proofs had run as the cluster admin, so this denial never showed.
 
