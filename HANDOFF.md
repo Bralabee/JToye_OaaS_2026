@@ -1,9 +1,9 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 19/32 plans done; PR 5 (/pay page) is #1064 OPEN, 30-20 Task 2 (owner review + squash-merge) next
+# Handoff: Phase 30 (The Money Path, Executed) executing, 19/32 plans done; PR 5 (/pay page, #1064) MERGED as bff82097, 30-20 Task 3 next
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
 **2026-10-31 midnight delta (RESUME HERE; everything below is history).**
-- **PR 5 is #1064, OPEN, from `feat/30-pay-link-page`** (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 is done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
+- **PR 5 (#1064) MERGED as `bff82097` from `feat/30-pay-link-page`** (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 and Task 2 are done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
   - Merged from the base: `e310356b` (picking up #1058). `HANDOFF.md` was resolved by hand with both sides kept (checked by content).
   - OTP seam (owner decision expose-on-staging, `27ffb459`): base `"false"`, staging `"true"`, production `"false"`. Env `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`, plus a `${}` placeholder in `application.yml`. Production render: `true`=0, tag=1. Staging render: `true`=1.
   - OpenAPI snapshot (`fd6250de`): red before (rc 1), green after (rc 0). Additive only: 4 paths, 2 schemas, 3 `stripeAccountId`.
@@ -1040,10 +1040,13 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 62 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 63 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-31 (agy/30-21-22-refund-e2e, Phase 30 30-21/30-22): 62 -> 63. check-stripe-ci-keys
+# refuses unset, empty, live or swapped CI Stripe sandbox keys unless STRIPE_TEST_SECRET_KEY and
+# CI_STRIPE_PUBLISHABLE_KEY are set; CI runs its --selftest in ops-contracts and the guard in e2e-nightly.
 # 2026-10-25 (PR #1045, the Antigravity bundle): 61 -> 62. check-synthesis-gate is rc 1 in
 # this bare loop until the active milestone's synthesis review (/qa-council + persona test)
 # is recorded in qa/synthesis-ledger.json with --record; CI runs only its --selftest.

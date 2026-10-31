@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# check-stripe-ci-keys.sh — guard that STRIPE_TEST_SECRET_KEY and STRIPE_TEST_PUBLISHABLE_KEY
+# check-stripe-ci-keys.sh — guard that STRIPE_TEST_SECRET_KEY and CI_STRIPE_PUBLISHABLE_KEY
 # passed into CI / nightly jobs are genuine Stripe TEST-mode credentials (Phase 30 plan 30-22,
 # PAY-01; threat mitigations T-30-09, T-30-10).
 #
 # USAGE
-#   STRIPE_TEST_SECRET_KEY=<value> [STRIPE_TEST_PUBLISHABLE_KEY=<value>] scripts/check-stripe-ci-keys.sh
+#   STRIPE_TEST_SECRET_KEY=<value> CI_STRIPE_PUBLISHABLE_KEY=<value> scripts/check-stripe-ci-keys.sh
 #   scripts/check-stripe-ci-keys.sh --selftest
 #   STRIPE_CI_KEYS_SELFTEST_FORMAT=tap scripts/check-stripe-ci-keys.sh --selftest
 #
 # EXIT
-#   0  accepted (test-mode secret key present; publishable key empty or test-mode)
-#   1  refused (unset/empty secret key, live key, swapped keys, or malformed characters)
+#   0  accepted (test-mode secret key and test-mode publishable key present)
+#   1  refused (unset/empty key, live key, restricted key, swapped keys, or malformed characters)
 #   2  usage error
 
 set -uo pipefail
@@ -42,7 +42,7 @@ classify_prefix() {
 }
 
 check() {
-  local sk="${STRIPE_TEST_SECRET_KEY-}" pk="${STRIPE_TEST_PUBLISHABLE_KEY-}"
+  local sk="${STRIPE_TEST_SECRET_KEY-}" pk="${CI_STRIPE_PUBLISHABLE_KEY:-${STRIPE_TEST_PUBLISHABLE_KEY-}}"
   local sk_prefix pk_prefix
   sk_prefix="$(classify_prefix "$sk")"
   pk_prefix="$(classify_prefix "$pk")"
@@ -56,12 +56,13 @@ check() {
   fi
   well_formed "$sk" sk_test_ || refuse "STRIPE_TEST_SECRET_KEY starts sk_test_ but contains non-alphanumeric characters (length=${#sk})."
 
-  if [ "$pk_prefix" != empty ]; then
-    if [ "$pk_prefix" != pk_test_ ]; then
-      refuse "STRIPE_TEST_PUBLISHABLE_KEY must be a Stripe TEST publishable key (pk_test_...) when set, got prefix=$pk_prefix."
-    fi
-    well_formed "$pk" pk_test_ || refuse "STRIPE_TEST_PUBLISHABLE_KEY starts pk_test_ but contains non-alphanumeric characters (length=${#pk})."
+  if [ "$pk_prefix" = empty ]; then
+    refuse "CI_STRIPE_PUBLISHABLE_KEY is unset or empty — provision the repository variable with a Stripe TEST publishable key (pk_test_...)."
   fi
+  if [ "$pk_prefix" != pk_test_ ]; then
+    refuse "CI_STRIPE_PUBLISHABLE_KEY must be a Stripe TEST publishable key (pk_test_...), got prefix=$pk_prefix."
+  fi
+  well_formed "$pk" pk_test_ || refuse "CI_STRIPE_PUBLISHABLE_KEY starts pk_test_ but contains non-alphanumeric characters (length=${#pk})."
 
   echo "OK: Stripe CI test keys accepted (secret_prefix=$sk_prefix secret_length=${#sk} pk_prefix=$pk_prefix pk_length=${#pk})"
   exit 0
@@ -92,7 +93,7 @@ render_results() {
 
 st_run() {
   local rc=0
-  STRIPE_TEST_SECRET_KEY="$2" STRIPE_TEST_PUBLISHABLE_KEY="$3" bash "$SELF" > "$ST/$1.out" 2>&1 < /dev/null || rc=$?
+  STRIPE_TEST_SECRET_KEY="$2" CI_STRIPE_PUBLISHABLE_KEY="$3" bash "$SELF" > "$ST/$1.out" 2>&1 < /dev/null || rc=$?
   echo "$rc"
 }
 

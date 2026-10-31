@@ -26,11 +26,13 @@
 #   below is therefore explicit rather than "everything" — see SERVICES.
 #
 # FAIL-CLOSED CONTRACT — every one of these is a FAILURE, never a pass:
+#   * the CI Stripe sandbox credentials fail `check-stripe-ci-keys.sh`
 #   * the stack does not become healthy within the deadline
-#   * the Playwright JSON report is absent, empty, or reports ZERO tests
-#   * `check-e2e-skip-budget.sh` exits non-zero (1 = violation, 2 = VOID)
+#   * the Playwright JSON report (main or Stripe phase) is absent, empty, or reports ZERO tests
+#   * `stripe listen` does not reach Ready, or the payment_intent.succeeded / refund.* events do not land in processed_stripe_events
+#   * `check-e2e-skip-budget.sh` exits non-zero across the union of both reports (1 = violation, 2 = VOID)
 #   * `check-backup-restore-drill.sh` exits non-zero (1 = an arm failed, 2 = VOID)
-#   `continue-on-error` appears NOWHERE in this file on purpose. A job that cannot go red
+#   Step-level error swallowing appears NOWHERE in this file on purpose. A job that cannot go red
 #   is the exact failure mode #420 exists to remove.
 #
 # A11Y-5 (E1): `e2e/dashboard-a11y-nightly.spec.ts` runs as part of the SAME
@@ -47,14 +49,17 @@
 # job's fail-closed contract.
 #
 # CREDENTIALS
-#   Phase 1 (the full cash/storefront/dashboard suite) consumes no repository secret:
-#   all of verify-env.sh's REQUIRED_VARS are generated per-run for a stack that lives
-#   ~40 minutes and is then destroyed, with STRIPE_API_KEY left empty so #793
-#   (cash-checkout-no-stripe.spec.ts) can prove a cash checkout loads zero Stripe code.
-#   Phase 2 (the Stripe test-mode phase, plan 30-22 / PAY-01) consumes
-#   secrets.STRIPE_TEST_SECRET_KEY (sk_test_...) and optional
-#   secrets.STRIPE_TEST_PUBLISHABLE_KEY (pk_test_...), guarded by
-#   scripts/check-stripe-ci-keys.sh before any Stripe process starts.
+#   Phase 1 (the full cash/storefront/dashboard suite) runs against a core-java
+#   with STRIPE_API_KEY left empty so #793 (cash-checkout-no-stripe.spec.ts) can
+#   prove a cash checkout loads zero Stripe resources; all of verify-env.sh's
+#   REQUIRED_VARS are generated per-run for a stack that lives ~40 minutes and is
+#   then destroyed.
+#   Phase 2 (the Stripe test-mode phase, plan 30-22 / PAY-01) consumes ONE repository
+#   secret (`secrets.STRIPE_TEST_SECRET_KEY`, `sk_test_...`) and ONE repository variable
+#   (`vars.CI_STRIPE_PUBLISHABLE_KEY`, `pk_test_...`) from a dedicated CI Stripe sandbox
+#   account (D-09; never the staging Stripe account so `stripe listen` cannot steal or
+#   duplicate staging webhooks, Pitfall 5), guarded by `scripts/check-stripe-ci-keys.sh`
+#   before the stack starts.
 
 name: E2E Nightly (full stack)
 
@@ -91,10 +96,20 @@ jobs:
     name: Full Playwright suite against a real stack
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      CI_STRIPE_PUBLISHABLE_KEY: ${{ vars.CI_STRIPE_PUBLISHABLE_KEY }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Gate — Stripe test-mode CI keys (T-30-09, T-30-10)
+        run: |
+          set -euo pipefail
+          [ -n "${STRIPE_TEST_SECRET_KEY:-}" ] && echo "::add-mask::${STRIPE_TEST_SECRET_KEY}"
+          [ -n "${CI_STRIPE_PUBLISHABLE_KEY:-}" ] && echo "::add-mask::${CI_STRIPE_PUBLISHABLE_KEY}"
+          bash scripts/check-stripe-ci-keys.sh
 
       # The stack builds four images and pulls eight. A stock runner has ~14 GB free,
       # and a mid-build ENOSPC surfaces as an unrelated-looking compose error.
@@ -263,6 +278,7 @@ jobs:
           # client-IP digest behind the per-IP cash-order cap, exactly 64 hex characters or
           # core-java refuses to start. DERIVED for the same reason, generated the same way.
           echo "CLIENT_IP_HMAC_KEY=$(openssl rand -hex 32)" >> .env
+          echo "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${CI_STRIPE_PUBLISHABLE_KEY}" >> .env
 
           echo "appended $(wc -l < .env) total lines"
 
@@ -420,17 +436,8 @@ jobs:
 
       # Phase 30 plan 30-22 (PAY-01): Phase 2 runs stripe-refund-flow.spec.ts against
       # real Stripe test mode after Phase 1 has proven #793 (cash-checkout-no-stripe)
-      # on the cash-only stack. Refuses unset, empty, swapped or live keys before
-      # starting stripe listen or recreating core-java.
-      - name: Gate — Stripe test-mode CI keys (T-30-09, T-30-10)
-        env:
-          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
-          STRIPE_TEST_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
-        run: bash scripts/check-stripe-ci-keys.sh
-
-      - name: Install pinned Stripe CLI and start webhook forwarder
-        env:
-          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      # on the cash-only stack.
+      - name: Install the Stripe CLI (pinned, checksum-verified)
         run: |
           set -euo pipefail
           STRIPE_CLI_VERSION="1.55.6"
@@ -442,6 +449,9 @@ jobs:
           rm -f /tmp/stripe-cli.tar.gz
           stripe --version
 
+      - name: Start the Stripe forwarder
+        run: |
+          set -euo pipefail
           # Derive the account's test webhook signing secret via env (never argv, T-30-12)
           # and register it with GitHub Actions' log masker before writing to .env.
           whsec=$(STRIPE_API_KEY="$STRIPE_TEST_SECRET_KEY" stripe listen --print-secret)
@@ -453,35 +463,41 @@ jobs:
           {
             echo "STRIPE_API_KEY=${STRIPE_TEST_SECRET_KEY}"
             echo "STRIPE_WEBHOOK_SECRET=${whsec}"
+            echo "STRIPE_CONNECT_WEBHOOK_SECRET=${whsec}"
+            echo "STRIPE_ENVIRONMENT_TAG=ci-nightly"
           } >> .env
 
           STRIPE_API_KEY="$STRIPE_TEST_SECRET_KEY" nohup stripe listen \
-            --forward-to http://localhost:9090/webhooks/stripe \
-            > /tmp/stripe-listen.log 2>&1 &
-          echo $! > /tmp/stripe-listen.pid
+            --forward-to http://localhost:9090/api/v1/public/payments/webhook \
+            --forward-connect-to http://localhost:9090/api/v1/public/payments/webhook/connect \
+            > "$RUNNER_TEMP/stripe-listen.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/stripe-listen.pid"
 
-          deadline=$(( SECONDS + 30 ))
+          deadline=$(( SECONDS + 60 ))
           ready=0
           while [ "$SECONDS" -lt "$deadline" ]; do
-            kill -0 "$(cat /tmp/stripe-listen.pid)" 2>/dev/null || {
+            kill -0 "$(cat "$RUNNER_TEMP/stripe-listen.pid")" 2>/dev/null || {
               echo "::error::stripe listen exited prematurely"
-              cat /tmp/stripe-listen.log >&2 || true
+              cat "$RUNNER_TEMP/stripe-listen.log" >&2 || true
               exit 1
             }
-            if grep -q "Ready!" /tmp/stripe-listen.log 2>/dev/null; then
+            if grep -q "Ready" "$RUNNER_TEMP/stripe-listen.log" 2>/dev/null; then
               ready=1
               break
             fi
             sleep 1
           done
           [ "$ready" -eq 1 ] || {
-            echo "::error::stripe listen did not become ready within 30s"
-            cat /tmp/stripe-listen.log >&2 || true
+            echo "::error::stripe listen did not become ready within 60s"
+            cat "$RUNNER_TEMP/stripe-listen.log" >&2 || true
             exit 1
           }
 
+      - name: Recreate core-java with the CI Stripe key
+        run: |
+          set -euo pipefail
           docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate core-java
-          deadline=$(( SECONDS + 180 ))
+          deadline=$(( SECONDS + 300 ))
           up_core=0
           while [ "$SECONDS" -lt "$deadline" ]; do
             status=$(curl -fsS http://localhost:9090/actuator/health 2>/dev/null | jq -r '.status // empty' || true)
@@ -493,24 +509,29 @@ jobs:
             sleep 3
           done
           [ "$up_core" -eq 1 ] || {
-            echo "::error::core-java did not become UP within 180s after Stripe recreate"
+            echo "::error::core-java did not become UP within 300s after Stripe recreate"
             docker compose -f "$COMPOSE_FILE" logs --tail 200 core-java
             exit 1
           }
+          accepts=$(curl -fsS http://localhost:9090/api/v1/public/shops/mama-ades-kitchen | jq -r '.acceptsCardPayments')
+          [ "$accepts" = "true" ] || {
+            echo "::error::mama-ades-kitchen acceptsCardPayments is '$accepts' (expected true)"
+            exit 1
+          }
 
-      - name: Run the Stripe Playwright phase (PAY-01)
+      - name: Run the Stripe-keyed specs
+        id: stripe-run
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
           STRIPE_E2E: '1'
-          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
-          STRIPE_TEST_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+          STRIPE_E2E_EVIDENCE: e2e-artifacts/stripe-refund.json
         run: |
           set -uo pipefail
           mkdir -p e2e-artifacts
           set -a; . ../.env; set +a
           export E2E_VENDOR_PASSWORD="${KC_SEED_USER_PASSWORD}"
-          npx playwright test e2e/stripe-refund-flow.spec.ts --reporter=json > e2e-artifacts/report-stripe.json || true
+          npx playwright test e2e/stripe-refund-flow.spec.ts --project=desktop --reporter=json > e2e-artifacts/report-stripe.json || true
 
       - name: Assert the Stripe report is real, zero skips, zero failures
         working-directory: frontend
@@ -528,17 +549,58 @@ jobs:
           echo "stripe_phase: total=$total passed=$passed failed=$failed skipped=$skipped"
           echo "### E2E nightly (Stripe phase): $passed passed, $failed failed, $skipped skipped (of $total)" >> "$GITHUB_STEP_SUMMARY"
 
+          [ "$passed" -ge 1 ] || { echo "::error::Stripe phase passed $passed test(s) (expected >= 1)"; exit 1; }
           [ "$failed" -eq 0 ] || { echo "::error::$failed Stripe E2E test(s) failed"; exit 1; }
           [ "$skipped" -eq 0 ] || { echo "::error::$skipped Stripe E2E test(s) skipped — PAY-01 requires zero skips in the Stripe phase"; exit 1; }
+
+      - name: Stripe events reached the app
+        run: |
+          set -euo pipefail
+          ev=frontend/e2e-artifacts/stripe-refund.json
+          [ -s "$ev" ] || { echo "::error::missing $ev from Stripe spec"; exit 1; }
+          pi=$(jq -r '.intent // empty' "$ev")
+          re=$(jq -r '.refund // empty' "$ev")
+          [ -n "$pi" ] && [ -n "$re" ] || { echo "::error::missing intent or refund id in $ev"; exit 1; }
+
+          cfg="$RUNNER_TEMP/stripe-curl.cfg"
+          umask 077
+          printf 'header = "Authorization: Bearer %s"\n' "$STRIPE_TEST_SECRET_KEY" > "$cfg"
+          trap 'rm -f "$cfg"' EXIT
+
+          pi_ev=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?type=payment_intent.succeeded&limit=25" \
+            | jq -r --arg id "$pi" '.data[] | select(.data.object.id == $id) | .id' | head -n 1)
+          re_ev=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?types%5B%5D=refund.created&types%5B%5D=refund.updated&types%5B%5D=charge.refunded&limit=25" \
+            | jq -r --arg re "$re" --arg pi "$pi" '.data[] | select(.data.object.id == $re or .data.object.payment_intent == $pi) | .id' | head -n 1)
+          [ -n "$pi_ev" ] || { echo "::error::no payment_intent.succeeded event found on Stripe for $pi"; exit 1; }
+          [ -n "$re_ev" ] || { echo "::error::no refund event found on Stripe for $re ($pi)"; exit 1; }
+
+          set -a; . ./.env; set +a
+          db="${POSTGRES_DB:-jtoye}"
+          pi_rows=$(docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" -d "$db" -tAc \
+            "SELECT count(*) FROM processed_stripe_events WHERE event_id = '$pi_ev';")
+          re_rows=$(docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U "$POSTGRES_USER" -d "$db" -tAc \
+            "SELECT count(*) FROM processed_stripe_events WHERE event_id = '$re_ev';")
+          echo "processed_stripe_events: pi_event=$pi_ev rows=$pi_rows refund_event=$re_ev rows=$re_rows"
+          [ "${pi_rows:-0}" -ge 1 ] || { echo "::error::event $pi_ev not found in processed_stripe_events"; exit 1; }
+          [ "${re_rows:-0}" -ge 1 ] || { echo "::error::event $re_ev not found in processed_stripe_events"; exit 1; }
 
       # S-1..S-5 across the union of Phase 1 (cash/full) and Phase 2 (Stripe): total
       # within budget, every skip declared with a justification + REMOVE WHEN block,
       # no stale ALLOW, and both reports stamped with the current e2e-spec-digest.
       - name: Enforce the declared skip budget
+        if: always() && steps.stack-up.outcome == 'success'
         run: >-
           bash scripts/check-e2e-skip-budget.sh
           --report frontend/e2e-artifacts/report.json
           --report frontend/e2e-artifacts/report-stripe.json
+
+      - name: Stop the Stripe forwarder
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/stripe-listen.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/stripe-listen.pid")" 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/stripe-listen.pid"
+          fi
 
       # R-16 / #459. WHY HERE AND NOT IN ci-cd.yaml: `frontend-e2e` there is
       # deliberately stack-free, and this script drives THREE real Keycloak
@@ -579,8 +641,8 @@ jobs:
       # not have. The boundary is therefore: this class of check lives in the
       # nightly, and the PR lane covers the same invariants in jsdom.
       #
-      # Deliberately NO `continue-on-error` — that string appears nowhere in this
-      # file on purpose (see the header). The script fails closed on its own:
+      # Deliberately no step-level error swallowing — that directive appears nowhere in
+      # this file on purpose (see the header). The script fails closed on its own:
       # exit 1 on any failed check, exit 2 when KC_SEED_USER_PASSWORD is unset or
       # when it runs fewer checks than it declares, and every arm pushes a
       # failing result from its catch so a thrown exception can never read as a
@@ -743,8 +805,8 @@ jobs:
       - name: Tear down
         if: always()
         run: |
-          if [ -f /tmp/stripe-listen.pid ]; then
-            kill "$(cat /tmp/stripe-listen.pid)" 2>/dev/null || true
-            rm -f /tmp/stripe-listen.pid
+          if [ -f "$RUNNER_TEMP/stripe-listen.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/stripe-listen.pid")" 2>/dev/null || true
+            rm -f "$RUNNER_TEMP/stripe-listen.pid"
           fi
           docker compose -f "$COMPOSE_FILE" down -v --remove-orphans

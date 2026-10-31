@@ -199,6 +199,7 @@ test.describe("Phase 30 PAY-01 — Stripe test-mode vendor refund flow", () => {
           headers: stripeAuth,
           form: {
             payment_method: "pm_card_visa",
+            return_url: "http://localhost:3000/track",
           },
         },
       )

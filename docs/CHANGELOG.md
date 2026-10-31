@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Unskipped Stripe Test-Mode Refund E2E and an S-5 Skip-Budget Gate (Phase 30 30-21/30-22, PAY-01) (#1065) — 2026-10-31
+
+- **`scripts/check-e2e-skip-budget.sh`:** rule S-5 says every `ALLOW` line needs a justification comment and a `# REMOVE WHEN:` line. New `--lint-conf` mode. `--report` can be repeated to evaluate the union of all skipped specs across reports (with matching spec digests). New `--selftest` (14 fixtures).
+- **`frontend/e2e/stripe-refund-flow.spec.ts`:** a storefront card order confirmed with `pm_card_visa`, captured by the webhook and refunded for £1.00 from the vendor dashboard. The refund is read back from Stripe (`succeeded`, 100, `livemode=false`). It runs only when `STRIPE_E2E=1`. The environment-dependent paid-refund test leaves `vendor-refund-flow.spec.ts`.
+- **`scripts/check-stripe-ci-keys.sh`:** refuses missing, swapped or live Stripe keys before any Stripe step (6-arm selftest).
+- **`e2e-nightly.yml`:** a Stripe Phase 2 after the cash suite. It validates the keys, installs stripe-cli v1.55.6 (sha256 pinned), forwards webhooks, runs the refund spec with zero skips and checks the skip budget across both reports.
+- **`ci-cd.yaml` ops-contracts:** runs both selftests and `--lint-conf`.
+
 ### The `/pay` Payment-Link Page: a Fragment-Token Preview, the Shared Card Form on the Owning Account, and a Staging-Only OTP Seam (Phase 30 PR 5, PAY-04) (#1064) — 2026-10-31
 
 A vendor could already issue a payment link (PAY-04), but the customer had no page to pay it on. D-03 puts that page in Phase 30: a link PAY-04 sends must be payable end to end on staging.
