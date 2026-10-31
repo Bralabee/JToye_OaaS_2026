@@ -462,7 +462,7 @@ tasks.register<Test>("integrationTest") {
     // exists to prevent, and re-deriving it costs an hour of wall clock.
     //
     // Raw series: .planning/phases/27-operational-maturity/baselines/ (T7 arms A/B/C).
-    setForkEvery((findProperty("itForkEvery") as String?)?.toLongOrNull() ?: 4L)
+    setForkEvery((findProperty("itForkEvery") as String?)?.toLongOrNull() ?: 16L)
 
     // Run several forkEvery-bounded JVMs CONCURRENTLY. Container startup is
     // wait-bound (~16s per container sitting idle), so overlapping those waits is

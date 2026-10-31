@@ -12,22 +12,38 @@ import org.junit.platform.commons.support.HierarchyTraversalMode;
 import org.junit.platform.commons.support.ModifierSupport;
 import org.junit.platform.commons.support.ReflectionSupport;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.ApplicationContext;
-import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.ContextCustomizer;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.MergedContextConfiguration;
+import org.springframework.test.context.TestContext;
+import org.springframework.test.context.TestContextManager;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
+import uk.jtoye.core.security.TenantContext;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 /**
  * Per-JVM-fork shared PostgreSQL Testcontainers extension for {@code @Tag("testcontainers")}
@@ -36,12 +52,15 @@ import java.util.Set;
  * <p>Instead of booting 200 separate {@code postgres:18-alpine} Docker containers and running all
  * 88+ Flyway migrations 200 times, each Gradle test worker JVM starts a single
  * {@code postgres:18-alpine} container, applies the full Flyway migration chain once, and resets
- * cluster roles, triggers, constraints, and user tables in {@code <5ms} before and after each test
- * class while keeping {@code revinfo_seq} monotonic across the fork.
+ * cluster roles, triggers, constraints, and user tables in {@code <5ms} before each test class
+ * while keeping {@code revinfo_seq} monotonic across the fork.
  *
- * <p>Classes that test custom Flyway migration targets, broken migration chains, pre-Flyway role
- * ownership ({@code ALTER DEFAULT PRIVILEGES}), or non-default Postgres images/databases are
- * automatically excluded and retain their own dedicated per-class container.
+ * <p>In addition, for {@code @SpringBootTest} classes whose {@code @DynamicPropertySource} method
+ * registers the exact standard property set from
+ * {@link IntegrationTestSupport#registerPostgresTestProperties}, this extension normalizes the
+ * {@code DynamicPropertiesContextCustomizer} method reference so Spring's
+ * {@code DefaultContextCache} reuses the cached {@link ApplicationContext} across standard classes
+ * in the same worker fork instead of booting a fresh context per class.
  */
 public class SharedPostgresContainerExtension implements BeforeAllCallback, AfterAllCallback {
 
@@ -49,13 +68,14 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
     private static final String EXPECTED_DB = "jtoye_test";
     private static final String EXPECTED_USER = "test";
     private static final String EXPECTED_PASS = "test";
+    private static final String DYNAMIC_PROPERTIES_CUSTOMIZER_CLASS =
+            "org.springframework.test.context.support.DynamicPropertiesContextCustomizer";
 
     /**
-     * Classes that perform partial/out-of-order manual Flyway migrations or pre-Flyway
-     * {@code ALTER DEFAULT PRIVILEGES} role setup on {@code jtoye_test} and therefore must keep a
-     * dedicated per-class container. (All other manual-migration and role-ownership classes
-     * already declare a distinct database name such as {@code jtoye_v80} or {@code jtoye} and are
-     * excluded automatically by the {@link #EXPECTED_DB} check.)
+     * Classes that perform partial/out-of-order manual Flyway migrations, pre-Flyway
+     * {@code ALTER DEFAULT PRIVILEGES} role setup, or rely on {@code ddl-auto=create-drop}
+     * instead of {@link IntegrationTestSupport#registerPostgresTestProperties} and therefore must
+     * keep a dedicated per-class container.
      */
     private static final Set<String> EXCLUDED_CLASSES = Set.of(
             "uk.jtoye.core.customer.CustomerOriginShopScopeIntegrationTest",
@@ -63,7 +83,31 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
             "uk.jtoye.core.media.MediaSweepTenantScopeIntegrationTest"
     );
 
+    private static final Set<String> DROP_SHOP_NAME_UNIQUE_INDEX_CLASSES = Set.of(
+            "uk.jtoye.core.payment.RefundWebhookHandlingIntegrationTest",
+            "uk.jtoye.core.payment.StripeWebhookIdempotencyIntegrationTest"
+    );
+
+    private static final Set<TestContext> SEEN_TEST_CONTEXTS =
+            Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+
+    private static final Method CANONICAL_DYNAMIC_PROPERTY_METHOD;
+
+    static {
+        try {
+            CANONICAL_DYNAMIC_PROPERTY_METHOD = SharedPostgresContainerExtension.class
+                    .getDeclaredMethod("registerCanonicalSharedPostgresProperties", DynamicPropertyRegistry.class);
+            CANONICAL_DYNAMIC_PROPERTY_METHOD.setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     private static PostgreSQLContainer<?> forkSingleton;
+
+    static void registerCanonicalSharedPostgresProperties(DynamicPropertyRegistry registry) {
+        IntegrationTestSupport.registerPostgresTestProperties(registry, ensureSingletonStarted());
+    }
 
     @Override
     public void beforeAll(ExtensionContext context) throws Exception {
@@ -74,11 +118,7 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
         if (!isTestcontainersTagged(testClass) || EXCLUDED_CLASSES.contains(testClass.getName())) {
             return;
         }
-        // Prevent any @Tag("testcontainers") class that omits spring.jpa.hibernate.ddl-auto=none in
-        // its @DynamicPropertySource from inheriting ddl-auto=create-drop from application-test.yml
-        // and dropping/recreating tables (wiping Flyway RLS policies) on the shared container.
         System.setProperty("spring.jpa.hibernate.ddl-auto", "none");
-
         List<Field> fields = ReflectionSupport.findFields(
                 testClass,
                 f -> ModifierSupport.isStatic(f)
@@ -106,7 +146,13 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
             usesPooledContainer = true;
         }
         if (usesPooledContainer) {
-            ensureSingletonStartedAndReset();
+            PostgreSQLContainer<?> pg = ensureSingletonStarted();
+            if (AnnotationSupport.isAnnotated(testClass, SpringBootTest.class)) {
+                normalizeDynamicPropertiesCustomizerIfStandard(context, pg);
+            }
+            evictAndClearSeenContexts();
+            resetDatabaseAndRoles(pg, DROP_SHOP_NAME_UNIQUE_INDEX_CLASSES.contains(testClass.getName()));
+            evictAndClearSeenContexts();
         }
     }
 
@@ -119,21 +165,123 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
         if (!isTestcontainersTagged(testClass) || EXCLUDED_CLASSES.contains(testClass.getName())) {
             return;
         }
-        if (AnnotationSupport.isAnnotated(testClass, SpringBootTest.class)) {
-            try {
-                ApplicationContext appCtx = SpringExtension.getApplicationContext(context);
-                appCtx.getBeansOfType(ScheduledAnnotationBeanPostProcessor.class)
-                        .values()
-                        .forEach(ScheduledAnnotationBeanPostProcessor::destroy);
-                appCtx.getBeansOfType(HikariDataSource.class)
-                        .values()
-                        .forEach(ds -> {
-                            if (ds.getHikariPoolMXBean() != null) {
-                                ds.getHikariPoolMXBean().softEvictConnections();
-                            }
-                        });
-            } catch (Exception ignored) {
-                // Context may not have started if a test failed before context refresh
+        System.setProperty("spring.jpa.hibernate.ddl-auto", "none");
+        TenantContext.clear();
+        SecurityContextHolder.clearContext();
+        evictAndClearSeenContexts();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void normalizeDynamicPropertiesCustomizerIfStandard(
+            ExtensionContext context, PostgreSQLContainer<?> pg) {
+        try {
+            Method getTcm = SpringExtension.class.getDeclaredMethod(
+                    "getTestContextManager", ExtensionContext.class);
+            getTcm.setAccessible(true);
+            TestContextManager tcm = (TestContextManager) getTcm.invoke(null, context);
+            TestContext tc = tcm.getTestContext();
+            SEEN_TEST_CONTEXTS.add(tc);
+            Field mergedConfigField = tc.getClass().getDeclaredField("mergedConfig");
+            mergedConfigField.setAccessible(true);
+            MergedContextConfiguration mergedConfig =
+                    (MergedContextConfiguration) mergedConfigField.get(tc);
+
+            Set<ContextCustomizer> currentCustomizers = mergedConfig.getContextCustomizers();
+            ContextCustomizer targetCustomizer = null;
+            for (ContextCustomizer customizer : currentCustomizers) {
+                if (DYNAMIC_PROPERTIES_CUSTOMIZER_CLASS.equals(customizer.getClass().getName())) {
+                    targetCustomizer = customizer;
+                    break;
+                }
+            }
+            if (targetCustomizer == null) {
+                return;
+            }
+            Field methodsField = targetCustomizer.getClass().getDeclaredField("methods");
+            methodsField.setAccessible(true);
+            Set<Method> methods = (Set<Method>) methodsField.get(targetCustomizer);
+            if (methods == null || methods.isEmpty()) {
+                return;
+            }
+
+            Map<String, String> expectedProps = new LinkedHashMap<>();
+            IntegrationTestSupport.registerPostgresTestProperties(
+                    (name, supplier) -> expectedProps.put(name, String.valueOf(supplier.get())),
+                    pg);
+
+            Map<String, String> actualProps = new LinkedHashMap<>();
+            DynamicPropertyRegistry actualRegistry =
+                    (name, supplier) -> actualProps.put(name, String.valueOf(supplier.get()));
+            for (Method m : methods) {
+                m.setAccessible(true);
+                m.invoke(null, actualRegistry);
+            }
+            expectedProps.remove("spring.datasource.hikari.minimum-idle");
+            actualProps.remove("spring.datasource.hikari.minimum-idle");
+            if (!expectedProps.equals(actualProps)) {
+                return;
+            }
+
+            Constructor<?> ctor = targetCustomizer.getClass().getDeclaredConstructor(Set.class);
+            ctor.setAccessible(true);
+            ContextCustomizer canonicalCustomizer =
+                    (ContextCustomizer) ctor.newInstance(Set.of(CANONICAL_DYNAMIC_PROPERTY_METHOD));
+
+            Set<ContextCustomizer> normalized = new LinkedHashSet<>();
+            for (ContextCustomizer customizer : currentCustomizers) {
+                if (customizer == targetCustomizer) {
+                    normalized.add(canonicalCustomizer);
+                } else {
+                    normalized.add(customizer);
+                }
+            }
+            Field contextCustomizersField =
+                    MergedContextConfiguration.class.getDeclaredField("contextCustomizers");
+            contextCustomizersField.setAccessible(true);
+            contextCustomizersField.set(mergedConfig, Collections.unmodifiableSet(normalized));
+        } catch (Throwable ignored) {
+            // Class has non-standard or container-dependent dynamic properties; leave untouched
+        }
+    }
+
+    private static void evictAndClearSeenContexts() {
+        TenantContext.clear();
+        SecurityContextHolder.clearContext();
+        synchronized (SEEN_TEST_CONTEXTS) {
+            for (TestContext tc : SEEN_TEST_CONTEXTS) {
+                if (!tc.hasApplicationContext()) {
+                    continue;
+                }
+                ApplicationContext appCtx;
+                try {
+                    appCtx = tc.getApplicationContext();
+                } catch (Exception ignored) {
+                    continue;
+                }
+                if (appCtx instanceof ConfigurableApplicationContext cac && !cac.isActive()) {
+                    continue;
+                }
+                try {
+                    appCtx.getBeansOfType(CacheManager.class)
+                            .values()
+                            .forEach(cm -> cm.getCacheNames().forEach(name -> {
+                                Cache cache = cm.getCache(name);
+                                if (cache != null) {
+                                    cache.clear();
+                                }
+                            }));
+                } catch (Exception ignored) {
+                }
+                try {
+                    appCtx.getBeansOfType(HikariDataSource.class)
+                            .values()
+                            .forEach(ds -> {
+                                if (ds.getHikariPoolMXBean() != null) {
+                                    ds.getHikariPoolMXBean().softEvictConnections();
+                                }
+                            });
+                } catch (Exception ignored) {
+                }
             }
         }
     }
@@ -181,19 +329,7 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
         return forkSingleton;
     }
 
-    static synchronized PostgreSQLContainer<?> ensureSingletonStartedAndReset() {
-        PostgreSQLContainer<?> pg = ensureSingletonStarted();
-        resetDatabaseAndRoles(pg);
-        return pg;
-    }
-
-    static synchronized void resetIfStarted() {
-        if (forkSingleton != null && forkSingleton.isRunning()) {
-            resetDatabaseAndRoles(forkSingleton);
-        }
-    }
-
-    private static void resetDatabaseAndRoles(PostgreSQLContainer<?> pg) {
+    private static void resetDatabaseAndRoles(PostgreSQLContainer<?> pg, boolean dropShopNameUniqueIndex) {
         try (Connection conn = DriverManager.getConnection(
                      pg.getJdbcUrl(), "_jtoye_bootstrap_superuser", EXPECTED_PASS);
              Statement stmt = conn.createStatement()) {
@@ -248,6 +384,11 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
                         ON CONFLICT (id) DO NOTHING;
                     END $$;
                     """);
+            if (dropShopNameUniqueIndex) {
+                stmt.execute("DROP INDEX IF EXISTS public.idx_shops_tenant_name");
+            } else {
+                stmt.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_shops_tenant_name ON public.shops(tenant_id, name)");
+            }
         } catch (Exception e) {
             throw new IllegalStateException("Failed to reset shared PostgreSQL test container state", e);
         }
@@ -255,8 +396,7 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
 
     /**
      * Lightweight {@link PostgreSQLContainer} adapter that delegates to the per-JVM-fork singleton
-     * container while resetting database tables and cluster roles on {@link #start()} and
-     * {@link #stop()}.
+     * container.
      */
     static final class PooledPostgreSQLContainer extends PostgreSQLContainer<PooledPostgreSQLContainer> {
 
@@ -278,12 +418,12 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
 
         @Override
         public void stop() {
-            resetIfStarted();
+            // Kept running for the life of the worker fork JVM; reset occurs in beforeAll.
         }
 
         @Override
         public void close() {
-            resetIfStarted();
+            // Kept running for the life of the worker fork JVM; reset occurs in beforeAll.
         }
 
         @Override
