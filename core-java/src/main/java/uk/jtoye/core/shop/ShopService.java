@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopSlugTakenException;
 import uk.jtoye.core.geo.PostcodeGeocoder;
+import uk.jtoye.core.payment.BillingLocationSync;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
@@ -51,6 +53,7 @@ public class ShopService {
     private final ShopCacheLoader shopCacheLoader;
     private final PostcodeGeocoder postcodeGeocoder;
     private final Clock clock;
+    private final BillingLocationSync billingLocationSync;
 
     /**
      * Slugs that must never reach the {@code slug} column, because the storefront
@@ -94,7 +97,20 @@ public class ShopService {
                        PostcodeGeocoder postcodeGeocoder,
                        Clock clock) {
         this(shopRepository, null, shopMapper, storageService, cacheEvictor, shopAccessService,
-                shopCacheLoader, postcodeGeocoder, clock);
+                shopCacheLoader, postcodeGeocoder, clock, null);
+    }
+
+    public ShopService(ShopRepository shopRepository,
+                       ShopSlugAliasRepository shopSlugAliasRepository,
+                       ShopMapper shopMapper,
+                       StorageService storageService,
+                       TenantCacheEvictor cacheEvictor,
+                       ShopAccessService shopAccessService,
+                       ShopCacheLoader shopCacheLoader,
+                       PostcodeGeocoder postcodeGeocoder,
+                       Clock clock) {
+        this(shopRepository, shopSlugAliasRepository, shopMapper, storageService, cacheEvictor,
+                shopAccessService, shopCacheLoader, postcodeGeocoder, clock, null);
     }
 
     @Autowired
@@ -106,7 +122,8 @@ public class ShopService {
                        ShopAccessService shopAccessService,
                        ShopCacheLoader shopCacheLoader,
                        PostcodeGeocoder postcodeGeocoder,
-                       Clock clock) {
+                       Clock clock,
+                       @Nullable BillingLocationSync billingLocationSync) {
         this.shopRepository = shopRepository;
         this.shopSlugAliasRepository = shopSlugAliasRepository;
         this.shopMapper = shopMapper;
@@ -116,6 +133,7 @@ public class ShopService {
         this.shopCacheLoader = shopCacheLoader;
         this.postcodeGeocoder = postcodeGeocoder;
         this.clock = clock;
+        this.billingLocationSync = billingLocationSync;
     }
 
     // createShop inserts a brand-new entity; no existing cache key could match it,
@@ -188,6 +206,9 @@ public class ShopService {
         applyCoordinate(shop, request, null, null);
 
         shop = saveTranslatingSlugConflict(shop);
+        if (billingLocationSync != null) {
+            billingLocationSync.syncAfterCommit(tenantId, "shop-create-" + shop.getId());
+        }
 
         log.info("Created shop {} with ID {} for tenant {}", shop.getName(), shop.getId(), tenantId);
 
@@ -585,6 +606,9 @@ public class ShopService {
 
         shopRepository.delete(shop);
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
+        if (billingLocationSync != null) {
+            billingLocationSync.syncAfterCommit(tenantId, "shop-delete-" + shopId);
+        }
 
         log.info("Deleted shop {} with ID {}", shop.getName(), shop.getId());
     }
