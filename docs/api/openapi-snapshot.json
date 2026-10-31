@@ -558,6 +558,10 @@
             "description" : "Stripe PaymentIntent ID for the remaining balance",
             "type" : "string"
           },
+          "stripeAccountId" : {
+            "description" : "Connected Stripe account that owns the PaymentIntent; pass as stripeAccount to Stripe.js. Null for platform and destination charges.",
+            "type" : "string"
+          },
           "totalAmountPennies" : {
             "description" : "Total order amount in pennies",
             "format" : "int64",
@@ -2961,6 +2965,10 @@
           "status" : {
             "type" : "string"
           },
+          "stripeAccountId" : {
+            "description" : "Connected Stripe account that owns the PaymentIntent; pass as stripeAccount to Stripe.js. Null for platform and destination charges.",
+            "type" : "string"
+          },
           "subtotalPennies" : {
             "format" : "int64",
             "type" : "integer"
@@ -4649,6 +4657,65 @@
         },
         "type" : "object"
       },
+      "PaymentLinkPreviewDto" : {
+        "description" : "Read-only preview of a single-use payment link. Reading it does not use the link up.",
+        "properties" : {
+          "amountPennies" : {
+            "description" : "The amount this link asks for, in minor units.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "currency" : {
+            "description" : "ISO 4217 currency, lower case, as the payment intent was created.",
+            "example" : "gbp",
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "purpose" : {
+            "enum" : [
+              "UPFRONT",
+              "DEPOSIT",
+              "BALANCE"
+            ],
+            "type" : "string"
+          },
+          "shopName" : {
+            "description" : "The shop's trading name.",
+            "type" : "string"
+          },
+          "state" : {
+            "description" : "PAID beats USED beats REVOKED beats EXPIRED beats ACTIVE. PAID: the order's payment is CAPTURED (UPFRONT, DEPOSIT) or nothing is left to pay (BALANCE).",
+            "enum" : [
+              "ACTIVE",
+              "USED",
+              "EXPIRED",
+              "REVOKED",
+              "PAID"
+            ],
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentLinkTokenRequest" : {
+        "description" : "The single-use token from the payment link's #token= fragment.",
+        "properties" : {
+          "token" : {
+            "minLength" : 1,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "token"
+        ],
+        "type" : "object"
+      },
       "ProblemDetail" : {
         "additionalProperties" : true,
         "description" : "RFC 7807 problem detail. Every non-2xx response from this API uses this shape, produced centrally by GlobalExceptionHandler. Handlers may attach additional machine-readable members (e.g. shopId, requiredRole, errors).",
@@ -5300,6 +5367,10 @@
             "type" : "string"
           },
           "purpose" : {
+            "type" : "string"
+          },
+          "stripeAccountId" : {
+            "description" : "Connected Stripe account that owns the PaymentIntent; pass as stripeAccount to Stripe.js. Null for platform and destination charges.",
             "type" : "string"
           },
           "stripePaymentIntentId" : {
@@ -13843,6 +13914,160 @@
         ]
       }
     },
+    "/api/v1/public/payment-links/preview" : {
+      "post" : {
+        "description" : "Read-only and safe to repeat: does NOT consume the single-use link and does not contact the payment provider. Returns the shop, order number, amount, currency, purpose, expiry and state (ACTIVE, USED, EXPIRED, REVOKED, PAID; PAID takes precedence over USED, USED over REVOKED, REVOKED over EXPIRED). The token is sent in the JSON body, never the URL (PAY-04, D-03).",
+        "operationId" : "previewPaymentLinkByBody",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PaymentLinkTokenRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PaymentLinkPreviewDto"
+                }
+              }
+            },
+            "description" : "The link's preview. Cache-Control: no-store."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The token is missing or blank."
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No payment link has this token (type https://jtoye.uk/errors/not-found)."
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Per-IP public rate limit exceeded."
+          }
+        },
+        "summary" : "Preview a payment link without using it",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/api/v1/public/payment-links/redeem" : {
+      "post" : {
+        "description" : "The body-token form of the path redeem, with identical behaviour: marks the link used (single use) and returns the live Stripe PaymentIntent client secret. Idempotent by construction rather than replayable: a repeat is always refused 409, so an Idempotency-Key is not needed (PAY-04).",
+        "operationId" : "redeemPaymentLinkByBody",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PaymentLinkTokenRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RedeemedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "Redeemed. Cache-Control: no-store."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The token is missing or blank."
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No payment link has this token (type https://jtoye.uk/errors/not-found)."
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The link has already been used."
+          },
+          "410" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The link was revoked or has expired."
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Per-IP public rate limit exceeded."
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The payment provider could not load the session."
+          }
+        },
+        "summary" : "Redeem a single-use payment link (token in the body)",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
     "/api/v1/public/payment-links/{token}/redeem" : {
       "post" : {
         "description" : "Marks the payment link token as used (single-use) and returns the live Stripe PaymentIntent client secret (#461 / PAY-04).",
@@ -17090,6 +17315,160 @@
           }
         },
         "summary" : "Create remaining-balance PaymentIntent for a deposit order",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/payment-links/preview" : {
+      "post" : {
+        "description" : "Read-only and safe to repeat: does NOT consume the single-use link and does not contact the payment provider. Returns the shop, order number, amount, currency, purpose, expiry and state (ACTIVE, USED, EXPIRED, REVOKED, PAID; PAID takes precedence over USED, USED over REVOKED, REVOKED over EXPIRED). The token is sent in the JSON body, never the URL (PAY-04, D-03).",
+        "operationId" : "previewPaymentLinkByBody_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PaymentLinkTokenRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PaymentLinkPreviewDto"
+                }
+              }
+            },
+            "description" : "The link's preview. Cache-Control: no-store."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The token is missing or blank."
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No payment link has this token (type https://jtoye.uk/errors/not-found)."
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Per-IP public rate limit exceeded."
+          }
+        },
+        "summary" : "Preview a payment link without using it",
+        "tags" : [
+          "Public Storefront"
+        ]
+      }
+    },
+    "/public/payment-links/redeem" : {
+      "post" : {
+        "description" : "The body-token form of the path redeem, with identical behaviour: marks the link used (single use) and returns the live Stripe PaymentIntent client secret. Idempotent by construction rather than replayable: a repeat is always refused 409, so an Idempotency-Key is not needed (PAY-04).",
+        "operationId" : "redeemPaymentLinkByBody_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PaymentLinkTokenRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RedeemedPaymentLinkDto"
+                }
+              }
+            },
+            "description" : "Redeemed. Cache-Control: no-store."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The token is missing or blank."
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No payment link has this token (type https://jtoye.uk/errors/not-found)."
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The link has already been used."
+          },
+          "410" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The link was revoked or has expired."
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Per-IP public rate limit exceeded."
+          },
+          "502" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The payment provider could not load the session."
+          }
+        },
+        "summary" : "Redeem a single-use payment link (token in the body)",
         "tags" : [
           "Public Storefront"
         ]
