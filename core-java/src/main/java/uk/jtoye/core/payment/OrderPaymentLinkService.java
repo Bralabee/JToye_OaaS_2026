@@ -1,6 +1,7 @@
 package uk.jtoye.core.payment;
 
 import com.stripe.exception.StripeException;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.EntityManager;
 import org.hibernate.Session;
 import org.slf4j.Logger;
@@ -21,6 +22,8 @@ import uk.jtoye.core.order.PaymentStatus;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
 
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
@@ -28,6 +31,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * Issues and redeems single-use expiring payment links for verified-phone orders
@@ -40,12 +44,21 @@ import java.util.UUID;
  *   <li>Only the SHA-256 hex digest of the 32-byte URL-safe token is persisted.</li>
  *   <li>Prior unused links for the same order + purpose are automatically revoked on re-issue.</li>
  *   <li>Single-use redemption stamps {@code used_at} and returns the live Stripe {@code clientSecret}.</li>
+ *   <li>A read-only preview (30-16, D-03) answers who is asking, how much and whether the link still
+ *       works WITHOUT stamping {@code used_at} and without calling Stripe, so a link scanner or a
+ *       curious tap cannot burn a single-use link.</li>
  * </ul>
+ *
+ * <p>The issued URL carries the token in the fragment, {@code <base>/pay#token=<raw>} (owner decision
+ * 2026-10-31, plan 30-16 Task 1): no browser sends a fragment to a server, so the token never appears
+ * in a request line or an access log, the V75 / V77 bearer-token rule. The page posts it in a JSON body.
  */
 @Service
 public class OrderPaymentLinkService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderPaymentLinkService.class);
+    /** One body for every unknown token, on redeem and preview alike. */
+    private static final String LINK_NOT_FOUND = "Payment link not found.";
 
     private final OrderPaymentLinkRepository linkRepository;
     private final OrderRepository orderRepository;
@@ -54,6 +67,8 @@ public class OrderPaymentLinkService {
     private final ShopAccessService shopAccessService;
     private final WhatsAppSmsChannel whatsAppSmsChannel;
     private final EntityManager entityManager;
+    private final ShopRepository shopRepository;
+    private final StripeProperties stripeProperties;
     private final SecureRandom secureRandom = new SecureRandom();
     private final String baseUrl;
     private final int defaultTtlMinutes;
@@ -66,6 +81,8 @@ public class OrderPaymentLinkService {
             ShopAccessService shopAccessService,
             WhatsAppSmsChannel whatsAppSmsChannel,
             EntityManager entityManager,
+            ShopRepository shopRepository,
+            StripeProperties stripeProperties,
             @Value("${jtoye.payment-links.base-url:${notification.email.tracking-base-url:http://localhost:3000}}") String baseUrl,
             @Value("${jtoye.payment-links.default-ttl-minutes:60}") int defaultTtlMinutes) {
         this.linkRepository = linkRepository;
@@ -75,6 +92,8 @@ public class OrderPaymentLinkService {
         this.shopAccessService = shopAccessService;
         this.whatsAppSmsChannel = whatsAppSmsChannel;
         this.entityManager = entityManager;
+        this.shopRepository = shopRepository;
+        this.stripeProperties = stripeProperties;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.defaultTtlMinutes = defaultTtlMinutes;
     }
@@ -99,7 +118,30 @@ public class OrderPaymentLinkService {
             long amountPennies,
             String stripePaymentIntentId,
             String clientSecret,
-            OffsetDateTime usedAt
+            OffsetDateTime usedAt,
+            @Schema(description = "Connected Stripe account that owns the PaymentIntent; pass as stripeAccount to "
+                    + "Stripe.js. Null for platform and destination charges.")
+            String stripeAccountId
+    ) {}
+
+    /**
+     * What a payment-link holder may see before deciding to pay (UI-SPEC S3 data contract 1): who is
+     * asking, for how much, and whether the link still works. Carries no token, no client secret and no
+     * customer data.
+     */
+    @Schema(description = "Read-only preview of a single-use payment link. Reading it does not use the link up.")
+    public record PaymentLinkPreviewDto(
+            @Schema(description = "The shop's trading name.") String shopName,
+            String orderNumber,
+            @Schema(description = "The amount this link asks for, in minor units.") long amountPennies,
+            @Schema(description = "ISO 4217 currency, lower case, as the payment intent was created.", example = "gbp")
+            String currency,
+            @Schema(allowableValues = {"UPFRONT", "DEPOSIT", "BALANCE"}) String purpose,
+            OffsetDateTime expiresAt,
+            @Schema(description = "PAID beats USED beats REVOKED beats EXPIRED beats ACTIVE. PAID: the order's "
+                    + "payment is CAPTURED (UPFRONT, DEPOSIT) or nothing is left to pay (BALANCE).",
+                    allowableValues = {"ACTIVE", "USED", "EXPIRED", "REVOKED", "PAID"})
+            String state
     ) {}
 
     /**
@@ -197,7 +239,7 @@ public class OrderPaymentLinkService {
         link.setExpiresAt(expiresAt);
         link = linkRepository.saveAndFlush(link);
 
-        String paymentUrl = baseUrl + "/pay/" + rawToken;
+        String paymentUrl = baseUrl + "/pay#token=" + rawToken;
         if (order.getCustomerPhone() != null && !order.getCustomerPhone().isBlank()) {
             String phoneE164 = PhoneVerificationService.normalizePhone(order.getCustomerPhone());
             whatsAppSmsChannel.deliver(new NotificationMessage(
@@ -239,41 +281,7 @@ public class OrderPaymentLinkService {
      */
     @Transactional
     public RedeemedPaymentLinkDto redeemPaymentLink(String rawToken) {
-        if (rawToken == null || rawToken.isBlank()) {
-            throw new IllegalArgumentException("Payment link token is required.");
-        }
-        String tokenSha256 = PhoneVerificationService.sha256Hex(rawToken.trim());
-
-        // A-3 (PR #949 round 1): the bearer lookup must run tenant-less so the token-scoped
-        // order_payment_links_public_select policy applies. An ambient TenantContext (an
-        // authenticated user of another tenant clicking the link) would otherwise pin the GUC
-        // to the wrong tenant and both policies would hide the row. Restored in finally.
-        UUID previousTenant = TenantContext.get().orElse(null);
-        TenantContext.clear();
-
-        Session session = entityManager.unwrap(Session.class);
-        try {
-            session.doWork(connection -> {
-                try (var stmt = connection.prepareStatement(
-                        "SELECT set_config('app.current_tenant_id', '', true), "
-                                + "set_config('app.payment_link_token_sha256', ?, true)")) {
-                    stmt.setString(1, tokenSha256);
-                    stmt.execute();
-                }
-            });
-
-            OrderPaymentLink link = linkRepository.findByTokenSha256(tokenSha256)
-                    .orElseThrow(() -> new ResourceNotFoundException("Payment link not found."));
-
-            TenantContext.set(link.getTenantId());
-            session.doWork(connection -> {
-                try (var stmt = connection.prepareStatement(
-                        "SELECT set_config('app.current_tenant_id', ?, true)")) {
-                    stmt.setString(1, link.getTenantId().toString());
-                    stmt.execute();
-                }
-            });
-
+        return withLinkTenant(rawToken, link -> {
             if (link.getRevokedAt() != null) {
                 throw new ResponseStatusException(HttpStatus.GONE,
                         "This payment link has been revoked.");
@@ -298,8 +306,12 @@ public class OrderPaymentLinkService {
             link.setUsedAt(now);
 
             String clientSecret = null;
+            String stripeAccountId = null;
             if (link.getStripePaymentIntentId() != null && paymentService.isConfigured()) {
                 Order order = orderRepository.findById(link.getOrderId()).orElse(null);
+                // 30-17 (UI-SPEC § S1): the account the secret below is retrieved on, from the same
+                // routing rule (direct-charge header only), read under this link's pinned tenant.
+                stripeAccountId = order == null ? null : paymentService.directChargeAccountFor(order).orElse(null);
                 try {
                     // A-1: order-aware retrieve carries the Stripe-Account header for
                     // direct-charge / split-deposit intents on the vendor's connected account.
@@ -322,8 +334,105 @@ public class OrderPaymentLinkService {
                     link.getAmountPennies(),
                     link.getStripePaymentIntentId(),
                     clientSecret,
-                    now
+                    now,
+                    stripeAccountId
             );
+        });
+    }
+
+    /**
+     * Preview a payment link without spending it (30-16, D-03, UI-SPEC S3 data contract 1).
+     *
+     * <p>Resolves the token exactly as {@link #redeemPaymentLink} does (tenant-less bearer lookup under
+     * the token-scoped RLS policy, then the link's own tenant pinned for the order and shop reads, the
+     * caller's {@link TenantContext} restored afterwards), then reports the link's state. It writes
+     * nothing: no {@code markUsedIfUnused}, no Stripe call. An unknown token is the same 404 as redeem.
+     */
+    @Transactional(readOnly = true)
+    public PaymentLinkPreviewDto previewPaymentLink(String rawToken) {
+        return withLinkTenant(rawToken, link -> {
+            Order order = orderRepository.findById(link.getOrderId())
+                    .orElseThrow(() -> new ResourceNotFoundException(LINK_NOT_FOUND));
+            String shopName = shopRepository.findById(link.getShopId())
+                    .map(Shop::getName)
+                    .orElseThrow(() -> new ResourceNotFoundException(LINK_NOT_FOUND));
+            return new PaymentLinkPreviewDto(
+                    shopName,
+                    order.getOrderNumber(),
+                    link.getAmountPennies(),
+                    stripeProperties.getCurrency(),
+                    link.getPurpose(),
+                    link.getExpiresAt(),
+                    previewState(link, order, OffsetDateTime.now()));
+        });
+    }
+
+    /**
+     * The preview state, in precedence order PAID &gt; USED &gt; REVOKED &gt; EXPIRED &gt; ACTIVE. PAID is
+     * the order's truth, not the link's: an UPFRONT or DEPOSIT link is paid once the order's payment is
+     * CAPTURED, a BALANCE link once nothing is left due (a captured deposit with a balance still owed is
+     * not a paid balance). Expiry uses the same comparison as redeem, so the two never disagree.
+     */
+    static String previewState(OrderPaymentLink link, Order order, OffsetDateTime now) {
+        boolean paid = "BALANCE".equals(link.getPurpose())
+                ? order.getBalanceDuePennies() != null && order.getBalanceDuePennies() == 0L
+                : order.getPaymentStatus() == PaymentStatus.CAPTURED;
+        if (paid) {
+            return "PAID";
+        }
+        if (link.getUsedAt() != null) {
+            return "USED";
+        }
+        if (link.getRevokedAt() != null) {
+            return "REVOKED";
+        }
+        if (link.getExpiresAt().isBefore(now)) {
+            return "EXPIRED";
+        }
+        return "ACTIVE";
+    }
+
+    /**
+     * The bearer resolution shared by redeem and preview: find the link by its token's digest with no
+     * tenant pinned, pin the link's tenant, run {@code work}, and restore the caller's context.
+     */
+    private <T> T withLinkTenant(String rawToken, Function<OrderPaymentLink, T> work) {
+        if (rawToken == null || rawToken.isBlank()) {
+            throw new IllegalArgumentException("Payment link token is required.");
+        }
+        String tokenSha256 = PhoneVerificationService.sha256Hex(rawToken.trim());
+
+        // A-3 (PR #949 round 1): the bearer lookup must run tenant-less so the token-scoped
+        // order_payment_links_public_select policy applies. An ambient TenantContext (an
+        // authenticated user of another tenant clicking the link) would otherwise pin the GUC
+        // to the wrong tenant and both policies would hide the row. Restored in finally.
+        UUID previousTenant = TenantContext.get().orElse(null);
+        TenantContext.clear();
+
+        Session session = entityManager.unwrap(Session.class);
+        try {
+            session.doWork(connection -> {
+                try (var stmt = connection.prepareStatement(
+                        "SELECT set_config('app.current_tenant_id', '', true), "
+                                + "set_config('app.payment_link_token_sha256', ?, true)")) {
+                    stmt.setString(1, tokenSha256);
+                    stmt.execute();
+                }
+            });
+
+            OrderPaymentLink link = linkRepository.findByTokenSha256(tokenSha256)
+                    .orElseThrow(() -> new ResourceNotFoundException(LINK_NOT_FOUND));
+
+            TenantContext.set(link.getTenantId());
+            session.doWork(connection -> {
+                try (var stmt = connection.prepareStatement(
+                        "SELECT set_config('app.current_tenant_id', ?, true)")) {
+                    stmt.setString(1, link.getTenantId().toString());
+                    stmt.execute();
+                }
+            });
+
+            return work.apply(link);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

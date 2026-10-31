@@ -1,0 +1,45 @@
+# 30-16 Task 3 verify, at GREEN commit c7dc7594 (feat/30-pay-link-page). Live build dir: core-java/build-local.
+
+## V1 (plan <verify> 1)
+cmd: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest' --tests 'uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkRlsIntegrationTest' --no-daemon
+first GREEN run 19:29Z: rc=0, '> Task :core-java:integrationTest' executed (not UP-TO-DATE)
+  PaymentLinkPreviewIntegrationTest tests=7 failures=0 errors=0 (ts 2026-10-31T19:29:15Z)
+  PhoneVerificationAndPaymentLinkRlsIntegrationTest tests=4 failures=0 errors=0 (ts 2026-10-31T19:29:15Z)
+after adding the service-level tenant-B restore arm, 19:30Z: rc=0, PaymentLinkPreviewIntegrationTest tests=7 failures=0
+both later re-run green inside the arms bracket (CLEAN0 19:31Z, CLEAN1 19:36Z) and the wide run below
+
+## V2 (plan <verify> 2)
+cmd: ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest' --no-daemon
+rc=0, '> Task :core-java:test' executed; PhoneVerificationAndPaymentLinkTest tests=7 failures=0 errors=0 (ts 2026-10-31T19:28:28Z)
+
+## Wide run (whole unit suite + payment package ITs + OpenApiSnapshotTest), started 2026-10-31T19:38:21Z
+cmd: ./gradlew --continue :core-java:cleanTest :core-java:test :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.payment.*' --tests 'uk.jtoye.core.integration.OpenApiSnapshotTest' --no-daemon
+56 tests completed, 1 failed
+8 actionable tasks: 4 executed, 4 up-to-date
+wide_rc=1
+core-java/build-local/test-results/test: files=223 fresh=223 {'tests': 2010, 'failures': 0, 'errors': 0, 'skipped': 1}
+  (the 1 skip is ProductLabelGoldenFileTest, pre-existing and outside this plan)
+core-java/build-local/test-results/integrationTest: files=9 fresh=9 {'tests': 56, 'failures': 1, 'errors': 0, 'skipped': 0}
+   FAIL uk.jtoye.core.integration.OpenApiSnapshotTest#apiDocsMatchCommittedSnapshot()
+  The only failure is OpenApiSnapshotTest, by design: the snapshot is regenerated in plan 30-20 Task 1, whose RED
+  is this test failing on the new routes (30-17 / 30-20 plan text). Snapshot vs generated spec (jq -S):
+  paths added (0 removed):
+    + /api/v1/public/payment-links/preview
+    + /api/v1/public/payment-links/redeem
+    + /public/payment-links/preview
+    + /public/payment-links/redeem
+  schemas added (0 removed):
+    + PaymentLinkPreviewDto
+    + PaymentLinkTokenRequest
+  diff lines: removed=0 added=367
+
+## Docs metrics (counts changed: +10 Java @Test methods, +1 file)
+docs-freshness.sh before --write: rc=1 (tree 3091/427/6686 vs metrics.json 3081/426/6676)
+check-doc-metrics.sh after --write, prose not yet edited: rc=1 (10 FAIL lines: README x4, CLAUDE.md x3, AGENTS.md x3)
+docs-freshness OK: metrics match source (total logical invocations: 6686).
+docs-freshness.sh rc=0
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+check-doc-metrics.sh rc=0
+
+## Secret scan of this plan's evidence (gitleaks, repo .gitleaks.toml)
+planted sk_live_ control: rc=1; RED records: rc=0; arms file: rc=1 on a random test token (generic-api-key) -> 43-char tokens redacted -> rc=0

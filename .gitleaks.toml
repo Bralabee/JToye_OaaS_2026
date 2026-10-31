@@ -281,3 +281,20 @@ regexTarget = "line"
 regexes = [
   '''^\s*\+?Mailpit after the transition \([0-9TZ:-]+\), [a-z]+ new messages?; unsubscribe tokens redacted:\s*\n\s*\+?[A-Za-z0-9]{22} Date: [A-Z][a-z]{2}, [0-9]{1,2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} \+0000 \(GMT\)\s*$''',
 ]
+
+# ---- Phase 30-18 test fixture (plan 30-20, 2026-10-31) ----------------------
+# frontend/app/pay/__tests__/pay-client.test.tsx sets CLIENT_SECRET to a made-up
+# PaymentIntent client secret. Jest's mocked Stripe.js receives it, and it reaches no
+# Stripe endpoint. It is not a real client secret: real ones are pi_<24 alphanumerics>
+# _secret_<25 alphanumerics>, never a four-digit id and a three-letter tail.
+# generic-api-key flags CLIENT_SECRET = "..." (commit 25126b7f, already in branch
+# history, so the value cannot be edited out of the pushed range). ONE exact value,
+# matched on the secret and anchored at both ends: pi_3018_secret_abd, or any real
+# pi_..._secret_..., still fires.
+[[allowlists]]
+description = "Phase 30-18 /pay Jest fixture: the mocked PaymentIntent client secret pi_3018_secret_abc (a fixture, not a credential)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^pi_3018_secret_abc$''',
+]

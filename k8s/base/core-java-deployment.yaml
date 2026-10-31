@@ -636,6 +636,14 @@ spec:
             configMapKeyRef:
               name: app-config
               key: stripe.environment-tag
+        # PAY-04 OTP test seam (owner decision 30-16, plan 30-20): base "false", staging
+        # "true", production "false" explicitly. Not optional: the key is in base, so every
+        # overlay renders it, and plan 30-17's guard refuses "true" outside local/test/staging.
+        - name: JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: jtoye.phone-verification.expose-otp-for-test
         # OPTIONAL Secret (stripe-credentials). Absent → env unset → the
         # application.yml empty defaults apply and the payment path behaves
         # exactly as it does today.

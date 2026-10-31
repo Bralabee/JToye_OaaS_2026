@@ -30,5 +30,14 @@ exports[`Security headers snapshot (regression guard) static headers match snaps
     ],
     "source": "/invite/:path*",
   },
+  {
+    "headers": [
+      {
+        "key": "Referrer-Policy",
+        "value": "no-referrer",
+      },
+    ],
+    "source": "/pay/:path*",
+  },
 ]
 `;

@@ -183,6 +183,13 @@ jtoye:
     # "Registered office:" (Pitfall 13 — 31.1-27 sets it in every runtime, beside the frontend's
     # NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).
     registered-office: ${COMPANY_REGISTERED_OFFICE:}
+  phone-verification:
+    # PAY-04 test seam (plans 30-16/30-17/30-20, owner decision expose-on-staging): when true the
+    # public phone-verification challenge returns its OTP as testPreviewOtp, so a staging proof can
+    # verify a phone without a real SMS. FALSE by default and in every k8s overlay but staging.
+    # PhoneVerificationService refuses to start with it true unless stripe.environment-tag declares
+    # a local, test or staging runtime, so a production render that set it would not boot.
+    expose-otp-for-test: ${JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST:false}
   shop:
     # Slugs a vendor may NOT claim, because the storefront serves a STATIC route at
     # /shop/<segment> and Next.js resolves a static segment BEFORE the dynamic

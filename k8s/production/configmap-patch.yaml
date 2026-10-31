@@ -81,6 +81,10 @@ data:
   # PAY-03 (plan 30-13): this runtime's Stripe environment name, declared here and never in
   # base (k8s/base/configmap.yaml says why; plan 30-17's OTP guard trusts it).
   stripe.environment-tag: "production"
+  # PAY-04 OTP test seam: stated OFF explicitly (owner decision 30-16), never inherited.
+  # Byte-identical to the base value; were it ever "true" here, plan 30-17's startup
+  # guard would refuse to boot core-java, because "production" is not a seam environment.
+  jtoye.phone-verification.expose-otp-for-test: "false"
 
   # FE-1 / E-5 (QA council 20260902-134741): stated EXPLICITLY here, in keeping
   # with this overlay's convention — the vendor sign-out return leg stays on

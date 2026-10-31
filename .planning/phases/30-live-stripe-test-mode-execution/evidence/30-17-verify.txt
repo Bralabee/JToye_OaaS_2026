@@ -1,0 +1,49 @@
+# 30-17 verification record (2026-10-31, branch feat/30-pay-link-page, not pushed)
+# Every command was run from the worktree root; rc captured on the same statement.
+
+## Task 1 <verify> (the plan's two automated commands)
+V1  ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.payment.PaymentServiceTest'
+        --tests 'uk.jtoye.core.storefront.GuestOrderStripeAccountTest' --tests 'uk.jtoye.core.boot4.*' --no-daemon
+    RED  (fbd3b888, before GREEN): rc=1; PaymentServiceTest 53 tests / 7 failures (the 7 new arms), GuestOrderStripeAccountTest
+         7 / 7. Records: evidence/30-17-red-task1-payment.json, -storefront.json (RED_EVIDENCE_OK).
+    GREEN (c54abfe1): rc=0; compileJava and test EXECUTED (not UP-TO-DATE). PaymentServiceTest 53/0, GuestOrderStripeAccountTest
+         7/0, boot4: AmqpJackson2CompatibilityTest 18/0, ConfigKeyContractTest 9/0, GoldenFixturesIntegrityTest 5/0,
+         Jackson3WireContractTest 12/0, JacksonLineContractTest 5/0, OutboxPayloadCompatibilityTest 21/0,
+         RenamedConfigKeysBindingTest 8/0, RequestBodyConstraintEnforcementTest 2/0, StatemachineSecurityAccessTest 2/0.
+    After refactor (b892c61c): rc=0, same counts.
+V2  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest' --no-daemon
+    RED: rc=1, 9 tests / 2 failures (the 2 new redeem arms). Record: evidence/30-17-red-task1-it.json (RED_EVIDENCE_OK).
+    GREEN: rc=0, 9/0 (NOSUPERUSER NOBYPASSRLS; real settlement routing, spied Stripe calls).
+Break arms: evidence/30-17-task1-arms.txt (A..E each red on the named arm; clean before and after; restores by blob hash).
+Tracer gate: interactive, human_verify_mode end-of-phase, automated-only <verify>; V1 and V2 re-ran green in the closing
+clean bracket of the arms run, so expansion continued.
+
+## Task 2 <verify>
+V3  ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.customer.PhoneVerificationProductionRefusalTest'
+        --tests 'uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest' --no-daemon
+    RED (0327d385): rc=1, refusal test 21 / 21 failures, PhoneVerificationAndPaymentLinkTest 7/0.
+         Record: evidence/30-17-red-task2.json (RED_EVIDENCE_OK).
+    GREEN (8c187771, run with boot4.* added): rc=0, 21/0 and 7/0; boot4 ConfigKeyContractTest 9/0 with the new @Value key.
+    After refactor (55687939): rc=0, 21/0 and 7/0.
+Break arms: evidence/30-17-task2-arms.txt. ARM P is the plan's: the production-only guard turns the missing (null), blank,
+whitespace, stagng, Staging and prod arms red, while the production arm stays green.
+
+## Wide runs (after both tasks)
+W1  ./gradlew :core-java:cleanTest :core-java:test --no-daemon
+    rc=0; 225 classes, 2045 tests, 0 failures, 0 errors, 1 skipped (the pre-existing ProductLabelGoldenFileTest skip).
+    30-16 recorded 2010 tests across 223 classes: +7 PaymentServiceTest, +7 GuestOrderStripeAccountTest, +21 refusal.
+W2  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.payment.*'
+        --tests 'uk.jtoye.core.storefront.GuestCheckout*' --tests '*OpenApiSnapshotTest' --no-daemon
+    rc=1; 13 classes, 76 tests, 1 failure, 0 errors. The failure is OpenApiSnapshotTest, red BY DESIGN until plan 30-20
+    Task 1 regenerates PR 5's snapshot (30-16 SUMMARY deviation 6).
+    git diff --no-index docs/api/openapi-snapshot.json core-java/build-local/openapi/openapi-current.json: 0 removed lines,
+    379 added; the 3 stripeAccountId properties (GuestOrderConfirmation, BalancePaymentSessionDto, RedeemedPaymentLinkDto)
+    plus 30-16's 4 paths (/api/v1/public/payment-links/{preview,redeem} and their /public aliases) and their schemas.
+
+## Counts
+scripts/docs-freshness.sh                rc=1 before --write (3091/427 -> 3115/429 computed, total 6686 -> 6710), rc=0 after
+scripts/check-doc-metrics.sh             rc=1 after --write (10 FAIL lines across README, CLAUDE.md, AGENTS.md), rc=0 after prose
+
+## Stub scan
+665 added lines under core-java/ (git diff <plan_head_before> -- core-java): 0 matches for
+TODO|FIXME|placeholder|coming soon|not available (rc=1); the same scan over the lines plus one planted TODO: 1 (rc=0).

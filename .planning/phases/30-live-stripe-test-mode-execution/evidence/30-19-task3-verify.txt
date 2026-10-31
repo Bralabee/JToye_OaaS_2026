@@ -1,0 +1,33 @@
+## V1 --list with STAGING_E2E=1
+Listing tests:
+  [mobile] › staging-pay-link.spec.ts:319:7 › staging /pay on a phone @mobile-only › staging /pay mounts the card form at 360 px with a coarse pointer and no sideways scroll @mobile-only
+  [desktop] › staging-pay-link.spec.ts:221:5 › staging /pay: preview, continue, reload-resume, pay 4242, Stripe reads succeeded, link spent @desktop-only
+Total: 2 tests in 1 file
+rc=0 desktop=1 mobile=1
+## V1b --list WITHOUT STAGING_E2E (must not collect)
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the arguments.
+Listing tests:
+Total: 0 tests in 0 files
+rc=1
+## V2 account read in both specs
+frontend/e2e/staging-pay-link.spec.ts header=3 field=5 verdict=3
+frontend/e2e/staging-card-checkout.spec.ts header=3 field=5 verdict=3
+miss=0
+## V3 reload + no-link assertion
+reload_calls=2 no_link_assertions=2
+## V4 tsc
+tsc_rc=0
+## V2/V3 strict form (docblock lines * also excluded; the plan's form counts them)
+pay page\.reload\( code_lines=1
+pay Open your payment link code_lines=1
+pay Stripe-Account code_lines=2
+pay stripeAccountId code_lines=4
+pay account= code_lines=2
+card Stripe-Account code_lines=2
+card stripeAccountId code_lines=4
+card account= code_lines=2
+## gates
+check-e2e-typecheck rc=0 PASS: 56 e2e file(s) type-check clean.
+check-e2e-baseurl-contract rc=0 PASS: every PLAYWRIGHT_BASE_URL fallback under frontend/e2e/ agrees with playwright.config.ts.
+eslint rc=0

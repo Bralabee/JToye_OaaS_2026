@@ -442,3 +442,41 @@ describe("#957 post-POST: the Ready state keeps every existing good", () => {
     await waitFor(() => expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{"items":[]}').items).toHaveLength(0))
   })
 })
+
+// ---------------------------------------------------------------------------------------------
+// Plan 30-18 Task 3 (UI-SPEC § S1 "Connected-account initialisation"): a direct-charge order's
+// PaymentIntent lives on the vendor's connected account, so the confirmation's stripeAccountId
+// (plan 30-17) must reach loadStripe as `{ stripeAccount }` — or confirmPayment cannot find the
+// intent. With no account the call stays loadStripe(pk), ONE argument (#793 property 3).
+// ---------------------------------------------------------------------------------------------
+
+describe("30-18: the checkout initialises Stripe on the account that owns the intent", () => {
+  it("a direct-charge confirmation (stripeAccountId) loads Stripe with { stripeAccount }, and Try again keeps the account", async () => {
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = PUBLISHABLE_KEY
+    mockedPost.mockResolvedValue({ data: { ...CARD_CONFIRMATION, stripeAccountId: "acct_1" } })
+    mockedLoadStripe.mockImplementationOnce(() => Promise.resolve(null))
+    await placeCardOrder()
+
+    const alert = await findFailedAlert()
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(1)
+    expect(mockedLoadStripe.mock.calls[0]).toEqual([PUBLISHABLE_KEY, { stripeAccount: "acct_1" }])
+
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
+    await screen.findByTestId("stripe-elements")
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(2)
+    expect(mockedLoadStripe.mock.calls[1]).toEqual([PUBLISHABLE_KEY, { stripeAccount: "acct_1" }])
+  })
+
+  it.each([
+    ["absent (an older server)", {}],
+    ["null (a destination or platform charge)", { stripeAccountId: null }],
+  ])("with stripeAccountId %s, loadStripe is called with the key alone", async (_label, extra) => {
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = PUBLISHABLE_KEY
+    mockedPost.mockResolvedValue({ data: { ...CARD_CONFIRMATION, ...extra } })
+    await placeCardOrder()
+
+    await screen.findByTestId("stripe-elements")
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(1)
+    expect(mockedLoadStripe.mock.calls[0]).toEqual([PUBLISHABLE_KEY])
+  })
+})

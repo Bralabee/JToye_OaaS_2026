@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The `/pay` Payment-Link Page: a Fragment-Token Preview, the Shared Card Form on the Owning Account, and a Staging-Only OTP Seam (Phase 30 PR 5, PAY-04) (#1064) — 2026-10-31
+
+A vendor could already issue a payment link (PAY-04), but the customer had no page to pay it on. D-03 puts that page in Phase 30: a link PAY-04 sends must be payable end to end on staging.
+
+- **Preview without spending (30-16).** `POST /api/v1/public/payment-links/preview` takes the token in a JSON body. It returns the shop, the order number, the amount, the purpose, the expiry and a state: `PAID`, `USED`, `REVOKED`, `EXPIRED` or `ACTIVE`, in that precedence. It never stamps `used_at` and never calls Stripe. A body-token `POST /payment-links/redeem` sits beside the path redeem. By owner decision, links are issued as `/pay#token=…`, so the token never reaches a request line or an access log.
+- **The owning account reaches the browser (30-17).** `stripeAccountId` is set for direct-charge and split-deposit intents and is null for platform and destination intents. It is on the checkout confirmation, the balance session and the redeemed link. Stripe.js loads with `{ stripeAccount }` when it is set.
+- **`frontend/app/pay/page.tsx` (30-18).** The page previews the link. It spends the link only once Stripe.js has loaded. It pays through the checkout's own CardPaymentForm, which is now shared. A reload brings the card form back from a `history.state` entry that never holds the token. Every dead, failed and returning state has its own copy. `receipt_email` is now omitted only when the email is blank.
+- **Hygiene and the staging proof (30-19).** `robots.txt` disallows `/pay`. `/pay/:path*` sends `Referrer-Policy: no-referrer`. The SSR gate declares `STATIC pay/page.tsx`. `staging-seed.sh --stage pay-link` makes a real payable link and writes its URL only to a mode-600 file. `staging-pay-link.spec.ts` pays it and reads the intent on the owning account.
+- **OTP seam overlays (30-20, owner decision expose-on-staging).** `jtoye.phone-verification.expose-otp-for-test` is `"false"` in base, `"true"` in `k8s/staging` and `"false"` stated explicitly in `k8s/production`. core-java reads it as `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`. With the seam on, `PhoneVerificationService` refuses to start unless `stripe.environment-tag` is `local`, `test` or `staging`.
+- **OpenAPI snapshot regenerated.** `OpenApiSnapshotTest` failed before the regeneration and passed after it. The diff is additive only: 4 paths, 2 schemas and 3 `stripeAccountId` properties.
+- **`.gitleaks.toml`.** One exact-value entry for the 30-18 Jest fixture's mocked client secret.
+
 ### Toolchain Audit Gaps R2a-c, R5b, and R10a: Gradle Dependency Submission, `/mcp-server` Dependabot Coverage, Go Linting Baselines, and Loopback Port Bindings (#1058) — 2026-10-31
 
 Closes the OaaS-scoped findings (`R2a–c`, `R5b`, `R10a`) from the 2026-10-31 rev-2 toolchain audit (`~/machine-reset/toolchain-audit-2026-10-31/HANDOFF.md`):

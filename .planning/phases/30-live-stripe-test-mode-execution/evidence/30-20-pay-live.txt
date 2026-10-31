@@ -1,0 +1,100 @@
+# 30-20 — PR 5 (/pay, PAY-04 / D-03): Task 1 evidence (pre-merge). Task 3 appends the GREEN side after the merge deploys.
+# All times UTC. Worktree JToye_OaaS_2026-p30-15, branch feat/30-pay-link-page.
+# Owner decisions (evidence/30-16-owner-decisions.txt): token = FRAGMENT, OTP = expose-on-staging.
+# So PROBE_PATH=/pay (one route, frontend/app/pay/page.tsx; there is no /pay/[token]), and the unknown-token
+# preview is POST /api/v1/public/payment-links/preview {"token":"probe-<UTC>"}.
+
+## 1. Merge from the base (proof rule 3)
+2026-10-31T21:25:15Z (merge commit time)  git fetch origin: rc 0. HEAD..origin/main = 1 commit (eff54aa0, #1058).
+  git merge --no-ff origin/main: one conflict, HANDOFF.md, resolved by hand, keeping BOTH sides (no whole-file --ours/--theirs).
+  Content check against the merge base (C-locale sort/comm):
+    main added_since_base=1 missing_in_merged=0
+    head added_since_base=60 missing_in_merged=0
+    fail-direction control: main's added lines vs HEAD's PRE-merge copy -> 1 missing (the check can fail)
+  merge commit e310356bf83c73a43b031e967e41eaab4bb1f4bf
+  HEAD..origin/main after merge: 0 lines. check-branch-behind-base.sh rc 0 ("0 behind").
+
+## 2. OTP seam overlays (owner decision expose-on-staging) — commit 27ffb459
+  app-config jtoye.phone-verification.expose-otp-for-test: base "false", k8s/staging "true", k8s/production "false" (explicit).
+  core-java env JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST from that key (configMapKeyRef, not optional).
+  application.yml: jtoye.phone-verification.expose-otp-for-test: ${JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST:false}
+    (deviation Rule 3: check-env-contract.sh counts only ${} placeholders as "read"; without it direction (a) fails, arm B below).
+  render-golden.sh --write: goldens changed by the key + env entry only (production 6+, staging 6+, 0-).
+  2026-10-31T21:26:44Z plan verify 1 (render-invariants && render-golden && env-contract && no-plaintext-secrets && connection-math):
+    rc=0 fail_or_parse_lines=0 output_lines=80
+  plan verify 2: production_true=0 production_false=1 production_tag=1
+    positive control (staging render): staging_true=1 ; local render: local_false=1 local_true=0
+  Break arms (committed state first; restore by cp from scratch, then by-content check against HEAD blobs):
+    ARM A production patch set "true": production_true=1 (verify 2 reds); render-golden.sh check rc=1 (golden drift)
+    ARM B placeholder removed from application.yml: check-env-contract.sh rc=1, "(a) VIOLATIONS 1 - JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST"
+    ARM C base key deleted: the WHOLE verify-1 chain rc=0, fail_lines=0, and the local render carries NO key (count 0).
+      FINDING (recorded, not filed): the plan's fails_when "an env read with no key in some overlay" cannot fail in this chain.
+      No gate checks that a non-optional configMapKeyRef names a key present in every render; that is a runtime
+      CreateContainerConfigError only. The measured substitute: the key is in base, so every overlay renders it
+      (local_false=1, staging_true=1, production_false=1).
+    closing clean: git diff --quiet rc=0; all three files restored-by-content (hash-object == HEAD blob).
+
+## 3. OpenAPI snapshot — commit fd6250de
+  2026-10-31T21:28:10Z RED: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests uk.jtoye.core.integration.OpenApiSnapshotTest
+    rc=1; :core-java:integrationTest FAILED (executed, not UP-TO-DATE); xml tests="1" failures="1" errors="0" timestamp 2026-10-31T21:28:17.664Z
+    message: "The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot ..."
+  2026-10-31T21:28:55Z ./gradlew :core-java:updateOpenApiSnapshot --no-daemon rc=0. Diff: 379 insertions, 0 deletions.
+    paths added  : /api/v1/public/payment-links/preview (post), /api/v1/public/payment-links/redeem (post),
+                   /public/payment-links/preview (post), /public/payment-links/redeem (post)
+    paths changed: (none)
+    schemas added: PaymentLinkPreviewDto, PaymentLinkTokenRequest
+    schemas changed: BalancePaymentSessionDto, GuestOrderConfirmation, RedeemedPaymentLinkDto — each ONLY + "stripeAccountId"
+                   (type string, not required; "Null for platform and destination charges.")
+    other top-level / components keys changed: (none)
+    The four paths include the body-token REDEEM as well as the preview: the owner's fragment decision names both
+    ("a body-token preview and redeem are added beside the path redeem"), and 30-16/30-17 SUMMARY predicted exactly
+    4 paths + 2 schemas + 3 stripeAccountId properties. Nothing outside that set moved, so no stop.
+  2026-10-31T21:30:04Z GREEN: same command rc=0; :core-java:integrationTest executed; xml tests="1" skipped="0" failures="0" errors="0"
+    timestamp 2026-10-31T21:30:11.994Z
+
+## 4. RED reads on today's staging (pre-merge, read-only)
+  2026-10-31T21:30:51Z PROBE_PATH=/pay  GET https://app-staging.olajay.co.uk/pay
+    curl_rc=0 code=404 no_referrer=0 -> plan verify rc 0 (RED as expected)
+    headers: HTTP/2 404 ; referrer-policy: strict-origin-when-cross-origin ; x-robots-tag: noindex, nofollow ;
+             cache-control: private, no-cache, no-store, max-age=0, must-revalidate
+    controls: app root GET / = 200 (the probe can see a non-404); header grep over a scratch "referrer-policy: no-referrer" line = 1
+  2026-10-31T21:31:05Z POST https://api-staging.olajay.co.uk/api/v1/public/payment-links/preview, JSON body carrying the probe value probe-20261031T213105Z as its one field
+    curl_rc=0 404 application/problem+json
+    {"detail":"Resource not found","instance":"/api/v1/public/payment-links/preview","status":404,"title":"Not Found","type":"https://jtoye.uk/errors/not-found"}
+    GET on the same path today = 404.
+    controls: GET /api/v1/public/shops/staging-test-kitchen = 200 ; existing path redeem with an unknown token = 404
+  NOTE FOR TASK 3 (falsifiability): status 404 + type not-found is IDENTICAL for "route absent" (today) and "unknown token"
+    (after the merge). Task 3's GREEN preview arm must also assert the detail "Payment link not found."
+    (OrderPaymentLinkService.LINK_NOT_FOUND), and/or GET on the preview route 405 (today 404). Without that, the GREEN arm passes on today's staging.
+
+## 5. Per-PR suite (plan 30-08 Task 1 list + check-ssr-coverage-contract.sh), on HEAD fd6250de
+  name                     rc  start                 end
+  staging-seed --selftest  0   2026-10-31T21:31:34Z  2026-10-31T21:31:50Z
+  check-env-contract       0   2026-10-31T21:31:50Z  2026-10-31T21:31:51Z  (core-java 92 injected / 199 read)
+  check-gate-enforcement   0   2026-10-31T21:31:51Z  2026-10-31T21:31:53Z
+  docs-freshness           0   2026-10-31T21:31:53Z  2026-10-31T21:31:53Z  (6753)
+  check-doc-metrics        0   2026-10-31T21:31:53Z  2026-10-31T21:31:54Z  (37 claims)
+  check-ssr-coverage       0   2026-10-31T21:31:54Z  2026-10-31T21:31:54Z
+  check-branch-behind-base 0   2026-10-31T21:31:54Z  2026-10-31T21:31:54Z
+  frontend lint            0   2026-10-31T21:32:01Z  2026-10-31T21:32:26Z  (0 errors, 27 warnings)
+  frontend jest --ci       0   2026-10-31T21:32:26Z  2026-10-31T21:32:55Z  (275 suites, 3260/3260)
+  core-java cleanTest cleanIntegrationTest test integrationTest  0   2026-10-31T21:31:29Z  2026-10-31T21:47:30Z
+                           (BUILD SUCCESSFUL 15m 59s; both tasks executed; fresh xml after the clean tasks:
+                            test 225 files tests=2045 failures=0 errors=0 skipped=1;
+                            integrationTest 229 files tests=1402 failures=0 errors=0 skipped=1)
+
+## 6. Push and PR
+  2026-10-31T21:48 first push REFUSED by pre-push P-3 (gitleaks 8.30.1, range bd4a0159..HEAD, 37 commits): 2 generic-api-key hits
+    a) this file, line 61: the probe JSON body written in key/value form. My own unpushed commit: reworded and amended
+       (control: the old shape in a scratch dir -> gitleaks dir rc=1; reworded file -> rc=0).
+    b) frontend/app/pay/__tests__/pay-client.test.tsx:85 CLIENT_SECRET = "pi_3018_secret_abc" (30-18 commit 25126b7f, already
+       in history). Deviation Rule 3: ONE exact-value content allowlist in .gitleaks.toml, ^pi_3018_secret_abc$, regexTarget secret
+       (commit 6536d143). Controls on 8.30.1: pi_3018_secret_abc rc=0 ; pi_3018_secret_abd rc=1 ; a real-shaped
+       pi_<24>_secret_<25> rc=1. CI pins 8.27.2 (gitleaks.yml), so the CI job is the 8.27.2 read.
+    range rescan after both fixes: rc=0.
+  2026-10-31T21:50:05Z check-branch-behind-base.sh rc=0 (0 behind origin/main eff54aa0), immediately before the push.
+  2026-10-31T21:50:09Z push rc=0: bd4a0159..6536d143 (remote head bd4a0159 = the earlier 30-16 push, an ancestor: fast-forward).
+    pre-push: P-2 ok, P-3 ok (no secrets), P-4 ok.
+  2026-10-31T21:50:30Z gh pr create rc=0: PR #1064 https://github.com/Bralabee/JToye_OaaS_2026/pull/1064
+    body scan before create: attribution=0 closing=0 (positive control: "Co-Authored-By: x" + "Closes #957" -> 1 and 1).
+<!-- pr-after -->

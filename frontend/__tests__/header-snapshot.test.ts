@@ -81,6 +81,52 @@ describe("Security headers snapshot (regression guard)", () => {
     expect(effective).toBe("no-referrer")
   })
 
+  // 30-19 (PAY-04 / D-03, T-30-77): the payment-link page sends no Referer either. Its
+  // link carries a single-use bearer token in the fragment (/pay#token=…); the island
+  // strips it to /pay, but a Referer would still name the page to Stripe.js and anything
+  // else it loads. Same two properties as /invite: the entry comes after the default, and
+  // its source matches the page (/pay, and /pay/<x> should a path segment ever appear)
+  // without bleeding into neighbours such as /payments or a storefront path.
+  it("/pay gets Referrer-Policy no-referrer, after (so over) the default", async () => {
+    const mod: any = await import("../next.config.mjs")
+    const routes: Array<{ source: string; headers: Array<{ key: string; value: string }> }> =
+      await mod.default.headers()
+    const referrer = (r: (typeof routes)[number]) =>
+      r.headers.find((h) => h.key === "Referrer-Policy")?.value
+
+    const defaultIdx = routes.findIndex((r) => r.source === "/:path*")
+    const payIdx = routes.findIndex((r) => r.source === "/pay/:path*")
+    expect(defaultIdx).toBeGreaterThanOrEqual(0)
+    expect(payIdx).toBeGreaterThan(defaultIdx)
+    expect(referrer(routes[payIdx])).toBe("no-referrer")
+
+    const { pathToRegexp } = jest.requireActual("next/dist/compiled/path-to-regexp") as {
+      pathToRegexp: (source: string, keys: unknown[], options: object) => RegExp
+    }
+    const matches = (path: string) => pathToRegexp(routes[payIdx].source, [], {}).test(path)
+    expect(matches("/pay")).toBe(true)
+    expect(matches("/pay/abc123")).toBe(true)
+    // Controls: scoped to the payment page, not a prefix of other routes.
+    expect(matches("/payments")).toBe(false)
+    expect(matches("/dashboard/payments")).toBe(false)
+    expect(matches("/shop/x")).toBe(false)
+
+    // The last entry setting Referrer-Policy wins in Next; for both /pay forms it is no-referrer.
+    for (const path of ["/pay", "/pay/abc123"]) {
+      const effective = routes
+        .filter((r) => pathToRegexp(r.source, [], {}).test(path) && referrer(r))
+        .map(referrer)
+        .pop()
+      expect(effective).toBe("no-referrer")
+    }
+    // Control: a storefront path keeps the default.
+    const shopEffective = routes
+      .filter((r) => pathToRegexp(r.source, [], {}).test("/shop/x") && referrer(r))
+      .map(referrer)
+      .pop()
+    expect(shopEffective).toBe("strict-origin-when-cross-origin")
+  })
+
   it("CSP directive string matches snapshot (fixed nonce)", () => {
     const csp = buildCsp({
       nonce: "SNAPSHOT_NONCE",

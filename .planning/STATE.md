@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing — 30-13 DONE (13/32): Connect secret chain (Key Vault stripe-credentials--connect-webhook-secret external whsec_ -> core-java-kv SPC -> stripe-credentials/connect-webhook-secret -> STRIPE_CONNECT_WEBHOOK_SECRET optional) and per-overlay stripe.environment-tag (local/staging/production, never base, non-optional ref); 5 commits on feat/30-connect-webhook (not pushed); next 30-14 (owner stores the Key Vault object BEFORE PR 4 merges)"
-last_updated: "2026-10-25T22:56:00.000Z"
-last_activity: 2026-10-25
-last_activity_desc: "30-13 done — Connect secret Key Vault/SPC/env chain + per-overlay environment tag + compose/.env.example/local wiring; 7 break arms recorded; gate gap (no CI check of the tag value) deferred"
+stopped_at: "Phase 30 executing — 30-20 Task 1 DONE, stopped at 30-20 Task 2 (owner checkpoint: D3 review series + squash-merge of PR 5 = #1064, https://github.com/Bralabee/JToye_OaaS_2026/pull/1064). Base merge e310356b; OTP seam overlays 27ffb459 (staging true, production false); OpenAPI snapshot fd6250de (red rc1 -> green rc0, additive 4 paths/2 schemas/3 stripeAccountId); gitleaks fixture allowlist 6536d143; evidence/30-20-pay-live.txt. No 30-20-SUMMARY.md until Task 3 (merge deploy, GREEN reads, staging link payment)."
+last_updated: "2026-10-31T21:55:00.000Z"
+last_activity: 2026-10-31
+last_activity_desc: "30-20 Task 1 done — PR 5 (#1064) open: base merged, OTP seam on for staging only, OpenAPI snapshot regenerated after a recorded red, staging RED reads recorded, per-PR suite rc 0; owner review + squash-merge next"
 state_head: 6ee0a5189d48961003f0c1320889ef47b2b92974
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 296
-  percent: 94
+  completed_plans: 302
+  percent: 95
 ---
 
 # Project State
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 13/32 plans done (30-01..30-13); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038) and PR 3 (#1044, issue #108 Stripe half) merged + deployed + proven live; D-02 done (#1043); PR 4 parts 1-2 (30-12 Connect webhook, 30-13 platform wiring) committed on feat/30-connect-webhook, not pushed; next 30-14 (owner stores stripe-credentials--connect-webhook-secret in jtoye-stg-kv BEFORE the merge: the new SPC object fails the CSI mount when absent)
-Last activity: 2026-10-25 — 30-13 DONE: stripe-credentials--connect-webhook-secret classified external whsec_ (writer refuses other values; preflight checks it as a TEST object), in the core-java SPC objects and stripe-credentials secretObjects, read as STRIPE_CONNECT_WEBHOOK_SECRET (optional). stripe.environment-tag declared per overlay (local/staging/production) and never in base, read as STRIPE_ENVIRONMENT_TAG through a non-optional configMapKeyRef. Compose, .env.example and k8s-local-secrets.sh wired. Goldens +29/-0. Finding deferred: no CI gate holds the tag to the overlay name. SUMMARY: 30-13-SUMMARY.md
+Status: Executing — 19/32 plans done (30-01..30-19); 30-20 Task 1 done, at the owner checkpoint (Task 2): PR 5 (PAY-04 /pay page) is #1064 OPEN from feat/30-pay-link-page, awaiting the D3 review series and squash-merge; then 30-20 Task 3 (deploy watch, GREEN reads, staging link payment). Earlier: PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038), PR 3 (#1044, issue #108 Stripe half) and PR 4 (#1046, PAY-03 Connect webhook, ec73ddee) merged + deployed + proven live; D-02 done (#1043).
+Last activity: 2026-10-31 — 30-20 Task 1 DONE: PR #1064 opened (see stopped_at). Previously: 30-19 DONE: robots DISALLOW /pay; next.config '/pay/:path*' Referrer-Policy no-referrer after the default (header test: order, match /pay and /pay/x not /payments, effective value; break arm 5 red); ssr-routes.conf STATIC pay/page.tsx (gate rc 1 -> 44/44 PASS). scripts/staging-seed.sh --stage pay-link --link-out FILE: public OTP send first (testPreviewOtp; absent -> REFUSED [otp-hidden], nothing written), vendor order with +447700900123 (Idempotency-Key pay-link-<stamp>), public verify, vendor POST /orders/{id}/payment-links UPFRONT; URL (/pay#token= shape checked) only to FILE chmod 600 first; PAY-LINK order/link/expires; selftest 51/0, arms A/B/C each red. frontend/e2e/staging-pay-link.spec.ts (STAGING_E2E=1 only): desktop pay arm with page.reload() resume (redeems=1, no 'Open your payment link'), 4242, Stripe read with Stripe-Account when redeem names one, spent link in a fresh tab, verdict STAGING-PAY ... account=; @mobile-only 360 px coarse-pointer overflow arm. staging-card-checkout.spec.ts reads on the owning account (account=). Plan's account grep form vacuous (break arm stayed green), strict form recorded. Full Jest 3260/3260, build + tsc rc 0. Counts 6753. Next 30-20.
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1454,6 +1454,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 30]: 30-13: stripe-credentials--connect-webhook-secret is external whsec_, mounted by core-java-kv and synced as stripe-credentials/connect-webhook-secret; STRIPE_CONNECT_WEBHOOK_SECRET is an optional ref. The object must exist in jtoye-stg-kv before PR 4 merges (a missing SPC object fails the CSI mount)
 - [Phase 30]: 30-13: stripe.environment-tag is declared per overlay (local, staging, production) and never in base; STRIPE_ENVIRONMENT_TAG reads it through a configMapKeyRef that is NOT optional, so a forgotten overlay fails the pod at start
 - [Phase 30]: 30-13: no CI gate checks the tag VALUE per overlay (static suite stays rc 0 with an overlay tag deleted); recorded in deferred-items.md with a render-invariant route for 30-14 or 30-20
+- [Phase 30]: 30-19: /pay is one route, declared STATIC pay/page.tsx to the SSR gate; robots DISALLOW "/pay" and '/pay/:path*' Referrer-Policy no-referrer after the default
+- [Phase 30]: 30-19: staging-seed --stage pay-link sends the public OTP challenge BEFORE the vendor order, so a keep-hidden staging (no testPreviewOtp) refuses [otp-hidden] with nothing written; the link URL leaves only via a --link-out file chmod 600 before it is written
+- [Phase 30]: 30-19: both staging payment specs send Stripe-Account on the intent read when the captured response names an acct_ id, and their verdict lines end account=<acct_|none>
 
 ### Pending Todos
 
@@ -1533,9 +1536,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-25T22:56:00.000Z
-Stopped at: Phase 30 — 30-13 done (13/32); next /gsd-execute-phase 30 resumes at 30-14 on feat/30-connect-webhook
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-13-SUMMARY.md`
+Last session: 2026-10-31T21:25:00.000Z
+Stopped at: Phase 30 — 30-19 done (19/32); next is 30-20, the owner checkpoint for PR 5 (base sync, OpenAPI snapshot regen, push, PR, review series, merge, deploy, pay a real link on staging), on feat/30-pay-link-page (worktree JToye_OaaS_2026-p30-15, not pushed)
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-19-SUMMARY.md` (Notes for 30-20)
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 

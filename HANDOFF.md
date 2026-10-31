@@ -1,11 +1,93 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 14/32 plans done; PR 4 merged, 30-15 staging proof next
+# Handoff: Phase 30 (The Money Path, Executed) executing, 19/32 plans done; PR 5 (/pay page) is #1064 OPEN, 30-20 Task 2 (owner review + squash-merge) next
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-31 delta (RESUME HERE; everything below is history).**
+**2026-10-31 midnight delta (RESUME HERE; everything below is history).**
+- **PR 5 is #1064, OPEN, from `feat/30-pay-link-page`** (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 is done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
+  - Merged from the base: `e310356b` (picking up #1058). `HANDOFF.md` was resolved by hand with both sides kept (checked by content).
+  - OTP seam (owner decision expose-on-staging, `27ffb459`): base `"false"`, staging `"true"`, production `"false"`. Env `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`, plus a `${}` placeholder in `application.yml`. Production render: `true`=0, tag=1. Staging render: `true`=1.
+  - OpenAPI snapshot (`fd6250de`): red before (rc 1), green after (rc 0). Additive only: 4 paths, 2 schemas, 3 `stripeAccountId`.
+  - `.gitleaks.toml` (`6536d143`): one exact-value entry for the 30-18 fixture `pi_3018_secret_abc`. The pre-push range scan refused the first push because of it.
+  - RED on today's staging: `/pay` 404 with `strict-origin-when-cross-origin`; the preview returns 404 `not-found` "Resource not found".
+  - Per-PR suite all rc 0: core-java test+integrationTest (2045 + 1402), Jest 3260/3260, lint, and the script gates.
+- **Next: 30-20 Task 2, the owner's.** Run the D3 review series on #1064 from the repo checkout:
+  - round 1 `/code-review 1064 --comment`, with `oaas-tenancy-security` on the preview's tenant pinning;
+  - a resolution comment after every round;
+  - `/review-verify 1064` until a round admits zero.
+  - Then squash-merge per plan 30-04 Task 1 steps 1-4, and reply "merged <sha>".
+- **Then 30-20 Task 3.** Watch Deploy to Staging and the Staging Edge Probe, then check digest parity. Then the GREEN reads:
+  - `/pay` 200 with `no-referrer`;
+  - robots `Disallow: /pay`;
+  - an unknown-token preview returns 404 with detail "Payment link not found.". Status and type alone are identical to today's route-absent 404, so they cannot tell the two apart; or GET on the preview returns 405 (404 today).
+  - After that, the two `--stage pay-link` runs and the spec, as in the block below.
+- **Gap found:** no gate checks that a non-optional configMapKeyRef names a key present in every render. Deleting the base key left the whole render chain at rc 0, while the local render had no key. This is recorded only, not filed.
+
+**2026-10-31 late-night delta (history; superseded by the 2026-10-31 midnight block above).**
+- **Phase 30 is 19/32.** 30-16 to 30-19 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open. **Next is 30-20, the owner checkpoint for PR 5.**
+  - **30-19 (`30-19-SUMMARY.md`).**
+    - `robots.ts` disallows `/pay`.
+    - `next.config.mjs` sends `Referrer-Policy: no-referrer` on `/pay/:path*`, after the default. The header test asserts the order and the match.
+    - `ssr-routes.conf` declares `STATIC pay/page.tsx`; the SSR gate is 44/44 PASS.
+    - `scripts/staging-seed.sh --stage pay-link --link-out FILE` makes a real payable link. It sends the public OTP first and refuses `[otp-hidden]` with nothing written if staging does not return `testPreviewOtp`. Then it makes a vendor order with the phone, runs the public verify and issues the vendor link. The URL goes only to FILE, mode 600, and the stage prints `PAY-LINK order=… link=… expires=…`.
+    - `frontend/e2e/staging-pay-link.spec.ts` (`STAGING_E2E=1` only) has two arms:
+      - The desktop arm pays the link. It reloads after Continue and must get the card form back with one redeem. It reads the intent from Stripe on the owning account and prints `STAGING-PAY … account=…`.
+      - A `@mobile-only` arm at 360 px checks for sideways scroll.
+    - `staging-card-checkout.spec.ts` now reads on the owning account too.
+  - Counts are 6753. Full Jest: 3260/3260. Build and tsc: rc 0.
+- **30-20 must, in order:**
+  1. **Merge from the base.** The branch is 1 behind `origin/main` (`eff54aa0`, #1058). `HANDOFF.md` is the one file both sides touch: keep both blocks, do not "take theirs".
+  2. **Regenerate the OpenAPI snapshot.** `OpenApiSnapshotTest` is red by design, additive only.
+  3. **Set the staging overlay.** `jtoye.phone-verification.expose-otp-for-test=true` on staging only (owner decision expose-on-staging).
+  4. **Ship PR 5.** Push, open the PR, run the D3 review series, merge, then watch Deploy to Staging and the Staging Edge Probe.
+  5. **Run the live proof:**
+     - Two `--stage pay-link` runs, desktop and mobile, with the `--link-out` files in the scratchpad and never in evidence.
+     - The spec, with `STAGING_PAY_LINK_FILE`, `STAGING_PAY_LINK_FILE_MOBILE` and `STAGING_STRIPE_PUBLISHABLE_KEY=pk_test_…`.
+     - Record the `STAGING-PAY`, `STAGING-PAY-RELOAD` and `STAGING-PAY-MOBILE` lines. The reload line is the only proof that Next keeps the `history.state` entry across a real reload.
+     - Cancel the mobile arm's unpaid order with `--stage cancel-drafts` (D-02).
+- **Carried for UI review (from 30-18):** after a Stripe redirect the page says "You've paid £X. You can close this page.", which is outside the copy contract.
+
+**2026-10-31 night delta (history; superseded by the 2026-10-31 late-night block above).**
+- **Phase 30 is 18/32.** 30-16, 30-17 and 30-18 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open; plan 30-20 does the push.
+  - **30-18 (`30-18-SUMMARY.md`).** `frontend/app/pay/page.tsx` (metadata only, noindex, PublicShell) and `pay-client.tsx`:
+    - The page reads `#token=` and previews the link (shop, purpose heading, amount, order, London expiry).
+    - "Continue to payment" checks the key, awaits `loadStripeOnce()`, and only then redeems.
+    - It then calls `replaceState({...history.state, jtoyePayResume}, "", "/pay")`. The entry holds the client secret and display fields, never the token.
+    - It loads Stripe on `stripeAccountId`, retrieves the intent and mounts the shared CardPaymentForm.
+    - Every dead, failed and returning state is built. `/pay` without a token reads Stripe's return query, then the resume entry, and otherwise shows "Open your payment link".
+    - The checkout passes `confirmation.stripeAccountId` to the loader.
+  - Counts are 6750. Full Jest: 3259/3259. Build and tsc: rc 0.
+  - `frontend/node_modules` was installed in this worktree with `npm ci` from the lockfile.
+- **Red until 30-19:** `scripts/check-ssr-coverage-contract.sh` reports "R-1 undeclared page: pay/page.tsx". 30-19 owns `scripts/gates/ssr-routes.conf`. Declare `STATIC pay/page.tsx`; there is no `[token]` page.
+- **Red by design until 30-20 Task 1:** `OpenApiSnapshotTest` (additive only, unchanged by 30-18).
+- **The branch is 1 behind origin/main** (`eff54aa0`, #1058), with no file overlap. Merge from the base before the 30-20 push.
+- **Resume:** 30-19.
+  - robots `"/pay"`, and `Referrer-Policy: no-referrer` on `/pay/:path*` after the default.
+  - The SSR-gate line.
+  - `scripts/staging-seed.sh --stage pay-link`.
+  - `staging-pay-link.spec.ts`. Its reload-after-Continue arm is the only proof that Next keeps the `history.state` entry across a real reload.
+  - Account-aware Stripe reads in both staging specs.
+
+**2026-10-31 late delta (history; superseded by the 2026-10-31 night block above).**
+- **Phase 30 is 17/32.** 30-16 and 30-17 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open; plan 30-20 does the push.
+  - **30-16 (`30-16-SUMMARY.md`).** The owner chose fragment tokens and expose-on-staging. Links are issued as `/pay#token=…`. `POST /api/v1/public/payment-links/preview {token}` reads a link without spending it, and a body-token redeem sits beside the path redeem.
+  - **30-17 (`30-17-SUMMARY.md`).** `PaymentIntentResult` carries `stripeAccountId`, the connected account a direct-charge or split-deposit intent lives on (null for destination and platform intents). The confirmation (first response and replay), the balance session and the redeem all pass it on, as JSON null when it is null, never omitted. The replay now fetches a DRAFT's secret order-aware; before this it 404ed for direct charges. `expose-otp-for-test=true` refuses startup unless `stripe.environment-tag` is exactly `local`, `test` or `staging`.
+  - Counts are 6710. Unit tests: 2045/0.
+- **Red by design:** `OpenApiSnapshotTest` stays red on this branch until 30-20 Task 1 regenerates the snapshot. Its diff is additive only: 30-16's 4 paths and 2 schemas, plus 3 `stripeAccountId` properties.
+- **The branch is 1 behind origin/main** (`eff54aa0`, #1058, toolchain gaps), with no file overlap. Merge from the base before the 30-20 push.
+- **Resume:** 30-18 is the `/pay` page.
+  - Read `#token=` from `location.hash`.
+  - Call preview, then redeem.
+  - When `stripeAccountId` is non-null, call `loadStripe(pk, { stripeAccount })`.
+  - Then `history.replaceState(null, "", "/pay")`.
+  - The contract is in the "Notes for later plans" sections of `30-16-SUMMARY.md` and `30-17-SUMMARY.md`.
+
+**2026-10-31 delta (history; superseded by the 2026-10-31 late block above).**
 - **PR 4 (#1046, plans 30-12 to 30-14) merged 2026-10-31 as squash `ec73ddee`.** 30-14 Task 2/3 done 2026-10-30: Connect endpoint `we_1UWN2NDpS9ICNeRtxSQMsc2M` (TEST, API 2026-09-30.endive, 7 events), its secret stored as `stripe-credentials--connect-webhook-secret` in `jtoye-stg-kv`, V1-V3, `--assign-access` and the preflight green; see `evidence/30-14-connect-endpoint.txt`. Review series 1 -> 0 -> 0 admissible.
+- **#1053 (issue #1027 shop-card stretched link, plus the rabbitmq 4.3 horizon refresh) merges after #1046**, with main merged in.
 - **#1053 (`d837b295`), #1055 (`e09d322e`), #1056 (`502e3383`), and #1057 (`480782d7`) merged 2026-10-31** (stretched shop-card link for issue #1027, Key Vault CSI secret-sync gate for issue #1054, and CI Testcontainers/k8s-validate/buildx speedup).
-- **Resume:** 30-15, the staging proof for PR 4: pod digests equal the ghcr digests of the merge tag, and the Connect route answers a signed TEST event. Then close issue #1027 and the hand-closes listed on the PRs.
+- **Phase 30 is 15/32: 30-14 and 30-15 are done** (`30-14-SUMMARY.md`, `30-15-SUMMARY.md`, `evidence/30-15-connect-live.txt`, on `feat/30-pay-link-page`). 30-15's own env/Secret verify read `secret_key=0` after a fully green deploy: core-java ran without the Connect secret, because Deployments were applied before SecretProviderClasses and the addon never resyncs a synced Secret. Repaired on staging, and fixed in CI by #1055/#1056; issue #1054 is CLOSED. Re-read on the `480782d7` pod: secret present, unsigned and forged Connect events 400 with 0 ledger rows beside a 1-row positive control, and the staging card checkout CAPTURED.
+- **Resume:** 30-16 (PR 5, PAY-04 `/pay/{token}` page) on `feat/30-pay-link-page`. It opens with two owner decisions: the token in the path or the fragment, and how staging handles the OTP. Issue #1027 is still OPEN for the owner's hand-close.
+- **Resume (main's copy, superseded by the line above once 30-15 ran):** 30-15, the staging proof for PR 4: pod digests equal the ghcr digests of the merge tag, and the Connect route answers a signed TEST event. Then close issue #1027 and the hand-closes listed on the PRs.
 - **Watch:** RabbitMQ 4.3 EOL is 2027-01-31; the H-2 90-day warn window opens about 2026-11-02, so plan the 4.4 upgrade.
 
 **2026-10-25 late delta (history; superseded by the 2026-10-31 block above).**

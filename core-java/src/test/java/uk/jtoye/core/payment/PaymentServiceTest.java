@@ -1300,4 +1300,98 @@ class PaymentServiceTest {
         }
         assertEquals(PaymentStatus.CAPTURED, testOrder.getPaymentStatus());
     }
+
+    // ------------------------------------------------------------------
+    // 30-17 / PAY-04 / UI-SPEC § S1: the result names the connected account that OWNS the intent,
+    // so Stripe.js can be initialised with { stripeAccount } and confirmPayment can find it. Only a
+    // direct-charge or split-deposit intent lives on the vendor's account; a destination charge and a
+    // platform charge live on the platform, so their result carries null — never the destination.
+    // ------------------------------------------------------------------
+
+    private PaymentIntentResult createWithRouting(Optional<SettlementRoutingDecision> routing, boolean balance)
+            throws Exception {
+        when(stripeConnectService.resolveSettlementRouting(testOrder)).thenReturn(routing);
+        if (balance) {
+            testOrder.setStatus(OrderStatus.CONFIRMED);
+            testOrder.setDepositAmountPennies(3000L);
+            testOrder.setBalanceDuePennies(7000L);
+        }
+        PaymentIntent mockIntent = mock(PaymentIntent.class);
+        when(mockIntent.getId()).thenReturn("pi_30_17");
+        when(mockIntent.getClientSecret()).thenReturn("pi_30_17_secret_x");
+        try (MockedStatic<PaymentIntent> piMock = mockStatic(PaymentIntent.class)) {
+            piMock.when(() -> PaymentIntent.create(any(com.stripe.param.PaymentIntentCreateParams.class),
+                    any(com.stripe.net.RequestOptions.class))).thenReturn(mockIntent);
+            PaymentIntentResult result = balance
+                    ? paymentService.createBalancePaymentIntent(testOrder)
+                    : paymentService.createPaymentIntent(testOrder);
+            assertEquals("pi_30_17", result.paymentIntentId());
+            assertEquals("pi_30_17_secret_x", result.clientSecret());
+            return result;
+        }
+    }
+
+    private static Optional<SettlementRoutingDecision> routing(SettlementPolicyMode mode, String account) {
+        boolean split = mode == SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR;
+        return Optional.of(new SettlementRoutingDecision(mode, account, split ? 3000L : 1500L, 0L,
+                split ? 3000L : null, split ? 7000L : null));
+    }
+
+    @Test
+    @DisplayName("30-17: a DIRECT_CHARGE intent's result names the connected account that owns it")
+    void createPaymentIntent_directCharge_resultNamesConnectedAccount() throws Exception {
+        PaymentIntentResult result = createWithRouting(
+                routing(SettlementPolicyMode.DIRECT_CHARGE_VENDOR_MOR, "acct_30_17_direct"), false);
+        assertEquals("acct_30_17_direct", result.stripeAccountId());
+    }
+
+    @Test
+    @DisplayName("30-17: a SPLIT_DEPOSIT intent's result names the connected account that owns it")
+    void createPaymentIntent_splitDeposit_resultNamesConnectedAccount() throws Exception {
+        PaymentIntentResult result = createWithRouting(
+                routing(SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR, "acct_30_17_split"), false);
+        assertEquals("acct_30_17_split", result.stripeAccountId());
+    }
+
+    @Test
+    @DisplayName("30-17: a DESTINATION charge lives on the platform — the result carries null, not the destination account")
+    void createPaymentIntent_destinationCharge_resultCarriesNullAccount() throws Exception {
+        PaymentIntentResult result = createWithRouting(
+                routing(SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR, "acct_30_17_dest"), false);
+        String account = result.stripeAccountId();
+        assertNull(account, "a destination intent is created on the platform account");
+        assertNotEquals("acct_30_17_dest", account);
+    }
+
+    @Test
+    @DisplayName("30-17: no routing (platform charge, or the legacy MARKETPLACE destination fallback) — the result carries null")
+    void createPaymentIntent_noRouting_resultCarriesNullAccount() throws Exception {
+        when(stripeConnectService.resolveDestinationAccount(tenantId)).thenReturn(Optional.of("acct_30_17_legacy"));
+        PaymentIntentResult result = createWithRouting(Optional.empty(), false);
+        String account = result.stripeAccountId();
+        assertNull(account, "a platform intent, destination or not, is not on a connected account");
+    }
+
+    @Test
+    @DisplayName("30-17: a BALANCE intent under split-deposit routing names the connected account")
+    void createBalancePaymentIntent_accountFollowsTheSameRule() throws Exception {
+        PaymentIntentResult split = createWithRouting(
+                routing(SettlementPolicyMode.SPLIT_DEPOSIT_VENDOR_MOR, "acct_30_17_bal"), true);
+        assertEquals("acct_30_17_bal", split.stripeAccountId());
+    }
+
+    @Test
+    @DisplayName("30-17: a BALANCE intent under destination routing carries null")
+    void createBalancePaymentIntent_destination_carriesNullAccount() throws Exception {
+        PaymentIntentResult dest = createWithRouting(
+                routing(SettlementPolicyMode.DESTINATION_CHARGE_PLATFORM_MOR, "acct_30_17_bal_dest"), true);
+        assertNull(dest.stripeAccountId());
+    }
+
+    @Test
+    @DisplayName("30-17: a BALANCE intent with no routing carries null")
+    void createBalancePaymentIntent_noRouting_carriesNullAccount() throws Exception {
+        PaymentIntentResult none = createWithRouting(Optional.empty(), true);
+        assertNull(none.stripeAccountId());
+    }
 }

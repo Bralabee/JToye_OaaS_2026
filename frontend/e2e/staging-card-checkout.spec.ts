@@ -17,9 +17,12 @@
  *   5. Stripe itself, asked by id with the publishable key and the order's client secret (what
  *      stripe.js retrievePaymentIntent does; no secret key on the runner), reports the intent as
  *      status succeeded and livemode false. A key from another Stripe account answers 404 here, so
- *      this read also proves the browser key and the server key belong to one account.
+ *      this read also proves the browser key and the server key belong to one account. When the
+ *      confirmation names a connected account (stripeAccountId, plan 30-17: a direct charge lives on
+ *      the vendor's account, where a platform read answers resource_missing), the read sends
+ *      Stripe-Account with it (plan 30-19), so plan 30-32 can prove the direct-charge path here too.
  * It prints exactly one verdict line:
- *   STAGING-CARD order=<n> intent=<pi_…> payment_status=CAPTURED livemode=false at=<ISO-8601 UTC>
+ *   STAGING-CARD order=<n> intent=<pi_…> payment_status=CAPTURED livemode=false at=<ISO-8601 UTC> account=<acct_…|none>
  * and, as soon as the order exists, one ORDER line with its number, because a run that stops
  * before payment leaves an unpaid staging DRAFT that plan 30-09 cancels (D-02).
  *
@@ -74,6 +77,18 @@ test.use({ trace: "off", screenshot: "off", video: "off", locale: "en-GB" })
 function utcStamp(d: Date): string {
   // 2026-10-22T04:15:00.123Z -> 20261022T041500Z
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
+}
+
+/**
+ * The connected account the confirmation names: a non-null acct_ id, or null. A value that is
+ * present but not an acct_ id fails the test, naming only its shape (plan 30-19).
+ */
+function accountOf(body: { stripeAccountId?: unknown }, where: string): string | null {
+  const v = body.stripeAccountId
+  if (v === null || v === undefined) return null
+  if (typeof v === "string" && /^acct_[A-Za-z0-9]+$/.test(v)) return v
+  const shape = typeof v === "string" ? `a ${v.length}-character string not starting acct_` : `a ${typeof v}`
+  throw new Error(`${where}: stripeAccountId is ${shape}, not an acct_ id or null`)
 }
 
 /** The PaymentIntent id is the part of a client secret before "_secret_". */
@@ -188,7 +203,11 @@ async function walkCardCheckout(
   await placeOrder.click({ timeout: 15_000 })
   const postResponse = await orderPost
   expect(postResponse.status(), "the guest order POST did not answer 201").toBe(201)
-  const confirmation = (await postResponse.json()) as { orderNumber?: unknown; clientSecret?: unknown }
+  const confirmation = (await postResponse.json()) as {
+    orderNumber?: unknown
+    clientSecret?: unknown
+    stripeAccountId?: unknown
+  }
   const orderNumber = typeof confirmation.orderNumber === "string" ? confirmation.orderNumber : ""
   expect(orderNumber, "the guest order confirmation carries no orderNumber").not.toBe("")
   // From here on this run has created a staging order; say which one before anything can fail.
@@ -200,6 +219,7 @@ async function walkCardCheckout(
     "the confirmation carries no clientSecret: the staging backend took the non-card branch, so no card payment can be proven",
   ).toBe(true)
   const intentId = intentIdOf(clientSecret)
+  const account = accountOf(confirmation, "the guest order confirmation")
 
   // 4. THE #957 ASSERTION: the Stripe Payment Element is on screen within 30 s.
   const paymentIframe = page
@@ -264,9 +284,12 @@ async function walkCardCheckout(
   // 7. Stripe's own answer, by id, with the publishable key and the order's client secret.
   // A transport error's message quotes the request URL, which carries the client secret: rethrow
   // it with the secret cut out, so a failed read cannot print it.
+  // On the account that owns the intent: a direct charge is invisible to a platform read.
+  const headers: Record<string, string> = { Authorization: `Bearer ${publishableKey}` }
+  if (account !== null) headers["Stripe-Account"] = account
   const stripeRes = await request
     .get(`${STRIPE_API}/v1/payment_intents/${encodeURIComponent(intentId)}?client_secret=${encodeURIComponent(clientSecret)}`, {
-      headers: { Authorization: `Bearer ${publishableKey}` },
+      headers,
       timeout: 20_000,
     })
     .catch((e: unknown) => {
@@ -275,7 +298,7 @@ async function walkCardCheckout(
     })
   expect(
     stripeRes.status(),
-    "Stripe did not return the PaymentIntent for the publishable key (a 404 means the key is from another account)",
+    `Stripe did not return the PaymentIntent for the publishable key (account=${account ?? "none"}; a 404 means the key is from another account, or a direct charge read without Stripe-Account)`,
   ).toBe(200)
   const intent = (await stripeRes.json()) as { id?: unknown; status?: unknown; livemode?: unknown }
   expect(intent.id).toBe(intentId)
@@ -283,6 +306,6 @@ async function walkCardCheckout(
   expect(intent.status).toBe("succeeded")
 
   console.log(
-    `STAGING-CARD order=${orderNumber} intent=${intentId} payment_status=CAPTURED livemode=false at=${new Date().toISOString()}`,
+    `STAGING-CARD order=${orderNumber} intent=${intentId} payment_status=CAPTURED livemode=false at=${new Date().toISOString()} account=${account ?? "none"}`,
   )
 }
