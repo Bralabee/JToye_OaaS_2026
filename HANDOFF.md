@@ -1,8 +1,32 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 18/32 plans done; PR 5 (/pay page) under way, 30-19 next
+# Handoff: Phase 30 (The Money Path, Executed) executing, 19/32 plans done; PR 5 (/pay page) built, 30-20 next (owner checkpoint)
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-31 night delta (RESUME HERE; everything below is history).**
+**2026-10-31 late-night delta (RESUME HERE; everything below is history).**
+- **Phase 30 is 19/32.** 30-16 to 30-19 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open. **Next is 30-20, the owner checkpoint for PR 5.**
+  - **30-19 (`30-19-SUMMARY.md`).**
+    - `robots.ts` disallows `/pay`.
+    - `next.config.mjs` sends `Referrer-Policy: no-referrer` on `/pay/:path*`, after the default. The header test asserts the order and the match.
+    - `ssr-routes.conf` declares `STATIC pay/page.tsx`; the SSR gate is 44/44 PASS.
+    - `scripts/staging-seed.sh --stage pay-link --link-out FILE` makes a real payable link. It sends the public OTP first and refuses `[otp-hidden]` with nothing written if staging does not return `testPreviewOtp`. Then it makes a vendor order with the phone, runs the public verify and issues the vendor link. The URL goes only to FILE, mode 600, and the stage prints `PAY-LINK order=… link=… expires=…`.
+    - `frontend/e2e/staging-pay-link.spec.ts` (`STAGING_E2E=1` only) has two arms:
+      - The desktop arm pays the link. It reloads after Continue and must get the card form back with one redeem. It reads the intent from Stripe on the owning account and prints `STAGING-PAY … account=…`.
+      - A `@mobile-only` arm at 360 px checks for sideways scroll.
+    - `staging-card-checkout.spec.ts` now reads on the owning account too.
+  - Counts are 6753. Full Jest: 3260/3260. Build and tsc: rc 0.
+- **30-20 must, in order:**
+  1. **Merge from the base.** The branch is 1 behind `origin/main` (`eff54aa0`, #1058). `HANDOFF.md` is the one file both sides touch: keep both blocks, do not "take theirs".
+  2. **Regenerate the OpenAPI snapshot.** `OpenApiSnapshotTest` is red by design, additive only.
+  3. **Set the staging overlay.** `jtoye.phone-verification.expose-otp-for-test=true` on staging only (owner decision expose-on-staging).
+  4. **Ship PR 5.** Push, open the PR, run the D3 review series, merge, then watch Deploy to Staging and the Staging Edge Probe.
+  5. **Run the live proof:**
+     - Two `--stage pay-link` runs, desktop and mobile, with the `--link-out` files in the scratchpad and never in evidence.
+     - The spec, with `STAGING_PAY_LINK_FILE`, `STAGING_PAY_LINK_FILE_MOBILE` and `STAGING_STRIPE_PUBLISHABLE_KEY=pk_test_…`.
+     - Record the `STAGING-PAY`, `STAGING-PAY-RELOAD` and `STAGING-PAY-MOBILE` lines. The reload line is the only proof that Next keeps the `history.state` entry across a real reload.
+     - Cancel the mobile arm's unpaid order with `--stage cancel-drafts` (D-02).
+- **Carried for UI review (from 30-18):** after a Stripe redirect the page says "You've paid £X. You can close this page.", which is outside the copy contract.
+
+**2026-10-31 night delta (history; superseded by the 2026-10-31 late-night block above).**
 - **Phase 30 is 18/32.** 30-16, 30-17 and 30-18 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open; plan 30-20 does the push.
   - **30-18 (`30-18-SUMMARY.md`).** `frontend/app/pay/page.tsx` (metadata only, noindex, PublicShell) and `pay-client.tsx`:
     - The page reads `#token=` and previews the link (shop, purpose heading, amount, order, London expiry).

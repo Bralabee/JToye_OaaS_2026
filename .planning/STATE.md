@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing — 30-18 DONE (18/32): the /pay page (25126b7f RED, aecf8193 GREEN; 12f01182 RED, 9eddb8b7 GREEN, 8f679a57 round trip, 46f26f86 arms) and the checkout on the connected account (1cf2bc53 RED, a714132a GREEN); counts 6750 (eb04b758); SSR gate red on pay/page.tsx until 30-19; OpenApiSnapshotTest red by design until 30-20 Task 1; next 30-19 on feat/30-pay-link-page (not pushed; 1 behind origin/main eff54aa0)"
-last_updated: "2026-10-31T21:05:00.000Z"
+stopped_at: "Phase 30 executing — 30-19 DONE (19/32): /pay robots + no-referrer + STATIC SSR line (40f855e3 RED, 53fbcfaf GREEN, 10ea52e9 arm); staging-seed --stage pay-link (051c4117 RED, e161db1d GREEN, a42be210 arms); staging-pay-link.spec.ts + account-aware card spec (d9c84bed, 4a2aebeb arm); counts 6753 (8a9fbccd); OpenApiSnapshotTest red by design until 30-20 Task 1; next 30-20 (owner checkpoint: base sync, snapshot, push, PR, review, merge, deploy, pay a real link on staging) on feat/30-pay-link-page (not pushed; 1 behind origin/main eff54aa0)"
+last_updated: "2026-10-31T21:25:00.000Z"
 last_activity: 2026-10-31
-last_activity_desc: "30-18 done — a payment link is previewed, then spent only once the card form can load; dead, failed and returning links each say what happened; a reload resumes from history.state; the checkout pays a direct charge on the vendor's account"
+last_activity_desc: "30-19 done — /pay is not indexed and sends no Referer, the SSR gate passes, staging-seed makes a real payable link (URL only in a mode-600 file), and the staging spec pays it with a mid-payment reload, reading Stripe on the owning account"
 state_head: 6ee0a5189d48961003f0c1320889ef47b2b92974
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 301
+  completed_plans: 302
   percent: 95
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 ## Current Position
 
 Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 18/32 plans done (30-01..30-18); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038), PR 3 (#1044, issue #108 Stripe half) and PR 4 (#1046, PAY-03 Connect webhook, ec73ddee) merged + deployed + proven live; D-02 done (#1043); PR 5 (PAY-04 /pay page) in progress on feat/30-pay-link-page (not pushed): 30-18 done, next 30-19 (robots, Referrer-Policy, SSR-gate line, staging seed and the staging /pay spec)
-Last activity: 2026-10-31 — 30-18 DONE: app/pay/page.tsx (metadata only, noindex, PublicShell) + pay-client.tsx: #token= fragment -> read-only preview (shop, purpose heading, amount, order, London expiry, single-use note); Continue checks publishableKey(), awaits loadStripeOnce(), then redeems, replaceState({...history.state, jtoyePayResume}, '', '/pay') without the token, loads Stripe on stripeAccountId, retrieves the intent and mounts CardPaymentForm (receipt_email omitted when blank). Dead/failed/returning states branch on status + state enum only; /pay without a token reads Stripe's return query, then the resume entry, else 'Open your payment link'. Checkout: loadStripeOnce(confirmation.stripeAccountId), Try again keeps the account, no account = loadStripe(pk). RED_EVIDENCE_OK x3; break arms A (redeem first: 4 red) and B (replaceState null: 3 red incl. a reload round trip), clean 37/37 both sides. Full Jest 3259/3259, build + tsc rc 0, lint 0 errors. Counts 6750. /pay allowlisted in the link-graph guard. Handed to 30-19: the SSR-gate line (check-ssr-coverage-contract.sh red on pay/page.tsx). Next 30-19.
+Status: Executing — 19/32 plans done (30-01..30-19); PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038), PR 3 (#1044, issue #108 Stripe half) and PR 4 (#1046, PAY-03 Connect webhook, ec73ddee) merged + deployed + proven live; D-02 done (#1043); PR 5 (PAY-04 /pay page) built on feat/30-pay-link-page (not pushed): 30-16..30-19 done, next 30-20 (owner checkpoint: base sync, OpenAPI snapshot regen, expose-otp-for-test on the staging overlay, push, PR, review series, merge, deploy, pay a real link on staging)
+Last activity: 2026-10-31 — 30-19 DONE: robots DISALLOW /pay; next.config '/pay/:path*' Referrer-Policy no-referrer after the default (header test: order, match /pay and /pay/x not /payments, effective value; break arm 5 red); ssr-routes.conf STATIC pay/page.tsx (gate rc 1 -> 44/44 PASS). scripts/staging-seed.sh --stage pay-link --link-out FILE: public OTP send first (testPreviewOtp; absent -> REFUSED [otp-hidden], nothing written), vendor order with +447700900123 (Idempotency-Key pay-link-<stamp>), public verify, vendor POST /orders/{id}/payment-links UPFRONT; URL (/pay#token= shape checked) only to FILE chmod 600 first; PAY-LINK order/link/expires; selftest 51/0, arms A/B/C each red. frontend/e2e/staging-pay-link.spec.ts (STAGING_E2E=1 only): desktop pay arm with page.reload() resume (redeems=1, no 'Open your payment link'), 4242, Stripe read with Stripe-Account when redeem names one, spent link in a fresh tab, verdict STAGING-PAY ... account=; @mobile-only 360 px coarse-pointer overflow arm. staging-card-checkout.spec.ts reads on the owning account (account=). Plan's account grep form vacuous (break arm stayed green), strict form recorded. Full Jest 3260/3260, build + tsc rc 0. Counts 6753. Next 30-20.
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1454,6 +1454,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 30]: 30-13: stripe-credentials--connect-webhook-secret is external whsec_, mounted by core-java-kv and synced as stripe-credentials/connect-webhook-secret; STRIPE_CONNECT_WEBHOOK_SECRET is an optional ref. The object must exist in jtoye-stg-kv before PR 4 merges (a missing SPC object fails the CSI mount)
 - [Phase 30]: 30-13: stripe.environment-tag is declared per overlay (local, staging, production) and never in base; STRIPE_ENVIRONMENT_TAG reads it through a configMapKeyRef that is NOT optional, so a forgotten overlay fails the pod at start
 - [Phase 30]: 30-13: no CI gate checks the tag VALUE per overlay (static suite stays rc 0 with an overlay tag deleted); recorded in deferred-items.md with a render-invariant route for 30-14 or 30-20
+- [Phase 30]: 30-19: /pay is one route, declared STATIC pay/page.tsx to the SSR gate; robots DISALLOW "/pay" and '/pay/:path*' Referrer-Policy no-referrer after the default
+- [Phase 30]: 30-19: staging-seed --stage pay-link sends the public OTP challenge BEFORE the vendor order, so a keep-hidden staging (no testPreviewOtp) refuses [otp-hidden] with nothing written; the link URL leaves only via a --link-out file chmod 600 before it is written
+- [Phase 30]: 30-19: both staging payment specs send Stripe-Account on the intent read when the captured response names an acct_ id, and their verdict lines end account=<acct_|none>
 
 ### Pending Todos
 
@@ -1533,9 +1536,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-31T21:05:00.000Z
-Stopped at: Phase 30 — 30-18 done (18/32); next /gsd-execute-phase 30 resumes at 30-19 on feat/30-pay-link-page (worktree JToye_OaaS_2026-p30-15, not pushed)
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-18-SUMMARY.md`
+Last session: 2026-10-31T21:25:00.000Z
+Stopped at: Phase 30 — 30-19 done (19/32); next is 30-20, the owner checkpoint for PR 5 (base sync, OpenAPI snapshot regen, push, PR, review series, merge, deploy, pay a real link on staging), on feat/30-pay-link-page (worktree JToye_OaaS_2026-p30-15, not pushed)
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-19-SUMMARY.md` (Notes for 30-20)
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
