@@ -2577,15 +2577,19 @@ jobs:
               exit 1
             fi
           done
-          # From here on a failure means a deploy was STARTED, so the rollback step may undo it.
-          # Set before the apply, not after: an apply that fails half way has changed Deployments.
-          echo "applied=true" >> "$GITHUB_OUTPUT"
           # Issue #1054: `apply -k` renders every Deployment before every SecretProviderClass, so a
           # rollout's new pod mounted the OLD object list, and with rotation off the driver never
-          # adds a key to a synced Secret it already made. Apply the SecretProviderClasses first and
-          # delete any driver-made Secret missing a declared key (the next mount recreates it);
-          # then restart the consumers whose template the apply leaves unchanged.
+          # adds a key to a synced Secret it already made. --prepare applies the SecretProviderClasses
+          # first and deletes any driver-made Secret missing a declared key (the next mount recreates
+          # it); --restart then restarts the consumers whose template the apply leaves unchanged.
+          # --prepare changes no Deployment, so its failure must NOT trigger the rollback, whose
+          # `rollout undo` would step a healthy release back a revision: run 41186785839 did exactly
+          # that. It plans before it deletes, and restarts what it deleted if it fails part way.
           bash scripts/csi-secret-sync.sh --prepare --context jtoye-stg-aks --overlay k8s/staging --state "$RUNNER_TEMP/csi-restart.txt"
+          # From here on a failure means a deploy was STARTED, so the rollback step may undo it.
+          # Set before the apply, not after: an apply that fails half way has changed Deployments.
+          # check-deploy-rollback-guard R-3/R-4 hold it before the apply, R-6 after --prepare.
+          echo "applied=true" >> "$GITHUB_OUTPUT"
           kubectl apply -k k8s/staging
           bash scripts/csi-secret-sync.sh --restart --context jtoye-stg-aks --state "$RUNNER_TEMP/csi-restart.txt"
 

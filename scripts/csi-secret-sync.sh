@@ -263,18 +263,35 @@ case "$MODE" in
     read_live "$W" || void "could not read SecretProviderClasses, synced Secrets, pods or pod statuses"
     prepare_findings "$W" || void "the comparison did not run (above): refusing to treat 'could not compare' as 'nothing stale'"
     "${K[@]}" get deploy,statefulset -o json > "$W/workloads.json" || void "could not list Deployments and StatefulSets"
-    : > "$STATE"
+    # PLAN, then DELETE (review round 1 on #1056, F1). Every refusal and every workload lookup
+    # happens before the first delete, so a failure here leaves nothing deleted. The deploy step
+    # sets `applied` only after --prepare, so neither the rollback nor --restart runs after a
+    # --prepare failure: a Secret deleted by a half-finished --prepare would stay absent.
+    : > "$STATE"; : > "$W/delete.txt"
     while read -r kind secret spc rest; do
       [ "$kind" = STALE-SECRET ] || continue
       driver_made "$secret" "$W/secrets.json" \
-        || fail "synced Secret $secret lacks a key $spc declares ($rest), but nothing shows the driver made it (no managed label; an owner that is not a workload, or none): not deleting it"
-      echo "prepare: synced Secret $secret lacks a key $spc declares ($rest); deleting it so the next mount recreates it complete"
-      "${K[@]}" delete secret "$secret" --wait=true || fail "could not delete stale synced Secret $secret"
+        || fail "synced Secret $secret lacks a key $spc declares ($rest), but nothing shows the driver made it (no managed label; an owner that is not a workload, or none): nothing was deleted"
       # Each consumer with its generation NOW, so --restart can skip one the apply itself rolls.
       jq -r --arg s "$spc" '.items[] | select([.spec.template.spec.volumes[]?.csi.volumeAttributes.secretProviderClass?] | index($s))
-                            | "\(.kind | ascii_downcase)/\(.metadata.name) \(.metadata.generation)"' "$W/workloads.json" >> "$STATE" \
-        || fail "could not list the workloads that mount $spc"
+                            | "\(.kind | ascii_downcase)/\(.metadata.name) \(.metadata.generation)"' "$W/workloads.json" > "$W/consumers.$secret" \
+        || fail "could not list the workloads that mount $spc: nothing was deleted"
+      printf '%s %s %s\n' "$secret" "$spc" "$rest" >> "$W/delete.txt"
     done < "$W/findings.txt"
+    while read -r secret spc rest; do
+      echo "prepare: synced Secret $secret lacks a key $spc declares ($rest); deleting it so the next mount recreates it complete"
+      if ! "${K[@]}" delete secret "$secret" --wait=true; then
+        # Some Secrets may already be gone and no apply will follow. Restart their consumers now
+        # (no apply has run, so this stacks on no deploy revision), so their mounts recreate them.
+        if [ -s "$STATE" ]; then
+          sort -u "$STATE" | while read -r w _; do
+            "${K[@]}" rollout restart "$w" || echo "prepare: could not restart $w; its Secret stays absent until a pod mounts it" >&2
+          done
+        fi
+        fail "could not delete stale synced Secret $secret; the consumers of the Secrets already deleted were restarted so their mounts recreate them"
+      fi
+      cat "$W/consumers.$secret" >> "$STATE"
+    done < "$W/delete.txt"
     sort -u -o "$STATE" "$STATE"
     echo "prepare: $(grep -c . "$STATE") workload(s) to restart after the apply"
     ;;
