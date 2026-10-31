@@ -96,3 +96,10 @@ f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/s
 7b117162e80a943af4186f2255c40329cd8d145c:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task1.json:generic-api-key:4
 7b117162e80a943af4186f2255c40329cd8d145c:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-05-red-task2-it.json:generic-api-key:4
 7b117162e80a943af4186f2255c40329cd8d145c:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-07-task3-arms.txt:generic-api-key:7
+
+# Phase 30 plan 30-13 (PR 4, feat/30-connect-webhook): the break-arm record prints the
+# restored file's git blob id ("blob=c4f256d1..."), a 40-hex object name, not a credential.
+# Pinned to the branch commit; the squash commit needs its own pair after the merge (the
+# #1037 lesson), carried by plan 30-15.
+55d56a7fa6d5be0916726f9b793599d2b26df2f9:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-13-task1-arms.txt:generic-api-key:22
+55d56a7fa6d5be0916726f9b793599d2b26df2f9:.planning/phases/30-live-stripe-test-mode-execution/evidence/30-13-task1-arms.txt:generic-api-key:36

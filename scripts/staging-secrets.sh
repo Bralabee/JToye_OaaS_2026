@@ -32,7 +32,8 @@
 # USAGE (every Azure mode needs, in the CALLER's environment,
 #   JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94, and python3 + PyYAML,
 #   i.e. `conda activate jtoye-ops` on this host)
-#   scripts/staging-secrets.sh --list              names and classes, offline (no Azure call)
+#   scripts/staging-secrets.sh --list              names and classes (+ an external object's
+#                                                  required prefix/validator), offline (no Azure call)
 #   scripts/staging-secrets.sh --generate          write every absent estate/random/composite
 #                                                  object; existing ones print "exists (write-once)"
 #   scripts/staging-secrets.sh --set-external NAME read NAME's value from stdin (a hidden prompt
@@ -146,7 +147,12 @@ cmd_list() {
   setup_work; derive
   local n c bad=0
   while IFS= read -r n; do
-    if c=$(ss_classify "$n"); then printf '%s\t%s\n' "$n" "${c%% *}"; else printf '%s\t%s\n' "$n" "UNCLASSIFIED"; bad=$((bad + 1)); fi
+    # An external object also prints the rule the owner's value must meet (sk_test_, whsec_,
+    # @email, @nonempty), so --list says what --set-external will accept. Other kinds stay
+    # off the listing (an estate literal is a fact, but the listing is names and classes).
+    if c=$(ss_classify "$n"); then
+      if [ "${c%% *}" = external ]; then printf '%s\t%s\t%s\n' "$n" external "${c#external }"; else printf '%s\t%s\n' "$n" "${c%% *}"; fi
+    else printf '%s\t%s\n' "$n" "UNCLASSIFIED"; bad=$((bad + 1)); fi
   done < "$WORK/objects"
   echo "list: $(wc -l < "$WORK/objects") objects, $bad unclassified" >&2
   [ "$bad" -eq 0 ] || exit 1
@@ -452,8 +458,15 @@ cmd_selftest() {
   [ -z "$why" ] && [ "$rc" != 1 ] && why="webhook secret without whsec_ rc=$rc"
   printf '%s\n' 'whsec_y' > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run w2 --set-external stripe-credentials--webhook-secret)
   [ -z "$why" ] && [ "$rc" != 0 ] && why="whsec_ rc=$rc"
-  [ -z "$why" ] && command grep -qE 'sk_test_x|whsec_y' "$ST"/t1.out "$ST"/w2.out && why="a value was printed"
-  if [ -z "$why" ]; then ss_result "PASS external-prefix sk_live_=refused sk_test_=written-once whsec_=required"; else ss_result "FAIL external-prefix $why"; fails=$((fails + 1)); fi
+  # The Connect endpoint's secret (plan 30-13) carries the same whsec_ rule.
+  printf '%s\n' 'sk_test_z' > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run c1 --set-external stripe-credentials--connect-webhook-secret)
+  [ -z "$why" ] && [ "$rc" != 1 ] && why="connect webhook secret without whsec_ rc=$rc"
+  [ -z "$why" ] && [ -e "$ST/state/vault/stripe-credentials--connect-webhook-secret" ] && why="a refused connect webhook secret was written"
+  printf '%s\n' 'whsec_z' > "$ST/in"; rc=$(ST_STDIN="$ST/in" st_run c2 --set-external stripe-credentials--connect-webhook-secret)
+  [ -z "$why" ] && [ "$rc" != 0 ] && why="connect whsec_ rc=$rc: $(tail -n 1 "$ST/c2.out")"
+  [ -z "$why" ] && [ "$(cat "$ST/state/vault/stripe-credentials--connect-webhook-secret" 2>/dev/null)" != whsec_z ] && why="connect whsec_ not stored"
+  [ -z "$why" ] && command grep -qE 'sk_test_x|whsec_y|sk_test_z|whsec_z' "$ST"/t1.out "$ST"/w2.out "$ST"/c1.out "$ST"/c2.out && why="a value was printed"
+  if [ -z "$why" ]; then ss_result "PASS external-prefix sk_live_=refused sk_test_=written-once whsec_=required connect-whsec_=required"; else ss_result "FAIL external-prefix $why"; fails=$((fails + 1)); fi
 
   # --- external validators (plan 29-24): the Zoho alert-mail values -----------------------
   # @email refuses a non-address and a list, accepts one address once; @nonempty refuses an
@@ -484,22 +497,28 @@ cmd_selftest() {
   st_reset
   while IFS= read -r n; do case "$n" in stripe-credentials--*) ;; *) printf 'x' > "$ST/state/vault/$n" ;; esac; done < "$ST/objects"
   rc=$(st_run aa1 --assign-access); why=""
-  local grants; grants=$(wc -l < "$ST/access")
+  local grants nst; grants=$(wc -l < "$ST/access")
+  # One grant per Stripe object, each to core-java alone: 3 since plan 30-13 added the
+  # Connect endpoint's secret. Counted from the derivation, and asserted to be 3, so a
+  # derivation that silently lost an object cannot shrink the expectation with it.
+  nst=$(command grep -c '^stripe-credentials--' "$ST/objects")
   [ "$rc" = 0 ] || why="rc=$rc: $(tail -n 2 "$ST/aa1.out" | tr '\n' ' ')"
-  [ -z "$why" ] && [ "$(command grep -c '^deferred (object absent): stripe-credentials--' "$ST/aa1.out")" != 2 ] && why="want 2 stripe deferrals"
-  [ -z "$why" ] && [ "$(command grep -c '^deferred' "$ST/aa1.out")" != 2 ] && why="deferrals other than the two stripe objects"
-  [ -z "$why" ] && [ "$(wc -l < "$ST/state/roles")" != "$((grants - 2))" ] && why="want $((grants - 2)) assignments, got $(wc -l < "$ST/state/roles")"
+  [ -z "$why" ] && [ "$nst" != 3 ] && why="want 3 derived stripe objects, got $nst"
+  [ -z "$why" ] && [ "$(command grep -c '^deferred (object absent): stripe-credentials--' "$ST/aa1.out")" != "$nst" ] && why="want $nst stripe deferrals"
+  [ -z "$why" ] && [ "$(command grep -c '^deferred' "$ST/aa1.out")" != "$nst" ] && why="deferrals other than the $nst stripe objects"
+  [ -z "$why" ] && [ "$(wc -l < "$ST/state/roles")" != "$((grants - nst))" ] && why="want $((grants - nst)) assignments, got $(wc -l < "$ST/state/roles")"
   [ -z "$why" ] && command grep -q 'secrets/stripe-credentials--' "$ST/state/roles" && why="a stripe object was granted while absent"
   printf 'x' > "$ST/state/vault/stripe-credentials--api-key"; printf 'x' > "$ST/state/vault/stripe-credentials--webhook-secret"
+  printf 'x' > "$ST/state/vault/stripe-credentials--connect-webhook-secret"
   rc=$(st_run aa2 --assign-access)
   [ -z "$why" ] && [ "$rc" != 0 ] && why="re-run rc=$rc"
-  [ -z "$why" ] && [ "$(command grep -c '^assigned: ' "$ST/aa2.out")" != 2 ] && why="re-run created $(command grep -c '^assigned: ' "$ST/aa2.out"), want 2"
+  [ -z "$why" ] && [ "$(command grep -c '^assigned: ' "$ST/aa2.out")" != "$nst" ] && why="re-run created $(command grep -c '^assigned: ' "$ST/aa2.out"), want $nst"
   [ -z "$why" ] && command grep -q '^deferred' "$ST/aa2.out" && why="re-run still defers"
   [ -z "$why" ] && [ "$(LC_ALL=C sort -u "$ST/state/roles" | wc -l)" != "$grants" ] && why="duplicate or missing assignments: $(LC_ALL=C sort -u "$ST/state/roles" | wc -l) unique of $grants"
   rc=$(st_run aa3 --assign-access)
   [ -z "$why" ] && [ "$(command grep -c '^assigned: ' "$ST/aa3.out")" != 0 ] && why="third run created assignments"
   [ -z "$why" ] && [ "$(wc -l < "$ST/state/roles")" != "$grants" ] && why="assignment count changed on the idempotent run"
-  if [ -z "$why" ]; then ss_result "PASS assign-access grants=$grants deferred=2-then-0 created=2 duplicates=0"; else ss_result "FAIL assign-access $why"; fails=$((fails + 1)); fi
+  if [ -z "$why" ]; then ss_result "PASS assign-access grants=$grants deferred=$nst-then-0 created=$nst duplicates=0"; else ss_result "FAIL assign-access $why"; fails=$((fails + 1)); fi
 
   # --- leak-scan: hit names the object, never the value; clean file 0; missing/empty VOID -
   st_reset

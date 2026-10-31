@@ -13920,6 +13920,51 @@
         ]
       }
     },
+    "/api/v1/public/payments/webhook/connect" : {
+      "post" : {
+        "description" : "Handles Stripe events from the Connected accounts scope (Express account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an account; refuses everything when that secret is not configured.",
+        "operationId" : "handleConnectWebhook_1",
+        "parameters" : [
+          {
+            "in" : "header",
+            "name" : "Stripe-Signature",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "string"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "string"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stripe Connected-accounts webhook",
+        "tags" : [
+          "Payments"
+        ]
+      }
+    },
     "/api/v1/public/shops" : {
       "get" : {
         "description" : "Browse available shops. Optionally filter by search query, or order by distance from a coordinate. Supplying 'lat' and 'lon' returns published shops within 'radiusKm' (platform default when omitted, capped by the platform maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied together and cannot be combined with 'q'. With no coordinate the listing is name-ascending and 'distanceKm' is null. A 'q' that resolves to a GB postcode is read as a place and served by proximity from that postcode's centroid, nearest first, in preference to a text match on the same string; a 'q' that is not a postcode, or is a postcode the dataset does not know (Code-Point Open is GB only), is answered by the text search exactly as before. The 'X-Search-Interpretation' response header states which reading was applied.",
@@ -17122,6 +17167,51 @@
           }
         },
         "summary" : "Stripe webhook",
+        "tags" : [
+          "Payments"
+        ]
+      }
+    },
+    "/public/payments/webhook/connect" : {
+      "post" : {
+        "description" : "Handles Stripe events from the Connected accounts scope (Express account.updated, direct-charge payment_intent.* and refund.*). Verifies the signature against the Connect endpoint's own secret and refuses an event without an account; refuses everything when that secret is not configured.",
+        "operationId" : "handleConnectWebhook",
+        "parameters" : [
+          {
+            "in" : "header",
+            "name" : "Stripe-Signature",
+            "required" : true,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "string"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "additionalProperties" : {
+                    "type" : "string"
+                  },
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Stripe Connected-accounts webhook",
         "tags" : [
           "Payments"
         ]

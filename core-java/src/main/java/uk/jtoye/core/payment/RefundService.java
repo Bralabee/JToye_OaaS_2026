@@ -69,6 +69,8 @@ public class RefundService {
     private final StripeRefundClient stripeRefundClient;
     private final RefundEventPublisher refundEventPublisher;
     private final StripeConnectService stripeConnectService;
+    /** Null only through the legacy constructors: the refund is then tagged environment=unset. */
+    private final StripeProperties stripeProperties;
 
     public RefundService(RefundRepository refundRepository,
                          OrderRepository orderRepository,
@@ -80,7 +82,6 @@ public class RefundService {
                 refundMapper, stripeRefundClient, refundEventPublisher, null);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public RefundService(RefundRepository refundRepository,
                          OrderRepository orderRepository,
                          OrderStateMachineService stateMachineService,
@@ -88,6 +89,19 @@ public class RefundService {
                          StripeRefundClient stripeRefundClient,
                          RefundEventPublisher refundEventPublisher,
                          StripeConnectService stripeConnectService) {
+        this(refundRepository, orderRepository, stateMachineService, refundMapper,
+                stripeRefundClient, refundEventPublisher, stripeConnectService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public RefundService(RefundRepository refundRepository,
+                         OrderRepository orderRepository,
+                         OrderStateMachineService stateMachineService,
+                         RefundMapper refundMapper,
+                         StripeRefundClient stripeRefundClient,
+                         RefundEventPublisher refundEventPublisher,
+                         StripeConnectService stripeConnectService,
+                         StripeProperties stripeProperties) {
         this.refundRepository = refundRepository;
         this.orderRepository = orderRepository;
         this.stateMachineService = stateMachineService;
@@ -95,6 +109,7 @@ public class RefundService {
         this.stripeRefundClient = stripeRefundClient;
         this.refundEventPublisher = refundEventPublisher;
         this.stripeConnectService = stripeConnectService;
+        this.stripeProperties = stripeProperties;
     }
 
     /**
@@ -197,7 +212,12 @@ public class RefundService {
                     .setReason(RefundReason.toStripeReason(request.reason()))
                     .putMetadata("refund_id", refund.getId().toString())
                     .putMetadata("tenant_id", tenantId.toString())
-                    .putMetadata("order_id", orderId.toString());
+                    .putMetadata("order_id", orderId.toString())
+                    // PAY-03 (plan 30-12): the refund's own environment, so another environment's
+                    // runtime acknowledges its refund.* events instead of retrying them (Pitfall 5).
+                    .putMetadata("environment", stripeProperties != null
+                            ? stripeProperties.effectiveEnvironmentTag()
+                            : StripeProperties.UNSET_ENVIRONMENT);
             RequestOptions.RequestOptionsBuilder optsBuilder = RequestOptions.builder()
                     .setIdempotencyKey(serverIdemKey);
 
@@ -365,6 +385,11 @@ public class RefundService {
         try {
             UUID refundId = UUID.fromString(localRefundIdStr);
             // BL-04 — fail loud on missing-row in the metadata-bearing path.
+            // PAY-03 (plan 30-12): this is kept for SAME-environment events only. A refund created
+            // by another environment sharing the Stripe account carries that environment's tag and
+            // is acknowledged by PaymentService.dispatch before it reaches here, so the throw below
+            // can no longer turn a foreign refund into a retry storm; for this runtime's own refund
+            // a missing row is a real lag or bug, and the retry is what recovers it.
             // Throwing rolls back the @Transactional in PaymentService (and
             // with it the processed_stripe_events dedup row), so Stripe
             // retries the event after our local row catches up. If the row

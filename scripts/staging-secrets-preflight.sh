@@ -214,6 +214,7 @@ pf_full() { # a fully configured stub vault: every derived object, every grant, 
   while IFS= read -r n; do printf 'stub-value-%s' "$n" > "$ST/state/vault/$n"; done < "$ST/objects"
   printf '%s' 'sk_test_stub' > "$ST/state/vault/stripe-credentials--api-key"
   printf '%s' 'whsec_stub' > "$ST/state/vault/stripe-credentials--webhook-secret"
+  printf '%s' 'whsec_stub' > "$ST/state/vault/stripe-credentials--connect-webhook-secret"
   # Owner-supplied values validated by a kind, not a prefix (plan 29-24 @email/@nonempty):
   # a full vault holds a well-formed one for each, as the writer would have accepted.
   while IFS= read -r n; do
@@ -240,13 +241,15 @@ selftest() {
   cp "$ST/d/objects" "$ST/objects"; cp "$ST/d/access" "$ST/access"
   pf_idmap "$ST/idmap.yaml"
 
-  # --- full: rc 0, no gap line, exactly two test-mode lines ------------------------------
+  # --- full: rc 0, no gap line, exactly three test-mode lines, one per Stripe object -----
+  # (api-key, webhook-secret, and the Connect endpoint's connect-webhook-secret, plan 30-13)
   pf_full; rc=$(pf_run full); why=""
   [ "$rc" = 0 ] || why="rc=$rc: $(tail -n 3 "$ST/full.out" | tr '\n' ' ')"
   [ -z "$why" ] && [ -n "$(gaplines full)" ] && why="gap lines on a full vault: $(gaplines full | head -n 2 | tr '\n' ' ')"
-  [ -z "$why" ] && [ "$(command grep -c '^test-mode: yes ' "$ST/full.out")" != 2 ] && why="want 2 test-mode lines, got $(command grep -c '^test-mode: yes ' "$ST/full.out")"
+  [ -z "$why" ] && [ "$(command grep -c '^test-mode: yes ' "$ST/full.out")" != 3 ] && why="want 3 test-mode lines, got $(command grep -c '^test-mode: yes ' "$ST/full.out")"
+  [ -z "$why" ] && ! command grep -qx 'test-mode: yes (stripe-credentials--connect-webhook-secret)' "$ST/full.out" && why="the Connect webhook secret was not checked as a TEST object"
   [ -z "$why" ] && command grep -qE 'sk_test_stub|whsec_stub' "$ST/full.out" && why="a Stripe value was printed"
-  if [ -z "$why" ]; then ss_result "PASS full rc=0 gaps=0 test-mode=2"; else ss_result "FAIL full $why"; fails=$((fails + 1)); fi
+  if [ -z "$why" ]; then ss_result "PASS full rc=0 gaps=0 test-mode=3"; else ss_result "FAIL full $why"; fails=$((fails + 1)); fi
 
   # --- two render objects missing: exactly those two MISSING lines -----------------------
   pf_full; rm -f "$ST/state/vault/redis-credentials--password" "$ST/state/vault/nextauth-secret--secret"
@@ -298,6 +301,14 @@ selftest() {
   [ -z "$why" ] && [ "$(gaplines live)" != "NOT-TEST-MODE stripe-credentials--api-key" ] && why="gap lines were: $(gaplines live | tr '\n' '|')"
   [ -z "$why" ] && command grep -q 'sk_live_stub' "$ST/live.out" && why="the live value was printed"
   if [ -z "$why" ]; then ss_result "PASS not-test-mode rc=1"; else ss_result "FAIL not-test-mode $why"; fails=$((fails + 1)); fi
+
+  # --- 30-13: the Connect endpoint's secret holding a non-whsec_ value: NOT-TEST-MODE -----
+  pf_full; printf '%s' 'sk_live_stub' > "$ST/state/vault/stripe-credentials--connect-webhook-secret"
+  rc=$(pf_run connect); why=""
+  [ "$rc" = 1 ] || why="rc=$rc"
+  [ -z "$why" ] && [ "$(gaplines connect)" != "NOT-TEST-MODE stripe-credentials--connect-webhook-secret" ] && why="gap lines were: $(gaplines connect | tr '\n' '|')"
+  [ -z "$why" ] && command grep -q 'sk_live_stub' "$ST/connect.out" && why="the value was printed"
+  if [ -z "$why" ]; then ss_result "PASS connect-not-test-mode rc=1"; else ss_result "FAIL connect-not-test-mode $why"; fails=$((fails + 1)); fi
 
   # --- 29-25: an owner value that fails its @-validator is INVALID-VALUE, never printed ----
   # (and a validator kind is never read as a literal prefix: the full arm above holds a

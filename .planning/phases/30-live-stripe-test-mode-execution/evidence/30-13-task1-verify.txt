@@ -1,0 +1,117 @@
+== V1 static suite
+Postgres budget [k8s-staging]: max_connections=429, reserved=15, app-usable=414, 80% budget line=331
+Postgres budget [k8s-production]: max_connections=200, reserved=3, app-usable=197, 80% budget line=157
+INFO counterfactual: k8s-production at reserved 15 (the Azure Flexible Server reserve of the k8s-staging row) needs 155, budget 148 — does not fit at max_connections=200; Phase 32 must size max_connections ≥ 209 or lower the pool
+
+k8s-production (HPA max+surge)  11 replicas x pool 12  + keycloak(20)+backup(1)+exporter(2) = 155  -> OK (<= 157)
+k8s-staging (HPA max+surge)     11 replicas x pool 12  + keycloak(20)+backup(1)+exporter(2) = 155  -> OK (<= 331)
+compose (--scale 2)              2 replicas x pool 20  + keycloak(20)+exporter(2)+healthcheck(2) = 64  -> OK (<= 157)
+
+Drift guard: k8s DB_POOL_SIZE (12) == application-prod.yml default (12) — OK
+HPA guard: core-java HPA has no memory metric — OK
+
+PASS: connection-pool math fits every target's Postgres budget with >=20% headroom (compose 200/3, k8s-staging 429/15, k8s-production 200/3 as max_connections/reserved).
+rc=0 fail_or_parse_lines=0 output_lines=80
+== V2 staging render chain
+render_rc=0 spc_object_refs=2 secret_key_refs=2 env_entries=1
+== V3 chain + secrets selftests + list
+ARM undeclared-key caught=yes
+ARM two-producers caught=yes
+ARM clientid-mismatch caught=yes
+ARM sync-lifetime caught=yes
+ARM shared-identity caught=yes
+ARM object-not-mounted caught=yes
+ARM cert-secret-spc-producer caught=yes
+ARM cert-secret-foreign-key caught=yes
+ARM ingress-auth-unproduced caught=yes
+ARM ingress-auth-unsynced caught=yes
+ARM grafana-auth-unproduced caught=yes
+ARM grafana-spc-missing caught=yes
+ARM grafana-mount-missing caught=yes
+ARM zero-spc caught=yes
+ARM pyyaml-missing caught=yes
+ARM kubectl-missing caught=yes
+CLEAN clean-library rc=0
+CLEAN clean-gate rc=0
+SELFTEST: 18/18 as expected
+OK   [k8s/staging] OK: 12 SecretProviderClasses, 50 consumed (Secret, key) reference(s), 38 Key Vault objects; every consumer mounts its one producer, every clientID is its ServiceAccount's
+PASS: the Key Vault chain holds in 1 target(s) (k8s/staging).
+PASS write-once-generate writes=36 dsar=untouched
+PASS write-once-set-external rc=1 REFUSED [external]
+PASS argv-no-value sets=36 all---file values-in-argv=0
+PASS value-shapes hex64 alnum32 b64url32 vendor-policy composites=inputs
+PASS htpasswd-composite rows=2 order=password-then-auth user=probe-user apr1=reproducible printed=0
+PASS second-generate-noop writes=0 exists=37
+PASS unclassified rc=1 writes=0
+PASS external-prefix sk_live_=refused sk_test_=written-once whsec_=required connect-whsec_=required
+PASS external-validators @email=one-address @nonempty=refuses-empty grafana=estate+random externals-not-generated
+PASS assign-access grants=47 deferred=3-then-0 created=3 duplicates=0
+PASS leak-scan hit=1-named clean=0 missing=VOID empty=VOID
+PASS guard-unpinned rc=1 calls=0
+PASS void-no-python rc=2
+SELFTEST: 13/13 (derived objects=44, generated=37, grants=47)
+PASS full rc=0 gaps=0 test-mode=3
+PASS two-missing rc=1 lines=2
+PASS operator-script-objects rc=1 seed+realm named
+PASS ghost rc=1 MISSING ghost-credentials--key
+PASS missing-access rc=1 MISSING-ACCESS redis-credentials--password <principal>
+PASS disabled rc=1 MISSING postgres-credentials--host
+PASS not-test-mode rc=1
+PASS connect-not-test-mode rc=1
+PASS invalid-external-value rc=1 INVALID-VALUE to+password
+PASS empty-vault rc=1 missing=44
+PASS stale-identity rc=1 STALE-IDENTITY named
+PASS forbidden-read-detector-control full mode reads values (detector fires)
+PASS names-only-no-value-read rc=0 gaps=0 forbidden-reads=0
+PASS names-only-reports-gaps rc=1 MISSING+MISSING-ACCESS
+PASS names-only-unmapped rc=1 unresolved-client-id
+PASS committed-principal-map every SPC clientID mapped
+PASS guard-unpinned rc=1 calls=0
+PASS void-no-python rc=2
+SELFTEST: 18/18 (derived objects=44, grants=47)
+alertmanager-smtp-credentials--from	external	@email
+alertmanager-smtp-credentials--password	external	@nonempty
+alertmanager-smtp-credentials--to	external	@email
+alertmanager-smtp-credentials--username	external	@email
+client-ip-credentials--hmac-key	random
+dsar-credentials--encryption-key	random
+grafana-admin-credentials--admin-password	random
+grafana-admin-credentials--admin-user	estate
+grafana-edge-credentials--auth	composite
+grafana-edge-credentials--password	random
+keycloak-credentials--admin-password	random
+keycloak-credentials--admin-username	estate
+keycloak-credentials--frontend-client-secret	random
+keycloak-realm--edge-api-client-secret	random
+keycloak-realm--integration-catalog-ro-secret	random
+keycloak-realm--integration-orders-rw-secret	random
+keycloak-server-credentials--db-password	random
+mailpit-ui-credentials--auth	composite
+mailpit-ui-credentials--password	random
+nextauth-secret--secret	random
+notification-credentials--unsubscribe-signing-secret	random
+postgres-credentials--backup-password	random
+postgres-credentials--backup-username	estate
+postgres-credentials--database	estate
+postgres-credentials--host	estate
+postgres-credentials--migration-password	random
+postgres-credentials--migration-username	estate
+postgres-credentials--password	random
+postgres-credentials--port	estate
+postgres-credentials--username	estate
+postgres-exporter-credentials--password	random
+postgres-exporter-credentials--username	estate
+rabbitmq-credentials--password	random
+rabbitmq-credentials--stomp-login	composite
+rabbitmq-credentials--stomp-passcode	composite
+rabbitmq-credentials--username	estate
+rabbitmq-default-user--default-user-conf	composite
+redis-credentials--password	random
+smtp-credentials--password	random
+smtp-credentials--username	estate
+staging-seed--test-vendor-password	random
+stripe-credentials--api-key	external	sk_test_
+stripe-credentials--connect-webhook-secret	external	whsec_
+stripe-credentials--webhook-secret	external	whsec_
+list: 44 objects, 0 unclassified
+rc=0 classified=1 fail_lines=0

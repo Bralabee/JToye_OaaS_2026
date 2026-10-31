@@ -151,6 +151,11 @@ data:
   # application.yml defaults; only the origin is staging-specific.
   stripe.connect.return-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh"
+  # PAY-03 (plan 30-13): this runtime's Stripe environment name, declared here and never in
+  # base (k8s/base/configmap.yaml says why). Stripe objects this runtime creates carry it as
+  # metadata.environment, and events carrying another environment's name are acknowledged
+  # without being processed.
+  stripe.environment-tag: "staging"
 
   # FE-1 / E-5 (QA council 20260902-134741): stated EXPLICITLY here, never
   # inherited — the vendor sign-out return leg stays on today's /auth/signin

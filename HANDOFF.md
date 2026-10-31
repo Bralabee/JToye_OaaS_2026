@@ -1,8 +1,25 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 10/32 plans done; next 30-11 (PR 3)
+# Handoff: Phase 30 (The Money Path, Executed) executing, 14/32 plans done; PR 4 merged, 30-15 staging proof next
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-25 delta (RESUME HERE; everything below is history).**
+**2026-10-31 delta (RESUME HERE; everything below is history).**
+- **PR 4 (#1046, plans 30-12 to 30-14) merged 2026-10-31 as squash `ec73ddee`.** 30-14 Task 2/3 done 2026-10-30: Connect endpoint `we_1UWN2NDpS9ICNeRtxSQMsc2M` (TEST, API 2026-09-30.endive, 7 events), its secret stored as `stripe-credentials--connect-webhook-secret` in `jtoye-stg-kv`, V1-V3, `--assign-access` and the preflight green; see `evidence/30-14-connect-endpoint.txt`. Review series 1 -> 0 -> 0 admissible.
+- **#1053 (issue #1027 shop-card stretched link, plus the rabbitmq 4.3 horizon refresh) merges after #1046**, with main merged in.
+- **Resume:** 30-15, the staging proof for PR 4: pod digests equal the ghcr digests of the merge tag, and the Connect route answers a signed TEST event. Then close issue #1027 and the hand-closes listed on the PRs.
+- **Watch:** RabbitMQ 4.3 EOL is 2027-01-31; the H-2 90-day warn window opens about 2026-11-02, so plan the 4.4 upgrade.
+
+**2026-10-25 late delta (history; superseded by the 2026-10-31 block above).**
+- **Phase 30 is executing: 13/32 plans done.** PR 3 (issue #108, Stripe half) merged as #1044, squash 9d204778, and was proven on staging by 30-11: pod digests equal the ghcr digests of that tag, and the new startup line reads `connectTimeoutMs=5000 readTimeoutMs=20000 maxNetworkRetries=2`. #1045 (the bundle of four finished Antigravity branches) merged after it as 5fa3a955.
+- **PR 4 is #1046 (open at the time; merged 2026-10-31), from `feat/30-connect-webhook`** (plans 30-12, 30-13, 30-14). It holds the Connected-accounts webhook route, the per-overlay `stripe.environment-tag`, the Express capabilities and the Key Vault, SPC and env wiring. See `30-12-SUMMARY.md`, `30-13-SUMMARY.md` and `evidence/30-14-connect-endpoint.txt`.
+- **Do not merge PR 4 until `stripe-credentials--connect-webhook-secret` exists in `jtoye-stg-kv`.** The SecretProviderClass names that object, so the CSI mount fails without it.
+- **Owner actions pending (30-14 Task 2):**
+  - Register a Connected-accounts webhook endpoint in Stripe TEST, pinned to API version 2026-09-30.endive, at `https://api-staging.olajay.co.uk/api/v1/public/payments/webhook/connect`.
+  - Store its signing secret with `scripts/staging-secrets.sh --set-external stripe-credentials--connect-webhook-secret` (hidden prompt).
+  - Reply with the endpoint id.
+  The read-only list taken before the checkpoint shows one TEST endpoint only, `we_1USBcpDpS9ICNeRt3kIwcIvC` at the platform URL, so step 0 (delete or retarget extras) has nothing to act on.
+- **Resume:** 30-14 Task 3 verifies the endpoint, the Key Vault object, `--assign-access` and the preflight. Then 30-15 runs the review series and the merge.
+
+**2026-10-25 delta (history; superseded by the 2026-10-25 late block above).**
 - **Phase 30 is executing: 10/32 plans done.** Merged and deployed on 2026-10-25:
   - PR #1041 (issue #1038: a stale card DRAFT's PaymentIntent is cancelled before its order is deleted), squash b728254e.
   - PR #1043 (30-09, D-02 done: 6 orphaned TEST intents cancelled at Stripe and read back `canceled`, `livemode=false`), squash 201ac06e.

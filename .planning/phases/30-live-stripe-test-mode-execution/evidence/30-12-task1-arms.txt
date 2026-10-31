@@ -1,0 +1,65 @@
+# 30-12 Task 1: the Connect webhook route. Measured 2026-10-25 21:19Z-21:30Z on feat/30-connect-webhook.
+# Every count is read from the JUnit XML under core-java/build-local/test-results/, not from Gradle's summary.
+
+## RED (commit eb68c4b8, before any implementation)
+StripeConnectWebhookRouteIntegrationTest  rc=1  tests=10 fail=8   (record: 30-12-red-task1-it.json, RED_EVIDENCE_OK)
+  target "connect route: an account.updated signed with the Connect secret ... accepted"  expected: 200 but was: 404
+  6 other Connect-route arms: 404 (no handler). Platform arm with account: expected 400 but was 200.
+  Passing on the old tree (controls): platform route without account 200; Connect-signed on platform 400.
+  A first RED run errored one arm on the TEST's own fault ("Empty key": the JCE refuses an empty HMAC key);
+  that sub-arm was removed and RED re-run before commit. The record above is the re-run.
+StripePropertiesRedactionTest  rc=1  tests=5 fail=1  (record: 30-12-red-task1-unit.json, RED_EVIDENCE_OK)
+  "toString should mask connectWebhookSecret with ***" — the Binder bound nothing: no such property.
+
+## GREEN (commit 44780a93)
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests StripeConnectWebhookRouteIntegrationTest
+  --tests StripeWebhookIdempotencyIntegrationTest   rc=0
+  StripeConnectWebhookRouteIntegrationTest   tests=10 failures=0 errors=0
+  StripeWebhookIdempotencyIntegrationTest    tests=6  failures=0 errors=0
+./gradlew :core-java:cleanTest :core-java:test --tests StripePropertiesRedactionTest --tests PaymentServiceTest   rc=0
+  StripePropertiesRedactionTest   tests=5  failures=0 errors=0
+  PaymentServiceTest              tests=41 failures=0 errors=0   (38 before + 3 Connect-route unit arms)
+OpenAPI snapshot: updateOpenApiSnapshot adds /api/v1/public/payments/webhook/connect (+ the /public alias), 0 removed lines.
+
+## Break arms (on the committed tree 44780a93; bracket clean -> arm -> restore -> clean; restore verified by blob hash)
+== A-connect-route-verifies-with-platform-secret
+-- clean-before: blob 1f305c52abd209e31f132ad0907014523aacab6f head 1f305c52abd209e31f132ad0907014523aacab6f match
+-- arm: blob dc0ed1d71634f85867737fd607831316093cc3a1 (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.StripeConnectWebhookRouteIntegrationTest tests=10 failures=3 errors=0 skipped=0 mtime=21:27:25Z
+   xmlsum rc=1
+   FAIL connect route: an account.updated signed with the Connect secret and carrying account is accepted and recorded once :: org.opentest4j.AssertionFailedError: [Connect-signed Connect event on the Connect route]  expected: 200  but was: 400
+   FAIL connect route: the same payload signed with the PLATFORM secret is refused 400 with no row :: org.opentest4j.AssertionFailedError: [platform-signed event on the Connect route]  expected: 400  but was: 200
+   FAIL connect route: a Connect account.updated reaches the existing handler (a known tenant's account becomes ENABLED) :: org.opentest4j.AssertionFailedError:  expected: 200  but was: 400
+-- restore: blob 1f305c52abd209e31f132ad0907014523aacab6f == head 1f305c52abd209e31f132ad0907014523aacab6f: yes
+   git diff --quiet: clean
+== B-platform-route-accepts-account
+-- clean-before: blob 1f305c52abd209e31f132ad0907014523aacab6f head 1f305c52abd209e31f132ad0907014523aacab6f match
+-- arm: blob 8463b1db5c895a180d22192d2d6c43fe2f85b7a3 (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.StripeConnectWebhookRouteIntegrationTest tests=10 failures=1 errors=0 skipped=0 mtime=21:28:10Z
+   xmlsum rc=1
+   FAIL platform route: a platform-signed event that carries account is refused 400 with no row :: org.opentest4j.AssertionFailedError: [a Connect-scope event (account set) on the platform route]  expected: 400  but was: 200
+-- restore: blob 1f305c52abd209e31f132ad0907014523aacab6f == head 1f305c52abd209e31f132ad0907014523aacab6f: yes
+   git diff --quiet: clean
+== C-no-blank-secret-guard
+-- clean-before: blob 1f305c52abd209e31f132ad0907014523aacab6f head 1f305c52abd209e31f132ad0907014523aacab6f match
+-- arm: blob a2329747d374df14e7b11612883eb5510b42650e (differs from head: yes)
+   gradle rc=1
+uk.jtoye.core.payment.PaymentServiceTest tests=41 failures=1 errors=0 skipped=0 mtime=21:28:24Z
+   xmlsum rc=1
+   FAIL T-30-50: a blank Connect secret refuses before any signature verification is attempted :: org.opentest4j.AssertionFailedError: Unexpected exception type thrown, expected: <java.lang.IllegalArgumentException> but was: <java.lang.NullPointerException>
+-- restore: blob 1f305c52abd209e31f132ad0907014523aacab6f == head 1f305c52abd209e31f132ad0907014523aacab6f: yes
+   git diff --quiet: clean
+
+ARM A is the plan's named arm: the Connect route verifying with the platform secret turns the cross-secret
+refusal green-when-it-should-be-red, so the test FAILS (expected 400, was 200), and the genuine Connect event
+is refused. ARM B shows the platform-route account rule is load-bearing. ARM C: with the blank-secret guard
+removed the IT blank arm alone could not tell (constructEvent on an empty key also ends in a 400), so the
+unit arm asserting Webhook is never touched is the one that goes red.
+
+## Clean after the arms (also the tracer gate re-run of Task 1's <verify>, end-of-phase mode)
+integrationTest rc=0: StripeConnectWebhookRouteIntegrationTest tests=10 failures=0; StripeWebhookIdempotencyIntegrationTest tests=6 failures=0
+test rc=0: StripePropertiesRedactionTest tests=5 failures=0; PaymentServiceTest tests=41 failures=0
+(the test tasks executed; the UP-TO-DATE lines in those logs are compile tasks)
+Tracer verified end-to-end — expanding.

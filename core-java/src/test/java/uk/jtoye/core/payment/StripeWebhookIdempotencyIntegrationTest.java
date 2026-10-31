@@ -21,6 +21,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderRepository;
@@ -97,6 +98,9 @@ class StripeWebhookIdempotencyIntegrationTest {
         // Stripe needs *some* webhook secret because PaymentService passes it to
         // Webhook.constructEvent — but we mock the call so the value never matters.
         registry.add("stripe.webhook-secret", () -> "whsec_test_idempotency");
+        // PAY-03 (plan 30-12): this runtime's environment; the foreign-environment arms tag
+        // their objects with another one.
+        registry.add("stripe.environment-tag", () -> RUNTIME_ENVIRONMENT);
     }
 
     @Autowired private PaymentService paymentService;
@@ -108,6 +112,7 @@ class StripeWebhookIdempotencyIntegrationTest {
     @MockitoBean private PaymentEventPublisher paymentEventPublisher;
 
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000a04");
+    private static final String RUNTIME_ENVIRONMENT = "it-runtime";
 
     private Order seededOrder;
     private UUID seededShopId;
@@ -320,6 +325,115 @@ class StripeWebhookIdempotencyIntegrationTest {
                 .doesNotContain("idempotency@test.local");
     }
 
+    // --- PAY-03 (plan 30-12): events from another environment sharing the Stripe account ---
+
+    @Test
+    void foreignEnvironmentEventIsAcknowledgedWithNoRowAndNoSideEffect(CapturedOutput output) {
+        Order draft = seedOrder(OrderStatus.DRAFT, "pi_env_foreign");
+        Event event = buildSucceededEvent("evt_env_foreign", "pi_env_foreign", draft.getId(), TENANT_ID,
+                "ci-sandbox");
+
+        deliver(event);
+
+        assertThat(dedupRows("evt_env_foreign"))
+                .as("a foreign-environment event must leave no processed_stripe_events row")
+                .isZero();
+        assertThat(dbRow(draft.getId()))
+                .as("and must not touch the order")
+                .containsEntry("status", "DRAFT")
+                .containsEntry("payment_status", "PENDING");
+        verify(paymentEventPublisher, never()).publishSucceeded(any(), any(), any(), any(), anyLong(), any());
+        verify(orderEventPublisher, never()).publishStateChange(any(), any(), any(), any(), any(), any());
+        assertThat(output.getOut() + output.getErr())
+                .containsPattern("WARN\\s+\\S*PaymentService - event=stripe_event_foreign_environment "
+                        + "id=evt_env_foreign type=payment_intent.succeeded env=ci-sandbox");
+    }
+
+    @Test
+    void sameEnvironmentEventIsProcessed() {
+        Order draft = seedOrder(OrderStatus.DRAFT, "pi_env_same");
+        Event event = buildSucceededEvent("evt_env_same", "pi_env_same", draft.getId(), TENANT_ID,
+                RUNTIME_ENVIRONMENT);
+
+        deliver(event);
+
+        assertThat(dedupRows("evt_env_same"))
+                .as("positive control for the same query: a same-environment event is recorded")
+                .isEqualTo(1L);
+        assertThat(dbRow(draft.getId())).containsEntry("payment_status", "CAPTURED");
+    }
+
+    @Test
+    void eventWithoutEnvironmentMetadataIsProcessed() {
+        // Objects created before the environment tag existed carry none; they stay processable.
+        Order draft = seedOrder(OrderStatus.DRAFT, "pi_env_legacy");
+        Event event = buildSucceededEvent("evt_env_legacy", "pi_env_legacy", draft.getId(), TENANT_ID, null);
+
+        deliver(event);
+
+        assertThat(dedupRows("evt_env_legacy")).isEqualTo(1L);
+        assertThat(dbRow(draft.getId())).containsEntry("payment_status", "CAPTURED");
+    }
+
+    @Test
+    void succeededEventForAnUnknownOrderOfThisEnvironmentThrowsAndLeavesNoDedupRow() {
+        // Review round 1, finding 1: this runtime created the intent, so a missing order is a lag or a
+        // bug. Acknowledging it would commit the dedup row and lose a real payment; the throw rolls the
+        // row back so Stripe retries (BL-04, as RefundService does).
+        UUID missingOrder = UUID.randomUUID();
+        Event event = buildSucceededEvent("evt_unknown_order", "pi_unknown_order", missingOrder, TENANT_ID,
+                RUNTIME_ENVIRONMENT);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> deliver(event))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(dedupRows("evt_unknown_order"))
+                .as("the dedup row must roll back so Stripe's retry is processed, not skipped as a duplicate")
+                .isZero();
+        verify(paymentEventPublisher, never()).publishSucceeded(any(), any(), any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void failedEventForAnUnknownOrderOfThisEnvironmentThrowsAndLeavesNoDedupRow() {
+        UUID missingOrder = UUID.randomUUID();
+        Event event = buildSucceededEvent("evt_unknown_order_failed", "pi_unknown_order_failed", missingOrder,
+                TENANT_ID, RUNTIME_ENVIRONMENT);
+        when(event.getType()).thenReturn("payment_intent.payment_failed");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> deliver(event))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(dedupRows("evt_unknown_order_failed")).isZero();
+        verify(paymentEventPublisher, never()).publishFailed(any(), any(), any(), any(), anyLong(), any(), any());
+    }
+
+    @Test
+    void succeededEventForAnUnknownUntaggedOrderIsAcknowledgedNotThrown(CapturedOutput output) {
+        // Pitfall 5: an untagged intent (pre-tag, or an untagged stack sharing the account) for an order
+        // this database does not hold is a 200 to Stripe, not a 5xx retry storm.
+        UUID missingOrder = UUID.randomUUID();
+        Event event = buildSucceededEvent("evt_unknown_untagged", "pi_unknown_untagged", missingOrder, TENANT_ID,
+                null);
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> deliver(event)).doesNotThrowAnyException();
+        verify(paymentEventPublisher, never()).publishSucceeded(any(), any(), any(), any(), anyLong(), any());
+        assertThat(output.getOut() + output.getErr())
+                .containsPattern("WARN\\s+\\S*PaymentService - event=stripe_event_unknown_order "
+                        + "id=evt_unknown_untagged order=" + missingOrder);
+    }
+
+    @Test
+    void failedEventForAnUnknownUntaggedOrderIsAcknowledgedNotThrown(CapturedOutput output) {
+        UUID missingOrder = UUID.randomUUID();
+        Event event = buildSucceededEvent("evt_unknown_untagged_failed", "pi_unknown_untagged_failed",
+                missingOrder, TENANT_ID, null);
+        when(event.getType()).thenReturn("payment_intent.payment_failed");
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> deliver(event)).doesNotThrowAnyException();
+        verify(paymentEventPublisher, never()).publishFailed(any(), any(), any(), any(), anyLong(), any(), any());
+        assertThat(output.getOut() + output.getErr())
+                .containsPattern("WARN\\s+\\S*PaymentService - event=stripe_event_unknown_order "
+                        + "id=evt_unknown_untagged_failed order=" + missingOrder);
+    }
+
     // --- helpers -------------------------------------------------------
 
     private void deliver(Event event) {
@@ -327,6 +441,12 @@ class StripeWebhookIdempotencyIntegrationTest {
             webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(event);
             paymentService.handleWebhookEvent("payload", "sig");
         }
+    }
+
+    private long dedupRows(String eventId) {
+        Long n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM processed_stripe_events WHERE event_id = ?", Long.class, eventId);
+        return n == null ? -1L : n;
     }
 
     /** The order row as stored, read by SQL (the test superuser bypasses RLS). */
@@ -344,12 +464,21 @@ class StripeWebhookIdempotencyIntegrationTest {
      */
     private Event buildSucceededEvent(String eventId, String paymentIntentId,
                                       UUID orderId, UUID tenantId) {
+        return buildSucceededEvent(eventId, paymentIntentId, orderId, tenantId, null);
+    }
+
+    /** As above, with {@code metadata.environment} set to {@code environment} when it is non-null. */
+    private Event buildSucceededEvent(String eventId, String paymentIntentId,
+                                      UUID orderId, UUID tenantId, String environment) {
+        Map<String, String> metadata = new java.util.HashMap<>();
+        metadata.put("order_id", orderId.toString());
+        metadata.put("tenant_id", tenantId.toString());
+        if (environment != null) {
+            metadata.put("environment", environment);
+        }
         PaymentIntent intent = mock(PaymentIntent.class);
         when(intent.getId()).thenReturn(paymentIntentId);
-        when(intent.getMetadata()).thenReturn(Map.of(
-                "order_id", orderId.toString(),
-                "tenant_id", tenantId.toString()
-        ));
+        when(intent.getMetadata()).thenReturn(metadata);
         when(intent.getLatestCharge()).thenReturn(null);
 
         EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);

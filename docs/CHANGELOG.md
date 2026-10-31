@@ -17,6 +17,24 @@ axe-core 4.14 enables `label-content-name-mismatch` (WCAG 2.5.3, level A). A lin
 - **Re-proven on main, no code change here:** the four Antigravity branches (issues #1007, #1008, #1009, #992, #1011, #1016, #963 and the synthesis gate) were already merged by #1045. Each fix was shown red with its pre-fix file from `9d204778` and green restored; the record is in #1053.
 - **`infra/dependency-horizons.yaml`:** endoflife.date now publishes 2027-01-31 for rabbitmq 4.3 (it returned `false`), so H-2 failed Operational Contracts on every PR. The `rabbitmq` and `rabbitmq-k8s` rows' `eol_date` now carry that date, the same two-line change #1046 makes, so the two PRs merge cleanly in either order.
 
+### Stripe Connect Events Get Their Own Webhook Route and Secret, and Every Stripe Object Names Its Environment (#1046) — 2026-10-25
+
+This is Phase 30 PR 4, the prerequisite for PAY-03. Stripe sends events from two scopes, the platform's own account and connected accounts. Each scope is a separate endpoint registration with its own signing secret, so one route with one secret could not verify both.
+
+- **The Connect route.** `POST /api/v1/public/payments/webhook/connect` (plus the `/public` alias) verifies only against `stripe.connect-webhook-secret`. It refuses any event that carries no `account`.
+- **The platform route.** It now refuses any event that carries `account`.
+- **Shared handling.** Both routes share one dispatcher (the dedup INSERT and the event switch). A blank secret refuses the request before verification.
+- **Environment tag.** `stripe.environment-tag` is written as `metadata.environment` on PaymentIntents, Refunds and Express accounts. If it is not declared, the value is `unset`.
+  - An event whose object names another environment is acknowledged with 200 and a WARN, and leaves no row.
+  - A `payment_intent.*` event for an order this database does not hold is acknowledged with 200 and a WARN only when the intent carries no environment tag. If it carries this runtime's own tag, the handler throws, so the dedup row rolls back and Stripe retries; acknowledging it would lose a real payment (review round 1, finding 1).
+  - Same-environment refund handling (BL-04) is unchanged.
+- **Express capabilities.** New Express accounts request `card_payments` and `transfers` under the idempotency key `connect-account-create-<tenantId>`. If a reused account is missing either, both are requested before the onboarding link.
+- **Wiring.**
+  - The new Key Vault object `stripe-credentials--connect-webhook-secret` (an external `whsec_`) reaches core-java as `STRIPE_CONNECT_WEBHOOK_SECRET`.
+  - The tag is declared per overlay (local, staging, production), never in base, and is read through a non-optional `configMapKeyRef`.
+  - Compose, `.env.example` and the local k8s secrets script carry both variables.
+- **Merge order.** The PR merges only after the owner has stored the Key Vault object, because the CSI mount fails without it.
+
 ### Three Scheduled-CI Reds Fixed: curl/libcurl in the Core Image, an Order Page That Keeps an Open Dialog Through a Live Update, a Kitchen Lapse Spec That Waits Out the Session Cache (#1047) — 2026-10-26
 
 Three scheduled lanes on main were red at 5fa3a955. Each fix carries its own red and green proof.

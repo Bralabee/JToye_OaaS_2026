@@ -4,6 +4,7 @@ import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
+import com.stripe.model.MetadataStore;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.PaymentMethod;
 import com.stripe.net.RequestOptions;
@@ -225,6 +226,7 @@ public class PaymentService {
                 .putMetadata("order_id", order.getId().toString())
                 .putMetadata("order_number", order.getOrderNumber())
                 .putMetadata("tenant_id", order.getTenantId().toString())
+                .putMetadata("environment", stripeProperties.effectiveEnvironmentTag())
                 .setAutomaticPaymentMethods(
                         PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
                                 .setEnabled(true)
@@ -342,6 +344,7 @@ public class PaymentService {
                 .putMetadata("order_number", order.getOrderNumber())
                 .putMetadata("tenant_id", order.getTenantId().toString())
                 .putMetadata("payment_stage", "BALANCE")
+                .putMetadata("environment", stripeProperties.effectiveEnvironmentTag())
                 .setAutomaticPaymentMethods(
                         PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
                                 .setEnabled(true)
@@ -514,20 +517,81 @@ public class PaymentService {
     }
 
     /**
-     * Process a Stripe webhook event.
-     * Verifies the signature and dispatches to appropriate handler.
+     * Process a Stripe webhook event from the platform ("Your account") endpoint.
+     *
+     * <p>Verifies against {@code stripe.webhook-secret} only, and refuses an event that carries
+     * {@code account}: a Connected-accounts event belongs on {@link #handleConnectWebhookEvent},
+     * which has its own endpoint and secret (PAY-03, plan 30-12). Each scope has exactly one route
+     * and one secret.
      */
     @Transactional
     public void handleWebhookEvent(String payload, String sigHeader) {
-        Event event;
+        Event event = verify(payload, sigHeader, stripeProperties.getWebhookSecret());
+        if (event.getAccount() != null && !event.getAccount().isBlank()) {
+            log.warn("event=stripe_event_wrong_endpoint id={} type={} scope=connect endpoint=platform",
+                    event.getId(), event.getType());
+            throw new IllegalArgumentException("Connect event sent to the platform endpoint");
+        }
+        dispatch(event);
+    }
+
+    /**
+     * Process a Stripe webhook event from the "Connected accounts" endpoint (PAY-03, plan 30-12).
+     *
+     * <p>Stripe delivers Express {@code account.updated} and every direct-charge
+     * {@code payment_intent.*} / {@code refund.*} event only to an endpoint registered for the
+     * Connected-accounts scope, signed with that endpoint's own secret. This entry verifies against
+     * {@code stripe.connect-webhook-secret} only (blank: refuse everything), requires
+     * {@code event.account}, and then runs the SAME dispatcher as the platform route: one dedup
+     * table, one switch. A direct-charge intent's {@code event.account} is what the charge lookup in
+     * {@code handlePaymentIntentSucceeded} sends as the {@code Stripe-Account} header.
+     */
+    @Transactional
+    public void handleConnectWebhookEvent(String payload, String sigHeader) {
+        Event event = verify(payload, sigHeader, stripeProperties.getConnectWebhookSecret());
+        if (event.getAccount() == null || event.getAccount().isBlank()) {
+            log.warn("event=stripe_event_wrong_endpoint id={} type={} scope=platform endpoint=connect",
+                    event.getId(), event.getType());
+            throw new IllegalArgumentException("Not a Connect event");
+        }
+        dispatch(event);
+    }
+
+    /**
+     * Verify {@code sigHeader} over {@code payload} with {@code secret}. A blank secret refuses
+     * before any verification (fail closed): an unconfigured endpoint must never accept anything.
+     */
+    private Event verify(String payload, String sigHeader, String secret) {
+        if (secret == null || secret.isBlank()) {
+            log.warn("Stripe webhook refused: the endpoint's signing secret is not configured");
+            throw new IllegalArgumentException("Webhook endpoint not configured");
+        }
         try {
-            event = Webhook.constructEvent(payload, sigHeader, stripeProperties.getWebhookSecret());
+            return Webhook.constructEvent(payload, sigHeader, secret);
         } catch (SignatureVerificationException e) {
             log.warn("Stripe webhook signature verification failed: {}", e.getMessage());
             throw new IllegalArgumentException("Invalid Stripe signature");
         } catch (Exception e) {
             log.error("Failed to parse Stripe webhook event", e);
             throw new IllegalArgumentException("Invalid webhook payload");
+        }
+    }
+
+    /**
+     * The one dispatcher behind both webhook routes: the dedup INSERT, then the switch. Runs inside
+     * the caller's transaction.
+     */
+    private void dispatch(Event event) {
+        // PAY-03 (plan 30-12), Pitfall 5: every endpoint on a Stripe account receives every event
+        // on it, so a laptop or CI stack sharing the account sends staging events for objects
+        // staging never created. Acknowledge those (200 to Stripe) BEFORE the dedup row and before
+        // any side effect, so they leave no trace and cannot fail and retry. Objects with no
+        // environment metadata (created before the tag existed) are processed as before.
+        String foreignEnvironment = foreignEnvironmentOf(event);
+        if (foreignEnvironment != null) {
+            log.warn("event=stripe_event_foreign_environment id={} type={} env={}",
+                    event.getId(), event.getType(), foreignEnvironment);
+            return;
         }
 
         // AUDIT-W0-03 — TOCTOU-safe idempotency guard.
@@ -571,10 +635,11 @@ public class PaymentService {
                     event.getId());
             // issue #102 (ADR-0001 Decision 2) — Connect connected-account
             // capability sync. Sits AFTER the same dedup guard, so re-delivered
-            // account.updated events short-circuit above. In a live topology the
-            // Connect webhook endpoint must be pointed at the SAME URL/secret as
-            // the platform endpoint (or this handler split per-secret — deferred
-            // to the keyed environment).
+            // account.updated events short-circuit above. Express account.updated
+            // events arrive on the Connected-accounts endpoint
+            // (/api/v1/public/payments/webhook/connect, stripe.connect-webhook-secret);
+            // the platform endpoint refuses any event carrying `account` (PAY-03, plan
+            // 30-12), so do NOT point a Connect endpoint at the platform URL.
             case "account.updated" -> stripeConnectService.handleAccountUpdated(event);
             case "invoice.paid" -> {
                 if (stripeBillingService != null) {
@@ -595,6 +660,50 @@ public class PaymentService {
         }
     }
 
+    /**
+     * The {@code environment} metadata of the event's data object when it names an environment
+     * other than this runtime's {@link StripeProperties#effectiveEnvironmentTag()}; {@code null}
+     * when it names this one, names none, or the object cannot be read.
+     */
+    private String foreignEnvironmentOf(Event event) {
+        if (event.getDataObjectDeserializer() == null) {
+            return null;
+        }
+        Optional<com.stripe.model.StripeObject> object = event.getDataObjectDeserializer().getObject();
+        if (object == null || object.isEmpty() || !(object.get() instanceof MetadataStore<?> store)) {
+            return null;
+        }
+        java.util.Map<String, String> metadata = store.getMetadata();
+        String environment = metadata != null ? metadata.get("environment") : null;
+        if (environment == null || environment.isBlank()
+                || environment.equals(stripeProperties.effectiveEnvironmentTag())) {
+            return null;
+        }
+        return environment;
+    }
+
+    /**
+     * The order an intent's {@code order_id} names. An intent tagged with THIS runtime's environment
+     * was created here, so a missing order is a lag or a bug: throw, which rolls back the dedup row
+     * and lets Stripe retry (BL-04, as RefundService does for its own refunds). Acknowledging it would
+     * commit the dedup row and lose a real payment for good. An untagged intent (created before the
+     * tag existed, or by an untagged stack sharing the account) stays acknowledged with a WARN
+     * (Pitfall 5); foreign-tagged intents never reach here ({@link #foreignEnvironmentOf}).
+     */
+    private Optional<Order> findOrderForIntent(Event event, PaymentIntent intent, String orderId) {
+        Optional<Order> found = orderRepository.findById(java.util.UUID.fromString(orderId));
+        if (found.isPresent()) {
+            return found;
+        }
+        String environment = intent.getMetadata().get("environment");
+        if (environment != null && environment.equals(stripeProperties.effectiveEnvironmentTag())) {
+            throw new ResourceNotFoundException("Order not found for this environment's intent "
+                    + intent.getId() + " (event " + event.getId() + "): " + orderId);
+        }
+        log.warn("event=stripe_event_unknown_order id={} order={}", event.getId(), orderId);
+        return Optional.empty();
+    }
+
     private void handlePaymentIntentSucceeded(Event event) {
         PaymentIntent intent = (PaymentIntent) event.getDataObjectDeserializer()
                 .getObject().orElseThrow(() -> new IllegalStateException("Failed to deserialize PaymentIntent"));
@@ -612,8 +721,11 @@ public class PaymentService {
         }
 
         try {
-            Order order = orderRepository.findById(java.util.UUID.fromString(orderId))
-                    .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+            Optional<Order> found = findOrderForIntent(event, intent, orderId);
+            if (found.isEmpty()) {
+                return;
+            }
+            Order order = found.get();
 
             // Build payment method description
             String paymentMethodDesc = "Card";
@@ -757,8 +869,11 @@ public class PaymentService {
         }
 
         try {
-            Order order = orderRepository.findById(java.util.UUID.fromString(orderId))
-                    .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+            Optional<Order> found = findOrderForIntent(event, intent, orderId);
+            if (found.isEmpty()) {
+                return;
+            }
+            Order order = found.get();
 
             boolean isBalanceStage = "BALANCE".equals(intent.getMetadata().get("payment_stage"));
             if (!isBalanceStage) {

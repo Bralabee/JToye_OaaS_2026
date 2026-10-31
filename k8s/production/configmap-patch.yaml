@@ -78,6 +78,9 @@ data:
   # loopback dev origin, stranding MARKETPLACE payout setup at the last step.
   stripe.connect.return-url: "https://app.olajay.co.uk/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "https://app.olajay.co.uk/dashboard/payments/connect/refresh"
+  # PAY-03 (plan 30-13): this runtime's Stripe environment name, declared here and never in
+  # base (k8s/base/configmap.yaml says why; plan 30-17's OTP guard trusts it).
+  stripe.environment-tag: "production"
 
   # FE-1 / E-5 (QA council 20260902-134741): stated EXPLICITLY here, in keeping
   # with this overlay's convention — the vendor sign-out return leg stays on

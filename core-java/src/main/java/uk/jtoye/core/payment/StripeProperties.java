@@ -7,8 +7,33 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "stripe")
 public class StripeProperties {
 
+    /**
+     * The value written to Stripe metadata {@code environment} when {@code stripe.environment-tag}
+     * is not declared (PAY-03, plan 30-12). Deliberately not a real environment name, so an
+     * undeclared runtime stays visible instead of silently reading as one.
+     */
+    public static final String UNSET_ENVIRONMENT = "unset";
+
     private String apiKey = "";
     private String webhookSecret = "";
+
+    /**
+     * Signing secret of the "Connected accounts" webhook endpoint (PAY-03, plan 30-12). Stripe
+     * delivers Express {@code account.updated} and every direct-charge {@code payment_intent.*} /
+     * {@code refund.*} event only to an endpoint registered for that scope, and each endpoint has
+     * its own secret, so it cannot be {@link #webhookSecret}. Blank (the default) means the Connect
+     * route is not configured and refuses every request.
+     */
+    private String connectWebhookSecret = "";
+
+    /**
+     * The runtime's environment name (e.g. {@code staging}), written as metadata
+     * {@code environment} on every PaymentIntent, Refund and Express Account this app creates, and
+     * compared with the metadata of every verified webhook event (PAY-03, plan 30-12). Blank (the
+     * default) means NOT DECLARED: objects are tagged {@link #UNSET_ENVIRONMENT}. Never default it
+     * to a real environment name; each deployed runtime declares it (plan 30-13).
+     */
+    private String environmentTag = "";
 
     /**
      * Presentment/settlement currency for PaymentIntents (issue #102 — the
@@ -49,6 +74,20 @@ public class StripeProperties {
 
     public String getWebhookSecret() { return webhookSecret; }
     public void setWebhookSecret(String webhookSecret) { this.webhookSecret = webhookSecret; }
+
+    public String getConnectWebhookSecret() { return connectWebhookSecret; }
+    public void setConnectWebhookSecret(String connectWebhookSecret) { this.connectWebhookSecret = connectWebhookSecret; }
+
+    public String getEnvironmentTag() { return environmentTag; }
+    public void setEnvironmentTag(String environmentTag) { this.environmentTag = environmentTag; }
+
+    /**
+     * The environment name to write to Stripe metadata and to compare webhook events against:
+     * the declared tag, trimmed, or {@link #UNSET_ENVIRONMENT} when none is declared.
+     */
+    public String effectiveEnvironmentTag() {
+        return environmentTag == null || environmentTag.isBlank() ? UNSET_ENVIRONMENT : environmentTag.trim();
+    }
 
     public String getCurrency() { return currency; }
     public void setCurrency(String currency) { this.currency = currency; }
@@ -173,13 +212,15 @@ public class StripeProperties {
 
     /**
      * Redacted toString so accidental logger calls (log.info("config={}", stripeProps))
-     * cannot leak the live Stripe API key or webhook secret. Both fields are
+     * cannot leak the live Stripe API key or either webhook secret. All three are
      * masked while still showing whether they are set — useful for diagnostics.
      */
     @Override
     public String toString() {
         return "StripeProperties(apiKey=" + mask(apiKey)
                 + ", webhookSecret=" + mask(webhookSecret)
+                + ", connectWebhookSecret=" + mask(connectWebhookSecret)
+                + ", environmentTag=" + effectiveEnvironmentTag()
                 + ", currency=" + currency
                 + ", platformFeeBps=" + platformFeeBps
                 + ", connectTimeoutMs=" + connectTimeoutMs

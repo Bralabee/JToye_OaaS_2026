@@ -33,6 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -404,6 +405,45 @@ class RefundWebhookHandlingIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // PAY-03 (plan 30-12): BL-04 kept for this runtime's refunds; foreign refunds acknowledged
+    // ------------------------------------------------------------------
+
+    @Test
+    void sameEnvironmentRefundEventForAMissingLocalRow_stillThrowsForARetry_BL04() {
+        // This runtime declares no tag, so its own refunds carry environment=unset.
+        String eventId = "evt_refund_bl04_same_env";
+        Event stubbed = buildRefundEventWithEnvironment(eventId, "re_bl04_same", UUID.randomUUID(), "unset");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(stubbed);
+            assertThatThrownBy(() -> paymentService.handleWebhookEvent("payload", "sig"))
+                    .as("BL-04: a missing local row for OUR refund rolls back so Stripe retries")
+                    .isInstanceOf(uk.jtoye.core.exception.ResourceNotFoundException.class);
+        }
+        Long dedupRows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM processed_stripe_events WHERE event_id = ?", Long.class, eventId);
+        assertThat(dedupRows).as("the rollback takes the dedup row with it").isEqualTo(0L);
+    }
+
+    @Test
+    void foreignEnvironmentRefundEvent_isAcknowledgedWithNoRowAndNoRefundChange() {
+        String eventId = "evt_refund_foreign_env";
+        Event stubbed = buildRefundEventWithEnvironment(eventId, "re_foreign", UUID.randomUUID(), "ci-sandbox");
+
+        try (MockedStatic<Webhook> webhookMock = mockStatic(Webhook.class)) {
+            webhookMock.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(stubbed);
+            paymentService.handleWebhookEvent("payload", "sig");
+        }
+        Long dedupRows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM processed_stripe_events WHERE event_id = ?", Long.class, eventId);
+        assertThat(dedupRows).isEqualTo(0L);
+        assertThat(refundRepository.findById(seededRefund.getId()).orElseThrow().getStatus())
+                .isEqualTo(RefundStatus.CREATING);
+        Long outboxRows = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payment_event_outbox", Long.class);
+        assertThat(outboxRows).isEqualTo(0L);
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
@@ -438,6 +478,27 @@ class RefundWebhookHandlingIntegrationTest {
         Event event = mock(Event.class);
         when(event.getId()).thenReturn(eventId);
         when(event.getType()).thenReturn(eventType);
+        when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+        return event;
+    }
+
+    /** A refund.updated event whose Refund carries our metadata plus {@code environment}. */
+    private Event buildRefundEventWithEnvironment(String eventId, String stripeRefundId,
+                                                  UUID localRefundId, String environment) {
+        com.stripe.model.Refund refund = mock(com.stripe.model.Refund.class);
+        when(refund.getId()).thenReturn(stripeRefundId);
+        when(refund.getStatus()).thenReturn("succeeded");
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("refund_id", localRefundId.toString());
+        metadata.put("tenant_id", TENANT_ID.toString());
+        metadata.put("environment", environment);
+        when(refund.getMetadata()).thenReturn(metadata);
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(deserializer.getObject()).thenReturn(Optional.of(refund));
+        Event event = mock(Event.class);
+        when(event.getId()).thenReturn(eventId);
+        when(event.getType()).thenReturn("refund.updated");
         when(event.getDataObjectDeserializer()).thenReturn(deserializer);
         return event;
     }
