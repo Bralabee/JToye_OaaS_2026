@@ -1,8 +1,22 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 14/32 plans done; PR 4 merged, 30-15 staging proof next
+# Handoff: Phase 30 (The Money Path, Executed) executing, 17/32 plans done; PR 5 (/pay page) under way, 30-18 next
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-31 delta (RESUME HERE; everything below is history).**
+**2026-10-31 late delta (RESUME HERE; everything below is history).**
+- **Phase 30 is 17/32.** 30-16 and 30-17 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open; plan 30-20 does the push.
+  - **30-16 (`30-16-SUMMARY.md`).** The owner chose fragment tokens and expose-on-staging. Links are issued as `/pay#token=…`. `POST /api/v1/public/payment-links/preview {token}` reads a link without spending it, and a body-token redeem sits beside the path redeem.
+  - **30-17 (`30-17-SUMMARY.md`).** `PaymentIntentResult` carries `stripeAccountId`, the connected account a direct-charge or split-deposit intent lives on (null for destination and platform intents). The confirmation (first response and replay), the balance session and the redeem all pass it on, as JSON null when it is null, never omitted. The replay now fetches a DRAFT's secret order-aware; before this it 404ed for direct charges. `expose-otp-for-test=true` refuses startup unless `stripe.environment-tag` is exactly `local`, `test` or `staging`.
+  - Counts are 6710. Unit tests: 2045/0.
+- **Red by design:** `OpenApiSnapshotTest` stays red on this branch until 30-20 Task 1 regenerates the snapshot. Its diff is additive only: 30-16's 4 paths and 2 schemas, plus 3 `stripeAccountId` properties.
+- **The branch is 1 behind origin/main** (`eff54aa0`, #1058, toolchain gaps), with no file overlap. Merge from the base before the 30-20 push.
+- **Resume:** 30-18 is the `/pay` page.
+  - Read `#token=` from `location.hash`.
+  - Call preview, then redeem.
+  - When `stripeAccountId` is non-null, call `loadStripe(pk, { stripeAccount })`.
+  - Then `history.replaceState(null, "", "/pay")`.
+  - The contract is in the "Notes for later plans" sections of `30-16-SUMMARY.md` and `30-17-SUMMARY.md`.
+
+**2026-10-31 delta (history; superseded by the 2026-10-31 late block above).**
 - **PR 4 (#1046, plans 30-12 to 30-14) merged 2026-10-31 as squash `ec73ddee`.** 30-14 Task 2/3 done 2026-10-30: Connect endpoint `we_1UWN2NDpS9ICNeRtxSQMsc2M` (TEST, API 2026-09-30.endive, 7 events), its secret stored as `stripe-credentials--connect-webhook-secret` in `jtoye-stg-kv`, V1-V3, `--assign-access` and the preflight green; see `evidence/30-14-connect-endpoint.txt`. Review series 1 -> 0 -> 0 admissible.
 - **#1053 (issue #1027 shop-card stretched link, plus the rabbitmq 4.3 horizon refresh) merges after #1046**, with main merged in.
 - **Phase 30 is 15/32: 30-14 and 30-15 are done** (`30-14-SUMMARY.md`, `30-15-SUMMARY.md`, `evidence/30-15-connect-live.txt`, on `feat/30-pay-link-page`). 30-15's own env/Secret verify read `secret_key=0` after a fully green deploy: core-java ran without the Connect secret, because Deployments were applied before SecretProviderClasses and the addon never resyncs a synced Secret. Repaired on staging, and fixed in CI by #1055/#1056; issue #1054 is CLOSED. Re-read on the `480782d7` pod: secret present, unsigned and forged Connect events 400 with 0 ledger rows beside a 1-row positive control, and the staging card checkout CAPTURED.
