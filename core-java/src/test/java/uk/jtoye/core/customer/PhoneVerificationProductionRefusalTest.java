@@ -17,9 +17,6 @@ import org.slf4j.LoggerFactory;
 import uk.jtoye.core.notification.dispatch.WhatsAppSmsChannel;
 import uk.jtoye.core.order.OrderRepository;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -52,33 +49,9 @@ class PhoneVerificationProductionRefusalTest {
         }
     }
 
-    /**
-     * Calls the constructor that takes the environment tag, reflectively, so this file compiles on a
-     * tree whose constructor does not take one and fails there on an ASSERTION (30-17 RED). An
-     * exception the constructor throws is rethrown as itself, so assertThrows sees the real type.
-     */
     private PhoneVerificationService construct(boolean exposeOtpForTest, String environmentTag) {
-        Constructor<PhoneVerificationService> ctor;
-        try {
-            ctor = PhoneVerificationService.class.getConstructor(PhoneVerificationChallengeRepository.class,
-                    CustomerRepository.class, OrderRepository.class, WhatsAppSmsChannel.class,
-                    int.class, int.class, boolean.class, String.class);
-        } catch (NoSuchMethodException e) {
-            fail("30-17: PhoneVerificationService must take stripe.environment-tag, to refuse the OTP seam "
-                    + "outside a declared local, test or staging runtime");
-            return null;
-        }
-        try {
-            return ctor.newInstance(challengeRepository, customerRepository, orderRepository,
-                    whatsAppSmsChannel, 10, 5, exposeOtpForTest, environmentTag);
-        } catch (InvocationTargetException e) {
-            if (e.getCause() instanceof RuntimeException runtime) {
-                throw runtime;
-            }
-            throw new IllegalStateException(e.getCause());
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
+        return new PhoneVerificationService(challengeRepository, customerRepository, orderRepository,
+                whatsAppSmsChannel, 10, 5, exposeOtpForTest, environmentTag);
     }
 
     private void assertRefused(String environmentTag, String foundFragment) {
