@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 21
 waived_count: 0
 fixed_count: 31
-total_count: 51
-last_updated: 2026-10-19T13:54:56.914Z
+total_count: 52
+last_updated: 2026-10-31T23:51:09.522Z
 ---
 
 # Broken Windows Ledger
@@ -66,6 +66,7 @@ last_updated: 2026-10-19T13:54:56.914Z
 | 49 | 29 | deviation | k8s/components/keycloak/keycloak.yaml |  | 29-10: added KC_CACHE=local (single replica; jdbc-ping would seek peers on 7800, which keycloak-allow does not admit) and JAVA_OPTS_KC_HEAP MaxRAMPercentage=60 (the image default 70% of the 1Gi limit plus ~300 MB non-heap sits at the limit). Heap headroom is ASSUMED; plan 29-14 measures working set against the limit | open |  | 2026-10-19T00:30:16.913Z |  |
 | 50 | 29 | unmet-truth | core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java | 1776 | 29-14: storefront never shows a pipeline-uploaded image (toPublicProductDto reads flat image_url; asset-first resolution is vendor-only); the 'storefront renders it with naturalWidth > 0' truth is unmet at a784e7e2 | fixed | closed by 29-29 at 6e95ee6c (deployed to staging): the anonymous menu's Pelau imageUrl and imageUrls[0] are its ACTIVE pipeline derivative (asset 14add455, which the vendor uploaded in 29-22 in place of 29-14's 1475a89c, now released); the storefront image renders with naturalWidth 640 on mobile and desktop and the Product JSON-LD image equals its src (evidence/29-29-storefront-image.txt) | 2026-10-19T10:40:14.320Z | 2026-10-19T13:54:56.914Z |
 | 51 | 29 | deviation | k8s/base/core-java-deployment.yaml |  | 29-14: core-java/keycloak 1Gi surge pods fit no B2s node (661/399/803Mi free by requests); first deploy unstuck by scaling the crash-looping revision-1 ReplicaSets to 0; every later roll of either will stick until capacity is decided | open |  | 2026-10-19T10:40:14.440Z |  |
+| 52 | 30 | unmet-truth | k8s/staging/ingress-hosts-patch.yaml | 56 | 30-20: /pay Referrer-Policy no-referrer is replaced at the staging edge by the ingress more_set_headers strict-origin-when-cross-origin (issue #1071); the app sends no-referrer | open |  | 2026-10-31T23:51:09.522Z |  |
 
 ````json
 [
@@ -729,6 +730,19 @@ last_updated: 2026-10-19T13:54:56.914Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-19T10:40:14.440Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 52,
+    "kind": "unmet-truth",
+    "phase": "30",
+    "file": "k8s/staging/ingress-hosts-patch.yaml",
+    "line": 56,
+    "description": "30-20: /pay Referrer-Policy no-referrer is replaced at the staging edge by the ingress more_set_headers strict-origin-when-cross-origin (issue #1071); the app sends no-referrer",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-31T23:51:09.522Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
