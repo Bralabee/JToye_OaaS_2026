@@ -22,6 +22,8 @@ import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -48,6 +50,13 @@ public class PhoneVerificationService {
     private final int maxAttempts;
     private final boolean exposeOtpForTest;
 
+    /**
+     * The only {@code stripe.environment-tag} values under which the OTP test seam may start (30-17,
+     * T-30-69, PR #1018 review finding 2). An ALLOW-list on purpose: refusing only {@code production}
+     * failed OPEN on a tag nobody declared or somebody mistyped. Exact, case-sensitive members.
+     */
+    public static final Set<String> OTP_SEAM_ENVIRONMENTS = Set.of("local", "test", "staging");
+
     public PhoneVerificationService(
             PhoneVerificationChallengeRepository challengeRepository,
             CustomerRepository customerRepository,
@@ -55,7 +64,24 @@ public class PhoneVerificationService {
             WhatsAppSmsChannel whatsAppSmsChannel,
             @Value("${jtoye.phone-verification.ttl-minutes:10}") int ttlMinutes,
             @Value("${jtoye.phone-verification.max-attempts:5}") int maxAttempts,
-            @Value("${jtoye.phone-verification.expose-otp-for-test:false}") boolean exposeOtpForTest) {
+            @Value("${jtoye.phone-verification.expose-otp-for-test:false}") boolean exposeOtpForTest,
+            // EMPTY fallback, never a guessed name: a runtime that declares nothing reads blank and,
+            // with the seam on, is refused. Keyed on the tag and not the Spring profile, because
+            // staging runs the prod profile too (#999).
+            @Value("${stripe.environment-tag:}") String environmentTag) {
+        if (exposeOtpForTest) {
+            if (environmentTag == null || !OTP_SEAM_ENVIRONMENTS.contains(environmentTag)) {
+                String found = environmentTag == null || environmentTag.isBlank()
+                        ? "(not declared)"
+                        : "'" + environmentTag + "'";
+                throw new IllegalStateException("jtoye.phone-verification.expose-otp-for-test=true requires "
+                        + "stripe.environment-tag to be declared as one of "
+                        + new TreeSet<>(OTP_SEAM_ENVIRONMENTS) + "; found " + found
+                        + ": the OTP would be returned to any caller");
+            }
+            log.warn("phone verification OTPs are returned in API responses — test seam enabled in {}",
+                    environmentTag);
+        }
         this.challengeRepository = challengeRepository;
         this.customerRepository = customerRepository;
         this.orderRepository = orderRepository;

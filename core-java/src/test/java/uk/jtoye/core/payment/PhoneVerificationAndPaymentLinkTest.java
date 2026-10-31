@@ -85,7 +85,9 @@ class PhoneVerificationAndPaymentLinkTest {
                 whatsAppSmsChannel,
                 10,
                 5,
-                true
+                true,
+                // 30-17: the seam is on here, so the runtime must declare an allow-listed environment.
+                "test"
         );
 
         paymentLinkService = new OrderPaymentLinkService(
