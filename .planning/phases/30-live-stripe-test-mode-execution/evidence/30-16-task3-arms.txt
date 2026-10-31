@@ -1,0 +1,144 @@
+# 30-16 Task 3 break arms, run by a driver: CLEAN -> A1 A2 B C D E -> CLEAN, at HEAD c7dc7594 (GREEN committed first).
+# Random per-run test tokens (43-char base64url) are redacted as <random-test-token-redacted> so the secret scanner stays quiet.
+# Each arm edits OrderPaymentLinkService.java only, runs PhoneVerificationAndPaymentLinkTest (test) and
+# PaymentLinkPreviewIntegrationTest (integrationTest, NOSUPERUSER) with --continue, then restores the file from HEAD and
+# checks the restore by blob hash. Report lines are read from the fresh TEST-*.xml (deleted before each run).
+# The "ERROR conda.cli.main_run" lines are the report summariser exiting 1 because the report HAS failures (intended on an arm).
+#   A1  preview calls markUsedIfUnused, @Transactional(readOnly = true) kept      -> the read-only transaction refuses the UPDATE (500)
+#   A2  preview calls markUsedIfUnused, transaction made writable (the PLAN'S arm) -> 2nd preview reads USED, used_at arm red
+#   B   TenantContext.clear() removed before the bearer lookup (A-3)              -> tenant-B caller gets 404
+#   C   the caller's TenantContext is not restored in finally                    -> restore assertions red (IT + unit)
+#   D   USED checked before PAID                                                 -> "PAID beats USED" red (IT + unit)
+#   E   issued URL back to /pay/<token>                                          -> fragment URL assertion red (unit)
+=== HEAD c7dc7594 2026-10-31T19:31:37Z
+=== CLEAN (before)
+CLEAN git_diff_quiet_rc=0
+CLEAN0 gradle_rc=0
+CLEAN0   > Task :core-java:compileJava UP-TO-DATE
+CLEAN0   > Task :core-java:processResources UP-TO-DATE
+CLEAN0   > Task :core-java:classes UP-TO-DATE
+CLEAN0   > Task :core-java:compileTestJava UP-TO-DATE
+CLEAN0   > Task :core-java:processTestResources UP-TO-DATE
+CLEAN0   > Task :core-java:testClasses UP-TO-DATE
+CLEAN0   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=0 errors=0 skipped=0 ts=2026-10-31T19:31:45.115Z
+CLEAN0   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=0 errors=0 skipped=0 ts=2026-10-31T19:31:49.126Z
+=== ARM A1
+arm A1 applied
+A1    1 file changed, 1 insertion(+)
+A1 gradle_rc=1
+A1   > Task :core-java:compileJava
+A1   > Task :core-java:processResources UP-TO-DATE
+A1   > Task :core-java:compileTestJava UP-TO-DATE
+A1   > Task :core-java:processTestResources UP-TO-DATE
+A1   > Task :core-java:testClasses UP-TO-DATE
+A1   > Task :core-java:test
+ERROR conda.cli.main_run:execute(149): `conda run python /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/3da8e4cf-580f-4f15-a0c2-a9fb28239960/scratchpad/xmlsum.py core-java/build-local/test-results/test/TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml core-java/build-local/test-results/integrationTest/TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml` failed. (See above for error)
+A1   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=1 errors=0 skipped=0 ts=2026-10-31T19:32:27.878Z
+A1      FAIL 30-16: preview reads the link under its own tenant, never stamps used_at, never calls Stri | org.mockito.exceptions.verification.NeverWantedButInvoked:  linkRepository.markUsedIfUnused(     <any>,     <any> ); Never wanted here: -> at uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.previewPaymentLink_neverConsumes_neverCallsStripe_restoresCallerTenant(PhoneVerificationAndPaymentLi
+A1   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=6 errors=0 skipped=0 ts=2026-10-31T19:32:31.460Z
+A1      FAIL additive: the path redeem still works after a preview, and a body redeem of the same link  | org.opentest4j.AssertionFailedError:  expected: 200  but was: 500
+A1      FAIL states through HTTP: REVOKED, EXPIRED, PAID (CAPTURED), PAID beats USED, BALANCE paid at 0 | org.opentest4j.AssertionFailedError: [{"detail":"An unexpected error occurred","instance":"/api/v1/public/payment-links/preview","status":500,"title":"Internal Server Error","type":"https://jtoye.uk/errors/internal"}]  expected: 200  but was: 500
+A1      FAIL preview then body redeem: redeem succeeds (the preview did not consume), then preview says | org.opentest4j.AssertionFailedError:  expected: 200  but was: 500
+A1      FAIL RLS (NOSUPERUSER): with link 1's token GUC and no tenant, link 2's row is invisible; the p | org.opentest4j.AssertionFailedError:  expected: 200  but was: 500
+A1      FAIL bearer semantics: a signed-in user of tenant B previews tenant A's link exactly as an anon | org.opentest4j.AssertionFailedError: [{"detail":"An unexpected error occurred","instance":"/api/v1/public/payment-links/preview","status":500,"title":"Internal Server Error","type":"https://jtoye.uk/errors/internal"}]  expected: 200  but was: 500
+A1      FAIL preview of an ACTIVE link answers who, how much and until when — twice — and used_at stays | org.opentest4j.AssertionFailedError: [preview #1: {"detail":"An unexpected error occurred","instance":"/api/v1/public/payment-links/preview","status":500,"title":"Internal Server Error","type":"https://jtoye.uk/errors/internal"}]  expected: 200  but was: 500
+A1 restored core-java/src/main/java/uk/jtoye/core/payment/OrderPaymentLinkService.java blob=50a9938015346935f899762a9b4538ed0951304f (matches HEAD)
+=== ARM A2
+arm A2 applied
+A2    1 file changed, 2 insertions(+), 1 deletion(-)
+A2 gradle_rc=1
+A2   > Task :core-java:compileJava
+A2   > Task :core-java:processResources UP-TO-DATE
+A2   > Task :core-java:processTestResources UP-TO-DATE
+A2   > Task :core-java:test
+A2   > Task :core-java:test FAILED
+A2   > Task :core-java:integrationTest
+ERROR conda.cli.main_run:execute(149): `conda run python /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/3da8e4cf-580f-4f15-a0c2-a9fb28239960/scratchpad/xmlsum.py core-java/build-local/test-results/test/TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml core-java/build-local/test-results/integrationTest/TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml` failed. (See above for error)
+A2   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=1 errors=0 skipped=0 ts=2026-10-31T19:33:15.669Z
+A2      FAIL 30-16: preview reads the link under its own tenant, never stamps used_at, never calls Stri | org.mockito.exceptions.verification.NeverWantedButInvoked:  linkRepository.markUsedIfUnused(     <any>,     <any> ); Never wanted here: -> at uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.previewPaymentLink_neverConsumes_neverCallsStripe_restoresCallerTenant(PhoneVerificationAndPaymentLi
+A2   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=5 errors=0 skipped=0 ts=2026-10-31T19:33:19.791Z
+A2      FAIL additive: the path redeem still works after a preview, and a body redeem of the same link  | org.opentest4j.AssertionFailedError: [{"detail":"This single-use payment link has already been used.","instance":"/api/v1/public/payment-links/tok-35626bd8-612f-4406-928f-7c219d17038a-a6d6e0df-aacd-48e4-9277-eb535bc562b0/redeem","status":409,"title":"Conflict","type":"https://jtoye.uk/errors/respons
+A2      FAIL states through HTTP: REVOKED, EXPIRED, PAID (CAPTURED), PAID beats USED, BALANCE paid at 0 | org.opentest4j.AssertionFailedError:  expected: 410  but was: 409
+A2      FAIL preview then body redeem: redeem succeeds (the preview did not consume), then preview says | org.opentest4j.AssertionFailedError: [{"detail":"This single-use payment link has already been used.","instance":"/api/v1/public/payment-links/redeem","status":409,"title":"Conflict","type":"https://jtoye.uk/errors/response-status"}]  expected: 200  but was: 409
+A2      FAIL bearer semantics: a signed-in user of tenant B previews tenant A's link exactly as an anon | org.opentest4j.AssertionFailedError:  expected: {"shopName":"Mama Tolu's Kitchen 599164","orderNumber":"ORD-PRV-afbcf3d3","amountPennies":2750,"currency":"gbp","purpose":"UPFRONT","expiresAt":"2026-10-31T20:03:42.483497Z","state":"ACTIVE"}  but was: {"shopName":"Mama Tolu's Kitchen 599164","orderNum
+A2      FAIL preview of an ACTIVE link answers who, how much and until when — twice — and used_at stays | org.opentest4j.AssertionFailedError:  expected: "ACTIVE"  but was: "USED"
+A2 restored core-java/src/main/java/uk/jtoye/core/payment/OrderPaymentLinkService.java blob=50a9938015346935f899762a9b4538ed0951304f (matches HEAD)
+=== ARM B
+arm B applied
+B    1 file changed, 1 deletion(-)
+B gradle_rc=1
+B   > Task :core-java:compileJava
+B   > Task :core-java:processResources UP-TO-DATE
+B   > Task :core-java:processTestResources UP-TO-DATE
+B   > Task :core-java:test
+B   > Task :core-java:test FAILED
+B   > Task :core-java:integrationTest
+ERROR conda.cli.main_run:execute(149): `conda run python /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/3da8e4cf-580f-4f15-a0c2-a9fb28239960/scratchpad/xmlsum.py core-java/build-local/test-results/test/TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml core-java/build-local/test-results/integrationTest/TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml` failed. (See above for error)
+B   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=2 errors=0 skipped=0 ts=2026-10-31T19:34:00.532Z
+B      FAIL 30-16: preview reads the link under its own tenant, never stamps used_at, never calls Stri | java.lang.AssertionError: [the bearer lookup runs tenant-less (A-3)]  Expecting an empty Optional but was containing value: 75c6b855-4da2-4b30-938b-82daa32d82de
+B      FAIL OrderPaymentLinkService refuses unverified phone (422) and issues single-use expiring link | java.lang.AssertionError: [Public token lookup must run with TenantContext cleared so RLS public policy applies]  Expecting an empty Optional but was containing value: 0325079f-771e-46c1-8963-a7d18745c128
+B   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=1 errors=0 skipped=0 ts=2026-10-31T19:34:04.078Z
+B      FAIL bearer semantics: a signed-in user of tenant B previews tenant A's link exactly as an anon | org.opentest4j.AssertionFailedError: [{"detail":"Payment link not found.","instance":"/api/v1/public/payment-links/preview","status":404,"title":"Resource Not Found","type":"https://jtoye.uk/errors/not-found"}]  expected: 200  but was: 404
+B restored core-java/src/main/java/uk/jtoye/core/payment/OrderPaymentLinkService.java blob=50a9938015346935f899762a9b4538ed0951304f (matches HEAD)
+=== ARM C
+arm C applied
+C    1 file changed, 1 insertion(+), 5 deletions(-)
+C gradle_rc=1
+C   > Task :core-java:compileJava
+C   > Task :core-java:processResources UP-TO-DATE
+C   > Task :core-java:compileTestJava UP-TO-DATE
+C   > Task :core-java:processTestResources UP-TO-DATE
+C   > Task :core-java:testClasses UP-TO-DATE
+C   > Task :core-java:test
+ERROR conda.cli.main_run:execute(149): `conda run python /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/3da8e4cf-580f-4f15-a0c2-a9fb28239960/scratchpad/xmlsum.py core-java/build-local/test-results/test/TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml core-java/build-local/test-results/integrationTest/TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml` failed. (See above for error)
+C   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=3 errors=0 skipped=0 ts=2026-10-31T19:34:40.825Z
+C      FAIL 30-16: preview reads the link under its own tenant, never stamps used_at, never calls Stri | java.lang.AssertionError: [the caller's tenant is restored]  Expecting Optional to contain:   4b55c9f7-86c8-4fc1-92f9-aa546f40552e but was empty.
+C      FAIL 30-16: an unknown token previews as 404 'Payment link not found.' and the caller's tenant  | java.lang.AssertionError:  Expecting Optional to contain:   020f9cfe-258f-4569-89dd-2b53f7b0e935 but was empty.
+C      FAIL OrderPaymentLinkService refuses unverified phone (422) and issues single-use expiring link | java.lang.AssertionError:  Expecting Optional to contain:   e728c478-4a20-4ebb-bfad-8967d52391fb but was empty.
+C   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=1 errors=0 skipped=0 ts=2026-10-31T19:34:44.571Z
+C      FAIL bearer semantics: a signed-in user of tenant B previews tenant A's link exactly as an anon | java.lang.AssertionError: [the caller's tenant B is restored after the call]  Expecting Optional to contain:   341fd173-8f85-444d-9d68-acdc0420ed9d but was empty.
+C restored core-java/src/main/java/uk/jtoye/core/payment/OrderPaymentLinkService.java blob=50a9938015346935f899762a9b4538ed0951304f (matches HEAD)
+=== ARM D
+arm D applied
+D    1 file changed, 3 insertions(+), 3 deletions(-)
+D gradle_rc=1
+D   > Task :core-java:compileJava
+D   > Task :core-java:processResources UP-TO-DATE
+D   > Task :core-java:compileTestJava UP-TO-DATE
+D   > Task :core-java:processTestResources UP-TO-DATE
+D   > Task :core-java:testClasses UP-TO-DATE
+D   > Task :core-java:test
+ERROR conda.cli.main_run:execute(149): `conda run python /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/3da8e4cf-580f-4f15-a0c2-a9fb28239960/scratchpad/xmlsum.py core-java/build-local/test-results/test/TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml core-java/build-local/test-results/integrationTest/TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml` failed. (See above for error)
+D   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=1 errors=0 skipped=0 ts=2026-10-31T19:35:21.291Z
+D      FAIL 30-16: preview state precedence PAID > USED > REVOKED > EXPIRED > ACTIVE; BALANCE is PAID  | org.opentest4j.AssertionFailedError:  expected: "PAID"  but was: "USED"
+D   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=1 errors=0 skipped=0 ts=2026-10-31T19:35:25.232Z
+D      FAIL states through HTTP: REVOKED, EXPIRED, PAID (CAPTURED), PAID beats USED, BALANCE paid at 0 | org.opentest4j.AssertionFailedError: [PAID beats USED]  expected: "PAID"  but was: "USED"
+D restored core-java/src/main/java/uk/jtoye/core/payment/OrderPaymentLinkService.java blob=50a9938015346935f899762a9b4538ed0951304f (matches HEAD)
+=== ARM E
+arm E applied
+E    1 file changed, 1 insertion(+), 1 deletion(-)
+E gradle_rc=1
+E   > Task :core-java:compileJava
+E   > Task :core-java:processResources UP-TO-DATE
+E   > Task :core-java:compileTestJava UP-TO-DATE
+E   > Task :core-java:processTestResources UP-TO-DATE
+E   > Task :core-java:testClasses UP-TO-DATE
+E   > Task :core-java:test
+ERROR conda.cli.main_run:execute(149): `conda run python /tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/3da8e4cf-580f-4f15-a0c2-a9fb28239960/scratchpad/xmlsum.py core-java/build-local/test-results/test/TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml core-java/build-local/test-results/integrationTest/TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml` failed. (See above for error)
+E   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=1 errors=0 skipped=0 ts=2026-10-31T19:36:04.860Z
+E      FAIL OrderPaymentLinkService refuses unverified phone (422) and issues single-use expiring link | org.opentest4j.AssertionFailedError:  expected: "https://shop.jtoye.co.uk/pay#token=<random-test-token-redacted>"  but was: "https://shop.jtoye.co.uk/pay/<random-test-token-redacted>"
+E   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=0 errors=0 skipped=0 ts=2026-10-31T19:36:08.888Z
+E restored core-java/src/main/java/uk/jtoye/core/payment/OrderPaymentLinkService.java blob=50a9938015346935f899762a9b4538ed0951304f (matches HEAD)
+=== CLEAN (after)
+CLEAN git_diff_quiet_rc=0
+CLEAN1 gradle_rc=0
+CLEAN1   > Task :core-java:compileJava
+CLEAN1   > Task :core-java:processResources UP-TO-DATE
+CLEAN1   > Task :core-java:compileTestJava UP-TO-DATE
+CLEAN1   > Task :core-java:processTestResources UP-TO-DATE
+CLEAN1   > Task :core-java:testClasses UP-TO-DATE
+CLEAN1   > Task :core-java:test
+CLEAN1   TEST-uk.jtoye.core.payment.PhoneVerificationAndPaymentLinkTest.xml tests=7 failures=0 errors=0 skipped=0 ts=2026-10-31T19:36:48.598Z
+CLEAN1   TEST-uk.jtoye.core.payment.PaymentLinkPreviewIntegrationTest.xml tests=7 failures=0 errors=0 skipped=0 ts=2026-10-31T19:36:54.064Z
+=== END 2026-10-31T19:37:23Z
+arms_rc=0
