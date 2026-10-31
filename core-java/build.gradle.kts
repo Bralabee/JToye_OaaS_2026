@@ -423,7 +423,7 @@ tasks.register<Test>("integrationTest") {
         includeTags("testcontainers")
     }
     environment("DOCKER_API_VERSION", "1.45")
-    systemProperty("api.version", "1.45"); systemProperty("junit.jupiter.extensions.autodetection.enabled", "true")
+    systemProperty("api.version", "1.45"); systemProperty("junit.jupiter.extensions.autodetection.enabled", "true"); systemProperty("spring.jpa.hibernate.ddl-auto", "none")
     // Recycle the forked test JVM every few classes. Each Testcontainers class boots a distinct
     // Spring Boot context (many pin unique @MockBean/@SpyBean configs) whose threads are not all
     // reclaimed between classes; run in ONE fork, the suite accumulates enough live threads to hit
@@ -462,7 +462,7 @@ tasks.register<Test>("integrationTest") {
     // exists to prevent, and re-deriving it costs an hour of wall clock.
     //
     // Raw series: .planning/phases/27-operational-maturity/baselines/ (T7 arms A/B/C).
-    setForkEvery((findProperty("itForkEvery") as String?)?.toLongOrNull() ?: 8L)
+    setForkEvery((findProperty("itForkEvery") as String?)?.toLongOrNull() ?: 4L)
 
     // Run several forkEvery-bounded JVMs CONCURRENTLY. Container startup is
     // wait-bound (~16s per container sitting idle), so overlapping those waits is

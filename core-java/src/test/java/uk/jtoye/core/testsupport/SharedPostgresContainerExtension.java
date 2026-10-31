@@ -1,6 +1,7 @@
 package uk.jtoye.core.testsupport;
 
 import com.github.dockerjava.api.command.InspectContainerResponse;
+import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.AfterAllCallback;
@@ -35,14 +36,12 @@ import java.util.Set;
  * <p>Instead of booting 200 separate {@code postgres:18-alpine} Docker containers and running all
  * 88+ Flyway migrations 200 times, each Gradle test worker JVM starts a single
  * {@code postgres:18-alpine} container, applies the full Flyway migration chain once, and resets
- * cluster roles, triggers, sequences, and user tables in {@code <5ms} before and after each test
- * class. Because standard classes share the same JDBC URL within a fork, Spring Test's
- * {@code DefaultContextCache} also reuses the {@code ApplicationContext} across standard
- * {@code @SpringBootTest} classes in the same fork.
+ * cluster roles, triggers, constraints, and user tables in {@code <5ms} before and after each test
+ * class while keeping {@code revinfo_seq} monotonic across the fork.
  *
  * <p>Classes that test custom Flyway migration targets, broken migration chains, pre-Flyway role
- * ownership, or non-default Postgres images/databases are automatically excluded and retain their
- * own dedicated per-class container.
+ * ownership ({@code ALTER DEFAULT PRIVILEGES}), or non-default Postgres images/databases are
+ * automatically excluded and retain their own dedicated per-class container.
  */
 public class SharedPostgresContainerExtension implements BeforeAllCallback, AfterAllCallback {
 
@@ -52,13 +51,16 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
     private static final String EXPECTED_PASS = "test";
 
     /**
-     * Classes that perform partial/out-of-order manual Flyway migrations on {@code jtoye_test}
-     * and therefore must keep a dedicated per-class container. (All other manual-migration and
-     * role-ownership classes already declare a distinct database name such as {@code jtoye_v80} or
-     * {@code jtoye} and are excluded automatically by the {@link #EXPECTED_DB} check.)
+     * Classes that perform partial/out-of-order manual Flyway migrations or pre-Flyway
+     * {@code ALTER DEFAULT PRIVILEGES} role setup on {@code jtoye_test} and therefore must keep a
+     * dedicated per-class container. (All other manual-migration and role-ownership classes
+     * already declare a distinct database name such as {@code jtoye_v80} or {@code jtoye} and are
+     * excluded automatically by the {@link #EXPECTED_DB} check.)
      */
     private static final Set<String> EXCLUDED_CLASSES = Set.of(
-            "uk.jtoye.core.customer.CustomerOriginShopScopeIntegrationTest"
+            "uk.jtoye.core.customer.CustomerOriginShopScopeIntegrationTest",
+            "uk.jtoye.core.media.MediaRedriveControllerTest",
+            "uk.jtoye.core.media.MediaSweepTenantScopeIntegrationTest"
     );
 
     private static PostgreSQLContainer<?> forkSingleton;
@@ -72,6 +74,10 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
         if (!isTestcontainersTagged(testClass) || EXCLUDED_CLASSES.contains(testClass.getName())) {
             return;
         }
+        // Prevent any @Tag("testcontainers") class that omits spring.jpa.hibernate.ddl-auto=none in
+        // its @DynamicPropertySource from inheriting ddl-auto=create-drop from application-test.yml
+        // and dropping/recreating tables (wiping Flyway RLS policies) on the shared container.
+        System.setProperty("spring.jpa.hibernate.ddl-auto", "none");
 
         List<Field> fields = ReflectionSupport.findFields(
                 testClass,
@@ -119,6 +125,13 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
                 appCtx.getBeansOfType(ScheduledAnnotationBeanPostProcessor.class)
                         .values()
                         .forEach(ScheduledAnnotationBeanPostProcessor::destroy);
+                appCtx.getBeansOfType(HikariDataSource.class)
+                        .values()
+                        .forEach(ds -> {
+                            if (ds.getHikariPoolMXBean() != null) {
+                                ds.getHikariPoolMXBean().softEvictConnections();
+                            }
+                        });
             } catch (Exception ignored) {
                 // Context may not have started if a test failed before context refresh
             }
@@ -149,6 +162,7 @@ public class SharedPostgresContainerExtension implements BeforeAllCallback, Afte
                     .withPassword(EXPECTED_PASS)
                     .withCommand(
                             "postgres",
+                            "-c", "max_connections=300",
                             "-c", "fsync=off",
                             "-c", "synchronous_commit=off",
                             "-c", "full_page_writes=off");
