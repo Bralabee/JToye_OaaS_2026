@@ -1925,6 +1925,10 @@ jobs:
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
+        # Report only: the gate is the table-format step below. Code scanning is not
+        # available to a private repository without GitHub Code Security (#1048), and
+        # a failed upload must not turn this required check red.
+        continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -2254,6 +2258,8 @@ jobs:
       - name: Upload image scan results
         uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
+        # Report only, as in security-scan: the image gate is the next step (#1048).
+        continue-on-error: true
         with:
           sarif_file: 'trivy-image-results.sarif'
 
