@@ -116,6 +116,28 @@ compare() {
   return "$rc"
 }
 
+# prepare_findings DIR -> DIR/findings.txt; returns 0 when the comparison ran (findings or
+# none) and 2 when it did not. --prepare must never read "could not compare" as "nothing stale".
+prepare_findings() {
+  compare "$1" > "$1/findings.txt" 2> "$1/findings.err"
+  local rc=$?
+  [ "$rc" -le 1 ] || { cat "$1/findings.err" >&2; return 2; }
+  return 0
+}
+
+# driver_made NAME SECRETS_JSON -> 0 only when the driver made that Secret: its managed label, or
+# owners that are ALL workload kinds (the driver sets the consumer pod's owner). An operator's or
+# controller's Secret (owned by a RabbitmqCluster, a Certificate, ...) and a hand-made one are not.
+DRIVER_OWNER_KINDS='["ReplicaSet","StatefulSet","DaemonSet","Job","Pod"]'
+driver_made() {
+  jq -e --arg n "$1" --arg l "${MANAGED_LABEL%%=*}" --argjson k "$DRIVER_OWNER_KINDS" '
+    [ .items[] | select(.metadata.name == $n)
+      | (.metadata.labels[$l] == "true")
+        or (((.metadata.ownerReferences | length) > 0)
+            and all(.metadata.ownerReferences[]; (.kind as $x | $k | index($x)) != null)) ]
+    | any' "$2" >/dev/null
+}
+
 # ---- --selftest ----------------------------------------------------------------------
 if [ "$MODE" = selftest ]; then
   T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -163,9 +185,28 @@ if [ "$MODE" = selftest ]; then
   build "$T/no-spc"       '[]'  "$SEC3" "$P" "$ST22";  arm "no SecretProviderClass read"                   2 "VOID"             "$T/no-spc"
   build "$T/garbled"      "$S3" "$SEC3" "$P" "$ST22"; echo 'not json' > "$T/garbled/pods.json"
                                                        arm "an unreadable pod list"                        2 "VOID"             "$T/garbled"
+  # --prepare's reading of the comparison: a VOID is a VOID, never "nothing stale" (round 1, F3).
+  pf() { local rc; prepare_findings "$2" 2>/dev/null; rc=$?
+    if [ "$rc" -eq "$3" ]; then log "ok   prepare: $1 -> rc $rc"; pass=$((pass+1)); else log "BAD  prepare: $1 -> rc $rc, wanted $3"; bad=$((bad+1)); fi; }
+  pf "an unreadable pod list is VOID, not 'nothing stale'" "$T/garbled"     2
+  pf "the observed shape is read (stale found)"            "$T/2026-10-31"  0
+  grep -q '^STALE-SECRET stripe-credentials ' "$T/2026-10-31/findings.txt" \
+    && { log "ok   prepare: findings.txt names stripe-credentials"; pass=$((pass+1)); } \
+    || { log "BAD  prepare: findings.txt does not name stripe-credentials"; bad=$((bad+1)); }
+
+  # Which Secrets --prepare may delete (round 1, F5): only what the driver made.
+  dm() { # label secret-json expected(0 may delete, 1 refuse)
+    jq -n --argjson s "$2" '{items:[$s]}' > "$T/dm.json"
+    local rc; driver_made x "$T/dm.json"; rc=$?
+    if [ "$rc" -eq "$3" ]; then log "ok   driver_made: $1 -> $rc"; pass=$((pass+1)); else log "BAD  driver_made: $1 -> $rc, wanted $3"; bad=$((bad+1)); fi; }
+  dm "managed label"                    '{"metadata":{"name":"x","labels":{"secrets-store.csi.k8s.io/managed":"true"},"ownerReferences":[]}}' 0
+  dm "owned by a ReplicaSet (staging's rabbitmq-default-user)" '{"metadata":{"name":"x","labels":{},"ownerReferences":[{"kind":"ReplicaSet","name":"secret-sync-1"}]}}' 0
+  dm "owned by a RabbitmqCluster"       '{"metadata":{"name":"x","labels":{},"ownerReferences":[{"kind":"RabbitmqCluster","name":"rabbitmq"}]}}' 1
+  dm "a ReplicaSet AND a Certificate"   '{"metadata":{"name":"x","labels":{},"ownerReferences":[{"kind":"ReplicaSet","name":"a"},{"kind":"Certificate","name":"c"}]}}' 1
+  dm "hand-made: no label, no owner"    '{"metadata":{"name":"x","labels":{},"ownerReferences":[]}}' 1
   echo
   [ "$bad" -eq 0 ] || fail "selftest: $bad arm(s) did not behave ($pass passed)"
-  echo "PASS: selftest, $pass arms (green, the observed 2026-10-31 shape, five single-defect reds, two VOIDs)"
+  echo "PASS: selftest, $pass arms (the comparison: green, the observed 2026-10-31 shape, five single-defect reds, two VOIDs; --prepare's VOID; which Secrets may be deleted)"
   exit 0
 fi
 
@@ -220,32 +261,39 @@ case "$MODE" in
     echo "prepare: applying the overlay's $n SecretProviderClass(es) before anything that mounts them"
     "${K[@]}" apply -f "$W/spc.yaml" || fail "applying the SecretProviderClasses failed"
     read_live "$W" || void "could not read SecretProviderClasses, synced Secrets, pods or pod statuses"
+    prepare_findings "$W" || void "the comparison did not run (above): refusing to treat 'could not compare' as 'nothing stale'"
+    "${K[@]}" get deploy,statefulset -o json > "$W/workloads.json" || void "could not list Deployments and StatefulSets"
     : > "$STATE"
     while read -r kind secret spc rest; do
       [ "$kind" = STALE-SECRET ] || continue
-      # Only a Secret the driver made: its managed label, or owned by a workload (the driver sets
-      # the consumer's owner). A hand-made Secret of the same name has neither and is never deleted.
-      jq -e --arg n "$secret" --arg l "${MANAGED_LABEL%%=*}" '.items[] | select(.metadata.name == $n)
-          | (.metadata.labels[$l] == "true") or ((.metadata.ownerReferences | length) > 0)' "$W/secrets.json" >/dev/null \
-        || fail "synced Secret $secret lacks a key $spc declares ($rest), but it carries neither the driver's label nor an owner: not deleting a Secret this script cannot prove the driver made"
+      driver_made "$secret" "$W/secrets.json" \
+        || fail "synced Secret $secret lacks a key $spc declares ($rest), but nothing shows the driver made it (no managed label; an owner that is not a workload, or none): not deleting it"
       echo "prepare: synced Secret $secret lacks a key $spc declares ($rest); deleting it so the next mount recreates it complete"
       "${K[@]}" delete secret "$secret" --wait=true || fail "could not delete stale synced Secret $secret"
-      "${K[@]}" get deploy,statefulset -o json \
-        | jq -r --arg s "$spc" '.items[] | select([.spec.template.spec.volumes[]?.csi.volumeAttributes.secretProviderClass?] | index($s))
-                                 | "\(.kind | ascii_downcase)/\(.metadata.name)"' >> "$STATE" \
+      # Each consumer with its generation NOW, so --restart can skip one the apply itself rolls.
+      jq -r --arg s "$spc" '.items[] | select([.spec.template.spec.volumes[]?.csi.volumeAttributes.secretProviderClass?] | index($s))
+                            | "\(.kind | ascii_downcase)/\(.metadata.name) \(.metadata.generation)"' "$W/workloads.json" >> "$STATE" \
         || fail "could not list the workloads that mount $spc"
-    done < <(compare "$W" 2>/dev/null)
+    done < "$W/findings.txt"
     sort -u -o "$STATE" "$STATE"
     echo "prepare: $(grep -c . "$STATE") workload(s) to restart after the apply"
     ;;
   restart)
     [ -n "$STATE" ] && [ -f "$STATE" ] || void "--restart needs the --state file --prepare wrote"
-    while read -r w; do
+    while read -r w gen; do
       [ -n "$w" ] || continue
-      echo "restart: $w (its synced Secret was recreated)"
+      now="$("${K[@]}" get "$w" -o jsonpath='{.metadata.generation}')" || fail "could not read $w"
+      # A workload the apply changed is already rolling, and its new pods mount the recreated
+      # Secret. Restarting it would stack a second revision on the deploy's, and the job's
+      # `rollout undo` would then step back only to the deploy's own image (round 1, F1).
+      if [ "$now" != "$gen" ]; then
+        echo "restart: $w skipped: the apply moved it from generation $gen to $now, so its new pods mount the recreated Secret"
+        continue
+      fi
+      echo "restart: $w (its synced Secret was recreated; the apply left its template unchanged)"
       "${K[@]}" rollout restart "$w" || fail "rollout restart $w failed"
     done < "$STATE"
-    while read -r w; do
+    while read -r w _; do
       [ -n "$w" ] || continue
       "${K[@]}" rollout status "$w" --timeout="$ROLLOUT_TIMEOUT" || fail "$w did not roll out"
     done < "$STATE"
@@ -259,7 +307,7 @@ case "$MODE" in
       echo "PASS: every synced Secret holds every key its SecretProviderClass declares, and every running consumer pod mounted the full object set."
     elif [ "$rc" -eq 1 ]; then
       printf '%s\n' "$out"
-      fail "a Key Vault object did not reach a pod (issue #1054). A STALE-SECRET is repaired by deleting that driver-managed Secret and restarting its consumers; a STALE-MOUNT by restarting the pod."
+      fail "a Key Vault object did not reach a pod (issue #1054). A STALE-SECRET or MISSING-SECRET is repaired by deleting that driver-made Secret (if present) and restarting its consumers; a STALE-MOUNT or NO-POD-STATUS by restarting the pod."
     fi
     exit "$rc"
     ;;

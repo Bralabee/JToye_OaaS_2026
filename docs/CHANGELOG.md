@@ -22,7 +22,7 @@ The fix:
   - `--restart` restarts that Secret's consumers.
   - `--check` is the gate: every synced Secret holds every declared key, and every running consumer pod mounted the full object set. Exit 2 is VOID.
   - Values are never read, and a hand-made Secret is never deleted.
-- **`ci-cd.yaml`:** the staging deploy runs `--prepare`, the apply, then `--restart`. After digest parity it runs `--check`. The `--selftest` runs on every PR with nine arms, including the observed shape.
+- **`ci-cd.yaml`:** the staging deploy runs `--prepare`, the apply, then `--restart`. After digest parity it runs `--check`. The `--selftest` runs on every PR with 17 arms: the comparison (including the observed shape), `--prepare` refusing to read a VOID as clean, and which Secrets may be deleted.
 - **Proof:**
 
   | Run | Result |
@@ -33,6 +33,7 @@ The fix:
   | `--prepare` and `--restart` on staging | 12 SecretProviderClasses unchanged, 0 Secrets deleted, 0 restarts |
 
   The first live run also caught a defect in the check itself, which is fixed here. Staging's `rabbitmq-default-user` is driver-made but carries no managed label, and the label-only read reported it missing.
+- **Review round 1 fixes (#1055):** `--restart` skips a workload the apply already rolled, so the job's `rollout undo` still reaches the previous release. `--prepare` VOIDs when its comparison could not run. Deletion requires the managed label or only workload owners, so an operator-owned Secret is never deleted.
 - **Production:** not wired yet. The script fails closed outside `jtoye-staging`.
 
 
