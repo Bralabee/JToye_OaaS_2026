@@ -349,7 +349,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
-| 30. The Money Path, Executed | v2.3 | 17/32 | In Progress — PR 5 (PAY-04 /pay page) under way on feat/30-pay-link-page: 30-16 done 2026-10-31 (owner chose fragment tokens + expose-on-staging; non-consuming payment-link preview); 30-17 done 2026-10-31 (stripeAccountId reaches the browser; OTP seam allow-list); PR 4 (30-12..30-15, #1046 Connect webhook, PAY-03) merged and proven on staging 2026-10-31; PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24); PR #1041 (issue #1038 cleanup fix) merged b728254e and deployed with digest parity, D-02 done (2026-10-25) | — |
+| 30. The Money Path, Executed | v2.3 | 18/32 | In Progress — PR 5 (PAY-04 /pay page) under way on feat/30-pay-link-page: 30-16 done 2026-10-31 (owner chose fragment tokens + expose-on-staging; non-consuming payment-link preview); 30-17 done 2026-10-31 (stripeAccountId reaches the browser; OTP seam allow-list); 30-18 done 2026-10-31 (the /pay page in every state, previewed before it is spent and resumable after a reload; the checkout pays a direct charge on the vendor's account); PR 4 (30-12..30-15, #1046 Connect webhook, PAY-03) merged and proven on staging 2026-10-31; PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24); PR #1041 (issue #1038 cleanup fix) merged b728254e and deployed with digest parity, D-02 done (2026-10-25) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -727,7 +727,7 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
 
-**Plans:** 17/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+**Plans:** 18/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
 
 Plans:
 **Wave 1**
@@ -782,7 +782,7 @@ Plans:
 - [x] 30-17-PLAN.md — PAY-04 PR 5: stripeAccountId on intent results, OTP production refusal keyed on the environment tag
 
 **Wave 18** *(blocked on Wave 17 completion)*
-- [ ] 30-18-PLAN.md — PAY-04 PR 5: the /pay page (all states) and connected-account Stripe initialisation in checkout
+- [x] 30-18-PLAN.md — PAY-04 PR 5: the /pay page (all states) and connected-account Stripe initialisation in checkout
 
 **Wave 19** *(blocked on Wave 18 completion)*
 - [ ] 30-19-PLAN.md — PAY-04 PR 5: /pay robots/referrer/SSR hygiene, pay-link staging stage, account-aware staging specs

@@ -1,8 +1,29 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 17/32 plans done; PR 5 (/pay page) under way, 30-18 next
+# Handoff: Phase 30 (The Money Path, Executed) executing, 18/32 plans done; PR 5 (/pay page) under way, 30-19 next
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-31 late delta (RESUME HERE; everything below is history).**
+**2026-10-31 night delta (RESUME HERE; everything below is history).**
+- **Phase 30 is 18/32.** 30-16, 30-17 and 30-18 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open; plan 30-20 does the push.
+  - **30-18 (`30-18-SUMMARY.md`).** `frontend/app/pay/page.tsx` (metadata only, noindex, PublicShell) and `pay-client.tsx`:
+    - The page reads `#token=` and previews the link (shop, purpose heading, amount, order, London expiry).
+    - "Continue to payment" checks the key, awaits `loadStripeOnce()`, and only then redeems.
+    - It then calls `replaceState({...history.state, jtoyePayResume}, "", "/pay")`. The entry holds the client secret and display fields, never the token.
+    - It loads Stripe on `stripeAccountId`, retrieves the intent and mounts the shared CardPaymentForm.
+    - Every dead, failed and returning state is built. `/pay` without a token reads Stripe's return query, then the resume entry, and otherwise shows "Open your payment link".
+    - The checkout passes `confirmation.stripeAccountId` to the loader.
+  - Counts are 6750. Full Jest: 3259/3259. Build and tsc: rc 0.
+  - `frontend/node_modules` was installed in this worktree with `npm ci` from the lockfile.
+- **Red until 30-19:** `scripts/check-ssr-coverage-contract.sh` reports "R-1 undeclared page: pay/page.tsx". 30-19 owns `scripts/gates/ssr-routes.conf`. Declare `STATIC pay/page.tsx`; there is no `[token]` page.
+- **Red by design until 30-20 Task 1:** `OpenApiSnapshotTest` (additive only, unchanged by 30-18).
+- **The branch is 1 behind origin/main** (`eff54aa0`, #1058), with no file overlap. Merge from the base before the 30-20 push.
+- **Resume:** 30-19.
+  - robots `"/pay"`, and `Referrer-Policy: no-referrer` on `/pay/:path*` after the default.
+  - The SSR-gate line.
+  - `scripts/staging-seed.sh --stage pay-link`.
+  - `staging-pay-link.spec.ts`. Its reload-after-Continue arm is the only proof that Next keeps the `history.state` entry across a real reload.
+  - Account-aware Stripe reads in both staging specs.
+
+**2026-10-31 late delta (history; superseded by the 2026-10-31 night block above).**
 - **Phase 30 is 17/32.** 30-16 and 30-17 are done on `feat/30-pay-link-page`, in worktree `JToye_OaaS_2026-p30-15`. Nothing is pushed and no PR is open; plan 30-20 does the push.
   - **30-16 (`30-16-SUMMARY.md`).** The owner chose fragment tokens and expose-on-staging. Links are issued as `/pay#token=…`. `POST /api/v1/public/payment-links/preview {token}` reads a link without spending it, and a body-token redeem sits beside the path redeem.
   - **30-17 (`30-17-SUMMARY.md`).** `PaymentIntentResult` carries `stripeAccountId`, the connected account a direct-charge or split-deposit intent lives on (null for destination and platform intents). The confirmation (first response and replay), the balance session and the redeem all pass it on, as JSON null when it is null, never omitted. The replay now fetches a DRAFT's secret order-aware; before this it 404ed for direct charges. `expose-otp-for-test=true` refuses startup unless `stripe.environment-tag` is exactly `local`, `test` or `staging`.
