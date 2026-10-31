@@ -1,0 +1,27 @@
+npm notice run frontend@2.3.0 test
+npm notice run jest --ci --runTestsByPath __tests__/header-snapshot.test.ts
+  Using tsconfig file: tsconfig.build.json
+FAIL __tests__/header-snapshot.test.ts
+  ● Security headers snapshot (regression guard) › /pay gets Referrer-Policy no-referrer, after (so over) the default
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   -1
+
+       98 |     const payIdx = routes.findIndex((r) => r.source === "/pay/:path*")
+       99 |     expect(defaultIdx).toBeGreaterThanOrEqual(0)
+    > 100 |     expect(payIdx).toBeGreaterThan(defaultIdx)
+          |                    ^
+      101 |     expect(referrer(routes[payIdx])).toBe("no-referrer")
+      102 |
+      103 |     const { pathToRegexp } = jest.requireActual("next/dist/compiled/path-to-regexp") as {
+
+      at Object.toBeGreaterThan (__tests__/header-snapshot.test.ts:100:20)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 3 passed, 4 total
+Snapshots:   2 passed, 2 total
+Time:        0.541 s, estimated 1 s
+Ran all test suites within paths "__tests__/header-snapshot.test.ts".
+rc=1
