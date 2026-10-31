@@ -655,6 +655,34 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
     expect(window.history.state).toEqual({ __NA: true })
   })
 
+  it("a reload round trip: Continue, then the page is reloaded on the same history entry, and the card form comes back without a second redeem", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    mockStripeInstance = { confirmPayment: jest.fn(() => Promise.resolve({})) }
+    const first = render(<PayClient />)
+    await screen.findByRole("heading", { level: 1, name: `Pay ${SHOP_NAME}` })
+    fireEvent.click(screen.getByRole("button", { name: COPY.continue }))
+    await screen.findByTestId("stripe-elements")
+
+    // The reload: the page is gone, the module memo with it; the address bar and history.state stay.
+    first.unmount()
+    resetStripeLoaderForTests()
+    mockedLoadStripe.mockClear()
+    expect(window.location.pathname + window.location.hash).toBe("/pay")
+    render(<PayClient />)
+
+    // What the island itself wrote is what brings the form back: no preview, no second redeem.
+    await screen.findByTestId("stripe-elements")
+    expect(mockedRedeem).toHaveBeenCalledTimes(1)
+    expect(mockedPreview).toHaveBeenCalledTimes(1)
+    expect(mockedLoadStripe).toHaveBeenCalledWith(PUBLISHABLE_KEY, { stripeAccount: ACCOUNT })
+    expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
+    expect(screen.queryByRole("heading", { level: 1, name: NO_LINK.heading })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Pay £12.50" }))
+    await screen.findByRole("heading", { level: 1, name: COPY.received })
+    expect(window.history.state).toEqual({ __NA: true, routerKey: "kept" })
+  })
+
   it("reload after redeem when the intent has succeeded: 'This order is already paid' and the entry is dropped", async () => {
     openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
     mockedLoadStripe.mockImplementation(() => Promise.resolve(fakeStripe("succeeded")))
