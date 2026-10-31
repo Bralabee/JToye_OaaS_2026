@@ -125,7 +125,7 @@ public class OrderPaymentLinkService {
     ) {}
 
     /**
-     * What a payment-link holder may see before deciding to pay (UI-SPEC § S3 data contract 1): who is
+     * What a payment-link holder may see before deciding to pay (UI-SPEC S3 data contract 1): who is
      * asking, for how much, and whether the link still works. Carries no token, no client secret and no
      * customer data.
      */
@@ -341,7 +341,7 @@ public class OrderPaymentLinkService {
     }
 
     /**
-     * Preview a payment link without spending it (30-16, D-03, UI-SPEC § S3 data contract 1).
+     * Preview a payment link without spending it (30-16, D-03, UI-SPEC S3 data contract 1).
      *
      * <p>Resolves the token exactly as {@link #redeemPaymentLink} does (tenant-less bearer lookup under
      * the token-scoped RLS policy, then the link's own tenant pinned for the order and shop reads, the

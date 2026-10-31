@@ -3,7 +3,7 @@ import { PublicShell } from "@/components/public/public-shell"
 import { PayClient } from "./pay-client"
 
 /**
- * `/pay` — where a shop's payment link sends the customer (PAY-04 / D-03; UI-SPEC § S3; plan 30-18).
+ * `/pay` — where a shop's payment link sends the customer (PAY-04 / D-03; UI-SPEC S3; plan 30-18).
  * The link is `/pay#token={token}`.
  *
  * The route is `/pay`, not `/pay/[token]`: the owner chose the FRAGMENT for the token (plan 30-16

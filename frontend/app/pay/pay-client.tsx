@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import type { PaymentLinkPreview, PaymentLinkPurpose, RedeemedPaymentLink } from "@/types/storefront"
 
 /**
- * The client island of `/pay` (PAY-04 / D-03; UI-SPEC § S3; plan 30-18).
+ * The client island of `/pay` (PAY-04 / D-03; UI-SPEC S3; plan 30-18).
  *
  * THE LINK IS A SINGLE-USE BEARER CREDENTIAL, and redeem SPENDS it before it answers. So:
  *
@@ -18,7 +18,7 @@ import type { PaymentLinkPreview, PaymentLinkPurpose, RedeemedPaymentLink } from
  *      in memory (a ref). It is POSTed in a JSON body to the read-only preview, which shows who is
  *      asking and for how much before anything is spent (T-30-74).
  *   2. Only the "Continue to payment" press calls redeem, and only after publishableKey() is non-null
- *      and an AWAITED loadStripeOnce() resolved a Stripe instance (UI-SPEC § S3 steps 2a-2b, T-30-72):
+ *      and an AWAITED loadStripeOnce() resolved a Stripe instance (UI-SPEC S3 steps 2a-2b, T-30-72):
  *      a link is never spent on a page that cannot show the card form.
  *   3. After a successful redeem the address bar becomes "/pay" (history.replaceState) BEFORE Stripe
  *      mounts, so the token is not in the iframe's view of the page URL or in a screenshot. Until the
@@ -44,7 +44,7 @@ import type { PaymentLinkPreview, PaymentLinkPurpose, RedeemedPaymentLink } from
 const PREVIEW_PATH = "/api/v1/public/payment-links/preview"
 const REDEEM_PATH = "/api/v1/public/payment-links/redeem"
 
-/** The history.state key that lets a reload after redeem resume (UI-SPEC § S3 Storage, amended). */
+/** The history.state key that lets a reload after redeem resume (UI-SPEC S3 Storage, amended). */
 export const PAY_RESUME_KEY = "jtoyePayResume"
 
 export const PAY_PAGE_COPY = {
@@ -315,7 +315,7 @@ export function PayClient() {
   )
 
   /**
-   * Stripe's return from a redirect-based method (UI-SPEC § S3 step 4). The intent's own status
+   * Stripe's return from a redirect-based method (UI-SPEC S3 step 4). The intent's own status
    * decides; `redirect_status` is read only when the intent cannot be (no key, Stripe.js down).
    */
   const runReturn = useCallback(async (clientSecret: string | null, redirectStatus: string | null, acct: string | null) => {
@@ -371,7 +371,7 @@ export function PayClient() {
     start()
   }, [start])
 
-  /** The press (UI-SPEC § S3 step 2). The ONLY caller of redeem. */
+  /** The press (UI-SPEC S3 step 2). The ONLY caller of redeem. */
   async function continueToPayment(preview: PaymentLinkPreview) {
     if (inFlight.current) return
     inFlight.current = true

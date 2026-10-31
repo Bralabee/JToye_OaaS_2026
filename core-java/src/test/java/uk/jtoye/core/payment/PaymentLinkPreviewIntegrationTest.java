@@ -49,7 +49,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * Plan 30-16 / PAY-04 / D-03 / UI-SPEC § S3 data contract 1: a payment link can be checked
+ * Plan 30-16 / PAY-04 / D-03 / UI-SPEC S3 data contract 1: a payment link can be checked
  * (who is asking, how much, is it still valid) WITHOUT being spent.
  *
  * <p>Owner decision 2026-10-31 (evidence/30-16-owner-decisions.txt, Task 1 = fragment): the token

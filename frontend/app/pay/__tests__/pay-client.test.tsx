@@ -1,11 +1,11 @@
 /**
- * The payment-link page `/pay` (PAY-04 / D-03; UI-SPEC § S3; plan 30-18).
+ * The payment-link page `/pay` (PAY-04 / D-03; UI-SPEC S3; plan 30-18).
  *
  * The link a shop sends is `/pay#token={token}` (owner decision 30-16 Task 1, "fragment"): the token
  * is in no request line and no access log. The island reads it from `location.hash` and POSTs it in a
  * JSON body — `POST /api/v1/public/payment-links/preview {token}` on mount (read-only, never spends the
  * link) and `POST /api/v1/public/payment-links/redeem {token}` only when "Continue to payment" is
- * pressed, and only after Stripe.js has loaded (UI-SPEC § S3 steps 2a-2d).
+ * pressed, and only after Stripe.js has loaded (UI-SPEC S3 steps 2a-2d).
  *
  * What is held here:
  *   - the customer sees who is asking and for how much before anything is spent (T-30-74);
@@ -149,7 +149,7 @@ function openLink(path = `/pay#token=${TOKEN}`, state: unknown = { __NA: true, r
   window.history.replaceState(state, "", path)
 }
 
-/** Exactly one h1 on the page, whatever the state (UI-SPEC § S3 heading structure). */
+/** Exactly one h1 on the page, whatever the state (UI-SPEC S3 heading structure). */
 function theOneH1(): HTMLElement {
   const h1s = screen.getAllByRole("heading", { level: 1 })
   expect(h1s).toHaveLength(1)
@@ -190,7 +190,7 @@ afterEach(() => {
   else process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = ORIGINAL_KEY
 })
 
-describe("the /pay route shell (UI-SPEC § S3 route and SEO hygiene)", () => {
+describe("the /pay route shell (UI-SPEC S3 route and SEO hygiene)", () => {
   it("is titled, noindex,nofollow, with no canonical, Open Graph or other discoverability", () => {
     expect(metadata.title).toBe("Pay for your order — J'Toye")
     expect(metadata.description).toBe("Pay for an order you placed with a shop on J'Toye.")

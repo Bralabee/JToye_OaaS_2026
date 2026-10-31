@@ -269,7 +269,7 @@ export type PaymentLinkState = "ACTIVE" | "USED" | "EXPIRED" | "REVOKED" | "PAID
 /**
  * `POST /api/v1/public/payment-links/preview {token}` (`PaymentLinkPreviewDto`, plan 30-16). Read-only:
  * it never spends the link and never calls Stripe, so `/pay` shows who is asking and for how much
- * before anything is used (UI-SPEC § S3 data contract 1).
+ * before anything is used (UI-SPEC S3 data contract 1).
  */
 export interface PaymentLinkPreview {
   shopName: string
@@ -285,7 +285,7 @@ export interface PaymentLinkPreview {
 
 /**
  * `POST /api/v1/public/payment-links/redeem {token}` (`RedeemedPaymentLinkDto`). SPENDS the single-use
- * link before it answers, so `/pay` calls it only after Stripe.js has loaded (UI-SPEC § S3 step 2).
+ * link before it answers, so `/pay` calls it only after Stripe.js has loaded (UI-SPEC S3 step 2).
  * `stripeAccountId` (plan 30-17) is the connected account that owns a direct-charge or split-deposit
  * intent; null for platform and destination charges.
  */
