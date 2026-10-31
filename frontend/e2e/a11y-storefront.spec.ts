@@ -23,9 +23,9 @@
  *
  * `live storefront` — WRITTEN AND LISTED IN 37-52, RUN IN 37-53 on the rebuilt stack (37-52 is
  * code-only). Customer-side only: it places no order and needs no vendor password; the basket lives
- * in the browser's localStorage. Each probe has an INSTRUMENT arm on the same real page: with
- * aria-labelledby stripped by `page.evaluate`, Chrome's name for that card is no longer the shop and
- * the name assertion THROWS; with the live regions removed, a real Add records nothing and the
+ * in the browser's localStorage. Each probe has an INSTRUMENT arm on the same real page: with text
+ * planted inside the card's link by `page.evaluate`, Chrome's name for that card is no longer the
+ * shop; with the live regions removed, a real Add records nothing and the
  * announcement assertion THROWS; with the notice forced over the focused element, the overlap probe
  * reports it; with a name forced to an ellipsis, the overflow probe reports it.
  *
@@ -52,9 +52,12 @@ interface AxLink {
 
 /**
  * Every link in Chrome's accessibility tree whose href is a single shop page (`/shop/{slug}`), with
- * the name CHROME computed for it and the text of the card's name element (`h2`, or the element the
- * link's aria-labelledby points at when there is no h2). Read with `Accessibility.getFullAXTree`;
- * each AX node is resolved back to its DOM node to read the href.
+ * the name CHROME computed for it and the card's expected name: the element the link's
+ * aria-labelledby points at, else an `h2` inside the link (a link wrapping the whole card), else the
+ * `data-shop-name` of the card the link sits in (the stretched link of issue #1027, which wraps only
+ * the heading's text). The stretched case must NOT read the heading around the link: anything that
+ * leaks into the link lands in that heading too, and the comparison could never fail. Read with
+ * `Accessibility.getFullAXTree`; each AX node is resolved back to its DOM node to read the href.
  */
 async function shopCardLinksFromChrome(page: Page): Promise<AxLink[]> {
   const cdp = await page.context().newCDPSession(page)
@@ -83,7 +86,8 @@ async function shopCardLinksFromChrome(page: Page): Promise<AxLink[]> {
           const href = this.getAttribute("href") || ""
           const ref = this.getAttribute("aria-labelledby")
           const named = (ref && document.getElementById(ref)) || this.querySelector("h2")
-          return { href, cardName: named ? (named.textContent || "").replace(/\\s+/g, " ").trim() : "" }
+          const raw = named ? named.textContent || "" : this.closest("[data-shop-name]")?.getAttribute("data-shop-name") || ""
+          return { href, cardName: raw.replace(/\\s+/g, " ").trim() }
         }`,
       })) as { result: { value?: { href: string; cardName: string } } }
       const v = result.value
@@ -321,7 +325,7 @@ async function firstAddableDish(page: Page): Promise<{ dish: string; addLabel: s
 const soft = expect.configure({ soft: true })
 
 test.describe("live storefront @mobile-only", () => {
-  test("F2: Chrome names every /shop card link by its shop; INSTRUMENT: stripped aria-labelledby is caught", async ({ page }) => {
+  test("F2: Chrome names every /shop card link by its shop; INSTRUMENT: card text planted inside the link is caught", async ({ page }) => {
     await page.goto("/shop")
     await expect(page.getByRole("heading", { level: 2, name: SHOP_NAME }).first()).toBeVisible({ timeout: 20_000 })
 
@@ -329,18 +333,22 @@ test.describe("live storefront @mobile-only", () => {
     expectCardsNamedByShop(links)
     expect(links.map((l) => l.name), `${SHOP_NAME} is listed`).toContain(SHOP_NAME)
 
-    // INSTRUMENT: the same real page with the card's aria-labelledby removed. Chrome's name for it is
-    // no longer the shop, and the assertion must throw.
-    const stripped = await page.evaluate((slug) => {
+    // INSTRUMENT: the link is named by its content since issue #1027, so the failure mode is more of
+    // the card ending up inside the link. Plant the card's description text inside the link on the
+    // same real page: Chrome's name for it is no longer the shop, and the probe must see that.
+    const planted = await page.evaluate((slug) => {
       const a = document.querySelector(`a[href="/shop/${slug}"]`)
-      if (!a?.hasAttribute("aria-labelledby")) return false
-      a.removeAttribute("aria-labelledby")
+      const extra = a?.closest("article")?.querySelector("p")?.textContent?.trim() || "Open now"
+      if (!a) return false
+      a.appendChild(document.createTextNode(` ${extra}`))
       return true
     }, SHOP_SLUG)
-    expect(stripped, "the card had aria-labelledby to strip").toBe(true)
+    expect(planted, "the card link was found to plant text in").toBe(true)
     const after = await shopCardLinksFromChrome(page)
-    expect(after.find((l) => l.href === `/shop/${SHOP_SLUG}`)?.name).not.toBe(SHOP_NAME)
-    expect(() => expectCardsNamedByShop(after), "the name probe missed a card named by something else").toThrow()
+    const plantedName = after.find((l) => l.href === `/shop/${SHOP_SLUG}`)?.name
+    expect(plantedName, "the planted card is still in Chrome's tree").toBeTruthy()
+    expect(plantedName, "Chrome's name for the planted card link is no longer the shop").not.toBe(SHOP_NAME)
+    expect(() => expectCardsNamedByShop(after), "the name probe missed a card link named by more than its shop").toThrow()
   })
 
   test("F3: Add moves focus to '+' and announces the dish once; the last Remove returns focus to Add; INSTRUMENT: no region, no record", async ({ page }) => {
@@ -473,6 +481,8 @@ test.describe("live storefront on an iPhone 13 @mobile-only", () => {
 
 const CARDS = `
   <main>
+    <article data-shop-name="Stretched Kitchen" style="position:relative"><span id="stretched-d">Open</span><h2><a id="stretched" href="/shop/stretched-kitchen" aria-describedby="stretched-d">Stretched Kitchen</a></h2><p>Suya</p></article>
+    <article data-shop-name="Leaky Kitchen" style="position:relative"><h2><a id="leaky" href="/shop/leaky-kitchen">Leaky Kitchen <span>Open</span></a></h2><p>Grill</p></article>
     <a id="named" href="/shop/named-kitchen" aria-labelledby="named-h" aria-describedby="named-d">
       <article><img alt="Named Kitchen banner" src="data:,"><span id="named-d">Open</span><h2 id="named-h">Named Kitchen</h2><p>Jollof · Halal</p></article>
     </a>
@@ -486,18 +496,28 @@ const LONG = "Jollof Rice with Fried Plantain, Peppered Chicken and Coleslaw"
 const VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1">'
 
 test.describe("instruments can fail @stack-free", () => {
-  test("CDP name probe: a labelled card link reads as its shop; an unlabelled <a><article> does not", async ({ page }) => {
+  test("CDP name probe: a stretched or labelled card link reads as its shop; an unlabelled <a><article> does not", async ({ page }) => {
     await page.setContent(CARDS)
     const links = await shopCardLinksFromChrome(page)
+    const stretched = links.find((l) => l.href === "/shop/stretched-kitchen")
     const named = links.find((l) => l.href === "/shop/named-kitchen")
     const bare = links.find((l) => l.href === "/shop/bare-kitchen")
-    // Positive control: Chrome's tree carries both links and names the labelled one by its heading.
+    const leaky = links.find((l) => l.href === "/shop/leaky-kitchen")
+    // Positive controls: the stretched link (issue #1027) is named by its content and its heading is
+    // found around it; the labelled one is named by its heading.
+    expect(stretched?.name).toBe("Stretched Kitchen")
+    expect(stretched?.cardName).toBe("Stretched Kitchen")
     expect(named?.name).toBe("Named Kitchen")
     expect(bare, "the unlabelled link is in Chrome's tree").toBeTruthy()
     // Broken input: the article-wrapping link without aria-labelledby is not named by its shop.
     expect(bare!.name).not.toBe("Bare Kitchen")
     expect(() => expectCardsNamedByShop(links)).toThrow()
-    expect(() => expectCardsNamedByShop(links.filter((l) => l === named))).not.toThrow()
+    expect(() => expectCardsNamedByShop(links.filter((l) => l === named || l === stretched))).not.toThrow()
+    // Broken input: a stretched link whose content is more than the shop. Its heading holds the same
+    // leaked text, so the expected name must come from outside the link, or this cannot fail.
+    expect(leaky, "the leaky stretched link is in Chrome's tree").toBeTruthy()
+    expect(leaky!.name).toBe("Leaky Kitchen Open")
+    expect(() => expectCardsNamedByShop([leaky!]), "a stretched link named by more than its shop").toThrow()
   })
 
   test("recorder and announcement assertion: the new sentence passes; the old doubled count and silence fail", async ({ page }) => {

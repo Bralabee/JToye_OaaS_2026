@@ -85,10 +85,14 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
   // lib/fulfilment-offered.ts like the /shop directory card and every other customer surface.
   const collectionOnly = onlyOfferedType(shop) === "COLLECTION"
   const leadShown = collectionOnly || shop.deliveryFeePennies != null
-  // 37-52 (UI-SPEC F2, UXT-082): the whole card is the link, so without these its name was the
-  // concatenated card text ("{shop} logo Open 0.7 miles away {shop} {tags} {fee}"). The name is the
-  // shop; the open state and the distance are the description. Ids per render (useId).
-  const nameId = useId()
+  // 37-52 (UI-SPEC F2, UXT-082): the name is the shop; the open state and the distance are the
+  // description. Ids per render (useId).
+  //
+  // Issue 1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the shop name and is named
+  // by that content, not by aria-labelledby, so its accessible name contains its visible text
+  // (WCAG 2.5.3, axe-core 4.14 label-content-name-mismatch). The whole card stays clickable through
+  // the link's `after:` overlay, positioned against the `relative` <article>. `outline-hidden`, not
+  // `outline-none`, so forced-colors mode (which drops the overlay's box-shadow ring) still paints one.
   const badgeId = useId()
   const distanceId = useId()
   const describedBy = [badge ? badgeId : null, shop.distanceKm != null ? distanceId : null]
@@ -96,10 +100,8 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
     .join(" ")
 
   return (
-    <Link
-      href={`/shop/${shop.slug}`}
-      aria-labelledby={nameId}
-      aria-describedby={describedBy || undefined}
+    <article
+      data-shop-name={shop.name}
       // `grow basis-[220px]` with a matching `min-w` is what lets THREE cards
       // fill the container instead of huddling left as if two were missing,
       // while a longer list still overflows and scrolls. Do not swap this for a
@@ -109,7 +111,7 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
       // Hover is gated on a fine pointer in the written-out form. Tailwind's
       // `future.hoverOnlyWhenSupported` is unset, so a bare `hover:` latches on
       // tap and leaves the card stuck lifted after a finger lifts.
-      className="group grow basis-[220px] min-w-[220px] overflow-hidden rounded-xl border border-cream-100 bg-white shadow-sm transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] [@media(hover:hover)_and_(pointer:fine)]:hover:shadow-md"
+      className="group relative grow basis-[220px] min-w-[220px] overflow-hidden rounded-xl border border-cream-100 bg-white shadow-sm transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] [@media(hover:hover)_and_(pointer:fine)]:hover:shadow-md"
     >
       {/* Explicit width + height so the browser reserves the box before the
           logo arrives. Phase 24's D-07 precedent, and the landing route's CLS
@@ -157,7 +159,15 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
       </div>
 
       <div className="p-3.5">
-        <div id={nameId} className="font-bold text-slate-900">{shop.name}</div>
+        <div className="font-bold text-slate-900">
+          <Link
+            href={`/shop/${shop.slug}`}
+            aria-describedby={describedBy || undefined}
+            className="focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-amber-500"
+          >
+            {shop.name}
+          </Link>
+        </div>
 
         {tags.length > 0 && (
           <div className="mt-0.5 truncate text-xs text-slate-600">{tags.join(" · ")}</div>
@@ -189,6 +199,6 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
           )}
         </div>
       </div>
-    </Link>
+    </article>
   )
 }

@@ -267,18 +267,24 @@ describe("ShopCard — what the card says about delivery (37-G)", () => {
 })
 
 /**
- * 37-52 (UI-SPEC F2, UXT-082): the landing row's card is a link wrapping the whole card, so its name
+ * 37-52 (UI-SPEC F2, UXT-082): the landing row's card was a link wrapping the whole card, so its name
  * was the concatenated card text ("Peckham Jollof Co. logo Open 0.7 miles away Peckham Jollof Co. ...").
- * The name is now the shop through aria-labelledby; open state and distance are the description.
+ * Open state and distance are the description.
+ *
+ * Issue 1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the shop name and is named by
+ * that content, not by aria-labelledby (axe-core 4.14 label-content-name-mismatch, WCAG 2.5.3). A
+ * stretched `after:` overlay keeps the whole card clickable.
  */
 describe("ShopCard — the link is named by its shop (UXT-082)", () => {
-  it("names the link with the shop-name element through aria-labelledby", () => {
+  it("names the link by its own content, the shop name, and nothing else of the card", () => {
     render(<ShopCard shop={makeShop({ openNow: true, distanceKm: 1.2 })} />)
     const link = screen.getByRole("link", { name: "Peckham Jollof Co." })
-    const nameId = link.getAttribute("aria-labelledby")
 
-    expect(nameId).toBeTruthy()
-    expect(document.getElementById(nameId!)?.textContent).toBe("Peckham Jollof Co.")
+    expect(link.hasAttribute("aria-labelledby")).toBe(false)
+    expect(link.textContent).toBe("Peckham Jollof Co.")
+    const article = link.closest("article")!
+    expect(article).not.toBeNull()
+    expect((article.textContent || "").length).toBeGreaterThan(link.textContent!.length)
   })
 
   it("describes the link with the open state and the distance", () => {

@@ -163,53 +163,11 @@ function summarise(violations: { id: string; impact?: string | null; help?: stri
  * the header. `control` is REQUIRED (it may be a no-op only for surfaces whose
  * universal control is genuinely sufficient, and those pass an explicit one).
  */
-/**
- * The ONE known design exception, and the only thing this file ever excludes.
- *
- * axe-core 4.14 turned `label-content-name-mismatch` (WCAG 2.5.3) on by default and
- * compares a control's visible text to its accessible name word by word. The /shop
- * directory card is a `<Link>` around a whole `<article>`, named through
- * `aria-labelledby` = the card heading BY DESIGN (37-52, UXT-082: the content
- * concatenation name was unusable), so its visible text can never be "in" its name.
- * Whether that design changes is issue #1027. Until it does, THAT RULE on THAT
- * ELEMENT is excluded here — nothing else, no other rule, no other element — and
- * the /shop test asserts the exclusion actually fired, so a fix for #1027 that
- * removes the card's aria-labelledby makes this allow-list fail loudly and get
- * deleted rather than linger.
- */
-const DESIGN_EXCEPTION_1027 = {
-  ruleId: "label-content-name-mismatch",
-  // The card link, as axe serialises it: an <a> whose href is a storefront slug and
-  // that carries aria-labelledby. Lookaheads, so attribute order does not matter.
-  node: /^<a\b(?=[^>]*\bhref="\/shop\/[^"/]+")(?=[^>]*\baria-labelledby=)/,
-}
-
-type AxeViolation = { id: string; impact?: string | null; help?: string; nodes: { target: unknown[]; html: string }[] }
-
-/** Drops the #1027 nodes from the violations, returning what is left and how many it dropped. */
-function applyDesignException(violations: AxeViolation[]): { kept: AxeViolation[]; excluded: number } {
-  let excluded = 0
-  const kept: AxeViolation[] = []
-  for (const v of violations) {
-    if (v.id !== DESIGN_EXCEPTION_1027.ruleId) {
-      kept.push(v)
-      continue
-    }
-    const nodes = v.nodes.filter((n) => {
-      const hit = DESIGN_EXCEPTION_1027.node.test(n.html)
-      if (hit) excluded += 1
-      return !hit
-    })
-    if (nodes.length > 0) kept.push({ ...v, nodes })
-  }
-  return { kept, excluded }
-}
-
 async function scanSurface(
   page: Page,
   label: string,
   control: (page: Page) => Promise<void>
-): Promise<{ excludedFor1027: number }> {
+): Promise<void> {
   // ── UNIVERSAL NON-VACUITY CONTROL ──
   // Asserted on every surface: a page that failed to render, 404'd, or was
   // replaced by an error boundary has no <main> and no <h1>, and axe reports
@@ -281,16 +239,10 @@ async function scanSurface(
     `${label}: axe evaluated no rules at all — the scan itself is void`
   ).toBeGreaterThan(0)
 
-  // The one design exception (#1027), applied AFTER the scan so every other rule
-  // and every other element on the page is still held to the full set.
-  const { kept, excluded } = applyDesignException(results.violations as AxeViolation[])
-  if (excluded > 0) console.log(`  [design exception #1027] ${label}: ${excluded} card link(s) excluded from label-content-name-mismatch`)
-
   expect(
-    summarise(kept),
-    `${label}: ${CLAIM} violations (${kept.length} rule(s))`
+    summarise(results.violations),
+    `${label}: ${CLAIM} violations (${results.violations.length} rule(s))`
   ).toBe("")
-  return { excludedFor1027: excluded }
 }
 
 /** The universal control is enough here; stated explicitly rather than implied. */
@@ -331,7 +283,7 @@ test.describe(`public surfaces — ${CLAIM}`, () => {
 
   test(`/shop has no ${CLAIM} violations`, async ({ page }) => {
     await open(page, "/shop")
-    const { excludedFor1027 } = await scanSurface(page, "/shop", async (p) => {
+    await scanSurface(page, "/shop", async (p) => {
       // The listing's whole content IS the cards. Zero cards is the "shop
       // directory listed nothing" state, over which a clean scan means nothing.
       const cards = await p.locator("article:visible").count()
@@ -341,12 +293,35 @@ test.describe(`public surfaces — ${CLAIM}`, () => {
       ).toBeGreaterThan(0)
       console.log(`  [control] /shop shop cards = ${cards}`)
     })
-    // The allow-list must have done work here, or it is dead: the day #1027 is
-    // fixed, this fails and DESIGN_EXCEPTION_1027 gets deleted with it.
-    expect(
-      excludedFor1027,
-      "/shop: the #1027 design exception excluded nothing — the card link no longer trips label-content-name-mismatch, so delete DESIGN_EXCEPTION_1027"
-    ).toBeGreaterThan(0)
+  })
+
+  /**
+   * Issue 1027's stretched card link draws its focus ring as a box-shadow on the `::after` overlay.
+   * Forced-colors mode (Windows High Contrast) drops box-shadow, so the link must also keep a real
+   * outline there (`outline-hidden`: transparent normally, painted in the system colour when forced).
+   * `outline-none` is outline-style none and leaves a keyboard user nothing to see (WCAG 2.4.7).
+   * axe cannot see this: it is a computed style under an emulated media feature, after a real Tab.
+   */
+  test("a /shop card link keeps a visible focus outline in forced-colors mode", async ({ page }) => {
+    await page.emulateMedia({ forcedColors: "active" })
+    await open(page, "/shop")
+    const card = page.locator('article:visible a[href^="/shop/"]').first()
+    await expect(card, "/shop rendered no card link to focus").toBeVisible()
+
+    let focused = false
+    for (let i = 0; i < 80 && !focused; i++) {
+      await page.keyboard.press("Tab")
+      focused = await page.evaluate(() => !!document.activeElement?.matches('article a[href^="/shop/"]'))
+    }
+    expect(focused, "Tab never reached a /shop card link").toBe(true)
+
+    const outline = await page.evaluate(() => {
+      const cs = getComputedStyle(document.activeElement as Element)
+      return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) }
+    })
+    console.log(`  [control] forced-colors focus outline: ${outline.style} ${outline.width}px`)
+    expect(outline.style, "the focused card link has no outline in forced-colors mode").not.toBe("none")
+    expect(outline.width).toBeGreaterThan(0)
   })
 
   test(`a storefront has no ${CLAIM} violations`, async ({ page }) => {

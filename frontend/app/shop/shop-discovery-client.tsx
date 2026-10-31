@@ -41,169 +41,175 @@ function ShopCard({ shop }: { shop: PublicShop }) {
   const badge = cardBadgeLabel(availability)
   const open = availability.kind === "open"
   const tags = shop.tags?.split(",").map((t) => t.trim()).filter(Boolean) || []
-  // 37-52 (UI-SPEC F2, UXT-082): the link wraps an <article>, so without these its name was whatever
-  // the card's content concatenated to (banner alt, logo alt, badge, distance, fee line) and Chrome's
-  // tree gave the persona an unusable link. The NAME is the heading; what a sighted customer reads
-  // beside it (open state, distance) is the DESCRIPTION. Ids per render (useId), never per shop.
-  // There is no rating on PublicShop, so there is no rating to describe.
-  const nameId = useId()
+  // 37-52 (UI-SPEC F2, UXT-082): the NAME is the shop; what a sighted customer reads beside it
+  // (open state, distance) is the DESCRIPTION. Ids per render (useId), never per shop. There is no
+  // rating on PublicShop, so there is no rating to describe.
+  //
+  // Issue #1027 (owner ruling 2026-10-22, option 1): the link wraps ONLY the heading's text and is
+  // named by that content. A link wrapping the whole card and named by aria-labelledby can never
+  // contain its own visible text, which axe-core 4.14's label-content-name-mismatch (WCAG 2.5.3)
+  // fails. The whole card stays clickable through the link's `after:` overlay, which is positioned
+  // against the `relative` <article>; the card has no other interactive descendant for it to cover.
+  // `outline-hidden`, not `outline-none`: the visible ring is a box-shadow on the overlay, which
+  // forced-colors mode drops, and a transparent outline is what that mode paints instead.
+  // `data-shop-name` is the name the a11y probe expects (e2e/a11y-storefront.spec.ts), read from
+  // outside the link so text that leaks into the link cannot change it.
   const badgeId = useId()
   const distanceId = useId()
   const hasDistance = shop.distanceKm != null
   const describedBy = [badge ? badgeId : null, hasDistance ? distanceId : null].filter(Boolean).join(" ")
 
   return (
-    <Link
-      href={`/shop/${shop.slug}`}
-      className="group block"
-      aria-labelledby={nameId}
-      aria-describedby={describedBy || undefined}
-    >
-      <article className="bg-white rounded-2xl overflow-hidden shadow-sm border border-cream-100 transition-all duration-200 group-hover:shadow-md group-hover:border-amber-200 group-hover:-translate-y-0.5">
-        {/* Banner */}
-        <div className="relative h-36 sm:h-44 bg-gradient-to-br from-amber-300 via-amber-500 to-oxblood-600 overflow-hidden">
-          {shop.bannerUrl && (
-            <SafeImage
-              src={shop.bannerUrl}
-              alt={`${shop.name} banner`}
-              className="absolute inset-0 w-full h-full object-cover"
-              loading="lazy"
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+    <article data-shop-name={shop.name} className="group relative bg-white rounded-2xl overflow-hidden shadow-sm border border-cream-100 transition-all duration-200 hover:shadow-md hover:border-amber-200 hover:-translate-y-0.5">
+      {/* Banner */}
+      <div className="relative h-36 sm:h-44 bg-gradient-to-br from-amber-300 via-amber-500 to-oxblood-600 overflow-hidden">
+        {shop.bannerUrl && (
+          <SafeImage
+            src={shop.bannerUrl}
+            alt={`${shop.name} banner`}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
 
-          {/* Open / Paused / Closed badge (server-driven) */}
-          {badge && (
-            <div className="absolute top-3 right-3">
+        {/* Open / Paused / Closed badge (server-driven) */}
+        {badge && (
+          <div className="absolute top-3 right-3">
+            <span
+              id={badgeId}
+              data-testid="shop-availability-badge"
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${
+                open
+                  ? "bg-emerald-500/90 text-white"
+                  : "bg-slate-800/70 text-slate-300"
+              }`}
+            >
               <span
-                id={badgeId}
-                data-testid="shop-availability-badge"
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${
-                  open
-                    ? "bg-emerald-500/90 text-white"
-                    : "bg-slate-800/70 text-slate-300"
-                }`}
+                aria-hidden="true"
+                className={`h-1.5 w-1.5 rounded-full ${open ? "bg-white animate-pulse" : "bg-slate-400"}`}
+              />
+              {badge}
+            </span>
+          </div>
+        )}
+
+        {/* The distance pill is ABSOLUTELY POSITIONED, and that is a CLS
+            decision rather than a styling one — the same rule the landing
+            row's card records. A distance rendered in the flow would add a
+            line to every located card and push the rest of the grid down the
+            moment a postcode search returns; out of flow, a located and an
+            unlocated card are byte-identical in height.
+
+            Top-LEFT because the Open/Closed badge already owns top-right.
+
+            `shop.distanceKm` is the number the ORDERING used, computed in SQL
+            by 33-06's query. Converted here and never recomputed: a second
+            haversine in the browser is a second answer, and the card could
+            then disagree with the position it was given in the list. */}
+        {shop.distanceKm != null && (
+          <span id={distanceId} className="absolute top-3 left-3 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
+            {formatMiles(shop.distanceKm)}
+            {/* Spelled out rather than abbreviated: a screen reader pronounces
+                a two-letter unit as a word. */}
+            <span className="sr-only"> away</span>
+          </span>
+        )}
+
+        {/* Logo overlay */}
+        <div className="absolute bottom-3 left-3 h-12 w-12 rounded-xl bg-white shadow-lg ring-2 ring-white overflow-hidden">
+          <SafeImage
+            src={shop.logoUrl}
+            alt={shop.name}
+            className="h-full w-full object-cover"
+            fallbackIcon={<Store className="h-6 w-6 text-oxblood-600" />}
+            loading="lazy"
+          />
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="font-semibold text-slate-900 text-base leading-tight group-hover:text-oxblood transition-colors">
+            <Link
+              href={`/shop/${shop.slug}`}
+              aria-describedby={describedBy || undefined}
+              className="focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-amber-500"
+            >
+              {shop.name}
+            </Link>
+          </h2>
+          <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-amber-700 transition-colors flex-shrink-0 mt-0.5" />
+        </div>
+
+        {shop.description && (
+          <p className="mt-1 text-sm text-slate-600 line-clamp-2 leading-relaxed">
+            {shop.description}
+          </p>
+        )}
+
+        {/* Tags */}
+        {tags.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center rounded-md bg-cream px-2 py-0.5 text-xs font-medium text-oxblood-600"
               >
-                <span
-                  aria-hidden="true"
-                  className={`h-1.5 w-1.5 rounded-full ${open ? "bg-white animate-pulse" : "bg-slate-400"}`}
-                />
-                {badge}
+                {tag}
               </span>
-            </div>
-          )}
+            ))}
+            {tags.length > 3 && (
+              <span className="text-xs text-slate-600">+{tags.length - 3}</span>
+            )}
+          </div>
+        )}
 
-          {/* The distance pill is ABSOLUTELY POSITIONED, and that is a CLS
-              decision rather than a styling one — the same rule the landing
-              row's card records. A distance rendered in the flow would add a
-              line to every located card and push the rest of the grid down the
-              moment a postcode search returns; out of flow, a located and an
-              unlocated card are byte-identical in height.
-
-              Top-LEFT because the Open/Closed badge already owns top-right.
-
-              `shop.distanceKm` is the number the ORDERING used, computed in SQL
-              by 33-06's query. Converted here and never recomputed: a second
-              haversine in the browser is a second answer, and the card could
-              then disagree with the position it was given in the list. */}
-          {shop.distanceKm != null && (
-            <span id={distanceId} className="absolute top-3 left-3 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
-              {formatMiles(shop.distanceKm)}
-              {/* Spelled out rather than abbreviated: a screen reader pronounces
-                  a two-letter unit as a word. */}
-              <span className="sr-only"> away</span>
+        {/* Meta row */}
+        <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
+          {shop.address && (
+            <span className="inline-flex items-center gap-1 truncate">
+              <MapPin className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate">{shop.address}</span>
             </span>
           )}
-
-          {/* Logo overlay */}
-          <div className="absolute bottom-3 left-3 h-12 w-12 rounded-xl bg-white shadow-lg ring-2 ring-white overflow-hidden">
-            <SafeImage
-              src={shop.logoUrl}
-              alt={shop.name}
-              className="h-full w-full object-cover"
-              fallbackIcon={<Store className="h-6 w-6 text-oxblood-600" />}
-              loading="lazy"
-            />
-          </div>
+          {shop.minimumOrderPennies != null && shop.minimumOrderPennies > 0 && (
+            <span className="whitespace-nowrap font-medium text-slate-600">
+              Min {formatPennies(shop.minimumOrderPennies)}
+            </span>
+          )}
         </div>
 
-        {/* Content */}
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-2">
-            <h2 id={nameId} className="font-semibold text-slate-900 text-base leading-tight group-hover:text-oxblood transition-colors">
-              {shop.name}
-            </h2>
-            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-amber-700 transition-colors flex-shrink-0 mt-0.5" />
-          </div>
-
-          {shop.description && (
-            <p className="mt-1 text-sm text-slate-600 line-clamp-2 leading-relaxed">
-              {shop.description}
-            </p>
-          )}
-
-          {/* Tags */}
-          {tags.length > 0 && (
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {tags.slice(0, 3).map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center rounded-md bg-cream px-2 py-0.5 text-xs font-medium text-oxblood-600"
-                >
-                  {tag}
+        <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
+          {/* A null fee falls through to "Free delivery" here — pre-existing
+              behaviour on this surface, kept as-is when the wire type went
+              nullable (review WR-04 fixed the landing card; this listing's
+              null-as-free rendering is its own recorded question). */}
+          {/* 37-50 (2.9 item 2, UXT-023): a shop that does not deliver quotes no delivery fee or
+              threshold here, and says "Collection only" in the shop header's own words. The flags are
+              read through lib/fulfilment-offered.ts like every other customer surface; a shop taking
+              both (or a flag-less payload) renders the fee line exactly as before. */}
+          {onlyOfferedType(shop) === "COLLECTION" ? (
+            <span className="text-slate-600">{ONLY_CHIP_COPY.COLLECTION}</span>
+          ) : shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
+            <span className="text-slate-600">
+              Delivery {formatPennies(shop.deliveryFeePennies)}
+              {shop.freeDeliveryThresholdPennies && (
+                <span className="text-emerald-700 ml-1">
+                  Free over {formatPennies(shop.freeDeliveryThresholdPennies)}
                 </span>
-              ))}
-              {tags.length > 3 && (
-                <span className="text-xs text-slate-600">+{tags.length - 3}</span>
               )}
-            </div>
+            </span>
+          ) : (
+            <span className="text-emerald-700 font-medium">Free delivery</span>
           )}
-
-          {/* Meta row */}
-          <div className="mt-3 flex items-center gap-3 text-xs text-slate-600">
-            {shop.address && (
-              <span className="inline-flex items-center gap-1 truncate">
-                <MapPin className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">{shop.address}</span>
-              </span>
-            )}
-            {shop.minimumOrderPennies != null && shop.minimumOrderPennies > 0 && (
-              <span className="whitespace-nowrap font-medium text-slate-600">
-                Min {formatPennies(shop.minimumOrderPennies)}
-              </span>
-            )}
-          </div>
-
-          <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
-            {/* A null fee falls through to "Free delivery" here — pre-existing
-                behaviour on this surface, kept as-is when the wire type went
-                nullable (review WR-04 fixed the landing card; this listing's
-                null-as-free rendering is its own recorded question). */}
-            {/* 37-50 (2.9 item 2, UXT-023): a shop that does not deliver quotes no delivery fee or
-                threshold here, and says "Collection only" in the shop header's own words. The flags are
-                read through lib/fulfilment-offered.ts like every other customer surface; a shop taking
-                both (or a flag-less payload) renders the fee line exactly as before. */}
-            {onlyOfferedType(shop) === "COLLECTION" ? (
-              <span className="text-slate-600">{ONLY_CHIP_COPY.COLLECTION}</span>
-            ) : shop.deliveryFeePennies != null && shop.deliveryFeePennies > 0 ? (
-              <span className="text-slate-600">
-                Delivery {formatPennies(shop.deliveryFeePennies)}
-                {shop.freeDeliveryThresholdPennies && (
-                  <span className="text-emerald-700 ml-1">
-                    Free over {formatPennies(shop.freeDeliveryThresholdPennies)}
-                  </span>
-                )}
-              </span>
-            ) : (
-              <span className="text-emerald-700 font-medium">Free delivery</span>
-            )}
-            {shop.deliveryInfo && (
-              <span className="text-slate-600 truncate">{shop.deliveryInfo}</span>
-            )}
-          </div>
+          {shop.deliveryInfo && (
+            <span className="text-slate-600 truncate">{shop.deliveryInfo}</span>
+          )}
         </div>
-      </article>
-    </Link>
+      </div>
+    </article>
   )
 }
 
