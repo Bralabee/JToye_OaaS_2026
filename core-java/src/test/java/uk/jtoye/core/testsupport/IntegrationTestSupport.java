@@ -194,6 +194,7 @@ public final class IntegrationTestSupport {
         });
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.datasource.hikari.minimum-idle", () -> "0");
         // application-test.yml defaults to H2; point every H2-specific
         // property back at the Testcontainers Postgres.
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
