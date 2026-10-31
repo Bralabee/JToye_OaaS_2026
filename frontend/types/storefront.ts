@@ -252,6 +252,12 @@ export interface GuestOrderConfirmation {
   scheduledWindowLabel?: string | null
   depositAmountPennies?: number | null
   balanceDuePennies?: number | null
+  /**
+   * The connected Stripe account that owns this order's PaymentIntent (plan 30-17): set for a
+   * direct-charge or split-deposit shop, null for destination and platform charges; absent from an
+   * older server. Passed to Stripe.js as `stripeAccount` (UI-SPEC § S1).
+   */
+  stripeAccountId?: string | null
 }
 
 /** What a payment link asks for (`order_payment_links.link_kind`, V88). */
