@@ -254,6 +254,46 @@ export interface GuestOrderConfirmation {
   balanceDuePennies?: number | null
 }
 
+/** What a payment link asks for (`order_payment_links.link_kind`, V88). */
+export type PaymentLinkPurpose = "UPFRONT" | "DEPOSIT" | "BALANCE"
+
+/** The preview's state, in the server's precedence PAID > USED > REVOKED > EXPIRED > ACTIVE (30-16). */
+export type PaymentLinkState = "ACTIVE" | "USED" | "EXPIRED" | "REVOKED" | "PAID"
+
+/**
+ * `POST /api/v1/public/payment-links/preview {token}` (`PaymentLinkPreviewDto`, plan 30-16). Read-only:
+ * it never spends the link and never calls Stripe, so `/pay` shows who is asking and for how much
+ * before anything is used (UI-SPEC § S3 data contract 1).
+ */
+export interface PaymentLinkPreview {
+  shopName: string
+  orderNumber: string
+  amountPennies: number
+  /** ISO 4217, lower case, as the intent was created (default gbp). */
+  currency: string
+  purpose: PaymentLinkPurpose
+  /** ISO-8601 instant. */
+  expiresAt: string
+  state: PaymentLinkState
+}
+
+/**
+ * `POST /api/v1/public/payment-links/redeem {token}` (`RedeemedPaymentLinkDto`). SPENDS the single-use
+ * link before it answers, so `/pay` calls it only after Stripe.js has loaded (UI-SPEC § S3 step 2).
+ * `stripeAccountId` (plan 30-17) is the connected account that owns a direct-charge or split-deposit
+ * intent; null for platform and destination charges.
+ */
+export interface RedeemedPaymentLink {
+  linkId: string
+  orderId: string
+  purpose: PaymentLinkPurpose
+  amountPennies: number
+  stripePaymentIntentId: string | null
+  clientSecret: string | null
+  usedAt: string
+  stripeAccountId?: string | null
+}
+
 /** The RFC 7807 `type` URI the stale-acknowledgement 409 carries (31.1-03). */
 export const ALLERGEN_ACK_STALE_PROBLEM_TYPE = "https://jtoye.uk/errors/allergen-acknowledgement-stale"
 
