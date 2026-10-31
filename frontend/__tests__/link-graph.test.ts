@@ -66,6 +66,13 @@ const WILDCARD = "*"
  *                          address, with the token in the URL fragment (core-java
  *                          `jtoye.staff.invite.accept-base-url`). Same reasoning as
  *                          /data-request/download: an in-app link carries no token.
+ *  - "/pay"                the payment-link page (PAY-04 / D-03, plan 30-18). Reached
+ *                          ONLY via the single-use link a shop sends the customer
+ *                          (`/pay#token=…`, token in the URL fragment, owner decision
+ *                          30-16; core-java `OrderPaymentLinkService.issuePaymentLink`),
+ *                          or as Stripe's `return_url` from a redirect-based method.
+ *                          Same reasoning as /invite: an in-app link carries no token,
+ *                          so it could only ever show "Open your payment link".
  *
  * NOTE: API route handlers under `app/api/**` have no `page.tsx`, so they are
  * never enumerated as routes — they need no allowlist entry.
@@ -79,6 +86,7 @@ const ALLOWLIST = new Set<string>([
   "/data-request/download",
   "/data-request/confirm",
   "/invite",
+  "/pay",
 ])
 
 function isTestFile(file: string): boolean {
