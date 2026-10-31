@@ -83,6 +83,7 @@ class PaymentLinkPreviewIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private JsonMapper jsonMapper;
     @Autowired private PlatformTransactionManager txManager;
+    @Autowired private OrderPaymentLinkService paymentLinkService;
 
     private UUID tenantA;
     private UUID tenantB;
@@ -263,6 +264,19 @@ class PaymentLinkPreviewIntegrationTest {
         assertThat(asB.getResponse().getStatus()).as(body(asB)).isEqualTo(200);
         assertThat(json(asB)).isEqualTo(json(anonymous));
         assertThat(json(asB).path("shopName").asString()).isEqualTo(shopAName);
+
+        // The filter clears TenantContext after a request, so the restore is proven at the service: an
+        // ambient tenant B going in is tenant B coming out, and the real database answered tenant A's link.
+        TenantContext.set(tenantB);
+        try {
+            OrderPaymentLinkService.PaymentLinkPreviewDto direct = paymentLinkService.previewPaymentLink(s.rawToken);
+            assertThat(direct.orderNumber()).isEqualTo(s.orderNumber);
+            assertThat(direct.shopName()).isEqualTo(shopAName);
+            assertThat(direct.state()).isEqualTo("ACTIVE");
+            assertThat(TenantContext.get()).as("the caller's tenant B is restored after the call").contains(tenantB);
+        } finally {
+            TenantContext.clear();
+        }
         assertThat(usedAtIsNull(s.linkId)).isTrue();
     }
 
