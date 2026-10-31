@@ -1893,6 +1893,15 @@ jobs:
       - name: Assert every declared compose port is loopback-bound or exempt (--static #1009)
         run: bash scripts/check-infra-exposure.sh --static
 
+      - name: Prove the E2E skip-budget gate and S-5 block rule can fail (plan 30-21 --selftest)
+        run: bash scripts/check-e2e-skip-budget.sh --selftest
+
+      - name: Lint scripts/gates/e2e-skip-budget.conf against S-5 (plan 30-21 --lint-conf)
+        run: bash scripts/check-e2e-skip-budget.sh --lint-conf
+
+      - name: Prove the Stripe CI test-key guard can fail (plan 30-22 --selftest)
+        run: bash scripts/check-stripe-ci-keys.sh --selftest
+
       - name: Prove the gate-enforcement meta-gate can fail (#970 --selftest)
         run: bash scripts/check-gate-enforcement.sh --selftest
 
