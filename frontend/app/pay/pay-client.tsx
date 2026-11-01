@@ -122,7 +122,15 @@ type Phase =
   | { kind: "active"; preview: PaymentLinkPreview; notUsed?: boolean }
   | { kind: "opening"; preview: PaymentLinkPreview }
   | { kind: "preparing"; display: Display }
-  | { kind: "paying"; display: Display; stripe: StripePromise; clientSecret: string; stripeAccountId: string | null }
+  | {
+      kind: "paying"
+      display: Display
+      stripe: StripePromise
+      clientSecret: string
+      stripeAccountId: string | null
+      /** Mounted from the resume entry: a Payment Element load failure is then reloadable. */
+      fromResume: boolean
+    }
   | { kind: "linkOpened"; display: Display; reloadable?: boolean }
   | { kind: "dead"; which: DeadLink }
   | { kind: "alreadyPaid"; orderNumber: string | null }
@@ -298,8 +306,10 @@ export function PayClient() {
       if (!stripe || !promise) {
         // The entry is kept: a reload, once Stripe.js can load, finds the intent again. On the resume
         // path the page offers that reload (PR #1064 review round-2 residual); straight after a redeem
-        // the first-visit state stays as the copy contract has it.
-        setPhase({ kind: "linkOpened", display, reloadable: fromResume })
+        // the first-visit state stays as the copy contract has it. A null promise means the bundle has no
+        // publishable key, a build constant: a reload would land here again, so it is not offered
+        // (PR #1072 review round 1, finding 2).
+        setPhase({ kind: "linkOpened", display, reloadable: fromResume && promise !== null })
         return
       }
       let status: string | undefined
@@ -323,7 +333,7 @@ export function PayClient() {
         setPhase({ kind: "processing", amountPennies: display.amountPennies })
         return
       }
-      setPhase({ kind: "paying", display, stripe: promise, clientSecret, stripeAccountId })
+      setPhase({ kind: "paying", display, stripe: promise, clientSecret, stripeAccountId, fromResume })
     },
     []
   )
@@ -550,7 +560,11 @@ export function PayClient() {
                   totalPennies={phase.display.amountPennies}
                   returnUrl={`${window.location.origin}/pay?acct=${phase.stripeAccountId ?? ""}`}
                   onSucceeded={() => paid(phase.display)}
-                  onLoadError={() => setPhase({ kind: "linkOpened", display: phase.display })}
+                  // On the resume path the entry is still kept, so a reload recovers here as it does
+                  // for a Stripe.js load failure (PR #1072 review round 1, finding 3).
+                  onLoadError={() =>
+                    setPhase({ kind: "linkOpened", display: phase.display, reloadable: phase.fromResume })
+                  }
                 />
               </Elements>
             </div>

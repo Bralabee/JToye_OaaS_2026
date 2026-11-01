@@ -40,11 +40,21 @@ import { ConsentBanner } from "./consent-banner"
  * NOT ON /pay (owner ruling 2026-11-01, PR #1064 review series). The payment-link
  * page is a card form, and on a 360 px phone this fixed bar covered its Expiry
  * date and Security code fields on a first visit — the customer had to find and
- * dismiss chrome before they could pay. The page writes nothing to local or
- * session storage (30-UI-SPEC S3 Storage), and this notice informs, it gates
- * nothing, so leaving it off /pay withholds no choice and hides no storage the
- * page makes. The carve-out is `/pay` exactly or `/pay/<anything>`, never a bare
- * prefix: `/payments` is not the payment-link page.
+ * dismiss chrome before they could pay.
+ *
+ * /pay is NOT storage-free, and this carve-out does not pretend it is (PR #1072
+ * review round 1, finding 1). J'Toye's own island writes nothing to local or
+ * session storage (30-UI-SPEC S3 Storage), but /pay loads Stripe.js, and Stripe
+ * sets its own first-party cookies on this host to process the payment and
+ * detect fraud (`__stripe_mid` and `__stripe_sid` at the time of writing; the
+ * names are Stripe's to publish). Those cookies are strictly necessary for the
+ * payment the customer asked for, and /legal/cookies discloses them under
+ * "Stripe, on the payment step"; /pay's own footer (PublicShell) links that page.
+ * This notice only informs — it gates nothing — so dropping it here withholds
+ * no choice and leaves the disclosure one link away, where the alternative is a
+ * bar sitting over the card form on a small screen. The carve-out is `/pay`
+ * exactly or `/pay/<anything>`, never a bare prefix: `/payments` is not the
+ * payment-link page.
  *
  * The ConsentBanner branch is checked FIRST, on /pay as everywhere. The reasoning
  * above holds only while there is nothing to choose; the day a non-essential
