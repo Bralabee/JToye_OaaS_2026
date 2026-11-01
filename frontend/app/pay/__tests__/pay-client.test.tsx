@@ -502,6 +502,20 @@ describe("redeem refused: each status reads as its own state, without the server
     expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
   })
 
+  it("Stripe.js fails to load on the connected account straight after redeem: the 'link has now been opened' alert, and no Try again on a first visit", async () => {
+    serve(ok(PREVIEW), ok(REDEEMED))
+    mockedLoadStripe
+      .mockImplementationOnce(() => Promise.resolve(fakeStripe()))
+      .mockImplementationOnce(() => Promise.reject(new Error("Failed to load Stripe.js")))
+    await pressContinue()
+
+    await findAlert(LINK_OPENED)
+    expect(mockedRedeem).toHaveBeenCalledTimes(1)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+    noContinue()
+  })
+
   it("the Payment Element fails to load after redeem: the 'link has now been opened' alert replaces the form", async () => {
     serve(ok(PREVIEW), ok(REDEEMED))
     await pressContinue()

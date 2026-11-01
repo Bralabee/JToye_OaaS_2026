@@ -48,6 +48,15 @@ const REDEEM_PATH = "/api/v1/public/payment-links/redeem"
 /** The history.state key that lets a reload after redeem resume (UI-SPEC S3 Storage, amended). */
 export const PAY_RESUME_KEY = "jtoyePayResume"
 
+/**
+ * The page's one navigation, held on an object so a test can replace it: jsdom's Location is
+ * unforgeable (its reload is read-only and window.location cannot be redefined), so a spy on
+ * window.location.reload cannot be installed. Looked up at call time, never captured.
+ */
+export const payNavigation = {
+  reload: () => window.location.reload(),
+}
+
 export const PAY_PAGE_COPY = {
   checking: "Checking your payment link…",
   continue: "Continue to payment",
@@ -112,7 +121,7 @@ type Phase =
   | { kind: "opening"; preview: PaymentLinkPreview }
   | { kind: "preparing"; display: Display }
   | { kind: "paying"; display: Display; stripe: StripePromise; clientSecret: string; stripeAccountId: string | null }
-  | { kind: "linkOpened"; display: Display }
+  | { kind: "linkOpened"; display: Display; reloadable?: boolean }
   | { kind: "dead"; which: DeadLink }
   | { kind: "alreadyPaid"; orderNumber: string | null }
   | { kind: "processing"; amountPennies: number | null }
@@ -285,8 +294,10 @@ export function PayClient() {
         stripe = null
       }
       if (!stripe || !promise) {
-        // The entry is kept: a reload, once Stripe.js can load, finds the intent again.
-        setPhase({ kind: "linkOpened", display })
+        // The entry is kept: a reload, once Stripe.js can load, finds the intent again. On the resume
+        // path the page offers that reload (PR #1064 review round-2 residual); straight after a redeem
+        // the first-visit state stays as the copy contract has it.
+        setPhase({ kind: "linkOpened", display, reloadable: fromResume })
         return
       }
       let status: string | undefined
@@ -541,6 +552,11 @@ export function PayClient() {
             <p role="alert" className={ALERT}>
               {PAY_PAGE_COPY.linkOpened}
             </p>
+            {phase.reloadable && (
+              <button type="button" onClick={() => payNavigation.reload()} className={RETRY}>
+                {PAY_PAGE_COPY.tryAgain}
+              </button>
+            )}
           </>
         )}
 
