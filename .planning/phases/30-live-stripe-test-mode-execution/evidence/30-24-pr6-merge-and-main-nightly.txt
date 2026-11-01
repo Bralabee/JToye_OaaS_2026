@@ -8,7 +8,7 @@ Pre-merge sitting: head equality ok (b8d3192253e5); behind main 0; non-success r
 MERGEABLE state CLEAN draft false; check-stripe-pk-var.sh --environment staging rc 0 with STRIPE_PK_VAR supplied
 (rc 1 UNSET without it: the gate reads the deploy step's env). Squash body scanned: no attribution, no closing
 keyword (#61 named with Refs). Merged: 6b3ff3e1cab0 (gh pr view state=MERGED). Issue #61 still OPEN by design.
-Deploy of 6b3ff3e1: run 41299627034 (in progress at the time of this record; see the HANDOFF for its conclusion).
+Deploy of 6b3ff3e1: run 41299627034 SUCCESS (Deploy to Staging success, Staging Edge Probe success).
 
 ## Task 2 — the nightly on main (workflow_dispatch on 6b3ff3e1, run 41299664811, 10:56Z -> 11:26Z)
     conclusion: success; job "Full Playwright suite against a real stack": success
