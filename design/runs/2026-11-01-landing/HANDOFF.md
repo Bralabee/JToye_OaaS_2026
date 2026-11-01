@@ -87,3 +87,55 @@ node ~/.claude/skills/taste-skill/scripts/inspect.mjs http://localhost:3000/ --o
   row shows the logo or the name alone until vendors upload real ones.
 - Body text at 17px: the app's base is 16px; keep 16px+ either way.
 - `inspect.mjs` serves from cwd: run it from the worktree root or relative asset paths 404.
+
+## Mobile first — owner's standing requirement (2026-11-01, added after the step-4 ruling)
+
+Sanmi: "majority of users will interact on the web via phone tablet and similar devices ahead of
+laptops/desktops … I just need to know that there's been adequate and robust consideration for
+mobile friendly app like solution." What the record shows so far, honestly:
+
+- DONE: the brief says mobile-first; every sketch has its own phone composition from its sheet and
+  was captured at 390 and 768; inspect measured 390 (no overflow, headlines two lines or fewer);
+  The Pass puts headline, plate, supporting line and the search inside the first 390×844 screen,
+  with 44–56px tall controls.
+- NOT DONE: the pick was recommended from the 1280 first screens; The Pass's hover styles are NOT
+  gated to hover-capable pointers (0 `hover:hover` / `pointer:fine` queries), so they latch on tap;
+  its media queries are desktop-first (`max-width`); nothing was measured on a throttled mobile
+  profile or a real touch device.
+
+Build acceptance, phone first (each must be shown FAILING once before it is trusted):
+
+1. Build the 390 composition FIRST and keep it the primary artifact; desktop is the enlargement.
+   Tailwind mobile-first (`sm:`/`lg:` up), never `max-width` overrides.
+2. First screen at 390×844 (and 360×780): headline, one sentence, the search field and its button
+   all visible without scrolling; the field's tap target ≥ 48px tall, `inputmode="search"`,
+   `enterkeyhint="search"`, `autocomplete="postal-code"` only if the field is postcode-only (it is
+   not; leave it off). The six cuisine links ≥ 44px tall with 8px gaps.
+3. Hover feedback only under `@media (hover: hover) and (pointer: fine)` (the written-out gate the
+   current page uses; Tailwind v4 `hover:` is already gated by default, verify in the built CSS).
+   Press feedback (`active:`) on every control. "A viewport is not a device": check
+   `matchMedia('(hover: hover)')` in the Playwright mobile project (`hasTouch: true`,
+   `isMobile: true`), not a narrow desktop window.
+4. Core Web Vitals on a throttled mobile profile (Lighthouse mobile, or Playwright with CPU 4×
+   slowdown and "Slow 4G"): LCP ≤ 2.5 s with the plate as the LCP element served through
+   `next/image` with `priority`, `sizes` and explicit width/height; CLS < 0.1 (every picture and
+   the kitchen row reserve their box); INP < 200 ms. Record the numbers in `direction.md` beside
+   the before numbers from the current landing. The repo's web-perf contract (CLAUDE.md) asks
+   for a config-declared budget: use the existing one if present, else add one and cite it.
+5. Images: WebP/AVIF through `next/image`, `sizes` tuned so a 390px phone downloads ≤ 800px wide
+   files; total first-screen transfer ≤ 500 KB on the phone project; lazy-load everything below
+   the strip.
+6. No horizontal scroll at 360, 390, 414, 768, 1024 (assert `scrollWidth === clientWidth`);
+   the diagonal slab and the plate must not create it.
+7. Motion: the plate's settle only; `prefers-reduced-motion` still; no backdrop blur, no filters
+   on scroll (glass ruling: low-end Android).
+8. Thumb reach: the primary action on the first screen sits in the lower half of the phone
+   viewport; consider a sticky bottom "Find kitchens" bar on the phone only if the field scrolls
+   out, and only without covering content (the storefront already publishes
+   `--jt-bottom-chrome`; reuse the pattern).
+9. The step-8 blind A/B is shown to Sanmi on a PHONE-WIDTH capture first, desktop second.
+10. Tablet (768) is its own look, not a stretched phone: two-column where the sheet says so.
+
+Playwright projects for the gate: `Mobile Safari` (iPhone 14) and `Pixel 7` device descriptors
+plus desktop Chrome; the public-surfaces e2e already runs a mobile project (check
+`frontend/playwright.config.ts` and reuse its names).
