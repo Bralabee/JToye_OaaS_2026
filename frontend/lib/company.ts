@@ -133,6 +133,26 @@ export interface PublicContact {
   anyRoute: boolean
 }
 
+/**
+ * The dialable form of a configured phone number, for a `tel:` href.
+ *
+ * Stripping separators alone is not enough (PR 1080 round 1): the common UK
+ * international spelling writes the trunk zero in brackets after the country
+ * code, and keeping that zero yields a number that dials the country code
+ * followed by 0 and fails. So for a number with an international prefix
+ * (a leading +) a bracketed zero group is dropped, a single leading + is kept,
+ * and every other non-digit (including any interior +) is removed. A national
+ * number keeps its leading zero and loses only its separators.
+ */
+function telDigits(phone: string): string {
+  const trimmed = phone.trim()
+  if (trimmed.startsWith("+")) {
+    const withoutTrunk = trimmed.replace(/\(\s*0\s*\)/g, "")
+    return `+${withoutTrunk.replace(/\D/g, "")}`
+  }
+  return trimmed.replace(/\D/g, "")
+}
+
 export function resolvePublicContact(
   info: CompanyInfo = getCompanyInfo()
 ): PublicContact {
@@ -142,7 +162,7 @@ export function resolvePublicContact(
     email,
     emailHref: email ? `mailto:${email}` : null,
     phone,
-    phoneHref: phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : null,
+    phoneHref: phone ? `tel:${telDigits(phone)}` : null,
     anyRoute: Boolean(email || phone),
   }
 }

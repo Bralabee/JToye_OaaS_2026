@@ -130,6 +130,29 @@ describe("resolvePublicContact", () => {
   })
 })
 
+/**
+ * Round 1 review (PR 1080, comment 4436097495): the tel: href used to strip only
+ * separators, so the letterhead spelling "+44 (0)20 7946 0000" became
+ * tel:+4402079460000, which dials +44 0 20 and fails while the visible text
+ * looks right. A literal table, so scripts/count-test-blocks.mjs can count it.
+ */
+const PHONE_SPELLINGS: Array<[string, string, string]> = [
+  ["international with a (0) trunk group", "+44 (0)20 7946 0000", "tel:+442079460000"],
+  ["plain national", "020 7946 0000", "tel:02079460000"],
+  ["already clean E.164", "+442079460000", "tel:+442079460000"],
+  ["international with an interior plus", "+44 20 7946+0000", "tel:+442079460000"],
+]
+
+describe("resolvePublicContact builds a dialable tel: href", () => {
+  it.each(PHONE_SPELLINGS)("%s: %s -> %s", (_label, configured, href) => {
+    process.env[PHONE_VAR] = configured
+    const r = resolvePublicContact()
+    expect(r.phoneHref).toBe(href)
+    // The visible text stays exactly as configured.
+    expect(r.phone).toBe(configured)
+  })
+})
+
 describe("no contact value is hardcoded", () => {
   it.each(["app/contact/page.tsx", "lib/company.ts"])(
     "%s carries no email address or phone literal",
