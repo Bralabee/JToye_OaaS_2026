@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Design-Run Project Layer and design-run Agent Targets (#1078) — 2026-11-01
+
+Docs and agent text only. No code, API, migration or runtime change.
+
+- **`design/`, new.** The project layer of the `design-run` process. `brief.md` (the public landing page, confirmed by Sanmi), `decisions.md` (nine rulings carried from `.planning/sketches/MANIFEST.md` with source, status and a review trigger, including the 2026-11-01 lifts and step-2 rulings), `rulings.tsv` (eight design-skill conflict rulings), `rubric.md` (six past verdicts as checkable lines) and `references/README.md` (waiting for the owner's references).
+- **Agent targets.** The VS Code, Cursor and `AGENTS.md` targets for `oaas-frontend` and `oaas-release-qa` are regenerated from jtoye-orgos#47, so they name `design-run` instead of the superseded `frontend-craft-sequence`.
+
 ### Role-Gated Dashboard Nav, Staff Invite Shop, Orders Search, Finance Tile States and Product Dialog Fixes (swarm epic #964) (#1076) — 2026-11-01
 
 Eight findings from the 2026-10-19 staging persona swarm, frontend only. No API, migration or core-java change.
