@@ -61,9 +61,6 @@ const WITH_NOTE = order({
   allergyNote: NOTE,
 })
 
-const storedValues = (store: Storage) =>
-  Array.from({ length: store.length }, (_, i) => store.getItem(store.key(i) ?? "") ?? "")
-
 beforeEach(() => {
   mockGet.mockReset()
   mockGetSession.mockReset()
@@ -113,13 +110,16 @@ describe("My Orders shows the customer's own allergy note (SW-PRY-06)", () => {
     expect(screen.getByText('<img src="x" alt="injected">No nuts')).toBeInTheDocument()
   })
 
-  it("stores the note nowhere client-side, including after the card's tracking hand-off (C5)", () => {
-    render(<OrdersClient initial={loadOf(WITH_NOTE)} email="buyer@example.com" />)
-    fireEvent.click(screen.getAllByRole("link", { name: /track/i })[0])
-    expect(sessionStorage.getItem("jtoye-track-email")).toBe("buyer@example.com")
-    for (const value of [...storedValues(localStorage), ...storedValues(sessionStorage)]) {
-      expect(value).not.toContain("peanuts")
-    }
+  // Review R1: the old "stores the note nowhere" arm could not fail (nothing here writes Web Storage).
+  // What CAN regress is the opt-in: the proxy strips the note for any caller that does not send
+  // include=allergyNote (route.test.ts), so a refresh without it would silently drop the note.
+  it("refreshes through the proxy WITH include=allergyNote, so the note survives a refresh", async () => {
+    render(<OrdersClient initial={{ state: "error", reason: "upstream" }} email="buyer@example.com" />)
+    fireEvent.click(screen.getByTestId("orders-retry"))
+    const block = await screen.findByTestId(`order-allergy-note-${WITH_NOTE.orderNumber}`)
+    expect(within(block).getByText(NOTE)).toBeInTheDocument()
+    const [url] = (global.fetch as jest.Mock).mock.calls[0]
+    expect(new URL(String(url), "http://localhost").searchParams.get("include")).toBe("allergyNote")
   })
 })
 
