@@ -298,9 +298,8 @@ termination, certificate issuance or renewal, or HSTS. (ASVS V9 is deliberately 
 **v1.12.2**, where `allow-snippet-annotations` defaults to `false` and `annotations-risk-level`
 defaults to `High` (hardened defaults since ingress-nginx v1.9.0). The base ingress carries
 `nginx.ingress.kubernetes.io/configuration-snippet` with 5 `more_set_headers` directives — including
-HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Permissions-Policy` (`Referrer-Policy` is sent
-by the apps themselves since issue #1071, so it is present locally too). That
-annotation is in the Critical-risk class, so the validating admission webhook **rejects both Ingress
+HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Permissions-Policy` (`Referrer-Policy` the apps
+send themselves since issue #1071). That annotation is in the Critical-risk class, so the validating admission webhook **rejects both Ingress
 objects**. The local overlay therefore nulls the annotation. It is **UNCHANGED in staging and
 production**, and CI asserts both halves (the local render has no snippet; the production render
 keeps it).
