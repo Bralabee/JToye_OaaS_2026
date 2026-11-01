@@ -525,6 +525,8 @@ describe("redeem refused: each status reads as its own state, without the server
     await findAlert(LINK_OPENED)
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
     noContinue()
+    // A first visit, not a resume: no reload is offered (PR #1072 review round 1, finding 3 guard).
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
   })
 })
 
@@ -817,6 +819,39 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
       reload.mockRestore()
     }
     expect(mockedPost).toHaveBeenCalledTimes(0)
+  })
+
+  it("reload after redeem on a bundle with NO publishable key: the 'link has now been opened' alert, and no Try again (a reload cannot add a build-time key)", async () => {
+    // PR #1072 review round 1, finding 2: a missing key is a build constant, so a reload lands on the
+    // same entry and the same state; offering it would loop for ever.
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    render(<PayClient />)
+
+    await findAlert(LINK_OPENED)
+    expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+  })
+
+  it("reload after redeem when the Payment Element fails to load: the 'link has now been opened' alert carries Try again, which reloads the page", async () => {
+    // PR #1072 review round 1, finding 3: the same resume path, one step later. The entry is still kept,
+    // so a reload recovers here exactly as it does for a Stripe.js load failure.
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    render(<PayClient />)
+    await screen.findByTestId("stripe-elements")
+    fireEvent.click(screen.getByRole("button", { name: /simulate payment element load error/i }))
+
+    await findAlert(LINK_OPENED)
+    expect(screen.queryByTestId("stripe-elements")).toBeNull()
+    expect(window.history.state).toEqual({ __NA: true, [`jtoyePayResume`]: RESUME })
+    const retry = screen.getByRole("button", { name: "Try again" })
+    const reload = jest.spyOn(payNavigation, "reload").mockImplementation(() => {})
+    try {
+      fireEvent.click(retry)
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      reload.mockRestore()
+    }
   })
 
   it("the reload seam is the browser's own window.location.reload (jsdom reports the navigation it cannot perform)", () => {

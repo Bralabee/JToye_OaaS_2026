@@ -1,0 +1,185 @@
+# PR #1072 review round 1: findings 2 (no-key reload loop) and 3 (resume-path Payment Element failure)
+# base: b80b1dcf (PR head b80b1dcf)
+
+## RED (pre-fix pay-client.tsx; two new blocks + a no-button assertion on the first-visit Payment Element block)
+$ npx jest --ci --runTestsByPath app/pay/__tests__/pay-client.test.tsx
+npm notice run frontend@2.3.0 npx
+npm notice run 'jest' --ci --runTestsByPath app/pay/__tests__/pay-client.test.tsx
+  Using tsconfig file: tsconfig.build.json
+  console.error
+    An update to PayClient inside a test was not wrapped in act(...).
+    
+    When testing, code that causes React state updates should be wrapped into act(...):
+    
+    act(() => {
+      /* fire events that update state */
+    });
+    /* assert on the output */
+    
+    This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      407 |       }
+      408 |       if (!platform) {
+    > 409 |         setPhase({ kind: "active", preview, notUsed: true })
+          |         ^
+      410 |         return
+      411 |       }
+      412 |
+
+      at ../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:20466:19
+      at runWithFiberInDEV (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:1048:13)
+      at warnIfUpdatesNotWrappedWithActDEV (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:20465:9)
+      at scheduleUpdateOnFiber (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:17920:11)
+      at dispatchSetStateInternal (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:9556:13)
+      at dispatchSetState (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:9513:7)
+      at setPhase (app/pay/pay-client.tsx:409:9)
+
+  console.error
+    An update to PayClient inside a test was not wrapped in act(...).
+    
+    When testing, code that causes React state updates should be wrapped into act(...):
+    
+    act(() => {
+      /* fire events that update state */
+    });
+    /* assert on the output */
+    
+    This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+      407 |       }
+      408 |       if (!platform) {
+    > 409 |         setPhase({ kind: "active", preview, notUsed: true })
+          |         ^
+      410 |         return
+      411 |       }
+      412 |
+
+      at ../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:20466:19
+      at runWithFiberInDEV (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:1048:13)
+      at warnIfUpdatesNotWrappedWithActDEV (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:20465:9)
+      at scheduleUpdateOnFiber (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:17920:11)
+      at dispatchSetStateInternal (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:9556:13)
+      at dispatchSetState (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/react-dom/cjs/react-dom-client.development.js:9513:7)
+      at setPhase (app/pay/pay-client.tsx:409:9)
+
+FAIL app/pay/__tests__/pay-client.test.tsx
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › reload after redeem on a bundle with NO publishable key: the 'link has now been opened' alert, and no Try again (a reload cannot add a build-time key)
+
+    expect(received).toBeNull()
+
+    Received: <button class="mt-4 inline-flex h-11 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700" type="button">Try again</button>
+
+      831 |     await findAlert(LINK_OPENED)
+      832 |     expect(mockedLoadStripe).toHaveBeenCalledTimes(0)
+    > 833 |     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+          |                                                                 ^
+      834 |   })
+      835 |
+      836 |   it("reload after redeem when the Payment Element fails to load: the 'link has now been opened' alert carries Try again, which reloads the page", async () => {
+
+      at Object.toBeNull (app/pay/__tests__/pay-client.test.tsx:833:65)
+
+  ● /pay with no link: Stripe's return, the reload resume, and the empty state › reload after redeem when the Payment Element fails to load: the 'link has now been opened' alert carries Try again, which reloads the page
+
+    TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "Try again"
+
+    Here are the accessible roles:
+
+      paragraph:
+
+      Name "":
+      <p
+        class="text-sm text-slate-600 [overflow-wrap:anywhere]"
+      />
+
+      Name "":
+      <p
+        class="mt-2 text-2xl font-semibold leading-tight tabular-nums text-slate-900"
+      />
+
+      Name "":
+      <p
+        class="mt-2 text-sm text-slate-600 [overflow-wrap:anywhere]"
+      />
+
+      --------------------------------------------------
+      heading:
+
+      Name "Pay Mama Ade's Kitchen":
+      <h1
+        class="mt-1 text-2xl font-semibold leading-tight text-slate-900 focus:outline-none [overflow-wrap:anywhere]"
+        tabindex="-1"
+      />
+
+      --------------------------------------------------
+      alert:
+
+      Name "":
+      <p
+        class="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+        role="alert"
+      />
+
+      --------------------------------------------------
+
+    Ignored nodes: comments, script, style
+    <body>
+      <div>
+        <div
+          class="px-4 py-8"
+        >
+          <div
+            class="mx-auto max-w-md rounded-2xl border border-cream-100 bg-white p-6"
+          >
+            <p
+              class="text-sm text-slate-600 [overflow-wrap:anywhere]"
+            >
+              Mama Ade's Kitchen
+            </p>
+            <h1
+              class="mt-1 text-2xl font-semibold leading-tight text-slate-900 focus:outline-none [overflow-wrap:anywhere]"
+              tabindex="-1"
+            >
+              Pay Mama Ade's Kitchen
+            </h1>
+            <p
+              class="mt-2 text-2xl font-semibold leading-tight tabular-nums text-slate-900"
+            >
+              £12.50
+            </p>
+            <p
+              class="mt-2 text-sm text-slate-600 [overflow-wrap:anywhere]"
+            >
+              Order ORD-30-18-0001
+            </p>
+            <p
+              class="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
+              role="alert"
+            >
+              We couldn't load the card form, and this link has now been opened. Ask the shop to send you a new link. Nothing has been charged.
+            </p>
+          </div>
+        </div>
+      </div>
+    </body>
+
+      845 |     expect(screen.queryByTestId("stripe-elements")).toBeNull()
+      846 |     expect(window.history.state).toEqual({ __NA: true, [`jtoyePayResume`]: RESUME })
+    > 847 |     const retry = screen.getByRole("button", { name: "Try again" })
+          |                          ^
+      848 |     const reload = jest.spyOn(payNavigation, "reload").mockImplementation(() => {})
+      849 |     try {
+      850 |       fireEvent.click(retry)
+
+      at Object.getElementError (../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/@testing-library/dom/dist/config.js:37:19)
+      at ../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+      at ../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+      at ../../../../../../../home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+      at Object.getByRole (app/pay/__tests__/pay-client.test.tsx:847:26)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 44 passed, 46 total
+Snapshots:   0 total
+Time:        1.557 s, estimated 2 s
+Ran all test suites within paths "app/pay/__tests__/pay-client.test.tsx".
+rc=1
