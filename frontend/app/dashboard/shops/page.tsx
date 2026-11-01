@@ -710,12 +710,14 @@ export default function ShopsPage() {
                           <IconButton
                             onClick={() => setSlotsShop(shop)}
                             label={`Scheduled slots and WhatsApp link for ${shop.name}`}
+                            touchTarget
                             icon={<Calendar className="h-4 w-4" />}
                           />
                           {shopCaps.canEditShop(shop.id) && (
                             <IconButton
                               onClick={() => openEditDialog(shop)}
                               label={`Edit shop ${shop.name}`}
+                              touchTarget
                               icon={<Pencil className="h-4 w-4" />}
                             />
                           )}
@@ -724,6 +726,7 @@ export default function ShopsPage() {
                               onClick={() => openDeleteDialog(shop)}
                               className="text-red-600 hover:bg-red-50 hover:text-red-700"
                               label={`Delete shop ${shop.name}`}
+                              touchTarget
                               icon={<Trash2 className="h-4 w-4" />}
                             />
                           )}

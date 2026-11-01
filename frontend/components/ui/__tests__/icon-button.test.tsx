@@ -53,4 +53,18 @@ describe("IconButton (#451)", () => {
     expect(cls).toContain("h-11")
     expect(cls).not.toContain("h-8")
   })
+
+  it("SW-TND-12: touchTarget makes a 44px square below md and keeps the 32px square from md", () => {
+    render(<IconButton label="Edit shop A" touchTarget icon={<Trash2 />} />)
+    const cls = screen.getByRole("button").className.split(/\s+/)
+    expect(cls).toEqual(expect.arrayContaining(["h-11", "w-11", "md:h-8", "md:w-8"]))
+    expect(cls).not.toContain("h-8")
+  })
+
+  it("SW-TND-12: without touchTarget the 32px default is unchanged everywhere", () => {
+    render(<IconButton label="Edit shop A" icon={<Trash2 />} />)
+    const cls = screen.getByRole("button").className.split(/\s+/)
+    expect(cls).toEqual(expect.arrayContaining(["h-8", "w-8"]))
+    expect(cls).not.toContain("h-11")
+  })
 })

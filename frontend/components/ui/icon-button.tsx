@@ -23,6 +23,12 @@ export interface IconButtonProps
    * control already sits inside a tooltip primitive).
    */
   tooltip?: string | false
+  /**
+   * SW-TND-12 (swarm epic #964): a 44px square below `md` (the WCAG 2.5.5 / Apple HIG tap target),
+   * the 32px default from `md`, where the sidebar layout and a fine pointer take over. For row
+   * actions that sit side by side on a phone. Off by default, so desktop density is unchanged.
+   */
+  touchTarget?: boolean
 }
 
 /**
@@ -37,14 +43,14 @@ export interface IconButtonProps
  * caller can go larger without fighting the default.
  */
 const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
-  ({ label, icon, tooltip, className, variant = "ghost", size = "sm", ...props }, ref) => (
+  ({ label, icon, tooltip, touchTarget = false, className, variant = "ghost", size = "sm", ...props }, ref) => (
     <Button
       ref={ref}
       variant={variant}
       size={size}
       aria-label={label}
       title={tooltip === false ? undefined : (tooltip ?? label)}
-      className={cn("h-8 w-8 p-0", className)}
+      className={cn("h-8 w-8 p-0", touchTarget && "h-11 w-11 md:h-8 md:w-8", className)}
       {...props}
     >
       <span aria-hidden="true" className="contents">
