@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The Customer's Allergy Note on Signed-in My Orders Only, Under T-31.1-46 (swarm epic #964) (#1082) — 2026-11-01
+
+SW-PRY-06, owner ruling 2026-11-01 after a tenancy-security assessment (SAFE WITH CONDITIONS). A customer can now read back the allergy note they sent, on the signed-in My orders page and nowhere else. No migration, no RLS policy change.
+
+- **C1:** `GET /public/orders/mine` returns `CustomerOrderStatus` (`PublicOrderStatus` plus `allergyNote`), built by `PublicStorefrontService.getVerifiedCustomerOrders`, which only `getMyOrders` calls, behind `CustomerJwtVerifier`. `PublicOrderStatus` is unchanged, so the tracking response and the `?email=&verify=` history still never carry the note (T-31.1-46).
+- **C2:** the OpenAPI snapshot change is additive and limited to `/mine`: oasdiff reports no breaking change, only two `response-optional-property-added` entries.
+- **C3:** the note is returned only where `orders.contact_verified` is TRUE. A guest order (false) or a vendor/legacy one (NULL) returns none.
+- **C4:** after an Article 17 erasure `/mine` carries no note (T-31.1-47).
+- **C5:** `Cache-Control: no-store` on `/mine` and on the `/api/customer-orders` proxy. The DTO's `toString` leaves the note out. The frontend keeps it in React state only and renders it on My orders, never on `/track`.
+- Tests: five `AllergyNoteAckIntegrationTest` arms against a real RS256 customers-realm verifier (C1, customer B, staff-realm and `email_verified=false` 401, C3, C4), and seven Jest blocks. Threat row T-31.1-102 added to `31.1-SECURITY.md`.
+
 ### Terms and Contact Routes, Landing Copy Aligned to the Pilot, Strategy Pages Unlinked and Noindexed, Absolute Metadata (swarm epic #964) (#1080) — 2026-11-01
 
 Frontend only: six findings from the 2026-10-19 staging persona swarm, each re-checked on main first. No API, migration or core-java change.
