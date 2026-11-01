@@ -1,7 +1,8 @@
 /**
  * #838 acceptance in a real browser (D-04, 31.1-26): a signed-in customer finds "My account" in the
  * storefront menu, and "Download my data" and "Delete my account" each lodge a request through the
- * EXISTING public intake — each one answered by a "Confirm your data request" email, because the
+ * EXISTING public intake — each one answered by a "Confirm your request …" email (VERIFY_SUBJECT
+ * below: "… for a copy of your data" or "… to erase your data", SW-SAM-08), because the
  * intake still verifies by email whoever asks.
  *
  * TWO BLOCKS.
@@ -18,7 +19,7 @@
  *      nav, presses each action, and requires:
  *        - exactly one intake POST per action, carrying the signed-in address and the right type;
  *        - the constant "Check your email to confirm" copy;
- *        - one Mailhog message per action, subject "Confirm your data request", to that address.
+ *        - one Mailhog message per action, subject starting VERIFY_SUBJECT, to that address.
  *      The deletion is lodged and NEVER confirmed: the spec does not open the emailed link, so the
  *      throwaway account is not erased by the run (the confirm page is dsar-verify-link.spec.ts's).
  *      The Mailhog count is the non-vacuity control: a page that showed the copy without lodging
@@ -43,7 +44,9 @@ import { servedHtml, countOf } from "./helpers/served-html"
 const MAILHOG = process.env.MAILHOG_URL || "http://localhost:8025"
 const INTAKE_PATH = "/api/v1/public/gdpr/dsar"
 const LODGED_HEADING = "Check your email to confirm"
-const VERIFY_SUBJECT = "Confirm your data request"
+// SW-SAM-08 (swarm epic #964): the subject now names the request ("… for a copy of your data" /
+// "… to erase your data"); this prefix is shared by both.
+const VERIFY_SUBJECT = "Confirm your request"
 
 /** The chrome-only `<h2>` floor (ssr-coverage.spec.ts measured it on a page that renders no body). */
 const FOOTER_H2_FLOOR = 3

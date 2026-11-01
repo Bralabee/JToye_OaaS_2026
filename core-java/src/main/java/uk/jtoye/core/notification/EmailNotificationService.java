@@ -22,10 +22,13 @@ import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderStateChangeEvent;
+import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
 import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -119,6 +122,25 @@ public class EmailNotificationService {
     public static String allergenFlagCopy(OrderAllergenFlagDto flag) {
         return "Check — " + flag.productName() + ": the ingredients list mentions " + flag.allergenName()
                 + ", which the kitchen has not declared for this item. Ask the kitchen before you order.";
+    }
+
+    /**
+     * frontend/lib/order-status-announcement.ts ORDER_STATUS_COPY labels: the words the tracking
+     * pages show for each status (parity-tested), so an email and the page name a status alike.
+     */
+    static final Map<OrderStatus, String> CUSTOMER_STATUS_LABELS = Map.of(
+            OrderStatus.DRAFT, "Awaiting payment",
+            OrderStatus.PENDING, "Received",
+            OrderStatus.CONFIRMED, "Confirmed",
+            OrderStatus.PREPARING, "Preparing",
+            OrderStatus.READY, "Ready",
+            OrderStatus.COMPLETED, "Completed",
+            OrderStatus.CANCELLED, "Cancelled",
+            OrderStatus.REFUNDED, "Refunded");
+
+    /** The customer's word for a status; a status with no mapping reads as its name, never blank. */
+    static String customerStatusLabel(OrderStatus status) {
+        return CUSTOMER_STATUS_LABELS.getOrDefault(status, status.name());
     }
 
     /** The From display-name suffix (D-13). */
@@ -261,12 +283,16 @@ public class EmailNotificationService {
     public void sendOrderCancelledNotification(OrderStateChangeEvent event, String recipientEmail,
                                                CustomerEmailContext context) {
         CustomerEmailContext ctx = orUnknown(context);
+        // SW-ADE-12 (swarm epic #964): the customer's word for where the order had got to, never
+        // the enum name (an unpaid card order read "Previous status: DRAFT"). No line at all when
+        // the event carries no previous status, rather than "null".
+        String previous = event.previousStatus() == null ? ""
+                : "It was cancelled while it was: " + customerStatusLabel(event.previousStatus()) + ".\n";
         String lead = """
                 Your order %s from %s has been cancelled.
 
-                Previous status: %s
-                If this was unexpected, please contact %s directly.""".formatted(
-                event.orderNumber(), shopLabel(ctx), event.previousStatus(), shopLabel(ctx));
+                %sIf this was unexpected, please contact %s directly.""".formatted(
+                event.orderNumber(), shopLabel(ctx), previous, shopLabel(ctx));
         // #981: order-cancelled is a non-suppressible transactional notice — never carries List-Unsubscribe.
         send(event, recipientEmail, "order-cancelled", subject(event, "Cancelled"), lead, ctx, false, false);
     }
@@ -289,38 +315,57 @@ public class EmailNotificationService {
      * bearer token until it is used or expires. Only the event name is logged, and on failure only the
      * exception class (a mail exception's message can quote the address).
      *
+     * <p><b>SW-TND-02 (swarm epic #964).</b> The subject reads as an invitation ("{inviter} has
+     * invited you to help run {business} on J'Toye"), and the body names the role, the shop (or all
+     * shops) and, from {@link ShopRole#capabilities()}, what the role can do.
+     *
      * @param recipientEmail the normalised invitee address; the link goes here and nowhere else
+     * @param role           the grant the invitation carries; named and described in the body
+     * @param shopName       the granted shop's name, or null for a tenant-wide grant (the scope is
+     *                       decided by null, never by the words)
      * @param link           {accept-base-url}#token={tenantId}.{token} (token in the fragment, 37-08); never
      *                       logged, never stored readable
      * @param expiresAt      the same instant written to {@code staff_invite.expires_at}
      */
     @Async
     public void sendStaffInvite(String recipientEmail, String inviterName, String businessName,
-                                String roleLabel, String shopLabel, String link, OffsetDateTime expiresAt) {
+                                ShopRole role, String shopName, String link, OffsetDateTime expiresAt) {
         if (!emailEnabled) {
             log.debug("event=staff_invite_email_skipped reason=email_disabled");
             return;
         }
         if (recipientEmail == null || recipientEmail.isBlank() || link == null || link.isBlank()
-                || expiresAt == null) {
+                || expiresAt == null || role == null) {
             log.warn("event=staff_invite_email_skipped reason=incomplete");
             return;
         }
         String inviter = Objects.requireNonNullElse(sanitise(inviterName), "A Group admin");
         String business = Objects.requireNonNullElse(sanitise(businessName), "a business");
-        String role = Objects.requireNonNullElse(sanitise(roleLabel), "Staff");
-        String shop = Objects.requireNonNullElse(sanitise(shopLabel), "all shops");
+        String roleName = role.label();
+        // SW-TND-02, R1 (#1079): the scope is the caller's, never read from the words. A null shopName
+        // is a tenant-wide grant; any non-null one is one shop, even if it is literally "all shops" or
+        // sanitises to nothing (then the shop is not named, but the grant is still not widened).
+        String where;
+        if (shopName == null) {
+            where = ", for all shops.";
+        } else {
+            String shop = sanitise(shopName);
+            where = shop == null ? " at one shop." : " at " + Sentences.withFullStop(shop);
+        }
         String expiry = expiresAt.atZoneSameInstant(ClockConfig.UK_ZONE).format(INVITE_EXPIRY_FORMAT);
-        String subject = inviter + " invited you to " + business + " on " + PLATFORM_NAME;
+        String subject = inviter + " has invited you to help run " + business + " on " + PLATFORM_NAME;
         String body = """
-                %s has invited you to help run %s on J'Toye as %s for %s
+                %s has invited you to help run %s on J'Toye.
+
+                Your role: %s%s
+                %s
 
                 Accept the invitation: %s
 
                 This link works once and expires on %s (UK time).
 
                 If you weren't expecting this, you can ignore this email. Nothing happens unless you accept.
-                """.formatted(inviter, business, role, Sentences.withFullStop(shop), link, expiry);
+                """.formatted(inviter, business, roleName, where, role.capabilities(), link, expiry);
         try {
             MimeMessage mime = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
@@ -410,9 +455,9 @@ public class EmailNotificationService {
     // ---- Body ------------------------------------------------------------------------------------
 
     /**
-     * The whole plain-text body: the status lead, the tracking link, (order received only) the
-     * allergen record, the seller block, (order received only) the cancellation statement, and the
-     * platform footer.
+     * The whole plain-text body: the status lead, the order summary (when the listener read one), the
+     * tracking link, (order received only) the allergen record, the seller block, (order received
+     * only) the cancellation statement, and the platform footer.
      */
     String body(OrderStateChangeEvent event, String lead, CustomerEmailContext ctx, boolean orderReceived) {
         return body(event, lead, ctx, orderReceived, null);
@@ -421,7 +466,12 @@ public class EmailNotificationService {
     String body(OrderStateChangeEvent event, String lead, CustomerEmailContext ctx, boolean orderReceived,
                 @Nullable String unsubscribePageUrl) {
         StringBuilder b = new StringBuilder();
-        b.append(lead).append("\n\n").append(trackingLink(event)).append('\n');
+        b.append(lead).append("\n\n");
+        String summary = orderSummary(ctx);
+        if (summary != null) {
+            b.append(summary).append('\n');
+        }
+        b.append(trackingLink(event)).append('\n');
         if (orderReceived) {
             b.append('\n').append(allergenRecord(ctx));
         }
@@ -431,6 +481,59 @@ public class EmailNotificationService {
         }
         b.append('\n').append(footer(ctx, unsubscribePageUrl));
         return b.toString();
+    }
+
+    /**
+     * SW-JRD-15 (swarm epic #964, issue #826): what was ordered, from which shop, for how much, and
+     * where it goes. Every value but the total is customer- or vendor-written, so each passes
+     * {@link #oneLine}: a product name cannot forge a second "Total:" line. Null when the listener
+     * read no summary: the email then has no section rather than an empty one or a £0.00 total.
+     */
+    private String orderSummary(CustomerEmailContext ctx) {
+        OrderEmailSummary summary = ctx.summary();
+        if (summary == null) {
+            return null;
+        }
+        StringBuilder b = new StringBuilder();
+        b.append("Your order from ").append(shopLabel(ctx)).append('\n');
+        for (OrderEmailSummary.Line line : summary.lines()) {
+            String name = oneLine(line.name());
+            b.append(name == null ? "Item" : name).append(" \u00d7 ")
+                    .append(line.quantity() == null ? "?" : line.quantity()).append('\n');
+        }
+        // R1 (review on #1079): the total includes the delivery fee, so the fee is named or the lines
+        // cannot be reconciled with it; a split-deposit order (ADR-0007 / V87) also says what was
+        // charged now and what is still due, rather than only a gross figure.
+        if (summary.deliveryFeePennies() != null && summary.deliveryFeePennies() != 0) {
+            b.append("Delivery fee: ").append(pounds(summary.deliveryFeePennies())).append('\n');
+        }
+        if (summary.totalPennies() != null) {
+            b.append("Total: ").append(pounds(summary.totalPennies())).append('\n');
+        }
+        if (summary.depositPennies() != null && summary.balanceDuePennies() != null) {
+            b.append("Paid now: ").append(pounds(summary.depositPennies())).append('\n');
+            b.append("Balance due: ").append(pounds(summary.balanceDuePennies())).append('\n');
+        }
+        if (ctx.fulfilmentType() == FulfilmentType.COLLECTION) {
+            String where = oneLine(summary.collectionAddress());
+            b.append("Collect from: ").append(shopLabel(ctx));
+            if (where != null) {
+                b.append(", ").append(where);
+            }
+            b.append('\n');
+        } else {
+            List<String> address = summary.deliveryAddress().stream()
+                    .map(EmailNotificationService::oneLine).filter(Objects::nonNull).toList();
+            if (!address.isEmpty()) {
+                b.append("Delivery to: ").append(String.join(", ", address)).append('\n');
+            }
+        }
+        return b.toString();
+    }
+
+    /** "£12.50": pennies as a UK customer reads a price, the same BigDecimal rendering as FinanceCsvExporter. */
+    static String pounds(long pennies) {
+        return "\u00a3" + BigDecimal.valueOf(pennies, 2).toPlainString();
     }
 
     /** D-08: three statements, never merged; null is never rendered as "none". */

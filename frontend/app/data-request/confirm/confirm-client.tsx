@@ -11,7 +11,7 @@ import publicApiClient from "@/lib/public-api-client"
  * THE TOKEN ARMS A REQUEST, and the request may be an erasure, so this
  * component is mostly about WHEN it is spent:
  *
- *   1. It arrives in the URL fragment (`#token=…`), which a browser never sends
+ *   1. It arrives in the URL fragment (`#token=…&type=…`), which a browser never sends
  *      to any server, and is read once on mount.
  *   2. It is removed from the address bar immediately (`history.replaceState`),
  *      so it does not survive in history, a copied URL or a screenshot.
@@ -54,12 +54,50 @@ export const CONFIRM_COPY: Record<Outcome, Copy> = {
   },
 }
 
+type RequestKind = "access" | "erasure" | "unknown"
+
+/**
+ * SW-SAM-08 (swarm epic #964): what the page says before the press, by request type. The email link
+ * carries `&type=access|erasure` after the token in the fragment; it is DISPLAY ONLY — the press
+ * posts the token alone and the server acts on the type it stored. A link without a type (sent
+ * before this change) or with an unknown one keeps the general wording.
+ */
+export const REQUEST_TYPE_COPY: Record<RequestKind, Copy> = {
+  access: {
+    heading: "Confirm your request for a copy of your data",
+    body:
+      "Somebody asked us for a copy of the personal data held for your email address. If that was " +
+      "you, press the button below. We will not act on the request until you do.",
+  },
+  erasure: {
+    heading: "Confirm your request to erase your data",
+    body:
+      "Somebody asked us to erase the personal data held for your email address. If that was you, " +
+      "press the button below. We will not act on the request until you do.",
+  },
+  unknown: {
+    heading: "Confirm your data request",
+    body:
+      "Somebody asked us to act on the personal data held for your email address. If that was " +
+      "you, press the button below. We will not act on the request until you do.",
+  },
+}
+
+function toRequestKind(type: string | null): RequestKind {
+  return type === "access" || type === "erasure" ? type : "unknown"
+}
+
 type Phase =
   | { kind: "checking" }
-  | { kind: "ready" }
-  | { kind: "loading" }
-  | { kind: "failed" }
+  | { kind: "ready"; request: RequestKind }
+  | { kind: "loading"; request: RequestKind }
+  | { kind: "failed"; request: RequestKind }
   | { kind: "answered"; outcome: Outcome }
+
+/** The request a pre-answer phase is about; "unknown" once answered (nothing names it then). */
+function requestOf(phase: Phase): RequestKind {
+  return "request" in phase ? phase.request : "unknown"
+}
 
 function toOutcome(status: unknown): Outcome {
   return status === "verified" || status === "already_verified" ? status : "invalid"
@@ -69,6 +107,7 @@ export function ConfirmClient() {
   const tokenRef = useRef<string | null>(null)
   const inFlight = useRef(false)
   const [phase, setPhase] = useState<Phase>({ kind: "checking" })
+  const kindRef = useRef<RequestKind>("unknown")
 
   useEffect(() => {
     const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""))
@@ -84,23 +123,30 @@ export function ConfirmClient() {
     // Only a token actually read may replace the held one: under Strict Mode
     // (next dev) this effect runs twice, and the second run sees the fragment
     // the first run already stripped.
-    if (token && token.trim()) tokenRef.current = token.trim()
+    if (token && token.trim()) {
+      tokenRef.current = token.trim()
+      kindRef.current = toRequestKind(fragment.get("type"))
+    }
     // The fragment exists only in the browser, so which state to show can only be
     // decided after mount. No request is made here.
-    setPhase(tokenRef.current ? { kind: "ready" } : { kind: "answered", outcome: "invalid" })
+    setPhase(
+      tokenRef.current
+        ? { kind: "ready", request: kindRef.current }
+        : { kind: "answered", outcome: "invalid" }
+    )
   }, [])
 
   async function confirm() {
     const token = tokenRef.current
     if (!token || inFlight.current) return
     inFlight.current = true
-    setPhase({ kind: "loading" })
+    setPhase((p) => ({ kind: "loading", request: requestOf(p) }))
     try {
       const res = await publicApiClient.post<{ status?: string }>(VERIFY_PATH, { token })
       tokenRef.current = null
       setPhase({ kind: "answered", outcome: toOutcome(res.data?.status) })
     } catch {
-      setPhase({ kind: "failed" })
+      setPhase((p) => ({ kind: "failed", request: requestOf(p) }))
     } finally {
       inFlight.current = false
     }
@@ -121,11 +167,10 @@ export function ConfirmClient() {
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-orange-50">
               <ShieldCheck className="h-6 w-6 text-orange-700" aria-hidden="true" />
             </span>
-            <h1 className="text-2xl font-semibold leading-tight text-slate-900">Confirm your data request</h1>
-            <p className="mt-3 text-sm leading-relaxed text-slate-600">
-              Somebody asked us to act on the personal data held for your email address. If that was
-              you, press the button below. We will not act on the request until you do.
-            </p>
+            <h1 className="text-2xl font-semibold leading-tight text-slate-900">
+              {REQUEST_TYPE_COPY[requestOf(phase)].heading}
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-slate-600">{REQUEST_TYPE_COPY[requestOf(phase)].body}</p>
             <p className="mt-3 text-sm leading-relaxed text-slate-600">
               If you did not make this request, close this page. Nothing will happen and no data
               will be changed.

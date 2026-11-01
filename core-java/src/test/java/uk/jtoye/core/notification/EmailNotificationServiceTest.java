@@ -269,7 +269,50 @@ class EmailNotificationServiceTest {
 
         assertEquals("Order ORD-500 \u2014 Cancelled", msg.getSubject());
         assertTrue(msg.getText().contains("has been cancelled"));
-        assertTrue(msg.getText().contains("PREPARING"));
+        // SW-ADE-12 (swarm epic #964): the customer's word for the status, never the enum.
+        assertThat(msg.getText())
+                .contains("It was cancelled while it was: Preparing.")
+                .doesNotContain("PREPARING")
+                .doesNotContain("Previous status");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12: an unpaid card order cancelled from DRAFT says 'Awaiting payment', not DRAFT")
+    void cancelledFromDraftUsesTheCustomerWord() {
+        service.sendOrderCancelledNotification(createTestEvent("ORD-501", OrderStatus.DRAFT, OrderStatus.CANCELLED),
+                RECIPIENT, ctx(null));
+
+        assertThat(sent().getText()).contains("It was cancelled while it was: Awaiting payment.").doesNotContain("DRAFT");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12: a cancel event with no previous status omits the line rather than printing null")
+    void cancelledWithNoPreviousStatusOmitsTheLine() {
+        service.sendOrderCancelledNotification(createTestEvent("ORD-502", null, OrderStatus.CANCELLED),
+                RECIPIENT, ctx(null));
+
+        assertThat(sent().getText()).doesNotContain("It was cancelled while it was").doesNotContain("null");
+    }
+
+    @Test
+    @DisplayName("SW-ADE-12 parity: every status label equals the storefront's ORDER_STATUS_COPY label")
+    void statusLabelsMatchTheStorefront() throws Exception {
+        String copy = Files.readString(IntegrationTestSupport.locateRepoFile("frontend/lib/order-status-announcement.ts"));
+        SoftAssertions softly = new SoftAssertions();
+        for (OrderStatus status : OrderStatus.values()) {
+            Matcher m = Pattern.compile("\\b" + status.name() + ":\\s*\\{\\s*label:\\s*\"([^\"]*)\"").matcher(copy);
+            assertTrue(m.find(), "ORDER_STATUS_COPY has no entry for " + status);
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            service.sendOrderCancelledNotification(createTestEvent("ORD-503", status, OrderStatus.CANCELLED),
+                    RECIPIENT, ctx(null));
+
+            verify(mailSender).send(messageCaptor.capture());
+            softly.assertThat(new Sent(SentMail.reparse(messageCaptor.getValue())).getText()).as(status.name())
+                    .contains("It was cancelled while it was: " + m.group(1) + ".");
+        }
+        softly.assertAll();
     }
 
     // --- Conditional sending ---
@@ -590,6 +633,122 @@ class EmailNotificationServiceTest {
             }
         }
         softly.assertAll();
+    }
+
+    // --- SW-JRD-15 (swarm epic #964, issue #826): every order email says what was ordered ---------
+
+    private static final OrderEmailSummary DELIVERY_SUMMARY = new OrderEmailSummary(
+            List.of(new OrderEmailSummary.Line("Jollof Rice", 2), new OrderEmailSummary.Line("Puff Puff", 1)),
+            1250L, List.of("1 High Street", "Flat 2", "Birmingham", "B1 1AA"), null);
+
+    private static CustomerEmailContext withSummary(FulfilmentType type, OrderEmailSummary summary) {
+        return new CustomerEmailContext(SHOP_NAME, SHOP_EMAIL, SELLER, OrderChannel.STOREFRONT,
+                List.of("Gluten", "Milk"), List.of("Gluten", "Milk"), List.of(), type, summary);
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: every order email names the shop, the item lines, the total and the delivery address")
+    void everyStatusCarriesTheOrderSummary() {
+        SoftAssertions softly = new SoftAssertions();
+        for (Status status : STATUSES) {
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            status.send().accept(service, withSummary(FulfilmentType.DELIVERY, DELIVERY_SUMMARY));
+
+            verify(mailSender, times(1)).send(messageCaptor.capture());
+            String body = new Sent(SentMail.reparse(messageCaptor.getValue())).getText();
+            softly.assertThat(body).as(status.name())
+                    .contains("Your order from " + SHOP_NAME)
+                    .containsPattern("Jollof Rice \\u00d7 2\\r?\\n")
+                    .containsPattern("Puff Puff \\u00d7 1\\r?\\n")
+                    .contains("Total: \u00a312.50")
+                    .contains("Delivery to: 1 High Street, Flat 2, Birmingham, B1 1AA");
+        }
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order says where to collect it, and never a delivery address")
+    void collectionOrderSaysWhereToCollect() {
+        OrderEmailSummary collection = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 6)), 900L,
+                List.of(), "12 Market Street, Birmingham");
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, collection));
+
+        assertThat(sent().getText())
+                .contains("Zobo \u00d7 6")
+                .contains("Total: \u00a39.00")
+                .contains("Collect from: " + SHOP_NAME + ", 12 Market Street, Birmingham")
+                .doesNotContain("Delivery to:");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order whose shop has no address still says it is for collection")
+    void collectionWithoutAShopAddressNamesTheShop() {
+        OrderEmailSummary collection = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 1)), 150L,
+                List.of(), null);
+
+        service.sendOrderConfirmed(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, collection));
+
+        assertThat(sent().getText()).containsPattern("Collect from: " + Pattern.quote(SHOP_NAME) + "\\r?\\n");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a vendor-controlled product name cannot forge a line of the summary")
+    void productNamesAreSingleLines() {
+        OrderEmailSummary forged = new OrderEmailSummary(
+                List.of(new OrderEmailSummary.Line("Jollof\r\nTotal: \u00a30.00", 1)), 500L, List.of(), null);
+
+        service.sendOrderPreparing(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, forged));
+
+        String body = sent().getText();
+        assertThat(body).contains("Jollof Total: \u00a30.00 \u00d7 1").contains("Total: \u00a35.00");
+        assertThat(body.lines().filter(l -> l.startsWith("Total:")).toList()).containsExactly("Total: \u00a35.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a delivery order names its fee, so the lines reconcile with the total")
+    void deliveryFeeIsNamed() {
+        OrderEmailSummary withFee = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Jollof Rice", 2)),
+                1250L, List.of("1 High Street"), null, 250L, null, null);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, withFee));
+
+        String body = sent().getText();
+        assertThat(body).containsPattern("Delivery fee: \u00a32\\.50\\r?\\nTotal: \u00a312\\.50");
+        assertThat(body).doesNotContain("Paid now").doesNotContain("Balance due");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a zero delivery fee prints no fee line")
+    void zeroDeliveryFeeIsNotPrinted() {
+        OrderEmailSummary noFee = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 1)),
+                500L, List.of("1 High Street"), null, 0L, null, null);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, noFee));
+
+        assertThat(sent().getText()).doesNotContain("Delivery fee").contains("Total: \u00a35.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a split-deposit order says what was paid now and what is still due")
+    void splitDepositSaysPaidNowAndBalanceDue() {
+        OrderEmailSummary deposit = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Party tray", 1)),
+                10000L, List.of(), "12 Market Street", 0L, 2000L, 8000L);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, deposit));
+
+        assertThat(sent().getText())
+                .containsPattern("Total: \u00a3100\\.00\\r?\\nPaid now: \u00a320\\.00\\r?\\nBalance due: \u00a380\\.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: no summary read means no summary section, never an empty one or a \u00a30.00 total")
+    void noSummaryMeansNoSection() {
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
+
+        assertThat(sent().getText()).doesNotContain("Your order from").doesNotContain("Total:");
     }
 
     // --- T-31.1-88 / ASVS V7: the recipient never reaches a log line ---------------------------------

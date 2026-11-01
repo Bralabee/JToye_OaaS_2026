@@ -24,7 +24,7 @@
 import { StrictMode } from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ConfirmPage, { metadata } from "../confirm/page"
-import { ConfirmClient, CONFIRM_COPY } from "../confirm/confirm-client"
+import { ConfirmClient, CONFIRM_COPY, REQUEST_TYPE_COPY } from "../confirm/confirm-client"
 import publicApiClient from "@/lib/public-api-client"
 
 jest.mock("@/lib/public-api-client")
@@ -224,5 +224,48 @@ describe("under React Strict Mode (next dev double-runs mount effects)", () => {
     expect(mockedPost).toHaveBeenCalledWith(VERIFY_PATH, { token: TOKEN })
     expect(await screen.findByRole("heading", { name: CONFIRM_COPY.verified.heading })).toBeInTheDocument()
     expect(window.location.hash).toBe("")
+  })
+})
+
+// SW-SAM-08 (swarm epic #964): the page says WHICH request a press confirms. The type rides in the
+// fragment after the token (the email builds `#token=…&type=erasure|access`); it is display only,
+// and the press still posts the token alone.
+describe("the page names the request it confirms", () => {
+  it("an erasure link says it confirms erasing the data", async () => {
+    openWithHash(`#token=${TOKEN}&type=erasure`)
+    render(<ConfirmClient />)
+
+    expect(
+      await screen.findByRole("heading", { name: REQUEST_TYPE_COPY.erasure.heading })
+    ).toBeInTheDocument()
+    expect(screen.getByText(REQUEST_TYPE_COPY.erasure.body)).toBeInTheDocument()
+    expect(window.location.hash).toBe("")
+  })
+
+  it("an access link says it confirms sending a copy, and posts only the token", async () => {
+    openWithHash(`#token=${TOKEN}&type=access`)
+    respond("verified")
+    render(<ConfirmClient />)
+
+    expect(
+      await screen.findByRole("heading", { name: REQUEST_TYPE_COPY.access.heading })
+    ).toBeInTheDocument()
+    expect(screen.getByText(REQUEST_TYPE_COPY.access.body)).toBeInTheDocument()
+    await press()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledWith(VERIFY_PATH, { token: TOKEN }))
+  })
+
+  it("the two headings differ", () => {
+    expect(REQUEST_TYPE_COPY.erasure.heading).not.toBe(REQUEST_TYPE_COPY.access.heading)
+  })
+
+  it("an older link with no type, or an unknown type, keeps the general wording", async () => {
+    openWithHash(`#token=${TOKEN}&type=everything`)
+    render(<ConfirmClient />)
+
+    expect(
+      await screen.findByRole("heading", { name: REQUEST_TYPE_COPY.unknown.heading })
+    ).toBeInTheDocument()
+    expect(REQUEST_TYPE_COPY.unknown.heading).toBe("Confirm your data request")
   })
 })

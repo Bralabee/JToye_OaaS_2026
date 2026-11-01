@@ -15,6 +15,7 @@ import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.notification.CustomerEmailContext;
 import uk.jtoye.core.notification.EmailNotificationService;
+import uk.jtoye.core.notification.OrderEmailSummary;
 import uk.jtoye.core.notification.consent.ConsentGate;
 import uk.jtoye.core.notification.consent.NotificationCategory;
 import uk.jtoye.core.onboarding.TraderIdentityService;
@@ -274,6 +275,34 @@ public class OrderStateChangeListener {
                 acknowledged,
                 view.declaredNames(),
                 view.flags(),
-                order.getFulfilmentType());
+                order.getFulfilmentType(),
+                summaryOf(order, shop));
+    }
+
+    /**
+     * SW-JRD-15 (swarm epic #964, issue #826): the lines, total and destination the order emails
+     * quote, from the order already loaded under the event's tenant. The line name is the V30
+     * snapshot, never a live product read. A collection order names the shop's address and no
+     * delivery address (whatever an older row may still hold); anything else names the delivery
+     * address, blank parts dropped. The delivery fee and, for a split-deposit order (ADR-0007 / V87), the
+     * deposit and balance due travel too, so the email's lines reconcile with its total. The allergy
+     * note is never read here (31.1-13, T-31.1-46).
+     */
+    static OrderEmailSummary summaryOf(Order order, Shop shop) {
+        List<OrderEmailSummary.Line> lines = order.getItems() == null ? List.of() : order.getItems().stream()
+                .map(i -> new OrderEmailSummary.Line(i.getProductName(), i.getQuantity()))
+                .toList();
+        if (order.getFulfilmentType() == FulfilmentType.COLLECTION) {
+            return new OrderEmailSummary(lines, order.getTotalAmountPennies(), List.of(),
+                    shop == null ? null : shop.getAddress(), order.getDeliveryFeePennies(),
+                    order.getDepositAmountPennies(), order.getBalanceDuePennies());
+        }
+        List<String> address = java.util.stream.Stream.of(order.getAddressLine1(), order.getAddressLine2(),
+                        order.getAddressCity(), order.getAddressPostcode())
+                .filter(v -> v != null && !v.isBlank())
+                .map(String::strip)
+                .toList();
+        return new OrderEmailSummary(lines, order.getTotalAmountPennies(), address, null,
+                order.getDeliveryFeePennies(), order.getDepositAmountPennies(), order.getBalanceDuePennies());
     }
 }
