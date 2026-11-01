@@ -7,6 +7,7 @@ import {
 } from "@/lib/company"
 import { OPERATOR_APPLICATION_REVIEW_LINE } from "@/lib/operator-copy"
 import { PublicShell } from "@/components/public/public-shell"
+import { LEGAL_LINK_CLASS } from "@/components/legal/policy-page"
 
 export const metadata: Metadata = {
   title: "Contact J'Toye",
@@ -38,8 +39,6 @@ export const metadata: Metadata = {
  * below must not be rendered under a vendor's brand (lib/company.ts header).
  */
 
-const LINK_CLASS =
-  "font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
 export default function ContactPage() {
   const c = getCompanyInfo()
@@ -81,7 +80,7 @@ export default function ContactPage() {
             <div>
               <dt className="font-semibold text-oxblood">Email</dt>
               <dd>
-                <a href={contact.emailHref} className={LINK_CLASS}>
+                <a href={contact.emailHref} className={LEGAL_LINK_CLASS}>
                   {contact.email}
                 </a>
               </dd>
@@ -91,7 +90,7 @@ export default function ContactPage() {
             <div>
               <dt className="font-semibold text-oxblood">Phone</dt>
               <dd>
-                <a href={contact.phoneHref} className={LINK_CLASS}>
+                <a href={contact.phoneHref} className={LEGAL_LINK_CLASS}>
                   {contact.phone}
                 </a>
               </dd>
@@ -103,7 +102,7 @@ export default function ContactPage() {
                 Data protection contact
               </dt>
               <dd>
-                <a href={controller.emailHref} className={LINK_CLASS}>
+                <a href={controller.emailHref} className={LEGAL_LINK_CLASS}>
                   {controller.email}
                 </a>
               </dd>
@@ -116,7 +115,7 @@ export default function ContactPage() {
             J&apos;Toye has not yet published a general contact email address
             or phone number. For anything about your personal data, use the
             routes in the{" "}
-            <Link href="/legal/privacy" className={LINK_CLASS}>
+            <Link href="/legal/privacy" className={LEGAL_LINK_CLASS}>
               privacy notice
             </Link>
             .
@@ -129,7 +128,7 @@ export default function ContactPage() {
         <p className="mt-4 text-base leading-relaxed text-slate-600">
           J&apos;Toye runs an assisted pilot for food businesses.{" "}
           {OPERATOR_APPLICATION_REVIEW_LINE} See the{" "}
-          <Link href="/for-operators" className={LINK_CLASS}>
+          <Link href="/for-operators" className={LEGAL_LINK_CLASS}>
             operator page
           </Link>{" "}
           for the pilot and its pricing.
@@ -138,7 +137,7 @@ export default function ContactPage() {
         <p className="mt-14 text-base">
           <Link
             href="/legal"
-            className={`inline-flex min-h-11 items-center ${LINK_CLASS}`}
+            className={`inline-flex min-h-11 items-center ${LEGAL_LINK_CLASS}`}
           >
             ← Legal &amp; company information
           </Link>

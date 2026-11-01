@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { getCompanyInfo, resolveControllerContact } from "@/lib/company"
 import { PublicShell } from "@/components/public/public-shell"
+import { LEGAL_LINK_CLASS } from "@/components/legal/policy-page"
 
 export const metadata: Metadata = {
   title: "Legal & company information — J'Toye",
@@ -86,7 +87,7 @@ export default function LegalPage() {
           touch with J&apos;Toye, see the{" "}
           <Link
             href="/contact"
-            className="font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className={LEGAL_LINK_CLASS}
           >
             contact page
           </Link>
@@ -126,7 +127,7 @@ export default function LegalPage() {
               <dd>
                 <a
                   href={contact.emailHref}
-                  className="font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className={LEGAL_LINK_CLASS}
                 >
                   {contact.email}
                 </a>
@@ -143,7 +144,7 @@ export default function LegalPage() {
             <li key={doc.href}>
               <Link
                 href={doc.href}
-                className="inline-flex min-h-11 items-center font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className={`inline-flex min-h-11 items-center ${LEGAL_LINK_CLASS}`}
               >
                 {doc.title}
               </Link>
@@ -157,7 +158,7 @@ export default function LegalPage() {
         <p className="mt-14 text-base">
           <Link
             href="/"
-            className="inline-flex min-h-11 items-center font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className={`inline-flex min-h-11 items-center ${LEGAL_LINK_CLASS}`}
           >
             ← Back to J&apos;Toye
           </Link>

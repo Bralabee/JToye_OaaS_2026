@@ -1,7 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
-import { PolicyPage, PolicySection } from "@/components/legal/policy-page"
+import {
+  LEGAL_PROSE_LINK_CLASS,
+  PolicyPage,
+  PolicySection,
+} from "@/components/legal/policy-page"
 import {
   CANCELLATION_STATEMENT_COPY,
   PLATFORM_NOT_SELLER_COPY,
@@ -60,8 +64,6 @@ const SECTIONS = [
   "Contact",
 ] as const
 
-const LINK =
-  "font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
 const LAST_UPDATED = "1 November 2026"
 const VERSION = "1.0"
@@ -148,7 +150,7 @@ export default function TermsPage() {
         <p>{OPERATOR_FBO_LINE}</p>
         <p>
           The full pilot description is on the{" "}
-          <Link href="/for-operators" className={LINK}>
+          <Link href="/for-operators" className={LEGAL_PROSE_LINK_CLASS}>
             operator page
           </Link>
           .
@@ -161,15 +163,15 @@ export default function TermsPage() {
           How J&apos;Toye and the vendors on it use your personal data, who is
           responsible for what, and how to exercise your rights, is set out in
           the{" "}
-          <Link href="/legal/privacy" className={LINK}>
+          <Link href="/legal/privacy" className={LEGAL_PROSE_LINK_CLASS}>
             privacy notice
           </Link>
           . How long each category of data is kept is in the{" "}
-          <Link href="/legal/retention" className={LINK}>
+          <Link href="/legal/retention" className={LEGAL_PROSE_LINK_CLASS}>
             data retention schedule
           </Link>
           , and every cookie and item of browser storage is listed in the{" "}
-          <Link href="/legal/cookies" className={LINK}>
+          <Link href="/legal/cookies" className={LEGAL_PROSE_LINK_CLASS}>
             cookie and browser-storage policy
           </Link>
           .
@@ -180,7 +182,7 @@ export default function TermsPage() {
       <PolicySection heading={SECTIONS[6]}>
         <p>
           To contact J&apos;Toye, see our{" "}
-          <Link href="/contact" className={LINK}>
+          <Link href="/contact" className={LEGAL_PROSE_LINK_CLASS}>
             contact page
           </Link>
           . For a question about an order, contact the shop you ordered from:

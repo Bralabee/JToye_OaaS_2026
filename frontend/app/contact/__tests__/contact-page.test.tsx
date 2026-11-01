@@ -20,6 +20,7 @@ import { render, within } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import ContactPage, { metadata } from "@/app/contact/page"
 import { getCompanyInfo, resolvePublicContact } from "@/lib/company"
+import { LEGAL_LINK_CLASS } from "@/components/legal/policy-page"
 import { getCustomerSession } from "@/lib/customer-auth"
 
 jest.mock("@/lib/customer-auth", () => ({
@@ -164,4 +165,25 @@ describe("no contact value is hardcoded", () => {
       expect(src).not.toMatch(/(?:\+44|\b0)\s?\d{2,4}\s?\d{3,4}\s?\d{3,4}/)
     }
   )
+})
+
+/**
+ * One link style for the legal surface (PR 1080 round 1, comment 4436097726).
+ * The rendered link must carry the shared constant, and the source must not
+ * re-type the class string, so a style ruling cannot miss this page.
+ */
+describe("/contact reuses the legal-surface link style", () => {
+  it("renders its operator-page link with LEGAL_LINK_CLASS", () => {
+    const main = renderMain()
+    const link = main.querySelector('a[href="/for-operators"]')
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute("class")).toBe(LEGAL_LINK_CLASS)
+  })
+
+  it("does not re-type the link class string in its source", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/contact/page.tsx"), "utf8")
+    // Control: the page does use links.
+    expect(src).toMatch(/<Link/)
+    expect(src).not.toMatch(/text-amber-700/)
+  })
 })

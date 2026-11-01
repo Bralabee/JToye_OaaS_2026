@@ -16,7 +16,10 @@
  *     comment in the source cannot satisfy it). The control first proves the
  *     page actually rendered its body, so the absences are not vacuous.
  */
+import fs from "node:fs"
+import path from "node:path"
 import { render, screen, within } from "@testing-library/react"
+import { LEGAL_PROSE_LINK_CLASS } from "@/components/legal/policy-page"
 import "@testing-library/jest-dom"
 import TermsPage, { metadata } from "@/app/legal/terms/page"
 import LegalPage from "@/app/legal/page"
@@ -138,5 +141,29 @@ describe("the legal hub links the terms (SW-SAM-12)", () => {
       "href",
       "/contact"
     )
+  })
+})
+
+/** Same rule as /contact (PR 1080 round 1): the prose link style is shared, not re-typed. */
+describe("/legal/terms reuses the legal-surface prose link style", () => {
+  it("renders its in-prose links with LEGAL_PROSE_LINK_CLASS", () => {
+    const main = renderMain()
+    const link = main.querySelector('a[href="/legal/privacy"]')
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute("class")).toBe(LEGAL_PROSE_LINK_CLASS)
+  })
+
+  it("does not re-type the link class string in its source", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/legal/terms/page.tsx"), "utf8")
+    expect(src).toMatch(/<Link/)
+    expect(src).not.toMatch(/text-amber-700/)
+  })
+})
+
+describe("the /legal hub reuses the legal-surface link style", () => {
+  it("does not re-type the link class string in its source", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/legal/page.tsx"), "utf8")
+    expect(src).toMatch(/<Link/)
+    expect(src).not.toMatch(/text-amber-700/)
   })
 })
