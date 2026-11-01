@@ -77,3 +77,14 @@ records each source) over licensed stock, a shoot, or type-and-colour only.
   kitchen's own dish, room or person.
 - **Review when:** a tenant's own photos exist through the Phase 24 media pipeline; then they
   replace the found pictures on the surfaces that show that kitchen.
+
+## D11 · 2026-11-01 · Identity approved as drafted from The Pass (`identity.md`)
+Sanmi picked The Pass at step 3 of the landing run (A of four; `runs/2026-11-01-landing/direction.md`)
+and approved the identity drafted from it at step 4 without change: stone ground, oxblood, amber as
+the one action colour, Work Sans alone, a plain voice, the order ticket on the pass as the device,
+the plate settling on load as the only motion. Oxblood and Work Sans are kept on their merits, not
+as the D4 lock.
+- **Status: KEEP.**
+- **Review when:** the first tenant's own photographs arrive (D10), or a storefront branding run
+  (branded own-domain storefronts, D6's trigger) needs the storefront to carry a kitchen's identity
+  rather than J'Toye's.
