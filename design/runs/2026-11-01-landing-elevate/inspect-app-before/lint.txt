@@ -1,0 +1,39 @@
+TASTESKILL · LINT   5 file(s)
+
+FAIL
+  [emoji] Emoji used as UI.  (10×)
+      frontend/app/page.tsx:66  🍗
+      frontend/app/page.tsx:67  🍚
+      frontend/app/page.tsx:68  🥘
+      frontend/app/page.tsx:69  🍛
+      frontend/app/page.tsx:70  🥗
+      frontend/app/page.tsx:71  🍰
+      … 4 more
+  [gradient] Gradient fill. Use a flat colour or a real image (a neutral scrim over a photo is the one exception).  (4×)
+      frontend/app/page.tsx:196  radial-gradient(
+      frontend/app/page.tsx:277  bg-gradient-
+      frontend/app/page.tsx:313  bg-gradient-
+      frontend/components/marketing/dish-scroller.tsx:202  bg-gradient-
+  [shadow] Shadow. Elements at rest carry none; only real overlays (menu, dialog, sticky bar) may.  (13×)
+      frontend/app/page.tsx:265  shadow-sm
+      frontend/app/page.tsx:277  shadow-md
+      frontend/app/page.tsx:293  shadow-md
+      frontend/app/page.tsx:313  shadow-md
+      frontend/app/page.tsx:361  shadow-sm
+      frontend/app/page.tsx:383  shadow-sm
+      … 7 more
+  [hairline] Thin rule / divider line. Separate with space, tone or scale; lines belong to real tables and form fields.  (2×)
+      frontend/app/page.tsx:325  border-t
+      frontend/app/page.tsx:373  border-t
+
+WARN
+  [transition-all] transition: all. Name the properties (transform, opacity).  (2×)
+      frontend/app/page.tsx:277  transition-all
+      frontend/app/page.tsx:293  transition-all
+  [glass] Backdrop blur. One sticky bar at most; glass cards are a tell.  (1×)
+      frontend/components/marketing/dish-scroller.tsx:230  backdrop-blur
+  [em-dash] Em-dash habit. Use a full stop or a comma; keep at most one or two on a page.  (1×)
+      (all files):0  22 em dashes
+
+RESULT: 29 FAIL, 4 WARN — fix the FAILs before rendering.
+Interface fragments marked data-ui keep their own borders and shadows. Any other line that must keep a flagged pattern for a real reason can carry the comment taste-skill-ignore.
