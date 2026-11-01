@@ -154,11 +154,13 @@ describe("#817: a card names its declared allergens before Add", () => {
 })
 
 describe("D-18 / D-09: the card is never silent, and never says 'none' over the ingredients", () => {
-  it("mask 0 with no flag reads 'No allergens declared'", async () => {
+  it("mask 0 with no flag reads 'No allergens declared', with checkout's caveat (SW-PRY-02)", async () => {
     await renderMenu([dish("p1", "Plain Rice")])
     const card = cardOf("Plain Rice")
-    expect(within(card).getByText("No allergens declared")).toBeInTheDocument()
-    expect(addButton("Plain Rice")).toHaveAccessibleDescription(/No allergens declared/)
+    expect(within(card).getByText("No allergens declared – not the same as allergen-free")).toBeInTheDocument()
+    expect(addButton("Plain Rice")).toHaveAccessibleDescription(
+      /No allergens declared – not the same as allergen-free/
+    )
   })
 
   it("mask 0 with an undeclared ingredient allergen reads the D-09 wording, never 'No allergens declared'", async () => {
@@ -168,7 +170,7 @@ describe("D-18 / D-09: the card is never silent, and never says 'none' over the 
     const card = cardOf("Party Jollof Rice")
     const line = within(card).getByText("Ingredients name: MILK – check with the shop")
     expect(precedes(line, addButton("Party Jollof Rice"))).toBe(true)
-    expect(within(card).queryByText("No allergens declared")).toBeNull()
+    expect(within(card).queryByText(/No allergens declared/)).toBeNull()
     expect(addButton("Party Jollof Rice")).toHaveAccessibleDescription(
       /Ingredients name: MILK – check with the shop/
     )
@@ -218,7 +220,9 @@ describe("D-18 / D-09: the card is never silent, and never says 'none' over the 
     delete (legacy as Partial<PublicProduct>).undeclaredIngredientAllergens
     delete (legacy as Partial<PublicProduct>).mayContainAllergens
     await renderMenu([legacy])
-    expect(within(cardOf("Plain Rice")).getByText("No allergens declared")).toBeInTheDocument()
+    expect(within(cardOf("Plain Rice")).getByText("No allergens declared – not the same as allergen-free")).toBeInTheDocument()
+    // SW-PRY-03: the absent field reads as "not stated", never as silence.
+    expect(within(cardOf("Plain Rice")).getByText("May contain: not stated")).toBeInTheDocument()
   })
 })
 
@@ -244,8 +248,43 @@ describe("prohibition: no card says what the platform cannot stand behind", () =
     expect(screen.getAllByRole("button", { name: /^Add .+ to basket$/ })).toHaveLength(3)
     expect(screen.queryByText(/^\s*No allergens\s*$/)).toBeNull()
     const text = document.body.textContent ?? ""
-    expect(text).not.toMatch(/allergen[-\s]free/i)
+    // "allergen-free" only as checkout's DENIAL (SW-PRY-02), never as a claim.
+    expect(text).not.toMatch(/(?<!not the same as )allergen[-\s]free/i)
+    expect(text).toMatch(/not the same as allergen-free/)
     expect(text).not.toMatch(/safe for you/i)
     expect(text).not.toMatch(/no allergens present/i)
+  })
+})
+
+describe("SW-ADE-06 / SW-PRY-03 (swarm epic #964): the card states 'may contain', as the modal does", () => {
+  it("a may-contain allergen is on the card, before Add, and in Add's description", async () => {
+    await renderMenu([dish("p1", "Suya", { allergenMask: GLUTEN, mayContainAllergens: ["Sesame"] })])
+    const card = cardOf("Suya")
+    const may = within(card).getByText("May contain: Sesame")
+    expect(precedes(may, addButton("Suya"))).toBe(true)
+    expect(addButton("Suya")).toHaveAccessibleDescription(/May contain: Sesame/)
+    // Its own line: the declared statement does not absorb it.
+    expect(within(card).getByText("Contains: Gluten")).not.toBe(may)
+  })
+
+  it("names several may-contain allergens in catalogue order, minus any already declared", async () => {
+    await renderMenu([
+      dish("p1", "Suya", { allergenMask: MILK, mayContainAllergens: ["Sesame", "Milk", "Gluten"] }),
+    ])
+    expect(within(cardOf("Suya")).getByText("May contain: Gluten, Sesame")).toBeInTheDocument()
+  })
+
+  it("an empty may-contain list reads 'May contain: not stated' (none and not-recorded are one wire state)", async () => {
+    await renderMenu([dish("p1", "Plain Rice", { mayContainAllergens: [] })])
+    const card = cardOf("Plain Rice")
+    expect(within(card).getByText("May contain: not stated")).toBeInTheDocument()
+    expect(addButton("Plain Rice")).toHaveAccessibleDescription(/May contain: not stated/)
+  })
+
+  it("never both: a named list replaces 'not stated'", async () => {
+    await renderMenu([dish("p1", "Suya", { mayContainAllergens: ["Peanuts"] })])
+    const card = cardOf("Suya")
+    expect(within(card).getByText("May contain: Peanuts")).toBeInTheDocument()
+    expect(within(card).queryByText("May contain: not stated")).toBeNull()
   })
 })

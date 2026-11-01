@@ -19,7 +19,7 @@ import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
 import {
   BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
-  NO_ALLERGENS_DECLARED_COPY,
+  NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
 } from "@/lib/allergen-copy"
 
 // The basket page fetches the shop for its server-authoritative delivery fee
@@ -447,7 +447,7 @@ describe("Shop cart page — each line's own allergens (#860)", () => {
     await waitFor(() =>
       expect(lineAllergenText()).toEqual([
         "Contains: Milk",
-        NO_ALLERGENS_DECLARED_COPY,
+        NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
         "Ingredients name: MILK – check with the shop",
       ])
     )
@@ -485,7 +485,7 @@ describe("Shop cart page — each line's own allergens (#860)", () => {
         BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
       ])
     )
-    expect(screen.queryByText(NO_ALLERGENS_DECLARED_COPY)).toBeNull()
+    expect(screen.queryByText(NO_ALLERGENS_DECLARED_CUSTOMER_COPY)).toBeNull()
   })
 
   it("a dish the catalogue no longer lists says 'not available'; the other lines still state theirs", async () => {

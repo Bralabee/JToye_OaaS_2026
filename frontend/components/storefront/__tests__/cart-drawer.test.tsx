@@ -17,7 +17,7 @@ import { CartDrawer } from "@/components/storefront/cart-drawer"
 import publicApiClient from "@/lib/public-api-client"
 import {
   BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
-  NO_ALLERGENS_DECLARED_COPY,
+  NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
 } from "@/lib/allergen-copy"
 
 // #860 (31.1-23): the open drawer reads the live catalogue for each line's allergens; the #860
@@ -228,7 +228,7 @@ describe("CartDrawer — each line's own allergens (#860)", () => {
     await waitFor(() =>
       expect(lineAllergenText()).toEqual([
         "Contains: Milk",
-        NO_ALLERGENS_DECLARED_COPY,
+        NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
         "Ingredients name: MILK – check with the shop",
       ])
     )
@@ -247,7 +247,7 @@ describe("CartDrawer — each line's own allergens (#860)", () => {
         BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
       ])
     )
-    expect(screen.queryByText(NO_ALLERGENS_DECLARED_COPY)).toBeNull()
+    expect(screen.queryByText(NO_ALLERGENS_DECLARED_CUSTOMER_COPY)).toBeNull()
   })
 
   it("re-reads the catalogue each time it opens, so a vendor edit between opens is shown", async () => {

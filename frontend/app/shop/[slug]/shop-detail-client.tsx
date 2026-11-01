@@ -188,7 +188,8 @@ function ProductCard({
                 and referenced by the Add button's aria-describedby so a screen-reader user who
                 jumps straight to the control still hears it.
 
-                Rendered in EVERY state (declared / none declared / flagged), so every card carries
+                Rendered in EVERY state (declared / none declared / flagged, plus the may-contain
+                line beneath), so every card carries
                 the line and no state is a card one line shorter than its neighbours. The text
                 wraps rather than truncates: no allergen is ever hidden behind an ellipsis. */}
             <div id={allergenLineId} className="mt-2 space-y-0.5 text-xs leading-snug">
@@ -207,6 +208,18 @@ function ProductCard({
               {allergens.noneDeclaredLine && (
                 <p className="text-slate-600">{allergens.noneDeclaredLine}</p>
               )}
+              {/* SW-ADE-06 / SW-PRY-03 (swarm epic #964): the "may contain" line, as the dish modal
+                  states it. The card printed no cross-contact line at all, so a customer scanning
+                  the menu never saw "May contain: Sesame" unless they opened the dish; and an empty
+                  list printed nothing, which read the same as "none". It now always says one of
+                  the names or "not stated" (the payload cannot tell "none" from "not recorded"). */}
+              <p
+                className={
+                  allergens.mayContain.length > 0 ? "font-medium text-amber-800" : "text-slate-600"
+                }
+              >
+                {allergens.mayContainLine}
+              </p>
             </div>
 
             {/* Bottom row */}

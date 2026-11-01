@@ -295,9 +295,18 @@ export function ProductDetailModal({
               {allergens.noneDeclaredLine && (
                 <p className="text-sm text-slate-700">{allergens.noneDeclaredLine}</p>
               )}
-              {allergens.mayContainLine && (
-                <p className="text-sm font-medium text-amber-800">{allergens.mayContainLine}</p>
-              )}
+              {/* SW-PRY-03 (swarm epic #964): always stated. An empty list used to print nothing,
+                  so "the vendor said none" and "the vendor said nothing" looked identical; the
+                  payload cannot tell them apart, so the empty case reads "May contain: not stated". */}
+              <p
+                className={
+                  allergens.mayContain.length > 0
+                    ? "text-sm font-medium text-amber-800"
+                    : "text-sm text-slate-700"
+                }
+              >
+                {allergens.mayContainLine}
+              </p>
               {allergens.undeclaredLine && (
                 <p className="flex items-start gap-1.5 text-sm font-semibold text-amber-800">
                   <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-shrink-0" />

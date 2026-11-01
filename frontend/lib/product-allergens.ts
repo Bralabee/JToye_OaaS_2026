@@ -12,7 +12,7 @@
  *     ingredients itself; it only renders what the server computed.
  *   - MAY CONTAIN (D-16): cross-contact names the vendor recorded that are not already declared.
  *
- * "No allergens declared" is said only when the declaration is empty AND nothing is flagged: a
+ * "No allergens declared" (with its "not the same as allergen-free" caveat) is said only when the declaration is empty AND nothing is flagged: a
  * product whose ingredients name MILK must never read as having nothing to declare.
  *
  * Sentences come from lib/allergen-copy.ts; this module decides only WHICH of them apply.
@@ -20,7 +20,8 @@
 
 import { ALLERGENS, getAllergenNames } from "@/types/api"
 import {
-  NO_ALLERGENS_DECLARED_COPY,
+  MAY_CONTAIN_NOT_STATED_COPY,
+  NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
   containsCopy,
   mayContainCopy,
   undeclaredIngredientCopy,
@@ -32,7 +33,10 @@ export interface ProductAllergenStatement {
   declared: string[]
   /** "Contains: Gluten, Milk", or null for an empty declaration. */
   containsLine: string | null
-  /** "No allergens declared" when nothing is declared AND nothing is flagged; otherwise null. */
+  /**
+   * "No allergens declared – not the same as allergen-free" when nothing is declared AND nothing is
+   * flagged; otherwise null. SW-PRY-02: the caveat travels with the phrase on every customer surface.
+   */
   noneDeclaredLine: string | null
   /** Undeclared ingredient names (D-09), catalogue order, never a declared one. */
   undeclared: string[]
@@ -40,8 +44,12 @@ export interface ProductAllergenStatement {
   undeclaredLine: string | null
   /** May-contain names (D-16), catalogue order, never a declared one. */
   mayContain: string[]
-  /** "May contain: Sesame", or null. */
-  mayContainLine: string | null
+  /**
+   * "May contain: Sesame", or "May contain: not stated" when no name reached the browser (SW-PRY-03:
+   * the payload cannot tell "none" from "nothing recorded", so the line never implies "none").
+   * Never null: every surface that reads it states it.
+   */
+  mayContainLine: string
 }
 
 const CATALOGUE_POSITION = new Map(ALLERGENS.map((a, index) => [a.name, index]))
@@ -71,10 +79,10 @@ export function productAllergenStatement(
   return {
     declared,
     containsLine: containsCopy(declared),
-    noneDeclaredLine: declared.length === 0 && undeclared.length === 0 ? NO_ALLERGENS_DECLARED_COPY : null,
+    noneDeclaredLine: declared.length === 0 && undeclared.length === 0 ? NO_ALLERGENS_DECLARED_CUSTOMER_COPY : null,
     undeclared,
     undeclaredLine: undeclaredIngredientCopy(undeclared),
     mayContain,
-    mayContainLine: mayContainCopy(mayContain),
+    mayContainLine: mayContainCopy(mayContain) ?? MAY_CONTAIN_NOT_STATED_COPY,
   }
 }
