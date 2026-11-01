@@ -284,7 +284,9 @@ public class OrderStateChangeListener {
      * quote, from the order already loaded under the event's tenant. The line name is the V30
      * snapshot, never a live product read. A collection order names the shop's address and no
      * delivery address (whatever an older row may still hold); anything else names the delivery
-     * address, blank parts dropped. The allergy note is never read here (31.1-13, T-31.1-46).
+     * address, blank parts dropped. The delivery fee and, for a split-deposit order (ADR-0007 / V87), the
+     * deposit and balance due travel too, so the email's lines reconcile with its total. The allergy
+     * note is never read here (31.1-13, T-31.1-46).
      */
     static OrderEmailSummary summaryOf(Order order, Shop shop) {
         List<OrderEmailSummary.Line> lines = order.getItems() == null ? List.of() : order.getItems().stream()
@@ -292,13 +294,15 @@ public class OrderStateChangeListener {
                 .toList();
         if (order.getFulfilmentType() == FulfilmentType.COLLECTION) {
             return new OrderEmailSummary(lines, order.getTotalAmountPennies(), List.of(),
-                    shop == null ? null : shop.getAddress());
+                    shop == null ? null : shop.getAddress(), order.getDeliveryFeePennies(),
+                    order.getDepositAmountPennies(), order.getBalanceDuePennies());
         }
         List<String> address = java.util.stream.Stream.of(order.getAddressLine1(), order.getAddressLine2(),
                         order.getAddressCity(), order.getAddressPostcode())
                 .filter(v -> v != null && !v.isBlank())
                 .map(String::strip)
                 .toList();
-        return new OrderEmailSummary(lines, order.getTotalAmountPennies(), address, null);
+        return new OrderEmailSummary(lines, order.getTotalAmountPennies(), address, null,
+                order.getDeliveryFeePennies(), order.getDepositAmountPennies(), order.getBalanceDuePennies());
     }
 }

@@ -302,6 +302,7 @@ class OrderStateChangeListenerTest {
                 OrderStatus.DRAFT, OrderStatus.PENDING, OffsetDateTime.now());
         Order delivery = orderWithLines(shopId, OrderChannel.STOREFRONT, 65, "buyer@example.com");
         delivery.setTotalAmountPennies(1250L);
+        delivery.setDeliveryFeePennies(250L);
         delivery.setFulfilmentType(FulfilmentType.DELIVERY);
         delivery.setAddressLine1("1 High Street");
         delivery.setAddressLine2(" ");
@@ -328,6 +329,8 @@ class OrderStateChangeListenerTest {
         assertThat(summary.deliveryAddress()).as("blank lines dropped")
                 .containsExactly("1 High Street", "Birmingham", "B1 1AA");
         assertThat(summary.collectionAddress()).as("a delivery order names no collection point").isNull();
+        assertThat(summary.deliveryFeePennies()).isEqualTo(250L);
+        assertThat(summary.depositPennies()).as("a full-payment order").isNull();
         assertThat(summary.toString()).doesNotContain("peanuts");
     }
 
@@ -341,6 +344,8 @@ class OrderStateChangeListenerTest {
                 OrderStatus.PENDING, OrderStatus.CONFIRMED, OffsetDateTime.now());
         Order collection = orderWithLines(shopId, OrderChannel.STOREFRONT, 65, "buyer@example.com");
         collection.setAddressLine1("stale address the policy should have cleared");
+        collection.setDepositAmountPennies(2000L);
+        collection.setBalanceDuePennies(8000L);
         when(orderRepository.findById(orderId)).thenReturn(Optional.of(collection));
         Shop shop = new Shop();
         shop.setId(shopId);
@@ -355,6 +360,8 @@ class OrderStateChangeListenerTest {
         verify(emailService).sendOrderConfirmed(eq(event), eq("buyer@example.com"), ctx.capture());
         OrderEmailSummary summary = ctx.getValue().summary();
         assertThat(summary.collectionAddress()).isEqualTo("12 Market Street, Birmingham");
+        assertThat(summary.depositPennies()).isEqualTo(2000L);
+        assertThat(summary.balanceDuePennies()).isEqualTo(8000L);
         assertThat(summary.deliveryAddress()).isEmpty();
     }
 

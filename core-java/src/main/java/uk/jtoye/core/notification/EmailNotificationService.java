@@ -510,8 +510,18 @@ public class EmailNotificationService {
             b.append(name == null ? "Item" : name).append(" \u00d7 ")
                     .append(line.quantity() == null ? "?" : line.quantity()).append('\n');
         }
+        // R1 (review on #1079): the total includes the delivery fee, so the fee is named or the lines
+        // cannot be reconciled with it; a split-deposit order (ADR-0007 / V87) also says what was
+        // charged now and what is still due, rather than only a gross figure.
+        if (summary.deliveryFeePennies() != null && summary.deliveryFeePennies() != 0) {
+            b.append("Delivery fee: ").append(pounds(summary.deliveryFeePennies())).append('\n');
+        }
         if (summary.totalPennies() != null) {
             b.append("Total: ").append(pounds(summary.totalPennies())).append('\n');
+        }
+        if (summary.depositPennies() != null && summary.balanceDuePennies() != null) {
+            b.append("Paid now: ").append(pounds(summary.depositPennies())).append('\n');
+            b.append("Balance due: ").append(pounds(summary.balanceDuePennies())).append('\n');
         }
         if (ctx.fulfilmentType() == FulfilmentType.COLLECTION) {
             String where = oneLine(summary.collectionAddress());

@@ -708,6 +708,42 @@ class EmailNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("SW-JRD-15 R1: a delivery order names its fee, so the lines reconcile with the total")
+    void deliveryFeeIsNamed() {
+        OrderEmailSummary withFee = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Jollof Rice", 2)),
+                1250L, List.of("1 High Street"), null, 250L, null, null);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, withFee));
+
+        String body = sent().getText();
+        assertThat(body).containsPattern("Delivery fee: \u00a32\\.50\\r?\\nTotal: \u00a312\\.50");
+        assertThat(body).doesNotContain("Paid now").doesNotContain("Balance due");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a zero delivery fee prints no fee line")
+    void zeroDeliveryFeeIsNotPrinted() {
+        OrderEmailSummary noFee = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 1)),
+                500L, List.of("1 High Street"), null, 0L, null, null);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, noFee));
+
+        assertThat(sent().getText()).doesNotContain("Delivery fee").contains("Total: \u00a35.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15 R1: a split-deposit order says what was paid now and what is still due")
+    void splitDepositSaysPaidNowAndBalanceDue() {
+        OrderEmailSummary deposit = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Party tray", 1)),
+                10000L, List.of(), "12 Market Street", 0L, 2000L, 8000L);
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, deposit));
+
+        assertThat(sent().getText())
+                .containsPattern("Total: \u00a3100\\.00\\r?\\nPaid now: \u00a320\\.00\\r?\\nBalance due: \u00a380\\.00");
+    }
+
+    @Test
     @DisplayName("SW-JRD-15: no summary read means no summary section, never an empty one or a \u00a30.00 total")
     void noSummaryMeansNoSection() {
         service.sendOrderConfirmation(createTestEvent(), RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));

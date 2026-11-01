@@ -16,12 +16,26 @@ import java.util.List;
  * @param deliveryAddress   the delivery address lines, blank ones dropped; empty for a collection order
  *                          or when none was recorded
  * @param collectionAddress the shop's address, for a collection order; null when the shop has none
+ * @param deliveryFeePennies the delivery fee included in the total; null or 0 when there is none
+ * @param depositPennies    ADR-0007 / V87: the deposit charged at checkout on a split-deposit order;
+ *                          null for a full-payment order
+ * @param balanceDuePennies ADR-0007 / V87: the balance still due on a split-deposit order; null for a
+ *                          full-payment order
  */
 public record OrderEmailSummary(
         List<Line> lines,
         Long totalPennies,
         List<String> deliveryAddress,
-        String collectionAddress) {
+        String collectionAddress,
+        Long deliveryFeePennies,
+        Long depositPennies,
+        Long balanceDuePennies) {
+
+    /** A full-payment summary with no delivery fee recorded. */
+    public OrderEmailSummary(List<Line> lines, Long totalPennies, List<String> deliveryAddress,
+                             String collectionAddress) {
+        this(lines, totalPennies, deliveryAddress, collectionAddress, null, null, null);
+    }
 
     public OrderEmailSummary {
         lines = lines == null ? List.of() : List.copyOf(lines);
