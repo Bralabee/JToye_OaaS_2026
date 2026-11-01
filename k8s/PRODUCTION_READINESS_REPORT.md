@@ -119,7 +119,7 @@ The Kubernetes manifests for the JToye OaaS platform have been comprehensively r
   - X-Content-Type-Options: nosniff
   - X-XSS-Protection: 1; mode=block
   - Strict-Transport-Security (HSTS)
-  - Referrer-Policy: strict-origin-when-cross-origin
+  - Referrer-Policy: no longer set at the ingress (issue #1071); the apps send it (strict-origin-when-cross-origin, no-referrer on /pay and /invite)
   - Permissions-Policy (block geolocation, camera, mic)
 - ✓ **Enhanced CORS configuration**
   - Explicit allowed origin (https://app.olajay.co.uk)

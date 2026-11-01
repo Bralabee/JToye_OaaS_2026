@@ -5486,7 +5486,7 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
         echo "        because no cert-manager runs locally, so 'secretName: jtoye-tls' would never" >&2
         echo "        exist and nginx would serve its self-signed fallback." >&2
         echo "        FIX IT IN THE LOCAL OVERLAY, NOT ON THE CLUSTER. The base annotation is" >&2
-        echo "        DELIBERATELY PRESERVED for staging/production (it sets six security headers)." >&2
+        echo "        DELIBERATELY PRESERVED for staging/production (it sets five security headers)." >&2
         echo "        Setting allow-snippet-annotations: \"true\" / annotations-risk-level:" >&2
         echo "        \"Critical\" on the addon would make the apply succeed by re-enabling a" >&2
         echo "        documented Critical-risk annotation class that ingress-nginx disables by" >&2

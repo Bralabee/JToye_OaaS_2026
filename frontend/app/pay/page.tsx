@@ -26,6 +26,12 @@ export const metadata: Metadata = {
   title: "Pay for your order — J'Toye",
   description: "Pay for an order you placed with a shop on J'Toye.",
   robots: { index: false, follow: false },
+  // Issue #1071: renders <meta name="referrer" content="no-referrer">, the document-level policy
+  // that no edge can overwrite. On staging the ingress snippet REPLACED the Referrer-Policy header
+  // that next.config.mjs sends on /pay/:path* (more_set_headers replaces an upstream header of the
+  // same name), so Stripe.js and every other load from this page learned its origin. The edge line
+  // is gone and the next.config.mjs header rule stays; this is the second layer.
+  referrer: "no-referrer",
 }
 
 export default function PayPage() {

@@ -1,0 +1,453 @@
+# Quick 261101-r7k (issue #1071): RED/GREEN evidence, verbatim, ANSI stripped
+# Checkout: fix/1071-pay-referrer-policy cut from origin/main 6c1fdc93
+
+## 0. Live staging edge BEFORE any change (curl, read-only), 2026-11-01
+
+$ for u in /pay /invite / (app-staging) and /api/v1/public/shops (api-staging): curl -sS -o /dev/null -D - ...
+2026-11-01T08:21:55Z GET https://app-staging.olajay.co.uk/pay curl_rc=0 code=200
+referrer-policy: strict-origin-when-cross-origin
+2026-11-01T08:21:55Z GET https://app-staging.olajay.co.uk/invite curl_rc=0 code=200
+referrer-policy: strict-origin-when-cross-origin
+2026-11-01T08:21:55Z GET https://app-staging.olajay.co.uk/ curl_rc=0 code=200
+referrer-policy: strict-origin-when-cross-origin
+2026-11-01T08:21:55Z GET https://api-staging.olajay.co.uk/api/v1/public/shops curl_rc=0 code=200
+referrer-policy: strict-origin-when-cross-origin
+$ curl -sS https://app-staging.olajay.co.uk/pay | grep -o '<meta name="referrer"[^>]*>'
+meta_grep_rc=1        (no referrer meta tag in today's /pay document)
+
+Note: /invite (frontend/next.config.mjs '/invite/:path*' no-referrer, plan 37-09) is clobbered by
+the same edge line; the edge change fixes it too.
+
+Source facts read on the tree (not assumed):
+  frontend/next.config.mjs:48  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' }  ('/:path*' default)
+  frontend/next.config.mjs:77  /invite/:path*  no-referrer
+  frontend/next.config.mjs:88  /pay/:path*     no-referrer
+  core-java SecurityConfig.java:248-249  .referrerPolicy(... STRICT_ORIGIN_WHEN_CROSS_ORIGIN)
+  live: api-staging /api/v1/public/shops carries strict-origin-when-cross-origin (above)
+
+<!-- sections appended below -->
+
+## 1. Task 1: the app-host Ingresses stop setting Referrer-Policy (commit e9afe35e)
+
+Counter: evidence/rp-count.sh <overlay> (kubectl kustomize; per-Ingress Referrer-Policy line counts;
+APP_HOST_INGRESS_REFERRER_LINES sums jtoye-ingress + jtoye-sse-ingress).
+
+### 1a. FAIL direction: the pre-change tree (origin/main 6c1fdc93)
+k8s/base Ingress jtoye-ingress Referrer-Policy=1
+k8s/base Ingress jtoye-sse-ingress Referrer-Policy=0
+k8s/base TOTAL_INGRESS_DOCS=2 APP_HOST_INGRESS_REFERRER_LINES=1
+k8s/base kustomize_rc=0 whole_render_Referrer-Policy_lines=1
+script_rc=0
+k8s/staging Ingress grafana-public Referrer-Policy=1
+k8s/staging Ingress jtoye-ingress Referrer-Policy=1
+k8s/staging Ingress jtoye-sse-ingress Referrer-Policy=1
+k8s/staging Ingress keycloak-public Referrer-Policy=1
+k8s/staging Ingress mailpit-ui Referrer-Policy=1
+k8s/staging TOTAL_INGRESS_DOCS=5 APP_HOST_INGRESS_REFERRER_LINES=2
+k8s/staging kustomize_rc=0 whole_render_Referrer-Policy_lines=5
+script_rc=0
+k8s/production Ingress jtoye-ingress Referrer-Policy=1
+k8s/production Ingress jtoye-sse-ingress Referrer-Policy=0
+k8s/production TOTAL_INGRESS_DOCS=2 APP_HOST_INGRESS_REFERRER_LINES=1
+k8s/production kustomize_rc=0 whole_render_Referrer-Policy_lines=1
+script_rc=0
+(app-host total across the three overlays = 4; staging/production render total 6)
+
+### 1b. PASS direction: after the edit
+k8s/base Ingress jtoye-ingress Referrer-Policy=0
+k8s/base Ingress jtoye-sse-ingress Referrer-Policy=0
+k8s/base TOTAL_INGRESS_DOCS=2 APP_HOST_INGRESS_REFERRER_LINES=0
+k8s/base kustomize_rc=0 whole_render_Referrer-Policy_lines=0
+script_rc=0
+k8s/staging Ingress grafana-public Referrer-Policy=1
+k8s/staging Ingress jtoye-ingress Referrer-Policy=0
+k8s/staging Ingress jtoye-sse-ingress Referrer-Policy=0
+k8s/staging Ingress keycloak-public Referrer-Policy=1
+k8s/staging Ingress mailpit-ui Referrer-Policy=1
+k8s/staging TOTAL_INGRESS_DOCS=5 APP_HOST_INGRESS_REFERRER_LINES=0
+k8s/staging kustomize_rc=0 whole_render_Referrer-Policy_lines=3
+script_rc=0
+k8s/production Ingress jtoye-ingress Referrer-Policy=0
+k8s/production Ingress jtoye-sse-ingress Referrer-Policy=0
+k8s/production TOTAL_INGRESS_DOCS=2 APP_HOST_INGRESS_REFERRER_LINES=0
+k8s/production kustomize_rc=0 whole_render_Referrer-Policy_lines=0
+script_rc=0
+k8s/local Ingress jtoye-ingress Referrer-Policy=0
+k8s/local Ingress jtoye-sse-ingress Referrer-Policy=0
+k8s/local TOTAL_INGRESS_DOCS=2 APP_HOST_INGRESS_REFERRER_LINES=0
+k8s/local kustomize_rc=0 whole_render_Referrer-Policy_lines=0
+script_rc=0
+NOTE (deviation from the brief's "render ZERO Referrer-Policy lines" on k8s/staging): the staging
+render keeps 3 lines, on grafana-public, keycloak-public and mailpit-ui. Those are component Ingresses
+for hosts that no app of ours serves; removing their line would drop the header there (Incremental
+Betterment). The app-host Ingresses (jtoye-ingress, jtoye-sse-ingress) render 0 in every overlay, and
+base/production render 0 in total.
+
+### 1c. Goldens: render-golden.sh
+before --write (after the edit): golden_check_before_write_rc=1
+FAIL [staging]: render DRIFTED from k8s/goldens/staging.yaml
+FAIL [production]: render DRIFTED from k8s/goldens/production.yaml
+--diff-since pre-1071 (snapshot taken BEFORE the edit), resolve_rc=0:
+6170d6169
+<       more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+6240d6238
+<       more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+1424d1423
+<       more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+after --write: "All overlay renders match their committed goldens." golden_check_after_rc=0
+
+### 1d. check-render-invariants.sh
+pre-change tree: inv_pre_rc=0
+post-change: inv_post_rc=0
+  INV-15 OK [k8s/staging] (5 Ingresses, 6 tls entries x1 host, 4 managed with unique Secrets, noindex on all, 58 nginx annotations all Traefik-documented)
+  INV-15 OK [k8s/production] (2 Ingresses, 3 tls entries x1 host, 1 managed with unique Secrets, no noindex, 31 nginx annotations all Traefik-documented)
+--selftest-inv15: selftest_inv15_rc=0
+ARM two-host caught=yes
+ARM shared-secret caught=yes
+ARM missing-noindex caught=yes
+ARM unsupported-annotation caught=yes
+ARM snippet-drift caught=yes
+ARM production-noindex caught=yes
+ARM supported-list-empty caught=yes
+ARM supported-list-missing caught=yes
+CLEAN rc=0
+
+### 1e. Break arm (after commit e9afe35e): Referrer-Policy put back in BASE only
+inv_break_rc=1
+  FAIL [k8s/staging] INV-15: Ingress 'jtoye-ingress' configuration-snippet lacks base header line: more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+  FAIL [k8s/staging] INV-15: Ingress 'jtoye-sse-ingress' configuration-snippet lacks base header line: more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+(rp-count on production during the arm: APP_HOST_INGRESS_REFERRER_LINES=1)
+restore: git checkout -- k8s/base/ingress.yaml; content check: base strict-origin lines=0; git diff --exit-code rc=0
+clean again: inv_clean_again_rc=0
+
+### 1f. scripts/check-k8s-copy-parity.sh: parity_rc=0 (PASS: 9 pairs, all byte-equal)
+
+## 2. Task 2: /pay renders a no-referrer meta tag (TDD)
+
+### 2a. RED: test committed first (b3f76e4e), page.tsx unchanged
+$ npx jest app/pay/__tests__/page-metadata.test.ts      -> jest_red_rc=1
+FAIL app/pay/__tests__/page-metadata.test.ts
+  ● /pay metadata (issue #1071) › sets the document referrer policy to no-referrer and stays noindex,nofollow
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "no-referrer"
+    Received: undefined
+
+      25 | describe("/pay metadata (issue #1071)", () => {
+      26 |   it("sets the document referrer policy to no-referrer and stays noindex,nofollow", () => {
+    > 27 |     expect(metadata.referrer).toBe("no-referrer")
+         |                               ^
+      28 |     const robots = (metadata.robots ?? {}) as { index?: boolean; follow?: boolean }
+      29 |     expect(robots.index).toBe(false)
+      30 |     expect(robots.follow).toBe(false)
+
+      at Object.toBe (app/pay/__tests__/page-metadata.test.ts:27:31)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        0.778 s
+Ran all test suites matching app/pay/__tests__/page-metadata.test.ts.
+
+### 2b. GREEN: metadata.referrer = "no-referrer" (45d45b9c)
+$ npx jest app/pay/__tests__ __tests__/header-snapshot.test.ts --json   -> rc=0
+__tests__/header-snapshot.test.ts passed 4/4
+app/pay/__tests__/page-metadata.test.ts passed 1/1
+app/pay/__tests__/pay-client.test.tsx passed 38/38
+passed  Security headers snapshot (regression guard) /invite gets Referrer-Policy no-referrer, after (so over) the default
+passed  Security headers snapshot (regression guard) /pay gets Referrer-Policy no-referrer, after (so over) the default
+passed  /pay metadata (issue #1071) sets the document referrer policy to no-referrer and stays noindex,nofollow
+passed  the /pay route shell (UI-SPEC S3 route and SEO hygiene) is titled, noindex,nofollow, with no canonical, Open Graph or other discoverability
+passed  the /pay route shell (UI-SPEC S3 route and SEO hygiene) wraps the island in the public shell and fetches nothing itself; the token never renders
+(the act() console warnings in that run come from the pre-existing pay-client.test.tsx, unchanged)
+$ npx tsc --noEmit   -> tsc_rc=0
+$ npm run lint       -> lint_rc=0 (0 errors, 27 warnings; 0 of them in app/pay/)
+
+### 2c. The REAL path: next build + next start on 127.0.0.1:3471 (this worktree, node_modules copied from the
+### main checkout after cmp of package-lock.json rc=0; Turbopack refused a symlinked node_modules)
+$ npx next build       -> build_rc=0 ("Compiled successfully", route ƒ /pay)
+$ curl -sS -D - http://127.0.0.1:3471/pay
+curl_rc=0
+Referrer-Policy: no-referrer
+<meta name="referrer" content="no-referrer"/>
+meta_rc=0
+control: the same grep on http://127.0.0.1:3471/ (home) -> control_home_meta_rc=1 (no tag: scoped to /pay)
+fail direction for the tag: section 0, today's staging /pay document (pre-fix build) has no tag (meta_grep_rc=1)
+server stopped by PID; port 3471 then refused (curl rc=7), 0 listeners
+
+## 3. Task 3: check-staging-edge.sh pay-referrer arm + --only (f5507bd2)
+
+### 3a. FAIL direction: today's staging (pre-deploy), read-only, no cluster call
+check-staging-edge  (2026-11-01T08:33:01Z)  mode=normal,only=pay-referrer  context=none (read-only: public hosts only, no cluster call)
+FAIL  [pay-referrer]
+        https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend's header with strict-origin-when-cross-origin)
+FAIL: 1 of 1 check(s) failed
+only_pay_referrer_rc=1
+TAP version 13
+1..1
+# check-staging-edge 2026-11-01T08:33:01Z mode=normal,only=pay-referrer context=none (read-only: public hosts only, no cluster call)
+not ok 1 - pay-referrer
+  ---
+  message: 'https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend''s header with strict-origin-when-cross-origin)'
+  ...
+# FAIL: 1 of 1
+tap_rc=1
+
+### 3b. The CI shape (--skip-burst) on today's staging: the four old arms PASS, pay-referrer FAILS
+INVALID RUN, kept for honesty: 08:33:02Z, while the --fail-arms run (3f) had its scratch probe up.
+That probe deliberately routes auth-staging /admin to agnhost (HTTP 200), so this run's admin arm
+FAILED. A collision of two of my own runs, not an edge regression:
+check-staging-edge  (2026-11-01T08:33:02Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+FAIL  [admin]
+FAIL  [pay-referrer]
+        https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend's header with strict-origin-when-cross-origin)
+FAIL: 2 of 5 check(s) failed
+skip_burst_rc=1
+
+VALID RUNS, with no probe present (kubectl get ingress,svc,pod,networkpolicy | grep -c fidelity -> 0):
+08:30:52Z (before the --fail-arms run): headers PASS, csp PASS, cors PASS, admin PASS, pay-referrer FAIL
+  (strict-origin-when-cross-origin), "FAIL: 1 of 5 check(s) failed", skip_burst_rc=1; TAP 1..5,
+  ok 1-4, not ok 5 - pay-referrer, tap_skip_burst_rc=1
+08:33:26Z (after the probe was deleted and verified gone):
+check-staging-edge  (2026-11-01T08:33:26Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+PASS  [admin]
+FAIL  [pay-referrer]
+        https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend's header with strict-origin-when-cross-origin)
+FAIL: 1 of 5 check(s) failed
+skip_burst_rc=1
+
+### 3c. Usage errors (exit 2)
+[--only] rc=2: USAGE ERROR: --only needs an arm name
+[--only bogus] rc=2: USAGE ERROR: --only needs one of: headers csp cors admin burst pay-referrer (got "bogus")
+[--only pay-referrer --fail-arms --context x] rc=2: USAGE ERROR: --only cannot be combined with --fail-arms (that mode must show every arm can fail)
+[--only pay-referrer --skip-burst] rc=2: USAGE ERROR: --only cannot be combined with --skip-burst (--only already names the one arm to run)
+[--only=burst --skip-burst] rc=2: USAGE ERROR: --only cannot be combined with --skip-burst (--only already names the one arm to run)
+
+### 3d. PASS direction and other fail shapes, local: arm_pay_referrer extracted from the script
+### (scratch arm-harness: awk-extract fetch_headers + arm_pay_referrer, call on URL)
+### 3471 = this branch's real frontend (next start), 3472 = a node fake sending chosen headers
+arm_rc=0 detail: http://127.0.0.1:3471/pay (HTTP 200): Referrer-Policy: no-referrer
+  -> http://127.0.0.1:3471/pay harness_rc=0
+arm_rc=1 detail: http://127.0.0.1:3471/ (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer: the edge overwrote the frontend's header, issue #1071)
+  -> http://127.0.0.1:3471/ harness_rc=1
+arm_rc=0 detail: http://127.0.0.1:3472/good (HTTP 200): Referrer-Policy: no-referrer
+  -> http://127.0.0.1:3472/good harness_rc=0
+arm_rc=1 detail: http://127.0.0.1:3472/none (HTTP 200): NO Referrer-Policy header (expected exactly no-referrer)
+  -> http://127.0.0.1:3472/none harness_rc=1
+arm_rc=1 detail: http://127.0.0.1:3472/two (HTTP 200): 2 Referrer-Policy headers (expected exactly one, no-referrer); the last is 'no-referrer'
+  -> http://127.0.0.1:3472/two harness_rc=1
+arm_rc=1 detail: http://127.0.0.1:3472/upper (HTTP 200): Referrer-Policy: No-Referrer (expected exactly no-referrer: the edge overwrote the frontend's header, issue #1071)
+  -> http://127.0.0.1:3472/upper harness_rc=1
+arm_rc=2 detail: curl rc=7 on http://127.0.0.1:3479/unreachable: the request did not complete
+  -> http://127.0.0.1:3479/unreachable harness_rc=2
+control: the same harness on the origin/main script -> 'VOID: arm_pay_referrer not extracted' rc=3
+
+### 3e. shellcheck: same finding classes as origin/main (SC1091 x1, SC2178 x1 pre-existing; SC2329 info 10 -> 11, the new function)
+### actionlint on ci-cd.yaml: identical findings to origin/main except a +1 line-number shift (pre-existing)
+
+### 3f. --fail-arms (writes to staging: scratch probe, deleted by name and verified), --context jtoye-stg-aks
+### every arm, pay-referrer included, must FAIL on the annotation-free probe route
+check-staging-edge  (2026-11-01T08:32:43Z)  mode=fail-arms  context=jtoye-stg-aks
+PASS  [fail-arm-headers]
+        FAILED on the probe route, as it must: https://app-staging.olajay.co.uk/fidelity-probe (HTTP 200): MISSING Strict-Transport-Security X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy X-Robots-Tag
+        https://api-staging.olajay.co.uk/fidelity-probe (HTTP 200): MISSING Strict-Transport-Security X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy X-Robots-Tag
+PASS  [fail-arm-csp]
+        FAILED on the probe route, as it must: https://app-staging.olajay.co.uk/fidelity-probe (HTTP 200): no Content-Security-Policy header
+PASS  [fail-arm-cors]
+        FAILED on the probe route, as it must: Origin https://app-staging.olajay.co.uk: HTTP 200, ACAO '<none>', ACAC '<none>' (NOT allowed with credentials)
+        Origin https://evil.example: HTTP 200, ACAO '<none>' (refused: not echoed)
+PASS  [fail-arm-admin]
+        FAILED on the probe route, as it must: https://auth-staging.olajay.co.uk/admin/: HTTP 200 (ROUTED: body starts 'NOW: 2026-11-01 08:32:52.70291361 +0000 ')
+        https://auth-staging.olajay.co.uk/admin/master/console/: HTTP 200 (ROUTED: body starts 'NOW: 2026-11-01 08:32:52.809299225 +0000')
+        https://auth-staging.olajay.co.uk/realms/jtoye-staging/.well-known/openid-configuration: HTTP 200, issuer https://auth-staging.olajay.co.uk/realms/jtoye-staging
+PASS  [fail-arm-pay-referrer]
+        FAILED on the probe route, as it must: https://app-staging.olajay.co.uk/fidelity-probe (HTTP 200): NO Referrer-Policy header (expected exactly no-referrer)
+PASS  [fail-arm-burst]
+        FAILED on the probe route, as it must: sub-limit: 60 requests at 10/s in 6s -> 0 x 429; codes:  60 200;
+        burst: 1500 requests, concurrency 40, one HTTP/2 connection, 3s (curl rc=0) -> 0 x 429 (edge 0, app 0), 0 x 503, 1500 x 2xx, 0 other; 429 content-types: 
+        NO EDGE 429: the burst was never limited at the edge
+PASS  [probe-cleanup]
+        deleted by name and verified NotFound: ingress/fidelity-probe service/fidelity-probe networkpolicy/fidelity-probe-allow pod/fidelity-probe
+PASS: 7 of 7 check(s) hold on the live edge (mode=fail-arms)
+fail_arms_rc=0
+
+## 4. Docs and branch gates
+
+docs-freshness.sh (before --write): docs_freshness_pre_rc=1 ("Fix by running: scripts/docs-freshness.sh --write")
+docs-freshness.sh --write: dfw_rc=0; jest_blocks 3261 -> 3262, jest_files 275 -> 276, total_logical_invocations 6773 -> 6774
+docs-freshness.sh (after): docs_freshness_post_rc=0
+check-doc-metrics.sh before the prose edits: doc_metrics_pre_rc=1
+FAIL: README.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6774
+FAIL: README.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6774
+FAIL: README.md [jest_blocks]: doc says 3261, docs/metrics.json says 3262
+FAIL: README.md [jest_files]: doc says 275, docs/metrics.json says 276
+FAIL: CLAUDE.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6774
+FAIL: CLAUDE.md [jest_blocks]: doc says 3261, docs/metrics.json says 3262
+FAIL: CLAUDE.md [jest_files]: doc says 275, docs/metrics.json says 276
+FAIL: AGENTS.md [total_logical_invocations]: doc says 6773, docs/metrics.json says 6774
+FAIL: AGENTS.md [jest_blocks]: doc says 3261, docs/metrics.json says 3262
+FAIL: AGENTS.md [jest_files]: doc says 275, docs/metrics.json says 276
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.
+check-doc-metrics.sh after: doc_metrics_post_rc=0 "PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json."
+check-no-object-store-residue.sh: rc=1 when my k8s/LOCAL.md note added ONE line (13 line-numbered allowlist entries
+  below it went stale: "VIOLATION k8s/LOCAL.md:898: [R-1] ..." through ":2058"); rewrapped to the original
+  line count (2214 = 2214): residue_rc=0 "PASS: no retired object-store residue in 4494 tracked file(s); 2036 hit
+  line(s) covered by 51 reasoned, live allowlist entr(ies)."
+check-doc-citations.sh: rc=0 "PASS: all 46 verified citation(s) across 8 doc(s) resolve ..."
+check-handoff-contract.sh: rc=0
+check-gate-enforcement.sh: rc=0 "PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run."
+check-branch-behind-base.sh (after git fetch): rc=0 "PASS: HEAD contains every commit on origin/main (6c1fdc93); it is 5 commit(s) ahead and 0 behind."
+check-changelog-contract.sh: rc=0 "PASS: all 86 merged feat/fix PR(s) since fbee244d are cited in docs/CHANGELOG.md (0 exempt)."
+check-changelog-cites-pr.sh --pr 1073 --title "<the PR title>":
+  with the new entry: cites_pr_after_rc=0 "PASS: docs/CHANGELOG.md has an entry heading citing #1073."
+  with HEAD's CHANGELOG (no entry): cites_pr_before_rc=1; restored by content (grep -c '(#1071) (#1073)' = 1)
+PR body read back with gh pr view --json body: identical to the posted file except one trailing newline;
+  attribution grep (co-authored|claude-session|generated with|claude.ai/code) = 0 (control string = 1)
+
+## 5. Review round 1 on 8d1fb2b3 (comments 4435036160..4435036392): the two admissible fixes
+
+### 5-merge. Finding 1 (gate): the branch was 1 behind origin/main (#1072, 50dee65a)
+git merge --no-ff --no-commit origin/main -> merge_rc=1, CONFLICT (content) in AGENTS.md, CLAUDE.md,
+README.md, docs/CHANGELOG.md, docs/metrics.json. Every conflict hunk in the four count files was a count
+line only (both sides bumped the same numbers).
+- metrics.json, AGENTS.md, CLAUDE.md, README.md: main's copy, then docs-freshness.sh -> rc 1 (stale);
+  docs-freshness.sh --write -> rc 0; regenerated json vs origin/main:
+    jest_blocks 3273 -> 3274, jest_files 275 -> 276, total_logical_invocations 6785 -> 6786
+  check-doc-metrics.sh before setting the prose numbers: rc 1 (10 FAIL lines: doc says 6785/3273/275);
+  after (numbers from the regenerated json only): rc 0 "PASS: all 37 prose metric claim(s) ..."
+- docs/CHANGELOG.md: main's copy, this PR's 11-line entry re-applied at the top of [Unreleased].
+    grep -c '(#1071) (#1073)'       = 1   (this PR's entry)
+    grep -c '(#1072) — 2026-11-01'  = 1   (main's #1072 entry)
+    conflict markers                 = 0
+    diff vs origin/main: 0 lines removed, 11 added
+  check-changelog-contract.sh rc 0 "PASS: all 87 merged feat/fix PR(s) since fbee244d are cited ..."
+  check-changelog-cites-pr.sh --pr 1073 rc 0 "PASS: docs/CHANGELOG.md has an entry heading citing #1073."
+Merge commit 555b1e64 (parents 8d1fb2b3 50dee65a); message read back, no attribution line (the only hit
+of the attribution grep was the word "regenerated with", a false positive of the "generated with" term).
+check-branch-behind-base.sh after: rc 0 "PASS: HEAD contains every commit on origin/main (50dee65a); it is 7
+commit(s) ahead and 0 behind."
+
+## 5. Round 1 finding 2 (fail-open --only): RED on the script at 8d1fb2b3, 2026-11-01T09:20:49Z
+$ bash scripts/check-staging-edge.sh --only "headers csp"
+check-staging-edge  (2026-11-01T09:20:49Z)  mode=normal,only=headers csp  context=none (read-only: public hosts only, no cluster call)
+PASS: 0 of 0 check(s) hold on the live edge (mode=normal,only=headers csp); only the headers csp arm was run (--only), every other arm is unproven by this run
+rc=0
+$ bash scripts/check-staging-edge.sh --only= --skip-burst
+check-staging-edge  (2026-11-01T09:20:49Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+PASS  [admin]
+FAIL  [pay-referrer]
+FAIL: 1 of 5 check(s) failed
+rc=1
+$ bash scripts/check-staging-edge.sh --only "" --skip-burst
+check-staging-edge  (2026-11-01T09:20:51Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+PASS  [admin]
+FAIL  [pay-referrer]
+FAIL: 1 of 5 check(s) failed
+rc=1
+
+### 5b. GREEN after the fix (exact-equality --only, empty refused, REPORT_N == 0 is VOID), 2026-11-01T09:22:47Z
+$ bash scripts/check-staging-edge.sh --only "headers csp"
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "headers csp")
+rc=2
+$ bash scripts/check-staging-edge.sh --only=
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "")
+rc=2
+$ bash scripts/check-staging-edge.sh --only ""
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "")
+rc=2
+$ bash scripts/check-staging-edge.sh --only="headers csp"
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "headers csp")
+rc=2
+$ bash scripts/check-staging-edge.sh --only bogus
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "bogus")
+rc=2
+$ bash scripts/check-staging-edge.sh --only pay-referrer
+check-staging-edge  (2026-11-01T09:22:48Z)  mode=normal,only=pay-referrer  context=none (read-only: public hosts only, no cluster call)
+FAIL  [pay-referrer]
+        https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend's header with strict-origin-when-cross-origin)
+FAIL: 1 of 1 check(s) failed
+rc=1
+$ bash scripts/check-staging-edge.sh --only pay-referrer (EDGE_FORMAT=tap)
+TAP version 13
+1..1
+# check-staging-edge 2026-11-01T09:22:48Z mode=normal,only=pay-referrer context=none (read-only: public hosts only, no cluster call)
+not ok 1 - pay-referrer
+  ---
+  message: 'https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend''s header with strict-origin-when-cross-origin)'
+  ...
+# FAIL: 1 of 1
+rc=1
+
+### 5c. Backstop break arm: a scratch copy whose want() never matches (so no arm runs in a plain run)
+207:want() { return 1; }
+$ bash <copy> --skip-burst
+check-staging-edge  (2026-11-01T09:23:04Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+VOID: no arm was evaluated (mode=normal,skip-burst); nothing is proven
+rc=2
+$ EDGE_FORMAT=tap bash <copy> --skip-burst
+TAP version 13
+1..5
+# check-staging-edge 2026-11-01T09:23:04Z mode=normal,skip-burst context=none (read-only: public hosts only, no cluster call)
+# VOID: no arm was evaluated
+rc=2
+(control: the SAME break applied to the 8d1fb2b3 script, measured:)
+check-staging-edge  (2026-11-01T09:23:20Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS: 0 of 0 check(s) hold on the live edge (mode=normal,skip-burst); the burst arm was NOT RUN (--skip-burst), so the rate limit is unproven by this run
+rc=0
+
+### 5d. Unchanged modes after the fix
+$ bash scripts/check-staging-edge.sh --skip-burst
+check-staging-edge  (2026-11-01T09:23:04Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+PASS  [admin]
+FAIL  [pay-referrer]
+FAIL: 1 of 5 check(s) failed
+rc=1
+1..5
+ok 1 - headers
+ok 2 - csp
+ok 3 - cors
+ok 4 - admin
+not ok 5 - pay-referrer
+# FAIL: 1 of 5
+tap rc=1
+[--only pay-referrer --fail-arms --context x] rc=2: USAGE ERROR: --only cannot be combined with --fail-arms (that mode must show every arm can fail)
+[--only pay-referrer --skip-burst] rc=2: USAGE ERROR: --only cannot be combined with --skip-burst (--only already names the one arm to run)
+[--fail-arms --skip-burst --context x] rc=2: USAGE ERROR: --skip-burst cannot be combined with --fail-arms (that mode must show every arm, burst included, can fail)
+
+### 5e. k8s/local/ingress-patch.yaml: comment no longer lists Referrer-Policy among the nulled snippet's headers (doc only)
+
+### 5f. Gates on the fixed tree
+k8s/scripts/check-render-invariants.sh rc=0 :: PASS: INV-1..INV-7, INV-11 and INV-12 hold across 4 kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on k8s/staging k8s/production; INV-16 holds on k8s/staging (not ap
+k8s/scripts/render-golden.sh rc=0 :: All overlay renders match their committed goldens.
+scripts/check-doc-citations.sh rc=0 :: PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+scripts/check-no-object-store-residue.sh rc=0 :: PASS: no retired object-store residue in 4506 tracked file(s); 2036 hit line(s) covered by 51 reasoned, live allowlist entr(ies).
+scripts/check-handoff-contract.sh rc=0 ::       NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+scripts/check-gate-enforcement.sh rc=0 :: PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run.
+scripts/check-k8s-copy-parity.sh rc=0 :: PASS: 9 pairs, all byte-equal; 1 jobs pair(s), job sets and labels equal.
+scripts/docs-freshness.sh rc=0 :: docs-freshness OK: metrics match source (total logical invocations: 6786).
+scripts/check-doc-metrics.sh rc=0 :: PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+scripts/check-changelog-contract.sh rc=0 :: PASS: all 87 merged feat/fix PR(s) since fbee244d are cited in docs/CHANGELOG.md (0 exempt).
+scripts/check-branch-behind-base.sh rc=0 :: PASS: HEAD contains every commit on origin/main (50dee65a); it is 7 commit(s) ahead and 0 behind.
+frontend: npx jest app/pay/__tests__ __tests__/header-snapshot.test.ts components/public/__tests__/cookie-notice.test.tsx -> jest_rc=0
+  components/public/__tests__/cookie-notice.test.tsx passed 30/30
+  app/pay/__tests__/pay-client.test.tsx passed 46/46
+  app/pay/__tests__/page-metadata.test.ts passed 1/1
+  __tests__/header-snapshot.test.ts passed 4/4
+tsc --noEmit rc=0; npm run lint rc=0 (0 errors, 27 warnings); package-lock.json cmp vs main checkout rc=0
+shellcheck: same classes as before (SC1091 x1, SC2178 x1 pre-existing, SC2329 info x11)
