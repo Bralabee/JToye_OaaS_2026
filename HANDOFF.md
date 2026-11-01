@@ -1,8 +1,36 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 21/32 plans done; 30-21 adopted from PR 6 (#1065); 30-22 NOT MET on #1065 (two fixes needed before 30-23); issue #1071 (edge Referrer-Policy) open
+# Handoff: Phase 30 (The Money Path, Executed) executing, 22/32 plans done; 30-21 adopted and 30-22 complete on PR 6 (#1065, head 1f69a7f0); next D3 round 3 on #1065, then 30-23; issue #1071 (edge Referrer-Policy) open
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-11-01 adoption delta (RESUME HERE; everything below is history).**
+**2026-11-01 fix delta (RESUME HERE; everything below is history).**
+- **Owner ruling 2026-11-01: "you fix it. you tackle the gaps."** Both 30-22 gaps are fixed on #1065. The pushes were fast-forwards from a detached scratch checkout; Antigravity's worktree was not touched. New head: **`1f69a7f0`** (DRAFT, OPEN, read back with `gh pr view 1065 --json headRefOid`). Commits:
+  - `b7a827ac`: RED, a Jest read-back test (8/11 fail on the old rule)
+  - `29d419c4`: the fix
+  - `7537f8df`: merge of `origin/main` `bf98cde5` (#1068, #1067)
+  - `1f69a7f0`: counts, 6778
+- **30-22 is COMPLETE** (`30-22-SUMMARY.md`, evidence `evidence/30-22-fix-1065.txt`). WINDOWS 53 and 54 are fixed. **Phase 30 is 22/32.**
+  1. **T-30-87, the secret in an artifact.** The probe found a second path. On a transport error, Playwright's request call log prints `Authorization: Bearer <key>` into the JSON report and `error-context.md`, so `trace: "off"` alone does not close it. The fixes:
+     - Stripe calls now go through `frontend/e2e/stripe-test-api.ts`, which uses Node `fetch`, so Playwright never sees the key.
+     - `test.use(STRIPE_SPEC_ARTIFACTS)` turns traces and video off.
+     - The Stripe run writes its output to `$RUNNER_TEMP`, which is not uploaded. It also no longer empties the main run's `test-results/`.
+     - A new `always()` step runs `check-stripe-ci-keys.sh --scan-artifacts` before the upload. It deletes any file holding the `sk_test_` or the whsec (zip members are read) and fails the job.
+     - Results: probe RED 4 files, GREEN 0. The selftest is 18/18, with 2 break arms.
+  2. **Exactly one refund.** `pollRefundReadback` settles only on exactly one succeeded, 100-pence refund that has a charge id, seen on two consecutive reads within 30 s. The charge's livemode is always read. The page must show `Refunds (1)`, `£1.00` and the `Refunded` badge. Jest: 11/11 GREEN.
+  - Gates on `1f69a7f0` are all rc 0, including the changelog contract (green again), doc metrics 37/37, gate enforcement, both test-count oracles, gitleaks, and branch-behind-base (0 behind).
+  - **Not run here, by design:** the live refund against Stripe. That is 30-23 Task 2.
+- **Next, in order:**
+  1. **D3 round 3 on #1065:** `/review-verify 1065`, over the fix commits only (`b7a827ac`..`1f69a7f0`; the merge brings in main). The orchestrator runs it, and round 3+ is the owner's decision under §14.4. The PR body still describes the 6-arm selftest and the `>= 1` read-back; review against the evidence file, not the body.
+  2. **30-23, the owner checkpoint.** The CI keys can now be stored, because the trace fix is on the branch. Create the CI Stripe sandbox, then run `gh secret set STRIPE_TEST_SECRET_KEY` and `gh variable set CI_STRIPE_PUBLISHABLE_KEY`, then say "ci keys set". After that:
+     - the branch nightly on `agy/30-21-22-refund-e2e` (S-3 red expected);
+     - the ALLOW retired from the measured count;
+     - nightly 2 green;
+     - mark #1065 ready.
+  3. Then 30-24.
+- **Antigravity:** its `JToye_OaaS_2026-agy-p30-w21` worktree is behind the pushed branch. Run `git pull --ff-only` there before any further work.
+- Note: 30-25 (#1067) merged on main with its own SUMMARY. This record branch (cut from `bff82097`) does not have it yet, so after main is merged, the phase count on main reads one higher than 22.
+- This worktree's `feat/30-pay01-refund-e2e` holds only record commits and is NOT pushed.
+
+**2026-11-01 adoption delta (history; superseded by the fix block above).**
 - **PR 6 is #1065**: DRAFT, by Antigravity, on `agy/30-21-22-refund-e2e`, head `217003b5`.
   - It holds plans 30-21 and 30-22. Its D3 series is complete: round 1 admitted 4 and fixed 4, round 2 admitted 0, and the Review-Record is on `217003b5`.
   - The owner's ruling (2026-11-01) was to adopt it if proven. It was re-measured in a detached checkout of that head. Evidence: `evidence/30-21-22-adopt-1065.txt`.
