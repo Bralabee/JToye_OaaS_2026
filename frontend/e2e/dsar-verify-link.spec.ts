@@ -103,10 +103,11 @@ test.describe("DSAR verification link (#839)", () => {
     const messages = await messagesFor(request, address)
     expect(messages.length, `no verification email reached Mailhog for ${address}`).toBeGreaterThan(0)
     const text = messageText(messages[0])
-    expect(messages[0].Content?.Headers?.Subject?.[0] || "").toContain("Confirm your data request")
+    // SW-SAM-08 (swarm epic #964): the subject names which request it is.
+    expect(messages[0].Content?.Headers?.Subject?.[0] || "").toContain("Confirm your request")
 
     // 3. The link as the email carries it.
-    const match = text.match(/https?:\/\/[^\s<>"]+#token=[A-Za-z0-9_-]+/)
+    const match = text.match(/https?:\/\/[^\s<>"]+#token=[A-Za-z0-9_-]+(?:&type=(?:access|erasure))?/)
     expect(match, `the email carries no #token= link:\n${text}`).not.toBeNull()
     const link = match![0]
     const url = new URL(link)

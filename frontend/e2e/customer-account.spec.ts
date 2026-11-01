@@ -43,7 +43,9 @@ import { servedHtml, countOf } from "./helpers/served-html"
 const MAILHOG = process.env.MAILHOG_URL || "http://localhost:8025"
 const INTAKE_PATH = "/api/v1/public/gdpr/dsar"
 const LODGED_HEADING = "Check your email to confirm"
-const VERIFY_SUBJECT = "Confirm your data request"
+// SW-SAM-08 (swarm epic #964): the subject now names the request ("… for a copy of your data" /
+// "… to erase your data"); this prefix is shared by both.
+const VERIFY_SUBJECT = "Confirm your request"
 
 /** The chrome-only `<h2>` floor (ssr-coverage.spec.ts measured it on a page that renders no body). */
 const FOOTER_H2_FLOOR = 3
