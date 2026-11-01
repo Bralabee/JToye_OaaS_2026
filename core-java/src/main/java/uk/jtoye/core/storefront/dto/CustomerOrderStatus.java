@@ -25,6 +25,17 @@ public class CustomerOrderStatus extends PublicOrderStatus {
             + "email-verified history.", nullable = true, maxLength = 500)
     private String allergyNote;
 
+    /**
+     * Review R1: the inherited {@code @Schema} text says the note is never returned, which is true of
+     * {@link PublicOrderStatus} and false here, two keys above {@code allergyNote}. This override only
+     * re-describes the property for this schema; {@link PublicOrderStatus} stays byte-identical.
+     */
+    @Override
+    @Schema(description = "Whether the customer sent an allergy or dietary note with this order. On this signed-in "
+            + "history the text itself is in allergyNote when the contact was verified; the tracking response and "
+            + "the email-verified history carry only this flag.")
+    public Boolean getAllergyNoteProvided() { return super.getAllergyNoteProvided(); }
+
     public String getAllergyNote() { return allergyNote; }
     public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
 

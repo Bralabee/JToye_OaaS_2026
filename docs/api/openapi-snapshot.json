@@ -2335,7 +2335,7 @@
             "type" : "string"
           },
           "allergyNoteProvided" : {
-            "description" : "Whether the customer sent an allergy or dietary note with this order. The note's text is never returned here.",
+            "description" : "Whether the customer sent an allergy or dietary note with this order. On this signed-in history the text itself is in allergyNote when the contact was verified; the tracking response and the email-verified history carry only this flag.",
             "type" : "boolean"
           },
           "balanceDuePennies" : {
