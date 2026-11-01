@@ -28,6 +28,13 @@ import { metadata as operatorsMetadata } from "@/app/for-operators/page"
 import { metadata as legalMetadata } from "@/app/legal/page"
 import { metadata as termsMetadata } from "@/app/legal/terms/page"
 import { metadata as contactMetadata } from "@/app/contact/page"
+import { generateMetadata as shopLayoutMetadata } from "@/app/shop/layout"
+import { generateMetadata as shopIndexMetadata } from "@/app/shop/page"
+
+jest.mock("@/lib/storefront-server", () => ({
+  loadShopList: jest.fn(),
+  loadShopDetail: jest.fn(),
+}))
 
 const ORIGIN = "https://app-staging.example.test"
 const VARS = ["APP_PUBLIC_ORIGIN", "NEXTAUTH_URL"] as const
@@ -114,4 +121,29 @@ describe("public pages resolve to absolute URLs under the root metadataBase (SW-
       expect(abs.startsWith(ORIGIN)).toBe(true)
     }
   )
+})
+
+/**
+ * ONE OWNER (PR 1080 round 1, comment 4436097625). app/shop/layout.tsx used to
+ * set the same metadataBase from the same resolver. Two copies of one value
+ * drift: a later change to one would give the storefront and the marketing
+ * pages different canonical origins. The root layout is now the only layout
+ * that sets it, and the storefront still resolves absolute through inheritance.
+ */
+describe("metadataBase has one layout owner (round 1)", () => {
+  it("the shop layout does not set metadataBase", async () => {
+    process.env.NEXTAUTH_URL = ORIGIN
+    const meta = await shopLayoutMetadata()
+    // Control: this is the real shop layout metadata, not an empty object.
+    expect(String(meta.title).length).toBeGreaterThan(0)
+    expect(meta).not.toHaveProperty("metadataBase")
+  })
+
+  it("/shop's canonical still resolves absolute against the root base", async () => {
+    process.env.NEXTAUTH_URL = ORIGIN
+    const base = (await rootMetadata()).metadataBase as URL
+    const shop = await shopIndexMetadata()
+    const abs = resolve(canonicalOf(shop), base, "/shop")
+    expect(abs).toBe(`${ORIGIN}/shop`)
+  })
 })
