@@ -130,7 +130,9 @@ describe("the tracking page never renders the note, even from the signed-in list
     expect(await screen.findByTestId("allergy-note-status")).toHaveTextContent(
       ALLERGY_NOTE_SENT_COPY(WITH_NOTE.shopName)
     )
+    // A literal, not the My Orders constant: this arm guards the tracking page on its own, and must
+    // pass on a tree where that constant does not exist.
     expect(document.body.textContent ?? "").not.toContain("peanuts")
-    expect(screen.queryByText(MY_ORDERS_ALLERGY_NOTE_HEADING_COPY)).toBeNull()
+    expect(screen.queryByText("Your allergy note")).toBeNull()
   })
 })
