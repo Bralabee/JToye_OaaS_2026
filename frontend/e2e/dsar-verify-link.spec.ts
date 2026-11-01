@@ -32,6 +32,7 @@
  * Run: npx playwright test e2e/dsar-verify-link.spec.ts  (compose stack up)
  */
 import { test, expect, type APIRequestContext } from "@playwright/test"
+import { verifyLinkPattern } from "../app/data-request/confirm/verify-link"
 
 const API = process.env.PLAYWRIGHT_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090"
 const MAILHOG = process.env.MAILHOG_URL || "http://localhost:8025"
@@ -108,8 +109,10 @@ test.describe("DSAR verification link (#839)", () => {
     expect(messages[0].Content?.Headers?.Subject?.[0] || "").toContain("Confirm your request")
 
     // 3. The link as the email carries it.
-    const match = text.match(/https?:\/\/[^\s<>"]+#token=[A-Za-z0-9_-]+(?:&type=(?:access|erasure))?/)
-    expect(match, `the email carries no #token= link:\n${text}`).not.toBeNull()
+    // R1 on #1079: the type is REQUIRED and must be the kind lodged above (ACCESS), so a mailer that
+    // dropped or encoded `&type=` fails here rather than matching a type-less link.
+    const match = text.match(verifyLinkPattern("access"))
+    expect(match, `the email carries no #token=…&type=access link:\n${text}`).not.toBeNull()
     const link = match![0]
     const url = new URL(link)
     expect(url.origin, "the link must open the web app, not the API").toBe(frontendOrigin)
@@ -126,6 +129,8 @@ test.describe("DSAR verification link (#839)", () => {
     await page.goto(link, { waitUntil: "domcontentloaded" })
     const confirmButton = page.getByRole("button", { name: /confirm my request/i })
     await expect(confirmButton).toBeVisible({ timeout: 15_000 })
+    // SW-SAM-08: the page names the request the link was issued for.
+    await expect(page.getByRole("heading", { name: "Confirm your request for a copy of your data" })).toBeVisible()
     await page.waitForTimeout(1_000)
     expect(verifyPosts, "the page must not confirm before the press").toEqual([])
     expect(new URL(page.url()).hash, "the token must be cleared from the address bar").toBe("")
