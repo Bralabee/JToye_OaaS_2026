@@ -219,3 +219,14 @@
     Seen while checking for personal data, for the owner: the cookie banner is drawn over the Expiry date and
     Security code fields (a fixed element at its viewport offset in a full-page capture; at 360 x 780 it covers part
     of the card form until "Got it").
+
+## 9. Issue #1071 closed — the must-have "/pay answers 200 with Referrer-Policy no-referrer" MET on the live edge (2026-11-01)
+
+PR #1073 (fd01dc0c): the Referrer-Policy line left the base and staging ingress snippets (the apps own the header),
+/pay declares metadata.referrer = "no-referrer", and check-staging-edge.sh gained a pay-referrer arm (rc 1 on the
+pre-deploy edge, its fail direction). Deploy run 41295872214: Deploy to Staging success, Staging Edge Probe success.
+
+    GET https://app-staging.olajay.co.uk/pay
+    HTTP/2 200
+    referrer-policy: no-referrer
+    <meta name="referrer" content="no-referrer"/>

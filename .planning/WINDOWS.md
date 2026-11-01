@@ -742,10 +742,10 @@ last_updated: 2026-11-01T01:06:26.199Z
     "file": "k8s/staging/ingress-hosts-patch.yaml",
     "line": 56,
     "description": "30-20: /pay Referrer-Policy no-referrer is replaced at the staging edge by the ingress more_set_headers strict-origin-when-cross-origin (issue #1071); the app sends no-referrer",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "PR #1073 (fd01dc0c, merged 2026-11-01): Referrer-Policy left the base/staging ingress snippets, /pay declares metadata.referrer no-referrer, check-staging-edge.sh gained the pay-referrer arm; deploy run 41295872214 success incl. Staging Edge Probe; live read after the deploy: GET https://app-staging.olajay.co.uk/pay -> HTTP/2 200, referrer-policy: no-referrer, <meta name=\"referrer\" content=\"no-referrer\"/>",
     "recorded_at": "2026-10-31T23:51:09.522Z",
-    "resolved_at": null,
+    "resolved_at": "2026-11-01T11:40:00.000Z",
     "milestone": "v2.3"
   },
   {
