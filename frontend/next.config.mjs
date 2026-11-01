@@ -26,15 +26,6 @@ const nextConfig = {
         pathname: '/devstoreaccount1/jtoye-images/**',
       },
     ],
-    // D14: the srcset widths the optimizer may generate. The landing's photos are
-    // 800-1000px originals shown at most ~320px wide (a card, a door, a desktop
-    // tile), so nothing needs a candidate above 750: a 3x phone asked for 1080w
-    // under the default list and got the whole original. Capping the device
-    // list at 750 serves phones at most a 750px file at any pixel ratio, and a
-    // 2x desktop still gets 640w for a 320px card. imageSizes covers the 32px
-    // chip thumbnails at 1x/2x/3x. These are the ONLY next/image consumers.
-    deviceSizes: [384, 640, 750],
-    imageSizes: [32, 64, 96],
   },
   // The July operator pack PDF was retired with the /for-operators truth refresh;
   // links already handed to operators land on the page that replaced it.
