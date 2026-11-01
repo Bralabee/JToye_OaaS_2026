@@ -1,0 +1,220 @@
+30-21 / 30-22 ADOPTION RE-MEASUREMENT — PR #1065 (agy/30-21-22-refund-e2e)
+=========================================================================
+Head measured: 217003b52ef2a71c6d3301eda428bc4aa8264c70 (5 commits: f928ba16 e6316b47 39b4f136 8d9dde4a 217003b5)
+Base at measurement start: origin/main bff8209764135d4b864ffcc222c1f5ada983cbf1 (0 behind)
+Owner ruling 2026-11-01: "it should be adopted if PROVEN to be valid acceptable work."
+Method: every command below ran in a detached run-only checkout of the head
+  (git worktree add --detach .../scratchpad/wt-1065 217003b5, 2026-11-01T00:15:27Z),
+  never in Antigravity's worktree or the main checkout. The PR body, review comments and CI were read
+  as context only, never as proof.
+Break arms: clean -> arm -> clean, each restore verified by sha256 against the head blob.
+Lockfile: frontend/package-lock.json blob 6455bdd4 at head == origin/main (byte-identical);
+  frontend/package.json ce2b451f == origin/main. npm ci rc=0 (2026-11-01T00:20:05Z..00:20:12Z;
+  node v22.23.4 locally, install scripts blocked by the local npm policy; listing and tsc need none).
+
+-------------------------------------------------------------------------
+30-21 (S-5, --selftest, --lint-conf, repeatable --report, ops-contracts)
+-------------------------------------------------------------------------
+[00:18:38Z] bash scripts/check-e2e-skip-budget.sh --selftest
+  PASS bare-allow, no-remove-when, empty-remove-when, remove-when-only, blank-line-gap, full-block,
+  undeclared-skip, stale-allow, over-budget, digest-mismatch, lint-real-conf, lint-bare, union-ok,
+  union-digest-mismatch   -> rc=0 pass_lines=14 fail_lines=0 missing=0 stderr empty
+[00:18:51Z] plan T1 verify (verbatim, 10 arms): rc=0 missing=0 fail_lines=0 verify_rc=0
+            plan T2 verify 1 (verbatim, 6 arms): rc=0 missing=0 fail_lines=0 verify_rc=0
+            plan T2 verify 2 --lint-conf (real conf): "PASS: lint 2 ALLOW block(s)" rc=0 verify_rc=0
+            plan T2 verify 3 (ops-contracts YAML): selftest True, lint True, rc=0 true=2 verify_rc=0
+  FAIL direction of verify 3, on origin/main's ci-cd.yaml: selftest False, lint False, true=0 verify_rc=1
+  Step conditions (yaml): ops-contracts job if=None; the three new steps if=None
+    'Prove the E2E skip-budget gate and S-5 block rule can fail (plan 30-21 --selftest)'
+    'Lint scripts/gates/e2e-skip-budget.conf against S-5 (plan 30-21 --lint-conf)'
+    'Prove the Stripe CI test-key guard can fail (plan 30-22 --selftest)'
+[00:19:13Z] Acceptance: --lint-conf on a scratch copy of the real conf + blank line + bare
+  'ALLOW stomp-relay.spec.ts': "FAIL: S-5 ALLOW 'stomp-relay.spec.ts' lacks a justification and/or a
+  REMOVE WHEN line directly above it" rc=1 s5=1
+  Same copy with a justification comment but no REMOVE WHEN: rc=1, same S-5 line
+  bash scripts/check-ci-docs-skip-wiring.sh rc=0 ; --selftest rc=0 ("all arms behaved")
+[00:19:29Z] RED ARM (Task 1 acceptance), in wt-1065, TAP format:
+  clean0 sha b267bdcf...ad25 == head blob 6d17406e; selftest rc=0 not_ok=0
+  arm: the one line `check_s5_block "$value"` replaced by a no-op (target lines=1, calls_left=0)
+  armed selftest rc=1: not ok 1 bare-allow (rc=0, gate PASSED the bare ALLOW), not ok 2 no-remove-when,
+    3 empty-remove-when, 4 remove-when-only, 5 blank-line-gap, 12 lint-bare;
+    ok 6 full-block, 7 undeclared-skip, 8 stale-allow, 9 over-budget, 10 digest-mismatch,
+    11 lint-real-conf, 13 union-ok, 14 union-digest-mismatch  (ok=8 not_ok=6)
+  -> the five S-5 arms (+ lint-bare, also an S-5 arm) fail and the five existing-rule arms pass:
+     the fixtures drive the real gate (T-30-85). bare-allow's assertion includes no S-2/no S-3 (code l.178-179).
+  clean1 sha b267bdcf...ad25 equal=yes; selftest rc=0 pass=14
+Direct union probes (ad-hoc reports stamped with the tree digest 2ac2a003...; conf MAX_SKIPS 1 + full ALLOW fixture.spec.ts):
+  A zero skips + B fixture skip     -> rc=0 (ALLOW matched through report B; "2 total, 1 skipped")
+  A zero skips + B undeclared skip  -> rc=1 S-2 undeclared "other.spec.ts › u" (+ S-3 stale)
+  A zero skips + B MISSING          -> rc=2 VOID "no Playwright JSON report at .../MISSING.json"
+  B fixture skip twice              -> rc=1 S-1 "2 skipped test(s) exceeds the declared budget of 1"
+  -> titles UNIONED, counts SUMMED, a missing report VOID (the code; the PR BODY's prose
+     "a spec counts as skipped only if every report skipped it" is wrong about its own code).
+  E2E_REPORT=/nonexistent + --report <valid> -> rc=0 (E2E_REPORT ignored); control without --report -> rc=2 VOID
+  --lint-conf on a conf with 'BOGUS x' -> rc=2 VOID "unknown directive 'BOGUS'"
+Real conf at head: byte-identical to origin/main (ALLOW stomp-relay l.37, ALLOW vendor-refund-flow l.44,
+  MAX_SKIPS 6 l.83) — the conf edit is 30-23's, as planned.
+Spec digest: scripts/e2e-spec-digest.sh hashes the files under frontend/e2e + playwright.config.ts
+  (git hash-object over find), independent of STRIPE_E2E, so both nightly reports carry the same digest.
+
+-------------------------------------------------------------------------
+30-22 Task 1 (spec, collection switch, counts)
+-------------------------------------------------------------------------
+[00:20:20Z] plan T1 verify 1 (verbatim): arc=0 brc=0 default_lists_stripe=0 keyed_desktop=1 keyed_mobile=0
+  draft_test_still_listed=2 verify_rc=0
+  keyed: "[desktop] › stripe-refund-flow.spec.ts:144:7 › Phase 30 PAY-01 — Stripe test-mode vendor refund flow
+          › vendor issues a £1.00 refund on a captured Stripe card order @desktop-only"  Total: 1 test in 1 file
+  default: Total: 432 tests in 45 files
+Fail-direction controls of the switch (default listing):
+  STRIPE_E2E=1    -> stripe_lines=1 desktop=1 mobile=0 (433 tests in 46 files)   [the counter can see it]
+  STRIPE_E2E=true -> 0 ; =yes -> 0 ; =0 -> 0     [one spelling only]
+  STAGING_E2E=1   -> staging_lines=7 stripe_lines=0   [the two switches are independent]
+Default listing, origin/main bff82097 vs head (sorted, line numbers stripped): main 434, head 432;
+  diff = exactly the two entries "[desktop|mobile] › vendor-refund-flow.spec.ts › Phase 17 — vendor refund
+  flow › vendor logs in, opens an order, issues a partial refund, sees REFUNDED state". Nothing else
+  added or lost; no project grepInvert overridden (no CLI --grep-invert anywhere in the change).
+DRAFT test byte-identity: sha256 of the block from 'test("Issue refund button is hidden on a DRAFT order"'
+  to EOF = 52633a627f2a9a6a on both main and head (49 lines each); file prelude 5d0b050d48947259 both.
+Acceptance: rg -uu -n 'test\.skip' frontend/e2e/stripe-refund-flow.spec.ts -> rc=1 (none);
+  control over vendor-refund-flow.spec.ts -> rc=0 (l.76, l.104: the DRAFT test's vendorLogin skips).
+  rg -uu -i '\.skip|\.fixme|\.only|select |insert |update |psql|paymentStatus:|payment_status|payment_reference'
+  over the Stripe spec -> rc=1; positive control rg -c clientSecret -> 8, rc=0.
+  Read in review: no SQL, no fixture seeding of payment fields; the order is a storefront card order,
+  the PI is confirmed on api.stripe.com with pm_card_visa, CAPTURED is read, never written.
+[00:21:39Z] bash scripts/check-e2e-typecheck.sh -> "PASS: 57 e2e file(s) type-check clean." rc=0
+            cd frontend && npx tsc --noEmit -> rc=0
+  ARM: append `const __armTypeError: number = "not a number"` to the Stripe spec -> rc=1
+       "e2e/stripe-refund-flow.spec.ts(344,7): error TS2322"; restore sha b643607e... equal=yes; clean rc=0
+[00:22:21Z] plan T1 verify 2: docs-freshness OK (6754); check-doc-metrics PASS 37/37 claims; rc=0
+  ARM metrics.json playwright_specs 50->49: docs-freshness rc=1; restored equal=yes
+  ARM README "across 50 specs"->"49": check-doc-metrics rc=1 "README.md [playwright_specs]: doc says 49";
+  restored equal=yes; both clean again rc=0
+  check-test-count-oracle.sh playwright: runner=196 manifest=196, specs 50/50, rc=0
+  ARM (round-1 fix removed: STAGING_E2E=1 without STRIPE_E2E=1): rc=1 "runner says 195, docs/metrics.json
+  says 196"; restored equal=yes; clean rc=0
+
+Spec read against must-have 1 and the Task 1 action (code at head, frontend/e2e/stripe-refund-flow.spec.ts):
+  MET   own order: storefront guest order POST /public/shops/mama-ades-kitchen/orders (l.166), fresh
+        Idempotency-Key crypto.randomUUID() (l.167), uniqueContact, COLLECTION, menu price, allergen mask
+  MET   key missing/not sk_test_ -> throw with a reason (l.46-56); card mode off -> acceptsCardPayments
+        expectation (l.81-84) and a clientSecret parse error (l.58-67); never skips
+  MET   confirm with pm_card_visa + return_url (l.196-214), status succeeded, PI livemode false
+  MET   CAPTURED by the webhook (polled, l.230-253) and paymentReference == intent
+  MET   vendor confirm through the API (l.256-259, 200), refund £1.00 through the dashboard UI (l.262-285)
+  NOT MET "exactly one refund for that PaymentIntent": l.304 `toBeGreaterThanOrEqual(1)` then refunds[0].
+        A duplicate refund (double submit, a retried POST) would pass. No polling either (single GET).
+  PARTIAL "its charge livemode false": l.311-323 reads refund.livemode first, then GET /v1/charges/<charge>
+        when refund.charge is a string, else falls back to the PI's livemode — the charge is read on the
+        normal path, but the fallback can pass without reading it.
+  Deviations (action, not must-have): CAPTURED polled on the vendor API for 30 s, not public tracking for
+        60 s; heading /Refunds \(\d+\)/ not "Refunds (1)"; no assertion that the page shows the Refunded
+        status; the confirm response's CONFIRMED status not read; header note sits inside the describe.
+  Backend facts the spec relies on (read, not run): OrderDto exposes paymentStatus/paymentReference
+        (order/dto/OrderDto.java:45-46); OrderController maps /shop/{shopId} (l.278) and /{id}/confirm
+        (l.361); PublicStorefrontController is @RequestMapping({"/public","/api/v1/public"}) (l.52);
+        acceptsCardPayments = paymentService.isConfigured() (PublicStorefrontService.java:1806); with no
+        enabled connected account the PI is a platform charge (PaymentService.java:192-200) and no dev seed
+        links one (rg over core/dev, infra/db, scripts/seed* rc=1; control 'mama-ades' rc=0).
+
+-------------------------------------------------------------------------
+30-22 Task 2 (key guard, nightly Stripe phase, gate enforcement, CLI pin, A12)
+-------------------------------------------------------------------------
+[00:22:51Z] plan T2 verify 1 (verbatim): PASS ok, secret-empty, secret-live, pk-live, swapped, no-echo;
+  SELFTEST 6/6 rc=0 missing=0 fail_lines=0 verify_rc=0
+  Manual probes (values composed at run time): unset secret rc=1; rk_test_ (restricted) rc=1
+  "got prefix=rk_test_"; sk_test_ with a dash rc=1 "non-alphanumeric"; pk unset rc=1; leaks=0 in every output
+  ARM 1 (sk_live_ classified as sk_test_): selftest rc=1 "FAIL secret-live ..." 5/6; restored equal=yes
+  ARM 2 (check() echoes the secret): selftest rc=1 "FAIL no-echo ok.out contains a fixture value" 5/6;
+  restored equal=yes; clean rc=0 6/6
+  Extra (not in the plan): the pk also falls back to STRIPE_TEST_PUBLISHABLE_KEY when CI_STRIPE_PUBLISHABLE_KEY is unset.
+Nightly eight structural properties (plan T2 verify 2):
+  head : listen True, pinned True, recreate True, union True, pid-kill True, events True, no-continue True,
+         no-staging-key True -> rc=0 true=8 verify_rc=0 (verbatim heredoc run as well: true=8)
+  origin/main e2e-nightly.yml (fail direction): 7 False, no-staging-key True -> true=1 verify_rc=1
+  Note: 'continue-on-error' appeared in main's header COMMENTS, so no-continue was False on main; the PR
+        rewords those comments ("step-level error swallowing"). The token is now absent from the file.
+  Only secrets/vars read: secrets.STRIPE_TEST_SECRET_KEY, vars.CI_STRIPE_PUBLISHABLE_KEY (+ GITHUB_TOKEN for
+  escalation); rg keyvault|key-vault|stripe-credentials|STRIPE_STAGING|jtoye-stg -> rc=1 (none)
+  Compose maps STRIPE_API_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_CONNECT_WEBHOOK_SECRET, STRIPE_ENVIRONMENT_TAG
+  (docker-compose.full-stack.yml l.435-441) and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY (l.579), so the .env
+  appends reach the recreated core-java and the frontend build.
+  Webhook dispatch (PaymentService.java:597-646): every non-foreign event, charge.refunded included, gets
+  its processed_stripe_events row before the switch, so the events step can count any of
+  refund.created/refund.updated/charge.refunded.
+  Step order (yaml): 0 checkout, 1 key gate (masks both, then the guard), ... 7 stack-up, 12 seed-fixtures,
+  15 main run, 16 main verdict, 17 install CLI, 18 forwarder, 19 recreate core-java, 20 stripe-run,
+  21 Stripe verdict (total>0, passed>=1, failed/timedOut/interrupted=0, skipped=0), 22 events,
+  23 skip budget (if: always() && stack-up success; --report report.json --report report-stripe.json),
+  24 stop forwarder (always, kill by PID), 25 R-16 gate, 26 backup drill, 27 upload (always):
+  frontend/e2e-artifacts/, frontend/playwright-report/, frontend/test-results/ (14 days), 30 teardown
+  (kills the PID again, down -v). concurrency group e2e-nightly, cancel-in-progress false (pre-existing).
+[00:23:25Z] bash scripts/check-gate-enforcement.sh -> PASS (62 gates, 8 workflows, 35 selftests) rc=0
+  ARM: both references to check-stripe-ci-keys.sh (ops-contracts selftest, nightly call) replaced by true
+  -> rc=1 "1 gate(s) are referenced by no workflow ... check-stripe-ci-keys.sh"; restored equal=yes; clean rc=0
+[00:24:46Z] T-30-SC — the Stripe CLI pin (STRIPE_CLI_VERSION 1.55.6,
+  STRIPE_CLI_SHA256 1759a13a0c48f15e11979696df7b5958a73a8e6c1b92bea2a3ccb73ea97d5854)
+  gh release view v1.55.6 -R stripe/stripe-cli: tag=v1.55.6 published=2026-10-30T22:19:34Z draft=false
+    pre=false author=github-actions[bot]; repo stripe/stripe-cli owner_type=Organization fork=false
+  Published checksum file is stripe-linux-checksums.txt (there is NO stripe_1.55.6_checksums.txt asset;
+    round-1 recorded item 1 names a file that does not exist on the release):
+    "1759a13a0c48f15e11979696df7b5958a73a8e6c1b92bea2a3ccb73ea97d5854  stripe_1.55.6_linux_x86_64.tar.gz"
+  local sha256sum of the downloaded tarball (11397109 bytes) = 1759a13a...5854; `sha256sum -c -` against
+    the pin -> OK rc=0; against the published file -> OK rc=0
+  corrupted copy (one byte at offset 1000 set to 0x00, cmp: 1 byte differs) -> FAILED rc=1
+  Note: the release is 2 days old at measurement (the RESEARCH audit's "too new" factor; no other signal).
+[00:25:06Z] A12 — does `stripe listen` read STRIPE_API_KEY from the environment?
+  Binary: the verified tarball extracted to scratch; `stripe --version` = 1.55.6; run under
+  env -i HOME=<empty scratch> XDG_CONFIG_HOME=<empty scratch> PATH=/usr/bin:/bin.
+  listen --help: -f --forward-to, -c --forward-connect-to (default: same as --forward-to), --print-secret,
+  --api-key
+  ARM: STRIPE_API_KEY=<invalid sk_test_ composed at run time, ending 1793492706> stripe listen --print-secret
+    -> rc=1 "Authorization failed, status=401 ... Invalid API Key provided: sk_test_****2706"
+    The masked tail 2706 is the probe's own last four: the CLI used the environment key.
+  CONTROL (no key in env): rc=0 and a whsec_ was printed — the CLI found the operator's own stored Stripe CLI
+    login outside HOME/XDG (evidently the desktop keyring). So the env key also WINS over a stored login.
+    The printed value is NOT reproduced here; see "Disclosure" below.
+  -> A12 settled: the CLI reads STRIPE_API_KEY from the environment; no --api-key on argv is needed.
+
+T-30-87 probe — are API Authorization headers kept in a failing Playwright trace?
+  playwright.config.ts: retries 0, screenshot only-on-failure, trace "retain-on-failure" (l.66-81);
+  the repository is PUBLIC (gh repo view --json visibility); the nightly uploads frontend/test-results/.
+  Probe (scratch, no real secret): a test sends `request.get(<local http server>, {Authorization:
+  "Bearer " + an sk_test_ prefix + a marker token})` then fails deliberately -> run rc=1; the retained trace.zip
+  holds the marker in 4 files (0-trace.network, 0-trace.trace); negative-control token in 0 files.
+  -> On any FAILED run of the Stripe spec, test-results/<test>/trace.zip carries the CI sandbox sk_test_
+     in plaintext in the e2e-nightly-report artifact (public repo, 14 days). ::add-mask:: covers logs, not
+     artifact contents. Threat mitigation T-30-87 is incomplete. Not fixed here (the PR is Antigravity's).
+
+Disclosure (this session): the A12 control printed a real `stripe listen` webhook signing secret for the
+  Stripe account the operator's local Stripe CLI is logged in to, into this session's tool output. It is not
+  written to any file. It verifies events the CLI forwards to a local endpoint; whether it can be rotated,
+  and whether any local .env uses it, is the owner's call.
+
+-------------------------------------------------------------------------
+Branch / repo checks
+-------------------------------------------------------------------------
+[00:23:37Z] check-handoff-contract.sh rc=0 (the 62 -> 63 gate-count fix holds on the head's HANDOFF.md)
+  gitleaks 8.30.1 git --log-opts=origin/main..HEAD --redact: "no leaks found" rc=0 (~56 KB scanned)
+  check-branch-behind-base.sh rc=1: "HEAD is 1 commit(s) behind origin/main (and 5 ahead)".
+    origin/main moved DURING this measurement: 025ed690 (2026-11-01T00:17:07Z) "fix(payment): billing
+    endpoints gate on group admin ... (#1020) (#1068)". At measurement start the head was 0 behind.
+    git merge-tree HEAD origin/main -> conflicts in AGENTS.md, CLAUDE.md, docs/CHANGELOG.md (metric prose
+    and the [Unreleased] list); HANDOFF.md, README.md, docs/metrics.json auto-merge (the counts then need
+    docs-freshness --write: #1068 adds a Java test file).
+  check-changelog-contract.sh rc=1 on the head AND on bff82097: "C-1 PR #1068 is a merged feat/fix with no
+    entry" — the same moved base, not a #1065 defect.
+  check-changelog-cites-pr.sh --pr 1065 --title "<PR title>" -> "PASS: docs/CHANGELOG.md has an entry heading
+    citing #1065." rc=0; control --pr 1066999 -> rc=1. origin/main's CHANGELOG has no (#1065): rc=1.
+  CI on 217003b5 (context only): every listed check success/skipped/neutral, Integration Tests success.
+  PR #1065: DRAFT, OPEN, head 217003b5 unchanged by this session (remote ref and -agy-p30-w21 both
+  217003b5 at 00:27:05Z).
+
+Scratch removal [00:27:05Z]: git worktree remove --force .../scratchpad/wt-main rc=0 (a second detached
+  checkout of bff82097 used only for the listing baseline) and .../scratchpad/wt-1065 rc=0 (HEAD was still
+  217003b5, status clean); worktree prune; 0 scratchpad worktrees left; the extracted CLI binary deleted.
+
+VERDICT
+  30-21: every must-have MET. Adopt.
+  30-22: NOT MET — must-have 1's "exactly one refund" (spec asserts >= 1), and T-30-87's mitigation has a
+         reproduced hole (failing traces upload the sk_test_ to a public artifact). Everything else that
+         can be checked without the CI keys is MET. The live run is 30-23's and could not be measured here.

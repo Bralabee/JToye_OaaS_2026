@@ -1,0 +1,114 @@
+# 30-23 — PAY-01 part 3: the owner's CI sandbox keys and a real nightly on the PR branch
+
+## Task 1 (owner, side by side in Chrome, 2026-11-01 ~08:10-08:17Z)
+
+Sandboxes on the J'Toye Digital Ltd Stripe account before: "J'Toye Digital Ltd sandbox" acct_1U0tklDpS9ICNeRt
+(staging: the staging PaymentIntent ids carry that suffix) and the legacy "Test mode". Created a new sandbox
+"jtoye-ci" = acct_1UWtvjD29H13ktT5 (settings and capabilities copied from live with test data, no products).
+
+Keys read from the sandbox's API keys page, written to mode-600 files, verified without printing a value:
+
+    sk: mode=600 len=107 prefix=sk_test_
+    pk: mode=600 len=107 prefix=pk_test_
+    account read rc=0
+    sandbox account id=acct_1UWtvjD29H13ktT5 name=jtoye-ci
+    balance livemode=false
+    local CLI login account id=acct_1U0tklDpS9ICNeRt
+    PASS: both keys are TEST, the sandbox is a separate account
+    verify_rc=0
+    secret_set_rc=0
+    variable_set_rc=0
+    CI_STRIPE_PUBLISHABLE_KEY 2026-11-01T08:17:06Z
+    secret STRIPE_TEST_SECRET_KEY updated_at=2026-11-01T08:17:06Z
+    stored_len=107 prefix=pk_test_ suffix=<redacted; compared equal>
+    variable == sandbox pk (trailing newline was the only difference)
+    key files shredded, dir removed
+
+Acceptance: `gh variable list` lists CI_STRIPE_PUBLISHABLE_KEY (above). The secret's presence is proven by the
+nightly's key-guard step (Task 2).
+
+## Task 2 — first dispatched run on the PR branch
+
+Branch note: the plan names feat/30-pay01-refund-e2e; PR 6 (#1065) lives on agy/30-21-22-refund-e2e, so the
+dispatch is on that branch (owner, 2026-11-01). The stale refund ALLOW was already retired on the branch by the
+round-1 fix 0ebfaf66 (MAX_SKIPS 6 -> 4), so the plan's expected S-3 red does NOT apply to this run: the skip
+budget is expected GREEN at 4/4.
+
+    head=0ebfaf66 pr_head=0ebfaf66
+    dispatch_rc=0 at 2026-11-01T08:17:37Z
+    RUN: 41288249740 (workflow_dispatch, headSha 0ebfaf66)
+    https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/41288249740
+
+(step conclusions, STRIPE-REFUND line, processed_stripe_events, skip set: appended when the run ends)
+
+### Run 41288249740 — FAILURE at "Start the Stripe forwarder" (08:44Z), recorded verbatim from the job log
+
+    ##[error]stripe listen exited prematurely
+    must specify events to forward using --events, --all-snapshot, or --all-thin
+    ##[error]Process completed with exit code 1.
+    ... Enforce the declared skip budget:
+    VOID: no Playwright JSON report at frontend/e2e-artifacts/report-stripe.json — run the suite with --reporter=json first
+    ##[error]Process completed with exit code 2.
+
+Step conclusions: Start the Stripe forwarder = failure; Enforce the declared skip budget = failure (VOID rc 2,
+round-1 recorded finding 9 now OBSERVED); every earlier step success (key guard passed: the secret is present).
+
+Reproduced locally (Stripe CLI 1.54.0, the CI sandbox key via env, forward target a closed port):
+    flags=[]              -> "must specify events to forward using --events, --all-snapshot, or --all-thin"
+    flags=[--all-snapshot] -> "Getting ready..."
+Cause: `stripe listen` no longer forwards every event by default. Observed on two versions: the nightly's pinned
+Stripe CLI 1.55.6 (run 41288249740, above) and the local reproduction's Stripe CLI 1.54.0 (not the pinned version). Fix: `--all-snapshot` (the v1 snapshot
+payloads core-java parses), plus the skip-budget gate skipped rather than VOID when the Stripe run did not run.
+Fix pushed to the PR branch as a fast-forward from a detached scratch checkout (commit and second run: below).
+
+### Fix 1 and the runs that followed (branch head moved 0ebfaf66 -> f061f0a0 -> 3fbc86ab (30-24 merge of #1066) -> 5c4c8b45 -> a033dfdc (30-24 merge of #1072))
+
+f061f0a0: `stripe listen --all-snapshot`; the skip-budget step gates report.json alone when stripe-run was skipped,
+both reports otherwise (a missing Stripe report stays VOID). 5c4c8b45: the Stripe recreate pins core-java to :9090
+(compose publishes 9090-9091 and a plain recreate alternated to :9091, reproduced locally).
+
+Run 41291041531 (3fbc86ab): forwarder READY; failed at the recreate (core-java came back on :9091); the skip-budget
+step gated Phase 1 alone, 4/4 (finding 9 fixed as observed).
+Run 41293948964 (a033dfdc): steps 1-22 success (Phase 1: 434 tests, 0 failed, 4 skipped; recreate UP on :9090 in 36 s);
+step 23 "Assert the Stripe report" FAILED (1 test, 1 failed: the order never reached CAPTURED; core-java logged
+receiving payment_intent.succeeded and nothing after); step 25 skip budget success (435 tests, 4/4 skipped,
+all stomp-relay.spec.ts 2x2; report-stripe.json 0 skipped; digest a66e064b matches the tree); step 27 cart identity
+FAILED (C4 "placing an order still empties the basket": locator.waitFor 45 s timeout after the order POST).
+
+Cause of step 23, measured 2026-11-01 ~10:30Z:
+    CI sandbox /v1/events: payment_intent.succeeded (pi_3UWvcED29H13ktT517xlBdrC, env=ci-nightly) api_version=2026-07-29.dahlia
+    staging sandbox events (CLI login): api_version=2026-07-29.dahlia
+    stripe-java 34.0.0 (core-java/build.gradle.kts:333): Stripe.API_VERSION = 2026-09-30.endive
+    staging webhook endpoints (stripe webhook_endpoints list): both api_version=2026-09-30.endive
+    Stripe changelog newest: 2026-10-28.endive (same major as the SDK)
+`stripe listen` forwards in the account's DEFAULT version (dahlia) unless --latest; stripe-java's typed
+deserializer (PaymentService.handlePaymentIntentSucceeded: getDataObjectDeserializer().getObject().orElseThrow)
+returns empty across majors, the IllegalStateException becomes a silent 400, and the event is never applied.
+Staging never saw it because its endpoints are pinned on endive. Fix 2: `stripe listen --latest --all-snapshot`.
+Cause of step 27: the gate ran after core-java was recreated with the Stripe key (18/18 on the run where it was not).
+Fix 3: the gate moves before the recreate. Fix 4 (H-3): HANDOFF.md on the branch updated. Third run: below.
+
+### Run 41297105542 on b8d31922 — SUCCESS (the real nightly, Stripe phase included)
+
+Head: ce9c92a1 (third 30-24 merge, #1073; counts 6797; four CHANGELOG entries each once) -> b8d31922 (fixes 2-4:
+`stripe listen --latest --all-snapshot` + the forwarded version printed; cart-identity gate moved before the
+recreate; HANDOFF.md dated block, check-handoff-contract rc 1 -> 0).
+
+    steps 1-30, 33 success; 31 (dump logs) and 32 (escalate) skipped on a green run
+    Phase 1: 434 tests, 430 passed, 0 failed, 4 skipped
+    Cart-identity gate: 18/18
+    Forwarded API version: 2026-10-28.endive
+    core-java after recreate: 127.0.0.1:9090, UP after 23 s
+    Stripe phase: 1 test, 1 passed, 0 failed, 0 skipped
+    STRIPE-REFUND order=ORD-00000000-20261101-DB978298 intent=pi_3UWwFrD29H13ktT51zOhfyo3 refund=re_3UWwFrD29H13ktT51yMfGTP3 amount=100 livemode=false
+    Events reached the app: pi_event=evt_3UWwFrD29H13ktT51LYSq0RJ rows=1  refund_event=evt_3UWwFrD29H13ktT51VHtMLJr rows=1
+    Skip budget: both reports, 435 tests, 4 skipped / budget 4, digest a66e064b matches the tree, PASS
+      report.json 4 (stomp-relay.spec.ts: "kitchen display page loads and connects to WebSocket",
+      "kitchen display receives order event within 2 seconds", desktop + mobile); report-stripe.json 0
+    Artifact secret scan: 136 files, no secret; whsec_ in the job log: 2 lines of script text, no value
+
+Plan 30-23 Task 3's "ALLOW retired, MAX_SKIPS measured" was done in the round-1 fix 0ebfaf66 (MAX_SKIPS 4); this run
+is the measured confirmation (4 of 4, the stomp-relay ALLOW's 2 x 2). The S-5 break arms were recorded in that fix's
+evidence (round 1, #1065). PR 6 marked READY on b8d31922. Recorded, not fixed (outside the workflow's scope):
+core-java's GlobalExceptionHandler turns an IllegalStateException into a 400 without logging, which is why the
+API-version mismatch left no trace; the owner may route it.

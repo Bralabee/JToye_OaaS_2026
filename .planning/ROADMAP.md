@@ -349,7 +349,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 29/29 | Complete    | 2026-10-21 |
-| 30. The Money Path, Executed | v2.3 | 19/32 | In Progress — PR 5 (PAY-04 /pay page) under way on feat/30-pay-link-page: 30-16 done 2026-10-31 (owner chose fragment tokens + expose-on-staging; non-consuming payment-link preview); 30-17 done 2026-10-31 (stripeAccountId reaches the browser; OTP seam allow-list); 30-18 done 2026-10-31 (the /pay page in every state, previewed before it is spent and resumable after a reload; the checkout pays a direct charge on the vendor's account); 30-19 done 2026-10-31 (/pay not indexed and no Referer, SSR gate line, staging-seed --stage pay-link, the staging /pay spec with a reload-resume arm, both staging payment specs read on the owning account); PR 4 (30-12..30-15, #1046 Connect webhook, PAY-03) merged and proven on staging 2026-10-31; PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24); PR #1041 (issue #1038 cleanup fix) merged b728254e and deployed with digest parity, D-02 done (2026-10-25) | — |
+| 30. The Money Path, Executed | v2.3 | 25/32 | In Progress — 25/32 (30-01..30-25). 30-21..30-24 complete 2026-11-01: 30-21 adopted from PR 6 (#1065, Antigravity, head 217003b5; S-5 re-measured MET); 30-22 complete on #1065 head 1f69a7f0 (exactly-one refund read-back; the CI sk_test_ kept out of every uploaded artifact, T-30-87); 30-23 the CI sandbox keys and a green branch nightly (run 41297105542); 30-24 PR 6 merged 6b3ff3e1, deployed (run 41299627034 success) and the nightly on main green with a real TEST refund (run 41299664811). Issue #1071 (the edge Referrer-Policy on /pay) closed by #1073 (fd01dc0c), the live edge sends no-referrer, WINDOWS 52 fixed. The 30-20..30-24 records are PR #1074. Next: 30-26. PR 5 (#1064, PAY-04 /pay page) merged bff82097 and deployed 2026-10-31; 30-20 done. Earlier: 30-16 done 2026-10-31 (owner chose fragment tokens + expose-on-staging; non-consuming payment-link preview); 30-17 done 2026-10-31 (stripeAccountId reaches the browser; OTP seam allow-list); 30-18 done 2026-10-31 (the /pay page in every state, previewed before it is spent and resumable after a reload; the checkout pays a direct charge on the vendor's account); 30-19 done 2026-10-31 (/pay not indexed and no Referer, SSR gate line, staging-seed --stage pay-link, the staging /pay spec with a reload-resume arm, both staging payment specs read on the owning account); PR 4 (30-12..30-15, #1046 Connect webhook, PAY-03) merged and proven on staging 2026-10-31; PR 1 (30-01..30-04) and PR 2 (30-05..30-08, #1030) merged and proven on staging (2026-10-22, 2026-10-24); PR #1041 (issue #1038 cleanup fix) merged b728254e and deployed with digest parity, D-02 done (2026-10-25) | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 31.1. Persona gap closure (INSERTED) | v2.3 | 30/30 | Complete    | 2026-10-07 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -727,7 +727,7 @@ engaged on, so the order is paid before production.
 > - **`GAP-GTM-05` (`BillingPlanMode` — Axis 4):** Wire `PAY-02` recurring billing + `platformFeeBps` metering to support `SAAS_HYBRID_STANDARD` (`£39/location/mo + 0.5%`), `SAAS_FLAT_PREDICTABLE` (`£79–£149/mo + 0%`), and `BATCH_PAYG_STARTER` (`£0/mo + 6%` for weekend-only pop-up kitchens).
 > - **`GAP-GTM-06` (WhatsApp-to-Checkout Pre-Order Link Bridge, `#208`):** Activate `COMMS-07` to generate and dispatch pre-filled, allergen-gated storefront checkout links into WhatsApp threads.
 
-**Plans:** 19/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
+**Plans:** 25/32 plans executed (32 waves; 8 serial PRs, each watched through Deploy to Staging + Staging Edge Probe per D-07)
 
 Plans:
 **Wave 1**
@@ -788,22 +788,22 @@ Plans:
 - [x] 30-19-PLAN.md — PAY-04 PR 5: /pay robots/referrer/SSR hygiene, pay-link staging stage, account-aware staging specs
 
 **Wave 20** *(blocked on Wave 19 completion)*
-- [ ] 30-20-PLAN.md — PAY-04 PR 5: staging OTP setting per the owner's decision and API snapshot, merge, a real link paid through /pay on staging
+- [x] 30-20-PLAN.md — PAY-04 PR 5: staging OTP setting per the owner's decision and API snapshot, merge, a real link paid through /pay on staging
 
 **Wave 21** *(blocked on Wave 20 completion)*
-- [ ] 30-21-PLAN.md — PAY-01 PR 6: skip-budget S-5 rule, selftest, lint, report union
+- [x] 30-21-PLAN.md — PAY-01 PR 6: skip-budget S-5 rule, selftest, lint, report union
 
 **Wave 22** *(blocked on Wave 21 completion)*
-- [ ] 30-22-PLAN.md — PAY-01 PR 6: own-order Stripe refund spec, nightly Stripe phase (pinned CLI), CI key checks
+- [x] 30-22-PLAN.md — PAY-01 PR 6: own-order Stripe refund spec, nightly Stripe phase (pinned CLI), CI key checks (COMPLETE 2026-11-01 on PR #1065 head 1f69a7f0, after the two gaps found at 217003b5 were fixed — see 30-22-SUMMARY.md)
 
 **Wave 23** *(blocked on Wave 22 completion)*
-- [ ] 30-23-PLAN.md — PAY-01 PR 6: owner creates the CI sandbox keys; branch nightly; ALLOW retired with a measured budget
+- [x] 30-23-PLAN.md — PAY-01 PR 6: owner creates the CI sandbox keys; branch nightly; ALLOW retired with a measured budget
 
 **Wave 24** *(blocked on Wave 23 completion)*
-- [ ] 30-24-PLAN.md — PAY-01 PR 6: merge, main nightly green, #61 evidence
+- [x] 30-24-PLAN.md — PAY-01 PR 6: merge, main nightly green, #61 evidence
 
 **Wave 25** *(blocked on Wave 24 completion)*
-- [ ] 30-25-PLAN.md — PAY-02 PR 7 (D-04): owner quantity rule; per-location subscription quantity, idempotency keys, location sync
+- [x] 30-25-PLAN.md — PAY-02 PR 7 (D-04): owner quantity rule; per-location subscription quantity, idempotency keys, location sync
 
 **Wave 26** *(blocked on Wave 25 completion)*
 - [ ] 30-26-PLAN.md — PAY-02 PR 7: staging-seed billing and billing-sync-check stages
