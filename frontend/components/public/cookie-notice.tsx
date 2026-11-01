@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 
 import { cn } from "@/lib/utils"
@@ -35,7 +36,26 @@ import { ConsentBanner } from "./consent-banner"
  * If a non-essential category is ever registered, `ConsentBanner` supersedes
  * this notice automatically (see the branch below) — the notice must not sit
  * there saying "nothing to accept" while a real choice is pending.
+ *
+ * NOT ON /pay (owner ruling 2026-11-01, PR #1064 review series). The payment-link
+ * page is a card form, and on a 360 px phone this fixed bar covered its Expiry
+ * date and Security code fields on a first visit — the customer had to find and
+ * dismiss chrome before they could pay. The page writes nothing to local or
+ * session storage (30-UI-SPEC S3 Storage), and this notice informs, it gates
+ * nothing, so leaving it off /pay withholds no choice and hides no storage the
+ * page makes. The carve-out is `/pay` exactly or `/pay/<anything>`, never a bare
+ * prefix: `/payments` is not the payment-link page.
+ *
+ * The ConsentBanner branch is checked FIRST, on /pay as everywhere. The reasoning
+ * above holds only while there is nothing to choose; the day a non-essential
+ * category is registered the banner is a consent gate, and a gate that a route
+ * can opt out of is not one.
  */
+
+/** The payment-link page and anything under it (it has no sub-routes today). */
+function isPaymentLinkPage(pathname: string | null): boolean {
+  return pathname === "/pay" || (pathname ?? "").startsWith("/pay/")
+}
 
 /** POSITIONING, STACKING AND ZERO CLS all live in `BottomNoticeShell` now — see
  *  that file for the full R-07 record. Kept here in summary because this file is
@@ -89,6 +109,7 @@ const FOCUS_RING = cn(
 )
 
 export function CookieNotice() {
+  const pathname = usePathname()
   const [show, setShow] = useState(false)
 
   useEffect(() => {
@@ -102,6 +123,9 @@ export function CookieNotice() {
 
   // A real choice outranks an informational notice.
   if (choosableCategories().length > 0) return <ConsentBanner />
+
+  // After the banner, never before it: see "NOT ON /pay" above.
+  if (isPaymentLinkPage(pathname)) return null
 
   if (!show) return null
 
