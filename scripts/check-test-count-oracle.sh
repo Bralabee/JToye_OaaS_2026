@@ -218,11 +218,12 @@ playwright)
 	LIST="$(mktemp -t jtoye-pw-oracle-XXXXXX.json)"
 	# shellcheck disable=SC2064
 	trap "rm -f '$LIST'" EXIT
-	# STAGING_E2E=1: playwright.config.ts testIgnores staging-*.spec.ts unless it is set
-	# (D-27), but those specs are still DECLARATIONS that docs-freshness counts from
-	# source. Listing collects without running, and the specs read their Key Vault
-	# credential only at test time, so enumerating them here touches no host.
-	out=$(cd "$ROOT/frontend" && STAGING_E2E=1 npx playwright test --list --reporter=json 2>&1 >"$LIST")
+	# STAGING_E2E=1 STRIPE_E2E=1: playwright.config.ts testIgnores staging-*.spec.ts
+	# (D-27) and stripe-*.spec.ts (plan 30-22) unless their flags are set, but those
+	# specs are still DECLARATIONS that docs-freshness counts from source. Listing
+	# collects without running, and the specs read their credentials only at test time,
+	# so enumerating them here touches no host.
+	out=$(cd "$ROOT/frontend" && STAGING_E2E=1 STRIPE_E2E=1 npx playwright test --list --reporter=json 2>&1 >"$LIST")
 	rc=$?
 	if [ "$rc" -ne 0 ]; then
 		printf '%s\n' "$out" >&2

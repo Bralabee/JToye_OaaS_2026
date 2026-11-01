@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Unskipped Stripe Test-Mode Refund E2E and an S-5 Skip-Budget Gate (Phase 30 30-21/30-22, PAY-01) (#1065) — 2026-10-31
+
+- **`scripts/check-e2e-skip-budget.sh`:** rule S-5 says every `ALLOW` line needs a justification comment and a `# REMOVE WHEN:` line. New `--lint-conf` mode. `--report` can be repeated to evaluate the union of all skipped specs across reports (with matching spec digests). New `--selftest` (14 fixtures).
+- **`frontend/e2e/stripe-refund-flow.spec.ts`:** a storefront card order confirmed with `pm_card_visa`, captured by the webhook and refunded for £1.00 from the vendor dashboard. The refund is read back from Stripe for up to 30 s: exactly one refund for the PaymentIntent (`succeeded`, 100), settled on two consecutive reads, and its charge `livemode=false`. The page must show `Refunds (1)` and the `Refunded` status. Stripe calls go through `frontend/e2e/stripe-test-api.ts` (Node `fetch`), never Playwright's `request` fixture, and the spec turns traces and video off: a Playwright trace, and on a transport error its call log, kept the `sk_test_` header in plaintext (T-30-87). `__tests__/stripe-refund-readback.test.ts` proves the read-back rule on every PR. It runs only when `STRIPE_E2E=1`. The environment-dependent paid-refund test leaves `vendor-refund-flow.spec.ts`, and its skip-budget `ALLOW` goes with it: `MAX_SKIPS` 6 → 4, the stomp-relay skips measured in nightly 41158370941.
+- **`scripts/check-stripe-ci-keys.sh`:** refuses missing, swapped or live Stripe keys before any Stripe step. `--scan-artifacts` deletes any artifact file holding the secret or the `stripe listen` signing secret (zip members read) and fails. `--lint` checks the spec, the helper and the nightly keep their layers. The selftest has 18 arms.
+- **`e2e-nightly.yml`:** a Stripe Phase 2 after the cash suite. It validates the keys, installs stripe-cli v1.55.6 (sha256 pinned), forwards webhooks, runs the refund spec with zero skips and checks the skip budget across both reports. The Stripe run writes its Playwright output under `$RUNNER_TEMP`, which is not uploaded, and the artifacts are scanned for the secret before the upload.
+- **`ci-cd.yaml` ops-contracts:** runs both selftests and `--lint-conf`.
+
 ### The Apps Own Referrer-Policy, So /pay's no-referrer Reaches the Browser (#1071) (#1073) — 2026-11-01
 
 On staging, `/pay` answered with `Referrer-Policy: strict-origin-when-cross-origin`, and so did `/invite`. The frontend sends `no-referrer` on both pages, but the ingress `configuration-snippet` replaced it, because `more_set_headers` overwrites an upstream header that has the same name.

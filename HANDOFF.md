@@ -2,7 +2,17 @@
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-31 midnight delta (RESUME HERE; everything below is history).**
+**2026-11-01 delta, PR 6 (#1065, `agy/30-21-22-refund-e2e`, plans 30-21/30-22/30-24) (RESUME HERE; everything below is history).**
+- **The branch nightly is the open item.** Its first real dispatched runs each found one defect in `e2e-nightly.yml`, each fixed on the branch:
+  - `stripe listen` needs `--all-snapshot` (run 41288249740: without it stripe-cli 1.55.6 exits at once, "must specify events to forward").
+  - The core-java recreate is pinned to `:9090` with a `ports: !override` file (run 41291041531: the compose range `9090-9091` let Docker move it to `:9091`; the step now asserts the published port).
+  - The skip budget gates `report.json` alone when the Stripe run was skipped, and both reports otherwise, so a red step before Phase 2 no longer adds a VOID (round-1 recorded finding 9, observed on 41288249740).
+  - `stripe listen --latest` (run 41293948964: the account default `2026-07-29.dahlia` vs stripe-java 34.0.0's `2026-09-30.endive` made `payment_intent.succeeded` a silent 400; staging's endpoints are pinned to endive). The step prints the forwarded API version from the CLI's Ready line.
+  - The cart-identity gate runs before the Stripe recreate (C4 timed out placing a cash order once core-java ran with the CI Stripe key, run 41293948964).
+- **Three 30-24 merges from the base** (`3fbc86ab` #1066, `a033dfdc` #1072, `ce9c92a1` #1073): counts regenerated with `docs-freshness.sh --write`, every CHANGELOG entry kept.
+- **Next:** a green dispatched branch nightly (Stripe phase passed, STRIPE-REFUND line, events in `processed_stripe_events`, skip budget 4/4); then round 3 of the review series, which is the owner's under the 2026-10-25 ruling.
+
+**2026-10-31 midnight delta (history; superseded by the 2026-11-01 PR 6 block above).**
 - **PR 5 (#1064) MERGED as `bff82097` from `feat/30-pay-link-page`** (plans 30-16 to 30-20, PAY-04 / D-03). 30-20 Task 1 and Task 2 are done; the plan is not complete until Task 3, so there is no `30-20-SUMMARY.md` yet. Evidence: `evidence/30-20-pay-live.txt`.
   - Merged from the base: `e310356b` (picking up #1058). `HANDOFF.md` was resolved by hand with both sides kept (checked by content).
   - OTP seam (owner decision expose-on-staging, `27ffb459`): base `"false"`, staging `"true"`, production `"false"`. Env `JTOYE_PHONE_VERIFICATION_EXPOSE_OTP_FOR_TEST`, plus a `${}` placeholder in `application.yml`. Production render: `true`=0, tag=1. Staging render: `true`=1.
@@ -1040,10 +1050,13 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 62 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 63 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-31 (agy/30-21-22-refund-e2e, Phase 30 30-21/30-22): 62 -> 63. check-stripe-ci-keys
+# refuses unset, empty, live or swapped CI Stripe sandbox keys unless STRIPE_TEST_SECRET_KEY and
+# CI_STRIPE_PUBLISHABLE_KEY are set; CI runs its --selftest in ops-contracts and the guard in e2e-nightly.
 # 2026-10-25 (PR #1045, the Antigravity bundle): 61 -> 62. check-synthesis-gate is rc 1 in
 # this bare loop until the active milestone's synthesis review (/qa-council + persona test)
 # is recorded in qa/synthesis-ledger.json with --record; CI runs only its --selftest.
