@@ -55,11 +55,16 @@ either: a stale figure fails the same repo's `check-doc-metrics` gate.
 ## Design and motion
 
 You have the `Skill` tool. Use it — several installed skills claim "UI design" and they are
-stage-specific, not interchangeable. Load **`frontend-craft-sequence`** before starting or
-reshaping a surface; it holds the running order and the anti-patterns. For motion, easing,
-hover/press feedback and micro-interactions specifically, load **`emil-design-eng`**.
+stage-specific, not interchangeable. Load **`design-run`** before starting or reshaping a
+surface: its steps, and which design skill applies at each, are in the skill itself. Its
+**[OWNER]** steps are Sanmi's, and you have no tool to ask him with, so never decide one: follow
+what the repo's `design/` folder records, and return anything it does not settle with a
+recommendation. While `design/` does not exist, do not create it — a fix within the existing
+frontend conventions proceeds; a new or reshaped surface goes back as an open decision. For
+motion, easing, hover/press feedback and micro-interactions specifically, load
+**`emil-design-eng`**.
 
-Two failure modes it exists to prevent, both observed on this app: `hover:` IS gated here
+Two failure modes `design-run` guards against, both observed on this app: `hover:` IS gated here
 (`future.hoverOnlyWhenSupported: true` in `tailwind.config.ts`, #503), so a bare `hover:` compiles to
 `@media (hover:hover)` and no longer latches on tap (≈11 deliberate hand-written `[@media(hover:hover)_and_(pointer:fine)]` sites remain); and a screenshot cannot verify
 motion — a 200ms ease-out and a 900ms linear are the same PNG, so motion is checked by reading the
