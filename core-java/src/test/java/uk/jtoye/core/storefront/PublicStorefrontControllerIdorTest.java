@@ -117,5 +117,7 @@ class PublicStorefrontControllerIdorTest {
 
         verify(storefrontService).trackOrder("ORD-2026-0001", "alice@example.com");
         verify(storefrontService).getCustomerOrders(eq("alice@example.com"), any(Pageable.class));
+        // SW-PRY-06 C1 / T-31.1-46: the email-verified history never reaches the note-carrying method.
+        verify(storefrontService, never()).getVerifiedCustomerOrders(anyString(), any(Pageable.class));
     }
 }

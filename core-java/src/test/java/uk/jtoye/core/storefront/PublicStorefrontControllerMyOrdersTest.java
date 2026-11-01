@@ -16,7 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.GlobalExceptionHandler;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.security.CustomerJwtVerifier;
-import uk.jtoye.core.storefront.dto.PublicOrderStatus;
+import uk.jtoye.core.storefront.dto.CustomerOrderStatus;
 
 import java.util.List;
 
@@ -28,6 +28,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -77,7 +78,7 @@ class PublicStorefrontControllerMyOrdersTest {
         mockMvc.perform(get("/public/orders/mine"))
                 .andExpect(status().isUnauthorized());
 
-        verify(storefrontService, never()).getCustomerOrders(anyString(), any(Pageable.class));
+        verify(storefrontService, never()).getVerifiedCustomerOrders(anyString(), any(Pageable.class));
     }
 
     @Test
@@ -89,7 +90,7 @@ class PublicStorefrontControllerMyOrdersTest {
                 .andExpect(status().isUnauthorized());
 
         verify(customerJwtVerifier).verifiedEmail("forged-token");
-        verify(storefrontService, never()).getCustomerOrders(anyString(), any(Pageable.class));
+        verify(storefrontService, never()).getVerifiedCustomerOrders(anyString(), any(Pageable.class));
     }
 
     @Test
@@ -97,27 +98,33 @@ class PublicStorefrontControllerMyOrdersTest {
     void myOrders_withValidToken_listsOwnOrders() throws Exception {
         when(customerJwtVerifier.verifiedEmail("good-token")).thenReturn("alice@example.com");
 
-        PublicOrderStatus order = new PublicOrderStatus();
+        CustomerOrderStatus order = new CustomerOrderStatus();
         order.setOrderNumber("ORD-2026-0042");
         order.setStatus("PENDING");
-        Page<PublicOrderStatus> page = new PageImpl<>(List.of(order));
-        when(storefrontService.getCustomerOrders(eq("alice@example.com"), any(Pageable.class)))
+        order.setAllergyNote("No sesame please");
+        Page<CustomerOrderStatus> page = new PageImpl<>(List.of(order));
+        when(storefrontService.getVerifiedCustomerOrders(eq("alice@example.com"), any(Pageable.class)))
                 .thenReturn(page);
 
         mockMvc.perform(get("/public/orders/mine")
                         .header("X-Customer-Token", "good-token")
                         .param("size", "100"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].orderNumber").value("ORD-2026-0042"));
+                .andExpect(jsonPath("$.content[0].orderNumber").value("ORD-2026-0042"))
+                // SW-PRY-06: the signed-in history carries the customer's own note, and no cache keeps it.
+                .andExpect(jsonPath("$.content[0].allergyNote").value("No sesame please"))
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-store")));
 
-        verify(storefrontService).getCustomerOrders(eq("alice@example.com"), any(Pageable.class));
+        verify(storefrontService).getVerifiedCustomerOrders(eq("alice@example.com"), any(Pageable.class));
+        // C1: /mine is the only caller of the note-carrying method, and it never uses the shared one.
+        verify(storefrontService, never()).getCustomerOrders(anyString(), any(Pageable.class));
     }
 
     @Test
     @DisplayName("A client-supplied email param cannot override the token-proven identity")
     void myOrders_ignoresClientSuppliedEmailParam() throws Exception {
         when(customerJwtVerifier.verifiedEmail("good-token")).thenReturn("alice@example.com");
-        when(storefrontService.getCustomerOrders(eq("alice@example.com"), any(Pageable.class)))
+        when(storefrontService.getVerifiedCustomerOrders(eq("alice@example.com"), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
         // Attacker holds a legitimate session but tries to read someone else's history.
@@ -127,20 +134,20 @@ class PublicStorefrontControllerMyOrdersTest {
                 .andExpect(status().isOk());
 
         // The lookup ran for the token's email — never for the query param.
-        verify(storefrontService).getCustomerOrders(eq("alice@example.com"), any(Pageable.class));
-        verify(storefrontService, never()).getCustomerOrders(eq("victim@example.com"), any(Pageable.class));
+        verify(storefrontService).getVerifiedCustomerOrders(eq("alice@example.com"), any(Pageable.class));
+        verify(storefrontService, never()).getVerifiedCustomerOrders(eq("victim@example.com"), any(Pageable.class));
     }
 
     @Test
     @DisplayName("The versioned alias /api/v1/public/orders/mine serves the same handler")
     void myOrders_versionedAlias_works() throws Exception {
         when(customerJwtVerifier.verifiedEmail("good-token")).thenReturn("alice@example.com");
-        when(storefrontService.getCustomerOrders(eq("alice@example.com"), any(Pageable.class)))
+        when(storefrontService.getVerifiedCustomerOrders(eq("alice@example.com"), any(Pageable.class)))
                 .thenReturn(Page.empty());
 
         mockMvc.perform(get("/api/v1/public/orders/mine").header("X-Customer-Token", "good-token"))
                 .andExpect(status().isOk());
 
-        verify(storefrontService).getCustomerOrders(eq("alice@example.com"), any(Pageable.class));
+        verify(storefrontService).getVerifiedCustomerOrders(eq("alice@example.com"), any(Pageable.class));
     }
 }
