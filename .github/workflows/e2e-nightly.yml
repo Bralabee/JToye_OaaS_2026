@@ -438,6 +438,73 @@ jobs:
 
           [ "$failed" -eq 0 ] || { echo "::error::$failed E2E test(s) failed"; exit 1; }
 
+      # R-16 / #459. WHY HERE AND NOT IN ci-cd.yaml: `frontend-e2e` there is
+      # deliberately stack-free, and this script drives THREE real Keycloak
+      # registrations against a live realm plus a placed order. The nightly is
+      # the only lane with that stack.
+      #
+      # WHY AT ALL: it previously ran in no workflow, gate or npm script — it was
+      # manual-only, and it had been silently unrunnable since PR #522 moved one
+      # paragraph from `text-slate-500` to `text-slate-600`. A guard nothing
+      # executes decays without anyone learning it decayed.
+      #
+      # THE `if:` IS LOAD-BEARING, AND IT IS NOT `always()` (WR-04). With no
+      # `if:` a step inherits `success()`, so this gate would be SKIPPED whenever
+      # ANY earlier step failed — including the Playwright suite and the skip
+      # budget. This workflow's own escalation history records 14 consecutive
+      # scheduled failures (2026-08-11 → 2026-08-24); across every one of those
+      # nights this gate would have executed ZERO times, which is the exact
+      # decay it was added to stop. So it keys on the SEED step instead:
+      #
+      #   - a red suite, a red verdict step or a red skip budget must NOT skip
+      #     this gate — they say nothing about cart identity;
+      #   - a stack that never came up, or fixtures that never seeded, MUST skip
+      #     it — the shops it drives (peckham-jollof-co, mama-ades-kitchen) would
+      #     not exist and the failure would be noise about the wrong thing.
+      #
+      # `always()` alone would produce that noise; `steps.seed-fixtures.outcome`
+      # is the narrowest precondition that distinguishes the two.
+      #
+      # ORDERING TRADE-OFF, recorded rather than left implicit: this runs AFTER
+      # the suite because each pass registers three real Keycloak users and
+      # places a real order against the same seeded shops the suite asserts on.
+      # Hoisting it above the suite trades a skipped gate for perturbed fixtures,
+      # which is the worse failure — a suite failing for reasons it did not
+      # cause. No cheap smoke subset is carved out for PR CI either: every arm
+      # here needs either a real registration (C1c, C1, C2) or a placed order
+      # (C4), and the two that need neither (C3, and C1c's seed half) would
+      # still need the full compose stack that `frontend-e2e` deliberately does
+      # not have. The boundary is therefore: this class of check lives in the
+      # nightly, and the PR lane covers the same invariants in jsdom.
+      #
+      # AND IT RUNS BEFORE THE STRIPE PHASE (Phase 2), against the SAME cash-only core-java
+      # the suite ran on. Phase 2 recreates core-java with the CI Stripe key and leaves it that
+      # way, and C4 (place a cash order on peckham-jollof-co, wait for "Order confirmed") then
+      # times out: measured on branch nightly 41293948964 (17/18, "C4 threw: locator.waitFor:
+      # Timeout 45000ms exceeded", with core-java healthy on :9090), and on 41291041531; it was
+      # 18/18 on 41288249740, where the Stripe recreate never happened. So it sits straight
+      # after the Phase 1 verdict, keeping its `if:` on seed-fixtures. The price, accepted: the
+      # Phase 2 steps inherit success(), so a red gate here skips Phase 2 exactly as a red
+      # Phase 1 verdict already does (the skip budget then gates report.json alone).
+      #
+      # Deliberately no step-level error swallowing — that directive appears nowhere in
+      # this file on purpose (see the header). The script fails closed on its own:
+      # exit 1 on any failed check, exit 2 when KC_SEED_USER_PASSWORD is unset or
+      # when it runs fewer checks than it declares, and every arm pushes a
+      # failing result from its catch so a thrown exception can never read as a
+      # pass.
+      #
+      # No NODE_PATH: it is a CommonJS/`require` mechanism that Node's ESM
+      # resolver does not consult, so setting it here would document a mechanism
+      # that does not exist. `import … from "@playwright/test"` resolves by
+      # walking up from the importing file's own directory — which is why the
+      # script must stay under `frontend/`.
+      - name: Gate — cart identity boundary (#459 / R-16)
+        if: always() && steps.seed-fixtures.outcome == 'success'
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+        run: node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
+
       # Phase 30 plan 30-22 (PAY-01): Phase 2 runs stripe-refund-flow.spec.ts against
       # real Stripe test mode after Phase 1 has proven #793 (cash-checkout-no-stripe)
       # on the cash-only stack.
@@ -479,8 +546,24 @@ jobs:
           # (PaymentService: Webhook.constructEvent, then getDataObjectDeserializer() for
           # payment_intent.*, refund.*, account.updated); --all-thin would forward thin
           # events, which carry no data.object for those handlers to read.
+          #
+          # --latest is REQUIRED too: it picks the API VERSION the events are rendered in.
+          # Without it `stripe listen` forwards in the ACCOUNT DEFAULT, which on the CI sandbox
+          # (and staging) is 2026-07-29.dahlia, while stripe-java 34.0.0 pins
+          # 2026-09-30.endive. Its EventDataObjectDeserializer then returns no object,
+          # handlePaymentIntentSucceeded throws IllegalStateException, the global handler maps
+          # it to 400 WITHOUT a log line, and the order stays PENDING (observed: branch nightly
+          # 41293948964, pi_3UWvcED29H13ktT517xlBdrC, event api_version=2026-07-29.dahlia).
+          # Staging is unaffected because its two dashboard webhook endpoints are pinned to
+          # api_version=2026-09-30.endive. --latest forwards the newest version (2026-10-28.endive
+          # on 2026-11-01), which stripe-java accepts while the major name (endive) matches.
+          # When Stripe ships the next major before the SDK is bumped this breaks again, LOUDLY
+          # (the Stripe spec cannot reach CAPTURED) - that is the intended signal to bump
+          # stripe-java, not something to pin around. The version actually forwarded is printed
+          # below from the CLI's Ready line, so every run records it.
           STRIPE_API_KEY="$STRIPE_TEST_SECRET_KEY" nohup stripe listen \
             --all-snapshot \
+            --latest \
             --forward-to http://localhost:9090/api/v1/public/payments/webhook \
             --forward-connect-to http://localhost:9090/api/v1/public/payments/webhook/connect \
             > "$RUNNER_TEMP/stripe-listen.log" 2>&1 &
@@ -505,6 +588,16 @@ jobs:
             cat "$RUNNER_TEMP/stripe-listen.log" >&2 || true
             exit 1
           }
+          # Record the API version the forwarder renders events in. The Ready line ALSO carries
+          # the webhook signing secret, so only the version fragment is printed, never the line.
+          # One sed that quits on the first match: no pipe into head (pipefail, SIGPIPE 141).
+          api_version=$(sed -n '/You are using Stripe API Version \[/{s/.*\(You are using Stripe API Version \[[^]]*\]\).*/\1/p;q}' \
+            "$RUNNER_TEMP/stripe-listen.log")
+          [ -n "$api_version" ] || {
+            echo "::error::stripe listen is Ready but its log names no 'Stripe API Version [...]' - the forwarded version is unrecorded"
+            exit 1
+          }
+          echo "stripe listen: $api_version"
 
       # THE HOST PORT IS PINNED FOR THIS RECREATE. Compose publishes core-java on the RANGE
       # 127.0.0.1:9090-9091 (so `--scale core-java=2` can give replica 2 :9091), and Docker
@@ -652,8 +745,8 @@ jobs:
       #
       # WHICH REPORTS, AND WHY IT IS NOT SIMPLY SKIPPED WITHOUT PHASE 2. `stripe-run` has
       # no `if:`, so it inherits success() and is SKIPPED whenever any earlier step failed:
-      # the Phase 1 verdict (a red test), the Stripe CLI install, the forwarder, or the
-      # core-java recreate. Its `|| true` makes it `success` whenever it did run. So:
+      # the Phase 1 verdict (a red test), the cart-identity gate, the Stripe CLI install, the
+      # forwarder, or the core-java recreate. Its `|| true` makes it `success` whenever it did run. So:
       #   stripe-run skipped -> no report-stripe.json can exist. Gating on it anyway VOIDed
       #     (exit 2) on top of the real failure (observed: run 41288249740, the forwarder
       #     failed and this step added "no Playwright JSON report at
@@ -687,63 +780,6 @@ jobs:
             kill "$(cat "$RUNNER_TEMP/stripe-listen.pid")" 2>/dev/null || true
             rm -f "$RUNNER_TEMP/stripe-listen.pid"
           fi
-
-      # R-16 / #459. WHY HERE AND NOT IN ci-cd.yaml: `frontend-e2e` there is
-      # deliberately stack-free, and this script drives THREE real Keycloak
-      # registrations against a live realm plus a placed order. The nightly is
-      # the only lane with that stack.
-      #
-      # WHY AT ALL: it previously ran in no workflow, gate or npm script — it was
-      # manual-only, and it had been silently unrunnable since PR #522 moved one
-      # paragraph from `text-slate-500` to `text-slate-600`. A guard nothing
-      # executes decays without anyone learning it decayed.
-      #
-      # THE `if:` IS LOAD-BEARING, AND IT IS NOT `always()` (WR-04). With no
-      # `if:` a step inherits `success()`, so this gate would be SKIPPED whenever
-      # ANY earlier step failed — including the Playwright suite and the skip
-      # budget. This workflow's own escalation history records 14 consecutive
-      # scheduled failures (2026-08-11 → 2026-08-24); across every one of those
-      # nights this gate would have executed ZERO times, which is the exact
-      # decay it was added to stop. So it keys on the SEED step instead:
-      #
-      #   - a red suite, a red verdict step or a red skip budget must NOT skip
-      #     this gate — they say nothing about cart identity;
-      #   - a stack that never came up, or fixtures that never seeded, MUST skip
-      #     it — the shops it drives (peckham-jollof-co, mama-ades-kitchen) would
-      #     not exist and the failure would be noise about the wrong thing.
-      #
-      # `always()` alone would produce that noise; `steps.seed-fixtures.outcome`
-      # is the narrowest precondition that distinguishes the two.
-      #
-      # ORDERING TRADE-OFF, recorded rather than left implicit: this runs AFTER
-      # the suite because each pass registers three real Keycloak users and
-      # places a real order against the same seeded shops the suite asserts on.
-      # Hoisting it above the suite trades a skipped gate for perturbed fixtures,
-      # which is the worse failure — a suite failing for reasons it did not
-      # cause. No cheap smoke subset is carved out for PR CI either: every arm
-      # here needs either a real registration (C1c, C1, C2) or a placed order
-      # (C4), and the two that need neither (C3, and C1c's seed half) would
-      # still need the full compose stack that `frontend-e2e` deliberately does
-      # not have. The boundary is therefore: this class of check lives in the
-      # nightly, and the PR lane covers the same invariants in jsdom.
-      #
-      # Deliberately no step-level error swallowing — that directive appears nowhere in
-      # this file on purpose (see the header). The script fails closed on its own:
-      # exit 1 on any failed check, exit 2 when KC_SEED_USER_PASSWORD is unset or
-      # when it runs fewer checks than it declares, and every arm pushes a
-      # failing result from its catch so a thrown exception can never read as a
-      # pass.
-      #
-      # No NODE_PATH: it is a CommonJS/`require` mechanism that Node's ESM
-      # resolver does not consult, so setting it here would document a mechanism
-      # that does not exist. `import … from "@playwright/test"` resolves by
-      # walking up from the importing file's own directory — which is why the
-      # script must stay under `frontend/`.
-      - name: Gate — cart identity boundary (#459 / R-16)
-        if: always() && steps.seed-fixtures.outcome == 'success'
-        env:
-          PLAYWRIGHT_BASE_URL: http://localhost:3000
-        run: node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
 
       # BLOB-06 (Phase 36). The two-arm restore drill of docs/runbooks/backups.md, EXECUTED.
       # Every check inside the backup pipeline (the size floor, `pg_restore --list`) passes on
