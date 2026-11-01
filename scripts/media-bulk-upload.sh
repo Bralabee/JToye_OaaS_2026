@@ -121,6 +121,7 @@ done
 
 void() { echo "VOID: $*" >&2; exit 2; }
 say()  { printf '%s\n' "$*"; }
+note() { printf '%s\n' "$*" >&2; }   # diagnostics go to stderr: api_get's stdout is captured by callers
 
 # ---------------------------------------------------------------------------------
 # Pure helpers (no network) — the --selftest arms cover these.
@@ -179,6 +180,20 @@ idem_key() { printf 'media-bulk-%s' "$(printf '%s|%s|%s|%s|%s' "$RUN_ID" "$1" "$
 
 json_escape() { jq -Rn --arg v "$1" '$v'; }
 
+MAX_429_RETRIES="${MEDIA_MAX_429_RETRIES:-6}"; MAX_429_WAIT_S="${MEDIA_MAX_429_WAIT_S:-60}"
+# retry_wait_from HEADER_FILE -> seconds to sleep (pure; selftested)
+retry_wait_from() {
+  local reset after now wait
+  reset="$(awk 'tolower($1)=="x-ratelimit-reset:"{gsub(/\r/,"",$2); print $2}' "$1" | head -n1)"
+  after="$(awk 'tolower($1)=="retry-after:"{gsub(/\r/,"",$2); print $2}' "$1" | head -n1)"
+  now="${RETRY_NOW_OVERRIDE:-$(date +%s)}"; wait=""
+  case "$reset" in ''|*[!0-9]*) ;; *) [ "$reset" -gt "$now" ] && wait=$((reset - now)) ;; esac
+  if [ -z "$wait" ]; then case "$after" in ''|*[!0-9]*) wait="$POLL_S" ;; *) wait="$after" ;; esac; fi
+  [ "$wait" -ge 1 ] || wait=1
+  [ "$wait" -le "$MAX_429_WAIT_S" ] || wait="$MAX_429_WAIT_S"
+  printf '%s' "$wait"
+}
+
 # page_is_last PAGE_JSON -> "false" only when the page says .last is false; anything else ends the
 # walk. Not `.last // true`: jq's // treats false as absent, so that read "false" as true and the
 # walk never advanced (measured, round 2).
@@ -207,6 +222,12 @@ if [ "$SELFTEST" = 1 ]; then
   check "page predicate false" "$(page_is_last '{"last":false}')" "false"
   check "page predicate true"  "$(page_is_last '{"last":true}')" "true"
   check "page predicate absent" "$(page_is_last '{}')" "true"
+  h="$(mktemp)"; printf 'HTTP/1.1 429 \r\nRetry-After: 0\r\nX-RateLimit-Reset: 1000045\r\n' > "$h"
+  check "429 wait from reset"   "$(RETRY_NOW_OVERRIDE=1000000 retry_wait_from "$h")" "45"
+  printf 'HTTP/1.1 429 \r\nRetry-After: 0\r\n' > "$h";                           check "429 wait floor 1s"     "$(retry_wait_from "$h")" "1"
+  printf 'HTTP/1.1 429 \r\nRetry-After: 7\r\n' > "$h";                           check "429 wait retry-after"  "$(retry_wait_from "$h")" "7"
+  printf 'HTTP/1.1 429 \r\nX-RateLimit-Reset: 1000999\r\n' > "$h";               check "429 wait capped"       "$(RETRY_NOW_OVERRIDE=1000000 retry_wait_from "$h")" "60"
+  rm -f "$h"
   check "sku shape"            "$(sku_for 'Egusi Soup' abcd1234)" "EGUSI-SOUP-ABCD"
   check "sku deterministic"    "$(sku_for 'Egusi Soup' abcd1234)" "$(sku_for 'Egusi Soup' abcd1234)"
   check "sku differs by file"  "$([ "$(sku_for 'Menu Sides' 1111aaaa)" != "$(sku_for 'Menu Sides' 2222bbbb)" ] && echo differ)" "differ"
@@ -269,10 +290,12 @@ AUTH=(-H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT")
 
 # api_call METHOD PATH IDEMKEY [curl args...] -> sets HTTP (status) and RESP (body) in THIS shell.
 # Deliberately not "$(...)"-shaped: a status set inside a command substitution dies with it.
-# A 429 is retried up to MAX_429_RETRIES times, sleeping Retry-After (else POLL_S): the tenant
-# bucket is 100 requests a minute and a 29-row run with its polls drains it (measured: the run
-# after one answered 429 on every call). The same request is re-sent with the same key.
-HTTP=000; RESP=""; MAX_429_RETRIES="${MEDIA_MAX_429_RETRIES:-6}"
+# A 429 is retried up to MAX_429_RETRIES times. The wait is X-RateLimit-Reset (an epoch) minus
+# now, else Retry-After, floored at 1 s and capped at MAX_429_WAIT_S: the API was measured sending
+# `Retry-After: 0` with the reset a minute out, and a zero sleep is six instant retries and a VOID.
+# The tenant bucket is 120 a minute and a 29-row run with its polls can drain it. The same request
+# is re-sent with the same key.
+HTTP=000; RESP=""
 api_call() {
   local method="$1" path="$2" idem="$3"; shift 3
   local tmp hdr tries=0 wait
@@ -280,16 +303,15 @@ api_call() {
   while :; do
     HTTP="$(curl -sS --max-time 120 -o "$tmp" -D "$hdr" -w '%{http_code}' -X "$method" "${AUTH[@]}" -H 'Accept: application/json' ${idem:+-H "Idempotency-Key: $idem"} "$@" "$API$path")" || HTTP=000
     [ "$HTTP" = 429 ] && [ "$tries" -lt "$MAX_429_RETRIES" ] || break
-    tries=$((tries+1)); wait="$(awk 'tolower($1)=="retry-after:"{gsub(/\r/,"",$2); print $2}' "$hdr" | head -n1)"
-    case "$wait" in ''|*[!0-9]*) wait="$POLL_S" ;; esac
-    say "note    rate limited (429) on $method $path: waiting ${wait}s, retry $tries/$MAX_429_RETRIES"; sleep "$wait"
+    tries=$((tries+1)); wait="$(retry_wait_from "$hdr")"
+    note "note    rate limited (429) on $method $path: waiting ${wait}s, retry $tries/$MAX_429_RETRIES"; sleep "$wait"
   done
   RESP="$(cat "$tmp")"; rm -f "$tmp" "$hdr"
 }
 api_get() { api_call GET "$1" ""; printf '%s' "$RESP"; [ "$HTTP" = 200 ]; }
 
 # Shops: slug -> id, once.
-shops_json="$(api_get "/api/v1/shops?size=100")" || void "GET /shops failed"
+shops_json="$(api_get "/api/v1/shops?size=100")" || void "GET /shops answered HTTP $HTTP (after $MAX_429_RETRIES retries if 429)"
 shop_id_for() { printf '%s' "$shops_json" | jq -r --arg s "$1" '(.content // .)[] | select(.slug == $s) | .id' | head -n1; }
 
 # Products: exact title within a shop (case-insensitive) over the shop's FULL listing, page by
