@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef, useCallback, useId } from "react"
+import { useEffect, useState, useRef, useCallback, useId, useSyncExternalStore } from "react"
 import Link from "next/link"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store, Bike,
@@ -56,6 +56,37 @@ function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
 
+/**
+ * SW-JRD-10 / SW-MRC-06 (swarm epic #964): the fixed "View basket" bar covered the last card's Add
+ * button and, on a phone, a focused quantity stepper. The bar publishes its own measured height as
+ * `--jt-bottom-chrome` (hooks/use-bottom-chrome-height.ts, R-07), and the property is ABSENT when no
+ * bar shows, so both rules below read 0px then and change nothing.
+ *  - MENU_BOTTOM_PADDING: the menu ends one bar-height plus the old py-6 above the page bottom, so
+ *    the last card can always scroll clear of the bar.
+ *  - CONTROL_SCROLL_MARGIN: a card control focused while it sits behind the bar is scrolled clear of
+ *    it. Measured in Chromium (2026-11-01): a button 37px from the bottom of a 667px viewport, under
+ *    an 80px fixed bar, stayed covered on Tab without scroll-margin and was scrolled 55px clear with it.
+ */
+const MENU_BOTTOM_PADDING = "pb-[calc(var(--jt-bottom-chrome,0px)+1.5rem)]"
+const CONTROL_SCROLL_MARGIN = "scroll-mb-[calc(var(--jt-bottom-chrome,0px)+0.75rem)]"
+
+/**
+ * SW-CLR-13 (swarm epic #964): true once React has hydrated this page, false in the server HTML.
+ * The menu is server-rendered, so an Add button is on screen before its click handler exists; a tap
+ * in that window was silently dropped. The card's Add control is disabled until this is true, so
+ * the button says it is not ready instead of swallowing the tap (and Playwright's actionability
+ * check now waits for it too). useSyncExternalStore with a server snapshot of `false` is React's
+ * own hydration-safe way to say "client or server" without a mount effect.
+ */
+const noopSubscribe = () => () => {}
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false
+  )
+}
+
 function DietaryBadge({ tag }: { tag: string }) {
   const t = tag.toLowerCase().trim()
   if (t.includes("vegan")) return <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"><Leaf className="h-2.5 w-2.5" />Vegan</span>
@@ -79,6 +110,7 @@ function ProductCard({
   inFeaturedRail?: boolean
 }) {
   const [modalOpen, setModalOpen] = useState(false)
+  const hydrated = useHydrated()
   const { addItem, items, updateQuantity, lineLimit } = useCart()
   const dietaryTags = product.dietaryTags?.split(",").filter(Boolean) || []
   // #817 / D-18: the allergen line, in words, in every state. Its id is per RENDER (useId), not per
@@ -254,7 +286,9 @@ function ProductCard({
                   aria-label={`Add ${product.title} to basket${inFeaturedRail ? " (featured)" : ""}`}
                   // #817: the name stays the dish (A11Y-4); the description is its allergen line.
                   aria-describedby={allergenLineId}
-                  className="relative z-10 inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all"
+                  // SW-CLR-13: disabled in the server HTML, enabled the moment the handler exists.
+                  disabled={!hydrated}
+                  className={`relative z-10 inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all disabled:cursor-wait disabled:opacity-60 ${CONTROL_SCROLL_MARGIN}`}
                 >
                   <PlusIcon className="h-3 w-3" />
                   Add
@@ -279,7 +313,7 @@ function ProductCard({
                         ? `Remove ${product.title} from basket`
                         : `Decrease quantity of ${product.title}`
                     }
-                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
+                    className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all ${CONTROL_SCROLL_MARGIN}`}
                   >
                     <Minus className="h-3 w-3" />
                   </button>
@@ -291,7 +325,7 @@ function ProductCard({
                     aria-label={`Add one more ${product.title}`}
                     aria-describedby={atLineLimit ? lineLimitHintId : undefined}
                     disabled={atLineLimit}
-                    className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-50 ${CONTROL_SCROLL_MARGIN}`}
                   >
                     <PlusIcon className="h-3 w-3" />
                   </button>
@@ -645,11 +679,15 @@ export function ShopDetailClient({
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
 
-        {/* Back button */}
+        {/* Back button. SW-MRC-9 (swarm epic #964): white on bg-black/30 over the gold gradient
+            measured about 3.6:1. At bg-black/70 the pill's own fill is enough on ANY hero: over the
+            worst case, a pure-white banner, it composites to #4d4d4d, and white on that is 8.4:1
+            (WCAG AA for this 14px text is 4.5:1). The hover state only darkens it further. */}
         <div className="absolute top-4 left-4">
           <Link
             href="/shop"
-            className="inline-flex items-center gap-1 rounded-full bg-black/30 backdrop-blur-sm px-3 py-1.5 text-sm text-white hover:bg-black/50 transition-colors"
+            data-testid="shop-hero-back"
+            className="inline-flex items-center gap-1 rounded-full bg-black/70 backdrop-blur-sm px-3 py-1.5 text-sm text-white hover:bg-black/80 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -904,8 +942,8 @@ export function ShopDetailClient({
         </div>
       )}
 
-      {/* Menu */}
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6">
+      {/* Menu. The bottom padding is bound to the basket bar's published height (SW-JRD-10). */}
+      <div data-testid="shop-menu" className={`mx-auto max-w-4xl px-4 sm:px-6 pt-6 ${MENU_BOTTOM_PADDING}`}>
         {/* Featured section */}
         {featuredProducts.length > 0 && (
           <section className="mb-8">
