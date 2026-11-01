@@ -107,3 +107,21 @@ dark and heavy, less clear and friendly, food fading after the hero (rubric R8�
   open-collection photo of its cuisine captioned as an example ("Jollof — example photo"), so
   nothing implies it is that kitchen's dish.
 - **Review when:** the rebuild's blind A/B (the run's second look).
+
+## D14 · 2026-11-01 · Landing elevate approved: oxblood + gold palette, the sketch built into the app
+Sanmi approved the elevate sketch (`runs/2026-11-01-landing-elevate/sketch/after.html`, commit
+`c82cc0e7`) and ruled the four open items in its README, verbatim choices:
+1. **Build the elevate sketch** (`sketch/after.html` + `palette.md`) into the app. The palette in
+   `palette.md` is **ADOPTED** and supersedes D13's "Market day" (`identity.md` rewritten: oxblood
+   ramp, gold accent, warm-neutral ramp, Work Sans).
+2. **Headline "Order from local kitchens. Or run yours." KEPT on 3 lines.** `design-run`'s catalogue
+   (`rules/catalogue.tsv`) has no rule_id for taste-skill's `headline-lines` or `focal-point`, so no
+   `rulings.tsv` row can carry it. It is recorded here instead: both are **accepted inspect FAILs**
+   on `/`, by the owner's ruling, the same cause (the h1 in the hero's half-width column at 56px).
+   A gate run on the landing reports them and the run's `direction.md`/README names them as ruled.
+3. **Track-live copy ACCEPTED:** "See your order's status change as the kitchen confirms it,
+   prepares it and gets it ready." (the platform has no courier tracking; `/track` polls status).
+4. **Kitchen row edge: CARD PEEK on phones** instead of the gradient edge fade.
+- **Status: KEEP** (Sanmi). Supersedes D13's palette; D13's kitchen-card rule (own banner, else a
+  credited cuisine photo captioned "<Cuisine> — example photo") stands.
+- **Review when:** the built page's blind A/B (design-run step 8), or the h1 copy is next revisited.
