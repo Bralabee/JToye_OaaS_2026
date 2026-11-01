@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 30
 current_phase_name: The Money Path, Executed
 status: executing
-stopped_at: "Phase 30 executing at 25/32 (30-01..30-25). 30-23 and 30-24 COMPLETE 2026-11-01: PR 6 (#1065) merged 6b3ff3e1 at 10:56Z, deploy 41299627034 success, main nightly 41299664811 green (STRIPE-REFUND order=ORD-00000000-20261101-5A93F80C refund=re_3UWwsID29H13ktT50mHhqB4b amount=100 livemode=false). Issue #1071 closed by #1073 (fd01dc0c): the live edge sends referrer-policy no-referrer on /pay; WINDOWS 52 fixed (ledger 20 open / 34 fixed). The 30-20..30-24 records are PR #1074 (feat/30-pay01-refund-e2e, open at the time of writing). Next: end PR #1074's review series and merge it, then /gsd-execute-phase 30 at 30-26. Detail: CI sandbox jtoye-ci acct_1UWtvjD29H13ktT5, keys stored (secret STRIPE_TEST_SECRET_KEY, var CI_STRIPE_PUBLISHABLE_KEY); four dispatched nightlies on the PR branch fixed five Stripe-phase defects (--all-snapshot, skip-budget VOID, :9090 pin, --latest for the dahlia/endive API-version mismatch, cart gate before the recreate) and run 41297105542 on b8d31922 is green with the refund proven (re_3UWwFrD29H13ktT51yMfGTP3); #1065's review series ended with a Review-Record on b8d31922. Also merged 2026-11-01: #1072 (/pay notice + copy fixes, 50dee65a)."
-last_updated: "2026-11-01T11:43:04.000Z"
+stopped_at: "Phase 30 executing at 26/32 (30-01..30-26). 30-26 COMPLETE 2026-11-01 on feat/30-billing-per-location (not pushed): scripts/staging-seed.sh --stage billing (BILLING sub=… quantity=… locations=… invoice=… amount_paid=… status=paid livemode=false, from Stripe objects read by id) and --stage billing-sync-check (BILLING-SYNC before=n after-add=n+1 after-remove=n, probe shop deleted on every exit path); selftest 60 PASS 0 FAIL, both break arms recorded red then restored (30-26-SUMMARY.md). Next: 30-27 — PR 7 (30-25 is #1067 on main; this branch carries 30-26), merge, deploy, then run both stages on staging for the PAY-02 / D-04 evidence."
+last_updated: "2026-11-01T23:39:34.533Z"
 last_activity: 2026-11-01
-last_activity_desc: "30-24 complete (evidence/30-24-pr6-merge-and-main-nightly.txt): PR 6 #1065 merged 6b3ff3e1, deploy 41299627034 success, main nightly 41299664811 green with the refund proven; 30-23 complete; issue #1071 closed by #1073, WINDOWS 52 fixed; PR #1074 round-1 findings fixed"
-state_head: "0a04ce909b88d5dce3dd1982abc845d9eab94848"
+last_activity_desc: "30-26 complete: staging-seed.sh --stage billing and --stage billing-sync-check, selftest 60/0, break arms recorded"
+state_head: ee939be5531f5546a2c3be00bc095b4b7bc1f6da
 progress:
   total_phases: 20
   completed_phases: 18
   total_plans: 315
-  completed_plans: 308
-  percent: 98
+  completed_plans: 309
+  percent: 90
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-10-17)
 
 ## Current Position
 
-Phase: 30 — The Money Path, Executed (EXECUTING since 2026-10-22)
-Status: Executing — 25/32 plans done (30-01..30-25). 30-23 and 30-24 COMPLETE 2026-11-01: PR 6 #1065 merged 6b3ff3e1, deploy 41299627034 success, the nightly on main 41299664811 green with the refund proven. #1072 and #1073 merged the same day; issue #1071 is closed (the live edge sends no-referrer on /pay, evidence/30-20-pay-live.txt §9) and WINDOWS 52 is fixed. The 30-20..30-24 records are PR #1074 (open at the time of writing). Next: end PR #1074's review series and merge it, then 30-26. Before that: 30-22 COMPLETE 2026-11-01 on PR 6 #1065 head 1f69a7f0 (the two gaps fixed under the owner ruling "you fix it": T-30-87 secret kept out of every uploaded artifact, exactly-one refund read-back; evidence/30-22-fix-1065.txt); 30-21 ADOPTED 2026-11-01 from PR 6 #1065 (Antigravity, head 217003b5, every must-have re-measured MET), after which 30-22 was first HALTED NOT MET on that head (refund count >= 1 not exactly one; T-30-87 trace secret leak to a public artifact). Before that: PR 5 (PAY-04 /pay page, #1064) MERGED bff82097 2026-10-31T23:01:48Z and deployed (run 41250761893 success, digest parity rc 0); 30-20 found the edge Referrer-Policy gap (issue #1071, fixed since by #1073). Still open from 30-20: the 360 px screenshot awaits the owner's eye. Earlier: PR 1 (#1029), PR 2 (#1030, issue #958), PR #1041 (issue #1038), PR 3 (#1044, issue #108 Stripe half) and PR 4 (#1046, PAY-03 Connect webhook, ec73ddee) merged + deployed + proven live; D-02 done (#1043).
-Last activity: 2026-11-01 — PR #1074 round-1 findings fixed (STATE, ROADMAP, WINDOWS 52 table row, HANDOFF, 30-20/30-23/30-24 SUMMARYs). Before that, 2026-11-01 — 30-24 DONE (PR 6 #1065 merged 6b3ff3e1; deploy 41299627034 success; nightly on main 41299664811 green, STRIPE-REFUND re_3UWwsID29H13ktT50mHhqB4b; evidence/30-24-pr6-merge-and-main-nightly.txt). Before that, 2026-11-01 — 30-23 DONE (CI sandbox keys side by side in Chrome; branch nightlies 41288249740, 41291041531, 41293948964 red on five workflow defects, each measured and fixed; 41297105542 GREEN: Stripe 1/1, STRIPE-REFUND re_3UWwFrD29H13ktT51yMfGTP3, events 1/1 rows, skip budget 4/4); #1065's round 3 zero admissible; #1072 (50dee65a) and #1073 (fd01dc0c) merged, each after a two-round series. Before that, 2026-11-01 — 30-22 fixes pushed to PR #1065 (head 1f69a7f0) and 30-22 re-summarized complete. Before that, 2026-11-01 — PR #1065 adoption re-measurement (30-21-SUMMARY.md, 30-22-SUMMARY.md status halted, evidence/30-21-22-adopt-1065.txt). Before that, 2026-10-31 — 30-20 DONE (see stopped_at; 30-20-SUMMARY.md, evidence/30-20-pay-live.txt). Before that, 30-20 Task 1: PR #1064 opened. Previously: 30-19 DONE: robots DISALLOW /pay; next.config '/pay/:path*' Referrer-Policy no-referrer after the default (header test: order, match /pay and /pay/x not /payments, effective value; break arm 5 red); ssr-routes.conf STATIC pay/page.tsx (gate rc 1 -> 44/44 PASS). scripts/staging-seed.sh --stage pay-link --link-out FILE: public OTP send first (testPreviewOtp; absent -> REFUSED [otp-hidden], nothing written), vendor order with +447700900123 (Idempotency-Key pay-link-<stamp>), public verify, vendor POST /orders/{id}/payment-links UPFRONT; URL (/pay#token= shape checked) only to FILE chmod 600 first; PAY-LINK order/link/expires; selftest 51/0, arms A/B/C each red. frontend/e2e/staging-pay-link.spec.ts (STAGING_E2E=1 only): desktop pay arm with page.reload() resume (redeems=1, no 'Open your payment link'), 4242, Stripe read with Stripe-Account when redeem names one, spent link in a fresh tab, verdict STAGING-PAY ... account=; @mobile-only 360 px coarse-pointer overflow arm. staging-card-checkout.spec.ts reads on the owning account (account=). Plan's account grep form vacuous (break arm stayed green), strict form recorded. Full Jest 3260/3260, build + tsc rc 0. Counts 6753. (30-20 followed.)
+Phase: 30 (The Money Path, Executed) — EXECUTING
+Status: Executing Phase 30
+Last activity: 2026-11-01 — 30-26 complete (staging billing evidence stages); next 30-27
 
 - Phase 29 is COMPLETE (2026-10-21): 29/29 plans have a SUMMARY, `29-VERIFICATION.md` is `passed` 5/5 and `29-SECURITY.md` is closed (R-3 accepted by the owner 2026-10-21, staging-only, conditional on the generated edge credential). Phase 30 is planned and owner-approved (2026-10-21); execution starts with 30-01.
   The close is PR #1002. The follow-up PRs #988, #989, #990, #991 and #1000 are MERGED (#1001 was closed unmerged, as shipped inside #1000); see the ledger for the deploy result of each.
@@ -1001,6 +1001,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 29 P14 | 85min | 4 tasks | 30 files |
 | Phase 30 P12 | 79min | 3 tasks | 29 files |
 | Phase 30 P13 | 14min | 2 tasks | 20 files |
+| Phase 30 P26 | 13 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1461,6 +1462,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 30]: 30-22 halted NOT MET on PR #1065 head 217003b5: refund read >= 1 not exactly one, and a failing Playwright trace (retain-on-failure) would publish the CI sk_test_ Authorization header in the public e2e-nightly-report artifact (T-30-87); fix on #1065 before the owner stores CI keys (30-23)
 - [Phase 30]: 30-22 complete on PR #1065 head 1f69a7f0: the CI sk_test_ never enters Playwright (Node fetch client; the request fixture's call log leaked it into the JSON report even with trace off), and the nightly deletes any artifact file holding a Stripe secret before upload (check-stripe-ci-keys.sh --scan-artifacts, zip members read)
 - [Phase 30]: 30-22: the refund read-back settles only on exactly one succeeded refund on two consecutive reads within 30 s; a second refund is a violation at once
+- [Phase 30]: 30-26: both staging billing stages sign in as the staging vendor (BillingController gates on requireGroupAdmin; the vendor holds GROUP_ADMIN), take BILLING_LOCATION_RULE=all-shops from evidence/30-25-d04-decision.txt, and check 3900 three ways (DTO monthlyAmountPennies, Stripe price unit_amount, amount_paid = 3900 x quantity) as FAILs, never recomputed — PAY-02's falsifier is a test-mode invoice retrieved from Stripe by id; the stage reads subscription and invoice by id with the staging key and asserts livemode false on each
 
 ### Pending Todos
 
@@ -1541,9 +1543,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-31T21:25:00.000Z
-Stopped at: Phase 30 — 30-19 done (19/32); next is 30-20, the owner checkpoint for PR 5 (base sync, OpenAPI snapshot regen, push, PR, review series, merge, deploy, pay a real link on staging), on feat/30-pay-link-page (worktree JToye_OaaS_2026-p30-15, not pushed)
-Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-19-SUMMARY.md` (Notes for 30-20)
+Last session: 2026-11-01T23:40:00.000Z
+Stopped at: Phase 30 — 30-26 done (26/32) on feat/30-billing-per-location (not pushed); next is 30-27, PR 7 and the staging run of --stage billing and --stage billing-sync-check
+Resume file: `.planning/STATE.md` (Current Position) and `.planning/phases/30-live-stripe-test-mode-execution/30-26-SUMMARY.md` (Known Limits for 30-27)
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
