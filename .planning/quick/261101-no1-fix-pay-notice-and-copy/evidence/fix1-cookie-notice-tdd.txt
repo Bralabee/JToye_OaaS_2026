@@ -101,3 +101,66 @@ Snapshots:   0 total
 Time:        1.116 s
 Ran all test suites within paths "components/public/__tests__/cookie-notice.test.tsx".
 rc=0
+
+## BREAK ARM A-no-carveout (after commit a8df5fcd)
+diff --git a/frontend/components/public/cookie-notice.tsx b/frontend/components/public/cookie-notice.tsx
+index 7ee36cb5..82e15286 100644
+--- a/frontend/components/public/cookie-notice.tsx
++++ b/frontend/components/public/cookie-notice.tsx
+@@ -125,7 +125,6 @@ export function CookieNotice() {
+   if (choosableCategories().length > 0) return <ConsentBanner />
+ 
+   // After the banner, never before it: see "NOT ON /pay" above.
+-  if (isPaymentLinkPage(pathname)) return null
+ 
+   if (!show) return null
+ 
+  ● the payment-link page /pay carries no cookie notice › renders nothing at /pay, where it would cover the card form
+  ● the payment-link page /pay carries no cookie notice › renders nothing under /pay/ either
+Tests:       2 failed, 28 passed, 30 total
+rc=1
+A-no-carveout restored (sha256 matches committed)
+
+## BREAK ARM B-bare-prefix (after commit a8df5fcd)
+diff --git a/frontend/components/public/cookie-notice.tsx b/frontend/components/public/cookie-notice.tsx
+index 7ee36cb5..691e23e1 100644
+--- a/frontend/components/public/cookie-notice.tsx
++++ b/frontend/components/public/cookie-notice.tsx
+@@ -54,7 +54,7 @@ import { ConsentBanner } from "./consent-banner"
+ 
+ /** The payment-link page and anything under it (it has no sub-routes today). */
+ function isPaymentLinkPage(pathname: string | null): boolean {
+-  return pathname === "/pay" || (pathname ?? "").startsWith("/pay/")
++  return (pathname ?? "").startsWith("/pay")
+ }
+ 
+ /** POSITIONING, STACKING AND ZERO CLS all live in `BottomNoticeShell` now — see
+  ● the payment-link page /pay carries no cookie notice › CONTROL: still renders at / and at a route that only starts with the letters (/payments)
+Tests:       1 failed, 29 passed, 30 total
+rc=1
+B-bare-prefix restored (sha256 matches committed)
+
+## BREAK ARM C-carveout-before-banner (after commit a8df5fcd)
+diff --git a/frontend/components/public/cookie-notice.tsx b/frontend/components/public/cookie-notice.tsx
+index 7ee36cb5..b0cc68a5 100644
+--- a/frontend/components/public/cookie-notice.tsx
++++ b/frontend/components/public/cookie-notice.tsx
+@@ -122,10 +122,10 @@ export function CookieNotice() {
+   }, [])
+ 
+   // A real choice outranks an informational notice.
++  if (isPaymentLinkPage(pathname)) return null
+   if (choosableCategories().length > 0) return <ConsentBanner />
+ 
+   // After the banner, never before it: see "NOT ON /pay" above.
+-  if (isPaymentLinkPage(pathname)) return null
+ 
+   if (!show) return null
+ 
+  ● the payment-link page /pay carries no cookie notice › a real consent choice still outranks the carve-out: the banner renders at /pay
+Tests:       1 failed, 29 passed, 30 total
+rc=1
+C-carveout-before-banner restored (sha256 matches committed)
+
+## CLEAN AGAIN after the three arms
+jest cookie-notice.test.tsx: 30 passed, 30 total, rc=0; git diff --exit-code cookie-notice.tsx rc=0

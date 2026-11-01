@@ -28,7 +28,7 @@ import { loadStripe } from "@stripe/stripe-js/pure"
 import publicApiClient from "@/lib/public-api-client"
 import { resetStripeLoaderForTests } from "@/lib/stripe-loader"
 import PayPage, { metadata } from "../page"
-import { PayClient } from "../pay-client"
+import { PayClient, payNavigation } from "../pay-client"
 
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
@@ -717,6 +717,42 @@ describe("/pay with no link: Stripe's return, the reload resume, and the empty s
     await screen.findByRole("heading", { level: 1, name: DEAD.paid.heading })
     expect(window.history.state).toEqual({ __NA: true })
     expect(screen.queryByTestId("stripe-elements")).toBeNull()
+  })
+
+  it("reload after redeem when Stripe.js fails to load: the 'link has now been opened' alert carries Try again, which reloads the page", async () => {
+    // Owner ruling 2026-11-01 (PR #1064 review round-2 residual): this state had no action, although a
+    // plain reload recovers once Stripe.js can load, because the resume entry is kept for exactly that.
+    openLink("/pay", { __NA: true, [`jtoyePayResume`]: RESUME })
+    mockedLoadStripe.mockImplementation(() => Promise.reject(new Error("Failed to load Stripe.js")))
+    render(<PayClient />)
+
+    await findAlert(LINK_OPENED)
+    expect(theOneH1()).toHaveTextContent(`Pay ${SHOP_NAME}`)
+    expect(window.history.state).toEqual({ __NA: true, [`jtoyePayResume`]: RESUME })
+    const retry = screen.getByRole("button", { name: "Try again" })
+    expect(retry).toHaveClass("h-11")
+
+    // jsdom 26 Location is unforgeable (reload is read-only, location cannot be redefined), so the
+    // page reloads through payNavigation and the spy sits there; the next test proves the seam is the
+    // browser's own reload.
+    const reload = jest.spyOn(payNavigation, "reload").mockImplementation(() => {})
+    try {
+      fireEvent.click(retry)
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      reload.mockRestore()
+    }
+    expect(mockedPost).toHaveBeenCalledTimes(0)
+  })
+
+  it("the reload seam is the browser's own window.location.reload (jsdom reports the navigation it cannot perform)", () => {
+    const errors = jest.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      payNavigation.reload()
+      expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([expect.stringContaining("Not implemented: navigation")])
+    } finally {
+      errors.mockRestore()
+    }
   })
 
   it("reload after redeem when the intent cannot be read: the entry is dropped and the page asks for the link", async () => {
