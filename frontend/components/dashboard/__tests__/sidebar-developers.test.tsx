@@ -77,11 +77,14 @@ describe("Developers nav item (37-46)", () => {
     expect(link.querySelector("svg")?.getAttribute("class")).toMatch(/lucide-code/)
   })
 
-  it("a shop manager does not see Developers; Webhooks and Staff are unchanged", async () => {
+  it("a shop manager does not see Developers, nor the other Group-admin pages Webhooks and Staff", async () => {
+    // SW-TND-05 (swarm epic #964): Webhooks and Staff refuse anyone but a Group admin, so they are
+    // gated like Developers now (they used to be listed for everyone and refused on the page).
     const links = await sidebarLinks(false)
     expect(links).not.toContain("Developers")
-    expect(links).toContain("Webhooks")
-    expect(links).toContain("Staff")
+    expect(links).not.toContain("Webhooks")
+    expect(links).not.toContain("Staff")
+    expect(links).toContain("Shops")
   })
 
   it("the mobile More sheet shows Developers to a Group admin", async () => {
@@ -114,14 +117,14 @@ describe("Developers nav item (37-46)", () => {
     // that this flush is enough for Developers to appear).
     await act(async () => {})
     fireEvent.click(screen.getByRole("button", { name: /more navigation/i }))
-    expect(await screen.findByRole("link", { name: "Webhooks" })).toBeInTheDocument()
+    expect(await screen.findByRole("link", { name: "Shops" })).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: "Developers" })).toBeNull()
     unmount()
 
     // No provider (a page rendered on its own): nothing is known, so nothing admin-only is offered.
     render(<MobileTabBar />)
     fireEvent.click(screen.getByRole("button", { name: /more navigation/i }))
-    expect(await screen.findByRole("link", { name: "Webhooks" })).toBeInTheDocument()
+    expect(await screen.findByRole("link", { name: "Shops" })).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: "Developers" })).toBeNull()
   })
 })

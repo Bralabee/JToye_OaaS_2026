@@ -130,4 +130,16 @@ describe("Shops page: shop-admin controls follow the caller's role (#961)", () =
     expect(screen.getByText("Ask your administrator to add a shop.")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /add shop/i })).not.toBeInTheDocument()
   })
+
+  it("SW-TND-12 (swarm epic #964): every row action is a 44px tap target on a phone, 32px from md", async () => {
+    await renderPage({ loading: false, access: access({ groupAdmin: true, grantedShopIds: null, shopRoles: null }) })
+    for (const name of [
+      "Scheduled slots and WhatsApp link for Kitchen A",
+      "Edit shop Kitchen A",
+      "Delete shop Kitchen A",
+    ]) {
+      const cls = screen.getByRole("button", { name }).className.split(/\s+/)
+      expect(cls).toEqual(expect.arrayContaining(["h-11", "w-11", "md:h-8", "md:w-8"]))
+    }
+  })
 })

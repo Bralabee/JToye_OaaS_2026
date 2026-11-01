@@ -292,6 +292,79 @@ describe("Staff management screen (VSA-04)", () => {
     })
   })
 
+  it("SW-ADE-11: refuses a Staff grant with no shop, with a clear message, and sends nothing", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText(/team member/i), {
+      target: { value: USER_SAM },
+    })
+    // Staff is the default role; no shop is selected in the dashboard, so the shop reads All shops.
+    expect((within(grantCard()).getByLabelText(/^role$/i) as HTMLSelectElement).value).toBe("STAFF")
+    fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
+
+    expect(
+      await screen.findByText("Staff access covers one shop. Choose the shop they will work in.")
+    ).toBeInTheDocument()
+    expect(mockedApiClient.post).not.toHaveBeenCalled()
+  })
+
+  it("SW-ADE-11: defaults the grant's shop to the shop selected in the dashboard", async () => {
+    window.localStorage.setItem("shopContext", SHOP_B)
+    try {
+      render(<StaffPage />)
+      await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+      const shop = within(grantCard()).getByLabelText(/^shop$/i) as HTMLSelectElement
+      await waitFor(() => expect(shop.value).toBe(SHOP_B))
+
+      fireEvent.change(screen.getByLabelText(/team member/i), {
+        target: { value: USER_SAM },
+      })
+      mockedApiClient.post.mockResolvedValueOnce({ data: {} } as never)
+      fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
+      await waitFor(() => {
+        expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/staff/grant", {
+          userId: USER_SAM,
+          shopId: SHOP_B,
+          role: "STAFF",
+        })
+      })
+    } finally {
+      window.localStorage.removeItem("shopContext")
+    }
+  })
+
+  it("review R1-1: a Group-admin grant sends shopId null and shows All shops, even with a shop selected in the switcher", async () => {
+    window.localStorage.setItem("shopContext", SHOP_B)
+    try {
+      render(<StaffPage />)
+      await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+      const shop = within(grantCard()).getByLabelText(/^shop$/i) as HTMLSelectElement
+      await waitFor(() => expect(shop.value).toBe(SHOP_B))
+
+      fireEvent.change(screen.getByLabelText(/team member/i), {
+        target: { value: USER_SAM },
+      })
+      fireEvent.change(within(grantCard()).getByLabelText(/^role$/i), {
+        target: { value: "GROUP_ADMIN" },
+      })
+      mockedApiClient.post.mockResolvedValueOnce({ data: {} } as never)
+      fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
+      await waitFor(() => {
+        expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/staff/grant", {
+          userId: USER_SAM,
+          shopId: null,
+          role: "GROUP_ADMIN",
+        })
+      })
+      // Locked to All shops, as the invite form is: Group admin is tenant-wide by definition (23-04).
+      expect(shop).toBeDisabled()
+      expect(shop.value).toBe("")
+    } finally {
+      window.localStorage.removeItem("shopContext")
+    }
+  })
+
   it("renders the access-required state on a 403 and leaks no directory data", async () => {
     mockedApiClient.get.mockRejectedValueOnce(
       httpError(403, "/shop-access-denied")
@@ -690,6 +763,8 @@ describe("Remove access", () => {
     fireEvent.change(screen.getByLabelText(/team member/i), {
       target: { value: USER_SAM },
     })
+    // A Staff grant needs a shop (SW-ADE-11).
+    fireEvent.change(within(grantCard()).getByLabelText(/^shop$/i), { target: { value: SHOP_A } })
     fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
     await waitFor(() =>
       expect(
