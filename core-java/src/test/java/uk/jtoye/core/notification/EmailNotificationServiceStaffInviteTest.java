@@ -36,7 +36,8 @@ import static org.mockito.Mockito.verify;
  * D-07 (Phase 37-07): the invitation email, read the way the invitee's mail server receives it.
  *
  * <p>The copy is UI-SPEC § Copywriting B1-B3 ("Invitation email (plain text)"): subject
- * "{Inviter} invited you to {business} on J'Toye"; body naming role and shop, the link, "works once",
+ * "{Inviter} has invited you to help run {business} on J'Toye" (SW-TND-02); body naming role and shop
+ * and what the role can do ({@code ShopRole.capabilities()}), the link, "works once",
  * the expiry in UK time, and "Nothing happens unless you accept". Plain text only. The address and the
  * link (a bearer credential) never reach a log line.
  */

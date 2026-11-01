@@ -1,6 +1,7 @@
 /**
- * #839 acceptance on the compose stack (D-04, 31.1-20): the link in the
- * "Confirm your data request" email opens a readable page on the WEB app, and
+ * #839 acceptance on the compose stack (D-04, 31.1-20): the link in the DSAR
+ * verification email ("Confirm your request to erase your data" / "… for a copy of
+ * your data", SW-SAM-08) opens a readable page on the WEB app, and
  * confirming takes one deliberate press.
  *
  * Before 31.1-20 the emailed link pointed at http://localhost:8080/api/... —

@@ -1,7 +1,8 @@
 /**
  * #838 acceptance in a real browser (D-04, 31.1-26): a signed-in customer finds "My account" in the
  * storefront menu, and "Download my data" and "Delete my account" each lodge a request through the
- * EXISTING public intake — each one answered by a "Confirm your data request" email, because the
+ * EXISTING public intake — each one answered by a "Confirm your request …" email (VERIFY_SUBJECT
+ * below: "… for a copy of your data" or "… to erase your data", SW-SAM-08), because the
  * intake still verifies by email whoever asks.
  *
  * TWO BLOCKS.
@@ -18,7 +19,7 @@
  *      nav, presses each action, and requires:
  *        - exactly one intake POST per action, carrying the signed-in address and the right type;
  *        - the constant "Check your email to confirm" copy;
- *        - one Mailhog message per action, subject "Confirm your data request", to that address.
+ *        - one Mailhog message per action, subject starting VERIFY_SUBJECT, to that address.
  *      The deletion is lodged and NEVER confirmed: the spec does not open the emailed link, so the
  *      throwaway account is not erased by the run (the confirm page is dsar-verify-link.spec.ts's).
  *      The Mailhog count is the non-vacuity control: a page that showed the copy without lodging
