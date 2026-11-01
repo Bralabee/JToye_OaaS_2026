@@ -13,7 +13,7 @@
 import fs from "fs"
 import path from "path"
 import { render, screen, within } from "@testing-library/react"
-import Home from "@/app/page"
+import Home, { metadata as homeMetadata } from "@/app/page"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import type { PublicShop } from "@/types/storefront"
 
@@ -330,5 +330,47 @@ describe("Landing content bands declare the Marketing tier (ORCH-04)", () => {
       .getByRole("heading", { level: 1 })
       .closest(`[data-width-tier="marketing"]`)
     expect(heroBand?.parentElement).toBe(heroSection)
+  })
+})
+
+/**
+ * SW-CLR-03 (swarm epic #964). The landing page promised "Independent UK
+ * kitchens" and "go live in a day" while /for-operators — the page the operator
+ * door leads to — describes an assisted pilot for established West African food
+ * businesses in London. Two pages on one site making incompatible offers is the
+ * finding; the landing copy is aligned to /for-operators, whose wording it now
+ * reuses, rather than the other way round.
+ *
+ * The overclaims are asserted ABSENT on the rendered page and in the metadata,
+ * after a control that the hero actually rendered.
+ */
+describe("Landing copy matches the /for-operators pilot (SW-CLR-03)", () => {
+  const OVERCLAIMS: Array<[string, RegExp]> = [
+    ["go live in a day", /go live in a day/i],
+    ["Independent UK kitchens", /independent uk kitchens/i],
+  ]
+
+  it.each(OVERCLAIMS)("the rendered page no longer says %s", async (_label, pattern) => {
+    const { container } = render(await Home())
+    // Control: the hero rendered.
+    expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(pattern)
+  })
+
+  it.each(OVERCLAIMS)("the metadata no longer says %s", (_label, pattern) => {
+    const og = homeMetadata.openGraph as { description?: string } | undefined
+    // Control: both descriptions exist.
+    expect(String(homeMetadata.description).length).toBeGreaterThan(0)
+    expect(String(og?.description).length).toBeGreaterThan(0)
+    expect(String(homeMetadata.description)).not.toMatch(pattern)
+    expect(String(og?.description)).not.toMatch(pattern)
+  })
+
+  it("names the pilot's actual scope: West African food businesses in London, assisted", async () => {
+    const { container } = render(await Home())
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/west african food businesses in london/i)
+    expect(text).toMatch(/assisted pilot/i)
+    expect(String(homeMetadata.description)).toMatch(/in london/i)
   })
 })

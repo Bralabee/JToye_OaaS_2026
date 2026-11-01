@@ -24,7 +24,12 @@ import { serialiseJsonLd, shopListStructuredData } from "@/lib/structured-data"
 export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
   description:
-    "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders, manage your kitchen, and go live in a day.",
+    "Order from established West African food businesses in London in minutes, or apply for the assisted pilot: direct ordering, scheduled fulfilment and allergen labels.",
+  // SW-CLR-03 (swarm epic #964): this description used to promise "go live in a
+  // day" to any food business, while /for-operators describes an assisted pilot
+  // for established West African food businesses in London. The wording is now
+  // taken from /for-operators (its lede and its pilot section), not invented.
+  //
   // FE-5: canonical + Open Graph were missing on the landing page — the one
   // page most likely to be shared/linked externally. `alternates.canonical`
   // is a relative path deliberately (no `metadataBase` is set app-wide, so
@@ -34,7 +39,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "J'Toye — Order from local kitchens, or run your own",
     description:
-      "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders, manage your kitchen, and go live in a day.",
+      "Order from established West African food businesses in London in minutes, or apply for the assisted pilot: direct ordering, scheduled fulfilment and allergen labels.",
     url: "/",
     type: "website",
   },
@@ -232,7 +237,7 @@ export default async function Home() {
               {/* Left column — copy, search, doors */}
               <div>
                 <span className="text-xs font-bold uppercase tracking-[0.16em] text-oxblood-600">
-                  🇬🇧 Independent UK kitchens
+                  🇬🇧 West African food businesses in London
                 </span>
                 <h1
                   data-hero-headline
@@ -241,9 +246,10 @@ export default async function Home() {
                   Order from local kitchens. Or run yours.
                 </h1>
                 <p className="mt-4 max-w-xl text-lg text-slate-600">
-                  J&apos;Toye connects hungry customers with independent food
-                  businesses — order in minutes, or take your kitchen online and
-                  go live in a day.
+                  J&apos;Toye connects hungry customers with established West
+                  African food businesses in London — order in minutes, or apply
+                  for the assisted pilot for direct ordering and scheduled
+                  fulfilment.
                 </p>
 
                 {/* C: discovery search + category chips. Both run a REAL query
@@ -288,7 +294,7 @@ export default async function Home() {
                     <Store className="h-8 w-8 text-gold" />
                     <span className="mt-4 text-lg font-bold">Run your food business</span>
                     <span className="mt-1 text-sm text-cream/80">
-                      Take orders, manage your kitchen, go live in a day.
+                      Direct ordering, scheduled fulfilment and allergen labels, in an assisted pilot.
                     </span>
                     <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-gold">
                       Learn more
