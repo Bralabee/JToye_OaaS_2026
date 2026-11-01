@@ -37,16 +37,24 @@ import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switche
 import type { LucideIcon } from "lucide-react"
 import { useTheme } from "@/hooks/use-theme"
 
+/**
+ * The role a nav item's page needs (SW-TND-05, swarm epic #964), as the server's staff/me answer
+ * decides it. `"GROUP_ADMIN"`: listed only for a Group admin. `"SHOP_MANAGER"`: listed for a Group
+ * admin or a caller who manages at least one shop. Unset: every caller with access. A hint for what to
+ * OFFER, never an authorization input: every page and every API call refuses the rest regardless.
+ */
+export type NavRequirement = "SHOP_MANAGER" | "GROUP_ADMIN"
+
 export interface NavItem {
   name: string
   href: string
   icon: LucideIcon
   /**
-   * Listed only when the server's staff/me answer says the caller is a Group admin (37-46, UI-SPEC
-   * § E1). Before that answer arrives, or outside the dashboard shell, it is not listed: nothing
-   * admin-only is offered on a guess. The page and the server refuse everyone else regardless.
+   * The role this page needs (see {@link NavRequirement}). Before the staff/me answer arrives, or
+   * outside the dashboard shell, a gated item is not listed: nothing gated is offered on a guess
+   * (37-46, UI-SPEC § E1, T-37-113).
    */
-  groupAdminOnly?: boolean
+  requires?: NavRequirement
 }
 
 export const navigation: NavItem[] = [
@@ -54,42 +62,61 @@ export const navigation: NavItem[] = [
   { name: "Shops", href: "/dashboard/shops", icon: Store },
   { name: "Products", href: "/dashboard/products", icon: Package },
   { name: "Orders", href: "/dashboard/orders", icon: ShoppingCart },
+  // STAFF keep Customers: counter staff may look a customer up (owner ruling 2026-10-09, option B);
+  // edits need SHOP_MANAGER and the page/API refuse them.
   { name: "Customers", href: "/dashboard/customers", icon: Users },
-  { name: "Finance", href: "/dashboard/finance", icon: Banknote },
-  { name: "Marketing", href: "/dashboard/marketing", icon: Megaphone },
+  // Finance: a shop's figures need SHOP_MANAGER on it, the tenant's need Group admin (37-11).
+  { name: "Finance", href: "/dashboard/finance", icon: Banknote, requires: "SHOP_MANAGER" },
+  // Marketing: promotion and announcement writes need SHOP_MANAGER on the shop.
+  { name: "Marketing", href: "/dashboard/marketing", icon: Megaphone, requires: "SHOP_MANAGER" },
   { name: "Kitchen", href: "/dashboard/kitchen", icon: UtensilsCrossed },
-  { name: "Go live", href: "/dashboard/onboarding", icon: Rocket },
-  // Admin-only surface (like Finance): the page itself renders an
-  // access-required state on 403 for non-admin users.
-  { name: "Approvals", href: "/dashboard/onboarding/approvals", icon: ShieldCheck },
-  // GROUP_ADMIN-only surface (VSA-04, D-10) — same convention as Approvals: the
-  // item is always listed and the /dashboard/staff PAGE renders the
-  // access-required state on the server's typed 403 for a non-group-admin.
-  { name: "Staff", href: "/dashboard/staff", icon: UserCog },
-  // Machine channel (COMMS-06): vendor-facing webhook subscriptions +
-  // delivery-log browser. Falls into the mobile "More" sheet automatically.
-  { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
-  // Integrator API credentials (37-46, D-22..D-24): Group admin only, so unlike Staff and Webhooks
-  // the item itself is gated on staff/me (UI-SPEC § E1). The page refuses a direct visit too.
-  { name: "Developers", href: "/dashboard/developers", icon: Code2, groupAdminOnly: true },
-  // Image review (IMG-04, Phase 24): rejected uploads + content-flagged images
-  // for Keep/Replace. Like the other secondary surfaces, it flows into the
-  // mobile "More" sheet automatically (not one of the 4 primary thumb tabs).
-  { name: "Image review", href: "/dashboard/media/review", icon: Images },
+  // Go live: the onboarding lifecycle needs SHOP_MANAGER on the onboarded shop (#961).
+  { name: "Go live", href: "/dashboard/onboarding", icon: Rocket, requires: "SHOP_MANAGER" },
+  // Approvals: the admin realm role (OnboardingAdminController), which staff/me reports as groupAdmin.
+  // The page still renders its access-required state for a Group admin without the realm role.
+  { name: "Approvals", href: "/dashboard/onboarding/approvals", icon: ShieldCheck, requires: "GROUP_ADMIN" },
+  // Staff (VSA-04, D-10) and Webhooks (COMMS-06): requireGroupAdmin() on every endpoint.
+  { name: "Staff", href: "/dashboard/staff", icon: UserCog, requires: "GROUP_ADMIN" },
+  { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook, requires: "GROUP_ADMIN" },
+  // Integrator API credentials (37-46, D-22..D-24): Group admin only.
+  { name: "Developers", href: "/dashboard/developers", icon: Code2, requires: "GROUP_ADMIN" },
+  // Image review (IMG-04, Phase 24): Keep and Re-process need SHOP_MANAGER on the asset's shop.
+  { name: "Image review", href: "/dashboard/media/review", icon: Images, requires: "SHOP_MANAGER" },
 ]
 
+/** What the shell's staff/me answer lets this caller be offered in the nav. */
+export interface NavAccess {
+  isGroupAdmin: boolean
+  isShopManager: boolean
+}
+
 /**
- * True when the shell's staff/me answer has arrived and says Group admin. Null (no provider) or a
- * pending answer is false: an admin-only item is offered only on the server's word (T-37-113).
+ * Read from the shell's staff/me answer. Null (no provider) or a pending answer offers nothing gated:
+ * a gated item is listed only on the server's word (T-37-113). `isShopManager` is true for a Group
+ * admin, a tenant-wide SHOP_MANAGER, or SHOP_MANAGER on any one shop (#961 `shopRoles`). A server older
+ * than #961 sends no `shopRoles`; then the role cannot be told and manager items are offered, as before.
  */
-export function useIsKnownGroupAdmin(): boolean {
+export function useNavAccess(): NavAccess {
   const switcher = useOptionalShopSwitcherData()
-  return !!switcher && !switcher.loading && switcher.isGroupAdmin
+  if (!switcher || switcher.loading) return { isGroupAdmin: false, isShopManager: false }
+  const access = switcher.access
+  const isGroupAdmin = switcher.isGroupAdmin
+  if (isGroupAdmin) return { isGroupAdmin, isShopManager: true }
+  if (!access) return { isGroupAdmin, isShopManager: false }
+  const managerRole = (role: string | null | undefined) =>
+    role === "SHOP_MANAGER" || role === "GROUP_ADMIN"
+  if (managerRole(access.tenantWideRole)) return { isGroupAdmin, isShopManager: true }
+  if (access.shopRoles == null) return { isGroupAdmin, isShopManager: true }
+  return { isGroupAdmin, isShopManager: Object.values(access.shopRoles).some(managerRole) }
 }
 
 /** The items this caller is shown, in `navigation` order. */
-export function visibleNavigation(items: NavItem[], isGroupAdmin: boolean): NavItem[] {
-  return items.filter((item) => !item.groupAdminOnly || isGroupAdmin)
+export function visibleNavigation(items: NavItem[], access: NavAccess): NavItem[] {
+  return items.filter((item) => {
+    if (item.requires === "GROUP_ADMIN") return access.isGroupAdmin
+    if (item.requires === "SHOP_MANAGER") return access.isShopManager
+    return true
+  })
 }
 
 export function Sidebar() {
@@ -127,7 +154,7 @@ export function Sidebar() {
   // home itself shows the same page), so the links and the shop switcher are
   // hidden. The user block and Sign out stay (UI-SPEC § B3).
   const noAccess = useDashboardNoAccess()
-  const isGroupAdmin = useIsKnownGroupAdmin()
+  const navAccess = useNavAccess()
 
   return (
     <div className="hidden md:flex h-full w-64 flex-col bg-slate-900 text-white">
@@ -167,7 +194,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {!noAccess && visibleNavigation(navigation, isGroupAdmin).map((item) => {
+        {!noAccess && visibleNavigation(navigation, navAccess).map((item) => {
           const isActive = pathname === item.href
           return (
             <Link
