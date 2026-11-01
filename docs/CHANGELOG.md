@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Storefront Allergen Copy, May-Contain on Dish Cards, Basket-Bar Overlap and Basket A11y (swarm epic #964) (#1075) — 2026-11-01
+
+Frontend only: seven findings from the 2026-10-19 staging persona swarm, each still true on main.
+
+- **SW-ADE-06 (card half):** the dish card shows the vendor's "May contain: …" line, as the dish modal does. It sits before Add and is part of Add's description. The order-snapshot half needs a core-java migration and is not in this change.
+- **SW-PRY-02:** wherever a customer sees "No allergens declared" (card, modal, basket lines), it now reads "No allergens declared – not the same as allergen-free", in checkout's own words. The vendor dashboard keeps the bare phrase.
+- **SW-PRY-03:** an empty may-contain list reads "May contain: none listed" instead of disappearing. The public payload cannot tell "none" from "not recorded": `MayContainAllergens.undeclaredNames` returns `[]` for both.
+- **SW-JRD-10 / SW-MRC-06:** the menu's bottom padding and the card controls' `scroll-margin-bottom` are bound to `--jt-bottom-chrome`, the height the basket bar already publishes. The last dish and a focused stepper can no longer end up under the bar.
+- **SW-MRC-9:** the hero Back pill is `bg-black/70` (8.4:1 over any hero; it was about 3.6:1).
+- **SW-MRC-13:** basket-page item headings are h2, the dish dialog's scroll body is a named region, and the dialog says "basket", using the card's stepper names.
+- **SW-CLR-13:** the card's Add button is disabled in the server HTML until hydration, so an early tap is no longer silently dropped.
+
 ### Role-Gated Dashboard Nav, Staff Invite Shop, Orders Search, Finance Tile States and Product Dialog Fixes (swarm epic #964) (#1076) — 2026-11-01
 
 Eight findings from the 2026-10-19 staging persona swarm, frontend only. No API, migration or core-java change.

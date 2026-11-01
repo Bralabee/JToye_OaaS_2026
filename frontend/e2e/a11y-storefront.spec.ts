@@ -404,11 +404,11 @@ test.describe("live storefront @mobile-only", () => {
     await page.goto(`/shop/${SHOP_SLUG}/cart`)
     await largeTextNarrow(page)
     await expect(page.getByRole("heading", { name: dish }).first()).toBeVisible({ timeout: 15_000 })
-    expect(await clippedText(page, "h3", [dish]), "the basket item name").toEqual([])
+    expect(await clippedText(page, "h2", [dish]), "the basket item name").toEqual([])
 
     // INSTRUMENT: the same basket name forced to one clipped line is reported.
-    await page.addStyleTag({ content: "main h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }" })
-    expect((await clippedText(page, "h3", [dish])).length).toBeGreaterThan(0)
+    await page.addStyleTag({ content: "main h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }" })
+    expect((await clippedText(page, "h2", [dish])).length).toBeGreaterThan(0)
   })
 
   test("F6: signed out at 360px with 130% text the header row fits on the menu, basket and checkout; INSTRUMENT: a widened control is caught", async ({ page }) => {

@@ -264,9 +264,9 @@ test.describe("Storefront dish modal — dialog contract", () => {
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
 
-    await dialog.getByRole("button", { name: /Add to cart/i }).click()
+    await dialog.getByRole("button", { name: /Add to basket/ }).click()
     // The footer swaps to the quantity stepper once the dish is in the basket.
-    await expect(dialog.getByText("In cart")).toBeVisible()
+    await expect(dialog.getByText("In basket")).toBeVisible()
   })
 })
 
