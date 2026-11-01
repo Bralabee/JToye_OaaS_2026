@@ -1,4 +1,4 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 22/32 plans done; 30-21 adopted and 30-22 complete on PR 6 (#1065, head 0ebfaf66, round-1 fixes pushed); next the round-1 resolution, then /review-verify 1065, then 30-23; issue #1071 (edge Referrer-Policy) open
+# Handoff: Phase 30 (The Money Path, Executed) executing, 22/32 plans done; 30-21 adopted and 30-22 complete on PR 6 (#1065, head 0ebfaf66, review series ENDED: Review-Record on that head); next 30-23 (owner: CI sandbox keys, branch nightly, mark ready), then 30-24 (merge from base, merge); issue #1071 (edge Referrer-Policy) open
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
@@ -11,10 +11,11 @@
     - Nightly structure: 10/10, with a new no-head arm that reads 9/10 on the old YAML.
   - Gates on `0ebfaf66` are all rc 0, and branch-behind-base reports 0 behind. actionlint finds the same 2 pre-existing SC2129 style issues at l.139 on both heads.
   - Evidence: `evidence/30-22-fix-1065.txt`, section "ROUND 1 FIXES".
+- **Review series on #1065 ENDED (2026-11-01):** round 1 `/code-review` on `1f69a7f0` admitted 2 (fixed in `0ebfaf66`, 8 recorded); round 2 `/review-verify` on `0ebfaf66` admitted 0 (2 recorded) and carries `Review-Record: R-3, round 2 … on 0ebfaf66ef0f79a01cebd311f5981d77a4734772`. Both resolutions are on the PR from the owner's account. The branch is 1 behind `origin/main` (#1066; `check-changelog-contract.sh` is red on main itself for #1066's missing entry) — the merge from the base before 30-24's merge is the review gate's base exemption and needs no further round.
 - **Next:**
-  1. The orchestrator posts the round-1 resolution.
-  2. Then `/review-verify 1065`, over `0ebfaf66` only.
-  3. Then 30-23. The owner's CI keys come first, then the branch nightly.
+  1. 30-23 (owner checkpoint): store the CI sandbox keys — safe now, the trace/artifact leak fix is on the branch — then a real nightly on `agy/30-21-22-refund-e2e` (`STRIPE_E2E=1` phase; skip budget expected GREEN 4/4, the "ALLOW retired" step is already done), then mark #1065 ready. Recorded round-1 items 2 (events check has no deadline loop) and 9 (skip-budget gate after a Phase-1 failure) are what that nightly may surface; fix them there as observed if it does.
+  2. 30-24: merge `origin/main` into the branch (base exemption), CI green, squash-merge #1065 (the ship shape of 30-04 Task 1), watch main's nightly.
+  3. Open owner items: issue #1071 fix option (a: app owns Referrer-Policy / b: separate /pay ingress / c: conditional snippet); persist the owning Stripe account on the order at intent creation (30-17, #1064 round-1 finding 2); the 360 px screenshot `evidence/30-20-pay-360.png` and the cookie banner covering Expiry/Security code; the "You've paid £X" and resume dead-end copy for UI review.
 - **Antigravity:** its `-agy-p30-w21` worktree is behind again. Run `git pull --ff-only` there.
 
 **2026-11-01 fix delta (history; superseded by the round-1 fix block above).**
