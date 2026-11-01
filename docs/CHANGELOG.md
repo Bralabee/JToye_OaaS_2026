@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The Apps Own Referrer-Policy, So /pay's no-referrer Reaches the Browser (#1071) (#1073) — 2026-11-01
+
+On staging, `/pay` answered with `Referrer-Policy: strict-origin-when-cross-origin`, and so did `/invite`. The frontend sends `no-referrer` on both pages, but the ingress `configuration-snippet` replaced it, because `more_set_headers` overwrites an upstream header that has the same name.
+
+- **k8s:** the `Referrer-Policy` line is removed from the base `jtoye-ingress` snippet and from both staging copies. INV-15 requires those copies to carry every base line, so all three change together. The frontend (`next.config.mjs`) and core-java (`SecurityConfig`) already send the header, so no app response loses it. The grafana, keycloak and mailpit Ingresses keep their own line. The goldens lose exactly three lines.
+- **`frontend/app/pay/page.tsx`:** `metadata.referrer` is `"no-referrer"`. The document now carries `<meta name="referrer" content="no-referrer">`, which no edge can overwrite. The Jest test failed before the change and passes after it.
+- **`scripts/check-staging-edge.sh`:**
+  - New `pay-referrer` arm: it requires exactly one `Referrer-Policy: no-referrer` on app-staging `/pay`. It fails on the pre-deploy edge and on the `--fail-arms` probe.
+  - New `--only <arm>` flag runs a single arm.
+  - The `staging-edge-probe` job now runs the new arm after each staging deploy.
+
 ### List-Unsubscribe on Intermediate Order Emails, Phase 29 Gate Follow-Ups, and a Session-Burst Guard (#981, #979, #963) (#1066) — 2026-10-31
 
 - **#981, `EmailNotificationService` / `OrderStateChangeListener`:** CONFIRMED, PREPARING, READY and COMPLETED emails carry RFC 8058 `List-Unsubscribe` + `List-Unsubscribe-Post` and a footer link. They are sent only if `ConsentGate.allows(tenant, email, ORDERS)`. `order-received` (the statutory CCR 2013 reg 16 confirmation) and `order-cancelled` stay non-suppressible.
