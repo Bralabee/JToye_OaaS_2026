@@ -38,8 +38,9 @@ import type { PaymentLinkPreview, PaymentLinkPurpose, RedeemedPaymentLink } from
  * English `detail` (T-30-75), and every refused-link state renders constant copy only.
  *
  * Mount decides the mode, in this order: a `#token=` fragment (a link), Stripe's redirect query
- * (`payment_intent_client_secret` / `redirect_status`, the return from a redirect-based method), a
- * resume entry in history.state (a reload after redeem), else the "Open your payment link" state.
+ * (`payment_intent_client_secret`, the return from a redirect-based method; its `redirect_status` is
+ * never read, the intent's own status decides), a resume entry in history.state (a reload after
+ * redeem), else the "Open your payment link" state.
  */
 
 const PREVIEW_PATH = "/api/v1/public/payment-links/preview"
@@ -116,7 +117,8 @@ type DeadLink = "used" | "gone" | "notFound"
 
 type Phase =
   | { kind: "checking" }
-  | { kind: "checkFailed" }
+  /** `returnRead` set: Stripe's return could not read its intent, and Try again reads it again. */
+  | { kind: "checkFailed"; returnRead?: { clientSecret: string; acct: string | null } }
   | { kind: "active"; preview: PaymentLinkPreview; notUsed?: boolean }
   | { kind: "opening"; preview: PaymentLinkPreview }
   | { kind: "preparing"; display: Display }
@@ -327,29 +329,30 @@ export function PayClient() {
   )
 
   /**
-   * Stripe's return from a redirect-based method (UI-SPEC S3 step 4). The intent's own status
-   * decides; `redirect_status` is read only when the intent cannot be (no key, Stripe.js down).
+   * Stripe's return from a redirect-based method (UI-SPEC S3 step 4). Only the intent's own status
+   * decides. `redirect_status` is a query anyone can type, so it never does: when the intent cannot
+   * be read (no key, Stripe.js down, the read rejected, or Stripe answered with an error, as it does
+   * for a garbage client secret) the page says it could not check, and Try again reads the intent
+   * again (owner ruling 2026-11-01, PR #1064 review series).
    */
-  const runReturn = useCallback(async (clientSecret: string | null, redirectStatus: string | null, acct: string | null) => {
+  const runReturn = useCallback(async (clientSecret: string, acct: string | null) => {
     setPhase({ kind: "checking" })
     let status: string | null = null
     let amount: number | null = null
-    if (clientSecret) {
-      try {
-        const stripe = await (loadStripeOnce(acct ?? undefined) ?? Promise.resolve(null))
-        if (stripe) {
-          const { paymentIntent } = await stripe.retrievePaymentIntent(clientSecret)
-          status = paymentIntent?.status ?? null
-          amount = typeof paymentIntent?.amount === "number" ? paymentIntent.amount : null
-        }
-      } catch {
-        status = null
+    try {
+      const stripe = await (loadStripeOnce(acct ?? undefined) ?? Promise.resolve(null))
+      if (stripe) {
+        const { paymentIntent } = await stripe.retrievePaymentIntent(clientSecret)
+        status = paymentIntent?.status ?? null
+        amount = typeof paymentIntent?.amount === "number" ? paymentIntent.amount : null
       }
+    } catch {
+      status = null
     }
-    const outcome = status ?? redirectStatus
-    if (outcome === "succeeded") setPhase({ kind: "received", display: null, amountPennies: amount })
-    else if (outcome === "processing") setPhase({ kind: "processing", amountPennies: amount })
-    else setPhase({ kind: "redirectFailed" })
+    if (status === "succeeded") setPhase({ kind: "received", display: null, amountPennies: amount })
+    else if (status === "processing") setPhase({ kind: "processing", amountPennies: amount })
+    else if (status) setPhase({ kind: "redirectFailed" })
+    else setPhase({ kind: "checkFailed", returnRead: { clientSecret, acct } })
   }, [])
 
   /** Mount: which of the four ways in this is (see the header). */
@@ -361,11 +364,11 @@ export function PayClient() {
     }
     const query = new URLSearchParams(window.location.search)
     const clientSecret = query.get("payment_intent_client_secret")
-    const redirectStatus = query.get("redirect_status")
     // Only a return carrying an intent to read is Stripe's return. A bare redirect_status, typed by
-    // hand, has nothing to fall back from and must not read as a payment (PR #1064 round 1, finding 3).
+    // hand, must not read as a payment (PR #1064 round 1, finding 3), and with an intent it is still
+    // not read: the intent's status decides (see runReturn).
     if (clientSecret) {
-      runReturn(clientSecret, redirectStatus, query.get("acct") || null)
+      runReturn(clientSecret, query.get("acct") || null)
       return
     }
     const entry = currentState()[PAY_RESUME_KEY]
@@ -476,7 +479,15 @@ export function PayClient() {
             <p role="alert" className={ALERT}>
               {PAY_PAGE_COPY.checkFailed}
             </p>
-            <button type="button" onClick={() => runPreview()} className={RETRY}>
+            <button
+              type="button"
+              onClick={() => {
+                const read = phase.returnRead
+                if (read) runReturn(read.clientSecret, read.acct)
+                else runPreview()
+              }}
+              className={RETRY}
+            >
               {PAY_PAGE_COPY.tryAgain}
             </button>
           </>
