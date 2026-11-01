@@ -38,12 +38,14 @@
 # host per entry and no shared cert-manager Secret on the render.
 #
 # STAGING IS NOT FOR CRAWLERS (D-08 applied to search engines; T-29-29). The
-# configuration-snippet is REPLACED with base's six security headers plus
+# configuration-snippet is REPLACED with base's five security headers plus
 # X-Robots-Tag noindex, nofollow: staging holds a real-looking storefront that
-# must never be indexed as if it were the live product. The six base lines are
+# must never be indexed as if it were the live product. The five base lines are
 # copied, not inherited (a JSON6902 replace cannot append to a block scalar), so
 # INV-15 also fails a staging snippet that has drifted from base's header lines.
 # Production keeps base's snippet with no X-Robots-Tag: it is indexable once live.
+# No Referrer-Policy line, as in base: the apps own it, because the edge's line
+# replaced /pay's and /invite's no-referrer (issue #1071).
 - op: replace
   path: /metadata/annotations/nginx.ingress.kubernetes.io~1cors-allow-origin
   value: "https://app-staging.olajay.co.uk"
@@ -53,7 +55,6 @@
     more_set_headers "X-Frame-Options: DENY";
     more_set_headers "X-Content-Type-Options: nosniff";
     more_set_headers "X-XSS-Protection: 1; mode=block";
-    more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
     more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
     more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
     more_set_headers "X-Robots-Tag: noindex, nofollow";

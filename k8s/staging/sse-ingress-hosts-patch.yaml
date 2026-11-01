@@ -8,9 +8,10 @@
 # cert-manager annotation on this Ingress, so one Secret has one Certificate.
 #
 # noindex (plan 29-08, T-29-29): base gives this Ingress NO configuration-snippet,
-# so staging ADDS one: base jtoye-ingress's six security headers plus
+# so staging ADDS one: base jtoye-ingress's five security headers plus
 # X-Robots-Tag, the same text as ingress-hosts-patch.yaml. INV-15 requires every
-# staging Ingress to carry both.
+# staging Ingress to carry both. No Referrer-Policy line: core-java sends it on
+# every SSE response itself (issue #1071, see k8s/base/ingress.yaml).
 - op: replace
   path: /metadata/annotations/nginx.ingress.kubernetes.io~1cors-allow-origin
   value: "https://app-staging.olajay.co.uk"
@@ -20,7 +21,6 @@
     more_set_headers "X-Frame-Options: DENY";
     more_set_headers "X-Content-Type-Options: nosniff";
     more_set_headers "X-XSS-Protection: 1; mode=block";
-    more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
     more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
     more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
     more_set_headers "X-Robots-Tag: noindex, nofollow";

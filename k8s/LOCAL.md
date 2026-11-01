@@ -297,8 +297,9 @@ termination, certificate issuance or renewal, or HSTS. (ASVS V9 is deliberately 
 **The nginx security-header snippet — not proven.** minikube v1.36.0 bundles ingress-nginx controller
 **v1.12.2**, where `allow-snippet-annotations` defaults to `false` and `annotations-risk-level`
 defaults to `High` (hardened defaults since ingress-nginx v1.9.0). The base ingress carries
-`nginx.ingress.kubernetes.io/configuration-snippet` with 6 `more_set_headers` directives — including
-HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`. That
+`nginx.ingress.kubernetes.io/configuration-snippet` with 5 `more_set_headers` directives — including
+HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Permissions-Policy` (`Referrer-Policy` is sent
+by the apps themselves since issue #1071, so it is present locally too). That
 annotation is in the Critical-risk class, so the validating admission webhook **rejects both Ingress
 objects**. The local overlay therefore nulls the annotation. It is **UNCHANGED in staging and
 production**, and CI asserts both halves (the local render has no snippet; the production render
@@ -311,7 +312,7 @@ keeps it).
 > convenience. `scripts/k8s-local-up.sh` never touches the controller's configuration.
 >
 > Flag for staging/production too: whichever ingress-nginx version runs there must have snippets
-> enabled, or those six headers are silently absent (or the apply has been failing).
+> enabled, or those five headers are silently absent (or the apply has been failing).
 
 **NetworkPolicy enforcement — not proven (D-11).** All 6 policies render unchanged locally and are
 validated as *manifests*. minikube's default CNI **does not enforce NetworkPolicies at all**, so
