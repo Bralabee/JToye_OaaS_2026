@@ -5,6 +5,7 @@ import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import apiClient from "@/lib/api-client"
+import { fetchAcceptedAssetOutcome } from "@/lib/media-api"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
@@ -734,12 +735,29 @@ export default function ProductsPage() {
       if (currentPage === 0) fetchProducts()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to delete product"
-      toast({
-        variant: "destructive",
-        title: "Error deleting product",
-        description: errorMessage,
-      })
+      // SW-ADE-09 (swarm epic #964): a product an order still references is refused with a typed
+      // 409 (errors/in-use). Say why and what to do instead, rather than the raw axios string.
+      const res = (error as { response?: { status?: number; data?: { type?: unknown } } } | null)
+        ?.response
+      const inUse =
+        res?.status === 409 &&
+        typeof res.data?.type === "string" &&
+        res.data.type.endsWith("/errors/in-use")
+      toast(
+        inUse
+          ? {
+              variant: "destructive",
+              title: `${deletingProduct.title} can't be deleted`,
+              description:
+                "It is on past orders, so it stays in your records. To take it off your menu, edit it and untick Available.",
+            }
+          : {
+              variant: "destructive",
+              title: "Error deleting product",
+              description: describeLoadError(error, "Couldn't delete the product. Please try again.")
+                .message,
+            }
+      )
     } finally {
       setSubmitting(false)
     }
@@ -1260,8 +1278,13 @@ export default function ProductsPage() {
                 <ImageUploader
                   currentImageUrl={editingProduct.imageUrl}
                   uploadUrl={`/api/v1/products/${editingProduct.id}/image`}
+                  // SW-ADE-02 (swarm epic #964): leave "Processing…" once the server settles the asset.
+                  resolveAcceptedAsset={(assetId) =>
+                    fetchAcceptedAssetOutcome(editingProduct.id, assetId)
+                  }
                   onUploadComplete={(url) => {
-                    setEditingProduct({ ...editingProduct, imageUrl: url })
+                    // No URL (review R1-4): keep the image shown and re-read the list.
+                    if (url) setEditingProduct({ ...editingProduct, imageUrl: url })
                     fetchProducts()
                   }}
                   onAiSuggestions={(suggestions) => {

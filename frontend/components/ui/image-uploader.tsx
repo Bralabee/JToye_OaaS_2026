@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { X, ImageIcon, Loader2 } from "lucide-react"
 import apiClient from "@/lib/api-client"
 import { AssetImage } from "@/components/ui/asset-image"
 import { makeIdempotencyKey } from "@/lib/webhooks-api"
-import type { MediaUploadAccepted } from "@/types/api"
+import type { AcceptedAssetOutcome, MediaUploadAccepted } from "@/types/api"
 
 const DIMENSION_REQUIREMENTS = {
   square: { minWidth: 400, minHeight: 400, label: "400x400px" },
@@ -54,16 +54,42 @@ export interface AiSuggestions {
   confidence?: number
 }
 
+/**
+ * SW-ADE-02 (swarm epic #964): how often, and how many times, the uploader asks for an accepted
+ * asset's outcome before it stops showing "Processing…". 30 x 2s is a minute: the worker normally
+ * settles in seconds, and a stalled upload is the review queue's job (27-01 / D-10), not a spinner's.
+ */
+export const ASSET_POLL_INTERVAL_MS = 2000
+export const ASSET_POLL_MAX_ATTEMPTS = 30
+
+export const STILL_PROCESSING_COPY =
+  "Your photo is still processing. It will appear on the product when it's ready, and Image review lists it if it fails."
+export const PROCESSING_FAILED_COPY = "We couldn't use that photo. Try another one."
+export const READY_NO_URL_COPY =
+  "Your photo is ready. It will show here once the product reloads."
+
 interface ImageUploaderProps {
   currentImageUrl?: string | null
   uploadUrl: string
-  onUploadComplete: (imageUrl: string) => void
+  /**
+   * The new image's URL, or null when the server settled the upload without one (an ACTIVE asset whose
+   * derivative URL did not resolve, review R1-4 on #1076, or a legacy response with no URL). Null
+   * still means "re-read": keep the image you have and refetch.
+   */
+  onUploadComplete: (imageUrl: string | null) => void
   // Phase 24 (IMG-04): the product image endpoint is now an async accept — it
   // returns 202 { assetId, status:"PENDING" } and the worker validates +
   // normalizes off-thread. Callers that target that endpoint receive the
   // accepted asset here (the uploader shows the "Processing…" state meanwhile).
   // Optional so legacy synchronous callers (shop logo/banner) are unaffected.
   onUploadAccepted?: (asset: MediaUploadAccepted) => void
+  /**
+   * SW-ADE-02: read an accepted asset's outcome from the server. When given, the uploader asks
+   * every {@link ASSET_POLL_INTERVAL_MS} (at most {@link ASSET_POLL_MAX_ATTEMPTS} times) and leaves
+   * "Processing…" on ACTIVE (calling `onUploadComplete` with the URL), FAILED, or the cap. Without
+   * it the uploader behaves as before.
+   */
+  resolveAcceptedAsset?: (assetId: string) => Promise<AcceptedAssetOutcome>
   onAiSuggestions?: (suggestions: AiSuggestions) => void
   onRemove?: () => void
   aspectRatio?: "square" | "banner" | "logo"
@@ -273,6 +299,7 @@ export function ImageUploader({
   uploadUrl,
   onUploadComplete,
   onUploadAccepted,
+  resolveAcceptedAsset,
   onAiSuggestions,
   onRemove,
   aspectRatio = "square",
@@ -289,7 +316,69 @@ export function ImageUploader({
   // the worker is normalizing off-thread, so we show a "Processing…" state
   // instead of a stale preview or a not-yet-servable derivative URL.
   const [processing, setProcessing] = useState(false)
+  /** SW-ADE-02: the accepted asset being polled for, or null when nothing is. */
+  const [pollingAssetId, setPollingAssetId] = useState<string | null>(null)
+  /** SW-ADE-02: the cap was reached with the asset still PENDING. */
+  const [stillProcessing, setStillProcessing] = useState(false)
+  /** Review R1-4: the asset is ACTIVE but the read carried no URL to show yet. */
+  const [readyNoUrl, setReadyNoUrl] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // The latest callbacks, read by the poll without restarting it when a parent re-renders.
+  const resolveRef = useRef(resolveAcceptedAsset)
+  const completeRef = useRef(onUploadComplete)
+  useEffect(() => {
+    resolveRef.current = resolveAcceptedAsset
+    completeRef.current = onUploadComplete
+  })
+
+  // SW-ADE-02: ask for the accepted asset's outcome until it settles or the cap is reached. Every
+  // state change happens in a timer or promise callback, never in the effect body.
+  useEffect(() => {
+    if (!pollingAssetId) return
+    let cancelled = false
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const settle = () => {
+      setProcessing(false)
+      setPollingAssetId(null)
+    }
+    const poll = async () => {
+      const resolve = resolveRef.current
+      if (cancelled || !resolve) return
+      attempts += 1
+      let outcome: AcceptedAssetOutcome | null = null
+      try {
+        outcome = await resolve(pollingAssetId)
+      } catch {
+        // A failed read is not an outcome: ask again on the next tick, within the same cap.
+      }
+      if (cancelled) return
+      if (outcome?.status === "ACTIVE") {
+        settle()
+        // Review R1-4: ACTIVE with no URL is not silence. The parent is still told, so it re-reads
+        // the product, and the vendor is told the photo is ready.
+        if (!outcome.url) setReadyNoUrl(true)
+        completeRef.current(outcome.url)
+        return
+      }
+      if (outcome?.status === "FAILED") {
+        settle()
+        setError(outcome.failureReason || PROCESSING_FAILED_COPY)
+        return
+      }
+      if (attempts >= ASSET_POLL_MAX_ATTEMPTS) {
+        settle()
+        setStillProcessing(true)
+        return
+      }
+      timer = setTimeout(poll, ASSET_POLL_INTERVAL_MS)
+    }
+    timer = setTimeout(poll, ASSET_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [pollingAssetId])
 
   const aspectClass =
     aspectRatio === "banner"
@@ -306,6 +395,9 @@ export function ImageUploader({
       setError(null)
       setImgBroken(false)
       setProcessing(false)
+      setPollingAssetId(null)
+      setStillProcessing(false)
+      setReadyNoUrl(false)
 
       // 1. Type gate.
       const typeError = validateFileType(file.type)
@@ -386,6 +478,7 @@ export function ImageUploader({
         if (isAsyncAccept(data)) {
           setProcessing(true)
           setPreview(null)
+          if (resolveAcceptedAsset) setPollingAssetId(data.assetId)
           onUploadAccepted?.({ assetId: data.assetId, status: data.status })
           // AI suggestions come from the advisory vision stage the worker runs
           // off-thread — they are not part of the synchronous 202 accept body.
@@ -421,7 +514,7 @@ export function ImageUploader({
         URL.revokeObjectURL(objectUrl)
       }
     },
-    [uploadUrl, onUploadComplete, displayUrl, dimReq]
+    [uploadUrl, onUploadComplete, displayUrl, dimReq, resolveAcceptedAsset, onUploadAccepted, onAiSuggestions]
   )
 
   const handleDrop = useCallback(
@@ -575,6 +668,16 @@ export function ImageUploader({
 
       {/* Error message */}
       {error && <p className="text-sm text-red-500">{error}</p>}
+      {readyNoUrl && !error && (
+        <p role="status" className="text-sm text-slate-600">
+          {READY_NO_URL_COPY}
+        </p>
+      )}
+      {stillProcessing && !error && (
+        <p role="status" className="text-sm text-slate-600">
+          {STILL_PROCESSING_COPY}
+        </p>
+      )}
     </div>
   )
 }
