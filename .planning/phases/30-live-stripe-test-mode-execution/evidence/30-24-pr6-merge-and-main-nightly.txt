@@ -1,0 +1,22 @@
+# 30-24 — PR 6 merged in the 30-04 ship shape; the nightly on main runs the Stripe phase for real
+
+## Task 1 — merge (2026-11-01 ~10:55Z)
+Review series on #1065: round 1 /code-review 2 admissible fixed (0ebfaf66), round 2 /review-verify 0 admissible
+(Review-Record on 0ebfaf66), then the 30-23 nightlies pushed five workflow fixes + three base merges, so round 3
+/review-verify on b8d31922: 0 admissible, Review-Record on b8d3192253e51ad84a7c7bc726bcdc539a66bb22 (comment 6556977357).
+Pre-merge sitting: head equality ok (b8d3192253e5); behind main 0; non-success required checks 0; mergeable
+MERGEABLE state CLEAN draft false; check-stripe-pk-var.sh --environment staging rc 0 with STRIPE_PK_VAR supplied
+(rc 1 UNSET without it: the gate reads the deploy step's env). Squash body scanned: no attribution, no closing
+keyword (#61 named with Refs). Merged: 6b3ff3e1cab0 (gh pr view state=MERGED). Issue #61 still OPEN by design.
+Deploy of 6b3ff3e1: run 41299627034 (in progress at the time of this record; see the HANDOFF for its conclusion).
+
+## Task 2 — the nightly on main (workflow_dispatch on 6b3ff3e1, run 41299664811, 10:56Z -> 11:26Z)
+    conclusion: success; job "Full Playwright suite against a real stack": success
+    Phase 1: total=434 passed=430 failed=0 skipped=4
+    Forwarded API version: 2026-10-28.endive
+    stripe_phase: total=1 passed=1 failed=0 skipped=0
+    STRIPE-REFUND order=ORD-00000000-20261101-5A93F80C intent=pi_3UWwsID29H13ktT50iiQkxiB refund=re_3UWwsID29H13ktT50mHhqB4b amount=100 livemode=false
+    pi_event=evt_3UWwsID29H13ktT50eOmNFKJ rows=1   refund_event=evt_3UWwsID29H13ktT50B4RcM33 rows=1
+    PASS: all 4 skip(s) are declared and within the budget of 4.
+    artifact e2e-nightly-report downloaded: 0 files hold an sk_test_/whsec_ value (scan over every file)
+The scheduled nightly tonight is the second proof; the main-branch record is this dispatched run.
