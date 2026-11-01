@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Role-Gated Dashboard Nav, Staff Invite Shop, Orders Search, Finance Tile States and Product Dialog Fixes (swarm epic #964) (#1076) — 2026-11-01
+
+Eight findings from the 2026-10-19 staging persona swarm, frontend only. No API, migration or core-java change.
+
+- **SW-TND-05, nav gated by role (`components/dashboard/sidebar.tsx`, `mobile-tab-bar.tsx`).** Each nav item names the role its page needs. The role is read from the staff/me answer the shell already loads (`shopRoles`, #961). Staff, Webhooks, Approvals and Developers are Group admin only. Finance, Go live, Marketing and Image review need SHOP_MANAGER on some shop. Customers stays for STAFF (owner ruling 2026-10-09, option B). This applies in the sidebar and in the mobile More sheet. A gated item is listed only after staff/me has answered.
+- **SW-ADE-11, a Staff invite or grant needs a shop (`app/dashboard/staff/page.tsx`, `components/dashboard/staff/invite-staff-form.tsx`).** Both forms start on the shop selected in the switcher. A Staff request with no shop is refused inline before anything is sent. An All-shops shop manager and a Group admin are unchanged.
+- **SW-ADE-10, orders search (`app/dashboard/orders/page.tsx`).** You can search the loaded page by order number, customer name or email. The status filter stays, and a search that matches nothing says so.
+- **SW-ADE-08 / SW-TND-07, VAT tile states (`app/dashboard/page.tsx`).** The tile now has separate states for loading, refused (403, or tenant-wide STAFF), failed and genuinely empty. Before, all four read "No financial data yet".
+- **SW-TND-12, tap targets (`components/ui/icon-button.tsx`, `app/dashboard/shops/page.tsx`).** IconButton has a new opt-in `touchTarget` prop: 44px below `md` and 32px from `md` up. The Shops row actions use it.
+- **SW-ADE-02, image Processing state (`components/ui/image-uploader.tsx`, `lib/media-api.ts`, `app/dashboard/products/page.tsx`).** After an upload is accepted, the uploader checks its outcome every 2 s, up to 30 times. It reads the product's `media` list, then the review queue. It leaves "Processing…" when the image is ACTIVE or FAILED, or when the checks run out.
+- **SW-ADE-09, deleting an ordered dish (`app/dashboard/products/page.tsx`).** The 409 `errors/in-use` refusal now explains why the dish can't be deleted and says to untick Available instead. Other failures show the server's problem detail rather than the axios string.
+- **SW-ADE-13, plain finance copy (`components/dashboard/merchant-roi-card.tsx`).** The labels are rewritten in plain language. The figures, the 28% delivery-app comparison and the test ids are unchanged.
+- **Skipped: SW-TND-08** (customer email shown to STAFF). The owner's option B ruling lets counter staff look customers up. A client-side hide would also leave the email in the order API response, so this needs a server-side ruling.
+
 ### Unskipped Stripe Test-Mode Refund E2E and an S-5 Skip-Budget Gate (Phase 30 30-21/30-22, PAY-01) (#1065) — 2026-10-31
 
 - **`scripts/check-e2e-skip-budget.sh`:** rule S-5 says every `ALLOW` line needs a justification comment and a `# REMOVE WHEN:` line. New `--lint-conf` mode. `--report` can be repeated to evaluate the union of all skipped specs across reports (with matching spec digests). New `--selftest` (14 fixtures).
