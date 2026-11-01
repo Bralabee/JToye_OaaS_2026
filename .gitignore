@@ -231,3 +231,7 @@ graphify-out/
 # untracked in the main checkout (2026-10-04) where a blanket add would sweep them.
 .planning/state.json
 .gsd/
+
+# media-bulk-upload.sh outputs (a manifest kept beside the repo would drag these in)
+*.ledger.tsv
+*.resolved.csv
