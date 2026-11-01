@@ -29,12 +29,15 @@ import {
   remainingAccessLines,
 } from "@/components/dashboard/staff/effective-access-cell"
 import {
+  defaultShopChoice,
   INVITE_COPY,
   INVITE_FIELD_LABELS,
   InviteStaffForm,
   STAFF_FIELD_LABEL_CLASS,
+  STAFF_NEEDS_SHOP,
   STAFF_SELECT_CLASS,
 } from "@/components/dashboard/staff/invite-staff-form"
+import { useShopContext } from "@/hooks/use-shop-context"
 import {
   formatInviteExpiry,
   PendingInvitesTable,
@@ -411,7 +414,11 @@ export default function StaffPage() {
   )
 
   const [targetUserId, setTargetUserId] = useState("")
-  const [targetShopId, setTargetShopId] = useState(ALL_SHOPS_VALUE)
+  /** The operator's shop pick, or null until they make one: the default follows the dashboard's
+   *  shop switcher (SW-ADE-11), so a Staff grant starts on the shop being worked on. */
+  const [pickedShopId, setPickedShopId] = useState<string | null>(null)
+  const { contextShopId } = useShopContext()
+  const targetShopId = pickedShopId ?? defaultShopChoice(shops, contextShopId)
   const [targetRole, setTargetRole] = useState<ShopRole>("STAFF")
 
   /** "Grant access" on a No access row moves the operator to the form. */
@@ -555,7 +562,7 @@ export default function StaffPage() {
   const startGrantFor = (p: StaffPerson) => {
     setNotice(null)
     setTargetUserId(p.userId)
-    setTargetShopId(ALL_SHOPS_VALUE)
+    setPickedShopId(null)
     setTargetRole("STAFF")
     grantCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
     // The person is chosen; what is left to decide is the shop and the role.
@@ -565,6 +572,10 @@ export default function StaffPage() {
   const handleGrant = async () => {
     if (!targetUserId) {
       setNotice("Choose a team member to grant access to.")
+      return
+    }
+    if (targetRole === "STAFF" && targetShopId === ALL_SHOPS_VALUE) {
+      setNotice(STAFF_NEEDS_SHOP)
       return
     }
     setNotice(null)
@@ -835,7 +846,7 @@ export default function StaffPage() {
                 id="staff-shop"
                 ref={shopSelectRef}
                 value={targetShopId}
-                onChange={(e) => setTargetShopId(e.target.value)}
+                onChange={(e) => setPickedShopId(e.target.value)}
                 className={`h-10 ${STAFF_SELECT_CLASS}`}
               >
                 <option value={ALL_SHOPS_VALUE}>All shops / tenant-wide</option>

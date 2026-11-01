@@ -217,21 +217,61 @@ describe("Invite someone (UI-SPEC § B1)", () => {
     expect(within(row).getByText("10 Oct, 14:32")).toBeInTheDocument()
   })
 
-  it("sends shopId null for All shops", async () => {
+  it("sends shopId null for an All-shops shop manager (a tenant-wide manager is still allowed)", async () => {
     await renderLoaded()
     const card = inviteCard()
     fireEvent.change(within(card).getByLabelText("Email"), {
       target: { value: "sam@example.test" },
     })
-    fireEvent.change(within(card).getByLabelText("Role"), { target: { value: "STAFF" } })
+    fireEvent.change(within(card).getByLabelText("Role"), { target: { value: "SHOP_MANAGER" } })
+    fireEvent.change(within(card).getByLabelText("Shop"), { target: { value: "" } })
     fireEvent.click(within(card).getByRole("button", { name: "Send invitation" }))
     await waitFor(() =>
       expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/staff/invites", {
         email: "sam@example.test",
-        role: "STAFF",
+        role: "SHOP_MANAGER",
         shopId: null,
       })
     )
+  })
+
+  it("SW-ADE-11: refuses a Staff invitation with no shop, inline, and sends nothing", async () => {
+    await renderLoaded()
+    const card = inviteCard()
+    fireEvent.change(within(card).getByLabelText("Email"), {
+      target: { value: "sam@example.test" },
+    })
+    // Staff is the default role; with no shop selected in the dashboard the shop reads All shops.
+    expect((within(card).getByLabelText("Role") as HTMLSelectElement).value).toBe("STAFF")
+    fireEvent.click(within(card).getByRole("button", { name: "Send invitation" }))
+    expect(
+      await within(card).findByText("Staff access covers one shop. Choose the shop they will work in.")
+    ).toBeInTheDocument()
+    expect(mockedApiClient.post).not.toHaveBeenCalled()
+  })
+
+  it("SW-ADE-11: defaults the shop to the shop selected in the dashboard, and sends it", async () => {
+    window.localStorage.setItem("shopContext", SHOP_B)
+    try {
+      await renderLoaded()
+      const card = inviteCard()
+      await waitFor(() =>
+        expect((within(card).getByLabelText("Shop") as HTMLSelectElement).value).toBe(SHOP_B)
+      )
+      fireEvent.change(within(card).getByLabelText("Email"), {
+        target: { value: "sam@example.test" },
+      })
+      fireEvent.click(within(card).getByRole("button", { name: "Send invitation" }))
+      await waitFor(() =>
+        expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/staff/invites", {
+          email: "sam@example.test",
+          role: "STAFF",
+          shopId: SHOP_B,
+        })
+      )
+    } finally {
+      window.localStorage.removeItem("shopContext")
+    }
   })
 
   it("locks the shop to All shops for Group admin, with the hint, and sends shopId null", async () => {
@@ -287,6 +327,8 @@ describe("Invite someone (UI-SPEC § B1)", () => {
     fireEvent.change(within(card).getByLabelText("Email"), {
       target: { value: "taken@example.test" },
     })
+    // A Staff invitation needs a shop (SW-ADE-11).
+    fireEvent.change(within(card).getByLabelText("Shop"), { target: { value: SHOP_A } })
     fireEvent.click(within(card).getByRole("button", { name: "Send invitation" }))
 
     const alert = await within(card).findByRole("alert")
@@ -315,6 +357,8 @@ describe("Invite someone (UI-SPEC § B1)", () => {
     fireEvent.change(within(card).getByLabelText("Email"), {
       target: { value: "maya@example.test" },
     })
+    // A Staff invitation needs a shop (SW-ADE-11).
+    fireEvent.change(within(card).getByLabelText("Shop"), { target: { value: SHOP_A } })
     fireEvent.click(within(card).getByRole("button", { name: "Send invitation" }))
 
     await waitFor(() =>
