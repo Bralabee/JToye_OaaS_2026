@@ -15,8 +15,8 @@ SW-PRY-06, owner ruling 2026-11-01 after a tenancy-security assessment (SAFE WIT
 - **C2:** the OpenAPI snapshot change is additive and limited to `/mine`: oasdiff reports no breaking change, only two `response-optional-property-added` entries.
 - **C3:** the note is returned only where `orders.contact_verified` is TRUE. A guest order (false) or a vendor/legacy one (NULL) returns none.
 - **C4:** after an Article 17 erasure `/mine` carries no note (T-31.1-47).
-- **C5:** `Cache-Control: no-store` on `/mine` and on the `/api/customer-orders` proxy. The DTO's `toString` leaves the note out. The frontend keeps it in React state only and renders it on My orders, never on `/track`.
-- Tests: five `AllergyNoteAckIntegrationTest` arms against a real RS256 customers-realm verifier (C1, customer B, staff-realm and `email_verified=false` 401, C3, C4), and seven Jest blocks. Threat row T-31.1-102 added to `31.1-SECURITY.md`.
+- **C5:** `Cache-Control: no-store` on `/mine`, on the `/api/customer-orders` proxy, and on the server-rendered `/shop/orders` document (its own `next.config.mjs` rule). The proxy drops `allergyNote` unless the caller sends `include=allergyNote`, which only My orders sends, so the signed-in `/track` page never receives the text. The DTO's `toString` leaves the note out. The note is rendered on My orders only.
+- Tests: five `AllergyNoteAckIntegrationTest` arms against a real RS256 customers-realm verifier (C1, customer B, staff-realm and `email_verified=false` 401, C3, C4), and ten Jest blocks. Threat row T-31.1-102 added to `31.1-SECURITY.md`.
 
 ### Terms and Contact Routes, Landing Copy Aligned to the Pilot, Strategy Pages Unlinked and Noindexed, Absolute Metadata (swarm epic #964) (#1080) — 2026-11-01
 
