@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEFORE — J'Toye landing as on origin/main 1fb15a8b (static copy)</title>
+<!--
+  BEFORE: a static copy of frontend/app/page.tsx, components/marketing/{hero-search,near-you-row,
+  shop-card}.tsx and components/public/public-header.tsx as they are on origin/main 1fb15a8b
+  (PR #1080 merged), with the Tailwind classes written out as plain CSS. Only the parts the elevate job
+  covers: the first screen, the kitchen row and How it works. The kitchen row uses the three seeded
+  demo shops (core-java DemoDataSeeder) and their placeholder logos (D12). GSAP is not run; the
+  How-it-works circles are shown in their active state, as the old landing's capture shows them
+  (design/runs/2026-11-01-landing/inspect-before/desktop-page-01.jpg).
+-->
+<style>
+@font-face{font-family:"Work Sans";src:url("fonts/work-sans-latin.woff2") format("woff2");font-weight:100 900;font-display:swap}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Work Sans",system-ui,sans-serif;color:#0f172a;background:#fff;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+svg{display:block}
+.band{max-width:1280px;margin:0 auto;padding:0 16px}
+@media(min-width:640px){.band{padding:0 24px}}
+@media(min-width:1024px){.band{padding:0 32px}}
+/* header */
+header{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid #F4EBE1;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.hbar{display:flex;height:56px;align-items:center;justify-content:space-between}
+.wm{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:600;letter-spacing:-.025em;color:#3A0B0D}
+.wm span.j{display:inline-flex;width:32px;height:32px;align-items:center;justify-content:center;border-radius:8px;background:#3A0B0D;color:#fff;font-size:14px;font-weight:700}
+nav.d{display:none;align-items:center;gap:24px;font-size:14px;color:#475569}
+@media(min-width:640px){nav.d{display:flex}.burger{display:none!important}}
+.signin{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#3A0B0D;color:#fff;padding:6px 12px;font-size:12px;font-weight:500}
+.burger{display:inline-flex;width:44px;height:44px;align-items:center;justify-content:center;color:#334155}
+/* hero */
+.hero{position:relative;overflow:hidden;background:#FBF6F0}
+.wash{position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 85% -10%,#fde7c8 0%,transparent 55%)}
+.hero .band{position:relative;padding-top:56px;padding-bottom:56px}
+@media(min-width:768px){.hero .band{padding-top:80px;padding-bottom:80px}}
+.hgrid{display:grid;align-items:center;gap:40px}
+@media(min-width:1024px){.hgrid{grid-template-columns:1fr 1fr}}
+.eyebrow{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:#6E1D21}
+h1{margin-top:12px;font-size:36px;font-weight:900;line-height:1.03;letter-spacing:-.025em;color:#3A0B0D}
+@media(min-width:640px){h1{font-size:48px}}
+@media(min-width:768px){h1{font-size:60px}}
+.lede{margin-top:16px;max-width:576px;font-size:18px;line-height:28px;color:#475569}
+form{margin-top:24px;display:flex;max-width:576px;gap:10px}
+.fld{position:relative;flex:1}
+.fld svg{position:absolute;left:20px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:#6E1D21}
+input{width:100%;border-radius:999px;border:1px solid #F4EBE1;background:#fff;padding:12px 16px 12px 48px;font:inherit;font-size:14px;color:#0f172a;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+input::placeholder{color:#64748b}
+button.s{display:inline-flex;align-items:center;border:0;border-radius:999px;background:#F59E0B;padding:12px 20px;font:inherit;font-size:14px;font-weight:700;color:#3A2400;box-shadow:0 10px 28px rgba(217,119,6,.30)}
+.chips{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;border:1px solid #F4EBE1;background:#fff;padding:6px 12px;font-size:14px;font-weight:500;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.doors{margin-top:24px;display:grid;gap:16px}
+@media(min-width:640px){.doors{grid-template-columns:1fr 1fr}}
+.door{display:flex;flex-direction:column;border-radius:16px;padding:24px;box-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1)}
+.door svg.i{width:32px;height:32px}
+.door .t{margin-top:16px;font-size:18px;font-weight:700}
+.door .b{margin-top:4px;font-size:14px;line-height:20px}
+.door .l{margin-top:16px;display:inline-flex;align-items:center;gap:4px;font-size:14px;font-weight:600}
+.door .l svg{width:16px;height:16px}
+.d1{background:linear-gradient(to bottom right,#FBBF24,#F97316);color:#3A2400}
+.d1 .b{color:rgba(58,36,0,.75)}
+.d2{background:#3A0B0D;color:#fff}
+.d2 svg.i,.d2 .l{color:#E8B04B}
+.d2 .b{color:rgba(251,246,240,.8)}
+.tiles{display:none;grid-template-columns:1fr 1fr;gap:16px}
+@media(min-width:1024px){.tiles{display:grid}}
+.tile{display:grid;height:160px;place-items:center;border-radius:16px;font-size:60px;box-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1)}
+.t1{background:linear-gradient(to bottom right,#fff,#fbe9d4);transform:rotate(-2deg)}
+.t2{background:linear-gradient(to bottom right,#fff,#f6dcd8);transform:rotate(2deg);margin-top:24px}
+.t3{background:linear-gradient(to bottom right,#fff,#e7f3ea);transform:rotate(2deg)}
+.t4{background:linear-gradient(to bottom right,#fff,#fdeecb);transform:rotate(-2deg);margin-top:-8px}
+/* kitchens */
+.kit{border-top:1px solid #F4EBE1;background:#fff}
+.kit .band{padding-top:48px;padding-bottom:48px}
+.khead{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px}
+h2.k{font-size:24px;line-height:32px;font-weight:700;color:#3A0B0D}
+.status{margin-top:4px;min-height:20px;font-size:14px;color:#475569}
+.kact{display:flex;align-items:center;gap:16px}
+.loc{display:inline-flex;align-items:center;gap:6px;border-radius:999px;border:1px solid #F4EBE1;background:#fff;padding:6px 14px;font:inherit;font-size:14px;font-weight:700;color:#3A0B0D;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.loc svg{width:16px;height:16px}
+.all{font-size:14px;font-weight:700;color:#B45309}
+.scrollwrap{position:relative;margin-top:20px}
+.scroller{display:flex;gap:16px;overflow-x:auto;padding-bottom:8px}
+.fade{position:absolute;top:0;bottom:0;right:0;width:40px;background:linear-gradient(to left,#fff,transparent);pointer-events:none}
+@media(min-width:1024px){.fade{display:none}}
+.card{position:relative;flex:1 0 220px;min-width:220px;overflow:hidden;border-radius:12px;border:1px solid #F4EBE1;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.logo{position:relative;height:112px;background:#FBF6F0;overflow:hidden}
+.logo img{width:100%;height:112px;object-fit:cover;display:block}
+.badge{position:absolute;left:8px;top:8px;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.open{background:#047857}.other{background:rgba(15,23,42,.8)}
+.cbody{padding:14px}
+.cname{font-weight:700;color:#0f172a}
+.ctags{margin-top:2px;font-size:12px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cfee{margin-top:8px;font-size:14px;font-weight:600;color:#3A0B0D}
+.cfee span{font-weight:400;color:#475569}
+/* how */
+.how{background:#FBF6F0;padding:64px 0}
+h2.h{font-size:30px;line-height:1.25;font-weight:700;color:#3A0B0D}
+.steps{position:relative;margin-top:40px;display:grid;gap:32px}
+@media(min-width:640px){.steps{grid-template-columns:repeat(3,1fr)}}
+.rail{display:none;position:absolute;left:16%;right:16%;top:24px;height:2px;border-radius:2px;background:#F4EBE1}
+.rail i{position:absolute;inset:0;background:#F59E0B;border-radius:2px}
+@media(min-width:640px){.rail{display:block}}
+.step{position:relative;display:flex;flex-direction:column}
+.dot{display:inline-flex;width:48px;height:48px;align-items:center;justify-content:center;border-radius:999px;background:#3A0B0D;color:#fff;box-shadow:0 0 0 4px #FBF6F0,0 1px 2px rgba(0,0,0,.05)}
+.dot svg{width:24px;height:24px}
+.step h3{margin-top:16px;font-size:18px;font-weight:600;color:#0f172a}
+.step p{margin-top:8px;font-size:14px;line-height:20px;color:#475569}
+</style>
+</head>
+<body>
+<header>
+  <div class="band hbar">
+    <a href="#" class="wm"><span class="j" aria-hidden="true">J</span><span>J'Toye</span></a>
+    <nav class="d" aria-label="Main">
+      <a href="#">Shops</a><a href="#">For operators</a><a href="#">Track order</a>
+      <a href="#" class="signin"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Sign in</a>
+    </nav>
+    <span class="burger" aria-label="Open menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+  </div>
+</header>
+<main>
+<section class="hero">
+  <div class="wash" aria-hidden="true"></div>
+  <div class="band">
+    <div class="hgrid">
+      <div>
+        <span class="eyebrow">🇬🇧 Independent UK kitchens</span>
+        <h1>Order from local kitchens. Or run yours.</h1>
+        <p class="lede">J'Toye connects hungry customers with independent food businesses — order in minutes, or apply to take your kitchen online with an assisted setup.</p>
+        <form role="search" action="#" onsubmit="return false">
+          <label for="q" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Search kitchens, dishes or a postcode</label>
+          <div class="fld"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="q" type="search" placeholder="Try “jollof”, “vegan” or your postcode…"></div>
+          <button class="s" type="submit">Search</button>
+        </form>
+        <div class="chips">
+          <a class="chip" href="#"><span aria-hidden="true">🍗</span> Grill</a>
+          <a class="chip" href="#"><span aria-hidden="true">🍚</span> Jollof</a>
+          <a class="chip" href="#"><span aria-hidden="true">🥘</span> Caribbean</a>
+          <a class="chip" href="#"><span aria-hidden="true">🍛</span> South Asian</a>
+          <a class="chip" href="#"><span aria-hidden="true">🥗</span> Vegan</a>
+          <a class="chip" href="#"><span aria-hidden="true">🍰</span> Desserts</a>
+        </div>
+        <div class="doors">
+          <a href="#" class="door d1">
+            <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg>
+            <span class="t">Order food near you</span>
+            <span class="b">Browse independent kitchens and order in minutes.</span>
+            <span class="l">Browse shops <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>
+          </a>
+          <a href="#" class="door d2">
+            <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg>
+            <span class="t">Run your food business</span>
+            <span class="b">Take orders and manage your kitchen. A person reviews every application.</span>
+            <span class="l">Learn more <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>
+          </a>
+        </div>
+      </div>
+      <div class="tiles" aria-hidden="true">
+        <div class="tile t1">🍜</div><div class="tile t2">🥘</div><div class="tile t3">🥗</div><div class="tile t4">🍰</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="kit" id="kitchens">
+  <div class="band">
+    <div class="khead">
+      <div aria-live="polite">
+        <h2 class="k">Kitchens on J'Toye</h2>
+        <p class="status"></p>
+      </div>
+      <div class="kact">
+        <button type="button" class="loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 12h3M19 12h3M12 2v3M12 19v3"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>Use my location</button>
+        <a href="#" class="all">See all kitchens →</a>
+      </div>
+    </div>
+    <div class="scrollwrap">
+      <div class="scroller" role="region" aria-label="Dishes cooking near you" tabindex="0">
+        <article class="card"><div class="logo"><img src="img/logo-mama-ades.png" width="220" height="132" alt="Mama Ade's Kitchen logo"><span class="badge open">Open</span></div>
+          <div class="cbody"><div class="cname"><a href="#">Mama Ade's Kitchen</a></div><div class="ctags">Nigerian · West African · Halal</div><div class="cfee">£3.50 delivery<span> · min £10.00</span></div></div></article>
+        <article class="card"><div class="logo"><img src="img/logo-peckham-jollof.png" width="220" height="132" alt="Peckham Jollof Co. logo"><span class="badge open">Open</span></div>
+          <div class="cbody"><div class="cname"><a href="#">Peckham Jollof Co.</a></div><div class="ctags">Nigerian · Grill · Halal</div><div class="cfee">£2.99 delivery<span> · min £10.00</span></div></div></article>
+        <article class="card"><div class="logo"><img src="img/logo-brixton-grill.png" width="220" height="132" alt="Brixton Village Grill logo"><span class="badge other">Paused</span></div>
+          <div class="cbody"><div class="cname"><a href="#">Brixton Village Grill</a></div><div class="ctags">Grill · Peri Peri · Halal</div><div class="cfee">£3.99 delivery<span> · min £10.00</span></div></div></article>
+      </div>
+      <div class="fade" aria-hidden="true"></div>
+    </div>
+  </div>
+</section>
+
+<section class="how">
+  <div class="band">
+    <h2 class="h">How it works</h2>
+    <div class="steps">
+      <div class="rail" aria-hidden="true"><i></i></div>
+      <div class="step"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span><h3>Browse</h3><p>Find independent kitchens near you and explore their menus.</p></div>
+      <div class="step"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></span><h3>Order &amp; pay</h3><p>Add to your basket and check out securely — delivery or collection.</p></div>
+      <div class="step"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span><h3>Track live</h3><p>Follow your order from the kitchen to your door in real time.</p></div>
+    </div>
+  </div>
+</section>
+</main>
+</body>
+</html>
