@@ -1,0 +1,1432 @@
+{
+ "url": "design/runs/2026-11-01-landing-elevate/sketch/after.html",
+ "at": "2026-11-01T19:21:21.993Z",
+ "allow": [
+  "still-page"
+ ],
+ "viewports": [
+  {
+   "width": 1280,
+   "height": 800,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.93,
+    0.67,
+    0.77
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1280,
+     "h": 800
+    },
+    "page": {
+     "height": 2022,
+     "screens": 2.5,
+     "words": 220,
+     "img": 14,
+     "video": 0,
+     "canvas": 0,
+     "svg": 10,
+     "sections": 4,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 8,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "jollof-rice-and-dodo.webp",
+      "egusi-soup-with-pounded-yam.webp",
+      "suya-with-pepper-sauce.webp",
+      "jollof-rice-with-vegetable.webp",
+      "puff-puff.webp",
+      "egusi-soup-with-pounded-yam.webp",
+      "jollof-rice-and-dodo.webp",
+      "suya-with-pepper-sauce.webp"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "chars": 40,
+     "lines": 3,
+     "size": 56,
+     "vw": 4.4,
+     "font": "Work Sans",
+     "weight": 800,
+     "tracking": -0.03,
+     "leading": 1.04,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "left",
+     "widthRatio": 0.45,
+     "top": 128,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "lines": 3,
+     "size": 56,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "words": 7,
+      "chars": 40,
+      "lines": 3,
+      "size": 56,
+      "vw": 4.4,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1.04,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.45,
+      "top": 128,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Kitchens on J'Toye",
+      "words": 3,
+      "chars": 18,
+      "lines": 1,
+      "size": 28,
+      "vw": 2.2,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.2,
+      "top": 1046,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "How it works",
+      "words": 3,
+      "chars": 12,
+      "lines": 1,
+      "size": 28,
+      "vw": 2.2,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.95,
+      "top": 1590,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 3,
+     "maxLines": 3,
+     "over2Lines": 1,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      14,
+      16,
+      20,
+      28,
+      56
+     ],
+     "sizeCount": 5,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 16,
+      "leading": 1.45,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 14.4
+     },
+     "measureChars": 87,
+     "max": {
+      "size": 56,
+      "vw": 4.4,
+      "font": "Work Sans",
+      "text": "Order from local kitchens. Or run yours."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0,
+     "centerShare": 0.02,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#f4f2f0",
+       "top": 56,
+       "hsl": {
+        "h": 30,
+        "s": 0.15,
+        "l": 0.95
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 988,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#4d4642",
+       "share": 0.49
+      },
+      {
+       "color": "#1e1814",
+       "share": 0.22
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.18
+      },
+      {
+       "color": "#f8e9e8",
+       "share": 0.06
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.03
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#1e1814"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 9,
+     "inHero": 8,
+     "radius": "pill",
+     "height": 40,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Sign in",
+      "Search",
+      "Grill",
+      "Jollof",
+      "Caribbean"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 0,
+     "hairlineSamples": [],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 5,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 7,
+     "mediaRadius": 16,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 1123
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 5,
+     "fixed": true,
+     "height": 56,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1280,
+     "h": 800
+    },
+    "pageH": 2022,
+    "margins": {
+     "left": 32,
+     "right": 29
+    },
+    "sections": [
+     {
+      "sel": "section.hero",
+      "tag": "section",
+      "top": 56,
+      "height": 932,
+      "words": 70,
+      "media": 5,
+      "middle": 57,
+      "heading": {
+       "text": "Order from local kitchens. Or run yours.",
+       "size": 56,
+       "tag": "h1"
+      },
+      "left": 32,
+      "right": 29,
+      "textLeft": 32,
+      "textRight": 683,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#kitchens.kit",
+      "tag": "section",
+      "top": 988,
+      "height": 515,
+      "words": 65,
+      "media": 3,
+      "middle": 16,
+      "heading": {
+       "text": "Kitchens on J'Toye",
+       "size": 28,
+       "tag": "h2"
+      },
+      "left": 32,
+      "right": 32,
+      "textLeft": 32,
+      "textRight": 32,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.how",
+      "tag": "section",
+      "top": 1502,
+      "height": 398,
+      "words": 48,
+      "media": 0,
+      "middle": 62,
+      "heading": {
+       "text": "How it works",
+       "size": 28,
+       "tag": "h2"
+      },
+      "left": 32,
+      "right": 60,
+      "textLeft": 32,
+      "textRight": 60,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.credits",
+      "tag": "section",
+      "top": 1901,
+      "height": 121,
+      "words": 29,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 32,
+      "right": 648,
+      "textLeft": 32,
+      "textRight": 648,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "size": 56,
+      "top": 128,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 32,
+      "n": 5
+     }
+    ],
+    "leftBlocks": 5,
+    "bodySize": 16,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0.13,
+    "voidBox": {
+     "x": 427,
+     "y": 107,
+     "w": 853,
+     "h": 160
+    }
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 2,
+   "filled": [
+    0.86,
+    0.76
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 1948,
+     "screens": 1.9,
+     "words": 220,
+     "img": 14,
+     "video": 0,
+     "canvas": 0,
+     "svg": 10,
+     "sections": 4,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 4,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "jollof-rice-and-dodo.webp",
+      "egusi-soup-with-pounded-yam.webp",
+      "jollof-rice-and-dodo.webp",
+      "suya-with-pepper-sauce.webp"
+     ],
+     "blendText": 0,
+     "sideScrollers": 1,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "chars": 40,
+     "lines": 2,
+     "size": 48,
+     "vw": 6.3,
+     "font": "Work Sans",
+     "weight": 800,
+     "tracking": -0.03,
+     "leading": 1.04,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.94,
+     "top": 128,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "lines": 2,
+     "size": 48,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "words": 7,
+      "chars": 40,
+      "lines": 2,
+      "size": 48,
+      "vw": 6.3,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1.04,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 128,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Kitchens on J'Toye",
+      "words": 3,
+      "chars": 18,
+      "lines": 1,
+      "size": 28,
+      "vw": 3.6,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.33,
+      "top": 923,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "How it works",
+      "words": 3,
+      "chars": 12,
+      "lines": 1,
+      "size": 28,
+      "vw": 3.6,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 1467,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 3,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      14,
+      16,
+      20,
+      28,
+      48
+     ],
+     "sizeCount": 5,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 16,
+      "leading": 1.45,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 14.4
+     },
+     "measureChars": 87,
+     "max": {
+      "size": 48,
+      "vw": 6.3,
+      "font": "Work Sans",
+      "text": "Order from local kitchens. Or run yours."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0,
+     "centerShare": 0.02,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#f4f2f0",
+       "top": 56,
+       "hsl": {
+        "h": 30,
+        "s": 0.15,
+        "l": 0.95
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 865,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#4d4642",
+       "share": 0.49
+      },
+      {
+       "color": "#1e1814",
+       "share": 0.22
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.18
+      },
+      {
+       "color": "#f8e9e8",
+       "share": 0.06
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.03
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#1e1814"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 9,
+     "inHero": 9,
+     "radius": "pill",
+     "height": 40,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Sign in",
+      "Search",
+      "Grill",
+      "Jollof",
+      "Caribbean"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 0,
+     "hairlineSamples": [],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 5,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 3,
+     "mediaRadius": 12,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 1000
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 5,
+     "fixed": true,
+     "height": 56,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 1948,
+    "margins": {
+     "left": 24,
+     "right": 24
+    },
+    "sections": [
+     {
+      "sel": "section.hero",
+      "tag": "section",
+      "top": 56,
+      "height": 809,
+      "words": 70,
+      "media": 1,
+      "middle": 0,
+      "heading": {
+       "text": "Order from local kitchens. Or run yours.",
+       "size": 48,
+       "tag": "h1"
+      },
+      "left": 24,
+      "right": 50,
+      "textLeft": 24,
+      "textRight": 50,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#kitchens.kit",
+      "tag": "section",
+      "top": 865,
+      "height": 515,
+      "words": 65,
+      "media": 3,
+      "middle": 16,
+      "heading": {
+       "text": "Kitchens on J'Toye",
+       "size": 28,
+       "tag": "h2"
+      },
+      "left": 24,
+      "right": 0,
+      "textLeft": 24,
+      "textRight": 24,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.how",
+      "tag": "section",
+      "top": 1379,
+      "height": 448,
+      "words": 48,
+      "media": 0,
+      "middle": 69,
+      "heading": {
+       "text": "How it works",
+       "size": 28,
+       "tag": "h2"
+      },
+      "left": 24,
+      "right": 30,
+      "textLeft": 24,
+      "textRight": 30,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.credits",
+      "tag": "section",
+      "top": 1827,
+      "height": 121,
+      "words": 29,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 24,
+      "right": 144,
+      "textLeft": 24,
+      "textRight": 144,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "size": 48,
+      "top": 128,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 24,
+      "n": 5
+     }
+    ],
+    "leftBlocks": 5,
+    "bodySize": 16,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.94,
+    0.69,
+    0.81
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 2520,
+     "screens": 3,
+     "words": 213,
+     "img": 14,
+     "video": 0,
+     "canvas": 0,
+     "svg": 10,
+     "sections": 4,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 4,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "jollof-rice-and-dodo.webp",
+      "egusi-soup-with-pounded-yam.webp",
+      "jollof-rice-and-dodo.webp",
+      "suya-with-pepper-sauce.webp"
+     ],
+     "blendText": 0,
+     "sideScrollers": 1,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "chars": 40,
+     "lines": 3,
+     "size": 34,
+     "vw": 8.7,
+     "font": "Work Sans",
+     "weight": 800,
+     "tracking": -0.03,
+     "leading": 1.04,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.92,
+     "top": 96,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "lines": 3,
+     "size": 34,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "words": 7,
+      "chars": 40,
+      "lines": 3,
+      "size": 34,
+      "vw": 8.7,
+      "font": "Work Sans",
+      "weight": 800,
+      "tracking": -0.03,
+      "leading": 1.04,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 96,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Kitchens on J'Toye",
+      "words": 3,
+      "chars": 18,
+      "lines": 1,
+      "size": 24,
+      "vw": 6.2,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.56,
+      "top": 1179,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "How it works",
+      "words": 3,
+      "chars": 12,
+      "lines": 1,
+      "size": 24,
+      "vw": 6.2,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": -0.015,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 1743,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 3,
+     "maxLines": 3,
+     "over2Lines": 1,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      14,
+      16,
+      20,
+      24,
+      34
+     ],
+     "sizeCount": 5,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 16,
+      "leading": 1.55,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 15.7
+     },
+     "measureChars": 51,
+     "max": {
+      "size": 34,
+      "vw": 8.7,
+      "font": "Work Sans",
+      "text": "Order from local kitchens. Or run yours."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0,
+     "centerShare": 0.02,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#f4f2f0",
+       "top": 56,
+       "hsl": {
+        "h": 30,
+        "s": 0.15,
+        "l": 0.95
+       }
+      },
+      {
+       "color": "#e8b04b",
+       "top": 577,
+       "hsl": {
+        "h": 39,
+        "s": 0.77,
+        "l": 0.6
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 1123,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#4d4642",
+       "share": 0.49
+      },
+      {
+       "color": "#1e1814",
+       "share": 0.22
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.18
+      },
+      {
+       "color": "#f8e9e8",
+       "share": 0.06
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.03
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#1e1814"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 8,
+     "inHero": 7,
+     "radius": "pill",
+     "height": 40,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Search",
+      "Grill",
+      "Jollof",
+      "Caribbean",
+      "South Asian"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 0,
+     "hairlineSamples": [],
+     "outlinedBoxes": 0,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 5,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 3,
+     "mediaRadius": 12,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 1300
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "img",
+      "ratio": 0.13
+     }
+    ],
+    "nav": {
+     "links": 1,
+     "fixed": true,
+     "height": 56,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 2520,
+    "margins": {
+     "left": 16,
+     "right": 16
+    },
+    "sections": [
+     {
+      "sel": "section.hero",
+      "tag": "section",
+      "top": 56,
+      "height": 1067,
+      "words": 70,
+      "media": 1,
+      "middle": 0,
+      "heading": {
+       "text": "Order from local kitchens. Or run yours.",
+       "size": 34,
+       "tag": "h1"
+      },
+      "left": 16,
+      "right": 16,
+      "textLeft": 16,
+      "textRight": 24,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#kitchens.kit",
+      "tag": "section",
+      "top": 1123,
+      "height": 556,
+      "words": 43,
+      "media": 3,
+      "middle": 231,
+      "heading": {
+       "text": "Kitchens on J'Toye",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 0,
+      "textLeft": 16,
+      "textRight": 16,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.how",
+      "tag": "section",
+      "top": 1679,
+      "height": 699,
+      "words": 48,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "How it works",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 18,
+      "textLeft": 16,
+      "textRight": 18,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.credits",
+      "tag": "section",
+      "top": 2378,
+      "height": 143,
+      "words": 29,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 16,
+      "right": 23,
+      "textLeft": 16,
+      "textRight": 23,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "size": 34,
+      "top": 96,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 5
+     }
+    ],
+    "leftBlocks": 5,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "headline-lines",
+   "width": 1280,
+   "message": "1 headline(s) wrap past two lines at 1280px: \"Order from local kitchens. Or run yours.\" → 3 lines (7 words, 56px)",
+   "fix": "Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 36px or less."
+  },
+  {
+   "level": "WARN",
+   "id": "no-footage",
+   "width": 1280,
+   "message": "No video anywhere on the page.",
+   "fix": "Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject."
+  },
+  {
+   "level": "FAIL",
+   "id": "focal-point",
+   "width": 1280,
+   "message": "The first screen has no dominant element: the largest type is 56px (4.4vw) and no single picture holds a third of the viewport.",
+   "fix": "Make one thing lead: the headline at display size, or one large picture. A grid of many small pictures is not one thing; in blind tests jurors marked a first screen without a headline down every time. On the strongest studied sites the largest type has a median of 8.4vw."
+  },
+  {
+   "level": "WARN",
+   "id": "side-scroll",
+   "width": 768,
+   "message": "1 row(s) scroll sideways with content past their edge.",
+   "fix": "Jurors and most visitors read a row cut at the edge as clipped, not as scrollable. Wrap it onto more lines, or end it inside the grid.",
+   "alsoAt": [
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "headline-lines",
+   "width": 390,
+   "message": "1 headline(s) wrap past two lines at 390px: \"Order from local kitchens. Or run yours.\" → 3 lines (7 words, 34px)",
+   "fix": "Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 24px or less."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1280,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-after/desktop-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-after/desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-after/tablet-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-after/tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-after/mobile-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-after/mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

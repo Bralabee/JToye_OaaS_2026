@@ -249,7 +249,12 @@ function describeSite(key: string): string {
  */
 const UNASSERTED_SITES: ReadonlySet<string> = new Set([
   "app/auth/signin/page.tsx::text-slate-500", // 4.76 on white, 4.43 on cream
-  "app/page.tsx::text-emerald-600", // 3.77 on white, 3.51 on cream
+  // D14 (2026-11-01): the operator door's body copy, brand-100 on its brand-900
+  // field (14.44:1, palette.md §3.6). It never sits on a light surface; the
+  // scan cannot see the ground, so it is registered here rather than evaded.
+  // The same change removed app/page.tsx::text-emerald-600 (the trust ticks are
+  // emerald-700 now) and hero-search.tsx::text-slate-500, so the ledger shrinks.
+  "app/page.tsx::text-brand-100", // 1.18 on white, 1.1 on cream; 14.44 on brand-900
   "app/shop/[slug]/cart/page.tsx::text-red-400", // 2.77 on white, 2.57 on cream
   "app/shop/[slug]/cart/page.tsx::text-red-500", // 3.76 on white, 3.5 on cream
   "app/shop/[slug]/cart/page.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
@@ -302,7 +307,6 @@ const UNASSERTED_SITES: ReadonlySet<string> = new Set([
   "components/marketing/competitive-teardown.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
   "components/marketing/competitive-teardown.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   "components/marketing/competitive-teardown.tsx::text-slate-50", // 1.05 on white, 1.03 on cream
-  "components/marketing/hero-search.tsx::text-slate-500", // 4.76 on white, 4.43 on cream
   "components/public/public-header.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   "components/storefront/cart-drawer.tsx::text-red-400", // 2.77 on white, 2.57 on cream
   "components/storefront/cart-drawer.tsx::text-red-500", // 3.76 on white, 3.5 on cream

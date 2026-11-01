@@ -46,7 +46,7 @@ test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }
   // grepInvert would otherwise silently run GSAP scene assertions at 390px.
   test.skip(({ viewport }) => (viewport?.width ?? 0) < 768, "desktop-only scenes")
 
-  test("/ splits the hero headline, marks the scope active, parallaxes the heat-wash", async ({
+  test("/ splits the hero headline, marks the scope active, has no heat-wash, scrubs the rail", async ({
     page,
   }) => {
     await page.goto(`${BASE}/`)
@@ -72,12 +72,20 @@ test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }
       expect(Number(opacity)).toBeGreaterThan(0.9)
     }
 
-    const heatwash = page.locator("[data-hero-heatwash]").first()
-    const before = await heatwash.evaluate((el) => getComputedStyle(el).transform)
-    await page.mouse.wheel(0, 700)
-    await page.waitForTimeout(500)
-    const after = await heatwash.evaluate((el) => getComputedStyle(el).transform)
-    expect(after).not.toBe(before)
+    // D14 (design/decisions.md, 2026-11-01): the radial heat-wash and its
+    // parallax are gone with the gradient ban; the hero is a flat field. This
+    // used to assert the wash moved on scroll. It now asserts the wash is
+    // absent, and — so the absence is not a statement about a dead page — that
+    // the rest of the scrubbed scene still runs: the How-it-works rail fill
+    // still scales as the page scrolls.
+    expect(await page.locator("[data-hero-heatwash]").count(), "the heat-wash is gone (D14)").toBe(0)
+    const rail = page.locator("[data-hero-railfill]").first()
+    const before = await rail.evaluate((el) => getComputedStyle(el).transform)
+    await page.locator("[data-hero-steps]").first().scrollIntoViewIfNeeded()
+    await page.mouse.wheel(0, 300)
+    await page.waitForTimeout(800)
+    const after = await rail.evaluate((el) => getComputedStyle(el).transform)
+    expect(after, "the step rail still scrubs on scroll").not.toBe(before)
   })
 
   test("/for-operators arrives POPULATED — headline + hero image + docket visible without scrolling, no pin", async ({

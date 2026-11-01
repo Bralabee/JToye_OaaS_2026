@@ -99,7 +99,23 @@ const config: Config & { corePlugins?: { container?: boolean } } = {
         // the appetite accent (sketch 004 winner D).
         oxblood: { DEFAULT: "#3A0B0D", deep: "#1F0F28", 700: "#571417", 600: "#6E1D21" },
         cream: { DEFAULT: "#FBF6F0", 100: "#F4EBE1" },
-        gold: "#E8B04B",
+        // D14 (design/decisions.md, 2026-11-01): the landing's adopted palette,
+        // design/runs/2026-11-01-landing-elevate/palette.md. Only the steps a page
+        // uses are declared. `brand` is the oxblood ramp (brand-900 IS `oxblood`,
+        // brand-800 IS `oxblood-700`, brand-700 IS `oxblood-600`; those names stay
+        // for the routes that use them). `gold` DEFAULT keeps every `text-gold` /
+        // `bg-gold` call site resolving to the same hex. `warm` is the warm-stone
+        // neutral ramp that replaces cream and slate on the landing.
+        brand: { 100: "#F8E9E8", 700: "#6E1D21", 800: "#571417", 900: "#3A0B0D" },
+        gold: { DEFAULT: "#E8B04B", 200: "#FCD89E", 400: "#E8B04B", 500: "#D1992D" },
+        warm: {
+          100: "#F4F2F0",
+          200: "#E8E5E4",
+          300: "#D7D3D0",
+          600: "#655F5B",
+          700: "#4D4642",
+          900: "#1E1814",
+        },
         // Ink for text sitting ON the amber appetite accent (amber-500 pills).
         // Tokenised so marketing components never need the raw hex — the
         // palette-discipline gate greps components/marketing for `#rrggbb`.

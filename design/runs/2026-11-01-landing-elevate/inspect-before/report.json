@@ -1,0 +1,1569 @@
+{
+ "url": "design/runs/2026-11-01-landing-elevate/sketch/before.html",
+ "at": "2026-11-01T19:20:14.796Z",
+ "allow": [
+  "still-page"
+ ],
+ "viewports": [
+  {
+   "width": 1280,
+   "height": 800,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.93,
+    0.66,
+    0.6
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1280,
+     "h": 800
+    },
+    "page": {
+     "height": 1639,
+     "screens": 2,
+     "words": 193,
+     "img": 3,
+     "video": 0,
+     "canvas": 0,
+     "svg": 11,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 3,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "logo-mama-ades.png",
+      "logo-peckham-jollof.png",
+      "logo-brixton-grill.png"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "🍗",
+      "🍚",
+      "🥘",
+      "🍛",
+      "🥗",
+      "🍰",
+      "🍜"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "chars": 40,
+     "lines": 3,
+     "size": 60,
+     "vw": 4.7,
+     "font": "Work Sans",
+     "weight": 900,
+     "tracking": -0.025,
+     "leading": 1.03,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "left",
+     "widthRatio": 0.46,
+     "top": 168,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "lines": 3,
+     "size": 60,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "words": 7,
+      "chars": 40,
+      "lines": 3,
+      "size": 60,
+      "vw": 4.7,
+      "font": "Work Sans",
+      "weight": 900,
+      "tracking": -0.025,
+      "leading": 1.03,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.46,
+      "top": 168,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "🍜 🥘 🥗 🍰",
+      "words": 4,
+      "chars": 11,
+      "lines": 2,
+      "size": 60,
+      "vw": 4.7,
+      "font": "Work Sans",
+      "weight": 400,
+      "tracking": 0,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.46,
+      "top": 308,
+      "tag": "div",
+      "kind": "heading"
+     },
+     {
+      "text": "How it works",
+      "words": 3,
+      "chars": 12,
+      "lines": 1,
+      "size": 30,
+      "vw": 2.3,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.95,
+      "top": 1364,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 3,
+     "maxLines": 3,
+     "over2Lines": 1,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 4,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      12,
+      14,
+      16,
+      18,
+      24,
+      30,
+      60
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 14,
+      "leading": 1.43,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 15.8
+     },
+     "measureChars": 64,
+     "max": {
+      "size": 60,
+      "vw": 4.7,
+      "font": "Work Sans",
+      "text": "Order from local kitchens. Or run yours."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 1,
+     "microLabelShare": 0.028,
+     "microSamples": [
+      "🇬🇧 Independent UK kitchens"
+     ],
+     "upperShare": 0.03,
+     "centerShare": 0.02,
+     "smallText": 4
+    },
+    "eyebrows": [
+     {
+      "text": "🇬🇧 Independent UK kitchens",
+      "above": "Order from local kitchens. Or run yours.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 12,
+      "top": 141
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#fbf6f0",
+       "top": 57,
+       "hsl": {
+        "h": 33,
+        "s": 0.58,
+        "l": 0.96
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 918,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#475569",
+       "share": 0.47
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.13
+      },
+      {
+       "color": "#0f172a",
+       "share": 0.09
+      },
+      {
+       "color": "#fbf6f0",
+       "share": 0.07
+      },
+      {
+       "color": "#334155",
+       "share": 0.06
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#334155"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 8,
+     "inHero": 7,
+     "radius": "pill",
+     "height": 30,
+     "withShadow": 8,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Search",
+      "🍗 Grill",
+      "🍚 Jollof",
+      "🥘 Caribbean",
+      "🍛 South Asian"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 21,
+     "shadowOverlay": 1,
+     "shadowSamples": [
+      "input#q → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "button.s → rgba(217, 119, 6, 0.3) 0px 10px 28px 0px",
+      "a.chip → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "a.chip → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px"
+     ],
+     "gradients": 6,
+     "scrims": 0,
+     "gradientSamples": [
+      "div.wash → radial-gradient(120% 90% at 85% -10%, rgb(253, 231, 200) 0%, rgba(0, 0, 0, 0) 55%)",
+      "a.door.d1 → linear-gradient(to right bottom, rgb(251, 191, 36), rgb(249, 115, 22))",
+      "div.tile.t1 → linear-gradient(to right bottom, rgb(255, 255, 255), rgb(251, 233, 212))",
+      "div.tile.t2 → linear-gradient(to right bottom, rgb(255, 255, 255), rgb(246, 220, 216))"
+     ],
+     "gradientText": 0,
+     "hairlines": 2,
+     "hairlineSamples": [
+      "header 1280px",
+      "section#kitchens.kit 1280px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 1043
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 5,
+     "fixed": true,
+     "height": 57,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1280,
+     "h": 800
+    },
+    "pageH": 1639,
+    "margins": {
+     "left": 32,
+     "right": 33
+    },
+    "sections": [
+     {
+      "sel": "section.hero",
+      "tag": "section",
+      "top": 57,
+      "height": 861,
+      "words": 84,
+      "media": 0,
+      "middle": 225,
+      "heading": {
+       "text": "Order from local kitchens. Or run yours.",
+       "size": 60,
+       "tag": "h1"
+      },
+      "left": 32,
+      "right": 136,
+      "textLeft": 32,
+      "textRight": 136,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#kitchens.kit",
+      "tag": "section",
+      "top": 918,
+      "height": 382,
+      "words": 54,
+      "media": 3,
+      "middle": 18,
+      "heading": {
+       "text": "Kitchens on J'Toye",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 32,
+      "right": 32,
+      "textLeft": 32,
+      "textRight": 32,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.how",
+      "tag": "section",
+      "top": 1300,
+      "height": 339,
+      "words": 44,
+      "media": 0,
+      "middle": 48,
+      "heading": {
+       "text": "How it works",
+       "size": 30,
+       "tag": "h2"
+      },
+      "left": 32,
+      "right": 41,
+      "textLeft": 32,
+      "textRight": 41,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "size": 60,
+      "top": 168,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 32,
+      "n": 5
+     },
+     {
+      "x": 448,
+      "n": 2
+     },
+     {
+      "x": 864,
+      "n": 2
+     }
+    ],
+    "leftBlocks": 9,
+    "bodySize": 14,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0.16,
+    "voidBox": {
+     "x": 533,
+     "y": 107,
+     "w": 747,
+     "h": 213
+    }
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 2,
+   "filled": [
+    0.83,
+    0.74
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 1539,
+     "screens": 1.5,
+     "words": 189,
+     "img": 3,
+     "video": 0,
+     "canvas": 0,
+     "svg": 11,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 3,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "logo-mama-ades.png",
+      "logo-peckham-jollof.png",
+      "logo-brixton-grill.png"
+     ],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "🍗",
+      "🍚",
+      "🥘",
+      "🍛",
+      "🥗",
+      "🍰"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "chars": 40,
+     "lines": 2,
+     "size": 60,
+     "vw": 7.8,
+     "font": "Work Sans",
+     "weight": 900,
+     "tracking": -0.025,
+     "leading": 1.03,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.94,
+     "top": 168,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "lines": 2,
+     "size": 60,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "words": 7,
+      "chars": 40,
+      "lines": 2,
+      "size": 60,
+      "vw": 7.8,
+      "font": "Work Sans",
+      "weight": 900,
+      "tracking": -0.025,
+      "leading": 1.03,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 168,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "How it works",
+      "words": 3,
+      "chars": 12,
+      "lines": 1,
+      "size": 30,
+      "vw": 3.9,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.94,
+      "top": 1245,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 2,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      12,
+      14,
+      16,
+      18,
+      24,
+      30,
+      60
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 14,
+      "leading": 1.43,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 15.8
+     },
+     "measureChars": 64,
+     "max": {
+      "size": 60,
+      "vw": 7.8,
+      "font": "Work Sans",
+      "text": "Order from local kitchens. Or run yours."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 1,
+     "microLabelShare": 0.028,
+     "microSamples": [
+      "🇬🇧 Independent UK kitchens"
+     ],
+     "upperShare": 0.03,
+     "centerShare": 0.02,
+     "smallText": 4
+    },
+    "eyebrows": [
+     {
+      "text": "🇬🇧 Independent UK kitchens",
+      "above": "Order from local kitchens. Or run yours.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 12,
+      "top": 141
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#fbf6f0",
+       "top": 57,
+       "hsl": {
+        "h": 33,
+        "s": 0.58,
+        "l": 0.96
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 799,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#475569",
+       "share": 0.47
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.13
+      },
+      {
+       "color": "#0f172a",
+       "share": 0.08
+      },
+      {
+       "color": "#fbf6f0",
+       "share": 0.07
+      },
+      {
+       "color": "#334155",
+       "share": 0.06
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#334155"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 8,
+     "inHero": 8,
+     "radius": "pill",
+     "height": 30,
+     "withShadow": 8,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Search",
+      "🍗 Grill",
+      "🍚 Jollof",
+      "🥘 Caribbean",
+      "🍛 South Asian"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 17,
+     "shadowOverlay": 1,
+     "shadowSamples": [
+      "input#q → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "button.s → rgba(217, 119, 6, 0.3) 0px 10px 28px 0px",
+      "a.chip → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "a.chip → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px"
+     ],
+     "gradients": 2,
+     "scrims": 0,
+     "gradientSamples": [
+      "div.wash → radial-gradient(120% 90% at 85% -10%, rgb(253, 231, 200) 0%, rgba(0, 0, 0, 0) 55%)",
+      "a.door.d1 → linear-gradient(to right bottom, rgb(251, 191, 36), rgb(249, 115, 22))"
+     ],
+     "gradientText": 0,
+     "hairlines": 2,
+     "hairlineSamples": [
+      "header 768px",
+      "section#kitchens.kit 768px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 924
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 5,
+     "fixed": true,
+     "height": 57,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 1539,
+    "margins": {
+     "left": 24,
+     "right": 25
+    },
+    "sections": [
+     {
+      "sel": "section.hero",
+      "tag": "section",
+      "top": 57,
+      "height": 742,
+      "words": 80,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Order from local kitchens. Or run yours.",
+       "size": 60,
+       "tag": "h1"
+      },
+      "left": 24,
+      "right": 78,
+      "textLeft": 24,
+      "textRight": 78,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#kitchens.kit",
+      "tag": "section",
+      "top": 799,
+      "height": 382,
+      "words": 54,
+      "media": 3,
+      "middle": 18,
+      "heading": {
+       "text": "Kitchens on J'Toye",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 24,
+      "right": 24,
+      "textLeft": 24,
+      "textRight": 24,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.how",
+      "tag": "section",
+      "top": 1181,
+      "height": 359,
+      "words": 44,
+      "media": 0,
+      "middle": 46,
+      "heading": {
+       "text": "How it works",
+       "size": 30,
+       "tag": "h2"
+      },
+      "left": 24,
+      "right": 56,
+      "textLeft": 24,
+      "textRight": 56,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "size": 60,
+      "top": 168,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 24,
+      "n": 5
+     },
+     {
+      "x": 275,
+      "n": 2
+     },
+     {
+      "x": 525,
+      "n": 2
+     }
+    ],
+    "leftBlocks": 9,
+    "bodySize": 14,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.91,
+    0.69,
+    0.88
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 2102,
+     "screens": 2.5,
+     "words": 182,
+     "img": 3,
+     "video": 0,
+     "canvas": 0,
+     "svg": 11,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 3,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [
+      "logo-mama-ades.png",
+      "logo-peckham-jollof.png",
+      "logo-brixton-grill.png"
+     ],
+     "blendText": 0,
+     "sideScrollers": 1,
+     "brokenImages": [],
+     "emoji": [
+      "🍗",
+      "🍚",
+      "🥘",
+      "🍛",
+      "🥗",
+      "🍰"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "chars": 40,
+     "lines": 3,
+     "size": 36,
+     "vw": 9.2,
+     "font": "Work Sans",
+     "weight": 900,
+     "tracking": -0.025,
+     "leading": 1.03,
+     "upper": false,
+     "italic": false,
+     "mono": false,
+     "align": "left",
+     "position": "center",
+     "widthRatio": 0.92,
+     "top": 144,
+     "tag": "h1",
+     "kind": "heading"
+    },
+    "h1": {
+     "text": "Order from local kitchens. Or run yours.",
+     "words": 7,
+     "lines": 3,
+     "size": 36,
+     "font": "Work Sans"
+    },
+    "headings": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "words": 7,
+      "chars": 40,
+      "lines": 3,
+      "size": 36,
+      "vw": 9.2,
+      "font": "Work Sans",
+      "weight": 900,
+      "tracking": -0.025,
+      "leading": 1.03,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 144,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Kitchens on J'Toye",
+      "words": 3,
+      "chars": 18,
+      "lines": 1,
+      "size": 24,
+      "vw": 6.2,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.33,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.57,
+      "top": 1062,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "How it works",
+      "words": 3,
+      "chars": 12,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "Work Sans",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.92,
+      "top": 1497,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 3,
+     "maxLines": 3,
+     "over2Lines": 1,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 3,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Work Sans",
+       "share": 1,
+       "mono": false
+      }
+     ],
+     "familyCount": 1,
+     "sizes": [
+      12,
+      14,
+      16,
+      18,
+      24,
+      30,
+      36
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": {
+      "font": "Work Sans",
+      "size": 14,
+      "leading": 1.43,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 15.8
+     },
+     "measureChars": 40,
+     "max": {
+      "size": 36,
+      "vw": 9.2,
+      "font": "Work Sans",
+      "text": "Order from local kitchens. Or run yours."
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 1,
+     "microLabelShare": 0.029,
+     "microSamples": [
+      "🇬🇧 Independent UK kitchens"
+     ],
+     "upperShare": 0.03,
+     "centerShare": 0.02,
+     "smallText": 4
+    },
+    "eyebrows": [
+     {
+      "text": "🇬🇧 Independent UK kitchens",
+      "above": "Order from local kitchens. Or run yours.",
+      "upper": true,
+      "tracked": true,
+      "mono": false,
+      "pill": false,
+      "size": 12,
+      "top": 117
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#ffffff",
+     "bodyBgHsl": {
+      "h": 0,
+      "s": 0,
+      "l": 1
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#fbf6f0",
+       "top": 57,
+       "hsl": {
+        "h": 33,
+        "s": 0.58,
+        "l": 0.96
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 1013,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#475569",
+       "share": 0.46
+      },
+      {
+       "color": "#3a0b0d",
+       "share": 0.14
+      },
+      {
+       "color": "#0f172a",
+       "share": 0.09
+      },
+      {
+       "color": "#fbf6f0",
+       "share": 0.07
+      },
+      {
+       "color": "#334155",
+       "share": 0.06
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#334155"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 8,
+     "inHero": 7,
+     "radius": "pill",
+     "height": 30,
+     "withShadow": 8,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Search",
+      "🍗 Grill",
+      "🍚 Jollof",
+      "🥘 Caribbean",
+      "🍛 South Asian"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 17,
+     "shadowOverlay": 1,
+     "shadowSamples": [
+      "input#q → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "button.s → rgba(217, 119, 6, 0.3) 0px 10px 28px 0px",
+      "a.chip → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+      "a.chip → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px"
+     ],
+     "gradients": 2,
+     "scrims": 1,
+     "gradientSamples": [
+      "div.wash → radial-gradient(120% 90% at 85% -10%, rgb(253, 231, 200) 0%, rgba(0, 0, 0, 0) 55%)",
+      "a.door.d1 → linear-gradient(to right bottom, rgb(251, 191, 36), rgb(249, 115, 22))"
+     ],
+     "gradientText": 0,
+     "hairlines": 2,
+     "hairlineSamples": [
+      "header 390px",
+      "section#kitchens.kit 390px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 12,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 3,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 1176
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 1,
+     "fixed": true,
+     "height": 57,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "work sans"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 2102,
+    "margins": {
+     "left": 16,
+     "right": 16
+    },
+    "sections": [
+     {
+      "sel": "section.hero",
+      "tag": "section",
+      "top": 57,
+      "height": 956,
+      "words": 80,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Order from local kitchens. Or run yours.",
+       "size": 36,
+       "tag": "h1"
+      },
+      "left": 16,
+      "right": 16,
+      "textLeft": 16,
+      "textRight": 25,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section#kitchens.kit",
+      "tag": "section",
+      "top": 1013,
+      "height": 420,
+      "words": 39,
+      "media": 3,
+      "middle": 99,
+      "heading": {
+       "text": "Kitchens on J'Toye",
+       "size": 24,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 0,
+      "textLeft": 16,
+      "textRight": 16,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "section.how",
+      "tag": "section",
+      "top": 1433,
+      "height": 669,
+      "words": 44,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "How it works",
+       "size": 30,
+       "tag": "h2"
+      },
+      "left": 16,
+      "right": 29,
+      "textLeft": 16,
+      "textRight": 29,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "Order from local kitchens. Or run yours.",
+      "size": 36,
+      "top": 144,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 9
+     }
+    ],
+    "leftBlocks": 9,
+    "bodySize": 14,
+    "stage": false,
+    "explains": true,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": null,
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "headline-lines",
+   "width": 1280,
+   "message": "1 headline(s) wrap past two lines at 1280px: \"Order from local kitchens. Or run yours.\" → 3 lines (7 words, 60px)",
+   "fix": "Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 36px or less."
+  },
+  {
+   "level": "FAIL",
+   "id": "eyebrow",
+   "width": 1280,
+   "message": "1 eyebrow/kicker label(s) above headings: \"🇬🇧 Independent UK kitchens\" above \"Order from local kitchens. Or run yours.\"",
+   "fix": "Delete them. If the label carried real information, fold it into the headline or the supporting sentence.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "micro-label",
+   "width": 1280,
+   "message": "1 tiny uppercase letter-spaced label(s): \"🇬🇧 Independent UK kitchens\"",
+   "fix": "Prefer sentence case at body size.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "emoji",
+   "width": 1280,
+   "message": "Emoji in the page: 🍗 🍚 🥘 🍛 🥗 🍰 🍜",
+   "fix": "Remove. Use words or real imagery.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "gradient",
+   "width": 1280,
+   "message": "6 gradient fill(s): div.wash → radial-gradient(120% 90% at 85% -10%, rgb(253, 231, 200) 0%, rgba(0, 0, 0, 0) 55%) | a.door.d1 → linear-gradient(to right bottom, rgb(251, 191, 36), rgb(249, 115, 22)) | div.tile.t1 → linear-gradient(to right bottom, rgb(255, 255, 255), rgb(251, 233, 212))",
+   "fix": "Use a flat colour or a real image. The only gradient allowed by default is a neutral scrim over a photo for legibility.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "shadow",
+   "width": 1280,
+   "message": "21 box-shadow(s) on elements at rest: input#q → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px | button.s → rgba(217, 119, 6, 0.3) 0px 10px 28px 0px | a.chip → rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+   "fix": "Remove. Separate surfaces with a tone step or space. Shadows are for things that really float (menus, dialogs, sticky bars).",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "button-fx",
+   "width": 1280,
+   "message": "Buttons with shadow/glow.",
+   "fix": "Flat fill, one colour.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "hairline",
+   "width": 1280,
+   "message": "2 thin rule(s)/divider line(s): header 1280px | section#kitchens.kit 1280px",
+   "fix": "Delete. Separate with space, a tone change, or scale. Lines are only for real tables and form fields.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "outlined-box",
+   "width": 1280,
+   "message": "3 boxes drawn with a 1px outline.",
+   "fix": "Define a surface by its fill (one tone step from the page) or leave the content unboxed.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "palette-cream",
+   "width": 1280,
+   "message": "Yellow-cream background (section #fbf6f0, text #fbf6f0).",
+   "fix": "Use the drawn palette. If you want warmth, take a low-chroma stone or bone, not a yellow cream.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "body-size",
+   "width": 1280,
+   "message": "Body text is 14px (the size most of the running text is set in).",
+   "fix": "Body copy 16–20px. Map small sizes from blueprints onto your body step.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "few-pictures",
+   "width": 1280,
+   "message": "Only 3 picture(s) on the page (3 photographs, footage or raster images, 0 interface fragments). Drawings in SVG do not count.",
+   "fix": "Find real pictures of the subject's world with scripts/assets.mjs (photographs, archival images, maps, engravings, footage), download them to assets/ and give them room: a hero picture, one per section that has a subject, a full-width band. At least four, usually six to twelve."
+  },
+  {
+   "level": "WARN",
+   "id": "no-footage",
+   "width": 1280,
+   "message": "No video anywhere on the page.",
+   "fix": "Look for one honest clip with scripts/assets.mjs --video (the place, the material, the process) and use it as a muted loop with a poster frame. Defend its absence only if no clip fits the subject."
+  },
+  {
+   "level": "FAIL",
+   "id": "small-text",
+   "width": 1280,
+   "message": "4 text blocks under 13px.",
+   "fix": "Nothing meant to be read goes below 13px.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "headline-lines",
+   "width": 390,
+   "message": "1 headline(s) wrap past two lines at 390px: \"Order from local kitchens. Or run yours.\" → 3 lines (7 words, 36px)",
+   "fix": "Cut words first (a headline is a title, not a sentence). Then give it a wider measure. Lower the size only as a last resort and never below the scale you chose. A real statement paragraph belongs in a <p> or <blockquote> at 24px or less."
+  },
+  {
+   "level": "WARN",
+   "id": "side-scroll",
+   "width": 390,
+   "message": "1 row(s) scroll sideways with content past their edge.",
+   "fix": "Jurors and most visitors read a row cut at the edge as clipped, not as scrollable. Wrap it onto more lines, or end it inside the grid."
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1280,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-before/desktop-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-before/desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-before/tablet-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-before/tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-before/mobile-fold.jpg",
+   "pages": [
+    "/home/sanmi/IdeaProjects/JToye_OaaS_2026-landing-elevate/design/runs/2026-11-01-landing-elevate/inspect-before/mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

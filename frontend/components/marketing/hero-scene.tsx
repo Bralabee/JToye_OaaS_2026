@@ -15,8 +15,8 @@ import {
  * Renders its Server-Component children UNTOUCHED and fully visible, then —
  * only in the browser, only on desktop with motion allowed — layers the GSAP
  * "full-award" choreography over them: split-type headline stagger, persona
- * door deal-in, parallax heat-wash, and a scrubbed step-rail that draws and
- * activates each step as you pass it.
+ * door deal-in, and a scrubbed step-rail that draws and activates each step as
+ * you pass it. (The parallax heat-wash left with the wash itself, D14.)
  *
  * No-FOUC contract: every hidden "from" state is set INSIDE the
  * `gsap.matchMedia(DESKTOP_MOTION_QUERY, …)` branch (client + desktop +
@@ -129,21 +129,11 @@ export function HeroScene({ children }: { children: ReactNode }) {
           })
         }
 
-        // Parallax heat-wash on scroll through the hero.
-        const heatwash = root.querySelector<HTMLElement>("[data-hero-heatwash]")
-        const hero = root.querySelector<HTMLElement>("[data-hero-section]")
-        if (heatwash && hero) {
-          gsap.to(heatwash, {
-            yPercent: 30,
-            ease: "none",
-            scrollTrigger: {
-              trigger: hero,
-              start: "top top",
-              end: "bottom top",
-              scrub: true,
-            },
-          })
-        }
+        // The parallax heat-wash that ran here went with the radial wash it
+        // moved (D14, design/decisions.md): the elevated hero is a flat
+        // warm-100 field, and a gradient behind it is banned on this page
+        // (design/rulings.tsv gradient-decoration). Nothing else moved; the
+        // e2e motion spec now asserts the wash is absent.
 
         // "How it works" section title reveal.
         const howTitle = root.querySelector<HTMLElement>("[data-hero-howtitle]")

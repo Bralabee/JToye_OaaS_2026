@@ -1,0 +1,8 @@
+TASTESKILL · LINT   5 file(s)
+
+WARN
+  [em-dash] Em-dash habit. Use a full stop or a comma; keep at most one or two on a page.  (1×)
+      (all files):0  23 em dashes
+
+RESULT: 0 FAIL, 1 WARN
+Interface fragments marked data-ui keep their own borders and shadows. Any other line that must keep a flagged pattern for a real reason can carry the comment taste-skill-ignore.

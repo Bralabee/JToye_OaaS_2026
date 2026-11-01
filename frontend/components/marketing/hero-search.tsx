@@ -36,7 +36,7 @@ export function HeroSearch() {
       action="/shop"
       method="get"
       onSubmit={handleSubmit}
-      className="mt-6 flex max-w-xl gap-2.5"
+      className="mt-7 flex max-w-xl gap-2"
     >
       <label htmlFor="hero-search" className="sr-only">
         Search kitchens, dishes or a postcode
@@ -44,7 +44,7 @@ export function HeroSearch() {
       <div className="relative flex-1">
         <Search
           aria-hidden
-          className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-oxblood-600"
+          className="pointer-events-none absolute left-[18px] top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-brand-700"
         />
         <input
           id="hero-search"
@@ -54,12 +54,17 @@ export function HeroSearch() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Try “jollof”, “vegan” or your postcode…"
-          className="w-full rounded-full border border-cream-100 bg-white py-3 pl-12 pr-4 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-500 hover:border-amber-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+          // D14: white on the hero's warm-100 ground, separated by tone (no
+          // outline, no resting shadow); 16px text, which also stops iOS zooming
+          // the page on focus. Focus is a 2px brand-700 outline.
+          className="h-[52px] w-full rounded-full bg-white pl-12 pr-4 text-base text-warm-900 placeholder:text-warm-600 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700"
         />
       </div>
       <button
         type="submit"
-        className="inline-flex items-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-amber-ink shadow-[0_10px_28px_rgba(217,119,6,0.30)] transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2"
+        // D14: the action accent, flat gold-400 with brand-900 type (8.71:1). The
+        // orange glow and the lift are gone; press feedback is a 0.97 scale.
+        className="inline-flex h-[52px] items-center rounded-full bg-gold-400 px-[22px] text-base font-bold text-brand-900 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:hover:bg-gold-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-700"
       >
         Search
       </button>
