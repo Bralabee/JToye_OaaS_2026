@@ -165,7 +165,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 
 Read-mostly + narrow-write Model Context Protocol server (`mcp-server/`, Phase 20/25), Bearer pass-through over the core REST API — RLS is the sole tenant-isolation boundary, the container holds no client secret and no DB credentials.
 - Tools (`mcp-server/src/tools/`): `list-shops.ts`, `list-products.ts`, `read-orders.ts` (all read), `create-customer.ts`, `create-order.ts` (mutating — Phase 25, Idempotency-Key contract, NOSUPERUSER-proven RLS).
-- Transport: `@modelcontextprotocol/sdk` ^1.29.0, hosted over `express` ^5 (Streamable HTTP).
+- Transport: `@modelcontextprotocol/sdk` ^1.32.2, hosted over `express` ^5 (Streamable HTTP).
 - LOCAL-DEV: `jtoye-mcp-server` container, port `9100`, `CORE_BASE_URL=http://core-java:9090` (fixed internal name, SSRF guard T-20-04).
 
 ---
