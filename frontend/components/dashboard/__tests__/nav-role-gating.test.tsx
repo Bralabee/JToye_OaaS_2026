@@ -136,4 +136,45 @@ describe("dashboard nav role gating (SW-TND-05)", () => {
     for (const name of MANAGER_UP) expect(links).toContain(name)
     for (const name of OWNER_ONLY) expect(links).not.toContain(name)
   })
+
+  it("review R1-2: when staff/me cannot be read, the role is UNKNOWN, so nothing is hidden on it (only Developers, as before #1076)", async () => {
+    mockedFetchMyShops.mockRejectedValue(Object.assign(new Error("Network Error"), { response: { status: 503 } }))
+    const { container } = render(
+      <ShopSwitcherProvider>
+        <Sidebar />
+      </ShopSwitcherProvider>
+    )
+    await waitFor(() => expect(mockedFetchMyShops).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId("shop-switcher")).not.toHaveAttribute("aria-busy", "true"))
+    const links = within(container.querySelector("nav") as HTMLElement)
+      .getAllByRole("link")
+      .map((a) => a.textContent?.trim() ?? "")
+    for (const name of [...EVERYONE, ...MANAGER_UP, "Staff", "Webhooks", "Approvals"]) {
+      expect(links).toContain(name)
+    }
+    // Developers was never offered on a guess (37-46, T-37-113), and still is not.
+    expect(links).not.toContain("Developers")
+  })
+
+  it("review R1-2: the mobile More sheet offers the same items when staff/me cannot be read", async () => {
+    mockedFetchMyShops.mockRejectedValue(new Error("Network Error"))
+    render(
+      <ShopSwitcherProvider>
+        <MobileTabBar />
+      </ShopSwitcherProvider>
+    )
+    await waitFor(() => expect(mockedFetchMyShops).toHaveBeenCalled())
+    await act(async () => {})
+    fireEvent.click(screen.getByRole("button", { name: /more navigation/i }))
+    await screen.findByRole("link", { name: "Shops" })
+    const links = screen.getAllByRole("link").map((a) => a.textContent?.trim() ?? "")
+    for (const name of [...MANAGER_UP, "Staff", "Webhooks", "Approvals"]) expect(links).toContain(name)
+    expect(links).not.toContain("Developers")
+  })
+
+  it("review R1-2: a RESOLVED shop-manager answer still hides Approvals and the other Group-admin pages", async () => {
+    const links = await sidebarLinks("manager")
+    expect(links).not.toContain("Approvals")
+    expect(links).not.toContain("Staff")
+  })
 })

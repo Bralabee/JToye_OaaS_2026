@@ -55,6 +55,11 @@ export interface NavItem {
    * (37-46, UI-SPEC § E1, T-37-113).
    */
   requires?: NavRequirement
+  /**
+   * Never listed on a guess, even when the caller's role is UNKNOWN (staff/me could not be read).
+   * Developers only (37-46, T-37-113: integrator credentials), which is how it behaved before #1076.
+   */
+  serverWordOnly?: boolean
 }
 
 export const navigation: NavItem[] = [
@@ -79,43 +84,55 @@ export const navigation: NavItem[] = [
   { name: "Staff", href: "/dashboard/staff", icon: UserCog, requires: "GROUP_ADMIN" },
   { name: "Webhooks", href: "/dashboard/webhooks", icon: Webhook, requires: "GROUP_ADMIN" },
   // Integrator API credentials (37-46, D-22..D-24): Group admin only.
-  { name: "Developers", href: "/dashboard/developers", icon: Code2, requires: "GROUP_ADMIN" },
+  { name: "Developers", href: "/dashboard/developers", icon: Code2, requires: "GROUP_ADMIN", serverWordOnly: true },
   // Image review (IMG-04, Phase 24): Keep and Re-process need SHOP_MANAGER on the asset's shop.
   { name: "Image review", href: "/dashboard/media/review", icon: Images, requires: "SHOP_MANAGER" },
 ]
 
 /** What the shell's staff/me answer lets this caller be offered in the nav. */
 export interface NavAccess {
+  /** True only while the answer is still pending: nothing gated is offered yet. */
+  pending: boolean
+  /**
+   * True when there is no answer to decide on: staff/me failed (or the page sits outside the
+   * dashboard shell). The role is then UNKNOWN, not "none" (review R1-2 on #1076): every gated item
+   * but a `serverWordOnly` one is offered, and each page and the API still refuse what they refuse.
+   */
+  unknown: boolean
   isGroupAdmin: boolean
   isShopManager: boolean
 }
 
 /**
- * Read from the shell's staff/me answer. Null (no provider) or a pending answer offers nothing gated:
- * a gated item is listed only on the server's word (T-37-113). `isShopManager` is true for a Group
- * admin, a tenant-wide SHOP_MANAGER, or SHOP_MANAGER on any one shop (#961 `shopRoles`). A server older
- * than #961 sends no `shopRoles`; then the role cannot be told and manager items are offered, as before.
+ * Read from the shell's staff/me answer. Only a RESOLVED answer hides an item. `isShopManager` is
+ * true for a Group admin, a tenant-wide SHOP_MANAGER, or SHOP_MANAGER on any one shop (#961
+ * `shopRoles`). A server older than #961 sends no `shopRoles`; then the role cannot be told and
+ * manager items are offered, as before.
  */
 export function useNavAccess(): NavAccess {
   const switcher = useOptionalShopSwitcherData()
-  if (!switcher || switcher.loading) return { isGroupAdmin: false, isShopManager: false }
+  const none = { pending: false, unknown: false, isGroupAdmin: false, isShopManager: false }
+  if (!switcher) return { ...none, unknown: true }
+  if (switcher.loading) return { ...none, pending: true }
   const access = switcher.access
   const isGroupAdmin = switcher.isGroupAdmin
-  if (isGroupAdmin) return { isGroupAdmin, isShopManager: true }
-  if (!access) return { isGroupAdmin, isShopManager: false }
+  if (isGroupAdmin) return { ...none, isGroupAdmin, isShopManager: true }
+  if (!access) return { ...none, unknown: true }
   const managerRole = (role: string | null | undefined) =>
     role === "SHOP_MANAGER" || role === "GROUP_ADMIN"
-  if (managerRole(access.tenantWideRole)) return { isGroupAdmin, isShopManager: true }
-  if (access.shopRoles == null) return { isGroupAdmin, isShopManager: true }
-  return { isGroupAdmin, isShopManager: Object.values(access.shopRoles).some(managerRole) }
+  if (managerRole(access.tenantWideRole)) return { ...none, isShopManager: true }
+  if (access.shopRoles == null) return { ...none, isShopManager: true }
+  return { ...none, isShopManager: Object.values(access.shopRoles).some(managerRole) }
 }
 
 /** The items this caller is shown, in `navigation` order. */
 export function visibleNavigation(items: NavItem[], access: NavAccess): NavItem[] {
   return items.filter((item) => {
+    if (!item.requires) return true
+    if (access.pending) return false
+    if (access.unknown) return !item.serverWordOnly
     if (item.requires === "GROUP_ADMIN") return access.isGroupAdmin
-    if (item.requires === "SHOP_MANAGER") return access.isShopManager
-    return true
+    return access.isShopManager
   })
 }
 
