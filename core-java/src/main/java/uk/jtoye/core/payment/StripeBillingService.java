@@ -7,6 +7,7 @@ import com.stripe.model.Invoice;
 import com.stripe.model.PaymentMethod;
 import com.stripe.model.Price;
 import com.stripe.model.Subscription;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.CustomerUpdateParams;
 import com.stripe.param.PaymentMethodAttachParams;
@@ -16,11 +17,15 @@ import com.stripe.param.SubscriptionUpdateParams;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.payment.dto.BillingSubscriptionDto;
 import uk.jtoye.core.payment.dto.BillingSubscriptionRequest;
+import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.tenant.BillingPlanMode;
 import uk.jtoye.core.tenant.SubscriptionStatus;
 import uk.jtoye.core.tenant.Tenant;
@@ -40,13 +45,22 @@ import java.util.UUID;
  *
  * <p>Supported tiers (all monetary amounts and bps resolved from {@link StripeProperties.Billing}):
  * <ul>
- *   <li>{@link BillingPlanMode#SAAS_HYBRID_STANDARD}: £39/location/mo + 50 bps (0.5%)</li>
- *   <li>{@link BillingPlanMode#SAAS_FLAT_PREDICTABLE}: £79–£149/location/mo + 0 bps (0%)</li>
+ *   <li>{@link BillingPlanMode#SAAS_HYBRID_STANDARD}: £39/location/mo + 50 bps (0.5%) — per-location quantity</li>
+ *   <li>{@link BillingPlanMode#SAAS_FLAT_PREDICTABLE}: £79–£149/location/mo + 0 bps (0%) — per-location quantity</li>
  *   <li>{@link BillingPlanMode#BATCH_PAYG_STARTER}: £0/mo + 600 bps (6.0%)</li>
- *   <li>{@link BillingPlanMode#WALK_SETUP_STEPDOWN}: £195/mo during setup, stepping down
- *       on {@link #completeWalkSetup(UUID)} to 250 bps (2.5%) of direct orders capped at
+ *   <li>{@link BillingPlanMode#WALK_SETUP_STEPDOWN}: £195/mo during setup (per-account quantity = 1), stepping down
+ *       on {@link #completeWalkSetup(UUID)} to 2.5% (250 bps) of direct orders capped at
  *       £39/mo per account (£0 in a quiet month).</li>
  * </ul>
+ *
+ * <p><b>Per-location quantity rule (Phase 30 Plan 30-25, D-04,
+ * {@code .planning/phases/30-live-stripe-test-mode-execution/evidence/30-25-d04-decision.txt}):</b>
+ * Under the owner's {@code all-shops} rule, every shop row belonging to the tenant
+ * ({@link ShopRepository#countByTenantId(UUID)}) is a billable location for
+ * {@link BillingPlanMode#SAAS_HYBRID_STANDARD} and {@link BillingPlanMode#SAAS_FLAT_PREDICTABLE}.
+ * {@link BillingPlanMode#WALK_SETUP_STEPDOWN} is a per-account setup fee ({@code quantity = 1}).
+ * A failed location-count query propagates and aborts subscription creation before any Stripe call
+ * (T-30-96: never fall back to a guessed quantity).
  */
 @Service
 public class StripeBillingService {
@@ -56,13 +70,65 @@ public class StripeBillingService {
     private final StripeProperties stripeProperties;
     private final TenantRepository tenantRepository;
     private final StripeConnectService stripeConnectService;
+    private final ShopRepository shopRepository;
 
     public StripeBillingService(StripeProperties stripeProperties,
                                 TenantRepository tenantRepository,
                                 StripeConnectService stripeConnectService) {
+        this(stripeProperties, tenantRepository, stripeConnectService, null);
+    }
+
+    @Autowired
+    public StripeBillingService(StripeProperties stripeProperties,
+                                TenantRepository tenantRepository,
+                                StripeConnectService stripeConnectService,
+                                @Nullable ShopRepository shopRepository) {
         this.stripeProperties = stripeProperties;
         this.tenantRepository = tenantRepository;
         this.stripeConnectService = stripeConnectService;
+        this.shopRepository = shopRepository;
+    }
+
+    /**
+     * True iff the billing plan bills per tenant location under the owner's D-04 {@code all-shops}
+     * rule ({@code evidence/30-25-d04-decision.txt}).
+     */
+    public static boolean isPerLocationMode(BillingPlanMode mode) {
+        return mode == BillingPlanMode.SAAS_HYBRID_STANDARD
+                || mode == BillingPlanMode.SAAS_FLAT_PREDICTABLE;
+    }
+
+    /**
+     * Compute the Stripe subscription item quantity for {@code tenantId} on {@code mode} under
+     * the owner's D-04 {@code all-shops} rule ({@code evidence/30-25-d04-decision.txt}).
+     *
+     * <p>Per-location modes ({@link BillingPlanMode#SAAS_HYBRID_STANDARD},
+     * {@link BillingPlanMode#SAAS_FLAT_PREDICTABLE}) return {@link ShopRepository#countByTenantId(UUID)}
+     * with {@link TenantContext} pinned to {@code tenantId}; per-account modes return {@code 1L}.
+     * Any repository failure propagates (T-30-96: never fall back to a default quantity).
+     */
+    @Transactional(readOnly = true)
+    public long locationQuantity(UUID tenantId, BillingPlanMode mode) {
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId is required");
+        }
+        if (!isPerLocationMode(mode)) {
+            return 1L;
+        }
+        if (shopRepository == null) {
+            throw new IllegalStateException("ShopRepository is required to compute per-location billing quantity");
+        }
+        Optional<UUID> priorTenant = TenantContext.get();
+        TenantContext.set(tenantId);
+        try {
+            return shopRepository.countByTenantId(tenantId);
+        } finally {
+            if (priorTenant.isPresent()) {
+                TenantContext.set(priorTenant.get());
+            } else {
+                TenantContext.clear();
+            }
+        }
     }
 
     @Transactional(readOnly = true)
@@ -100,6 +166,10 @@ public class StripeBillingService {
         long monthlyPennies = stripeProperties.getBilling().monthlyAmountPenniesFor(mode, walkSetupDone);
 
         if (stripeProperties.getApiKey() != null && !stripeProperties.getApiKey().isBlank()) {
+            // Compute the location quantity BEFORE any Stripe API call so a count-query failure
+            // aborts cleanly with zero side effects in Stripe (T-30-96).
+            long quantity = monthlyPennies > 0 ? locationQuantity(tenantId, mode) : 1L;
+
             String customerId = ensureStripeCustomer(tenant, request.paymentMethodId(), request.testClockId());
 
             // If switching away from an existing recurring subscription, cancel the prior one first
@@ -111,6 +181,9 @@ public class StripeBillingService {
             }
 
             if (monthlyPennies > 0) {
+                RequestOptions priceOptions = RequestOptions.builder()
+                        .setIdempotencyKey("billing-price-" + tenantId + "-" + mode.name() + "-" + UUID.randomUUID())
+                        .build();
                 Price price = Price.create(PriceCreateParams.builder()
                         .setCurrency(stripeProperties.getCurrency())
                         .setUnitAmount(monthlyPennies)
@@ -120,12 +193,13 @@ public class StripeBillingService {
                         .setProductData(PriceCreateParams.ProductData.builder()
                                 .setName("J'Toye OaaS — " + mode.name())
                                 .build())
-                        .build());
+                        .build(), priceOptions);
 
                 SubscriptionCreateParams.Builder subParams = SubscriptionCreateParams.builder()
                         .setCustomer(customerId)
                         .addItem(SubscriptionCreateParams.Item.builder()
                                 .setPrice(price.getId())
+                                .setQuantity(quantity)
                                 .build())
                         .putMetadata("tenant_id", tenantId.toString())
                         .putMetadata("billing_plan_mode", mode.name());
@@ -133,7 +207,10 @@ public class StripeBillingService {
                     subParams.setDefaultPaymentMethod(request.paymentMethodId());
                 }
 
-                Subscription subscription = Subscription.create(subParams.build());
+                RequestOptions subOptions = RequestOptions.builder()
+                        .setIdempotencyKey("billing-subscription-" + tenantId + "-" + price.getId())
+                        .build();
+                Subscription subscription = Subscription.create(subParams.build(), subOptions);
                 tenant.setStripeSubscriptionId(subscription.getId());
                 tenant.setSubscriptionStatus(mapStatus(subscription.getStatus()));
                 tenant.setSubscriptionCancelAtPeriodEnd(

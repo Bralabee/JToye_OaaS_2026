@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Per-Location Subscription Quantity, Kept in Step With Shop Create and Delete (Phase 30 30-25, PAY-02, D-04) (#1067) — 2026-10-31
+
+- **D-04 (`all-shops`):** SAAS_HYBRID_STANDARD and SAAS_FLAT_PREDICTABLE bill one unit per shop. WALK_SETUP_STEPDOWN bills one per account. The ruling is in `evidence/30-25-d04-decision.txt`.
+- **`ShopRepository.countByTenantId`:** has an explicit `tenant_id` predicate, because `shops_public_read` (V16) shows every tenant's published shops. A bare count overcounted under RLS, and a break arm proves it.
+- **`StripeBillingService`:** sets the subscription item quantity from the location count. Idempotency keys are added on `Price.create` and `Subscription.create`.
+- **`BillingLocationSync`:** after a shop create or delete commits, it updates the Stripe `SubscriptionItem` quantity with key `billing-qty-<item>-<qty>-<event>`. A Stripe failure is logged and counted on `jtoye.billing.location_sync.failed`, never rolled into the shop write. A failed sync is not retried; the next shop change for that tenant corrects it.
+
 ### Billing Endpoints Gate on Group Admin, So Real Keycloak Users Reach Them (#1020) (#1068) — 2026-10-31
 
 `BillingController` gated its four endpoints on `hasAnyRole('ADMIN', 'TENANT_ADMIN', 'VENDOR', 'OPERATOR')`. Those uppercase roles never match the lowercase `ROLE_*` authorities that Keycloak realm roles become, so `/api/v1/billing/subscription` refused every real user with 403.
