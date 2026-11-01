@@ -113,15 +113,18 @@ describe("Public landing page (/)", () => {
     expect(headerLink.getAttribute("href")).toBe("/for-operators")
   })
 
-  it("renders the shared public footer (allergen note + guide link)", async () => {
+  it("renders the shared public footer (allergen note + vendor link)", async () => {
     render(await Home())
     expect(
       screen.getByText(/allergen info available on all products/i)
     ).toBeTruthy()
-    const guideLink = screen.getByRole("link", {
-      name: /business model guide/i,
+    // Was the business-model-guide link, which SW-CLR-05 (swarm epic #964)
+    // removed from the footer; "Become a vendor" is footer-only copy, so it
+    // still proves the footer rendered.
+    const vendorLink = screen.getByRole("link", {
+      name: /become a vendor/i,
     })
-    expect(guideLink.getAttribute("href")).toBe("/business-model-guide")
+    expect(vendorLink.getAttribute("href")).toBe("/for-operators")
   })
 
   it("renders REAL shops in the kitchen row, and none of the invented vendors (#544)", async () => {
