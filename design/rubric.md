@@ -36,3 +36,6 @@ screenshots against these and taste-skill's `references/critique.md` at design-r
   the proposal states its system (one brand hue with a tint/shade ramp, neutrals, one accent, the
   60-30-10 split, contrast). No colour "from nowhere". (Round 2: "the red colour from out of nowhere
   is cringe"; "not … cognisant of colour theories".)
+- **R14 · The phone's first screen shows food at a size you can taste.** Chip thumbnails do not
+  count. (Elevate run 2026-11-01: the build won the blind A/B, and the scorer's top weakness was
+  the phone first screen with no real food picture.)
