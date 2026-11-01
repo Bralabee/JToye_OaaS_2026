@@ -15,7 +15,7 @@ import {
   CONTAINS_LABEL_COPY,
   NO_ALLERGENS_DECLARED_COPY,
   NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
-  MAY_CONTAIN_NOT_STATED_COPY,
+  MAY_CONTAIN_NONE_LISTED_COPY,
   INGREDIENTS_EMPHASIS_HELP_COPY,
   MAY_CONTAIN_HELP_COPY,
   KEEP_AS_IS_COPY,
@@ -121,8 +121,8 @@ describe("D-16: may contain is its own line", () => {
     expect(mayContainCopy([])).toBeNull()
   })
 
-  it("SW-PRY-03: the storefront's empty case reads 'May contain: not stated', never silence", () => {
-    expect(MAY_CONTAIN_NOT_STATED_COPY).toBe("May contain: not stated")
+  it("SW-PRY-03: the storefront's empty case reads 'May contain: none listed', never silence", () => {
+    expect(MAY_CONTAIN_NONE_LISTED_COPY).toBe("May contain: none listed")
   })
 
   it("the vendor helper text says these are not ingredients", () => {

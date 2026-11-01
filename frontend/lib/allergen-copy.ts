@@ -86,7 +86,7 @@ export function tickAllergenCopy(name: string): string {
 
 /**
  * D-16: the "may contain" line (cross-contact), the same words the PPDS label prints.
- * Returns null for an empty list; a storefront surface then states MAY_CONTAIN_NOT_STATED_COPY.
+ * Returns null for an empty list; a storefront surface then states MAY_CONTAIN_NONE_LISTED_COPY.
  */
 export function mayContainCopy(names: readonly string[]): string | null {
   return names.length === 0 ? null : `May contain: ${names.join(", ")}`
@@ -97,9 +97,11 @@ export function mayContainCopy(names: readonly string[]): string | null {
  * public product payload cannot tell "the vendor recorded none" from "the vendor recorded nothing":
  * core-java's MayContainAllergens.undeclaredNames returns [] for a null mask, a 0 mask and a mask
  * whose every bit is already declared, so `mayContainAllergens: []` is all three. Printing nothing
- * made that look like a statement of "none"; this says only what is true in every one of them.
+ * made that look like a statement of "none". "None listed" is true in every one of them: it says no
+ * name is on the list, not that the vendor said nothing (the wording "not stated", reviewed on PR
+ * #1075, was false for a vendor who deliberately recorded an empty set) nor that there is no risk.
  */
-export const MAY_CONTAIN_NOT_STATED_COPY = "May contain: not stated"
+export const MAY_CONTAIN_NONE_LISTED_COPY = "May contain: none listed"
 
 
 // ---------------------------------------------------------------------------------------------

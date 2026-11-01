@@ -20,7 +20,7 @@
 
 import { ALLERGENS, getAllergenNames } from "@/types/api"
 import {
-  MAY_CONTAIN_NOT_STATED_COPY,
+  MAY_CONTAIN_NONE_LISTED_COPY,
   NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
   containsCopy,
   mayContainCopy,
@@ -45,7 +45,7 @@ export interface ProductAllergenStatement {
   /** May-contain names (D-16), catalogue order, never a declared one. */
   mayContain: string[]
   /**
-   * "May contain: Sesame", or "May contain: not stated" when no name reached the browser (SW-PRY-03:
+   * "May contain: Sesame", or "May contain: none listed" when no name reached the browser (SW-PRY-03:
    * the payload cannot tell "none" from "nothing recorded", so the line never implies "none").
    * Never null: every surface that reads it states it.
    */
@@ -83,6 +83,6 @@ export function productAllergenStatement(
     undeclared,
     undeclaredLine: undeclaredIngredientCopy(undeclared),
     mayContain,
-    mayContainLine: mayContainCopy(mayContain) ?? MAY_CONTAIN_NOT_STATED_COPY,
+    mayContainLine: mayContainCopy(mayContain) ?? MAY_CONTAIN_NONE_LISTED_COPY,
   }
 }

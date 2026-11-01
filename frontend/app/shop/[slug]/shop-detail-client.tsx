@@ -244,7 +244,7 @@ function ProductCard({
                   states it. The card printed no cross-contact line at all, so a customer scanning
                   the menu never saw "May contain: Sesame" unless they opened the dish; and an empty
                   list printed nothing, which read the same as "none". It now always says one of
-                  the names or "not stated" (the payload cannot tell "none" from "not recorded"). */}
+                  the names or "none listed" (the payload cannot tell "none" from "not recorded"). */}
               <p
                 className={
                   allergens.mayContain.length > 0 ? "font-medium text-amber-800" : "text-slate-600"

@@ -306,7 +306,7 @@ export function ProductDetailModal({
               )}
               {/* SW-PRY-03 (swarm epic #964): always stated. An empty list used to print nothing,
                   so "the vendor said none" and "the vendor said nothing" looked identical; the
-                  payload cannot tell them apart, so the empty case reads "May contain: not stated". */}
+                  payload cannot tell them apart, so the empty case reads "May contain: none listed". */}
               <p
                 className={
                   allergens.mayContain.length > 0

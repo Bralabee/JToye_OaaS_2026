@@ -293,23 +293,23 @@ describe("ProductDetailModal allergen section (31.1-21)", () => {
     expect(text).not.toMatch(/(?<!not the same as )allergen[-\s]free|safe for you|no allergens present/i)
   })
 
-  it("SW-PRY-03: an empty may-contain list reads 'May contain: not stated', never silence", () => {
+  it("SW-PRY-03: an empty may-contain list reads 'May contain: none listed', never silence", () => {
     renderModal(product({ allergenMask: 0, mayContainAllergens: [] }))
-    expect(within(allergenSection()).getByText("May contain: not stated")).toBeInTheDocument()
+    expect(within(allergenSection()).getByText("May contain: none listed")).toBeInTheDocument()
   })
 
-  it("SW-PRY-03: an older backend (field absent) also reads 'May contain: not stated'", () => {
+  it("SW-PRY-03: an older backend (field absent) also reads 'May contain: none listed'", () => {
     const legacy = product({ allergenMask: MILK })
     delete (legacy as Partial<PublicProduct>).mayContainAllergens
     renderModal(legacy)
-    expect(within(allergenSection()).getByText("May contain: not stated")).toBeInTheDocument()
+    expect(within(allergenSection()).getByText("May contain: none listed")).toBeInTheDocument()
   })
 
-  it("SW-PRY-03: a named may-contain list replaces the 'not stated' line, never both", () => {
+  it("SW-PRY-03: a named may-contain list replaces the 'none listed' line, never both", () => {
     renderModal(product({ allergenMask: 0, mayContainAllergens: ["Sesame"] }))
     const section = allergenSection()
     expect(within(section).getByText("May contain: Sesame")).toBeInTheDocument()
-    expect(within(section).queryByText("May contain: not stated")).toBeNull()
+    expect(within(section).queryByText("May contain: none listed")).toBeNull()
   })
 })
 

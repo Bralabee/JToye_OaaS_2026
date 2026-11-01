@@ -221,8 +221,8 @@ describe("D-18 / D-09: the card is never silent, and never says 'none' over the 
     delete (legacy as Partial<PublicProduct>).mayContainAllergens
     await renderMenu([legacy])
     expect(within(cardOf("Plain Rice")).getByText("No allergens declared – not the same as allergen-free")).toBeInTheDocument()
-    // SW-PRY-03: the absent field reads as "not stated", never as silence.
-    expect(within(cardOf("Plain Rice")).getByText("May contain: not stated")).toBeInTheDocument()
+    // SW-PRY-03: the absent field reads as "none listed", never as silence.
+    expect(within(cardOf("Plain Rice")).getByText("May contain: none listed")).toBeInTheDocument()
   })
 })
 
@@ -274,17 +274,17 @@ describe("SW-ADE-06 / SW-PRY-03 (swarm epic #964): the card states 'may contain'
     expect(within(cardOf("Suya")).getByText("May contain: Gluten, Sesame")).toBeInTheDocument()
   })
 
-  it("an empty may-contain list reads 'May contain: not stated' (none and not-recorded are one wire state)", async () => {
+  it("an empty may-contain list reads 'May contain: none listed' (none and not-recorded are one wire state)", async () => {
     await renderMenu([dish("p1", "Plain Rice", { mayContainAllergens: [] })])
     const card = cardOf("Plain Rice")
-    expect(within(card).getByText("May contain: not stated")).toBeInTheDocument()
-    expect(addButton("Plain Rice")).toHaveAccessibleDescription(/May contain: not stated/)
+    expect(within(card).getByText("May contain: none listed")).toBeInTheDocument()
+    expect(addButton("Plain Rice")).toHaveAccessibleDescription(/May contain: none listed/)
   })
 
-  it("never both: a named list replaces 'not stated'", async () => {
+  it("never both: a named list replaces 'none listed'", async () => {
     await renderMenu([dish("p1", "Suya", { mayContainAllergens: ["Peanuts"] })])
     const card = cardOf("Suya")
     expect(within(card).getByText("May contain: Peanuts")).toBeInTheDocument()
-    expect(within(card).queryByText("May contain: not stated")).toBeNull()
+    expect(within(card).queryByText("May contain: none listed")).toBeNull()
   })
 })
