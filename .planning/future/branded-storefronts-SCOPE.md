@@ -2,7 +2,8 @@
 
 **Status: FUTURE. Not part of v2.3, not in `ROADMAP.md`, not in `ISSUE-DISPOSITION.md`.**
 Scoped 2026-10-31 at the owner's request. Nothing here is started, numbered, or scheduled. It
-does not compete with Phases 28–35 for time, review, or Flyway numbers.
+does not compete with any numbered phase in `ROADMAP.md` (28–39 as of 2026-11-01) for time,
+review, or Flyway numbers.
 
 ## Why it exists
 
@@ -32,8 +33,11 @@ Three options were considered. The owner ruled on 2026-10-31:
    committed vendor, this is not built.
 
 When the gate opens, plan this as its own milestone or phase through GSD (`/gsd-new-milestone` or
-`/gsd-phase`). **Re-verify every "Evidence" line below first**: they were read from main
-`eff54aa0` on 2026-10-31, and the code will have moved.
+`/gsd-phase`). **Re-verify every "Evidence" line below first**: they were read at `10a34003` (main merged in,
+2026-11-01), and the code will have moved. `scripts/check-doc-citations.sh` does not scan this
+file by default (its list is the evergreen docs); run it scoped,
+`CITATION_DOCS=.planning/future/branded-storefronts-SCOPE.md scripts/check-doc-citations.sh`,
+to check the `file:line` citations here.
 
 ## What the vendor and their customer get
 
@@ -44,19 +48,19 @@ When the gate opens, plan this as its own milestone or phase through GSD (`/gsd-
   same vendor dashboard, the same order list, the same payouts. **There is one shop record, not two.**
 - A small "Powered by OaaS" mark stays in the footer (whether it can be removed is an open decision).
 
-## Evidence: what exists today (main `eff54aa0`, 2026-10-31)
+## Evidence: what exists today (`10a34003`, 2026-11-01)
 
 | Area | Today | Gap for this feature |
 |---|---|---|
 | Shop pages | `frontend/app/shop/[slug]/` (page, cart, checkout), slug-addressed, with old-slug 301s (`V86__shop_slug_alias.sql`) | No link between a web address (host) and a shop |
 | Branding | `shops.logo_url`, `banner_url`, `description` (`V16__public_storefront.sql`) | No colours, font, favicon, or display-name override |
 | Public API | `PublicStorefrontController.java` under `/api/v1/public` (shop, products, slots, guest order, reviews, promotions) | Reused as is; nothing to build |
-| Page metadata | `generateMetadata` in `shop/[slug]/page.tsx`: canonical is `/shop/<slug>`, origin from `resolvePublicOrigin()` (`APP_PUBLIC_ORIGIN` → `NEXTAUTH_URL`), **one origin per deployment** | Canonical and `metadataBase` must follow the vendor's address for that shop |
-| Customer sign-in | `jtoye-customers` Keycloak realm, `storefront-client`, PKCE, HttpOnly cookies (`shop/signin/page.tsx`); `frontend/auth.ts` with `trustHost: true` | Cookies are per address: each vendor address needs its own redirect URI and web origin in Keycloak |
+| Page metadata | `generateMetadata` in `shop/[slug]/page.tsx`: canonical is `/shop/<slug>`, origin from `resolvePublicOrigin(req)` in `frontend/lib/public-origin.ts` (`APP_PUBLIC_ORIGIN` → `NEXTAUTH_URL` → the request origin LAST, on purpose: a raw `Host` header is attacker-chosen, and inside a container it is a bind address, #467/#504), **one origin per deployment** | Canonical and `metadataBase` must follow the vendor's address for that shop, resolved from a VERIFIED address record and passed in above the env values — never read from the raw `Host` header |
+| Customer sign-in | `jtoye-customers` Keycloak realm, `storefront-client`, PKCE, HttpOnly cookies (`shop/signin/page.tsx`; the flow is `frontend/lib/customer-auth.ts`, whose `redirect_uri` is already built from `window.location.origin`, so it is per address today). `frontend/auth.ts` is the VENDOR realm's NextAuth config, not this flow. Sign-out: `app/api/customer-auth/logout-url/route.ts` builds `post_logout_redirect_uri` from `resolvePublicOrigin(req)` | Cookies are per address: each vendor address needs its own redirect URI and web origin in Keycloak. Sign-out on a vendor address must return to that address: today it would land on the platform origin, which breaks BSF-05 |
 | CORS | `CorsConfig.java`, a fixed list from `cors.allowed-origins` | Only matters if the browser calls the API from the vendor address; avoid that by sending calls through the same-address frontend |
-| Email links | `NotificationProperties.baseUrl` (one value), `trackingBaseUrl` in `EmailNotificationService` | Order and tracking links must point at the address the customer ordered from |
+| Email links | `NotificationProperties.Unsubscribe` holds `baseUrl` and `oneClickBaseUrl` (two values, #516); `notification.email.tracking-base-url` is read by `EmailNotificationService`, `OrderPaymentLinkService` (through `jtoye.payment-links.base-url`, which falls back to it), `DsarAccessExportService` and `DsarOutcomeMailer` | Order, tracking and payment-link links must point at the address the customer ordered from. DSAR links are customer-scoped, with no order to read an address from: they stay on the platform address |
 | TLS / ingress | nginx ingress, cert-manager `letsencrypt-prod`, explicit host list per overlay (`k8s/base/ingress.yaml`, `k8s/staging/ingress-hosts-patch.yaml`) | Hosts are written into manifests by hand; vendor addresses must be added without a manifest edit and redeploy per vendor |
-| Framing | `X-Frame-Options: DENY` (`k8s/base/ingress.yaml:35`) | **Stays.** This feature never embeds the checkout in another site |
+| Framing | `X-Frame-Options: DENY` (`k8s/base/ingress.yaml:46`) | **Stays.** This feature never embeds the checkout in another site |
 | Settlement | `OnboardingModel.WHITE_LABEL` → `DIRECT_CHARGE_VENDOR_MOR` | **Unrelated.** "White label" in the code is about who is the legal seller, not branding. Do not conflate the two |
 
 ## Scope
@@ -99,9 +103,17 @@ When the gate opens, plan this as its own milestone or phase through GSD (`/gsd-
    date, certificate state) with globally unique host, like `shops.slug` and `shop_slug_alias`.
    Branding columns on `shops` or a `shop_branding` table. Flyway number: the next free one at
    the time; never reserve one now.
-2. **Frontend:** host-based resolution in `frontend/middleware.ts` (rewrite `/` on a vendor host to
-   the shop's route internally), a cached host → shop lookup against a new public endpoint, and
-   per-request origin for metadata in place of the single `resolvePublicOrigin()`.
+2. **Frontend:** host-based resolution in `frontend/middleware.ts`. On a vendor host, rewrite `/`
+   AND the whole `shop/[slug]/**` subtree (cart, checkout, orders) plus the shared `shop/signin`,
+   `shop/account`, `shop/orders` and `shop/auth/callback` routes to that shop, and make every
+   emitted path host-aware: the old-slug `permanentRedirect('/shop/<canonical>')` in
+   `shop/[slug]/page.tsx`, the checkout `returnUrl` and its `router.push` targets. Rewriting `/`
+   alone leaves a basket on `order.toyefoods.co.uk` at `/shop/toye-foods/cart` and the directory
+   reachable, against BSF-01 and BSF-05. The middleware matcher excludes `/api/*`, `_next/*` and
+   static assets, so `app/api/customer-auth/*` and any route-served `robots.txt` / `sitemap.xml`
+   need their own host → shop lookup. That lookup is a cached call against a new public endpoint
+   that returns only VERIFIED, ACTIVE addresses, and its origin is passed into
+   `resolvePublicOrigin()` above the env values, never derived from the raw `Host` header.
 3. **TLS and routing:** compare (a) cert-manager with one Certificate per address created by a
    controller or operator job, against (b) a front layer that issues certificates on demand
    (Caddy on-demand TLS, or a managed service such as Azure Front Door custom domains). (a) fits
@@ -131,7 +143,11 @@ When the gate opens, plan this as its own milestone or phase through GSD (`/gsd-
 - **D4 — Self-serve or operator-run.** First version: an operator adds addresses for vendors
   (fewer moving parts). Self-serve comes later.
 - **D5 — Subdomain fallback.** Offer `toyefoods.<platform-domain>` to vendors with no domain of
-  their own? It is cheap once BSF-01/03 exist (one wildcard certificate).
+  their own? BSF-01 covers the routing but NOT the certificate: the cluster issuer
+  (`letsencrypt-prod`, `k8s/base/ingress.yaml`) solves ACME over HTTP-01
+  (`k8s/base/networkpolicies/60-acme-http01-solver.yaml`), and Let's Encrypt issues a wildcard
+  `*.<platform-domain>` only over DNS-01, which needs a DNS-01 solver and a DNS-provider
+  credential. That is its own building block, not a by-product of BSF-03.
 
 ## Risks
 
@@ -142,8 +158,9 @@ When the gate opens, plan this as its own milestone or phase through GSD (`/gsd-
 - **Split sign-in.** A customer signed in on the OaaS storefront is not automatically signed in on
   the vendor address (different cookies). The Keycloak session makes it one redirect, not a new
   password, but it must be tested on a real second address.
-- **A regression on the platform's own address.** The host middleware runs on every request.
-  The current Playwright and axe suites must pass unchanged on the platform address, and a
+- **A regression on the platform's own address.** The host middleware runs on every page request
+  (the matcher in `frontend/middleware.ts` excludes `/api/*`, `_next/*` and static assets). The
+  current Playwright and axe suites must pass unchanged on the platform address, and a
   vendor-address suite added beside them.
 
 ## Alternatives (future, not planned)
