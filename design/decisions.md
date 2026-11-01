@@ -25,6 +25,9 @@ mandatory mobile and `prefers-reduced-motion` floor; GSAP dynamic-imported, 0 kb
   content present at load, at most one deliberate motion moment. KEEP its engineering rules: GSAP
   only on marketing routes (0 kb on app routes), and a still floor for mobile and
   `prefers-reduced-motion`.
+- **No tool measures the one-moment cap:** ruling `section-entrance` avoid lets inspect skip
+  `still-page`, which also measured `ambient-motion` (`rule-check.sh allow` prints it as SHARED).
+  Each run's `direction.md` names its one moment and records that the code was read for others.
 - **Review when:** a dealt direction's one motion moment needs a scroll-driven scene.
 
 ## D4 · 2026-07-15 · Oxblood `#3A0B0D` + Work Sans, matched to jtoyedigital.co.uk (sketch 004, PR #232)
@@ -51,10 +54,16 @@ implement 006-A/007 without a fresh go-ahead.
   production notes. The 005 rejection stays as `rubric.md` R2.
 - **Review when:** step 3 of the landing run.
 
-## D8 · 2026-10-22 · `/shop` cards: one stretched link covering the whole card (issue #1027)
+## D8 · 2026-10-22 · `/shop` cards: one stretched link covering the whole card
+Ruled on issue #1027 (option 1), shipped in PR #1053 on 2026-10-30.
 - **Status: KEEP.** Matches the `card-hover` ruling: a clickable card is one control.
 - **Review when:** the card component is redesigned.
 
-## D9 · 2026-04 · Orange-rose gradient banners on shop cards
-Restored by the PR #52 revert and kept since.
-- **Status: SUPERSEDED 2026-11-01** by `rulings.tsv` `gradient-decoration` ban.
+## D9 · 2026-04 · Gradient banners and tiles as decoration
+Orange-rose shop-card banners were restored by the PR #52 revert; since sketch 004 the live
+gradients are: the `/shop` card banner amber→oxblood (`app/shop/shop-discovery-client.tsx`), and on
+the landing (`app/page.tsx`) the radial warm wash behind the hero, the amber→orange operator door
+and the dish tiles.
+- **Status: SUPERSEDED 2026-11-01** by `rulings.tsv` `gradient-decoration` ban, page and app. A run
+  that touches one of these surfaces replaces its gradient; new work adds none, whatever the
+  existing code does.

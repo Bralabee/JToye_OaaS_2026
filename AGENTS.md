@@ -434,7 +434,7 @@ You own the server-side Java in `~/IdeaProjects/JToye_OaaS_2026/core-java/`.
   `gradle/wrapper/gradle-wrapper.properties`, Spring Boot and every library in
   `core-java/build.gradle.kts`. Never restate a patch version in this charter: it is emitted into
   the app repo's `AGENTS.md`, and a stale version fails its `check-doc-versions` gate.
-- PostgreSQL 15 with **row-level security**. Every query runs inside a `TenantContext`.
+- PostgreSQL 18 with **row-level security**. Every query runs inside a `TenantContext`.
 - Flyway migrations are forward-only and were at V51 at the v2.2 close.
 - A **V46 transactional outbox** exists. New async work rides it — do not invent a second
   delivery mechanism.

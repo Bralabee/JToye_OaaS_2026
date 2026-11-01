@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Docs and agent text only. No code, API, migration or runtime change.
 
 - **`design/`, new.** The project layer of the `design-run` process. `brief.md` (the public landing page, confirmed by Sanmi), `decisions.md` (nine rulings carried from `.planning/sketches/MANIFEST.md` with source, status and a review trigger, including the 2026-11-01 lifts and step-2 rulings), `rulings.tsv` (eight design-skill conflict rulings), `rubric.md` (six past verdicts as checkable lines) and `references/README.md` (waiting for the owner's references).
-- **Agent targets.** The VS Code, Cursor and `AGENTS.md` targets for `oaas-frontend` and `oaas-release-qa` are regenerated from jtoye-orgos#47, so they name `design-run` instead of the superseded `frontend-craft-sequence`.
+- **Agent targets.** The VS Code, Cursor and `AGENTS.md` targets for `oaas-frontend` and `oaas-release-qa` are regenerated from jtoye-orgos#47, so they name `design-run` instead of the superseded `frontend-craft-sequence`. The generator would also have written the `oaas-core-java` block back to PostgreSQL 15 (its jtoye-orgos charter predates #939); that line is kept at 18 by hand until the charter is fixed.
 
 ### Role-Gated Dashboard Nav, Staff Invite Shop, Orders Search, Finance Tile States and Product Dialog Fixes (swarm epic #964) (#1076) — 2026-11-01
 
