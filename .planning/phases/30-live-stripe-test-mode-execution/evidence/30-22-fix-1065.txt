@@ -218,3 +218,75 @@ Structural: `grep -cE '^[^#]*jq .*\| head -n 1' .github/workflows/e2e-nightly.ym
     3 matching: rc=0
   URLs the old step requested: events?type=payment_intent.succeeded&limit=25 and the refund types &limit=25 —
     no created[gte]: a shared sandbox with > 25 newer events pushes this run's off page one.
+
+-------------------------------------------------------------------------
+THE FIX — 0ebfaf66 (one commit for both findings, on 1f69a7f0, fast-forward)
+-------------------------------------------------------------------------
+  scripts/gates/e2e-skip-budget.conf: the refund ALLOW and its justification/REMOVE WHEN block deleted; MAX_SKIPS
+    6 -> 4; the measurement comment rewritten to nightly 41158370941's measured 6 minus the deleted test's 2 = 4,
+    dated 2026-11-01, with both report shapes (Phase 1 report.json: 4; Phase 2 report-stripe.json: 0; union 4)
+    and the earlier 2026-08-28 figure kept as one line of history.
+  FOR PLAN 30-23's EXECUTOR: its "the ALLOW retired" step is ALREADY DONE here — the test that ALLOW exempted is
+    deleted by #1065, so there is no refund ALLOW left to delete and none should be looked for. 30-23's first
+    branch nightly will therefore NOT be red on S-3 (its Task 2 <fails_when> expected that red); with the ALLOW
+    gone the expected first-run result is the skip-budget step GREEN at 4 skipped of budget 4 — record that, and
+    a skip count other than 4 is the finding.
+  .github/workflows/e2e-nightly.yml "Stripe events reached the app": no `| head` anywhere; each Stripe response
+    is captured whole (curl failure -> ::error), jq selects `first(.data[] | select(...) | .id) // empty`; the
+    window is created[gte] = the PaymentIntent's own `created` (one GET /v1/payment_intents/<pi>; non-numeric ->
+    ::error), limit=100 (API maximum); a miss is ::error naming has_more, rc 1. Added (Rule 2): $pi now enters
+    a URL path, so it is shape-checked (pi_ + [A-Za-z0-9_] only) first.
+  Deviation (Rule 1, caused by this fix): frontend/e2e/layout-width-contract.spec.ts l.135 quoted "MAX_SKIPS 6";
+    now "its MAX_SKIPS" (comment only; no number to go stale again). This changes the spec digest — nothing
+    commits a digest (rg for it rc=1), so only locally stamped reports VOID, which is the contract.
+  docs/CHANGELOG.md, the #1065 entry: one clause — the ALLOW goes with the test, MAX_SKIPS 6 -> 4.
+
+-------------------------------------------------------------------------
+F1 GREEN (on 0ebfaf66; fixtures re-stamped with its digest 1b9f546d42411f60)
+-------------------------------------------------------------------------
+[01:28:42Z] the same two-report run (4 + 0): "tests : 7 total, 4 skipped (budget 4)", "1 ALLOW entr(ies)",
+  "PASS: all 4 skip(s) are declared and within the budget of 4."  rc=0
+  the 5-skip report: "FAIL: S-1 5 skipped test(s) exceeds the declared budget of 4"  rc=1   (S-1 can fail now)
+  control, the 1f69a7f0 conf blob against the same re-stamped 4+0 reports: S-3 stale ALLOW, rc=1
+  --selftest rc=0 (14 PASS, 0 FAIL) | --lint-conf rc=0 "PASS: lint 1 ALLOW block(s)" (was 2)
+
+-------------------------------------------------------------------------
+F4 GREEN (on the working tree at 01:25:57Z; committed step text cmp-identical to the harnessed one)
+-------------------------------------------------------------------------
+  The new step text, extracted by yaml.safe_load and run `bash --noprofile --norc -eo pipefail` with stubs:
+    3 matching events     -> rc=0, refund_event=evt_3_charge_refunded (the first match), pi_event=evt_pi_ok
+    20000 matching events -> rc=0, refund_event=evt_bulk_0_… (the first; the OLD text died 141 on this input)
+    no match, has_more=true -> rc=1 "::error::no refund event for re_TEST456 (pi_TEST123) since 1761900000
+                               (has_more=true)"   — loud, never a silent empty
+    intent id 'pi_X;rm -rf' -> rc=1 "::error::intent id 'pi_X;rm -rf' is not a Stripe id", no URL requested
+    URLs requested: /v1/payment_intents/pi_TEST123,
+      events?type=payment_intent.succeeded&created%5Bgte%5D=1761900000&limit=100,
+      events?types%5B%5D=refund.created&…&charge.refunded&created%5Bgte%5D=1761900000&limit=100
+  jq-only command on events3.json under set -euo pipefail: rc=0, exactly 1 line, "evt_3_charge_refunded"
+  structural `grep -cE '^[^#]*jq .*\| head -n 1'` = 0 (was 2); any `| head` in the step's non-comment lines = 0
+  Nightly structure, plan T2 verify 2 + scan-before-upload + a NEW no-head arm (no `| head` in the events step's
+    non-comment lines AND exactly two event queries carrying created%5Bgte%5D and limit=100):
+    0ebfaf66: rc=0 true=10/10 ; the plan's own 8-arm script 8/8
+    FAIL direction, 1f69a7f0's YAML: rc=0 true=9/10, "no-head False" (the new arm can fail)
+  shellcheck -S warning on the extracted step text rc=0 (old and new)
+  actionlint: rc=1 on BOTH 1f69a7f0 and 0ebfaf66 with the same 2 findings, both SC2129 style at l.139 (another
+    step, pre-existing); 0 findings in the changed step. Recorded, not fixed (out of scope).
+
+-------------------------------------------------------------------------
+GATES ON 0ebfaf66 (01:28:56Z, each rc recorded)
+-------------------------------------------------------------------------
+  check-e2e-skip-budget --selftest rc=0 (14) and --lint-conf rc=0 (1 ALLOW) | check-stripe-ci-keys --selftest
+  rc=0 (18/18) and --lint rc=0 | check-gate-enforcement rc=0 | check-changelog-contract rc=0 (85) |
+  check-changelog-cites-pr --pr 1065 rc=0 | docs-freshness rc=0 (6778, unchanged) | check-doc-metrics rc=0 (37/37)
+  | check-doc-versions rc=0 | check-claims rc=0 | check-handoff-contract rc=0 | check-ci-docs-skip-wiring rc=0 |
+  check-e2e-typecheck rc=0 | gitleaks git 1f69a7f0..HEAD --redact "no leaks found" rc=0
+  check-branch-behind-base.sh immediately before the push: rc=0 "10 ahead and 0 behind" origin/main bf98cde5
+    (ls-remote: main bf98cde5, branch 1f69a7f0 = the expected base, so the push was a fast-forward)
+  pre-push hook: P-2 ok, P-3 no secrets ok, P-4 claims ok, "all checks passed"
+PUSH [01:29Z]: `git push origin HEAD:agy/30-21-22-refund-e2e` rc=0 "1f69a7f0..0ebfaf66";
+  ls-remote 0ebfaf66ef0f79a01cebd311f5981d77a4734772; `gh pr view 1065 --json headRefOid` read back
+  0ebfaf66ef0f79a01cebd311f5981d77a4734772 (the first read immediately after the push still showed 1f69a7f0 —
+  API lag; the second read matched). PR still DRAFT, OPEN.
+Not done here: the round-1 resolution comment (the orchestrator's), /review-verify 1065 over 0ebfaf66, the live
+  nightly (30-23). The other eight round-1 findings are untouched, including the stale header of
+  vendor-refund-flow.spec.ts l.10-22.

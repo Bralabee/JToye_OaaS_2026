@@ -1,8 +1,23 @@
-# Handoff: Phase 30 (The Money Path, Executed) executing, 22/32 plans done; 30-21 adopted and 30-22 complete on PR 6 (#1065, head 1f69a7f0); next D3 round 3 on #1065, then 30-23; issue #1071 (edge Referrer-Policy) open
+# Handoff: Phase 30 (The Money Path, Executed) executing, 22/32 plans done; 30-21 adopted and 30-22 complete on PR 6 (#1065, head 0ebfaf66, round-1 fixes pushed); next the round-1 resolution, then /review-verify 1065, then 30-23; issue #1071 (edge Referrer-Policy) open
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-11-01 fix delta (RESUME HERE; everything below is history).**
+**2026-11-01 round-1 fix delta (RESUME HERE; everything below is history).**
+- A round-1 review of `1f69a7f0` admitted two findings. Both are fixed in ONE commit, **`0ebfaf66`**, which is now the **#1065 head** (DRAFT, OPEN, read back with `gh pr view 1065 --json headRefOid`). It was a fast-forward push from the detached scratch checkout, and Antigravity's worktree was not touched. The other eight findings are recorded by the orchestrator and were not changed.
+  - **F1:** the refund `ALLOW` was stale, because #1065 deletes the test it exempted. It is deleted, and `MAX_SKIPS` goes from 6 to 4, the number measured in nightly 41158370941 (6 minus the deleted test's 2). Before the fix, the 4+0 two-report run was rc 1 on S-3, and a fifth skip passed under ceiling 6. After it, the same run is rc 0 and a fifth skip is rc 1 on S-1.
+  - **F1 and 30-23:** 30-23's "ALLOW retired" step is **already done**. Its first branch nightly should be skip-budget GREEN at 4 of 4, not red on S-3. Any skip count other than 4 is the finding.
+  - **F4:** the Stripe events check no longer pipes into `head`, which dies 141 under pipefail with no `::error`. Instead, jq picks `first(...)`. The window starts at the PaymentIntent's `created` (`created[gte]`) with `limit=100`, and a miss is an `::error` naming `has_more`.
+    - The old step text died rc 141 with no output on 20000 matching events. The new text returns the first match.
+    - Nightly structure: 10/10, with a new no-head arm that reads 9/10 on the old YAML.
+  - Gates on `0ebfaf66` are all rc 0, and branch-behind-base reports 0 behind. actionlint finds the same 2 pre-existing SC2129 style issues at l.139 on both heads.
+  - Evidence: `evidence/30-22-fix-1065.txt`, section "ROUND 1 FIXES".
+- **Next:**
+  1. The orchestrator posts the round-1 resolution.
+  2. Then `/review-verify 1065`, over `0ebfaf66` only.
+  3. Then 30-23. The owner's CI keys come first, then the branch nightly.
+- **Antigravity:** its `-agy-p30-w21` worktree is behind again. Run `git pull --ff-only` there.
+
+**2026-11-01 fix delta (history; superseded by the round-1 fix block above).**
 - **Owner ruling 2026-11-01: "you fix it. you tackle the gaps."** Both 30-22 gaps are fixed on #1065. The pushes were fast-forwards from a detached scratch checkout; Antigravity's worktree was not touched. New head: **`1f69a7f0`** (DRAFT, OPEN, read back with `gh pr view 1065 --json headRefOid`). Commits:
   - `b7a827ac`: RED, a Jest read-back test (8/11 fail on the old rule)
   - `29d419c4`: the fix
