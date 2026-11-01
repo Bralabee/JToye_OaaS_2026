@@ -154,7 +154,9 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
                   customer could not read what was in their basket.
                   SW-MRC-13 (swarm epic #964): H2, not H3 — the page's H1 is "Your basket" and there is
                   no H2 between them, so an H3 here skipped a level. The size is the class, not the tag. */}
-              <h2 className="text-sm font-semibold text-slate-900 break-words">{item.title}</h2>
+              <h2 data-testid="cart-item-title" className="text-sm font-semibold text-slate-900 break-words">
+                {item.title}
+              </h2>
               {item.category && (
                 <p className="text-xs text-slate-600">{item.category}</p>
               )}

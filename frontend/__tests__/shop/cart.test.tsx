@@ -641,3 +641,48 @@ describe("Shop cart page — heading outline (SW-MRC-13)", () => {
     })
   })
 })
+
+/**
+ * PR #1075 review round 1 (inline 4435453773): e2e/cart-identity-boundary.verify.mjs (run by
+ * e2e-nightly) reads the basket's item titles with a CSS locator in cartPageState(). It was
+ * `article h3, h3.text-sm`; the SW-MRC-13 h3 -> h2 change left it matching nothing, so `titles`
+ * was always [] and every `titles.some(...)` arm went false. The script needs a stack, so this pins
+ * it statically: the locator is read out of the script's own source and run against the real
+ * basket page in jsdom (Playwright's CSS engine and querySelectorAll agree on a plain selector).
+ */
+describe("cart-identity-boundary.verify.mjs reads this page's item titles", () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it("the script's title locator matches every basket item title, and only them", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require("fs") as typeof import("fs")
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path") as typeof import("path")
+    const source = readFileSync(
+      path.join(__dirname, "..", "..", "e2e", "cart-identity-boundary.verify.mjs"),
+      "utf8"
+    )
+    const match = /const titles = await page\.locator\((["'`])(.+?)\1\)\.allTextContents\(\)/.exec(source)
+    // Control: the locator was found in the script, so the query below tests the script's selector.
+    expect(match).not.toBeNull()
+    const selector = match![2]
+
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [
+          { productId: "p1", title: "Jollof Rice", pricePennies: 899, quantity: 1, imageUrl: null, category: "Mains" },
+          { productId: "p2", title: "Puff Puff", pricePennies: 300, quantity: 2, imageUrl: null, category: "Sides" },
+        ],
+      })
+    )
+    renderCart()
+    await screen.findByRole("heading", { name: "Jollof Rice" })
+
+    const titles = Array.from(document.querySelectorAll(selector)).map((el) => el.textContent)
+    expect(titles).toEqual(["Jollof Rice", "Puff Puff"])
+  })
+})

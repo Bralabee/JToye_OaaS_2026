@@ -120,7 +120,11 @@ async function cartPageState(page, slug) {
     await empty.waitFor({ state: "visible", timeout: 10000 })
     return { empty: true, itemCount: 0, titles: [] }
   }
-  const titles = await page.locator("article h3, h3.text-sm").allTextContents()
+  // Item titles by an EXPLICIT testid, for the reason the count line below gives. This was
+  // `article h3, h3.text-sm`: the basket's item headings became h2 (SW-MRC-13, swarm epic #964),
+  // after which it matched nothing and every `titles.some(...)` arm read false (PR #1075 review).
+  // __tests__/shop/cart.test.tsx reads this locator out of this file and runs it on the real page.
+  const titles = await page.locator('[data-testid="cart-item-title"]').allTextContents()
   // The item-count line, located by an EXPLICIT testid.
   //
   // Two incidental couplings have already broken this, and the second was
