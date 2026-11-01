@@ -101,7 +101,9 @@
 #   --only ARM    run exactly one arm (headers, csp, cors, admin, burst or pay-referrer) in the
 #                 normal, read-only mode. Every other arm is NOT RUN, and the PASS line says so,
 #                 so it can never be read as the full result. Refused together with --fail-arms
-#                 and with --skip-burst; an unknown name is a usage error (exit 2).
+#                 and with --skip-burst. The value must EQUAL one arm name: an unknown, empty
+#                 (--only= or --only "") or space-joined name is a usage error (exit 2). A run
+#                 that evaluates no arm at all, however it got there, is VOID (exit 2).
 #
 # EXIT
 #
@@ -156,6 +158,7 @@ CONTEXT=""
 FAIL_ARMS=0
 SKIP_BURST=0
 ONLY=""
+ONLY_SET=0
 ARMS=(headers csp cors admin burst pay-referrer)
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -167,8 +170,8 @@ while [ $# -gt 0 ]; do
     --skip-burst) SKIP_BURST=1; shift ;;
     --only)
       if [ $# -lt 2 ]; then echo "USAGE ERROR: --only needs an arm name" >&2; exit 2; fi
-      ONLY="$2"; shift 2 ;;
-    --only=*) ONLY="${1#--only=}"; shift ;;
+      ONLY="$2"; ONLY_SET=1; shift 2 ;;
+    --only=*) ONLY="${1#--only=}"; ONLY_SET=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "USAGE ERROR: unknown argument \"$1\"" >&2; exit 2 ;;
   esac
@@ -179,11 +182,17 @@ if [ "$FAIL_ARMS" -eq 1 ] && [ "$SKIP_BURST" -eq 1 ]; then
   exit 2
 fi
 
-if [ -n "$ONLY" ]; then
-  case " ${ARMS[*]} " in
-    *" ${ONLY} "*) ;;
-    *) echo "USAGE ERROR: --only needs one of: ${ARMS[*]} (got \"${ONLY}\")" >&2; exit 2 ;;
-  esac
+if [ "$ONLY_SET" -eq 1 ]; then
+  # EXACT equality against one arm name. A substring test over the joined list accepted
+  # "headers csp", which then matched no arm, ran nothing and printed PASS: 0 of 0 (review of
+  # #1073). An empty value (--only= or --only "") is refused too: it must never read as "flag
+  # absent" and silently run every arm under the --only label.
+  only_ok=0
+  for a in "${ARMS[@]}"; do [ "$a" = "$ONLY" ] && only_ok=1; done
+  if [ "$only_ok" -ne 1 ]; then
+    echo "USAGE ERROR: --only needs exactly one of: ${ARMS[*]} (got \"${ONLY}\")" >&2
+    exit 2
+  fi
   if [ "$FAIL_ARMS" -eq 1 ]; then
     echo "USAGE ERROR: --only cannot be combined with --fail-arms (that mode must show every arm can fail)" >&2
     exit 2
@@ -817,6 +826,12 @@ else
 fi
 
 for l in "${REPORT_LINES[@]}"; do printf '%s\n' "$l"; done
+
+# Zero arms evaluated is VOID, however it happened: "found nothing" is never "clean".
+if [ "$REPORT_N" -eq 0 ]; then
+  [ "$FORMAT" = "tap" ] && echo "# VOID: no arm was evaluated" || echo "VOID: no arm was evaluated (mode=${MODE}); nothing is proven"
+  exit 2
+fi
 
 if [ "$N_VOID" -gt 0 ]; then
   [ "$FORMAT" = "tap" ] && echo "# VOID: ${N_VOID} of ${REPORT_N} could not be evaluated" || echo "VOID: ${N_VOID} of ${REPORT_N} arm(s) could not be evaluated; nothing is proven"

@@ -310,3 +310,144 @@ check-changelog-cites-pr.sh --pr 1073 --title "<the PR title>":
   with HEAD's CHANGELOG (no entry): cites_pr_before_rc=1; restored by content (grep -c '(#1071) (#1073)' = 1)
 PR body read back with gh pr view --json body: identical to the posted file except one trailing newline;
   attribution grep (co-authored|claude-session|generated with|claude.ai/code) = 0 (control string = 1)
+
+## 5. Review round 1 on 8d1fb2b3 (comments 4435036160..4435036392): the two admissible fixes
+
+### 5-merge. Finding 1 (gate): the branch was 1 behind origin/main (#1072, 50dee65a)
+git merge --no-ff --no-commit origin/main -> merge_rc=1, CONFLICT (content) in AGENTS.md, CLAUDE.md,
+README.md, docs/CHANGELOG.md, docs/metrics.json. Every conflict hunk in the four count files was a count
+line only (both sides bumped the same numbers).
+- metrics.json, AGENTS.md, CLAUDE.md, README.md: main's copy, then docs-freshness.sh -> rc 1 (stale);
+  docs-freshness.sh --write -> rc 0; regenerated json vs origin/main:
+    jest_blocks 3273 -> 3274, jest_files 275 -> 276, total_logical_invocations 6785 -> 6786
+  check-doc-metrics.sh before setting the prose numbers: rc 1 (10 FAIL lines: doc says 6785/3273/275);
+  after (numbers from the regenerated json only): rc 0 "PASS: all 37 prose metric claim(s) ..."
+- docs/CHANGELOG.md: main's copy, this PR's 11-line entry re-applied at the top of [Unreleased].
+    grep -c '(#1071) (#1073)'       = 1   (this PR's entry)
+    grep -c '(#1072) — 2026-11-01'  = 1   (main's #1072 entry)
+    conflict markers                 = 0
+    diff vs origin/main: 0 lines removed, 11 added
+  check-changelog-contract.sh rc 0 "PASS: all 87 merged feat/fix PR(s) since fbee244d are cited ..."
+  check-changelog-cites-pr.sh --pr 1073 rc 0 "PASS: docs/CHANGELOG.md has an entry heading citing #1073."
+Merge commit 555b1e64 (parents 8d1fb2b3 50dee65a); message read back, no attribution line (the only hit
+of the attribution grep was the word "regenerated with", a false positive of the "generated with" term).
+check-branch-behind-base.sh after: rc 0 "PASS: HEAD contains every commit on origin/main (50dee65a); it is 7
+commit(s) ahead and 0 behind."
+
+## 5. Round 1 finding 2 (fail-open --only): RED on the script at 8d1fb2b3, 2026-11-01T09:20:49Z
+$ bash scripts/check-staging-edge.sh --only "headers csp"
+check-staging-edge  (2026-11-01T09:20:49Z)  mode=normal,only=headers csp  context=none (read-only: public hosts only, no cluster call)
+PASS: 0 of 0 check(s) hold on the live edge (mode=normal,only=headers csp); only the headers csp arm was run (--only), every other arm is unproven by this run
+rc=0
+$ bash scripts/check-staging-edge.sh --only= --skip-burst
+check-staging-edge  (2026-11-01T09:20:49Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+PASS  [admin]
+FAIL  [pay-referrer]
+FAIL: 1 of 5 check(s) failed
+rc=1
+$ bash scripts/check-staging-edge.sh --only "" --skip-burst
+check-staging-edge  (2026-11-01T09:20:51Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+PASS  [admin]
+FAIL  [pay-referrer]
+FAIL: 1 of 5 check(s) failed
+rc=1
+
+### 5b. GREEN after the fix (exact-equality --only, empty refused, REPORT_N == 0 is VOID), 2026-11-01T09:22:47Z
+$ bash scripts/check-staging-edge.sh --only "headers csp"
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "headers csp")
+rc=2
+$ bash scripts/check-staging-edge.sh --only=
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "")
+rc=2
+$ bash scripts/check-staging-edge.sh --only ""
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "")
+rc=2
+$ bash scripts/check-staging-edge.sh --only="headers csp"
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "headers csp")
+rc=2
+$ bash scripts/check-staging-edge.sh --only bogus
+USAGE ERROR: --only needs exactly one of: headers csp cors admin burst pay-referrer (got "bogus")
+rc=2
+$ bash scripts/check-staging-edge.sh --only pay-referrer
+check-staging-edge  (2026-11-01T09:22:48Z)  mode=normal,only=pay-referrer  context=none (read-only: public hosts only, no cluster call)
+FAIL  [pay-referrer]
+        https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend's header with strict-origin-when-cross-origin)
+FAIL: 1 of 1 check(s) failed
+rc=1
+$ bash scripts/check-staging-edge.sh --only pay-referrer (EDGE_FORMAT=tap)
+TAP version 13
+1..1
+# check-staging-edge 2026-11-01T09:22:48Z mode=normal,only=pay-referrer context=none (read-only: public hosts only, no cluster call)
+not ok 1 - pay-referrer
+  ---
+  message: 'https://app-staging.olajay.co.uk/pay (HTTP 200): Referrer-Policy: strict-origin-when-cross-origin (expected exactly no-referrer; before issue #1071 the ingress snippet replaced the frontend''s header with strict-origin-when-cross-origin)'
+  ...
+# FAIL: 1 of 1
+rc=1
+
+### 5c. Backstop break arm: a scratch copy whose want() never matches (so no arm runs in a plain run)
+207:want() { return 1; }
+$ bash <copy> --skip-burst
+check-staging-edge  (2026-11-01T09:23:04Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+VOID: no arm was evaluated (mode=normal,skip-burst); nothing is proven
+rc=2
+$ EDGE_FORMAT=tap bash <copy> --skip-burst
+TAP version 13
+1..5
+# check-staging-edge 2026-11-01T09:23:04Z mode=normal,skip-burst context=none (read-only: public hosts only, no cluster call)
+# VOID: no arm was evaluated
+rc=2
+(control: the SAME break applied to the 8d1fb2b3 script, measured:)
+check-staging-edge  (2026-11-01T09:23:20Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS: 0 of 0 check(s) hold on the live edge (mode=normal,skip-burst); the burst arm was NOT RUN (--skip-burst), so the rate limit is unproven by this run
+rc=0
+
+### 5d. Unchanged modes after the fix
+$ bash scripts/check-staging-edge.sh --skip-burst
+check-staging-edge  (2026-11-01T09:23:04Z)  mode=normal,skip-burst  context=none (read-only: public hosts only, no cluster call)
+PASS  [headers]
+PASS  [csp]
+PASS  [cors]
+PASS  [admin]
+FAIL  [pay-referrer]
+FAIL: 1 of 5 check(s) failed
+rc=1
+1..5
+ok 1 - headers
+ok 2 - csp
+ok 3 - cors
+ok 4 - admin
+not ok 5 - pay-referrer
+# FAIL: 1 of 5
+tap rc=1
+[--only pay-referrer --fail-arms --context x] rc=2: USAGE ERROR: --only cannot be combined with --fail-arms (that mode must show every arm can fail)
+[--only pay-referrer --skip-burst] rc=2: USAGE ERROR: --only cannot be combined with --skip-burst (--only already names the one arm to run)
+[--fail-arms --skip-burst --context x] rc=2: USAGE ERROR: --skip-burst cannot be combined with --fail-arms (that mode must show every arm, burst included, can fail)
+
+### 5e. k8s/local/ingress-patch.yaml: comment no longer lists Referrer-Policy among the nulled snippet's headers (doc only)
+
+### 5f. Gates on the fixed tree
+k8s/scripts/check-render-invariants.sh rc=0 :: PASS: INV-1..INV-7, INV-11 and INV-12 hold across 4 kustomize target(s); INV-8, INV-9, INV-10, INV-14, INV-15, INV-17 and INV-19 hold on k8s/staging k8s/production; INV-16 holds on k8s/staging (not ap
+k8s/scripts/render-golden.sh rc=0 :: All overlay renders match their committed goldens.
+scripts/check-doc-citations.sh rc=0 :: PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+scripts/check-no-object-store-residue.sh rc=0 :: PASS: no retired object-store residue in 4506 tracked file(s); 2036 hit line(s) covered by 51 reasoned, live allowlist entr(ies).
+scripts/check-handoff-contract.sh rc=0 ::       NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+scripts/check-gate-enforcement.sh rc=0 :: PASS: every gate either runs in CI or has a declared reason it cannot, and every --selftest is run.
+scripts/check-k8s-copy-parity.sh rc=0 :: PASS: 9 pairs, all byte-equal; 1 jobs pair(s), job sets and labels equal.
+scripts/docs-freshness.sh rc=0 :: docs-freshness OK: metrics match source (total logical invocations: 6786).
+scripts/check-doc-metrics.sh rc=0 :: PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+scripts/check-changelog-contract.sh rc=0 :: PASS: all 87 merged feat/fix PR(s) since fbee244d are cited in docs/CHANGELOG.md (0 exempt).
+scripts/check-branch-behind-base.sh rc=0 :: PASS: HEAD contains every commit on origin/main (50dee65a); it is 7 commit(s) ahead and 0 behind.
+frontend: npx jest app/pay/__tests__ __tests__/header-snapshot.test.ts components/public/__tests__/cookie-notice.test.tsx -> jest_rc=0
+  components/public/__tests__/cookie-notice.test.tsx passed 30/30
+  app/pay/__tests__/pay-client.test.tsx passed 46/46
+  app/pay/__tests__/page-metadata.test.ts passed 1/1
+  __tests__/header-snapshot.test.ts passed 4/4
+tsc --noEmit rc=0; npm run lint rc=0 (0 errors, 27 warnings); package-lock.json cmp vs main checkout rc=0
+shellcheck: same classes as before (SC1091 x1, SC2178 x1 pre-existing, SC2329 info x11)
