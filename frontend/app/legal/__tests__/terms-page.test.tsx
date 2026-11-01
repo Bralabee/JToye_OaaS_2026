@@ -119,6 +119,15 @@ describe("the legal hub links the terms (SW-SAM-12)", () => {
     expect(within(main).getByRole("link", { name: /^privacy notice$/i })).toBeInTheDocument()
   })
 
+  it("links /contact from its own body, not only from the footer", () => {
+    render(<LegalPage />)
+    const main = document.querySelector("main")
+    if (!main) throw new Error("VOID: the legal hub rendered no main landmark")
+    // Control: the hub's identity list rendered.
+    expect(main.textContent).toContain("Company number")
+    expect(main.querySelector('a[href="/contact"]')).not.toBeNull()
+  })
+
   it("the terms page links back to the contact route", () => {
     renderMain()
     expect(screen.getAllByRole("link", { name: /contact page/i })[0]).toHaveAttribute(

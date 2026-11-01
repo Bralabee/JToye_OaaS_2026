@@ -82,7 +82,15 @@ export default function LegalPage() {
         <p className="mt-4 text-base leading-relaxed text-slate-600">
           The J&apos;Toye platform is operated by the company below. Individual
           vendor shops listed on the platform are run by their own businesses and
-          remain responsible for their own trading disclosures.
+          remain responsible for their own trading disclosures. To get in
+          touch with J&apos;Toye, see the{" "}
+          <Link
+            href="/contact"
+            className="font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            contact page
+          </Link>
+          .
         </p>
 
         <dl className="mt-8 space-y-4 text-base leading-relaxed">
