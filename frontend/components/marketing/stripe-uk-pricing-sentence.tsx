@@ -2,7 +2,7 @@ import { STRIPE_UK_PRICING_LINK_TEXT, STRIPE_UK_PRICING_URL } from "@/lib/pricin
 
 /**
  * The sentence that follows PRICING_CARD_FEE_LINE on /for-operators and
- * /legal/terms (SW-CLR-06, swarm epic #964): it points at Stripe's UK price list
+ * /legal/terms (SW-CLR-06, swarm epic 964 on GitHub): it points at Stripe's UK price list
  * instead of quoting a rate (owner ruling 2026-11-01).
  *
  * One component, so the wording, the new-tab attributes and the screen-reader
