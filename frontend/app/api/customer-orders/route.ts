@@ -59,7 +59,12 @@ export async function GET(req: NextRequest) {
       }
     )
     const body = await upstream.json().catch(() => ({}))
-    return NextResponse.json(body, { status: upstream.status })
+    // SW-PRY-06 (T-31.1-46): the history carries the customer's own allergy note, so neither the
+    // browser nor any proxy may keep a copy beyond the request.
+    return NextResponse.json(body, {
+      status: upstream.status,
+      headers: { "Cache-Control": "no-store" },
+    })
   } catch {
     return NextResponse.json({ error: "upstream_unavailable" }, { status: 502 })
   }

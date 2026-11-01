@@ -67,6 +67,22 @@ describe("/api/customer-orders", () => {
     expect(body.content[0].orderNumber).toBe("ORD-1")
   })
 
+  it("passes the customer's own allergy note through and marks the response no-store (SW-PRY-06)", async () => {
+    const note = "No sesame, my son is allergic"
+    global.fetch = jest.fn().mockResolvedValue({
+      status: 200,
+      json: async () => ({ content: [{ orderNumber: "ORD-1", allergyNote: note }] }),
+    }) as unknown as typeof fetch
+
+    const res = await GET(makeRequest("http://localhost/api/customer-orders?size=100", "tok-abc"))
+
+    expect(res.status).toBe(200)
+    // C5: neither the browser nor a proxy may keep a copy of a health note beyond the request.
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    const body = await res.json()
+    expect(body.content[0].allergyNote).toBe(note)
+  })
+
   it("never forwards a client-supplied email param (identity comes from the token only)", async () => {
     const fetchSpy = jest.fn().mockResolvedValue({
       status: 200,
