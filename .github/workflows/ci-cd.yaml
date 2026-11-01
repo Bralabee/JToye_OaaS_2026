@@ -2220,9 +2220,13 @@ jobs:
           # The three contact values are set by the owner in repository variables. Each
           # is optional by design: unset passes an EMPTY build-arg, which is exactly what
           # the image baked before they were wired (frontend/Dockerfile declares the ARGs
-          # with no default), and an empty value renders "not yet published" on /contact
-          # and the privacy notice instead of a blank or a guessed address. No deploy
-          # guard checks them: empty is a valid, honest state, unlike the Stripe key.
+          # with no default). What an empty value does differs per key: with the contact
+          # email AND phone both empty, /contact prints "has not yet published a general
+          # contact email address or phone number"; an empty data-protection email is OMITTED SILENTLY from
+          # the privacy notice and from /contact, with no visible cue (and the notice
+          # drops its whole contact block when the registered office is empty too). So
+          # a notice with no address line means the Art. 13 route is NOT configured. No
+          # deploy guard checks them: an empty value builds and deploys, unlike the Stripe key.
           # FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is optional HERE only: an empty value still
           # builds (frontend/Dockerfile keeps it out of the CR-02 gate), but deploy-staging
           # refuses anything that is not a pk_test_ key and deploy-production refuses a
