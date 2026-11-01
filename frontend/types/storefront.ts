@@ -400,7 +400,11 @@ export type OrderPlacedVia = "STOREFRONT" | "VENDOR"
  *     null means "not loaded with the list", not "not recorded". Never render it as either.
  *   placedVia — STOREFRONT | VENDOR; null when the order predates the channel being recorded.
  *   allergyNoteProvided / allergyNoteAcknowledgedAt — the customer sent an allergy note, and when
- *     the shop marked it read. The note's TEXT is never on this response (T-31.1-46).
+ *     the shop marked it read. The note's TEXT is not part of this record: it travels ONLY on the
+ *     signed-in `/public/orders/mine`, as `OrderSummary.allergyNote` (lib/customer-orders.ts), for a
+ *     contact-verified order, and the `/api/customer-orders` proxy passes it on only to My Orders
+ *     (`include=allergyNote`). The tracking response and the `?verify=` history never carry it
+ *     (T-31.1-46, SW-PRY-06 / T-31.1-102).
  */
 export interface PublicOrderAllergenRecord {
   acknowledgedAllergenMask?: number | null
