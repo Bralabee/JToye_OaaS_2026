@@ -1,9 +1,35 @@
 ---
 phase: 30-live-stripe-test-mode-execution
 plan: 23
+subsystem: e2e-stripe-refund-nightly
+tags: [pay-01, stripe, test-mode, ci-sandbox, e2e-nightly, stripe-cli, api-version, pr-1065]
 status: complete
+
+requires:
+  - phase: 30-live-stripe-test-mode-execution
+    provides: "30-22: the refund spec reads back exactly one refund and the CI sk_test_ never reaches an uploaded artifact (PR #1065, round-1 fix head 0ebfaf66)"
+provides:
+  - "CI Stripe sandbox jtoye-ci (acct_1UWtvjD29H13ktT5), a separate account from staging's (acct_1U0tklDpS9ICNeRt); repository secret STRIPE_TEST_SECRET_KEY and variable CI_STRIPE_PUBLISHABLE_KEY stored and verified without printing a value"
+  - "Five defects in the nightly's Stripe phase measured and fixed on PR #1065: stripe listen --all-snapshot; the skip-budget gate no longer VOIDs after an upstream failure; core-java pinned to :9090 on the recreate; stripe listen --latest (the dahlia/endive API-version mismatch); the cart-identity gate before the recreate"
+  - "Branch nightly run 41297105542 on b8d31922 green: Stripe phase 1/1, STRIPE-REFUND re_3UWwFrD29H13ktT51yMfGTP3, both events in processed_stripe_events, skip budget 4/4"
+  - "PR #1065 marked ready on b8d31922"
+affects: [30-24]
+
+key-files:
+  created:
+    - .planning/phases/30-live-stripe-test-mode-execution/evidence/30-23-pay01-branch-nightly.txt
+  modified:
+    - .github/workflows/e2e-nightly.yml
+
+key-decisions:
+  - "Dispatched on PR 6's branch agy/30-21-22-refund-e2e, not the plan's feat/30-pay01-refund-e2e (owner, 2026-11-01)"
+  - "Each nightly defect was fixed as observed with its cause measured first, per the checkpoint's instruction; none was in the plan"
+  - "stripe listen --latest: it forwards 2026-10-28.endive, the same major as stripe-java 34.0.0's 2026-09-30.endive, and the step prints the forwarded version"
+
+requirements-completed: [PAY-01]
+
+duration: 159min
 completed: 2026-11-01
-requirements: [PAY-01]
 pr: 1065
 branch: agy/30-21-22-refund-e2e
 head: b8d3192253e51ad84a7c7bc726bcdc539a66bb22

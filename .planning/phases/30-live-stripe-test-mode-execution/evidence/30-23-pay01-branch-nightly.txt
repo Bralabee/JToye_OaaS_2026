@@ -20,7 +20,7 @@ Keys read from the sandbox's API keys page, written to mode-600 files, verified 
     variable_set_rc=0
     CI_STRIPE_PUBLISHABLE_KEY 2026-11-01T08:17:06Z
     secret STRIPE_TEST_SECRET_KEY updated_at=2026-11-01T08:17:06Z
-    stored_len=107 prefix=pk_test_ suffix=26QtYu
+    stored_len=107 prefix=pk_test_ suffix=<redacted; compared equal>
     variable == sandbox pk (trailing newline was the only difference)
     key files shredded, dir removed
 
@@ -56,7 +56,8 @@ round-1 recorded finding 9 now OBSERVED); every earlier step success (key guard 
 Reproduced locally (Stripe CLI 1.54.0, the CI sandbox key via env, forward target a closed port):
     flags=[]              -> "must specify events to forward using --events, --all-snapshot, or --all-thin"
     flags=[--all-snapshot] -> "Getting ready..."
-Cause: Stripe CLI 1.5x `listen` no longer forwards every event by default. Fix: `--all-snapshot` (the v1 snapshot
+Cause: `stripe listen` no longer forwards every event by default. Observed on two versions: the nightly's pinned
+Stripe CLI 1.55.6 (run 41288249740, above) and the local reproduction's Stripe CLI 1.54.0 (not the pinned version). Fix: `--all-snapshot` (the v1 snapshot
 payloads core-java parses), plus the skip-budget gate skipped rather than VOID when the Stripe run did not run.
 Fix pushed to the PR branch as a fast-forward from a detached scratch checkout (commit and second run: below).
 

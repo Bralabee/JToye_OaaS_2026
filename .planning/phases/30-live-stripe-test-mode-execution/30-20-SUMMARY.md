@@ -14,7 +14,7 @@ provides:
   - "docs/api/openapi-snapshot.json: +4 payment-link paths (body-token preview and redeem), +2 schemas, +3 nullable stripeAccountId"
   - "D-03 on staging: a vendor's payment link paid through /pay with 4242; Stripe reads succeeded, livemode false, on the spec and on an independent stripe-get"
   - "evidence/30-20-pay-live.txt (RED and GREEN side by side), evidence/30-20-pay-360.png"
-  - "Issue #1071: the staging edge replaces /pay's Referrer-Policy no-referrer"
+  - "Issue #1071: the staging edge replaced /pay's Referrer-Policy no-referrer; fixed 2026-11-01 by PR #1073 (fd01dc0c), the live edge now sends no-referrer (evidence/30-20-pay-live.txt §9), issue closed, WINDOWS 52 fixed"
 affects: [30-21, 30-22, 30-32]
 
 estimate:
@@ -44,7 +44,7 @@ key-files:
     - core-java/src/main/resources/application.yml, docs/api/openapi-snapshot.json, .gitleaks.toml, docs/CHANGELOG.md (in PR 5)
 
 key-decisions:
-  - "The /pay edge Referrer-Policy defect is NOT fixed inside 30-20 (Rule 4): the fix touches every overlay's ingress and the staging edge gate and needs its own reviewed PR and deploy. Filed as issue #1071 [observed]; open WINDOWS entry 52"
+  - "The /pay edge Referrer-Policy defect is NOT fixed inside 30-20 (Rule 4): the fix touches every overlay's ingress and the staging edge gate and needs its own reviewed PR and deploy. Filed as issue #1071 [observed]; open WINDOWS entry 52. Superseded 2026-11-01: fixed by PR #1073 (fd01dc0c), entry 52 fixed"
   - "The spec's screenshot name (30-20-pay-mobile-360.png) was renamed to the plan's artifact name (30-20-pay-360.png) rather than editing the merged spec"
 
 requirements-completed: [PAY-04]
@@ -71,8 +71,8 @@ coverage:
     requirement: PAY-04
     verification:
       - kind: other
-        ref: "plan verify 1 at 2026-10-31T23:46:51Z: no_referrer=0 (edge sends strict-origin-when-cross-origin); issue #1071"
-        status: fail
+        ref: "2026-11-01, after PR #1073 (fd01dc0c) and deploy run 41295872214: GET https://app-staging.olajay.co.uk/pay on the live edge -> HTTP/2 200, referrer-policy: no-referrer, <meta name=referrer content=no-referrer> (evidence/30-20-pay-live.txt §9); issue #1071 closed. Supersedes plan verify 1 at 2026-10-31T23:46:51Z: no_referrer=0 (the edge sent strict-origin-when-cross-origin), the fail direction"
+        status: pass
     human_judgment: false
   - id: D4
     description: "A real payment link is paid through /pay on staging (4242), read back from Stripe as succeeded/livemode false; the 360 px phone arm has no sideways scroll"
@@ -100,7 +100,7 @@ completed: 2026-10-31
 
 # Phase 30 Plan 20: PR 5 merged, deployed and a payment link paid on staging Summary
 
-**PR 5 (#1064, the /pay page) merged as `bff82097` and deployed with digest parity. On staging, a vendor's payment link was paid through `/pay` with 4242, and Stripe reads the intent back as succeeded and livemode false. But the public edge still sends `Referrer-Policy: strict-origin-when-cross-origin` on `/pay`: the frontend sends `no-referrer`, and the ingress `more_set_headers` replaces it (issue #1071, open).**
+**PR 5 (#1064, the /pay page) merged as `bff82097` and deployed with digest parity. On staging, a vendor's payment link was paid through `/pay` with 4242, and Stripe reads the intent back as succeeded and livemode false. But the public edge still sends `Referrer-Policy: strict-origin-when-cross-origin` on `/pay`: the frontend sends `no-referrer`, and the ingress `more_set_headers` replaces it (issue #1071).** **Superseded 2026-11-01:** PR #1073 (`fd01dc0c`) fixed it; the live edge now sends `referrer-policy: no-referrer` on `/pay` (`evidence/30-20-pay-live.txt` §9), issue #1071 is closed and WINDOWS entry 52 is fixed.
 
 ## Performance
 
@@ -182,7 +182,7 @@ STAGING-PAY order=ORD-1AAC0CDE-20261031-A22F26BE intent=pi_3UWm0PDpS9ICNeRt2UOAY
    - **Found during:** Task 3, plan verify 1 (`no_referrer=0`, verify rc 1).
    - **Cause:** `k8s/base/ingress.yaml:38` and `k8s/staging/ingress-hosts-patch.yaml:56` set `more_set_headers "Referrer-Policy: strict-origin-when-cross-origin"`, which replaces the app's header. Proven by reading the frontend Service directly: `/pay` `no-referrer`, `/payments` default.
    - **Why not fixed here:** the fix touches every overlay's ingress and the staging edge gate, and needs its own reviewed PR and deploy.
-   - **Tracking:** issue #1071 [observed]; `.planning/WINDOWS.md` entry 52 (open, unmet-truth). The ledger blocks `/gsd-ship` until it is resolved.
+   - **Tracking:** issue #1071 [observed]; `.planning/WINDOWS.md` entry 52 (unmet-truth). Superseded 2026-11-01: fixed by PR #1073 (`fd01dc0c`, deploy run 41295872214), entry 52 fixed (resolved 2026-11-01T10:50:25Z), issue closed; it no longer blocks `/gsd-ship`.
    - **Consequence:** the a11y must-have ("Stripe.js completes under no-referrer") is proven by the app-level Jest arms only, not on staging. The staging payment ran under strict-origin-when-cross-origin.
 2. **[Rule 3 - tooling] kubectl token.** Neither `staging-seed.sh` nor `check-deploy-digest-parity.sh` adds `--token`, so I used a scratchpad PATH shim. It mints the AKS token on the pinned subscription `c483d353…`. No repo change.
 3. **[Rule 3 - naming] Screenshot.** The spec wrote `30-20-pay-mobile-360.png`; it was renamed to the plan's `30-20-pay-360.png`.
@@ -206,10 +206,7 @@ None. No new surface in this task. T-30-81 (link URLs on the operator host) is m
 
 - **Eyeball** `/home/sanmi/IdeaProjects/JToye_OaaS_2026-p30-15/.planning/phases/30-live-stripe-test-mode-execution/evidence/30-20-pay-360.png` (the human-check: fits 360 px, tabs visible, no clipped controls). **Awaiting the owner's eye; not claimed.**
   - Seen while checking it for personal data: the cookie banner is drawn over the Expiry date and Security code fields. At 360x780 it covers part of the card form until "Got it" is pressed.
-- **Issue #1071:** choose the edge fix. The options are in the issue:
-  - a per-path Ingress for `/pay`;
-  - drop Referrer-Policy from the app-host snippet and let Next.js own it;
-  - a conditional snippet.
+- **Issue #1071:** no longer an owner item. The option "the apps own Referrer-Policy" was taken and shipped in PR #1073 (`fd01dc0c`, 2026-11-01); the issue is closed.
 - **Carried forward:**
   - Whether to persist the owning Stripe account on the order at intent creation (30-17, round-1 finding 2).
   - For UI review: the "You've paid £X" redirect copy and the resume-path dead-end copy.
@@ -226,5 +223,5 @@ None. No new surface in this task. T-30-81 (link URLs on the operator host) is m
 - Commits:
   - The PR-branch commits 27ffb459, fd6250de, 7d63a580, 6536d143, a3734d88, 68532b1c, 05fd74a2, 31ec8b03, c4bc1492 and e6df7cd3 are present as objects. They are squashed into bff82097, so they are not ancestors of HEAD.
   - bff82097 and abe442d9 are ancestors of HEAD.
-- Issue #1071 is OPEN.
-- Note: the self-check passes on what the SUMMARY claims. The plan's must-have on the edge Referrer-Policy is FAILED and recorded above; it is not passed.
+- Issue #1071 was open at this check (2026-10-31). Re-read 2026-11-01: closed at 10:04:59Z by PR #1073.
+- Note: the self-check passes on what the SUMMARY claims. The plan's must-have on the edge Referrer-Policy FAILED at this check and is recorded above. Superseded 2026-11-01: MET on the live edge after PR #1073 (`evidence/30-20-pay-live.txt` §9; coverage D3 pass).
