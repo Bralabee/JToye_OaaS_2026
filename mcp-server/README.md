@@ -160,3 +160,7 @@ the multi-tenant pass-through design to one tenant. Pass-through (§3) is the lo
 
 *Never paste real secret values into this file, logs, or tool output. Secrets live in
 `.env` and are consumed by Keycloak only.*
+
+## 7. Licence
+
+Proprietary. The terms are in the repository root [`LICENSE`](../LICENSE) (copyright J'Toye Digital Ltd, no licence granted except under a written agreement). `package.json` declares `"license": "UNLICENSED"`.
