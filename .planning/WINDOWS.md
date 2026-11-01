@@ -1,8 +1,8 @@
 ---
 schema_version: 1
-open_count: 21
+open_count: 20
 waived_count: 0
-fixed_count: 33
+fixed_count: 34
 total_count: 54
 last_updated: 2026-11-01T01:06:26.199Z
 ---
