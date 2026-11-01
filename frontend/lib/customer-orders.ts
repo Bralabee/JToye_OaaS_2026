@@ -47,8 +47,12 @@ export interface OrderSummary extends PublicOrderAllergenRecord {
    * after an erasure. It is deliberately NOT on `PublicOrderAllergenRecord`, which the tracking page
    * shares: this page renders it, nothing else does.
    *
-   * Never persist it: it lives in React state for the life of the page and is not written to
-   * localStorage, sessionStorage or any cache (the proxy and core both answer `no-store`).
+   * Where it lives: page.tsx server-renders it into the My Orders HTML and RSC payload (`initial`),
+   * and the client island holds it in React state; nothing writes it to localStorage or
+   * sessionStorage. Every response that carries it says no-store on its own account: core's
+   * `/mine`, the `/api/customer-orders` proxy (and only for `include=allergyNote`, which only this
+   * page sends), and the `/shop/orders` document through its own next.config.mjs headers() rule,
+   * which does not rely on the root layout's force-dynamic.
    */
   allergyNote?: string | null
   createdAt: string

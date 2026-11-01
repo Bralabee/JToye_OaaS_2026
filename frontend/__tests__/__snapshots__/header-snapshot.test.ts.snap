@@ -39,5 +39,14 @@ exports[`Security headers snapshot (regression guard) static headers match snaps
     ],
     "source": "/pay/:path*",
   },
+  {
+    "headers": [
+      {
+        "key": "Cache-Control",
+        "value": "private, no-store, max-age=0",
+      },
+    ],
+    "source": "/shop/orders",
+  },
 ]
 `;
