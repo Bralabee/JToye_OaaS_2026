@@ -2209,6 +2209,15 @@ jobs:
           #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
           #   FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE   (optional; D-14, #794)
           #   FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY (optional at build; staging pk_test_, #957)
+          #   FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL       (optional; SW-CLR-04, epic #964)
+          #   FRONTEND_PUBLIC_CONTACT_EMAIL               (optional; SW-CLR-04, epic #964)
+          #   FRONTEND_PUBLIC_CONTACT_PHONE               (optional; SW-CLR-04, epic #964)
+          # The three contact values are set by the owner in repository variables. Each
+          # is optional by design: unset passes an EMPTY build-arg, which is exactly what
+          # the image baked before they were wired (frontend/Dockerfile declares the ARGs
+          # with no default), and an empty value renders "not yet published" on /contact
+          # and the privacy notice instead of a blank or a guessed address. No deploy
+          # guard checks them: empty is a valid, honest state, unlike the Stripe key.
           # FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY is optional HERE only: an empty value still
           # builds (frontend/Dockerfile keeps it out of the CR-02 gate), but deploy-staging
           # refuses anything that is not a pk_test_ key and deploy-production refuses a
@@ -2244,6 +2253,9 @@ jobs:
             NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
             NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${{ vars.FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE }}
             NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ vars.FRONTEND_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${{ vars.FRONTEND_PUBLIC_DATA_PROTECTION_EMAIL }}
+            NEXT_PUBLIC_CONTACT_EMAIL=${{ vars.FRONTEND_PUBLIC_CONTACT_EMAIL }}
+            NEXT_PUBLIC_CONTACT_PHONE=${{ vars.FRONTEND_PUBLIC_CONTACT_PHONE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # All four service images target linux/amd64 exclusively to match the AKS
