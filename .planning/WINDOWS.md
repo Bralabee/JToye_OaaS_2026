@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 21
+open_count: 23
 waived_count: 0
 fixed_count: 31
-total_count: 52
-last_updated: 2026-10-31T23:51:09.522Z
+total_count: 54
+last_updated: 2026-11-01T00:34:35.347Z
 ---
 
 # Broken Windows Ledger
@@ -67,6 +67,8 @@ last_updated: 2026-10-31T23:51:09.522Z
 | 50 | 29 | unmet-truth | core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java | 1776 | 29-14: storefront never shows a pipeline-uploaded image (toPublicProductDto reads flat image_url; asset-first resolution is vendor-only); the 'storefront renders it with naturalWidth > 0' truth is unmet at a784e7e2 | fixed | closed by 29-29 at 6e95ee6c (deployed to staging): the anonymous menu's Pelau imageUrl and imageUrls[0] are its ACTIVE pipeline derivative (asset 14add455, which the vendor uploaded in 29-22 in place of 29-14's 1475a89c, now released); the storefront image renders with naturalWidth 640 on mobile and desktop and the Product JSON-LD image equals its src (evidence/29-29-storefront-image.txt) | 2026-10-19T10:40:14.320Z | 2026-10-19T13:54:56.914Z |
 | 51 | 29 | deviation | k8s/base/core-java-deployment.yaml |  | 29-14: core-java/keycloak 1Gi surge pods fit no B2s node (661/399/803Mi free by requests); first deploy unstuck by scaling the crash-looping revision-1 ReplicaSets to 0; every later roll of either will stick until capacity is decided | open |  | 2026-10-19T10:40:14.440Z |  |
 | 52 | 30 | unmet-truth | k8s/staging/ingress-hosts-patch.yaml | 56 | 30-20: /pay Referrer-Policy no-referrer is replaced at the staging edge by the ingress more_set_headers strict-origin-when-cross-origin (issue #1071); the app sends no-referrer | open |  | 2026-10-31T23:51:09.522Z |  |
+| 53 | 30 | unmet-truth | frontend/e2e/stripe-refund-flow.spec.ts | 304 | 30-22 must-have 1 NOT MET on PR #1065 217003b5: the refund spec asserts >= 1 refund for its PaymentIntent, not exactly one | open |  | 2026-11-01T00:34:35.236Z |  |
+| 54 | 30 | unmet-truth | frontend/playwright.config.ts | 81 | T-30-87 on PR #1065 217003b5: trace retain-on-failure keeps the Stripe spec's sk_test_ Authorization header; e2e-nightly uploads frontend/test-results/ to a PUBLIC artifact | open |  | 2026-11-01T00:34:35.347Z |  |
 
 ````json
 [
@@ -743,6 +745,32 @@ last_updated: 2026-10-31T23:51:09.522Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-31T23:51:09.522Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 53,
+    "kind": "unmet-truth",
+    "phase": "30",
+    "file": "frontend/e2e/stripe-refund-flow.spec.ts",
+    "line": 304,
+    "description": "30-22 must-have 1 NOT MET on PR #1065 217003b5: the refund spec asserts >= 1 refund for its PaymentIntent, not exactly one",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-01T00:34:35.236Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 54,
+    "kind": "unmet-truth",
+    "phase": "30",
+    "file": "frontend/playwright.config.ts",
+    "line": 81,
+    "description": "T-30-87 on PR #1065 217003b5: trace retain-on-failure keeps the Stripe spec's sk_test_ Authorization header; e2e-nightly uploads frontend/test-results/ to a PUBLIC artifact",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-11-01T00:34:35.347Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
