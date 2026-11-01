@@ -32,9 +32,9 @@ export const metadata: Metadata = {
   //
   // FE-5: canonical + Open Graph were missing on the landing page — the one
   // page most likely to be shared/linked externally. `alternates.canonical`
-  // is a relative path deliberately (no `metadataBase` is set app-wide, so
-  // Next emits it root-relative — see the note in app/shop/layout.tsx for why
-  // no hostname is guessed here).
+  // stays a relative path: since SW-CLR-08 the root layout sets `metadataBase`
+  // from the injected public origin, and Next resolves it to an absolute URL
+  // against that (no hostname is written here; app/layout.tsx says why).
   alternates: { canonical: "/" },
   openGraph: {
     title: "J'Toye — Order from local kitchens, or run your own",
