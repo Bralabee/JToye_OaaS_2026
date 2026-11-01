@@ -19,6 +19,7 @@ import {
   PRICING,
   PRICING_CARD_FEE_LINE,
 } from "@/lib/pricing"
+import { StripeUkPricingSentence } from "@/components/marketing/stripe-uk-pricing-sentence"
 
 export const metadata: Metadata = {
   title: "Terms of use — J'Toye",
@@ -145,7 +146,8 @@ export default function TermsPage() {
           </li>
         </ul>
         <p>
-          {formatSetupLine(PRICING)} {PRICING_CARD_FEE_LINE}
+          {formatSetupLine(PRICING)} {PRICING_CARD_FEE_LINE}{" "}
+          <StripeUkPricingSentence linkClassName={LEGAL_PROSE_LINK_CLASS} />
         </p>
         <p>{OPERATOR_FBO_LINE}</p>
         <p>

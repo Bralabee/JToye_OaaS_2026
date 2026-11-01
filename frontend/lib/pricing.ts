@@ -53,3 +53,15 @@ export function formatSetupLine(pricing: { setupFrom: number } = PRICING): strin
 }
 export const PRICING_CARD_FEE_LINE =
   "Stripe card fees are charged on your own Stripe account, because you are the merchant of record."
+
+/**
+ * Where the card-fee line sends a reader for the actual rate (SW-CLR-06, swarm
+ * epic #964). Owner ruling 2026-11-01: do NOT print a card-fee figure — Stripe
+ * sets it on the vendor's own account and changes it on its own schedule, so a
+ * typed rate would go stale silently. The page links Stripe's UK price list
+ * instead. Both render sites (/for-operators and /legal/terms) render it through
+ * components/marketing/stripe-uk-pricing-sentence.tsx, which reads these two
+ * constants, and lib/__tests__/pricing.test.ts pins the URL.
+ */
+export const STRIPE_UK_PRICING_URL = "https://stripe.com/gb/pricing"
+export const STRIPE_UK_PRICING_LINK_TEXT = "Stripe's UK pricing page"

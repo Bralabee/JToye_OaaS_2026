@@ -28,7 +28,13 @@ import {
   PLATFORM_NOT_SELLER_COPY,
 } from "@/components/storefront/seller-block"
 import { NO_VAT_REGISTRATION_COPY } from "@/components/storefront/no-vat-registration-note"
-import { formatSetupLine, PRICING, PRICING_CARD_FEE_LINE } from "@/lib/pricing"
+import {
+  formatSetupLine,
+  PRICING,
+  PRICING_CARD_FEE_LINE,
+  STRIPE_UK_PRICING_LINK_TEXT,
+  STRIPE_UK_PRICING_URL,
+} from "@/lib/pricing"
 import { getCompanyInfo } from "@/lib/company"
 import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
 import { getCustomerSession } from "@/lib/customer-auth"
@@ -42,6 +48,13 @@ beforeEach(() => {
   ;(getCustomerSession as jest.Mock).mockReset()
   ;(getCustomerSession as jest.Mock).mockResolvedValue(null)
 })
+
+/** The link's VISIBLE text: the sr-only new-tab announcement removed, whitespace trimmed. */
+function visibleLinkText(link: HTMLElement): string {
+  const copy = link.cloneNode(true) as HTMLElement
+  copy.querySelectorAll(".sr-only").forEach((n) => n.remove())
+  return (copy.textContent ?? "").trim()
+}
 
 /** The page's own <main>, so the shared footer is never what an assertion reads. */
 function renderMain(): HTMLElement {
@@ -96,6 +109,29 @@ describe("/legal/terms quotes the checkout's operative wording verbatim", () => 
     expect(text).toContain(PRICING.paygLabel)
     expect(text).toContain(formatSetupLine(PRICING))
     expect(text).toContain(PRICING_CARD_FEE_LINE)
+  })
+
+  // SW-CLR-06 (owner ruling 2026-11-01): the quoted card-fee line carries the same
+  // Stripe UK pricing link as /for-operators, from the same constant.
+  it("links Stripe's UK pricing page beside the card-fee line, in a new tab", () => {
+    const main = renderMain()
+    const link = within(main).getByRole("link", { name: /stripe.s uk pricing/i })
+    expect(link).toHaveAttribute("href", STRIPE_UK_PRICING_URL)
+    expect(link).toHaveAttribute("target", "_blank")
+    expect(link.getAttribute("rel") ?? "").toMatch(/\bnoopener\b/)
+    expect(link.getAttribute("rel") ?? "").toMatch(/\bnoreferrer\b/)
+    // Round 1: the text must BE the shared constant, so a page that retypes it fails.
+    expect(visibleLinkText(link)).toBe(STRIPE_UK_PRICING_LINK_TEXT)
+    expect(link).toHaveAccessibleName(/opens in a new tab/i)
+    expect(link.closest("p")).toHaveTextContent(PRICING_CARD_FEE_LINE)
+  })
+
+  // Round 1: one shared component renders the sentence on both pages.
+  it("renders the Stripe pricing sentence through the shared component, not a local copy", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "app/legal/terms/page.tsx"), "utf8")
+    expect(src).toMatch(/from "@\/components\/marketing\/stripe-uk-pricing-sentence"/)
+    expect(src).toMatch(/<StripeUkPricingSentence\b/)
+    expect(src).not.toMatch(/STRIPE_UK_PRICING_URL|STRIPE_UK_PRICING_LINK_TEXT|opens in a new tab/)
   })
 })
 
