@@ -4,7 +4,8 @@ import { useRef } from "react"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useOperatorEntranceScene } from "@/components/marketing/operator-entrance-scene"
 import { SafeImage } from "@/components/ui/safe-image"
-import { formatRate, PRICING } from "@/lib/pricing"
+import { OPERATOR_APPLICATION_REVIEW_LINE, OPERATOR_FBO_LINE } from "@/lib/operator-copy"
+import { formatRate, formatSetupLine, PRICING, PRICING_CARD_FEE_LINE } from "@/lib/pricing"
 
 /**
  * Every price figure comes from the shared module (lib/pricing.ts), the same
@@ -19,8 +20,9 @@ const PLANS = [
   { name: "Batch pay-as-you-go", note: "Weekend or seasonal batch kitchens.", docket: "of your direct sales", monthly: ["£0", ""], fee: [PRICING.paygLabel, "of direct sales"], primary: false },
 ] as const
 
-const SETUP_LINE = `Assisted setup from £${PRICING.setupFrom}, scoped to the work agreed.`
-const CARD_FEE_LINE = "Stripe card fees are charged on your own Stripe account, because you are the merchant of record."
+// The two footnotes live in lib/pricing.ts so /legal/terms quotes the same strings.
+const SETUP_LINE = formatSetupLine(PRICING)
+const CARD_FEE_LINE = PRICING_CARD_FEE_LINE
 
 /**
  * The margin sentence's illustration: the positioning guide's 28% aggregator
@@ -90,6 +92,10 @@ const FIT_CRITERIA = [
 const CTA_CLASS =
   "inline-flex items-center rounded-full bg-amber-500 px-6 py-3.5 text-base font-bold text-amber-ink transition-[background-color,transform] duration-150 ease-out hover:bg-amber-400 active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300 motion-reduce:transition-none motion-reduce:active:scale-100"
 
+/** Secondary text link on the cream ground (contact beside the closing CTA, terms in pricing). */
+const INLINE_LINK_CLASS =
+  "font-semibold text-oxblood underline decoration-amber-500 decoration-2 underline-offset-[5px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-500"
+
 const H2_CLASS = "max-w-[26ch] text-2xl font-bold leading-tight tracking-[-0.02em] text-oxblood sm:text-3xl"
 
 const TICK_CLASS =
@@ -138,6 +144,8 @@ export function OperatorPitch() {
             <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-3">
               <a href="/dashboard/onboarding" className={CTA_CLASS}>Start your application</a>
               <a href="#pricing" className="text-[15px] font-semibold text-cream underline decoration-gold decoration-2 underline-offset-[5px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300">See pricing</a>
+              {/* SW-CLR-04 (persona swarm): a way to ask before applying, which ends at a sign-in. */}
+              <a href="/contact" className="text-[15px] font-semibold text-cream underline decoration-gold decoration-2 underline-offset-[5px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300">Contact us</a>
             </div>
           </div>
           <div data-op-media className="relative">
@@ -195,7 +203,7 @@ export function OperatorPitch() {
                   </div>
                 ))}
               </dl>
-              <p className="mt-7 border-l-[3px] border-amber-500 pl-4 text-[15px] font-medium text-slate-700">You remain the Food Business Operator. Recipe accuracy and cross-contamination are still yours.</p>
+              <p className="mt-7 border-l-[3px] border-amber-500 pl-4 text-[15px] font-medium text-slate-700">{OPERATOR_FBO_LINE}</p>
             </div>
           </div>
         </div>
@@ -227,7 +235,7 @@ export function OperatorPitch() {
               ))}
             </tbody>
           </table>
-          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE}</p>
+          <p className="mt-5 max-w-[44rem] text-sm text-slate-600">{SETUP_LINE} {CARD_FEE_LINE} See the <a href="/legal/terms" className={INLINE_LINK_CLASS}>terms of use</a>.</p>
         </div>
       </section>
 
@@ -253,8 +261,11 @@ export function OperatorPitch() {
             <div>
               <h3 className="text-lg font-bold text-oxblood">Is this for your kitchen?</h3>
               <ul className="mb-5 mt-3 grid list-disc gap-1.5 pl-[18px] text-[15px] text-slate-700">{FIT_CRITERIA.map((item) => <li key={item}>{item}</li>)}</ul>
-              <a href="/dashboard/onboarding" className={CTA_CLASS}>Start your application</a>
-              <p className="mt-3.5 text-sm text-slate-600">A person reviews every application, and nothing is charged until a plan is agreed.</p>
+              <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
+                <a href="/dashboard/onboarding" className={CTA_CLASS}>Start your application</a>
+                <a href="/contact" className={INLINE_LINK_CLASS}>Contact us</a>
+              </div>
+              <p className="mt-3.5 text-sm text-slate-600">{OPERATOR_APPLICATION_REVIEW_LINE}</p>
             </div>
           </div>
         </div>

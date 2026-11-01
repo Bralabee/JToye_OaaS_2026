@@ -139,12 +139,17 @@ const PUBLIC_ROUTES = [
   "/legal/cookies",
   "/legal/retention",
   "/legal/accessibility",
+  // PR 1080: the two routes it added, under the same 375px overflow, footer and
+  // title contracts as every other public page.
+  "/legal/terms",
+  "/contact",
   "/business-model-guide",
   "/competitive",
 ]
 
 /**
- * The published policy set (LGL-01), in the order a reader meets it.
+ * The published policy set (LGL-01), in the order a reader meets it, plus the
+ * terms and contact pages PR 1080 added to the footer's Legal column.
  *
  * Every one is a static server page with no backend dependency, which is what
  * lets the assertions below stay inside this spec's stack-free contract.
@@ -155,10 +160,13 @@ const LEGAL_ROUTES = [
   "/legal/cookies",
   "/legal/retention",
   "/legal/accessibility",
+  "/legal/terms",
+  "/contact",
 ] as const
 
 /**
- * The root layout's fallback title (app/layout.tsx:21).
+ * The root layout's fallback title (app/layout.tsx:42, inside generateMetadata
+ * since SW-CLR-08 moved metadataBase there).
  *
  * A page that forgot to export metadata inherits this and is INDISTINGUISHABLE
  * from one that set a title, until you compare against the default by name. Five
@@ -542,11 +550,12 @@ test.describe("published policy set — metadata, reachability and contact", () 
     ).toHaveCount(1)
 
     return footer.locator("a").evaluateAll((as) =>
-      as.map((a) => a.getAttribute("href") ?? "").filter((h) => h.startsWith("/legal"))
+      // /contact sits in the footer's Legal column since PR 1080, outside /legal/*.
+      as.map((a) => a.getAttribute("href") ?? "").filter((h) => h.startsWith("/legal") || h === "/contact")
     )
   }
 
-  test("all five policy pages are reachable from the footer on the landing page AND on a tenant storefront", async ({
+  test("every footer Legal-column page is reachable from the footer on the landing page AND on a tenant storefront", async ({
     page,
     context,
   }) => {
