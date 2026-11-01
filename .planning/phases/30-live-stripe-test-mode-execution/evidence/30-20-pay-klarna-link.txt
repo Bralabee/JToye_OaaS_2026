@@ -1,0 +1,172 @@
+# /pay on staging: Klarna and Link, proven 2026-11-01 (owner ruling: both stay)
+# All times UTC. Main checkout at d013fad9. Driven through the owner's Chrome
+# (claude-in-chrome), side by side, the way the CI keys were handed over.
+
+## 0. The question and the ruling
+
+30-20 left "card-only vs Klarna/Link on /pay" with the owner. On 2026-11-01 the
+owner ruled: "do Klarna and Link on /pay". Nothing in code restricted the form
+to cards: `PaymentService` creates every intent with
+`automatic_payment_methods.enabled=true` (lines 230 and 361) and
+`card-payment-form.tsx` mounts `<PaymentElement options={{ layout: "tabs" }}>`,
+so the Element shows whatever the account's payment-method configuration turns
+on. The ruling therefore changes no code; it needed PROOF that the two
+redirect/wallet methods complete on /pay, since 30-20 only ever paid with 4242.
+
+## 1. What the staging sandbox turns on (read, not assumed)
+
+    stripe get /v1/payment_method_configurations   (CLI login = acct_1U0tklDpS9ICNeRt, the staging sandbox)
+
+The account's default configuration (`is_default=true`) has these ON:
+amazon_pay, apple_pay, bancontact, blik, card, eps, kakao_pay, klarna, link,
+mb_way, naver_pay, payco, pix, revolut_pay, samsung_pay, satispay. Three
+"Managed Payments Configuration N" rows exist beside it (connected-account
+configurations), also with klarna and link ON.
+
+What /pay actually rendered for a £9.50 GBP intent, UK billing country:
+tabs **Card · Klarna · Revolut Pay · (more)**, and above the card fields the
+Link bar, which Stripe.js now brands **"Secure, fast checkout with Onelink"**
+(the Link wallet; the charge below comes back `payment_method_details.type=link`).
+Stripe filters the list by currency, amount and country, which is why
+pix/blik/eps and the Korean methods never appear for this order.
+
+## 2. The three links (one per arm; a link opens once)
+
+    JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-… scripts/staging-seed.sh --context jtoye-stg-aks --stage pay-link --link-out <scratchpad>/link-<arm>
+    (without the subscription variable the seed REFUSES [subscription]: rc 1, nothing written — the control)
+
+    13:06:49Z  PAY-LINK order=ORD-1AAC0CDE-20261101-18D1A87F link=d53cfcef-d89a-4891-9a72-5fa4f7a5fedd expires=2026-11-01T14:06:55Z  rc=0  (Klarna arm)
+    13:06:56Z  PAY-LINK order=ORD-1AAC0CDE-20261101-5CE700AD link=e13e3f6c-6bd1-4d1d-aa9f-00498640c31d expires=2026-11-01T14:07:00Z  rc=0  (card + Link sign-up arm)
+    13:12:42Z  PAY-LINK order=ORD-1AAC0CDE-20261101-71821E59 link=7424310d-1bb0-45f7-900e-907a954eed58 expires=2026-11-01T14:12:46Z  rc=0  (Link arm)
+
+Each link file was mode 600 (87 bytes) and was shredded after its arm
+(`shred -u`, rc 0; `ls link-*` → no such file). The URLs were handed to the
+browser only; they are single-use and expired at 14:07/14:13Z.
+
+## 3. Klarna arm (redirect-based method, the #1072 return path)
+
+1. Preview: "Pay J'Toye Staging Test Kitchen £9.50 · Order ORD-…-18D1A87F · This
+   link opens once." → Continue to payment → form with the tabs above.
+2. Klarna tab: "Pay now, in 30 days, or 3 interest-free payments of £3.17".
+   After the first click on Pay the Element inserted "After submission, you will
+   be redirected to securely complete next steps" and the button moved; the
+   second click submitted.
+3. Stripe redirected to Klarna's PLAYGROUND (`login.playground.klarna.com`), not
+   a Stripe-simulated page. The seed's phone `07700 900123` is REFUSED there
+   ("Enter a valid EU number": the Ofcom drama range fails Klarna's validator);
+   `07400 123456` was accepted. The playground sends no SMS and takes any
+   6-digit code except 999999 (123456 used). "Choose how to pay £9.50" offered
+   Pay in full / Pay later £9.50 in 30 days (pre-selected) / Pay in 3; "Confirm
+   and pay" showed a Klarna-generated email, "Stripe Test MID EU", Visa ••••1111
+   (Klarna's own sandbox card), a terms checkbox, then "Pay with Klarna".
+4. Return: `https://app-staging.olajay.co.uk/pay?acct=&payment_intent=…&payment_intent_client_secret=…&redirect_status=succeeded`
+   → "Checking your payment link…" → **"Payment received. You've paid £9.50. You
+   can close this page."** (screenshot `30-20-pay-klarna-received.jpg`).
+   Per #1072 the verdict came from reading the intent, not from `redirect_status`.
+5. Read back on the staging sandbox:
+
+    KLARNA-INTENT id=pi_3UWyTMDpS9ICNeRt4CJBgl3H status=succeeded livemode=false amount=950 gbp method_types=card,klarna,link,revolut_pay,amazon_pay latest_charge=py_3UWyTMDpS9ICNeRt4EC1gCGV api_version_meta_env=staging
+    KLARNA-CHARGE id=py_3UWyTMDpS9ICNeRt4EC1gCGV status=succeeded paid=true type=klarna klarna_category=pay_later captured=true livemode=false
+
+   (`py_`, not `ch_`: a non-card charge.) `list-drafts` at 13:10:35Z no longer
+   listed 18D1A87F — only 5CE700AD (`payment_status=PENDING intent=present`) —
+   so the webhook applied `payment_intent.succeeded` and the order left DRAFT.
+
+## 4. Card + Link sign-up arm (creates the Link account)
+
+Order 5CE700AD. The Link bar expanded to Email / Mobile number / Full name
+("Your Onelink account will be created after payment is completed"); card
+4242 4242 4242 4242, 12/34, 123, United Kingdom. The Element re-laid-out after
+the email was accepted (expiry/CVC moved down ~22 px: the first typed expiry and
+CVC landed nowhere and were re-entered, verified by zoom before Pay).
+→ "Payment received. You've paid £9.50 to J'Toye Staging Test Kitchen for order
+ORD-…-5CE700AD."
+
+    CARD+LINKSIGNUP-INTENT id=pi_3UWyTQDpS9ICNeRt3TEUw8x7 status=succeeded livemode=false amount=950 latest_charge=ch_3UWyTQDpS9ICNeRt3bwBmLsf
+
+## 5. Link arm (pays with the saved Link method)
+
+Order 71821E59. OBSERVED on the way in: navigating the SAME tab from the paid
+/pay to the new link's URL (a fragment-only change) kept "Payment received" for
+5CE700AD on screen — the #1064 round-1 recorded finding 4, now seen live. A
+full load (another page first, then the link) showed the new preview. This is
+not a customer path (a link is opened from a message) and stays recorded.
+
+The Link bar, given the same email, recognised the account WITHOUT a code
+(Link's own session cookie from arm 4) and offered "Visa ••••4242 · Confirm";
+Confirm asked "Confirm it's you — You are currently testing and no code will be
+sent. Enter 000000 to continue" (000000 entered), then "Confirm ZIP code" for
+the saved card (B1 1AA), then Pay £9.50 →
+**"Payment received. You've paid £9.50 to J'Toye Staging Test Kitchen for order
+ORD-…-71821E59."** (screenshot `30-20-pay-link-received.jpg`).
+
+    INTENT order=ORD-1AAC0CDE-20261101-71821E59 id=pi_3UWyZ0DpS9ICNeRt1OgxH0SL status=succeeded livemode=false amount=950 charge=ch_3UWyZ0DpS9ICNeRt119DMbxZ
+    LINK-CHARGE id=ch_3UWyZ0DpS9ICNeRt119DMbxZ status=succeeded paid=true type=link card_wallet=none captured=true livemode=false
+
+`payment_method_details.type=link` is the proof the method was Link, not a card
+entered by hand.
+
+## 6. All three orders left DRAFT
+
+    13:15:42Z  staging-seed.sh --stage list-drafts → LIST-DRAFTS count=0 card=0   rc=0
+    (at 13:10:35Z, between arms, it was count=1 card=1 naming 5CE700AD: the gate can see a draft)
+
+No staging order was cancelled or left behind by this proof; all three are
+paid vendor orders at staging-test-kitchen in Stripe TEST mode, livemode=false
+on every read.
+
+## 7. What this does NOT prove
+
+- Refunds of a Klarna (`py_`) charge. `RefundService` refunds by
+  `payment_intent`, which Stripe supports for Klarna, but no Klarna refund has
+  been run; the nightly's refund proof is card-only (#1065).
+- The checkout page's return path (`/shop/[slug]/checkout`) for a redirect
+  method: only /pay was exercised. The checkout uses the same `CardPaymentForm`
+  with its own `returnUrl`.
+- The phone arm (360 px) for the Klarna redirect.
+
+## 8. The owning-account column: recommendation for the owner (undecided 2026-11-01)
+
+The question (#1064 round-1 finding 2): the Stripe account an intent lives on
+is re-derived from the shop's CURRENT settlement routing on every later call —
+`RefundService` (resolveSettlementRouting → Stripe-Account header or
+reverse_transfer), `cancelAbandonedPaymentIntent` and the payment-link redeem
+replay (`directChargeAccountFor`) — instead of being recorded when the intent
+is created. Read from the code 2026-11-01:
+
+- `PaymentService.createPaymentIntent` lines 240-262: with a routing decision the
+  intent goes on the connected account (DIRECT, header) or carries
+  `transfer_data.destination` (DESTINATION); WITHOUT one (no ENABLED Connect
+  account, or no onboarding model) it is a plain PLATFORM intent. The staging
+  card spec prints `account=none` for exactly this case, so platform intents are
+  a real path, not a theory.
+- `RefundService` lines 224-241: the refund re-resolves routing and, for DIRECT,
+  sends the Stripe-Account header with the stored `pi_`.
+
+So the failing sequence is not only "a settlement-mode change between issue and
+redeem" (what round 1 recorded). It is also the ordinary onboarding order of
+events: a tenant takes card orders on the platform account, THEN connects
+Stripe (DIRECT is the WHITE_LABEL default); from that moment every refund of a
+pre-Connect order is sent to the connected account, Stripe answers
+`resource_missing` for the `pi_`, and the refund fails. Loud, not silent (the
+refund row is marked failed and logged), and no money moves wrongly — but the
+vendor can never refund those orders, and nothing in the current tests covers
+it (no IT changes routing between intent and refund).
+
+Recommendation: DO IT, as one `/gsd-quick` after Phase 30 closes and before the
+first production tenant connects Stripe. Shape (already approved on 2026-11-01):
+V89 adds nullable `orders.payment_settlement_mode` VARCHAR(32) (CHECK on the
+four SettlementPolicyMode values plus PLATFORM) and nullable
+`orders.payment_stripe_account_id` VARCHAR(255), both mirrored on `orders_aud`
+in the same migration (Order is `@Audited`), no backfill and no DEFAULT (NULL =
+not recorded, the V63 rule) and therefore no tenant loop; the four intent
+writers (`createPaymentIntent`, the balance intent, the payment-link intent and
+`OrderPaymentLinkService`'s redeem) set both at creation; the three readers
+(refund, cancel-abandoned, redeem replay) use the recorded pair when present
+and fall back to today's derivation when NULL. Proof: an IT that creates a
+platform intent, flips the shop to DIRECT with an ENABLED account, and refunds —
+RED on the unfixed tree (header sent), GREEN with the column; plus the break arm
+that removes the fallback and watches a pre-V89 order's refund fail. Two
+columns rather than one, because a NULL account id cannot distinguish "recorded
+as platform" from "not recorded", and a DESTINATION intent is also a
+platform-account intent whose refund needs `reverse_transfer`, not a header.
