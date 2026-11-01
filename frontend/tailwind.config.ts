@@ -97,13 +97,35 @@ const config: Config & { corePlugins?: { container?: boolean } } = {
         // J'Toye brand thread — matched to the parent site jtoyedigital.co.uk
         // (oxblood #3A0B0D + Work Sans). amber/orange (Tailwind defaults) stay
         // the appetite accent (sketch 004 winner D).
-        oxblood: { DEFAULT: "#3A0B0D", deep: "#1F0F28", 700: "#571417", 600: "#6E1D21" },
+        // `oxblood.deep` was #1F0F28 (a violet) and no file used it; it is now the
+        // identity's "oxblood deep" (design/identity.md, D11), the darkest field and
+        // the type on amber. Violet is on the identity's "not used" list.
+        oxblood: { DEFAULT: "#3A0B0D", deep: "#1C0405", 700: "#571417", 600: "#6E1D21" },
         cream: { DEFAULT: "#FBF6F0", 100: "#F4EBE1" },
         gold: "#E8B04B",
         // Ink for text sitting ON the amber appetite accent (amber-500 pills).
         // Tokenised so marketing components never need the raw hex — the
         // palette-discipline gate greps components/marketing for `#rrggbb`.
         "amber-ink": "#3A2400",
+        // ── The landing identity (design/identity.md, ruled by Sanmi 2026-11-01, D11).
+        // Six named colours, flat, no gradients (D9 / rulings.tsv gradient-decoration).
+        // These EXTEND Tailwind's scales: `stone-100` etc. keep their stock values;
+        // only the bare name and the named step are new.
+        //   stone        the page ground
+        //   stone-deep   a surface a tone down; replaces every rule and shadow
+        //   amber        the one accent: the action and the active state, nothing else
+        //   ink          running text on stone
+        //   chalk        text on oxblood (chalk-dim for secondary notes on oxblood)
+        stone: { DEFAULT: "#F2F1EE", deep: "#E3DED6" },
+        amber: { DEFAULT: "#F0A322" },
+        ink: { DEFAULT: "#1F1715", soft: "#6B5E57" },
+        chalk: { DEFAULT: "#F7F7F5", dim: "#D9CFC4" },
+        // The three server states the kitchen row prints (Open / Paused / Closed).
+        // Semantic colours, never the accent (identity.md).
+        status: { open: "#15724A", paused: "#D98A12", closed: "#8A8078" },
+        // Inside the kitchen-display fragment only (`data-ui`): the product's own
+        // line and note colours.
+        kds: { line: "#E6E1D9", note: "#FFF4D6" },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -119,10 +141,21 @@ const config: Config & { corePlugins?: { container?: boolean } } = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "plate-settle": {
+          from: { transform: "rotate(-16deg) translateY(-10px)" },
+          to: { transform: "rotate(-6deg) translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        // The landing's ONE motion moment (identity.md, direction.md): the hero
+        // plate settles on the pass, once, on load. Applied only through
+        // `motion-safe:` (prefers-reduced-motion: no-preference), so under reduced
+        // motion the still plate IS the finished page. Transform only; `both`
+        // holds the end state, and the start state is a rotated, fully visible
+        // plate, so a page that never animates still shows the picture.
+        "plate-settle": "plate-settle 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both",
       },
     },
   },
