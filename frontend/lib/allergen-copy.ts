@@ -15,6 +15,15 @@
 /** D-18: a declaration with none of the 14 regulated allergens. */
 export const NO_ALLERGENS_DECLARED_COPY = "No allergens declared"
 
+/**
+ * SW-PRY-02 (swarm epic #964): the same statement as a CUSTOMER reads it, on the dish card, the dish
+ * modal and the basket lines. Checkout's panel already says "That is not the same as allergen-free"
+ * (order-allergen-panel.tsx); a customer who never reaches checkout read the bare phrase on the menu
+ * as a safety claim. One short clause, the checkout's own words. The vendor dashboard keeps the bare
+ * NO_ALLERGENS_DECLARED_COPY: it is said to the person who made the declaration.
+ */
+export const NO_ALLERGENS_DECLARED_CUSTOMER_COPY = `${NO_ALLERGENS_DECLARED_COPY} – not the same as allergen-free`
+
 /** D-18: the label of the declared set where it is shown as a list (the dish modal). */
 export const CONTAINS_LABEL_COPY = "Contains"
 
@@ -77,11 +86,22 @@ export function tickAllergenCopy(name: string): string {
 
 /**
  * D-16: the "may contain" line (cross-contact), the same words the PPDS label prints.
- * Returns null for an empty list: an empty list means print nothing.
+ * Returns null for an empty list; a storefront surface then states MAY_CONTAIN_NONE_LISTED_COPY.
  */
 export function mayContainCopy(names: readonly string[]): string | null {
   return names.length === 0 ? null : `May contain: ${names.join(", ")}`
 }
+
+/**
+ * SW-PRY-03 (swarm epic #964): the storefront's line when no "may contain" name reaches it. The
+ * public product payload cannot tell "the vendor recorded none" from "the vendor recorded nothing":
+ * core-java's MayContainAllergens.undeclaredNames returns [] for a null mask, a 0 mask and a mask
+ * whose every bit is already declared, so `mayContainAllergens: []` is all three. Printing nothing
+ * made that look like a statement of "none". "None listed" is true in every one of them: it says no
+ * name is on the list, not that the vendor said nothing (the wording "not stated", reviewed on PR
+ * #1075, was false for a vendor who deliberately recorded an empty set) nor that there is no risk.
+ */
+export const MAY_CONTAIN_NONE_LISTED_COPY = "May contain: none listed"
 
 
 // ---------------------------------------------------------------------------------------------

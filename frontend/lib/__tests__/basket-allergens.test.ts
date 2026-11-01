@@ -111,8 +111,10 @@ describe("lineAllergens", () => {
     expect(lineAllergens(line(PUFF), index(JOLLOF, PUFF))?.containsLine).toBe("Contains: Eggs, Milk")
   })
 
-  it("an empty declaration reads 'No allergens declared'", () => {
-    expect(lineAllergens(line(PLANTAIN), index(PLANTAIN))?.noneDeclaredLine).toBe("No allergens declared")
+  it("an empty declaration reads 'No allergens declared', with the allergen-free caveat (SW-PRY-02)", () => {
+    expect(lineAllergens(line(PLANTAIN), index(PLANTAIN))?.noneDeclaredLine).toBe(
+      "No allergens declared – not the same as allergen-free"
+    )
   })
 
   it("a D-09 flag is stated, and never as 'No allergens declared'", () => {
