@@ -29,6 +29,7 @@ import {
   remainingAccessLines,
 } from "@/components/dashboard/staff/effective-access-cell"
 import {
+  ALL_SHOPS_VALUE,
   defaultShopChoice,
   INVITE_COPY,
   INVITE_FIELD_LABELS,
@@ -117,8 +118,6 @@ const ROLE_OPTIONS: { value: ShopRole; hint: string }[] = ROLE_ORDER.map((value)
   value,
   hint: ROLE_HINTS[value],
 }))
-
-const ALL_SHOPS_VALUE = ""
 
 /**
  * Static page chrome, hoisted so the loading state can render the REAL strings

@@ -17,6 +17,7 @@
  */
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import StaffPage from "../staff/page"
+import { ALL_SHOPS_VALUE, defaultShopChoice } from "@/components/dashboard/staff/invite-staff-form"
 import apiClient from "@/lib/api-client"
 import { fetchMyShops } from "@/lib/shops-api"
 
@@ -154,6 +155,21 @@ async function renderLoaded() {
 
 const inviteCard = () => screen.getByRole("region", { name: "Invite someone" })
 const pendingCard = () => screen.getByRole("region", { name: "Pending invitations" })
+
+describe("the All-shops sentinel has one definition (review R1-5)", () => {
+  it("defaultShopChoice answers All shops with the exported ALL_SHOPS_VALUE, and a listed shop by its id", () => {
+    expect(typeof ALL_SHOPS_VALUE).toBe("string")
+    expect(defaultShopChoice([{ id: SHOP_A }], null)).toBe(ALL_SHOPS_VALUE)
+    expect(defaultShopChoice([{ id: SHOP_A }], "not-a-listed-shop")).toBe(ALL_SHOPS_VALUE)
+    expect(defaultShopChoice([{ id: SHOP_A }], SHOP_A)).toBe(SHOP_A)
+  })
+
+  it("the invite form's All shops option carries that same value", async () => {
+    await renderLoaded()
+    const option = within(inviteCard()).getByRole("option", { name: "All shops" }) as HTMLOptionElement
+    expect(option.value).toBe(ALL_SHOPS_VALUE)
+  })
+})
 
 describe("Invite someone (UI-SPEC § B1)", () => {
   it("sits under the h1, above People, and Pending invitations sits below People", async () => {

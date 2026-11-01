@@ -38,6 +38,13 @@ import {
  */
 
 /**
+ * The "All shops / tenant-wide" choice in every Staff-page shop select, sent as `shopId: null`. The ONE
+ * definition (review R1-5 on #1076): the invite form, the grant card and {@link defaultShopChoice} all
+ * read it, so the default can never stop matching the option.
+ */
+export const ALL_SHOPS_VALUE = ""
+
+/**
  * SW-ADE-11 (swarm epic #964): Staff is "order ops on one shop" (ROLE_HINTS), so a Staff invitation or
  * grant with no shop is refused before it is sent. Shared by the invite form and the grant form.
  */
@@ -51,7 +58,7 @@ export function defaultShopChoice(
   shops: { id: string }[],
   contextShopId: string | null
 ): string {
-  return contextShopId && shops.some((s) => s.id === contextShopId) ? contextShopId : ""
+  return contextShopId && shops.some((s) => s.id === contextShopId) ? contextShopId : ALL_SHOPS_VALUE
 }
 
 export const INVITE_COPY = {
@@ -73,8 +80,6 @@ export const INVITE_COPY = {
 
 /** The labels, shared with the page's loading skeleton so the two cannot drift. */
 export const INVITE_FIELD_LABELS = { email: "Email", role: "Role", shop: "Shop" } as const
-
-const ALL_SHOPS_VALUE = ""
 
 /**
  * G-37-13 (37-54): the select every Staff-page form uses, both cards (no height: each
