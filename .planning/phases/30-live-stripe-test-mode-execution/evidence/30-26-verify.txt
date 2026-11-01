@@ -1,0 +1,72 @@
+# 30-26 plan verification at c9505fab, 2026-11-01T23:35:58Z
+## Task 1 <verify> verbatim
+rc=0
+missing=0 fail_lines=0
+task1 verify rc=0
+## Task 2 <verify> verbatim
+rc=0
+missing=0 fail_lines=0
+task2 verify rc=0
+## Fail direction of both verify blocks: the RED runs (evidence/30-26-red-task1.txt: 6 not ok; 30-26-red-task2.txt: 3 not ok) and the break arms (30-26-task1-arms.txt, 30-26-task2-arms.txt)
+## Full selftest lines
+PASS prod-api rc=1 az_calls=0 curl_calls=0 pod_reads=0
+PASS local-api rc=1 az_calls=0 curl_calls=0 pod_reads=0
+PASS no-context rc=2 kubectl_calls=0
+PASS stale-server rc=1 kubectl_calls=1(config view)
+PASS dev-profile rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS rollout-mixed rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS no-ready-pod rc=1 pod_reads=1 deployment_reads=0 az_calls=0 curl_calls=0
+PASS dry-run-plan rc=0 steps=19 az_calls=0 curl_calls=0
+PASS list-kv-objects rc=0 objects=5
+PASS operator-deleted-on-failure rc=1 seed_500_line=20 operator_delete_line=21 kv_reads=4 pinned=5 argv_secrets=0
+PASS operator-deleted-on-success rc=0 last_call=DELETE-operator readback=LIVE
+PASS order-live-key rc=1 kv_reads=1 curl_calls=0
+PASS order-first-run rc=0 confirms=1 verdict=SEED-ORDER event=evt_stub0001 secrets_printed=0
+PASS order-replay rc=0 confirms=0 verdict=SEED-ORDER
+PASS order-cash-refused rc=1 confirms=0 verdict=none
+PASS order-two-intents rc=1 verdict=none
+PASS order-livemode-true rc=1 confirms=0
+PASS order-unpaid-deadline rc=1 last_state=PENDING
+PASS dry-run-order rc=0 az_calls=0 curl_calls=0
+PASS stage-all rc=0 operator_delete_line=28 order_post_line=31 verdict=SEED-ORDER
+PASS list-drafts-ok rc=0 candidates=3 card=2
+PASS list-drafts-readonly rc=0 draft_list_gets=1 non_get_calls=0
+PASS list-drafts-no-pii rc=0 pii_lines=0 candidates=3
+PASS transition-refused rc=0 http=409 type=awaiting-payment transition_posts=1
+PASS transition-event-refused rc=2 az_calls=0 curl_calls=0
+PASS vendor-order-ok rc=0 body=shopId+1item idempotency_key=vendor-order-<stamp>
+PASS vendor-order-not-none rc=1 payment_status_PENDING=refused status_PENDING=refused
+PASS pay-link-ok rc=0 order=send<order<verify<issue file_mode=600 printed_otp_token_url_cs=0
+PASS pay-link-otp-hidden rc=1 tag=otp-hidden order_posts=0 issue_calls=0
+PASS pay-link-no-out rc=2 az_calls=0 curl_calls=0
+PASS pay-link-unverified rc=1 verify=422 issue_calls=0
+PASS cancel-one rc=0 order=stripe_cancel:5<intent_readback:6<order_cancel:7<order_readback:8 verdict=SEED-CANCEL
+PASS cancel-not-draft rc=1 pending+none+unlisted=refused stripe_calls=0 vendor_cancels=0
+PASS cancel-paid rc=1 succeeded+processing+requires_capture=refused stripe_cancels=0 vendor_cancels=0
+PASS cancel-live rc=1 stripe_cancels=0 vendor_cancels=0
+PASS cancel-stripe-fails rc=1 D001_vendor_cancels=0 D002_cancelled=1 summary=2/1/1
+PASS cancel-already-canceled rc=0 stripe_posts=0 vendor_cancels=1
+PASS cancel-only-listed rc=0 vendor_cancels=1 unnamed_touched=0
+PASS cancel-empty-list rc=2 absent+empty+malformed=usage-error az_calls=0 curl_calls=0
+PASS orphan-list rc=0 orphans=1 known+paid+no-metadata+other-tenant=excluded status_reads=8 writes=0
+PASS orphan-list-blind rc=2 void orphans=0
+PASS orphan-cancel-one rc=0 read<recheck<cancel<readback stripe_cancels=1 vendor_cancels=0 verdict=SEED-ORPHAN-CANCEL
+PASS orphan-cancel-refusals rc=1 order-exists+paid+no-metadata+other-tenant=refused refused_cancels=0 next_cancelled=1
+PASS orphan-cancel-already-canceled rc=0 stripe_posts=0
+PASS orphan-cancel-args rc=2 absent+malformed+twice+elsewhere=usage-error az_calls=0 curl_calls=0
+PASS stripe-get-sanitized rc=0 printed=pi_sg1+ch_sg1 secrets=0 pii=0
+PASS stripe-get-path-refused rc=1 customers+traversal+payment_methods=refused curl_calls=0 az_calls=0
+PASS stripe-get-live rc=1 printed=none
+PASS stripe-get-account-header with=acct_STUB1 without=none argv=none
+PASS stripe-get-livemode-absent refund=printed+n/a intent=refused
+PASS billing-ok rc=0 order=billing_get<pm<subscribe<sub<invoice quantity=1 locations=1 amount_paid=3900
+PASS billing-quantity-mismatch rc=1 quantity=1 locations=2
+PASS billing-amount-mismatch rc=1 quantity=2 amount_paid=3900 want=7800
+PASS billing-live rc=1 tag=stripe-mode printed=none
+PASS billing-replay rc=0 subscribe_calls=0 pm_calls=0 verdict=BILLING
+PASS billing-no-secret printed_key=0 printed_pm_body=0 printed_customer=0
+PASS sync-ok rc=0 quantity=1>2>1 order=read<create<delete<read probe_deleted=1
+PASS sync-no-subscription rc=1 tag=no-subscription shop_writes=0
+PASS sync-cleanup-on-fail rc=1 probe_deleted=1 summary=none
+PASS dry-run-tools rc=0 stages=10 az_calls=0 curl_calls=0
+selftest rc=0
