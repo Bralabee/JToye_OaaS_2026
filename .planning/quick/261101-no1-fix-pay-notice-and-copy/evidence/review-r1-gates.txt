@@ -1,0 +1,69 @@
+# Gates after the PR #1072 round-1 fixes (fix commit 4d189f50)
+
+## clean again + suites: npx jest --ci app/pay components/public
+Test Suites: 9 passed, 9 total
+Tests:       138 passed, 138 total
+rc=0
+
+## npm run lint
+✖ 27 problems (0 errors, 27 warnings)
+rc=0
+
+## npx tsc --noEmit
+rc=0
+
+## docs-freshness.sh BEFORE --write
+rc=1
+
+## docs-freshness.sh AFTER --write
+-  "jest_blocks": 3271,
++  "jest_blocks": 3273,
+-  "total_logical_invocations": 6783
++  "total_logical_invocations": 6785
+rc=0
+
+## check-doc-metrics.sh BEFORE prose edits
+FAIL: README.md [total_logical_invocations]: doc says 6783, docs/metrics.json says 6785
+FAIL: README.md [total_logical_invocations]: doc says 6783, docs/metrics.json says 6785
+FAIL: README.md [jest_blocks]: doc says 3271, docs/metrics.json says 3273
+FAIL: CLAUDE.md [total_logical_invocations]: doc says 6783, docs/metrics.json says 6785
+FAIL: CLAUDE.md [jest_blocks]: doc says 3271, docs/metrics.json says 3273
+FAIL: AGENTS.md [total_logical_invocations]: doc says 6783, docs/metrics.json says 6785
+FAIL: AGENTS.md [jest_blocks]: doc says 3271, docs/metrics.json says 3273
+FAIL: prose metric claim(s) disagree with docs/metrics.json (see above). Fix the doc, or run scripts/docs-freshness.sh --write if the tree legitimately changed.
+rc=1
+
+## scripts/check-doc-metrics.sh
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+rc=0
+
+## scripts/check-doc-citations.sh
+  violations  0
+PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+rc=0
+
+## scripts/check-no-object-store-residue.sh
+SUMMARY files_scanned=4500 raw_hits=2212 unique_lines=2036 allowlisted=2036 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+PASS: no retired object-store residue in 4500 tracked file(s); 2036 hit line(s) covered by 51 reasoned, live allowlist entr(ies).
+rc=0
+
+## scripts/check-branch-behind-base.sh
+
+PASS: HEAD contains every commit on origin/main (6c1fdc93); it is 10 commit(s) ahead and 0 behind.
+rc=0
+
+## scripts/check-handoff-contract.sh
+PASS: HANDOFF.md — 1 gate-count claim(s) and 36 state claim(s) hold; 2 commit(s) behind (budget 3).
+      NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+rc=0
+
+## full frontend jest: npx jest --ci
+Test Suites: 275 passed, 275 total
+Tests:       3273 passed, 3273 total
+Snapshots:   2 passed, 2 total
+rc=0
+
+## check-changelog-contract.sh
+PASS: all 86 merged feat/fix PR(s) since fbee244d are cited in docs/CHANGELOG.md (0 exempt).
+rc=0
