@@ -11,6 +11,7 @@ import { fetchAllMyShops, fetchMyAccess } from "@/lib/shops-api"
 import { joinedToastTitle } from "@/lib/joined-toast"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
 import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
@@ -141,6 +142,12 @@ export default function DashboardPage() {
   const [hoursNoticeShops, setHoursNoticeShops] = useState<Shop[] | null>(null)
   // 37-12: the scope the finance summary was filtered on, as the SERVER echoed it.
   const [financeScope, setFinanceScope] = useState<FinanceScope | null>(null)
+  // SW-ADE-08 / SW-TND-07 (swarm epic #964): how the last finance read for a scope ended, keyed on
+  // that scope, so "still loading", "refused" and "failed" are never shown as "no data".
+  const [financeResult, setFinanceResult] = useState<{
+    key: string
+    status: "ready" | "forbidden" | "error"
+  } | null>(null)
   const { toast } = useToast()
 
   // 23-07's persisted shop-context switcher. When a shop is selected, the
@@ -256,7 +263,7 @@ export default function DashboardPage() {
 
   // 37-12: the finance tile loads on its own, keyed on the same scope rule as the
   // finance page, so waiting for the caller's access never holds up the other tiles.
-  // A refusal or failure leaves the tile empty, as before ("No financial data yet").
+  // A refusal or failure has its own tile state (SW-ADE-08 / SW-TND-07), never "no data".
   const financeSeq = useRef(0)
   useEffect(() => {
     const seq = ++financeSeq.current
@@ -264,20 +271,40 @@ export default function DashboardPage() {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- the tile's scope-change reset; nothing is fetched for this scope
       setFinancialSummary(null)
       setFinanceScope(null)
+      setFinanceResult(null)
       return
     }
+    const key = contextShopId ?? "all"
     fetchFinanceSummary({ shopId: contextShopId })
       .then(({ summary, scope }) => {
         if (seq !== financeSeq.current) return
         setFinancialSummary(summary)
         setFinanceScope(scope)
+        // A body that is not a summary is a failed read, not an empty business.
+        setFinanceResult({ key, status: summary ? "ready" : "error" })
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (seq !== financeSeq.current) return
         setFinancialSummary(null)
         setFinanceScope(null)
+        setFinanceResult({
+          key,
+          status: onboardingHttpStatus(error) === 403 ? "forbidden" : "error",
+        })
       })
   }, [contextShopId, financeTileGate])
+
+  // What the VAT tile shows. A result for another scope (the switcher just moved) is still loading.
+  const financeTileState: "loading" | "ready" | "forbidden" | "error" | "choose-shop" =
+    financeTileGate === "wait"
+      ? "loading"
+      : financeTileGate === "staff-refused"
+        ? "forbidden"
+        : financeTileGate === "choose-shop"
+          ? "choose-shop"
+          : financeResult && financeResult.key === (contextShopId ?? "all")
+            ? financeResult.status
+            : "loading"
 
   // Re-fetch dashboard data whenever the selected shop changes so the order
   // activity always reflects the switcher (VSA-03).
@@ -488,13 +515,29 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle className="text-lg">Revenue by VAT Category</CardTitle>
               <CardDescription>
-                {financialSummary
+                {financeTileState === "ready" && financialSummary
                   ? `Total: £${(financialSummary.totalRevenuePennies / 100).toFixed(2)} revenue, £${(financialSummary.totalVatPennies / 100).toFixed(2)} VAT`
-                  : "No financial data yet"}
+                  : financeTileState === "loading"
+                    ? "Loading financial figures…"
+                    : financeTileState === "forbidden"
+                      ? "Finance figures need manager access."
+                      : financeTileState === "error"
+                        ? "Couldn't load the financial figures."
+                        : "Figures are shown one shop at a time."}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {vatChartData.length === 0 ? (
+              {financeTileState === "loading" ? (
+                <Skeleton className="h-[250px] w-full" aria-hidden="true" />
+              ) : financeTileState === "forbidden" ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  A shop manager or the business owner can see revenue and VAT here.
+                </p>
+              ) : financeTileState === "error" ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  Try again in a moment, or open Finance.
+                </p>
+              ) : financeTileState === "choose-shop" ? null : vatChartData.length === 0 ? (
                 <p className="py-8 text-center text-sm text-slate-500">No transactions to display</p>
               ) : (
                 <ResponsiveContainer width="100%" height={250}>
