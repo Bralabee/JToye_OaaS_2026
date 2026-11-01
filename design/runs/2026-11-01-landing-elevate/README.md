@@ -107,3 +107,115 @@ device profile.
 7. **Two new photographs** were added to the reused set: biryani (CC BY-SA 4.0) and chana masala
    (CC0). The Vegan chip's chana masala plate also has samosas beside it, and their filling is not
    stated.
+
+---
+
+## Build into the app — 2026-11-01 (design-run steps 6–7, D14)
+
+Owner rulings recorded first as **D14** (`design/decisions.md`); `identity.md` rewritten for the
+adopted palette (D13 "Market day" superseded). Built by the frontend agent on
+`design/landing-elevate-20261101`. No [OWNER] step was taken.
+
+### What was built
+
+| Area | Change |
+|---|---|
+| Tokens | `brand` (oxblood 100/700/800/900), `gold` ramp (DEFAULT kept = `#E8B04B`, 200/400/500), `warm` (100/200/300/600/700/900) in `tailwind.config.ts`. **No token retired:** `cream`, `amber-ink` are used by `/shop`, storefront, cart, checkout, track; `oxblood-deep` is mirrored by the Keycloak theme CSS and the k8s golden, outside this write scope. |
+| Photos | The sketch's 8 credited WebPs copied to `frontend/public/marketing/landing/` with `credits.json` (paths updated, `copiedFrom` kept). `components/marketing/landing-photos.ts` holds sizes, alt text, the visible credit line and the cuisine → example-photo assignment (first recognised tag, slug order, so re-ordering by distance never moves a picture; no match → no picture). All through `next/image`. |
+| Hero | Flat `warm-100` field; radial wash and its GSAP parallax removed; eyebrow removed; h1 800, -0.03em, 34/48/56px; lede 16/20px warm-900; HeroSearch flat (white field, gold-400 pill, no glow, no lift); chips white pills with 32px dish thumbnails; doors are flat gold-400 (with the jollof-and-plantain strip, eager, `fetchPriority=high`) and brand-900; hover one ramp step, gated `(hover:hover) and (pointer:fine)`; press `scale(0.98)`; desktop collage = 4 photos with the old static tilts. |
+| Kitchens | White section; cards flat `warm-100`, no border/shadow, hover `warm-200`; own banner via `SafeImage` when present, else the example photo captioned "<Cuisine> — example photo"; the placeholder logo is no longer shown (D12); badges Open emerald-700 / Paused gold-200 / Closed warm-700; **card peek**: cards are 80% wide below 640px, the old `grow basis-260` rule above; `DishScroller` edge fade (gradient) removed, `data-can-*` flags kept for the arrows; arrows flat (no outline, shadow or backdrop blur). "See all kitchens" loses the "→". |
+| How it works | warm-100; step circles brand-900; rail warm-300 track with brand-700 GSAP fill; Track-live copy per D14 item 3. |
+| Trust strip + credits | Kept (the sketch did not draw it; README above says "UK" lives there): flat warm-100 pills, emerald-700 ticks. The credit line sits in the same band so the page keeps its pinned four Marketing bands. |
+| Kept | No client directive on `page.tsx`, both doors and routes, crawlable chip links, `NearYouRow` and its three states, "Dishes cooking near you" byte-identical, JSON-LD, metadata, Marketing tier on all four bands, every remaining `data-hero-*` hook. |
+| Not changed (other routes) | `PublicShell`/header/footer/cookie notice are shared chrome: untouched, so the header rule, the footer caps labels and the shell's `bg-cream` ground remain (see gate). |
+
+**Motion, read in code (not from screenshots):** nothing added. Removed: the heat-wash parallax.
+State transitions only: `background-color`/`transform` 150 ms `cubic-bezier(0.23,1,0.32,1)`, press
+0.97–0.98, arrow nudge 3px on fine-pointer hover, `motion-reduce:transition-none` on the doors and
+search button. The GSAP scene (word split + entrance, doors deal-in, title/step reveals, rail scrub,
+trust-chip pop) is unchanged — note it still includes per-section entrances that `rulings.tsv`
+`section-entrance avoid` would not choose today; untouched here because it is the existing contract.
+
+### CLS fix found while proving (commit `1fee9b9d`)
+
+The first build regressed throttled CLS: 375px **0.2025** (baseline 0.1793, tolerance 0.02) and
+1440px **0.157** (control 0.1316). Cause, measured by blocking the web font: the size-adjusted
+fallback sets the h1 on fewer lines than Work Sans (2 vs 3 at 360–413px and from 1024px), so the swap
+pushed the first screen down a line. Fix: `min-height: 3.12em` on the h1 in exactly those ranges.
+After: 375px **0.1608**, 1440px **0.0093** (before build: 0.1795 / 0.0403).
+
+### Gate (step 7) — app, stack-free
+
+Before: `c82cc0e7` built in a scratch copy, `next start -p 3202`. After: this branch, `-p 3201`. Both
+against a fixture API on 127.0.0.1:19090 serving the three `DemoDataSeeder` shops (all
+`bannerUrl: null`; Brixton paused; real-distance `lat/lon/radiusKm` filtering). Compose and its DB
+untouched; the DB-writing near-you-row block excluded (`--grep-invert "disclosed, not dropped"`).
+
+| Check | BEFORE (`inspect-app-before/`) | AFTER (`inspect-app-after/`) |
+|---|---|---|
+| `lint.mjs` (page, hero-search, near-you-row, shop-card, dish-scroller) | rc 1 · 29 FAIL (shadow, gradient, emoji, eyebrow, hairline…), 4 WARN | rc 0 · **0 FAIL**, 1 WARN `em-dash` (23, incl. comments and D13's caption wording); same with `landing-photos.ts` + `hero-scene.tsx` added |
+| `inspect.mjs --widths 1280,768,390 --allow still-page --film` | rc 1 · 13 FAIL / 4 WARN | rc 1 · **6 FAIL / 6 WARN** |
+
+AFTER's FAILs, each placed:
+- `headline-lines` @1280 and @390, `focal-point` @1280 — **accepted by the owner (D14 item 2).** The
+  catalogue has no rule_id for either, so no `rulings.tsv` row; recorded in D14.
+- `micro-label` ("For customers", "Legal", "For operators") and `hairline` (header `border-b`, two
+  footer `border-t`) — shared chrome, other routes; not restyled here.
+- `body-size` 14px — measured by character count: inside `<main>` 16px 508 vs 14px 491 at 1280;
+  outside `<main>` (footer, cookie notice) 14px 614 + 12px 255. The shared chrome decides it.
+WARNs: `palette-cream` = `PublicShell`'s `bg-cream` root and the cookie button (shared);
+`outlined-box` = the cookie notice; `measure` 203ch and `small-text` = footer OS-data lines and the
+header "Sign in"; `side-scroll` = the kitchen scroller (deliberate); `no-footage` (out of scope).
+Gone vs before: eyebrow, emoji, gradient, shadow, outlined-box ×4→1 (chrome), few-pictures,
+covered-text, the landing's own hairlines.
+
+### Tests
+
+- `npx tsc --noEmit` rc 0. `npm run lint` rc 0 (0 errors, 26 warnings, none in a touched file).
+- Jest, landing + `components/marketing` + touched gates (`contrast-literals`, `palette-discipline`,
+  `csp-headers`, `reduced-motion-css`, `layout-widths-css`): **17 suites, 198 tests, rc 0**.
+  Full suite: 292 suites, 3449/3450 — the one failure was `products-orders-shop-scope` timing out at
+  5 s while inspect ran beside it; re-run alone 13/13.
+- **Shown failing against the before source** (source files checked out from `c82cc0e7`, new tests
+  kept, then restored and `git diff HEAD --quiet` rc 0): 12 of 52 fail — the 5 new "Landing elevate
+  (D14)" tests, 4 new ShopCard picture tests, and the 3 restyled fee-row byte controls.
+  `landing-photos.test.ts` size check shown failing by a 784→785 edit (reverted).
+- Ledger: `contrast-literals` loses `page.tsx::text-emerald-600` and `hero-search.tsx::text-slate-500`
+  (sites gone) and gains `page.tsx::text-brand-100` (door body on brand-900, 14.44:1).
+- Playwright on 3201 (motion, dish-scroller, landing-webperf, near-you-row, public-layout,
+  layout-width-contract, storefront-ssr-seo, mobile-instrument-contract, public-a11y), both projects:
+  **149 passed, 9 skipped, 11 failed**. The 11 are all `storefront-ssr-seo` tests that open
+  `/shop/{slug}` (menus, JSON-LD, sitemap), which the fixture cannot serve; the same 11 fail on the
+  before build.
+- **Changed e2e assertion shown failing:** `marketing-motion` "/ … has no heat-wash, scrubs the rail"
+  FAILs on the before build (`the heat-wash is gone (D14)`: expected 0, received 1) and passes after.
+
+### Throttled vitals (Fast-3G-ish, 4x CPU; landing-webperf spec + a probe)
+
+| Profile | BEFORE | AFTER |
+|---|---|---|
+| 375×812 CLS | 0.1795 | **0.1608** |
+| 375×812 LCP | 976–988 ms (lede text) | **964–984 ms** (the door photo) |
+| 1440×900 CLS | 0.0403 | **0.0093** |
+| 1440×900 LCP | 972–988 ms | **956–972 ms in 8 of 9 probe runs; 2968 ms in 1, and 3024 ms in the spec's own run** |
+| post-grant shift (spec) | — | 0.0000 |
+
+Phone images at 390px: DPR1 door `w=384`, cards `w=640`; DPR2 `w=640/750`; DPR3 requests `w=1080`
+and is served the 800px original (no upscale; checked by WebP header). Chip thumbnails 32/64/96w.
+
+## Unsettled after the build — for Sanmi
+
+1. **Desktop LCP outlier.** The HeroScene word split (unconditional by its recorded decision) can be
+   re-reported as a *larger* h1 LCP entry once Work Sans has swapped in, because the fallback face
+   now paints the h1 smaller (2 lines) than Work Sans (3). The before page's fallback paint was the
+   larger one, so it never happened there. A `deviceSizes` cap at 750w (to keep 3x phones ≤750px)
+   made it happen in 9/9 probe runs, so it was reverted (`e31cd586`). Options: split only when the
+   entrance plays (changes a recorded HeroScene decision), or match the fallback metrics in
+   `app/layout.tsx` (all pages). Not decided here.
+2. **3x phones get the 800px original**, not ≤750px, for the reason above.
+3. Shared chrome keeps the header rule, footer caps labels and the shell's cream root — a separate
+   PR across every public route if wanted (the step-8 ruling from the first landing run).
+4. The step-8 look (separate scorer, blind A/B) was not run.
+5. `scripts/check-doc-metrics.sh` is red until README/CLAUDE.md/AGENTS.md quote the new counts
+   (jest 3450 / 292 files, total 6992); `docs/metrics.json` was regenerated (`--write`). Those three
+   files are outside the frontend write scope.
