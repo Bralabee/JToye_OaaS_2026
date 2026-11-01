@@ -506,10 +506,36 @@ jobs:
             exit 1
           }
 
+      # THE HOST PORT IS PINNED FOR THIS RECREATE. Compose publishes core-java on the RANGE
+      # 127.0.0.1:9090-9091 (so `--scale core-java=2` can give replica 2 :9091), and Docker
+      # hands out range ports round-robin: a plain --force-recreate moved core-java to :9091
+      # (observed: branch nightly 41291041531, `docker compose ps` at the end of the job showed
+      # "Up 7 minutes (healthy) 127.0.0.1:9091->9090/tcp"), so this probe, the forwarder
+      # (--forward-to localhost:9090) and the browser (NEXT_PUBLIC_API_URL=localhost:9090) all
+      # lost it. Reproduced on a scratch compose project: range recreates alternate
+      # :19091, :19090, :19091; with the `!override` below three recreates all stay on :19090.
+      # The override replaces ONLY core-java's ports (rendered config otherwise identical) and
+      # is used only here — the stack-up step is the only other `up`, and it runs before this.
+      # A fixed port cannot silently move: if 9090 were still held, `up` fails "port is already
+      # allocated", and the published-port check below fails in seconds, not after 300s.
       - name: Recreate core-java with the CI Stripe key
         run: |
           set -euo pipefail
-          docker compose -f "$COMPOSE_FILE" up -d --no-deps --force-recreate core-java
+          docker compose version
+          pin="$RUNNER_TEMP/core-java-port-pin.yml"
+          cat > "$pin" <<'YAML'
+          services:
+            core-java:
+              ports: !override
+                - "${JTOYE_BIND_HOST:-127.0.0.1}:9090:9090"
+          YAML
+          docker compose -f "$COMPOSE_FILE" -f "$pin" up -d --no-deps --force-recreate core-java
+          published=$(docker compose -f "$COMPOSE_FILE" -f "$pin" port core-java 9090)
+          echo "core-java published on: $published"
+          case "$published" in
+            *:9090) ;;
+            *) echo "::error::core-java is published on '$published' after the recreate, not :9090"; exit 1 ;;
+          esac
           deadline=$(( SECONDS + 300 ))
           up_core=0
           while [ "$SECONDS" -lt "$deadline" ]; do
