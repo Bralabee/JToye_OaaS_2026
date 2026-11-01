@@ -45,6 +45,8 @@ import java.util.List;
  * @param recordedAllergens     the order-line snapshot union, or null
  * @param flags                 advisory reconciliation flags, never merged into either set; never null
  * @param fulfilmentType        collection or delivery; null resolves to the delivery copy
+ * @param summary               the items, total and destination (SW-JRD-15); null when not read, and
+ *                              then the email carries no order summary rather than an empty one
  */
 public record CustomerEmailContext(
         String shopName,
@@ -54,7 +56,16 @@ public record CustomerEmailContext(
         List<String> acknowledgedAllergens,
         List<String> recordedAllergens,
         List<OrderAllergenFlagDto> flags,
-        FulfilmentType fulfilmentType) {
+        FulfilmentType fulfilmentType,
+        OrderEmailSummary summary) {
+
+    /** A context with no order summary (the shape before SW-JRD-15). */
+    public CustomerEmailContext(String shopName, String shopEmail, SellerIdentityDto seller, OrderChannel placedVia,
+                                List<String> acknowledgedAllergens, List<String> recordedAllergens,
+                                List<OrderAllergenFlagDto> flags, FulfilmentType fulfilmentType) {
+        this(shopName, shopEmail, seller, placedVia, acknowledgedAllergens, recordedAllergens, flags,
+                fulfilmentType, null);
+    }
 
     public CustomerEmailContext {
         acknowledgedAllergens = acknowledgedAllergens == null ? null : List.copyOf(acknowledgedAllergens);

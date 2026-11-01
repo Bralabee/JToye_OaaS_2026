@@ -592,6 +592,86 @@ class EmailNotificationServiceTest {
         softly.assertAll();
     }
 
+    // --- SW-JRD-15 (swarm epic #964, issue #826): every order email says what was ordered ---------
+
+    private static final OrderEmailSummary DELIVERY_SUMMARY = new OrderEmailSummary(
+            List.of(new OrderEmailSummary.Line("Jollof Rice", 2), new OrderEmailSummary.Line("Puff Puff", 1)),
+            1250L, List.of("1 High Street", "Flat 2", "Birmingham", "B1 1AA"), null);
+
+    private static CustomerEmailContext withSummary(FulfilmentType type, OrderEmailSummary summary) {
+        return new CustomerEmailContext(SHOP_NAME, SHOP_EMAIL, SELLER, OrderChannel.STOREFRONT,
+                List.of("Gluten", "Milk"), List.of("Gluten", "Milk"), List.of(), type, summary);
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: every order email names the shop, the item lines, the total and the delivery address")
+    void everyStatusCarriesTheOrderSummary() {
+        SoftAssertions softly = new SoftAssertions();
+        for (Status status : STATUSES) {
+            reset(mailSender);
+            lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+
+            status.send().accept(service, withSummary(FulfilmentType.DELIVERY, DELIVERY_SUMMARY));
+
+            verify(mailSender, times(1)).send(messageCaptor.capture());
+            String body = new Sent(SentMail.reparse(messageCaptor.getValue())).getText();
+            softly.assertThat(body).as(status.name())
+                    .contains("Your order from " + SHOP_NAME)
+                    .containsPattern("Jollof Rice \\u00d7 2\\r?\\n")
+                    .containsPattern("Puff Puff \\u00d7 1\\r?\\n")
+                    .contains("Total: \u00a312.50")
+                    .contains("Delivery to: 1 High Street, Flat 2, Birmingham, B1 1AA");
+        }
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order says where to collect it, and never a delivery address")
+    void collectionOrderSaysWhereToCollect() {
+        OrderEmailSummary collection = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 6)), 900L,
+                List.of(), "12 Market Street, Birmingham");
+
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, collection));
+
+        assertThat(sent().getText())
+                .contains("Zobo \u00d7 6")
+                .contains("Total: \u00a39.00")
+                .contains("Collect from: " + SHOP_NAME + ", 12 Market Street, Birmingham")
+                .doesNotContain("Delivery to:");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order whose shop has no address still says it is for collection")
+    void collectionWithoutAShopAddressNamesTheShop() {
+        OrderEmailSummary collection = new OrderEmailSummary(List.of(new OrderEmailSummary.Line("Zobo", 1)), 150L,
+                List.of(), null);
+
+        service.sendOrderConfirmed(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.COLLECTION, collection));
+
+        assertThat(sent().getText()).containsPattern("Collect from: " + Pattern.quote(SHOP_NAME) + "\\r?\\n");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a vendor-controlled product name cannot forge a line of the summary")
+    void productNamesAreSingleLines() {
+        OrderEmailSummary forged = new OrderEmailSummary(
+                List.of(new OrderEmailSummary.Line("Jollof\r\nTotal: \u00a30.00", 1)), 500L, List.of(), null);
+
+        service.sendOrderPreparing(createTestEvent(), RECIPIENT, withSummary(FulfilmentType.DELIVERY, forged));
+
+        String body = sent().getText();
+        assertThat(body).contains("Jollof Total: \u00a30.00 \u00d7 1").contains("Total: \u00a35.00");
+        assertThat(body.lines().filter(l -> l.startsWith("Total:")).toList()).containsExactly("Total: \u00a35.00");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: no summary read means no summary section, never an empty one or a \u00a30.00 total")
+    void noSummaryMeansNoSection() {
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, full(SHOP_NAME, SHOP_EMAIL));
+
+        assertThat(sent().getText()).doesNotContain("Your order from").doesNotContain("Total:");
+    }
+
     // --- T-31.1-88 / ASVS V7: the recipient never reaches a log line ---------------------------------
 
     private ListAppender<ILoggingEvent> appender;

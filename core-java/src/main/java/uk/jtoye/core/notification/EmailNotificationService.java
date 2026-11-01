@@ -410,9 +410,9 @@ public class EmailNotificationService {
     // ---- Body ------------------------------------------------------------------------------------
 
     /**
-     * The whole plain-text body: the status lead, the tracking link, (order received only) the
-     * allergen record, the seller block, (order received only) the cancellation statement, and the
-     * platform footer.
+     * The whole plain-text body: the status lead, the order summary (when the listener read one), the
+     * tracking link, (order received only) the allergen record, the seller block, (order received
+     * only) the cancellation statement, and the platform footer.
      */
     String body(OrderStateChangeEvent event, String lead, CustomerEmailContext ctx, boolean orderReceived) {
         return body(event, lead, ctx, orderReceived, null);
@@ -421,7 +421,12 @@ public class EmailNotificationService {
     String body(OrderStateChangeEvent event, String lead, CustomerEmailContext ctx, boolean orderReceived,
                 @Nullable String unsubscribePageUrl) {
         StringBuilder b = new StringBuilder();
-        b.append(lead).append("\n\n").append(trackingLink(event)).append('\n');
+        b.append(lead).append("\n\n");
+        String summary = orderSummary(ctx);
+        if (summary != null) {
+            b.append(summary).append('\n');
+        }
+        b.append(trackingLink(event)).append('\n');
         if (orderReceived) {
             b.append('\n').append(allergenRecord(ctx));
         }
@@ -431,6 +436,50 @@ public class EmailNotificationService {
         }
         b.append('\n').append(footer(ctx, unsubscribePageUrl));
         return b.toString();
+    }
+
+    /**
+     * SW-JRD-15 (swarm epic #964, issue #826): what was ordered, from which shop, for how much, and
+     * where it goes. Every value but the total is customer- or vendor-written, so each passes
+     * {@link #oneLine}: a product name cannot forge a second "Total:" line. Null when the listener
+     * read no summary: the email then has no section rather than an empty one or a £0.00 total.
+     */
+    private String orderSummary(CustomerEmailContext ctx) {
+        OrderEmailSummary summary = ctx.summary();
+        if (summary == null) {
+            return null;
+        }
+        StringBuilder b = new StringBuilder();
+        b.append("Your order from ").append(shopLabel(ctx)).append('\n');
+        for (OrderEmailSummary.Line line : summary.lines()) {
+            String name = oneLine(line.name());
+            b.append(name == null ? "Item" : name).append(" \u00d7 ")
+                    .append(line.quantity() == null ? "?" : line.quantity()).append('\n');
+        }
+        if (summary.totalPennies() != null) {
+            b.append("Total: ").append(pounds(summary.totalPennies())).append('\n');
+        }
+        if (ctx.fulfilmentType() == FulfilmentType.COLLECTION) {
+            String where = oneLine(summary.collectionAddress());
+            b.append("Collect from: ").append(shopLabel(ctx));
+            if (where != null) {
+                b.append(", ").append(where);
+            }
+            b.append('\n');
+        } else {
+            List<String> address = summary.deliveryAddress().stream()
+                    .map(EmailNotificationService::oneLine).filter(Objects::nonNull).toList();
+            if (!address.isEmpty()) {
+                b.append("Delivery to: ").append(String.join(", ", address)).append('\n');
+            }
+        }
+        return b.toString();
+    }
+
+    /** "£12.50": pennies as a UK customer reads a price. */
+    static String pounds(long pennies) {
+        long abs = Math.abs(pennies);
+        return (pennies < 0 ? "-" : "") + "\u00a3" + (abs / 100) + "." + String.format(Locale.UK, "%02d", abs % 100);
     }
 
     /** D-08: three statements, never merged; null is never rendered as "none". */

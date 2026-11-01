@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.notification.CustomerEmailContext;
+import uk.jtoye.core.notification.OrderEmailSummary;
 import uk.jtoye.core.notification.EmailNotificationService;
 import uk.jtoye.core.notification.consent.ConsentGate;
 import uk.jtoye.core.notification.consent.NotificationCategory;
@@ -277,14 +278,84 @@ class OrderStateChangeListenerTest {
         order.setFulfilmentType(FulfilmentType.COLLECTION);
         OrderItem jollof = new OrderItem();
         jollof.setProductName("Jollof Rice");
+        // The field, not the setter: OrderItem's setters recompute the line total and need both values.
+        org.springframework.test.util.ReflectionTestUtils.setField(jollof, "quantity", 2);
         jollof.setAllergenMask(65);
         jollof.setAllergenFlagMask(0);
         OrderItem puff = new OrderItem();
         puff.setProductName("Puff Puff");
+        org.springframework.test.util.ReflectionTestUtils.setField(puff, "quantity", 1);
         puff.setAllergenMask(0);
         puff.setAllergenFlagMask(1 << 2);
         order.setItems(new java.util.ArrayList<>(List.of(jollof, puff)));
         return order;
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: the order summary (lines, total, destination) is read from the loaded order, "
+            + "and never carries the allergy note")
+    void emailContextCarriesTheOrderSummary() {
+        UUID orderId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(orderId, tenantId, "ORD-SUM-1",
+                OrderStatus.DRAFT, OrderStatus.PENDING, OffsetDateTime.now());
+        Order delivery = orderWithLines(shopId, OrderChannel.STOREFRONT, 65, "buyer@example.com");
+        delivery.setTotalAmountPennies(1250L);
+        delivery.setFulfilmentType(FulfilmentType.DELIVERY);
+        delivery.setAddressLine1("1 High Street");
+        delivery.setAddressLine2(" ");
+        delivery.setAddressCity("Birmingham");
+        delivery.setAddressPostcode("B1 1AA");
+        delivery.setAllergyNote("My child is allergic to peanuts");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(delivery));
+        Shop shop = new Shop();
+        shop.setId(shopId);
+        shop.setTenantId(tenantId);
+        shop.setName("Mama Ad\u00e9's Kitchen");
+        shop.setAddress("12 Market Street, Birmingham");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+
+        listener.handleOrderStateChange(event);
+
+        ArgumentCaptor<CustomerEmailContext> ctx = ArgumentCaptor.forClass(CustomerEmailContext.class);
+        verify(emailService).sendOrderConfirmation(eq(event), eq("buyer@example.com"), ctx.capture());
+        OrderEmailSummary summary = ctx.getValue().summary();
+        assertThat(summary).as("the listener reads the summary").isNotNull();
+        assertThat(summary.lines()).extracting(l -> l.name() + " x" + l.quantity())
+                .containsExactly("Jollof Rice x2", "Puff Puff x1");
+        assertThat(summary.totalPennies()).isEqualTo(1250L);
+        assertThat(summary.deliveryAddress()).as("blank lines dropped")
+                .containsExactly("1 High Street", "Birmingham", "B1 1AA");
+        assertThat(summary.collectionAddress()).as("a delivery order names no collection point").isNull();
+        assertThat(summary.toString()).doesNotContain("peanuts");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order carries the shop's address and no delivery address")
+    void collectionSummaryCarriesTheShopAddress() {
+        UUID orderId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(orderId, tenantId, "ORD-SUM-2",
+                OrderStatus.PENDING, OrderStatus.CONFIRMED, OffsetDateTime.now());
+        Order collection = orderWithLines(shopId, OrderChannel.STOREFRONT, 65, "buyer@example.com");
+        collection.setAddressLine1("stale address the policy should have cleared");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(collection));
+        Shop shop = new Shop();
+        shop.setId(shopId);
+        shop.setTenantId(tenantId);
+        shop.setName("Mama Ad\u00e9's Kitchen");
+        shop.setAddress("12 Market Street, Birmingham");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+
+        listener.handleOrderStateChange(event);
+
+        ArgumentCaptor<CustomerEmailContext> ctx = ArgumentCaptor.forClass(CustomerEmailContext.class);
+        verify(emailService).sendOrderConfirmed(eq(event), eq("buyer@example.com"), ctx.capture());
+        OrderEmailSummary summary = ctx.getValue().summary();
+        assertThat(summary.collectionAddress()).isEqualTo("12 Market Street, Birmingham");
+        assertThat(summary.deliveryAddress()).isEmpty();
     }
 
     @Test
