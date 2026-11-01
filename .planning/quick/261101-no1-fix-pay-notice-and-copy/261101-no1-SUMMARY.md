@@ -170,6 +170,40 @@ Where the fail direction is "not run", the rc=0 is **unverified** as a discrimin
 - **Runtime parity:** no runtime was handed back or rebuilt.
 - **Browser check:** no 360 px re-check was run. The next staging pass is the visual proof for fix 1.
 
+## PR #1072 review round 1 (on b80b1dcf)
+
+The coordinator ruled two of the eight inline findings admissible. A third was a comment correction. The other five are recorded in the resolution, not fixed: the checkout-page overlap, the "just now" copy for deterministic failures, the jsdom wording assertion, reusing the route helper, and the 360 px visual check.
+
+| Finding | Commit | Change |
+|---------|--------|--------|
+| 2 (no-key reload loop) | 1683c07c (red), 4d189f50 (fix) | `reloadable: fromResume && promise !== null`. A bundle with no key is a build constant, so no Try again is offered |
+| 3 (resume-path Payment Element failure) | 1683c07c (red), 4d189f50 (fix) | The `paying` phase carries `fromResume`, and `onLoadError` sets `reloadable: phase.fromResume` |
+| 1 (comment only) | 4d189f50 | The CookieNotice header now states the true premise (details below). The carve-out's behaviour is unchanged |
+
+**Finding 1, the corrected premise.** Stripe.js sets first-party fraud-prevention cookies on `/pay`. They are strictly necessary, and `/legal/cookies` ("Stripe, on the payment step") discloses them. `/pay`'s PublicShell footer links that page.
+
+**Correction to this record.** The PLAN's T-no1-02 rationale ("/pay writes no client storage") and the first SUMMARY's cross-cutting line had the same false premise. Both are superseded by the corrected comment.
+
+**Evidence: `evidence/review-r1-fixes-tdd.txt`.**
+- **RED, rc=1:** the 2 new blocks failed (the no-key block found a Try again; the Payment Element block found none). The first-visit Payment Element block, which now also asserts no Try again, passed.
+- **GREEN, rc=0:** 46/46.
+- **Break arms after 4d189f50**, each restored by sha256:
+  - A, no key reloadable: the no-key block RED.
+  - B, the element failure never reloadable: the resume element block RED.
+  - C, the element failure always reloadable: the first-visit element block RED.
+
+**Gates: `evidence/review-r1-gates.txt`.**
+
+| Gate | Result |
+|------|--------|
+| pay + public suites | 9 suites, 138 tests, rc=0 |
+| full frontend jest | 275/275 suites, 3273/3273 tests, rc=0 |
+| `npm run lint` | rc=0 |
+| `npx tsc --noEmit` | rc=0 |
+| `scripts/docs-freshness.sh` | rc=1 before `--write`, rc=0 after (jest_blocks 3271 to 3273, total 6783 to 6785) |
+| `scripts/check-doc-metrics.sh` | rc=1 before the prose edits, rc=0 after |
+| `check-doc-citations.sh`, `check-no-object-store-residue.sh`, `check-branch-behind-base.sh`, `check-handoff-contract.sh` | rc=0 each |
+
 ## Self-Check: PASSED
 
 - Commits on HEAD: FOUND f6f91f3f, a8df5fcd, cd32c224, 978e01fd, 5ce434b5, 82b93d32, ffb80341.
