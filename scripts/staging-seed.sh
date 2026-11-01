@@ -1825,6 +1825,13 @@ case "$method $base" in
     oid="${base#/api/v1/orders/}"; oid="${oid%/cancel}"; key=empty; code=200; : > "$STUB_LOG_DIR/order-cancelled-$oid" ;;
   "POST /api/v1/orders/"*"/submit"|"POST /api/v1/orders/"*"/confirm"|"POST /api/v1/orders/"*"/start-preparation")
     key=transition; code="${STUB_TRANSITION_CODE:-200}" ;;
+  # billing (plan 30-26, PAY-02 / D-04): the product's billing API, a TEST payment
+  # method, then the subscription and its invoice read from Stripe by id.
+  "GET /api/v1/billing/subscription") key=billing-get; code=200 ;;
+  "POST /api/v1/billing/subscription") key=billing-post; code=200 ;;
+  "POST /v1/payment_methods") key=pm-create; code=200 ;;
+  "GET /v1/subscriptions/"*) key="sub-${base#/v1/subscriptions/}"; code=200 ;;
+  "GET /v1/invoices/"*) key="inv-${base#/v1/invoices/}"; code=200 ;;
   # stripe-get: any other Stripe read answers the one generic fixture.
   "GET /v1/"*) key=stripe-get; code=200 ;;
 esac
@@ -2820,6 +2827,139 @@ IDF
   fi
   if [ -z "$why" ]; then _st_result "PASS stripe-get-livemode-absent refund=printed+n/a intent=refused"
   else _st_result "FAIL stripe-get-livemode-absent $why"; fails=$((fails + 1)); fi
+
+  # ===== billing (plan 30-26, PAY-02 / D-04): the staging tenant's subscription and
+  # its latest invoice, read from Stripe BY ID and checked against the tenant's
+  # locations. The customer id, the card fingerprint and the invoice's customer
+  # fields carry markers (STUBCUSbl1, STUBFPbl1, piizq7), so a print is detectable.
+  local bl_args=("${tool_args[@]}" --stage billing) bl_leak_re='STUBCUSbl1|STUBFPbl1|piizq7|PIIZQ7'
+  local bl_line_re='^BILLING sub=sub_bl1 quantity=1 locations=1 invoice=in_bl1 amount_paid=3900 status=paid livemode=false at=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'
+  cp "$ast/resp/shops.json" "$ast/resp/shops-before-billing.json"
+  _st_bl_fx() {   # STATUS(NONE|ACTIVE) QUANTITY LOCATIONS AMOUNT_PAID INVOICE_LIVEMODE(true|false)
+    local active=false; [ "$1" = ACTIVE ] && active=true
+    jq -n --arg t "$tid" --argjson a "$active" --arg st "$1" '{tenantId: $t, billingPlanMode: "SAAS_HYBRID_STANDARD", subscriptionStatus: $st,
+        stripeCustomerId: (if $a then "cus_STUBCUSbl1" else null end), stripeSubscriptionId: (if $a then "sub_bl1" else null end),
+        latestStripeInvoiceId: (if $a then "in_bl1" else null end), monthlyAmountPennies: 3900, effectiveFeeBps: 50,
+        monthlyFeeCapPennies: 0, monthlyFeeChargedPennies: 0, walkSetupCompleted: false, cancelAtPeriodEnd: false, currentPeriodEnd: null}' \
+      > "$ast/resp/billing-get.json"
+    jq -n --arg t "$tid" '{tenantId: $t, billingPlanMode: "SAAS_HYBRID_STANDARD", subscriptionStatus: "ACTIVE",
+        stripeCustomerId: "cus_STUBCUSbl1", stripeSubscriptionId: "sub_bl1", latestStripeInvoiceId: "in_bl1",
+        monthlyAmountPennies: 3900, effectiveFeeBps: 50, monthlyFeeCapPennies: 0, monthlyFeeChargedPennies: 0,
+        walkSetupCompleted: false, cancelAtPeriodEnd: false, currentPeriodEnd: null}' > "$ast/resp/billing-post.json"
+    jq -n '{id: "pm_bl1", object: "payment_method", livemode: false, type: "card",
+        card: {brand: "visa", last4: "4242", fingerprint: "STUBFPbl1"},
+        billing_details: {email: "piizq7@example.invalid", name: "Pii PIIZQ7"}}' > "$ast/resp/pm-create.json"
+    jq -n --argjson q "$2" '{id: "sub_bl1", object: "subscription", livemode: false, status: "active",
+        customer: "cus_STUBCUSbl1", latest_invoice: "in_bl1",
+        items: {object: "list", data: [{id: "si_bl1", object: "subscription_item", quantity: $q,
+          price: {id: "price_bl1", object: "price", unit_amount: 3900, currency: "gbp", recurring: {interval: "month"}}}]}}' \
+      > "$ast/resp/sub-sub_bl1.json"
+    jq -n --argjson p "$4" --argjson lm "$5" '{id: "in_bl1", object: "invoice", livemode: $lm, status: "paid", amount_paid: $p,
+        customer: "cus_STUBCUSbl1", customer_email: "piizq7@example.invalid", customer_name: "Pii PIIZQ7",
+        parent: {subscription_details: {subscription: "sub_bl1"}}}' > "$ast/resp/inv-in_bl1.json"
+    jq -n --arg t "$tid" --arg s "$sid" --argjson n "$3" '{content: [range(0; $n) as $i
+        | {id: (if $i == 0 then $s else "77777777-0000-4000-8000-00000000000\($i)" end), tenantId: $t,
+           slug: (if $i == 0 then "staging-test-kitchen" else "staging-second-\($i)" end), published: ($i == 0)}],
+        totalElements: $n, totalPages: 1}' > "$ast/resp/shops.json"
+  }
+  _st_bl_leaks() { command grep -cE "$bl_leak_re" <<<"$ST_OUT$ST_ERR" || true; }
+
+  # --- billing-ok: no subscription yet -> a TEST pm from tok_visa, the product's own
+  #     subscribe, then the subscription and its invoice read from Stripe by id
+  _st_bl_fx NONE 1 1 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  local bl_ok_out="$ST_OUT" bl_ok_err="$ST_ERR" bl_ok_rc="$ST_RC" bl_ok_curl bl_body l_bget l_pm l_bpost l_sub l_inv l_shops
+  bl_ok_curl=$(cat "$ast/logs/curl.log")
+  bl_body=$(command grep -F '"planMode"' "$ast/logs/bodies.log" | tail -n 1 || true)
+  l_bget=$(_st_line '^GET https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')
+  l_pm=$(_st_line '^POST https://api\.stripe\.com/v1/payment_methods -> 200$')
+  l_bpost=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')
+  l_sub=$(_st_line '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$')
+  l_inv=$(_st_line '^GET https://api\.stripe\.com/v1/invoices/in_bl1 -> 200$')
+  l_shops=$(_st_line '^GET https://api-staging\.olajay\.co\.uk/api/v1/shops\?size=100 -> 200$')
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! [[ "$(tail -n 1 <<<"$ST_OUT")" =~ $bl_line_re ]]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ -z "$l_bget" ] || [ -z "$l_pm" ] || [ -z "$l_bpost" ] || [ -z "$l_sub" ] || [ -z "$l_inv" ] || [ -z "$l_shops" ]; then
+    why="a call is missing: billing_get=$l_bget pm=$l_pm subscribe=$l_bpost sub=$l_sub invoice=$l_inv shops=$l_shops"
+  elif ! { [ "$l_bget" -lt "$l_pm" ] && [ "$l_pm" -lt "$l_bpost" ] && [ "$l_bpost" -lt "$l_sub" ] && [ "$l_sub" -lt "$l_inv" ]; }; then
+    why="call order is not billing_get<pm<subscribe<sub<invoice: $l_bget $l_pm $l_bpost $l_sub $l_inv"
+  elif [ "$(_st_flow '^POST https://api\.stripe\.com/v1/payment_methods ')" -ne 1 ] || [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription ')" -ne 1 ]; then
+    why="want exactly one pm creation and one subscribe: $(tr '\n' '|' < "$ast/logs/curl-flow.log")"
+  elif [ "$(command grep -E '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/' "$ast/logs/curl-flow.log" | command grep -vcE '^POST https://api\.stripe\.com/v1/payment_methods -> ' || true)" -ne 0 ]; then
+    why="a Stripe write other than the pm creation: $(tr '\n' '|' < "$ast/logs/curl-flow.log")"
+  elif ! command grep -qF -- '--data-urlencode type=card' <<<"$bl_ok_curl" || ! command grep -qF -- '--data-urlencode card[token]=tok_visa' <<<"$bl_ok_curl"; then
+    why="the pm was not created as type=card from card[token]=tok_visa"
+  elif [ "$(jq -cS . <<<"${bl_body:-null}" 2>/dev/null)" != '{"paymentMethodId":"pm_bl1","planMode":"SAAS_HYBRID_STANDARD"}' ]; then
+    why="the subscribe body is not {planMode: SAAS_HYBRID_STANDARD, paymentMethodId: the pm}: ${bl_body:-<none>}"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-ok rc=0 order=billing_get<pm<subscribe<sub<invoice quantity=1 locations=1 amount_paid=3900"
+  else _st_result "FAIL billing-ok $why"; fails=$((fails + 1)); fi
+
+  # --- billing-quantity-mismatch: Stripe bills 1 location, the tenant has 2 --------
+  _st_bl_fx NONE 1 2 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qE 'quantity is 1 but the tenant has 2 location' <<<"$ST_ERR"; then why="stderr does not name the quantity mismatch: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^BILLING ' <<<"$ST_OUT"; then why="a BILLING line was printed"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$')" -ne 1 ]; then why="the subscription was not read (the refusal did not come from Stripe's quantity)"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-quantity-mismatch rc=1 quantity=1 locations=2"
+  else _st_result "FAIL billing-quantity-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- billing-amount-mismatch: quantity 2 and 2 locations, but the invoice paid 3900
+  _st_bl_fx NONE 2 2 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qE 'amount_paid 3900 is not 7800' <<<"$ST_ERR"; then why="stderr does not name the amount mismatch: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^BILLING ' <<<"$ST_OUT"; then why="a BILLING line was printed"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/invoices/in_bl1 -> 200$')" -ne 1 ]; then why="the invoice was not read by id"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-amount-mismatch rc=1 quantity=2 amount_paid=3900 want=7800"
+  else _st_result "FAIL billing-amount-mismatch $why"; fails=$((fails + 1)); fi
+
+  # --- billing-live: the invoice reads livemode true -> refused, nothing printed ---
+  _st_bl_fx NONE 1 1 3900 true
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [stripe-mode]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [stripe-mode]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif command grep -q '^BILLING ' <<<"$ST_OUT"; then why="a BILLING line was printed"
+  elif [ "$(_st_flow '^GET https://api\.stripe\.com/v1/invoices/in_bl1 -> 200$')" -ne 1 ]; then why="the refusal did not come from the invoice read by id"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-live rc=1 tag=stripe-mode printed=none"
+  else _st_result "FAIL billing-live $why"; fails=$((fails + 1)); fi
+
+  # --- billing-replay: an ACTIVE subscription is read back, never re-created -------
+  _st_bl_fx ACTIVE 1 1 3900 false
+  _st_run STUB_PODS_FILE="$ast/pods-prod.json" -- "${bl_args[@]}"
+  local bl_rp_out="$ST_OUT" bl_rp_err="$ST_ERR"
+  why=""
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')" -ne 1 ]; then why="the subscription state was not read from the billing API"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription ')" -ne 0 ]; then why="the replay subscribed again"
+  elif [ "$(_st_flow '^POST https://api\.stripe\.com/v1/payment_methods ')" -ne 0 ]; then why="the replay created a payment method"
+  elif [ "$(_st_flow '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/')" -ne 0 ]; then why="the replay wrote to Stripe"
+  elif ! [[ "$(tail -n 1 <<<"$ST_OUT")" =~ $bl_line_re ]]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-replay rc=0 subscribe_calls=0 pm_calls=0 verdict=BILLING"
+  else _st_result "FAIL billing-replay $why"; fails=$((fails + 1)); fi
+
+  # --- billing-no-secret: the ok and replay runs printed no key, no pm body, no
+  #     customer field (the ok run must have printed its BILLING line: non-vacuity)
+  why=""
+  local bl_hits
+  bl_hits=$(command grep -cE "$bl_leak_re" <<<"$bl_ok_out$bl_ok_err$bl_rp_out$bl_rp_err" || true)
+  if [ "$bl_ok_rc" -ne 0 ] || ! command grep -qE '^BILLING ' <<<"$bl_ok_out"; then why="the ok run did not finish (nothing to inspect; the arm would pass vacuously)"
+  elif [ "$bl_hits" -ne 0 ]; then why="$bl_hits line(s) carry the customer id, the card fingerprint or a customer field"
+  elif command grep -qE '"payment_method"|"billing_details"|"fingerprint"|"customer_email"' <<<"$bl_ok_out$bl_ok_err"; then why="a Stripe response body was printed"
+  elif command grep -qE 'STUB-SECRET-|STUBSECRET' <<<"$bl_ok_out$bl_ok_err$bl_ok_curl$bl_rp_out$bl_rp_err"; then why="a key or secret marker was printed or put in argv"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS billing-no-secret printed_key=0 printed_pm_body=0 printed_customer=0"
+  else _st_result "FAIL billing-no-secret $why"; fails=$((fails + 1)); fi
+  cp "$ast/resp/shops-before-billing.json" "$ast/resp/shops.json"
 
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
   why=""
