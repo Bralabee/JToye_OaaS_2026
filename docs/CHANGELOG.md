@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Order Emails Carry Items and Total, Invite and Cancel Wording, DSAR Subject and Export Wording, Allergy Note Echo Skipped, API Root Redirect Scheme (swarm epic #964) (#1079) — 2026-11-01
+
+Seven findings from the 2026-10-19 staging persona swarm, each re-checked on main first. Six fixed, one skipped. No migration.
+
+- **SW-JRD-15 (issue #826):** every order email names the shop and lists the items (name × qty), the total, and the delivery address or where to collect. Still plain text. The listener reads it under the event's tenant (`OrderEmailSummary`). The allergy note stays out. The Keycloak account mails are a realm template and are out of scope.
+- **SW-TND-02:** the staff invite's subject is now "{inviter} has invited you to help run {business} on J'Toye". The body names the role and the shop, then says in a sentence or two what the role can do, taken from the `ShopRole` model.
+- **SW-ADE-12:** the cancel email says "It was cancelled while it was: Awaiting payment." instead of `Previous status: DRAFT`. The words are the storefront's `ORDER_STATUS_COPY`, and a test checks they still match. The /track chip uses the same words.
+- **SW-SAM-08:** the DSAR confirmation subject now says which request it is ("for a copy of your data" or "to erase your data"). The link carries the type after the token, in the fragment. The confirm page names the request, but the type is display only: the press still posts just the token.
+- **SW-SAM-09:** the access export said erasure was requested "through the same request page", which does not exist. It now names the real routes: My account ("Delete my account") or the privacy notice's contact routes.
+- **SW-PRY-06: SKIPPED.** Showing the allergy note's text on the public order status would reverse the closed mitigation T-31.1-46 (data minimisation of special-category data). `AllergyNoteAckIntegrationTest` asserts that mitigation. This is an owner and tenancy-security decision.
+- **SW-CLR-10:** `GET /` now returns a 302 with a relative `Location: /swagger-ui.html`. The old `RedirectView` let Tomcat build an absolute URL from its own http scheme, so behind TLS the redirect pointed at http. A test on a real Tomcat proves the fix. The OpenAPI snapshot documents the 302, and the 15 Spring-internal schemas `RedirectView` pulled in are gone. Whether to publish the docs on staging is still the owner's call.
+
 ### Design-Run Project Layer and design-run Agent Targets (#1078) — 2026-11-01
 
 Docs and agent text only. No code, API, migration or runtime change.
