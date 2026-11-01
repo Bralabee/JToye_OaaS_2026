@@ -4,7 +4,7 @@
  * orders ALREADY loaded on the page (no new API) by order number, customer name or email, and
  * works together with the status filter.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import OrdersPage from "../page"
 import apiClient from "@/lib/api-client"
 
@@ -91,5 +91,39 @@ describe("Orders search (SW-ADE-10)", () => {
     const { table } = await loaded()
     expect(within(table).getAllByText("Pending").length).toBe(3)
     expect(screen.getByRole("combobox", { name: /filter orders by status/i })).toBeInTheDocument()
+  })
+
+  // Review round 1 on #1076: the empty state blamed the search when the STATUS filter had emptied
+  // the page. It now names the filter that removed the rows.
+  async function chooseStatus(label: string) {
+    const trigger = screen.getByRole("combobox", { name: /filter orders by status/i })
+    fireEvent.keyDown(trigger, { key: "ArrowDown" })
+    fireEvent.click(await screen.findByRole("option", { name: label }))
+    await waitFor(() => expect(trigger).toHaveTextContent(label))
+  }
+
+  it("review R1-3: a status filter that leaves nothing names the status, not the search, and not 'No orders yet'", async () => {
+    await loaded()
+    await chooseStatus("Cancelled")
+    expect(screen.queryByRole("table")).toBeNull()
+    expect(screen.getByText("No cancelled orders on this page")).toBeInTheDocument()
+    expect(screen.queryByText("No orders yet")).toBeNull()
+    expect(screen.queryByText(/no orders match/i)).toBeNull()
+  })
+
+  it("review R1-3: with text in the box too, the status filter is still the one named", async () => {
+    const { search } = await loaded()
+    fireEvent.change(search, { target: { value: "kemi" } })
+    await chooseStatus("Cancelled")
+    expect(screen.getByText("No cancelled orders on this page")).toBeInTheDocument()
+    expect(screen.queryByText(/no orders match/i)).toBeNull()
+  })
+
+  it("review R1-3: when the status matches rows but the search removes them, the search is named", async () => {
+    const { search } = await loaded()
+    await chooseStatus("Pending")
+    fireEvent.change(search, { target: { value: "nobody-here" } })
+    expect(screen.getByText(/no orders match/i)).toBeInTheDocument()
+    expect(screen.queryByText(/no pending orders/i)).toBeNull()
   })
 })

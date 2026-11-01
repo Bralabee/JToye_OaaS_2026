@@ -504,14 +504,20 @@ function OrdersPageInner() {
   // rows this page already holds. The list is paged server-side, so the search covers this page only
   // and says so in its placeholder.
   const needle = searchQuery.trim().toLowerCase()
-  const filteredOrders = visibleOrders.filter(
-    (o) =>
-      (statusFilter === "ALL" || o.status === statusFilter) &&
-      (!needle ||
-        [o.orderNumber, o.id, o.customerName, o.customerEmail].some((field) =>
-          field?.toLowerCase().includes(needle)
-        ))
+  // Status first, then the search, so an empty page can name the filter that emptied it (review
+  // round 1 on #1076: the search was blamed when the status filter had removed every row).
+  const statusMatches = visibleOrders.filter(
+    (o) => statusFilter === "ALL" || o.status === statusFilter
   )
+  const filteredOrders = statusMatches.filter(
+    (o) =>
+      !needle ||
+      [o.orderNumber, o.id, o.customerName, o.customerEmail].some((field) =>
+        field?.toLowerCase().includes(needle)
+      )
+  )
+  const statusFilterLabel =
+    statusFilter === "ALL" ? null : statusConfig[statusFilter as OrderStatus]?.label ?? statusFilter
 
   // 37-30 (D-18): only a PENDING order can be rejected in bulk (37-29 reports any other state
   // ALREADY_ACCEPTED / ALREADY_CANCELLED), so only PENDING rows offer a checkbox, the header
@@ -813,7 +819,26 @@ function OrdersPageInner() {
                 message={loadErrorMessage}
                 onRetry={() => fetchData()}
               />
-            ) : filteredOrders.length === 0 && needle && visibleOrders.length > 0 ? (
+            ) : filteredOrders.length === 0 && visibleOrders.length > 0 && statusMatches.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
+                <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                  No {statusFilterLabel?.toLowerCase()} orders on this page
+                </h3>
+                <p className="mb-4 text-sm text-slate-500">
+                  The status filter hides the orders on this page. Choose another status to see them.
+                </p>
+                <Button
+                  onClick={() => {
+                    setStatusFilter("ALL")
+                    setCurrentPage(0)
+                  }}
+                  variant="outline"
+                >
+                  Show all statuses
+                </Button>
+              </div>
+            ) : filteredOrders.length === 0 && needle && statusMatches.length > 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Search className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
