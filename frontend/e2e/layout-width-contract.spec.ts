@@ -132,7 +132,7 @@
  * credential is supplied — `e2e/vendor-credentials.ts` defaults it to the empty
  * string DELIBERATELY, so an unsupplied password is a visible skip rather than a
  * silent 21-second auth failure misread as a product defect. That makes the
- * skip budget (`scripts/gates/e2e-skip-budget.conf`, MAX_SKIPS 6) a PRECONDITION
+ * skip budget (`scripts/gates/e2e-skip-budget.conf`, its MAX_SKIPS) a PRECONDITION
  * of running this file, not a consequence of it. The precondition is satisfied
  * rather than declared away: the only lane that runs the whole suite,
  * `e2e-nightly.yml`, exports `E2E_VENDOR_PASSWORD` from `KC_SEED_USER_PASSWORD`

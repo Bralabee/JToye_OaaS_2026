@@ -570,18 +570,34 @@ jobs:
           pi=$(jq -r '.intent // empty' "$ev")
           re=$(jq -r '.refund // empty' "$ev")
           [ -n "$pi" ] && [ -n "$re" ] || { echo "::error::missing intent or refund id in $ev"; exit 1; }
+          # $pi goes into a URL path below: Stripe ids only.
+          case "$pi" in pi_*[!A-Za-z0-9_]*|pi_) echo "::error::intent id '$pi' is not a Stripe id"; exit 1 ;; pi_*) ;; *) echo "::error::intent id '$pi' is not a Stripe id"; exit 1 ;; esac
 
           cfg="$RUNNER_TEMP/stripe-curl.cfg"
           umask 077
           printf 'header = "Authorization: Bearer %s"\n' "$STRIPE_TEST_SECRET_KEY" > "$cfg"
           trap 'rm -f "$cfg"' EXIT
 
-          pi_ev=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?type=payment_intent.succeeded&limit=25" \
-            | jq -r --arg id "$pi" '.data[] | select(.data.object.id == $id) | .id' | head -n 1)
-          re_ev=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?types%5B%5D=refund.created&types%5B%5D=refund.updated&types%5B%5D=charge.refunded&limit=25" \
-            | jq -r --arg re "$re" --arg pi "$pi" '.data[] | select(.data.object.id == $re or .data.object.payment_intent == $pi) | .id' | head -n 1)
-          [ -n "$pi_ev" ] || { echo "::error::no payment_intent.succeeded event found on Stripe for $pi"; exit 1; }
-          [ -n "$re_ev" ] || { echo "::error::no refund event found on Stripe for $re ($pi)"; exit 1; }
+          # No pipe into `head` anywhere here: under pipefail a producer still writing when head
+          # exits dies 141 and `set -e` aborts the step with no ::error (the refund query matches
+          # up to three events). Each response is captured whole, then jq picks the FIRST match
+          # itself. The window starts at the PaymentIntent's own `created`, so other runs on the
+          # shared sandbox before it cannot push this run's events off the page; limit=100 is the
+          # API maximum. Every miss is an ::error naming has_more, never a silent empty.
+          pi_obj=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/payment_intents/$pi") \
+            || { echo "::error::could not read PaymentIntent $pi from Stripe"; exit 1; }
+          since=$(jq -r '.created // empty' <<<"$pi_obj") || { echo "::error::PaymentIntent $pi: response is not JSON"; exit 1; }
+          case "$since" in ''|*[!0-9]*) echo "::error::PaymentIntent $pi has no numeric created ('$since')"; exit 1 ;; esac
+          pi_page=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?type=payment_intent.succeeded&created%5Bgte%5D=$since&limit=100") \
+            || { echo "::error::could not list payment_intent.succeeded events since $since"; exit 1; }
+          re_page=$(curl -fsS -K "$cfg" "https://api.stripe.com/v1/events?types%5B%5D=refund.created&types%5B%5D=refund.updated&types%5B%5D=charge.refunded&created%5Bgte%5D=$since&limit=100") \
+            || { echo "::error::could not list refund events since $since"; exit 1; }
+          pi_ev=$(jq -r --arg id "$pi" 'first(.data[] | select(.data.object.id == $id) | .id) // empty' <<<"$pi_page") \
+            || { echo "::error::payment_intent.succeeded event list is not JSON"; exit 1; }
+          re_ev=$(jq -r --arg re "$re" --arg pi "$pi" 'first(.data[] | select(.data.object.id == $re or .data.object.payment_intent == $pi) | .id) // empty' <<<"$re_page") \
+            || { echo "::error::refund event list is not JSON"; exit 1; }
+          [ -n "$pi_ev" ] || { echo "::error::no payment_intent.succeeded event for $pi since $since (has_more=$(jq -r '.has_more' <<<"$pi_page"))"; exit 1; }
+          [ -n "$re_ev" ] || { echo "::error::no refund event for $re ($pi) since $since (has_more=$(jq -r '.has_more' <<<"$re_page"))"; exit 1; }
 
           set -a; . ./.env; set +a
           db="${POSTGRES_DB:-jtoye}"
