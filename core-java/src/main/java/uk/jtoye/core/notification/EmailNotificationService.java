@@ -25,7 +25,6 @@ import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
 import uk.jtoye.core.security.access.ShopRole;
-import uk.jtoye.core.security.access.StaffInviteService;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
 import java.io.UnsupportedEncodingException;
@@ -318,7 +317,7 @@ public class EmailNotificationService {
      *
      * <p><b>SW-TND-02 (swarm epic #964).</b> The subject reads as an invitation ("{inviter} has
      * invited you to help run {business} on J'Toye"), and the body names the role, the shop (or all
-     * shops) and, from {@link #inviteRoleCapabilities}, what the role can do.
+     * shops) and, from {@link ShopRole#capabilities()}, what the role can do.
      *
      * @param recipientEmail the normalised invitee address; the link goes here and nowhere else
      * @param role           the grant the invitation carries; named and described in the body
@@ -340,7 +339,7 @@ public class EmailNotificationService {
         }
         String inviter = Objects.requireNonNullElse(sanitise(inviterName), "A Group admin");
         String business = Objects.requireNonNullElse(sanitise(businessName), "a business");
-        String roleName = StaffInviteService.roleLabel(role);
+        String roleName = role.label();
         String shop = sanitise(shopLabel);
         // SW-TND-02: "at {shop}" for one shop; "for all shops" when the grant is tenant-wide.
         String where = shop == null || shop.equals("all shops") ? ", for all shops." : " at " + Sentences.withFullStop(shop);
@@ -357,7 +356,7 @@ public class EmailNotificationService {
                 This link works once and expires on %s (UK time).
 
                 If you weren't expecting this, you can ignore this email. Nothing happens unless you accept.
-                """.formatted(inviter, business, roleName, where, inviteRoleCapabilities(role), link, expiry);
+                """.formatted(inviter, business, roleName, where, role.capabilities(), link, expiry);
         try {
             MimeMessage mime = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
@@ -371,24 +370,6 @@ public class EmailNotificationService {
             // The exception class only: a mail exception's message can quote the recipient (V7).
             log.error("event=staff_invite_email_failed error={}", e.getClass().getSimpleName());
         }
-    }
-
-    /**
-     * SW-TND-02 (swarm epic #964): what the invited role can do, in one or two plain sentences. Each
-     * is the {@link ShopRole} model as it is enforced, not marketing: STAFF reads the shop and moves
-     * orders through their states but writes no catalogue; SHOP_MANAGER has full control of a granted
-     * shop but no staff management and no shop create or delete; GROUP_ADMIN has every shop, shop
-     * create and delete, and staff management.
-     */
-    public static String inviteRoleCapabilities(ShopRole role) {
-        return switch (role) {
-            case STAFF -> "As Staff you can see the shop's orders and move them along as they are prepared. "
-                    + "You can't change products or prices.";
-            case SHOP_MANAGER -> "As a Shop manager you can run the shop: its products and prices, its orders "
-                    + "and its settings. You can't invite people or add or remove shops.";
-            case GROUP_ADMIN -> "As a Group admin you can run every shop in the business, add and remove shops, "
-                    + "and invite people and choose what they can do.";
-        };
     }
 
     // ---- Webhook auto-pause (UXT-038, 37-43) ------------------------------------------------------

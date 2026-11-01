@@ -260,15 +260,6 @@ public class StaffInviteService {
         return email;
     }
 
-    /** The role's name as people read it, in the invite email and anywhere else it is named. */
-    public static String roleLabel(ShopRole role) {
-        return switch (role) {
-            case STAFF -> "Staff";
-            case SHOP_MANAGER -> "Shop manager";
-            case GROUP_ADMIN -> "Group admin";
-        };
-    }
-
     static String sha256Hex(String token) {
         try {
             return HexFormat.of().formatHex(

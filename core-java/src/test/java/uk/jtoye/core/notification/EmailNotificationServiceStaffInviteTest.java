@@ -18,8 +18,10 @@ import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 import uk.jtoye.core.security.access.ShopRole;
+import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.SentMail;
 
+import java.nio.file.Files;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
@@ -95,7 +97,7 @@ class EmailNotificationServiceStaffInviteTest {
         assertThat(text)
                 .contains("Ada Admin has invited you to help run Mama Ade's Kitchen on J'Toye.")
                 .contains("Your role: Shop manager at Mama Ade's Kitchen Digbeth.")
-                .contains(EmailNotificationService.inviteRoleCapabilities(ShopRole.SHOP_MANAGER))
+                .contains(ShopRole.SHOP_MANAGER.capabilities())
                 .doesNotContain(" as Shop manager for ")
                 .contains("Accept the invitation: " + LINK)
                 .contains("This link works once and expires on 10 October 2026, 14:32 (UK time).")
@@ -110,7 +112,7 @@ class EmailNotificationServiceStaffInviteTest {
         String text = SentMail.text(sent());
         assertThat(text)
                 .contains("Your role: Group admin, for all shops.")
-                .contains(EmailNotificationService.inviteRoleCapabilities(ShopRole.GROUP_ADMIN))
+                .contains(ShopRole.GROUP_ADMIN.capabilities())
                 .contains("expires on 10 December 2026, 14:32 (UK time).");
     }
 
@@ -128,18 +130,34 @@ class EmailNotificationServiceStaffInviteTest {
     @Test
     @DisplayName("SW-TND-02: each role's email says what that role can do, in plain words from the role model")
     void inviteEmail_saysWhatEachRoleCanDo() {
-        assertThat(EmailNotificationService.inviteRoleCapabilities(ShopRole.STAFF))
+        assertThat(ShopRole.STAFF.capabilities())
                 .isEqualTo("As Staff you can see the shop's orders and move them along as they are prepared. "
                         + "You can't change products or prices.");
-        assertThat(EmailNotificationService.inviteRoleCapabilities(ShopRole.SHOP_MANAGER))
+        assertThat(ShopRole.SHOP_MANAGER.capabilities())
                 .isEqualTo("As a Shop manager you can run the shop: its products and prices, its orders and its "
                         + "settings. You can't invite people or add or remove shops.");
-        assertThat(EmailNotificationService.inviteRoleCapabilities(ShopRole.GROUP_ADMIN))
+        assertThat(ShopRole.GROUP_ADMIN.capabilities())
                 .isEqualTo("As a Group admin you can run every shop in the business, add and remove shops, and "
                         + "invite people and choose what they can do.");
 
         service.sendStaffInvite(TO, "Ada Admin", "Biz", ShopRole.STAFF, "Shop A", LINK, EXPIRES_BST);
-        assertThat(SentMail.text(sent())).contains(EmailNotificationService.inviteRoleCapabilities(ShopRole.STAFF));
+        assertThat(SentMail.text(sent())).contains(ShopRole.STAFF.capabilities());
+    }
+
+    @Test
+    @DisplayName("R1 (#1079): each role's name lives on ShopRole, and the email reads it from there")
+    void roleNamesLiveOnTheEnum() {
+        assertThat(ShopRole.STAFF.label()).isEqualTo("Staff");
+        assertThat(ShopRole.SHOP_MANAGER.label()).isEqualTo("Shop manager");
+        assertThat(ShopRole.GROUP_ADMIN.label()).isEqualTo("Group admin");
+    }
+
+    @Test
+    @DisplayName("R1 (#1079): the notification package does not call back into the staff-invite service (no cycle)")
+    void emailServiceDoesNotDependOnStaffInviteService() throws Exception {
+        String source = Files.readString(IntegrationTestSupport.locateRepoFile(
+                "core-java/src/main/java/uk/jtoye/core/notification/EmailNotificationService.java"));
+        assertThat(source).doesNotContain("StaffInviteService");
     }
 
     @Test
