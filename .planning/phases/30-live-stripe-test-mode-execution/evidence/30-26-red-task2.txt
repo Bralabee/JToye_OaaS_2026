@@ -1,0 +1,71 @@
+TAP version 13
+1..60
+ok 1 - prod-api
+ok 2 - local-api
+ok 3 - no-context
+ok 4 - stale-server
+ok 5 - dev-profile
+ok 6 - rollout-mixed
+ok 7 - no-ready-pod
+ok 8 - dry-run-plan
+ok 9 - list-kv-objects
+ok 10 - operator-deleted-on-failure
+ok 11 - operator-deleted-on-success
+ok 12 - order-live-key
+ok 13 - order-first-run
+ok 14 - order-replay
+ok 15 - order-cash-refused
+ok 16 - order-two-intents
+ok 17 - order-livemode-true
+ok 18 - order-unpaid-deadline
+ok 19 - dry-run-order
+ok 20 - stage-all
+ok 21 - list-drafts-ok
+ok 22 - list-drafts-readonly
+ok 23 - list-drafts-no-pii
+ok 24 - transition-refused
+ok 25 - transition-event-refused
+ok 26 - vendor-order-ok
+ok 27 - vendor-order-not-none
+ok 28 - pay-link-ok
+ok 29 - pay-link-otp-hidden
+ok 30 - pay-link-no-out
+ok 31 - pay-link-unverified
+ok 32 - cancel-one
+ok 33 - cancel-not-draft
+ok 34 - cancel-paid
+ok 35 - cancel-live
+ok 36 - cancel-stripe-fails
+ok 37 - cancel-already-canceled
+ok 38 - cancel-only-listed
+ok 39 - cancel-empty-list
+ok 40 - orphan-list
+ok 41 - orphan-list-blind
+ok 42 - orphan-cancel-one
+ok 43 - orphan-cancel-refusals
+ok 44 - orphan-cancel-already-canceled
+ok 45 - orphan-cancel-args
+ok 46 - stripe-get-sanitized
+ok 47 - stripe-get-path-refused
+ok 48 - stripe-get-live
+ok 49 - stripe-get-account-header
+ok 50 - stripe-get-livemode-absent
+ok 51 - billing-ok
+ok 52 - billing-quantity-mismatch
+ok 53 - billing-amount-mismatch
+ok 54 - billing-live
+ok 55 - billing-replay
+ok 56 - billing-no-secret
+not ok 57 - sync-ok
+  ---
+  message: 'rc=2 (want 0): USAGE ERROR: --stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link or billing '
+  ...
+not ok 58 - sync-no-subscription
+  ---
+  message: 'rc=2 (want 1): USAGE ERROR: --stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link or billing '
+  ...
+not ok 59 - sync-cleanup-on-fail
+  ---
+  message: 'rc=2 (want 1): USAGE ERROR: --stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link or billing '
+  ...
+ok 60 - dry-run-tools

@@ -2011,7 +2011,14 @@ case "$method $base" in
   "GET /api/v1/billing/subscription") key=billing-get; code=200 ;;
   "POST /api/v1/billing/subscription") key=billing-post; code=200 ;;
   "POST /v1/payment_methods") key=pm-create; code=200 ;;
-  "GET /v1/subscriptions/"*) key="sub-${base#/v1/subscriptions/}"; code=200 ;;
+  "GET /v1/subscriptions/"*)
+    subid="${base#/v1/subscriptions/}"; key="sub-$subid"
+    if [ -f "$STUB_LOG_DIR/shop-created" ] && [ ! -f "$STUB_LOG_DIR/shop-deleted" ] && [ -f "$STUB_RESP_DIR/sub-$subid-added.json" ]; then
+      key="sub-$subid-added"
+    fi; code=200 ;;
+  # billing-sync-check (plan 30-26): the probe location's create and delete.
+  "POST /api/v1/shops") key=shop-create-out; code=201; : > "$STUB_LOG_DIR/shop-created" ;;
+  "DELETE /api/v1/shops/"*) key=empty; code=204; : > "$STUB_LOG_DIR/shop-deleted" ;;
   "GET /v1/invoices/"*) key="inv-${base#/v1/invoices/}"; code=200 ;;
   # stripe-get: any other Stripe read answers the one generic fixture.
   "GET /v1/"*) key=stripe-get; code=200 ;;
@@ -2093,6 +2100,7 @@ IDF
     : > "$ast/logs/kubectl.log"; : > "$ast/logs/kubelogin.log"; : > "$ast/logs/curl.log"
     : > "$ast/logs/curl-flow.log"; : > "$ast/logs/az.log"; : > "$ast/logs/bodies.log"; rm -f "$ast/logs/confirmed"
     rm -f "$ast/logs/"order-cancelled-* "$ast/logs/"pi-canceled-*; : > "$ast/logs/stripe-account.log"
+    rm -f "$ast/logs/shop-created" "$ast/logs/shop-deleted"
     ST_OUT=$(command env -i PATH="$ast/stub:$ast/tools" HOME="$ast/home" KUBECONFIG="$ast/kubeconfig" \
       STUB_LOG_DIR="$ast/logs" STUB_RESP_DIR="$ast/resp" REAL_KUBECTL="$real_kubectl" AZ_STUB_LOG="$ast/logs/az.log" \
       JTOYE_AZURE_SUBSCRIPTION_ID=c483d353-5f61-4587-a790-addb9ab5fb94 AZ_STUB_ANSWERS="$ast/answers.tsv" \
@@ -3139,6 +3147,73 @@ IDF
   fi
   if [ -z "$why" ]; then _st_result "PASS billing-no-secret printed_key=0 printed_pm_body=0 printed_customer=0"
   else _st_result "FAIL billing-no-secret $why"; fails=$((fails + 1)); fi
+  cp "$ast/resp/shops-before-billing.json" "$ast/resp/shops.json"
+
+  # ===== billing-sync-check (plan 30-26, D-04): the quantity sync watched around a
+  # probe location. While the probe exists the stub's subscription read answers the
+  # -added fixture (when one is present), so the sync is observable; the probe's
+  # DELETE must happen on every exit path.
+  local bs_args=("${tool_args[@]}" --stage billing-sync-check) bs_probe="99999999-0000-4000-8000-000000000001"
+  local bs_env=(STUB_PODS_FILE="$ast/pods-prod.json" STAGING_SEED_BILLING_SYNC_DEADLINE_SECONDS=3 STAGING_SEED_POLL_SECONDS=1)
+  _st_bs_fx() {   # STATUS(NONE|ACTIVE) ADDED_QUANTITY(or "" for "Stripe never moves")
+    _st_bl_fx "$1" 1 1 3900 false
+    rm -f "$ast/resp/sub-sub_bl1-added.json"
+    [ -z "$2" ] || jq --argjson q "$2" '.items.data[0].quantity = $q' "$ast/resp/sub-sub_bl1.json" > "$ast/resp/sub-sub_bl1-added.json"
+    jq -n --arg id "$bs_probe" --arg t "$tid" '{id: $id, tenantId: $t, name: "Staging Billing Probe", slug: "staging-billing-probe", published: false}' \
+      > "$ast/resp/shop-create-out.json"
+  }
+
+  # --- sync-ok (all-shops): 1 -> 2 -> 1 around the probe's create and delete -------
+  _st_bs_fx ACTIVE 2
+  _st_run "${bs_env[@]}" -- "${bs_args[@]}"
+  why=""
+  local bs_name l_first l_post l_del l_last
+  bs_name=$(command grep -F '"Staging Billing Probe' "$ast/logs/bodies.log" | tail -n 1 | jq -r '.name // empty' 2>/dev/null || true)
+  l_first=$(_st_line '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$')
+  l_post=$(_st_line '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> 201$')
+  l_del=$(_st_line "^DELETE https://api-staging\.olajay\.co\.uk/api/v1/shops/$bs_probe -> 204$")
+  l_last=$(command grep -nE '^GET https://api\.stripe\.com/v1/subscriptions/sub_bl1 -> 200$' "$ast/logs/curl-flow.log" | tail -n 1 | cut -d: -f1 || true)
+  if [ "$ST_RC" -ne 0 ]; then why="rc=$ST_RC (want 0): $(head -c 240 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(tail -n 1 <<<"$ST_OUT")" != "BILLING-SYNC before=1 after-add=2 after-remove=1 livemode=false" ]; then why="the last line is '$(tail -n 1 <<<"$ST_OUT")'"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> ')" -ne 1 ] || [ "$(_st_flow '^DELETE https://api-staging\.olajay\.co\.uk/api/v1/shops/')" -ne 1 ]; then
+    why="want exactly one probe create and one probe delete: $(command grep -E '/api/v1/shops' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif [ -z "$l_first" ] || [ -z "$l_post" ] || [ -z "$l_del" ] || ! { [ "$l_first" -lt "$l_post" ] && [ "$l_post" -lt "$l_del" ] && [ "$l_del" -lt "$l_last" ]; }; then
+    why="call order is not read<create<delete<read: first=$l_first create=$l_post delete=$l_del last=$l_last"
+  elif ! [[ "$bs_name" =~ ^Staging\ Billing\ Probe\ [0-9]{8}T[0-9]{6}Z$ ]]; then why="the probe is not named 'Staging Billing Probe <UTC>': '${bs_name:-<none>}'"
+  elif [ "$(command grep -cE '^BILLING-SYNC-READ phase=(before|after-add|after-remove) quantity=[0-9]+ ' <<<"$ST_OUT" || true)" -lt 3 ]; then why="the reads were not printed (want one line per read)"
+  elif [ "$(_st_flow '^(POST|DELETE|PUT|PATCH) https://api\.stripe\.com/')" -ne 0 ]; then why="a Stripe write was made"
+  elif [ "$(_st_leaks)" -ne 0 ] || [ "$(command grep -cE "$bl_leak_re" <<<"$ST_OUT$ST_ERR" || true)" -ne 0 ]; then why="a secret or customer marker was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS sync-ok rc=0 quantity=1>2>1 order=read<create<delete<read probe_deleted=1"
+  else _st_result "FAIL sync-ok $why"; fails=$((fails + 1)); fi
+
+  # --- sync-no-subscription: no ACTIVE subscription -> refused, no shop written ----
+  _st_bs_fx NONE 2
+  _st_run "${bs_env[@]}" -- "${bs_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qF 'REFUSED [no-subscription]' <<<"$ST_ERR"; then why="stderr lacks 'REFUSED [no-subscription]': $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^GET https://api-staging\.olajay\.co\.uk/api/v1/billing/subscription -> 200$')" -ne 1 ]; then why="the refusal was not reached through the billing API read"
+  elif [ "$(_st_flow '^(POST|DELETE|PUT|PATCH) https://api-staging\.olajay\.co\.uk/api/v1/shops')" -ne 0 ]; then why="a shop was written: $(command grep -E '/api/v1/shops' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif command grep -q '^BILLING-SYNC ' <<<"$ST_OUT"; then why="a BILLING-SYNC line was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS sync-no-subscription rc=1 tag=no-subscription shop_writes=0"
+  else _st_result "FAIL sync-no-subscription $why"; fails=$((fails + 1)); fi
+
+  # --- sync-cleanup-on-fail: Stripe never reaches n+1 -> rc 1, the probe still deleted
+  _st_bs_fx ACTIVE ""
+  _st_run "${bs_env[@]}" -- "${bs_args[@]}"
+  why=""
+  if [ "$ST_RC" -ne 1 ]; then why="rc=$ST_RC (want 1): $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif ! command grep -qE 'did not reach 2' <<<"$ST_ERR"; then why="stderr does not name the missed quantity: $(head -c 200 <<<"$ST_ERR" | tr '\n' ' ')"
+  elif [ "$(_st_flow '^POST https://api-staging\.olajay\.co\.uk/api/v1/shops -> 201$')" -ne 1 ]; then why="the probe was not created (nothing to clean up; the arm would pass vacuously)"
+  elif [ "$(_st_flow "^DELETE https://api-staging\.olajay\.co\.uk/api/v1/shops/$bs_probe -> 204$")" -ne 1 ]; then why="the probe shop was not deleted exactly once: $(command grep -E '/api/v1/shops' "$ast/logs/curl-flow.log" | tr '\n' '|')"
+  elif ! command grep -qE "^PROBE-SHOP-DELETED: $bs_probe " <<<"$ST_OUT"; then why="no PROBE-SHOP-DELETED line"
+  elif command grep -q '^BILLING-SYNC before=' <<<"$ST_OUT"; then why="a BILLING-SYNC summary was printed"
+  fi
+  if [ -z "$why" ]; then _st_result "PASS sync-cleanup-on-fail rc=1 probe_deleted=1 summary=none"
+  else _st_result "FAIL sync-cleanup-on-fail $why"; fails=$((fails + 1)); fi
+  rm -f "$ast/resp/sub-sub_bl1-added.json"
   cp "$ast/resp/shops-before-billing.json" "$ast/resp/shops.json"
 
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
