@@ -59,6 +59,7 @@
 #         [--api URL] [--keycloak URL] [--realm NAME] [--client-id ID] [--tenant UUID]
 #         [--wait SECONDS] [--poll SECONDS]
 #   scripts/media-bulk-upload.sh --init-manifest DIR [--shop SLUG] [--mode replace|add]
+#                 (--mode add prints a blank sort_order per row: fill every slot before running)
 #   scripts/media-bulk-upload.sh --selftest
 #
 #   --dry-run   resolves shops and products, prints every action, sends no POST/PUT.
@@ -155,8 +156,10 @@ sha256_of() {
 # Pure bash: words split on - _ and space, first letter of each word upper-cased, nothing else touched.
 title_from_file() {
   local b w out=""
+  local -a words
   b="$(basename "$1")"; b="${b%.*}"; b="${b//[-_]/ }"
-  for w in $b; do out+="${out:+ }${w^}"; done
+  IFS=' ' read -ra words <<< "$b"     # read -ra, not an unquoted expansion: a * or [..] in a file name must not glob
+  for w in "${words[@]}"; do [ -n "$w" ] && out+="${out:+ }${w^}"; done
   printf '%s' "$out"
 }
 
@@ -175,6 +178,11 @@ RUN_ID="${MEDIA_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 idem_key() { printf 'media-bulk-%s' "$(printf '%s|%s|%s|%s|%s' "$RUN_ID" "$1" "$2" "$3" "$4" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; } | cut -c1-40)"; }
 
 json_escape() { jq -Rn --arg v "$1" '$v'; }
+
+# page_is_last PAGE_JSON -> "false" only when the page says .last is false; anything else ends the
+# walk. Not `.last // true`: jq's // treats false as absent, so that read "false" as true and the
+# walk never advanced (measured, round 2).
+page_is_last() { printf '%s' "$1" | jq -r 'if .last == false then "false" else "true" end'; }
 
 # ledger_product_lookup LEDGER SHA SHOP -> the product this file was last placed on in this shop
 # (the newest ledger row for the pair that names a product), or nothing. The ledger is the
@@ -195,6 +203,10 @@ if [ "$SELFTEST" = 1 ]; then
   check "csv trailing blank"   "$(csv_field 'a.jpg,s,T,add,2,' 6)" ""
   check "title from file"      "$(title_from_file '/x/egusi-soup_02.jpg')" "Egusi Soup 02"
   check "title keeps apostrophe" "$(title_from_file "/x/mama-ade's kitchen.jpg")" "Mama Ade's Kitchen"
+  check "title does not glob"  "$(cd / && title_from_file '/x/*.jpg')" "*"
+  check "page predicate false" "$(page_is_last '{"last":false}')" "false"
+  check "page predicate true"  "$(page_is_last '{"last":true}')" "true"
+  check "page predicate absent" "$(page_is_last '{}')" "true"
   check "sku shape"            "$(sku_for 'Egusi Soup' abcd1234)" "EGUSI-SOUP-ABCD"
   check "sku deterministic"    "$(sku_for 'Egusi Soup' abcd1234)" "$(sku_for 'Egusi Soup' abcd1234)"
   check "sku differs by file"  "$([ "$(sku_for 'Menu Sides' 1111aaaa)" != "$(sku_for 'Menu Sides' 2222bbbb)" ] && echo differ)" "differ"
@@ -255,16 +267,26 @@ fi
 
 AUTH=(-H "Authorization: Bearer $TOKEN" -H "X-Tenant-Id: $TENANT")
 
-api_get()  { curl -sS --max-time 30 "${AUTH[@]}" -H 'Accept: application/json' "$API$1"; }
 # api_call METHOD PATH IDEMKEY [curl args...] -> sets HTTP (status) and RESP (body) in THIS shell.
 # Deliberately not "$(...)"-shaped: a status set inside a command substitution dies with it.
-HTTP=000; RESP=""
+# A 429 is retried up to MAX_429_RETRIES times, sleeping Retry-After (else POLL_S): the tenant
+# bucket is 100 requests a minute and a 29-row run with its polls drains it (measured: the run
+# after one answered 429 on every call). The same request is re-sent with the same key.
+HTTP=000; RESP=""; MAX_429_RETRIES="${MEDIA_MAX_429_RETRIES:-6}"
 api_call() {
   local method="$1" path="$2" idem="$3"; shift 3
-  local tmp; tmp="$(mktemp)"
-  HTTP="$(curl -sS --max-time 120 -o "$tmp" -w '%{http_code}' -X "$method" "${AUTH[@]}" -H 'Accept: application/json' ${idem:+-H "Idempotency-Key: $idem"} "$@" "$API$path")" || HTTP=000
-  RESP="$(cat "$tmp")"; rm -f "$tmp"
+  local tmp hdr tries=0 wait
+  tmp="$(mktemp)"; hdr="$(mktemp)"
+  while :; do
+    HTTP="$(curl -sS --max-time 120 -o "$tmp" -D "$hdr" -w '%{http_code}' -X "$method" "${AUTH[@]}" -H 'Accept: application/json' ${idem:+-H "Idempotency-Key: $idem"} "$@" "$API$path")" || HTTP=000
+    [ "$HTTP" = 429 ] && [ "$tries" -lt "$MAX_429_RETRIES" ] || break
+    tries=$((tries+1)); wait="$(awk 'tolower($1)=="retry-after:"{gsub(/\r/,"",$2); print $2}' "$hdr" | head -n1)"
+    case "$wait" in ''|*[!0-9]*) wait="$POLL_S" ;; esac
+    say "note    rate limited (429) on $method $path: waiting ${wait}s, retry $tries/$MAX_429_RETRIES"; sleep "$wait"
+  done
+  RESP="$(cat "$tmp")"; rm -f "$tmp" "$hdr"
 }
+api_get() { api_call GET "$1" ""; printf '%s' "$RESP"; [ "$HTTP" = 200 ]; }
 
 # Shops: slug -> id, once.
 shops_json="$(api_get "/api/v1/shops?size=100")" || void "GET /shops failed"
@@ -273,14 +295,16 @@ shop_id_for() { printf '%s' "$shops_json" | jq -r --arg s "$1" '(.content // .)[
 # Products: exact title within a shop (case-insensitive) over the shop's FULL listing, page by
 # page. Not the FTS search: that is an unsorted prefix match capped at one page, so an exact
 # title can fall off it and a stop-word title never matches at all.
+# Fails CLOSED: a page that does not come back 200 returns rc 1, and the caller must not create
+# (a lookup refused by the rate limit followed by a create is a duplicate draft).
 product_id_for() {
-  local shop="$1" title="$2" page=0 body id last
+  local shop="$1" title="$2" page=0 body id
   while :; do
-    body="$(api_get "/api/v1/products?shopId=$shop&size=100&page=$page")" || return 0
+    api_call GET "/api/v1/products?shopId=$shop&size=100&page=$page" ""; body="$RESP"
+    [ "$HTTP" = 200 ] || return 1
     id="$(printf '%s' "$body" | jq -r --arg t "$title" '(.content // [])[] | select((.title | ascii_downcase) == ($t | ascii_downcase)) | .id' | head -n1)"
     [ -n "$id" ] && { printf '%s' "$id"; return 0; }
-    last="$(printf '%s' "$body" | jq -r '.last // true')"
-    [ "$last" = true ] && return 0
+    [ "$(page_is_last "$body")" = false ] || return 0
     page=$((page+1))
   done
 }
@@ -309,14 +333,17 @@ analyze_file() {   # product file -> sets ANALYSIS (JSON, or empty), HTTP
   ANALYSIS=""
 }
 
-RESOLVED="$BASE.resolved.csv"; RESOLVED_TMP="$(mktemp)"
+RESOLVED="$BASE.resolved.csv"; RESOLVED_TMP="$(mktemp)"; trap 'rm -f "$RESOLVED_TMP"' EXIT
 printf 'file,shop_slug,title,mode,sort_order,sku\n' > "$RESOLVED_TMP"
 # Every row goes in, refused and failed ones with whatever title they had, so the file is the
 # whole manifest as resolved so far. It is moved into place only when the run completes, and
 # a --dry-run never writes it (a planning pass must not destroy a curated file).
 resolved() { printf '"%s",%s,"%s",%s,%s,%s\n' "${1//\"/\"\"}" "$2" "${3//\"/\"\"}" "$4" "$5" "$6" >> "$RESOLVED_TMP"; }
 [ -f "$LEDGER" ] || printf 'at\tsource\tsha256\tshop\tproduct_id\tcreated\tmode\tslot\tidempotency_key\tasset_id\tstatus\turl\tai_name\tai_confidence\tnote\n' > "$LEDGER"
-ledger() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$@" >> "$LEDGER"; }
+ledger() {   # 14 fields after the timestamp, always: a wrong arity is a bug, and it says so instead of wrapping a row
+  [ $# -eq 14 ] || { echo "BUG: ledger() called with $# fields, want 14: $*" >&2; exit 2; }
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$@" >> "$LEDGER"
+}
 
 say "media-bulk-upload: api=$API realm=$REALM user=$USERNAME tenant=$TENANT rows=$total_rows ledger=$LEDGER dry_run=$DRY analyze=$ANALYZE"
 
@@ -331,11 +358,11 @@ while IFS= read -r line || [ -n "$line" ]; do
   case "$file" in /*) ;; *) file="$MANIFEST_DIR/$file" ;; esac
   tag="row $row ($(basename "$file"))"
 
-  if [ ! -f "$file" ]; then say "REFUSED $tag: no such file"; ledger "$file" - "$slug" - - "$mode" "$slot" - - - REFUSED - - - "no such file"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; fi
-  case "$mode" in replace|add) ;; *) say "REFUSED $tag: mode must be replace|add (got $mode)"; ledger "$file" - "$slug" - - "$mode" "$slot" - - - REFUSED - - - "bad mode"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue ;; esac
-  if [ "$mode" = add ] && [ -z "$slot" ]; then say "REFUSED $tag: add needs an explicit sort_order (the server replaces an occupied slot and releases what was there)"; ledger "$file" - "$slug" - - add - - - - REFUSED - - - "add without sort_order"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; fi
+  if [ ! -f "$file" ]; then say "REFUSED $tag: no such file"; ledger "$file" - "$slug" - - "$mode" "$slot" - - REFUSED - - - "no such file"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; fi
+  case "$mode" in replace|add) ;; *) say "REFUSED $tag: mode must be replace|add (got $mode)"; ledger "$file" - "$slug" - - "$mode" "$slot" - - REFUSED - - - "bad mode"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue ;; esac
+  if [ "$mode" = add ] && [ -z "$slot" ]; then say "REFUSED $tag: add needs an explicit sort_order (the server replaces an occupied slot and releases what was there)"; ledger "$file" - "$slug" - - add - - - REFUSED - - - "add without sort_order"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; fi
   shop="$(shop_id_for "$slug")"
-  if [ -z "$shop" ]; then say "REFUSED $tag: no shop with slug '$slug' visible to $USERNAME"; ledger "$file" - "$slug" - - "$mode" "$slot" - - - REFUSED - - - "unknown shop"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; fi
+  if [ -z "$shop" ]; then say "REFUSED $tag: no shop with slug '$slug' visible to $USERNAME"; ledger "$file" - "$slug" - - "$mode" "$slot" - - REFUSED - - - "unknown shop"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; fi
   sha="$(sha256_of "$file")"
 
   title_source=manifest; pid=""; created=no
@@ -352,7 +379,9 @@ while IFS= read -r line || [ -n "$line" ]; do
     fi
   fi
   if [ -z "$pid" ] && [ -z "$title" ]; then title="$(title_from_file "$file")"; title_source=filename; fi
-  [ -n "$pid" ] || pid="$(product_id_for "$shop" "$title")"
+  if [ -z "$pid" ]; then
+    pid="$(product_id_for "$shop" "$title")" || { say "FAILED  $tag: product lookup -> HTTP $HTTP (not creating)"; ledger "$file" "$sha" "$slug" - no "$mode" "$slot" - - FAILED - - - "lookup HTTP $HTTP"; resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"; n_failed=$((n_failed+1)); continue; }
+  fi
   ai_name=-; ai_conf=-; analysis=""
 
   if [ -z "$pid" ]; then
@@ -406,7 +435,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   deadline=$(( $(date +%s) + WAIT_S ))
   while [ "$status" = PENDING ] && [ "$(date +%s)" -lt "$deadline" ]; do
     sleep "$POLL_S"
-    m="$(api_get "/api/v1/products/$pid" | jq -c --arg a "$asset" '(.media // [])[] | select(.assetId == $a)' | head -n1)"
+    m="$(api_get "/api/v1/products/$pid" | jq -c --arg a "$asset" '(.media // [])[] | select(.assetId == $a)' 2>/dev/null | head -n1)"
     [ -n "$m" ] || continue
     status="$(printf '%s' "$m" | jq -r '.status')"
   done
@@ -424,6 +453,6 @@ while IFS= read -r line || [ -n "$line" ]; do
   resolved "$file" "$slug" "$title" "$mode" "$slot" "$sku"
 done < "$MANIFEST"
 
-if [ "$DRY" = 1 ]; then rm -f "$RESOLVED_TMP"; RESOLVED="(not written under --dry-run)"; else mv "$RESOLVED_TMP" "$RESOLVED"; fi
+if [ "$DRY" = 1 ]; then rm -f "$RESOLVED_TMP"; RESOLVED="(not written under --dry-run)"; else chmod 0644 "$RESOLVED_TMP" && mv "$RESOLVED_TMP" "$RESOLVED"; fi   # mktemp is 0600; a shared manifest folder wants it readable
 say "media-bulk-upload: rows=$total_rows active=$n_active failed=$n_failed planned=$n_planned created=$n_created ledger=$LEDGER resolved=$RESOLVED"
 [ "$n_failed" = 0 ] && exit 0 || exit 1
