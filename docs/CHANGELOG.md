@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`e2e-nightly.yml`:** a Stripe Phase 2 after the cash suite. It validates the keys, installs stripe-cli v1.55.6 (sha256 pinned), forwards webhooks, runs the refund spec with zero skips and checks the skip budget across both reports. The Stripe run writes its Playwright output under `$RUNNER_TEMP`, which is not uploaded, and the artifacts are scanned for the secret before the upload.
 - **`ci-cd.yaml` ops-contracts:** runs both selftests and `--lint-conf`.
 
+### The Apps Own Referrer-Policy, So /pay's no-referrer Reaches the Browser (#1071) (#1073) — 2026-11-01
+
+On staging, `/pay` answered with `Referrer-Policy: strict-origin-when-cross-origin`, and so did `/invite`. The frontend sends `no-referrer` on both pages, but the ingress `configuration-snippet` replaced it, because `more_set_headers` overwrites an upstream header that has the same name.
+
+- **k8s:** the `Referrer-Policy` line is removed from the base `jtoye-ingress` snippet and from both staging copies. INV-15 requires those copies to carry every base line, so all three change together. The frontend (`next.config.mjs`) and core-java (`SecurityConfig`) already send the header, so no app response loses it. The grafana, keycloak and mailpit Ingresses keep their own line. The goldens lose exactly three lines.
+- **`frontend/app/pay/page.tsx`:** `metadata.referrer` is `"no-referrer"`. The document now carries `<meta name="referrer" content="no-referrer">`, which no edge can overwrite. The Jest test failed before the change and passes after it.
+- **`scripts/check-staging-edge.sh`:**
+  - New `pay-referrer` arm: it requires exactly one `Referrer-Policy: no-referrer` on app-staging `/pay`. It fails on the pre-deploy edge and on the `--fail-arms` probe.
+  - New `--only <arm>` flag runs a single arm.
+  - The `staging-edge-probe` job now runs the new arm after each staging deploy.
+
 ### The `/pay` Page: No Cookie Notice Over the Card Form, a Retry on the Resume Path, and No "Payment Received" for an Unreadable Intent (#1072) — 2026-11-01
 
 Owner ruling 2026-11-01, from PR #1064's review series (recorded finding 6, the round-2 residual, and the 30-20 360 px screenshot). Quick task `261101-no1`.
