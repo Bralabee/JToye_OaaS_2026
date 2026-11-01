@@ -18,7 +18,7 @@ only issues caused by the current task are fixed in it).
   (a one-line doc fix) in the next commit that may touch that doc, then re-run the gate.
 
 - check-connection-math.sh reads the Keycloak pool from compose only (found during 29-10, 2026-10-19)
-  status: open
+  status: resolved (#979) — `k8s/scripts/check-connection-math.sh` now extracts `KC_DB_POOL_MAX_SIZE` from `k8s/components/keycloak/keycloak.yaml` as well as `docker-compose.full-stack.yml`, enforces a drift guard between the two, and exercises `keycloak-pool-drift` in `--selftest`
   **What:** `k8s/scripts/check-connection-math.sh` takes the Keycloak line item from
   `docker-compose.full-stack.yml` (`KC_DB_POOL_MAX_SIZE: "20"`, extract at its line ~170)
   and uses it for the k8s targets too. Since 29-10 the staging Keycloak sets its own
@@ -30,7 +30,7 @@ only issues caused by the current task are fixed in it).
   touches the connection budget (29-14 re-measures max_connections).
 
 - validate-networkpolicies.py cannot see component NetworkPolicies (found during 29-10, 2026-10-19)
-  status: open
+  status: resolved (#979) — `k8s/scripts/validate-networkpolicies.py` now validates `k8s/base/networkpolicies/*.yaml`, `k8s/components/**/*.yaml` carrying `kind: NetworkPolicy`, and `k8s/goldens/*.yaml` (18 files, 41 NetworkPolicy docs) with `--selftest`
   **What:** `k8s/scripts/validate-networkpolicies.py` (not CI-wired, measured) globs only
   `k8s/base/networkpolicies/`, so `keycloak-allow`, `redis-allow` and `rabbitmq-allow`
   (k8s/components/*) are not read at all: it prints `PASS: 7 files` with rc 0 under the

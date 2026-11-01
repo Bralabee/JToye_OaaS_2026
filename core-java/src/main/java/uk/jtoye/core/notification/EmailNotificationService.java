@@ -6,7 +6,9 @@ import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -14,6 +16,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import uk.jtoye.core.common.Sentences;
 import uk.jtoye.core.config.ClockConfig;
+import uk.jtoye.core.notification.consent.NotificationCategory;
+import uk.jtoye.core.notification.consent.UnsubscribeTokenService;
 import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderChannel;
@@ -22,12 +26,15 @@ import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
 import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * The customer's order emails, one per order status transition.
@@ -117,10 +124,16 @@ public class EmailNotificationService {
     /** The From display-name suffix (D-13). */
     static final String VIA_PLATFORM = " via J'Toye";
     static final String PLATFORM_NAME = "J'Toye";
+    static final String HEADER_LIST_UNSUBSCRIBE = "List-Unsubscribe";
+    static final String HEADER_LIST_UNSUBSCRIBE_POST = "List-Unsubscribe-Post";
+    static final String ONE_CLICK_POST_VALUE = "List-Unsubscribe=One-Click";
+    static final String UNSUBSCRIBE_FOOTER_PREFIX = "Unsubscribe from order status updates: ";
 
     // ---- Configuration ---------------------------------------------------------------------------
 
     private final JavaMailSender mailSender;
+    private final NotificationProperties notificationProperties;
+    private final UnsubscribeTokenService unsubscribeTokenService;
 
     @Value("${notification.email.from:noreply@jtoye.uk}")
     private String fromAddress;
@@ -145,7 +158,16 @@ public class EmailNotificationService {
     private String platformRegisteredOffice;
 
     public EmailNotificationService(JavaMailSender mailSender) {
+        this(mailSender, null, null);
+    }
+
+    @Autowired
+    public EmailNotificationService(JavaMailSender mailSender,
+                                    @Nullable NotificationProperties notificationProperties,
+                                    @Nullable UnsubscribeTokenService unsubscribeTokenService) {
         this.mailSender = mailSender;
+        this.notificationProperties = notificationProperties;
+        this.unsubscribeTokenService = unsubscribeTokenService;
     }
 
     // ---- One method per status; one send per call -------------------------------------------------
@@ -157,7 +179,9 @@ public class EmailNotificationService {
         String lead = """
                 Your order %s has been sent to %s They will confirm it shortly, and you'll get another \
                 email when they start preparing it.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
-        send(event, recipientEmail, "order-received", subject(event, "Received"), lead, ctx, true);
+        // #981: order-received is the statutory CCR 2013 reg 16 durable-medium contract
+        // confirmation — never carries List-Unsubscribe.
+        send(event, recipientEmail, "order-received", subject(event, "Received"), lead, ctx, true, false);
     }
 
     @Async
@@ -168,7 +192,7 @@ public class EmailNotificationService {
                 Great news! Your order %s has been confirmed by %s
 
                 Preparation will begin soon.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
-        send(event, recipientEmail, "order-confirmed", subject(event, "Confirmed"), lead, ctx, false);
+        send(event, recipientEmail, "order-confirmed", subject(event, "Confirmed"), lead, ctx, false, true);
     }
 
     @Async
@@ -179,7 +203,7 @@ public class EmailNotificationService {
                 Your order %s is now being prepared by %s
 
                 You'll get another email when it's ready.""".formatted(event.orderNumber(), Sentences.withFullStop(shopLabel(ctx)));
-        send(event, recipientEmail, "order-preparing", subject(event, "Being Prepared"), lead, ctx, false);
+        send(event, recipientEmail, "order-preparing", subject(event, "Being Prepared"), lead, ctx, false, true);
     }
 
     /**
@@ -209,7 +233,7 @@ public class EmailNotificationService {
                     Your order %s is ready for collection from %s!
 
                     Please pick it up at your earliest convenience.""".formatted(event.orderNumber(), shopLabel(ctx));
-            send(event, recipientEmail, "order-ready-collection", subject, lead, ctx, false);
+            send(event, recipientEmail, "order-ready-collection", subject, lead, ctx, false, true);
             return;
         }
 
@@ -218,7 +242,7 @@ public class EmailNotificationService {
 
                 There's no need to come to the shop — %s will deliver it to the address on your order.\
                 """.formatted(event.orderNumber(), shopLabel(ctx));
-        send(event, recipientEmail, "order-ready-delivery", subject, lead, ctx, false);
+        send(event, recipientEmail, "order-ready-delivery", subject, lead, ctx, false, true);
     }
 
     @Async
@@ -230,7 +254,7 @@ public class EmailNotificationService {
 
                 Thank you for ordering from %s""".formatted(event.orderNumber(), shopLabel(ctx),
                 Sentences.withFullStop(shopLabel(ctx)));
-        send(event, recipientEmail, "order-completed", subject(event, "Completed"), lead, ctx, false);
+        send(event, recipientEmail, "order-completed", subject(event, "Completed"), lead, ctx, false, true);
     }
 
     @Async
@@ -243,7 +267,8 @@ public class EmailNotificationService {
                 Previous status: %s
                 If this was unexpected, please contact %s directly.""".formatted(
                 event.orderNumber(), shopLabel(ctx), event.previousStatus(), shopLabel(ctx));
-        send(event, recipientEmail, "order-cancelled", subject(event, "Cancelled"), lead, ctx, false);
+        // #981: order-cancelled is a non-suppressible transactional notice — never carries List-Unsubscribe.
+        send(event, recipientEmail, "order-cancelled", subject(event, "Cancelled"), lead, ctx, false, false);
     }
 
     // ---- Staff invitation (D-07, 37-07) ------------------------------------------------------------
@@ -390,6 +415,11 @@ public class EmailNotificationService {
      * platform footer.
      */
     String body(OrderStateChangeEvent event, String lead, CustomerEmailContext ctx, boolean orderReceived) {
+        return body(event, lead, ctx, orderReceived, null);
+    }
+
+    String body(OrderStateChangeEvent event, String lead, CustomerEmailContext ctx, boolean orderReceived,
+                @Nullable String unsubscribePageUrl) {
         StringBuilder b = new StringBuilder();
         b.append(lead).append("\n\n").append(trackingLink(event)).append('\n');
         if (orderReceived) {
@@ -399,7 +429,7 @@ public class EmailNotificationService {
         if (orderReceived) {
             b.append('\n').append(CANCELLATION_STATEMENT_COPY).append('\n');
         }
-        b.append('\n').append(footer(ctx));
+        b.append('\n').append(footer(ctx, unsubscribePageUrl));
         return b.toString();
     }
 
@@ -471,7 +501,7 @@ public class EmailNotificationService {
     }
 
     /** The platform's own identity (D-14). The registered office line is omitted, never blank. */
-    private String footer(CustomerEmailContext ctx) {
+    private String footer(CustomerEmailContext ctx, @Nullable String unsubscribePageUrl) {
         StringBuilder b = new StringBuilder("—\n");
         String shop = sanitise(ctx.shopName());
         b.append("This email was sent by ").append(PLATFORM_NAME).append(" on behalf of ")
@@ -481,6 +511,9 @@ public class EmailNotificationService {
         String office = oneLine(platformRegisteredOffice);
         if (office != null) {
             b.append("Registered office: ").append(office).append('\n');
+        }
+        if (unsubscribePageUrl != null && !unsubscribePageUrl.isBlank()) {
+            b.append(UNSUBSCRIBE_FOOTER_PREFIX).append(unsubscribePageUrl).append('\n');
         }
         return b.toString();
     }
@@ -561,14 +594,48 @@ public class EmailNotificationService {
 
     // ---- Send ------------------------------------------------------------------------------------
 
+    private record UnsubscribeLinks(String pageUrl, String oneClickUrl) {
+        static final UnsubscribeLinks NONE = new UnsubscribeLinks(null, null);
+    }
+
+    private UnsubscribeLinks unsubscribeLinks(UUID tenantId, String recipientEmail, boolean unsubscribeable) {
+        if (!unsubscribeable
+                || tenantId == null
+                || recipientEmail == null || recipientEmail.isBlank()
+                || notificationProperties == null || !notificationProperties.configured()
+                || unsubscribeTokenService == null) {
+            return UnsubscribeLinks.NONE;
+        }
+        String token = unsubscribeTokenService.tokenFor(tenantId, recipientEmail, NotificationCategory.ORDERS);
+        NotificationProperties.Unsubscribe cfg = notificationProperties.getUnsubscribe();
+        String query = "tenant=" + urlEncode(tenantId.toString())
+                + "&email=" + urlEncode(recipientEmail)
+                + "&category=" + urlEncode(NotificationCategory.ORDERS.name())
+                + "&token=" + urlEncode(token);
+        String pageUrl = trimTrailingSlash(cfg.getBaseUrl()) + cfg.getPagePath() + "?" + query;
+        String oneClickUrl = cfg.oneClickConfigured()
+                ? trimTrailingSlash(cfg.getOneClickBaseUrl()) + cfg.getOneClickPath() + "?" + query
+                : null;
+        return new UnsubscribeLinks(pageUrl, oneClickUrl);
+    }
+
+    private static String urlEncode(String v) {
+        return URLEncoder.encode(v == null ? "" : v, StandardCharsets.UTF_8);
+    }
+
+    private static String trimTrailingSlash(String s) {
+        return s != null && s.endsWith("/") ? s.substring(0, s.length() - 1) : (s == null ? "" : s);
+    }
+
     private void send(OrderStateChangeEvent event, String recipientEmail, String template, String subject,
-                      String lead, CustomerEmailContext ctx, boolean orderReceived) {
+                      String lead, CustomerEmailContext ctx, boolean orderReceived, boolean unsubscribeable) {
         String orderNumber = event.orderNumber();
         if (!emailEnabled || recipientEmail == null || recipientEmail.isBlank()) {
             log.debug("Email notification skipped for order {} ({}): enabled={}, recipient present={}",
                     orderNumber, template, emailEnabled, recipientEmail != null && !recipientEmail.isBlank());
             return;
         }
+        UnsubscribeLinks links = unsubscribeLinks(event.tenantId(), recipientEmail, unsubscribeable);
         try {
             MimeMessage mime = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
@@ -579,7 +646,13 @@ public class EmailNotificationService {
             }
             helper.setTo(recipientEmail);
             helper.setSubject(subject);
-            helper.setText(body(event, lead, ctx, orderReceived), false);
+            helper.setText(body(event, lead, ctx, orderReceived, links.pageUrl()), false);
+            if (links.oneClickUrl() != null && !links.oneClickUrl().isBlank()) {
+                mime.addHeader(HEADER_LIST_UNSUBSCRIBE, "<" + links.oneClickUrl() + ">");
+                mime.addHeader(HEADER_LIST_UNSUBSCRIBE_POST, ONE_CLICK_POST_VALUE);
+            } else if (links.pageUrl() != null && !links.pageUrl().isBlank()) {
+                mime.addHeader(HEADER_LIST_UNSUBSCRIBE, "<" + links.pageUrl() + ">");
+            }
             mailSender.send(mime);
             log.info("Email notification sent for order {} ({})", orderNumber, template);
         } catch (MailException | MessagingException | UnsupportedEncodingException e) {
