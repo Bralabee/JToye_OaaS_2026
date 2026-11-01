@@ -7,8 +7,9 @@ import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useCustomerSession } from "@/hooks/use-customer-session"
 
 /**
- * Shared public footer (Surface B). De-orphans /track and /business-model-guide
- * (backlog #5) and gives /for-operators a second inbound link.
+ * Shared public footer (Surface B). De-orphans /track (backlog #5) and gives
+ * /for-operators a second inbound link. It also de-orphaned /business-model-guide
+ * until SW-CLR-05 (swarm epic #964) unlinked the two strategy pages.
  *
  * Oxblood brand anchor (sketch 004 winner D, matched to jtoyedigital.co.uk).
  *
@@ -252,6 +253,23 @@ export function PublicFooter() {
                   Accessibility statement
                 </Link>
               </li>
+              <li>
+                <Link
+                  href="/legal/terms"
+                  className="text-cream/85 transition-colors hover:text-white"
+                >
+                  Terms of use
+                </Link>
+              </li>
+              {/* SW-CLR-04 (swarm epic #964): the contact route lives in this
+                  column because it is the one every public route renders for
+                  everyone — "For operators" unmounts for a signed-in customer.
+                  A link only: the company identity stays on /contact itself. */}
+              <li>
+                <Link href="/contact" className="text-cream/85 transition-colors hover:text-white">
+                  Contact J&apos;Toye
+                </Link>
+              </li>
             </ul>
           </div>
 
@@ -268,16 +286,10 @@ export function PublicFooter() {
                     Become a vendor
                   </Link>
                 </li>
-                <li>
-                  <Link href="/business-model-guide" className="text-cream/85 transition-colors hover:text-white">
-                    Business model guide
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/competitive" className="text-cream/85 transition-colors hover:text-white">
-                    How we compare
-                  </Link>
-                </li>
+                {/* SW-CLR-05 (swarm epic #964): "Business model guide" and "How we
+                    compare" were linked here. Both are internal strategy pages
+                    (the teardown cites repo file paths), so they are unlinked
+                    and noindexed; the pages still exist at their URLs. */}
                 <li>
                   <Link href="/auth/signin" className="text-cream/85 transition-colors hover:text-white">
                     Vendor sign in

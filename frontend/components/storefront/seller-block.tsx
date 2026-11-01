@@ -57,7 +57,11 @@ export const SELLER_DETAILS_MISSING_COPY = "The seller has not provided their le
 export const PLATFORM_CONTACT_INTRO_COPY =
   "J'Toye is the ordering platform, not the seller. To contact J'Toye, see"
 
-/** The link text for the platform's own legal and contact details (/legal). */
+/**
+ * The link text for the platform's own legal and contact details. The link goes to /contact
+ * (PR 1080 round 1), which carries the company identity AND the general contact route; /legal
+ * carries the identity and the data-protection address only.
+ */
 export const PLATFORM_CONTACT_LINK_COPY = "J'Toye's legal and contact details"
 
 export const SELLER_ENTITY_TYPE_LABELS: Record<PublicSeller["entityType"], string> = {
@@ -143,7 +147,7 @@ export function SellerBlock({ seller, id = "seller-details-heading", className }
           <p className="mt-2 text-sm text-slate-600">
             {PLATFORM_CONTACT_INTRO_COPY}{" "}
             <Link
-              href="/legal"
+              href="/contact"
               className="text-oxblood underline underline-offset-2 hover:text-oxblood-700"
             >
               {PLATFORM_CONTACT_LINK_COPY}

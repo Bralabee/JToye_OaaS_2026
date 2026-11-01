@@ -63,6 +63,11 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
     @Query("SELECT s.id FROM Shop s WHERE s.tenantId = :tenantId")
     List<UUID> findIdsByTenantId(@Param("tenantId") UUID tenantId);
 
+    // 30-25 (PAY-02 / D-04, all-shops decision): tenant-scoped location count for per-location
+    // subscription billing. The explicit tenant_id predicate is load-bearing even under FORCE RLS
+    // because shops_public_read (V16) permits SELECT on every tenant's published = true shops.
+    long countByTenantId(UUID tenantId);
+
     // Tenant-scoped by-name read for the Edge sync upsert (PR #726 review M1). The shop
     // upsert key is (tenant, name) — idx_shops_tenant_name is unique per TENANT, not globally —
     // but the bare findByName runs under shops_public_read and so also returns a FOREIGN

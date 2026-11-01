@@ -221,7 +221,7 @@ describe("ProductDetailModal allergen section (31.1-21)", () => {
     const section = allergenSection()
     const list = within(section).getByRole("list", { name: "Contains" })
     expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Gluten", "Milk"])
-    expect(precedes(section, screen.getByRole("button", { name: /Add to cart/i }))).toBe(true)
+    expect(precedes(section, screen.getByRole("button", { name: /Add to basket/ }))).toBe(true)
   })
 
   it("comes before the description and the ingredients, directly under the title", () => {
@@ -232,9 +232,9 @@ describe("ProductDetailModal allergen section (31.1-21)", () => {
     expect(precedes(screen.getByRole("heading", { level: 2 }), section)).toBe(true)
   })
 
-  it("none declared: the section still renders and says 'No allergens declared'", () => {
+  it("none declared: the section still renders and says 'No allergens declared', with the caveat (SW-PRY-02)", () => {
     renderModal(product({ allergenMask: 0, undeclaredIngredientAllergens: [], mayContainAllergens: [] }))
-    expect(within(allergenSection()).getByText("No allergens declared")).toBeInTheDocument()
+    expect(within(allergenSection()).getByText("No allergens declared – not the same as allergen-free")).toBeInTheDocument()
     expect(within(allergenSection()).queryByRole("list", { name: "Contains" })).toBeNull()
   })
 
@@ -242,7 +242,7 @@ describe("ProductDetailModal allergen section (31.1-21)", () => {
     renderModal(product({ allergenMask: 0, undeclaredIngredientAllergens: ["Milk"] }))
     const section = allergenSection()
     expect(within(section).getByText("Ingredients name: MILK – check with the shop")).toBeInTheDocument()
-    expect(within(section).queryByText("No allergens declared")).toBeNull()
+    expect(within(section).queryByText(/No allergens declared/)).toBeNull()
   })
 
   it("may contain (D-16): 'May contain: Sesame' is its own line, never inside the Contains list", () => {
@@ -280,7 +280,7 @@ describe("ProductDetailModal allergen section (31.1-21)", () => {
         onDecrement={() => {}}
       />
     )
-    const more = screen.getByRole("button", { name: "Add one more Party Jollof Rice to cart" })
+    const more = screen.getByRole("button", { name: "Add one more Party Jollof Rice" })
     expect(precedes(allergenSection(), more)).toBe(true)
   })
 
@@ -289,6 +289,80 @@ describe("ProductDetailModal allergen section (31.1-21)", () => {
     const text = screen.getByRole("dialog").textContent ?? ""
     expect(text).toContain("No allergens declared")
     expect(screen.queryByText(/^\s*No allergens\s*$/)).toBeNull()
-    expect(text).not.toMatch(/allergen[-\s]free|safe for you|no allergens present/i)
+    // "allergen-free" only as checkout's denial (SW-PRY-02), never as a claim.
+    expect(text).not.toMatch(/(?<!not the same as )allergen[-\s]free|safe for you|no allergens present/i)
+  })
+
+  it("SW-PRY-03: an empty may-contain list reads 'May contain: none listed', never silence", () => {
+    renderModal(product({ allergenMask: 0, mayContainAllergens: [] }))
+    expect(within(allergenSection()).getByText("May contain: none listed")).toBeInTheDocument()
+  })
+
+  it("SW-PRY-03: an older backend (field absent) also reads 'May contain: none listed'", () => {
+    const legacy = product({ allergenMask: MILK })
+    delete (legacy as Partial<PublicProduct>).mayContainAllergens
+    renderModal(legacy)
+    expect(within(allergenSection()).getByText("May contain: none listed")).toBeInTheDocument()
+  })
+
+  it("SW-PRY-03: a named may-contain list replaces the 'none listed' line, never both", () => {
+    renderModal(product({ allergenMask: 0, mayContainAllergens: ["Sesame"] }))
+    const section = allergenSection()
+    expect(within(section).getByText("May contain: Sesame")).toBeInTheDocument()
+    expect(within(section).queryByText("May contain: none listed")).toBeNull()
+  })
+})
+
+describe("SW-MRC-13 (swarm epic #964): the dish dialog's scroll region and basket wording", () => {
+  const MILK = 1 << 6
+  it("the scrollable body is a NAMED, focusable region (no unnamed focusable scroller)", () => {
+    renderModal(product({ allergenMask: MILK }))
+    const region = within(screen.getByRole("dialog")).getByRole("region", {
+      name: "Party Jollof Rice details",
+    })
+    expect(region).toHaveAttribute("tabindex", "0")
+    expect(region.className).toMatch(/overflow-y-auto/)
+  })
+
+  it("says 'basket', as the menu card, the drawer and the basket page do; never 'cart'", () => {
+    renderModal(product({ allergenMask: MILK }))
+    expect(screen.getByRole("button", { name: "Add to basket · £9.50" })).toBeInTheDocument()
+    expect(screen.getByRole("dialog").textContent ?? "").not.toMatch(/\bcart\b/i)
+  })
+
+  it("in the basket: 'In basket', and the stepper uses the card's names", () => {
+    render(
+      <ProductDetailModal
+        product={product({ allergenMask: MILK })}
+        isOpen
+        onClose={() => {}}
+        quantity={1}
+        onAdd={() => {}}
+        onIncrement={() => {}}
+        onDecrement={() => {}}
+      />
+    )
+    const dialog = screen.getByRole("dialog")
+    expect(within(dialog).getByText("In basket")).toBeInTheDocument()
+    expect(within(dialog).getByRole("button", { name: "Add one more Party Jollof Rice" })).toBeInTheDocument()
+    expect(within(dialog).getByRole("button", { name: "Remove Party Jollof Rice from basket" })).toBeInTheDocument()
+    expect(dialog.textContent ?? "").not.toMatch(/\bcart\b/i)
+  })
+
+  it("above one, the minus is 'Decrease quantity of {dish}', as on the card", () => {
+    render(
+      <ProductDetailModal
+        product={product({ allergenMask: MILK })}
+        isOpen
+        onClose={() => {}}
+        quantity={3}
+        onAdd={() => {}}
+        onIncrement={() => {}}
+        onDecrement={() => {}}
+      />
+    )
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Decrease quantity of Party Jollof Rice" })
+    ).toBeInTheDocument()
   })
 })

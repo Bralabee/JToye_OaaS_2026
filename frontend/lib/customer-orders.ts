@@ -40,9 +40,27 @@ export interface OrderSummary extends PublicOrderAllergenRecord {
    * `itemCount` — the count is simply not rendered when it is not known.
    */
   unitCount?: number | null
+  /**
+   * SW-PRY-06 (T-31.1-46): the customer's OWN allergy note, as they wrote it. Only
+   * `/public/orders/mine` (CustomerOrderStatus) carries it, and only for an order whose contact was
+   * verified when it was placed; null when none was sent, when the contact was not verified, or
+   * after an erasure. It is deliberately NOT on `PublicOrderAllergenRecord`, which the tracking page
+   * shares: this page renders it, nothing else does.
+   *
+   * Where it lives: page.tsx server-renders it into the My Orders HTML and RSC payload (`initial`),
+   * and the client island holds it in React state; nothing writes it to localStorage or
+   * sessionStorage. Every response that carries it says no-store on its own account: core's
+   * `/mine`, the `/api/customer-orders` proxy (and only for `include=allergyNote`, which only this
+   * page sends), and the `/shop/orders` document through its own next.config.mjs headers() rule,
+   * which does not rely on the root layout's force-dynamic.
+   */
+  allergyNote?: string | null
   createdAt: string
   updatedAt: string
 }
+
+/** SW-PRY-06: the heading above the customer's own note on a My Orders card. */
+export const MY_ORDERS_ALLERGY_NOTE_HEADING_COPY = "Your allergy note"
 
 /**
  * Why the load failed. Kept coarse on purpose — the customer needs to know

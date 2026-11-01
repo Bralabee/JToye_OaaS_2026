@@ -35,6 +35,33 @@ public enum ShopRole {
         return rank;
     }
 
+    /** The role's name as people read it: the invite email, and anywhere else a role is named. */
+    public String label() {
+        return switch (this) {
+            case STAFF -> "Staff";
+            case SHOP_MANAGER -> "Shop manager";
+            case GROUP_ADMIN -> "Group admin";
+        };
+    }
+
+    /**
+     * What the role can do, in one or two plain sentences (SW-TND-02, swarm epic #964), stated from
+     * the tiers above as they are enforced: STAFF reads the shop and moves orders through their
+     * states but writes no catalogue; SHOP_MANAGER has full control of a granted shop but no staff
+     * management and no shop create or delete; GROUP_ADMIN has every shop, shop create and delete,
+     * and staff management. Kept beside the tiers so a change to one is a change to the other.
+     */
+    public String capabilities() {
+        return switch (this) {
+            case STAFF -> "As Staff you can see the shop's orders and move them along as they are prepared. "
+                    + "You can't change products or prices.";
+            case SHOP_MANAGER -> "As a Shop manager you can run the shop: its products and prices, its orders "
+                    + "and its settings. You can't invite people or add or remove shops.";
+            case GROUP_ADMIN -> "As a Group admin you can run every shop in the business, add and remove shops, "
+                    + "and invite people and choose what they can do.";
+        };
+    }
+
     /**
      * True when this role is at least {@code minRole} in the tier
      * (e.g. GROUP_ADMIN {@code satisfies} SHOP_MANAGER).

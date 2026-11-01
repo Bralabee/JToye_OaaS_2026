@@ -16,7 +16,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.notification.CustomerEmailContext;
+import uk.jtoye.core.notification.OrderEmailSummary;
 import uk.jtoye.core.notification.EmailNotificationService;
+import uk.jtoye.core.notification.consent.ConsentGate;
+import uk.jtoye.core.notification.consent.NotificationCategory;
 import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.security.TenantContext;
@@ -273,16 +276,90 @@ class OrderStateChangeListenerTest {
         order.setPlacedVia(placedVia);
         order.setAllergenAckMask(ackMask);
         order.setFulfilmentType(FulfilmentType.COLLECTION);
-        OrderItem jollof = new OrderItem();
+        OrderItem jollof = new OrderItem(UUID.randomUUID(), 2, 500L);
         jollof.setProductName("Jollof Rice");
         jollof.setAllergenMask(65);
         jollof.setAllergenFlagMask(0);
-        OrderItem puff = new OrderItem();
+        OrderItem puff = new OrderItem(UUID.randomUUID(), 1, 250L);
         puff.setProductName("Puff Puff");
         puff.setAllergenMask(0);
         puff.setAllergenFlagMask(1 << 2);
         order.setItems(new java.util.ArrayList<>(List.of(jollof, puff)));
         return order;
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: the order summary (lines, total, destination) is read from the loaded order, "
+            + "and never carries the allergy note")
+    void emailContextCarriesTheOrderSummary() {
+        UUID orderId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(orderId, tenantId, "ORD-SUM-1",
+                OrderStatus.DRAFT, OrderStatus.PENDING, OffsetDateTime.now());
+        Order delivery = orderWithLines(shopId, OrderChannel.STOREFRONT, 65, "buyer@example.com");
+        delivery.setTotalAmountPennies(1250L);
+        delivery.setDeliveryFeePennies(250L);
+        delivery.setFulfilmentType(FulfilmentType.DELIVERY);
+        delivery.setAddressLine1("1 High Street");
+        delivery.setAddressLine2(" ");
+        delivery.setAddressCity("Birmingham");
+        delivery.setAddressPostcode("B1 1AA");
+        delivery.setAllergyNote("My child is allergic to peanuts");
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(delivery));
+        Shop shop = new Shop();
+        shop.setId(shopId);
+        shop.setTenantId(tenantId);
+        shop.setName("Mama Ad\u00e9's Kitchen");
+        shop.setAddress("12 Market Street, Birmingham");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+
+        listener.handleOrderStateChange(event);
+
+        ArgumentCaptor<CustomerEmailContext> ctx = ArgumentCaptor.forClass(CustomerEmailContext.class);
+        verify(emailService).sendOrderConfirmation(eq(event), eq("buyer@example.com"), ctx.capture());
+        OrderEmailSummary summary = ctx.getValue().summary();
+        assertThat(summary).as("the listener reads the summary").isNotNull();
+        assertThat(summary.lines()).extracting(l -> l.name() + " x" + l.quantity())
+                .containsExactly("Jollof Rice x2", "Puff Puff x1");
+        assertThat(summary.totalPennies()).isEqualTo(1250L);
+        assertThat(summary.deliveryAddress()).as("blank lines dropped")
+                .containsExactly("1 High Street", "Birmingham", "B1 1AA");
+        assertThat(summary.collectionAddress()).as("a delivery order names no collection point").isNull();
+        assertThat(summary.deliveryFeePennies()).isEqualTo(250L);
+        assertThat(summary.depositPennies()).as("a full-payment order").isNull();
+        assertThat(summary.toString()).doesNotContain("peanuts");
+    }
+
+    @Test
+    @DisplayName("SW-JRD-15: a collection order carries the shop's address and no delivery address")
+    void collectionSummaryCarriesTheShopAddress() {
+        UUID orderId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        OrderStateChangeEvent event = new OrderStateChangeEvent(orderId, tenantId, "ORD-SUM-2",
+                OrderStatus.PENDING, OrderStatus.CONFIRMED, OffsetDateTime.now());
+        Order collection = orderWithLines(shopId, OrderChannel.STOREFRONT, 65, "buyer@example.com");
+        collection.setAddressLine1("stale address the policy should have cleared");
+        collection.setDepositAmountPennies(2000L);
+        collection.setBalanceDuePennies(8000L);
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(collection));
+        Shop shop = new Shop();
+        shop.setId(shopId);
+        shop.setTenantId(tenantId);
+        shop.setName("Mama Ad\u00e9's Kitchen");
+        shop.setAddress("12 Market Street, Birmingham");
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(shop));
+
+        listener.handleOrderStateChange(event);
+
+        ArgumentCaptor<CustomerEmailContext> ctx = ArgumentCaptor.forClass(CustomerEmailContext.class);
+        verify(emailService).sendOrderConfirmed(eq(event), eq("buyer@example.com"), ctx.capture());
+        OrderEmailSummary summary = ctx.getValue().summary();
+        assertThat(summary.collectionAddress()).isEqualTo("12 Market Street, Birmingham");
+        assertThat(summary.depositPennies()).isEqualTo(2000L);
+        assertThat(summary.balanceDuePennies()).isEqualTo(8000L);
+        assertThat(summary.deliveryAddress()).isEmpty();
     }
 
     @Test
@@ -426,5 +503,84 @@ class OrderStateChangeListenerTest {
         } finally {
             listenerLogger.setLevel(previous);
         }
+    }
+
+    // =============================================================================================
+    // #981: ConsentGate (ORDERS) suppresses intermediate updates under pinned tenant, never statutory notices
+    // =============================================================================================
+
+    @Test
+    @DisplayName("#981: when recipient opted out of ORDERS, intermediate statuses (CONFIRMED, PREPARING, READY, "
+            + "COMPLETED) are suppressed under the pinned tenant without logging the recipient")
+    void optedOutRecipient_suppressesIntermediateStatusesUnderPinnedTenant() {
+        ConsentGate consentGate = mock(ConsentGate.class);
+        OrderStateChangeListener gatedListener = new OrderStateChangeListener(
+                orderRepository, emailService, entityManager, metrics, simpMessagingTemplate,
+                jdbcTemplate, shopRepository, traderIdentityService, consentGate);
+
+        UUID tenantId = UUID.randomUUID();
+        AtomicReference<Optional<UUID>> tenantAtConsentRead = new AtomicReference<>();
+        when(consentGate.allows(eq(tenantId), eq("opted.out@example.com"), eq(NotificationCategory.ORDERS)))
+                .thenAnswer(inv -> {
+                    tenantAtConsentRead.set(TenantContext.get());
+                    return false;
+                });
+
+        for (OrderStatus status : List.of(
+                OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.COMPLETED)) {
+            UUID orderId = UUID.randomUUID();
+            OrderStateChangeEvent event = new OrderStateChangeEvent(
+                    orderId, tenantId, "ORD-SUPP-" + status.name(),
+                    OrderStatus.PENDING, status, OffsetDateTime.now());
+            Order order = new Order();
+            order.setCustomerEmail("opted.out@example.com");
+            order.setTotalAmountPennies(1500L);
+            when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+
+            gatedListener.handleOrderStateChange(event);
+
+            assertThat(tenantAtConsentRead.get())
+                    .as("Pitfall 8: ConsentGate must run while TenantContext is pinned to the event's tenant")
+                    .contains(tenantId);
+        }
+
+        verifyNoInteractions(emailService);
+        verify(metrics).recordOrderCompleted(1500L);
+        assertThat(logAppender.list).noneMatch(e -> e.getFormattedMessage().contains("opted.out"));
+    }
+
+    @Test
+    @DisplayName("#981: statutory notices (PENDING order-received and CANCELLED) are still sent even when "
+            + "recipient opted out of ORDERS")
+    void optedOutRecipient_stillReceivesStatutoryPendingAndCancelledNotices() {
+        ConsentGate consentGate = mock(ConsentGate.class);
+        lenient().when(consentGate.allows(any(), anyString(), any())).thenReturn(false);
+        OrderStateChangeListener gatedListener = new OrderStateChangeListener(
+                orderRepository, emailService, entityManager, metrics, simpMessagingTemplate,
+                jdbcTemplate, shopRepository, traderIdentityService, consentGate);
+
+        UUID tenantId = UUID.randomUUID();
+        UUID pendingOrderId = UUID.randomUUID();
+        OrderStateChangeEvent pendingEvent = new OrderStateChangeEvent(
+                pendingOrderId, tenantId, "ORD-STAT-PEN",
+                OrderStatus.DRAFT, OrderStatus.PENDING, OffsetDateTime.now());
+        Order pendingOrder = new Order();
+        pendingOrder.setCustomerEmail("opted.out@example.com");
+        when(orderRepository.findById(pendingOrderId)).thenReturn(Optional.of(pendingOrder));
+
+        UUID cancelledOrderId = UUID.randomUUID();
+        OrderStateChangeEvent cancelledEvent = new OrderStateChangeEvent(
+                cancelledOrderId, tenantId, "ORD-STAT-CAN",
+                OrderStatus.PENDING, OrderStatus.CANCELLED, OffsetDateTime.now());
+        Order cancelledOrder = new Order();
+        cancelledOrder.setCustomerEmail("opted.out@example.com");
+        when(orderRepository.findById(cancelledOrderId)).thenReturn(Optional.of(cancelledOrder));
+
+        gatedListener.handleOrderStateChange(pendingEvent);
+        gatedListener.handleOrderStateChange(cancelledEvent);
+
+        verify(emailService).sendOrderConfirmation(eq(pendingEvent), eq("opted.out@example.com"), any());
+        verify(emailService).sendOrderCancelledNotification(eq(cancelledEvent), eq("opted.out@example.com"), any());
+        verifyNoInteractions(consentGate);
     }
 }

@@ -36,6 +36,31 @@ const ACCESS_COOKIE = "jtoye-customer-access"
 // the compose stack from the day it shipped. See the shared function for the
 // measurements.
 
+/**
+ * SW-PRY-06 (T-31.1-102): core's /public/orders/mine carries the customer's own allergy-note text.
+ * This proxy is shared: My Orders refreshes through it, and so does the signed-in /track page, which
+ * keeps every entry in React state although it never renders the note. So the text is passed on
+ * ONLY when the caller opts in with `include=allergyNote`, which only app/shop/orders sends; every
+ * other caller gets the note-free shape (`allergyNoteProvided` and the read time stay). The flag is
+ * read here and never forwarded upstream.
+ */
+const ALLERGY_NOTE_INCLUDE = "allergyNote"
+
+function withoutAllergyNote(body: unknown): unknown {
+  if (!body || typeof body !== "object") return body
+  const page = body as { content?: unknown }
+  if (!Array.isArray(page.content)) return body
+  return {
+    ...page,
+    content: page.content.map((entry) => {
+      if (!entry || typeof entry !== "object") return entry
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { allergyNote, ...rest } = entry as Record<string, unknown>
+      return rest
+    }),
+  }
+}
+
 export async function GET(req: NextRequest) {
   const access = req.cookies.get(ACCESS_COOKIE)?.value
   if (!access) {
@@ -58,8 +83,15 @@ export async function GET(req: NextRequest) {
         cache: "no-store",
       }
     )
-    const body = await upstream.json().catch(() => ({}))
-    return NextResponse.json(body, { status: upstream.status })
+    const raw = await upstream.json().catch(() => ({}))
+    const body =
+      req.nextUrl.searchParams.get("include") === ALLERGY_NOTE_INCLUDE ? raw : withoutAllergyNote(raw)
+    // SW-PRY-06 (T-31.1-46): the history can carry the customer's own allergy note, so neither the
+    // browser nor any proxy may keep a copy beyond the request.
+    return NextResponse.json(body, {
+      status: upstream.status,
+      headers: { "Cache-Control": "no-store" },
+    })
   } catch {
     return NextResponse.json({ error: "upstream_unavailable" }, { status: 502 })
   }

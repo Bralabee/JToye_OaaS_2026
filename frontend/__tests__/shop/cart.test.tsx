@@ -19,7 +19,7 @@ import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
 import {
   BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
-  NO_ALLERGENS_DECLARED_COPY,
+  NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
 } from "@/lib/allergen-copy"
 
 // The basket page fetches the shop for its server-authoritative delivery fee
@@ -447,7 +447,7 @@ describe("Shop cart page — each line's own allergens (#860)", () => {
     await waitFor(() =>
       expect(lineAllergenText()).toEqual([
         "Contains: Milk",
-        NO_ALLERGENS_DECLARED_COPY,
+        NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
         "Ingredients name: MILK – check with the shop",
       ])
     )
@@ -485,7 +485,7 @@ describe("Shop cart page — each line's own allergens (#860)", () => {
         BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
       ])
     )
-    expect(screen.queryByText(NO_ALLERGENS_DECLARED_COPY)).toBeNull()
+    expect(screen.queryByText(NO_ALLERGENS_DECLARED_CUSTOMER_COPY)).toBeNull()
   })
 
   it("a dish the catalogue no longer lists says 'not available'; the other lines still state theirs", async () => {
@@ -601,5 +601,88 @@ describe("Shop cart page — which fulfilment the shop takes (UXT-023)", () => {
     expect(summary().outerHTML).toBe(
       '<div class="mt-6 rounded-xl bg-white border border-cream-100 p-4 shadow-sm"><div class="flex items-center justify-between text-sm"><span class="text-slate-600">Subtotal</span><span class="font-semibold text-slate-900">£3.00</span></div><div class="mt-2 flex items-center justify-between text-sm"><span class="text-slate-600">Delivery</span><span class="font-semibold text-slate-900">from £3.50</span></div><p class="mt-1 text-xs text-slate-600">Added at checkout, where collection is free and delivery is free over £25.00.</p></div>'
     )
+  })
+})
+
+/**
+ * SW-MRC-13 (swarm epic #964): the basket page went H1 ("Your basket") straight to H3 (each item),
+ * so a screen-reader user moving by heading met a missing level. Each item is now an H2 under the
+ * page's H1; no heading on the page skips a level.
+ */
+describe("Shop cart page — heading outline (SW-MRC-13)", () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it("items are H2 under the H1, and no heading skips a level", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [
+          { productId: "p1", title: "Jollof Rice", pricePennies: 899, quantity: 1, imageUrl: null, category: "Mains" },
+          { productId: "p2", title: "Puff Puff", pricePennies: 300, quantity: 2, imageUrl: null, category: "Sides" },
+        ],
+      })
+    )
+    renderCart()
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Jollof Rice" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 2, name: "Puff Puff" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 1, name: "Your basket" })).toBeInTheDocument()
+
+    const levels = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6")).map((h) =>
+      Number(h.tagName.slice(1))
+    )
+    // Control: the outline was read (one H1 and two items), so the walk below has something to check.
+    expect(levels).toEqual([1, 2, 2])
+    levels.forEach((level, i) => {
+      if (i > 0) expect(level - levels[i - 1]).toBeLessThanOrEqual(1)
+    })
+  })
+})
+
+/**
+ * PR #1075 review round 1 (inline 4435453773): e2e/cart-identity-boundary.verify.mjs (run by
+ * e2e-nightly) reads the basket's item titles with a CSS locator in cartPageState(). It was
+ * `article h3, h3.text-sm`; the SW-MRC-13 h3 -> h2 change left it matching nothing, so `titles`
+ * was always [] and every `titles.some(...)` arm went false. The script needs a stack, so this pins
+ * it statically: the locator is read out of the script's own source and run against the real
+ * basket page in jsdom (Playwright's CSS engine and querySelectorAll agree on a plain selector).
+ */
+describe("cart-identity-boundary.verify.mjs reads this page's item titles", () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it("the script's title locator matches every basket item title, and only them", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require("fs") as typeof import("fs")
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path") as typeof import("path")
+    const source = readFileSync(
+      path.join(__dirname, "..", "..", "e2e", "cart-identity-boundary.verify.mjs"),
+      "utf8"
+    )
+    const match = /const titles = await page\.locator\((["'`])(.+?)\1\)\.allTextContents\(\)/.exec(source)
+    // Control: the locator was found in the script, so the query below tests the script's selector.
+    expect(match).not.toBeNull()
+    const selector = match![2]
+
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [
+          { productId: "p1", title: "Jollof Rice", pricePennies: 899, quantity: 1, imageUrl: null, category: "Mains" },
+          { productId: "p2", title: "Puff Puff", pricePennies: 300, quantity: 2, imageUrl: null, category: "Sides" },
+        ],
+      })
+    )
+    renderCart()
+    await screen.findByRole("heading", { name: "Jollof Rice" })
+
+    const titles = Array.from(document.querySelectorAll(selector)).map((el) => el.textContent)
+    expect(titles).toEqual(["Jollof Rice", "Puff Puff"])
   })
 })

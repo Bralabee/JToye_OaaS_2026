@@ -14,6 +14,8 @@ import path from "path"
 import {
   CONTAINS_LABEL_COPY,
   NO_ALLERGENS_DECLARED_COPY,
+  NO_ALLERGENS_DECLARED_CUSTOMER_COPY,
+  MAY_CONTAIN_NONE_LISTED_COPY,
   INGREDIENTS_EMPHASIS_HELP_COPY,
   MAY_CONTAIN_HELP_COPY,
   KEEP_AS_IS_COPY,
@@ -44,8 +46,10 @@ import {
 const MODULE_PATH = path.join(__dirname, "..", "allergen-copy.ts")
 
 // Claims the platform can never stand behind: an absence of DECLARED allergens is not an
-// absence of allergens, and nothing here knows who the reader is.
-const FORBIDDEN = [/allergen[-\s]free/i, /safe for you/i, /no allergens present/i]
+// absence of allergens, and nothing here knows who the reader is. "allergen-free" is forbidden as a
+// CLAIM; SW-PRY-02 (swarm epic #964) adds it as a DENIAL, in checkout's words ("not the same as
+// allergen-free"), so only that one preceding phrase is let through.
+const FORBIDDEN = [/(?<!not the same as )allergen[-\s]free/i, /safe for you/i, /no allergens present/i]
 
 describe("D-09: the undeclared-ingredient wording names the allergen as the vendor typed it", () => {
   it("storefront form: 'Ingredients name: MILK – check with the shop' (the en dash is part of it)", () => {
@@ -83,6 +87,19 @@ describe("D-18: an empty declaration says what was declared, not what the food c
   it("NO_ALLERGENS_DECLARED_COPY is 'No allergens declared'", () => {
     expect(NO_ALLERGENS_DECLARED_COPY).toBe("No allergens declared")
   })
+
+  it("SW-PRY-02: the customer form carries checkout's 'not the same as allergen-free' caveat", () => {
+    expect(NO_ALLERGENS_DECLARED_CUSTOMER_COPY).toBe(
+      "No allergens declared – not the same as allergen-free"
+    )
+  })
+
+  it("the forbidden-phrase arm still catches a bare 'allergen-free' claim (control)", () => {
+    const claim = FORBIDDEN[0]
+    expect("This dish is allergen-free").toMatch(claim)
+    expect("Allergen free kitchen").toMatch(claim)
+    expect(NO_ALLERGENS_DECLARED_CUSTOMER_COPY).not.toMatch(claim)
+  })
 })
 
 describe("D-18: the declared set in words, on the menu card and the dish modal (31.1-21)", () => {
@@ -102,6 +119,10 @@ describe("D-16: may contain is its own line", () => {
     expect(mayContainCopy(["Sesame"])).toBe("May contain: Sesame")
     expect(mayContainCopy(["Peanuts", "Sesame"])).toBe("May contain: Peanuts, Sesame")
     expect(mayContainCopy([])).toBeNull()
+  })
+
+  it("SW-PRY-03: the storefront's empty case reads 'May contain: none listed', never silence", () => {
+    expect(MAY_CONTAIN_NONE_LISTED_COPY).toBe("May contain: none listed")
   })
 
   it("the vendor helper text says these are not ingredients", () => {

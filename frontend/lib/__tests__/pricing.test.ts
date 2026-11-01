@@ -1,4 +1,4 @@
-import { PRICING, formatRate } from "@/lib/pricing"
+import { PRICING, STRIPE_UK_PRICING_LINK_TEXT, STRIPE_UK_PRICING_URL, formatRate } from "@/lib/pricing"
 
 describe("formatRate", () => {
   it.each([
@@ -24,5 +24,19 @@ describe("PRICING (billing code: StripeProperties.Billing / V88)", () => {
 
   it("never carries the internal WALK_SETUP_STEPDOWN tier", () => {
     expect(JSON.stringify(PRICING)).not.toMatch(/195|walk/i)
+  })
+})
+
+// SW-CLR-06 (swarm epic #964): the card-fee line points at Stripe's own UK price
+// list instead of quoting a rate. Owner ruling 2026-11-01: never hardcode the rate,
+// so the URL is the one thing pinned here, and both render sites read this constant.
+describe("STRIPE_UK_PRICING_URL (the card-fee line's link)", () => {
+  it("is Stripe's UK pricing page over https", () => {
+    expect(STRIPE_UK_PRICING_URL).toBe("https://stripe.com/gb/pricing")
+  })
+
+  it("names the page it links, and quotes no rate", () => {
+    expect(STRIPE_UK_PRICING_LINK_TEXT).toMatch(/stripe.*uk.*pricing/i)
+    expect(STRIPE_UK_PRICING_LINK_TEXT).not.toMatch(/\d/)
   })
 })

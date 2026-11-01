@@ -70,6 +70,7 @@ import {
   FileCheck,
   Ban,
   RefreshCcw,
+  Search,
 } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
 import type { Order, OrderDetail, OrderStatus, PaymentStatus, Shop, Product } from "@/types/api"
@@ -339,6 +340,8 @@ function OrdersPageInner() {
   const [productsTruncated, setProductsTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
+  /** SW-ADE-10: a text search over the orders already loaded on this page (no new request). */
+  const [searchQuery, setSearchQuery] = useState("")
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [totalElements, setTotalElements] = useState(0)
@@ -497,9 +500,24 @@ function OrdersPageInner() {
       ? orders.filter((o) => o.shopId === contextShopId)
       : orders
 
-  const filteredOrders = visibleOrders.filter(
+  // SW-ADE-10 (swarm epic #964): order number, customer name or email, case-insensitive, over the
+  // rows this page already holds. The list is paged server-side, so the search covers this page only
+  // and says so in its placeholder.
+  const needle = searchQuery.trim().toLowerCase()
+  // Status first, then the search, so an empty page can name the filter that emptied it (review
+  // round 1 on #1076: the search was blamed when the status filter had removed every row).
+  const statusMatches = visibleOrders.filter(
     (o) => statusFilter === "ALL" || o.status === statusFilter
   )
+  const filteredOrders = statusMatches.filter(
+    (o) =>
+      !needle ||
+      [o.orderNumber, o.id, o.customerName, o.customerEmail].some((field) =>
+        field?.toLowerCase().includes(needle)
+      )
+  )
+  const statusFilterLabel =
+    statusFilter === "ALL" ? null : statusConfig[statusFilter as OrderStatus]?.label ?? statusFilter
 
   // 37-30 (D-18): only a PENDING order can be rejected in bulk (37-29 reports any other state
   // ALREADY_ACCEPTED / ALREADY_CANCELLED), so only PENDING rows offer a checkbox, the header
@@ -761,22 +779,38 @@ function OrdersPageInner() {
                     }`}
               </CardDescription>
             </div>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(0) }}>
-              <SelectTrigger className="w-[160px]" aria-label="Filter orders by status">
-                <SelectValue placeholder="Filter status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Statuses</SelectItem>
-                <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
-                <SelectItem value="CONFIRMED">Confirmed</SelectItem>
-                <SelectItem value="PREPARING">Preparing</SelectItem>
-                <SelectItem value="READY">Ready</SelectItem>
-                <SelectItem value="COMPLETED">Completed</SelectItem>
-                <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                <SelectItem value="REFUNDED">Refunded</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  aria-hidden="true"
+                />
+                <Input
+                  type="search"
+                  aria-label="Search orders on this page"
+                  placeholder="Order no., name or email"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-11 w-full pl-9 sm:h-10 sm:w-[240px]"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(0) }}>
+                <SelectTrigger className="w-[160px]" aria-label="Filter orders by status">
+                  <SelectValue placeholder="Filter status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  <SelectItem value="DRAFT">Draft</SelectItem>
+                  <SelectItem value="PENDING">Pending</SelectItem>
+                  <SelectItem value="CONFIRMED">Confirmed</SelectItem>
+                  <SelectItem value="PREPARING">Preparing</SelectItem>
+                  <SelectItem value="READY">Ready</SelectItem>
+                  <SelectItem value="COMPLETED">Completed</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  <SelectItem value="REFUNDED">Refunded</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
             {loadFailed ? (
@@ -785,6 +819,38 @@ function OrdersPageInner() {
                 message={loadErrorMessage}
                 onRetry={() => fetchData()}
               />
+            ) : filteredOrders.length === 0 && visibleOrders.length > 0 && statusMatches.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
+                <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                  No {statusFilterLabel?.toLowerCase()} orders on this page
+                </h3>
+                <p className="mb-4 text-sm text-slate-500">
+                  The status filter hides the orders on this page. Choose another status to see them.
+                </p>
+                <Button
+                  onClick={() => {
+                    setStatusFilter("ALL")
+                    setCurrentPage(0)
+                  }}
+                  variant="outline"
+                >
+                  Show all statuses
+                </Button>
+              </div>
+            ) : filteredOrders.length === 0 && needle && statusMatches.length > 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Search className="mb-4 h-12 w-12 text-slate-300" aria-hidden="true" />
+                <h3 className="mb-2 text-lg font-semibold text-slate-900">
+                  No orders match &ldquo;{searchQuery.trim()}&rdquo;
+                </h3>
+                <p className="mb-4 text-sm text-slate-500">
+                  The search covers the orders on this page. Try another name, email or order number.
+                </p>
+                <Button onClick={() => setSearchQuery("")} variant="outline">
+                  Clear search
+                </Button>
+              </div>
             ) : filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" />

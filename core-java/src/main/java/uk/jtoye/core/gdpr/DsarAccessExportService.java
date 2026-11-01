@@ -364,8 +364,11 @@ public class DsarAccessExportService {
         ArrayNode rights = about.putArray("rights");
         addRight(rights, "rectification", "If anything here is wrong, ask the shop concerned, or us, to correct "
                 + "it. Our privacy notice says how to contact us: " + appBaseUrl + "/legal/privacy");
-        addRight(rights, "erasure", "You can ask for your personal data to be erased through the same request "
-                + "page you used for this copy, choosing erasure instead of a copy.");
+        // SW-SAM-09 (swarm epic #964): name the routes that exist. There is no "request page": a signed-in
+        // customer asks from My account, and anyone else through the privacy notice's contact routes.
+        addRight(rights, "erasure", "You can ask for your personal data to be erased. If you have a J'Toye "
+                + "account, sign in and choose \"Delete my account\" on My account: " + appBaseUrl + "/shop/account"
+                + ". Otherwise, use the contact details in our privacy notice: " + appBaseUrl + "/legal/privacy");
         addRight(rights, "complaint", "You can complain to the Information Commissioner's Office: "
                 + "https://ico.org.uk/make-a-complaint/");
         about.put("source", "You provided this data yourself: when you placed orders, left reviews, set your "

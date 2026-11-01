@@ -168,7 +168,7 @@ class StaffInviteIntegrationTest {
 
         MimeMessage mail = SentMail.reparse((MimeMessage) awaitSends(1).get(0).getArgument(0));
         assertThat(SentMail.recipients(mail, Message.RecipientType.TO)).containsExactly("new@example.com");
-        assertThat(SentMail.subject(mail)).isEqualTo("Ada Admin invited you to " + tenantName + " on J'Toye");
+        assertThat(SentMail.subject(mail)).isEqualTo("Ada Admin has invited you to help run " + tenantName + " on J'Toye");
         String text = SentMail.text(mail);
         Matcher link = Pattern.compile(Pattern.quote(ACCEPT_BASE + "#token=" + tenantId + ".") + "([A-Za-z0-9_-]+)")
                 .matcher(text);

@@ -71,6 +71,8 @@ const PAGES = [
   { path: "/legal", heading: /legal & company information/i },
   { path: "/legal/privacy", heading: /privacy notice/i },
   { path: "/legal/accessibility", heading: /accessibility statement/i },
+  // PR 1080: /contact renders the same identity list as /legal.
+  { path: "/contact", heading: /contact j.toye/i },
 ] as const
 
 for (const legal of PAGES) {

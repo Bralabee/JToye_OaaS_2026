@@ -12,6 +12,7 @@ import {
   ORDERS_FETCH_SIZE,
   ORDERS_PAGE_SIZE,
   ORDER_STATUS_OPTIONS,
+  MY_ORDERS_ALLERGY_NOTE_HEADING_COPY,
   deriveOrdersView,
   isActiveOrder,
   isCapped,
@@ -22,9 +23,12 @@ import {
 } from "@/lib/customer-orders"
 import type { OrderStatus } from "@/types/api"
 import {
+  ALLERGY_NOTE_READ_COPY,
+  ALLERGY_NOTE_UNREAD_COPY,
   MY_ORDERS_ACK_HEADING_COPY,
   MY_ORDERS_FULL_RECORD_LINK_COPY,
   acknowledgementStatement,
+  formatAllergyNoteReadAt,
 } from "@/components/storefront/recorded-allergen-set"
 
 /**
@@ -222,6 +226,23 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
         <span className="sr-only"> for order {order.orderNumber}</span>
       </Link>
     </div>
+    {/* SW-PRY-06 (T-31.1-46): the customer's own note, on this signed-in page only. The server sends
+        it solely on /public/orders/mine and solely for a contact-verified order; it is rendered as
+        text (React escapes it) and never stored. */}
+    {order.allergyNote && (
+      <div
+        data-testid={`order-allergy-note-${order.orderNumber}`}
+        className="mt-1.5 rounded-lg border border-amber-600 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+      >
+        <p className="font-semibold">{MY_ORDERS_ALLERGY_NOTE_HEADING_COPY}</p>
+        <p className="mt-0.5 whitespace-pre-wrap break-words">{order.allergyNote}</p>
+        <p className="mt-1 text-amber-700">
+          {order.allergyNoteAcknowledgedAt
+            ? ALLERGY_NOTE_READ_COPY(formatAllergyNoteReadAt(order.allergyNoteAcknowledgedAt))
+            : ALLERGY_NOTE_UNREAD_COPY}
+        </p>
+      </div>
+    )}
     </div>
   )
 }
@@ -315,7 +336,8 @@ export function OrdersClient({
   /** One fetch path, shared by mount-renewal, poll and retry. */
   const fetchOrders = useCallback(async (): Promise<OrdersLoad> => {
     try {
-      const res = await fetch(`/api/customer-orders?size=${ORDERS_FETCH_SIZE}`, {
+      // include=allergyNote: this page is the one caller the proxy hands the note text to (SW-PRY-06).
+      const res = await fetch(`/api/customer-orders?size=${ORDERS_FETCH_SIZE}&include=allergyNote`, {
         credentials: "include",
         cache: "no-store",
       })

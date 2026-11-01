@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { useShopContext } from "@/hooks/use-shop-context"
 import {
   createStaffInvite,
   INVITE_OTHER_BUSINESS_PROBLEM,
@@ -36,6 +37,30 @@ import {
  * parent's: this component reports the server's answer through `onInvited`.
  */
 
+/**
+ * The "All shops / tenant-wide" choice in every Staff-page shop select, sent as `shopId: null`. The ONE
+ * definition (review R1-5 on #1076): the invite form, the grant card and {@link defaultShopChoice} all
+ * read it, so the default can never stop matching the option.
+ */
+export const ALL_SHOPS_VALUE = ""
+
+/**
+ * SW-ADE-11 (swarm epic #964): Staff is "order ops on one shop" (ROLE_HINTS), so a Staff invitation or
+ * grant with no shop is refused before it is sent. Shared by the invite form and the grant form.
+ */
+export const STAFF_NEEDS_SHOP = "Staff access covers one shop. Choose the shop they will work in."
+
+/**
+ * The shop a Staff-page form starts on (SW-ADE-11): the shop selected in the dashboard's switcher when
+ * it is one of the listed shops, else All shops. Not a trust boundary: the server checks the grant.
+ */
+export function defaultShopChoice(
+  shops: { id: string }[],
+  contextShopId: string | null
+): string {
+  return contextShopId && shops.some((s) => s.id === contextShopId) ? contextShopId : ALL_SHOPS_VALUE
+}
+
 export const INVITE_COPY = {
   title: "Invite someone",
   description:
@@ -50,12 +75,11 @@ export const INVITE_COPY = {
   shopGone: "That shop is no longer part of your business. Choose another shop and try again.",
   failed: "Couldn't send the invitation. Check your connection and try again.",
   forbidden: "Only a Group admin can invite people. Ask a Group admin in your business.",
+  staffNeedsShop: STAFF_NEEDS_SHOP,
 } as const
 
 /** The labels, shared with the page's loading skeleton so the two cannot drift. */
 export const INVITE_FIELD_LABELS = { email: "Email", role: "Role", shop: "Shop" } as const
-
-const ALL_SHOPS_VALUE = ""
 
 /**
  * G-37-13 (37-54): the select every Staff-page form uses, both cards (no height: each
@@ -98,7 +122,10 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
 
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<ShopRole>("STAFF")
-  const [shopId, setShopId] = useState(ALL_SHOPS_VALUE)
+  /** The operator's own pick, or null until they make one (the default then follows the switcher). */
+  const [pickedShopId, setPickedShopId] = useState<string | null>(null)
+  const { contextShopId } = useShopContext()
+  const shopId = pickedShopId ?? defaultShopChoice(shops, contextShopId)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [refusal, setRefusal] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -122,6 +149,10 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
       return
     }
     setEmailError(null)
+    if (role === "STAFF" && effectiveShopId === ALL_SHOPS_VALUE) {
+      setRefusal(INVITE_COPY.staffNeedsShop)
+      return
+    }
     inFlight.current = true
     setSending(true)
     try {
@@ -225,7 +256,7 @@ export function InviteStaffForm({ shops, onInvited }: InviteStaffFormProps) {
               <select
                 id="invite-shop"
                 value={effectiveShopId}
-                onChange={(e) => setShopId(e.target.value)}
+                onChange={(e) => setPickedShopId(e.target.value)}
                 disabled={groupAdmin}
                 aria-describedby={groupAdmin ? shopHintId : undefined}
                 className={`h-11 ${STAFF_SELECT_CLASS}`}

@@ -52,7 +52,10 @@ function getRequestSession(): Promise<Session | null> {
   }
   if (!requestSessionPromise) {
     const generation = sessionGeneration
-    const pending: Promise<Session | null> = getSession()
+    // broadcast: false prevents next-auth/react's getNewBroadcastChannel() from
+    // echoing a "storage" event back to <SessionProvider> in the same tab, which
+    // otherwise triggers a second GET /api/auth/session and full context re-render (#963).
+    const pending: Promise<Session | null> = getSession({ broadcast: false })
       .then((s) => {
         if (generation !== sessionGeneration) return s
         if (s?.accessToken) {

@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38), Next.js 16, Go 1.27, PostgreSQL 18
 - **Java version**: JDK 25 (Temurin) on Gradle 9.7.1 — JDK 25 requires Gradle ≥ 9.1 (migrated from JDK 21/Gradle 8.10.2, 2026-08-31)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 6754 logical invocations passing (3115 Java `@Test` methods across 429 files + 3261 Jest `it/test` blocks across 275 files + 112 top-level Go `Test*` funcs across 14 files + 196 Playwright `test()` blocks across 49 specs + 70 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
+- **Testing**: All new code requires tests — project standard is 6977 logical invocations passing (3163 Java `@Test` methods across 435 files + 3435 Jest `it/test` blocks across 291 files + 112 top-level Go `Test*` funcs across 14 files + 197 Playwright `test()` blocks across 51 specs + 70 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -555,11 +555,16 @@ either: a stale figure fails the same repo's `check-doc-metrics` gate.
 ## Design and motion
 
 You have the `Skill` tool. Use it — several installed skills claim "UI design" and they are
-stage-specific, not interchangeable. Load **`frontend-craft-sequence`** before starting or
-reshaping a surface; it holds the running order and the anti-patterns. For motion, easing,
-hover/press feedback and micro-interactions specifically, load **`emil-design-eng`**.
+stage-specific, not interchangeable. Load **`design-run`** before starting or reshaping a
+surface: its steps, and which design skill applies at each, are in the skill itself. Its
+**[OWNER]** steps are Sanmi's, and you have no tool to ask him with, so never decide one: follow
+what the repo's `design/` folder records, and return anything it does not settle with a
+recommendation. While `design/` does not exist, do not create it — a fix within the existing
+frontend conventions proceeds; a new or reshaped surface goes back as an open decision. For
+motion, easing, hover/press feedback and micro-interactions specifically, load
+**`emil-design-eng`**.
 
-Two failure modes it exists to prevent, both observed on this app: `hover:` IS gated here
+Two failure modes `design-run` guards against, both observed on this app: `hover:` IS gated here
 (`future.hoverOnlyWhenSupported: true` in `tailwind.config.ts`, #503), so a bare `hover:` compiles to
 `@media (hover:hover)` and no longer latches on tap (≈11 deliberate hand-written `[@media(hover:hover)_and_(pointer:fine)]` sites remain); and a screenshot cannot verify
 motion — a 200ms ease-out and a 900ms linear are the same PNG, so motion is checked by reading the
@@ -749,8 +754,9 @@ Two ordering traps, both observed on this app:
 - **A screenshot cannot verify motion.** A 200ms ease-out and a 900ms linear are the same PNG.
   Motion is checked by reading the code, never by looking at an image.
 
-If a UI change needs reviewing rather than proving, that is `oaas-frontend`'s remit and its
-`frontend-craft-sequence` skill — hand it over rather than duplicating the judgement.
+If a UI change needs reviewing rather than proving, that is `design-run`'s look step — hand it
+over rather than duplicating the judgement, and never to the agent that built the change: the
+scorer must not be the builder.
 
 ## Escalate rather than decide
 

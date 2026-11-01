@@ -5,8 +5,9 @@
 # WHAT LOCAL THEREFORE DOES NOT PROVE — read this before trusting a local pass:
 #   There is no cert-manager and no TLS here, and the security-header snippet is
 #   removed (see PIT-1 below). So a green local run proves NOTHING about HSTS,
-#   X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
-#   or TLS termination. Those remain staging/production-only behaviours, and the
+#   X-Frame-Options, X-Content-Type-Options, Permissions-Policy or TLS
+#   termination (Referrer-Policy is not in the snippet: the apps send it, #1071).
+#   Those remain staging/production-only behaviours, and the
 #   k8s/LOCAL.md runbook (plan 26-06) states that plainly so nobody reads "the
 #   ingress worked locally" as "the ingress is configured correctly".
 #

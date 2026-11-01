@@ -232,15 +232,19 @@ describe("next.config.mjs static security headers", () => {
   // path; the per-route override is asserted in header-snapshot.test.ts.
   // 30-19 added a third, '/pay/:path*' (the same no-referrer override for the
   // payment-link page, PAY-04 / D-03).
-  it("returns the all-paths default first, plus only the /invite and /pay overrides", async () => {
+  // SW-PRY-06 added a fourth, '/shop/orders' (Cache-Control no-store for the My Orders document,
+  // which carries the customer's own allergy note; asserted in header-snapshot.test.ts).
+  it("returns the all-paths default first, plus only the /invite, /pay and /shop/orders overrides", async () => {
     const routes = await loadHeaders()
     expect(routes.map((r: { source: string }) => r.source)).toEqual([
       "/:path*",
       "/invite/:path*",
       "/pay/:path*",
+      "/shop/orders",
     ])
     expect(routes[1].headers).toEqual([{ key: "Referrer-Policy", value: "no-referrer" }])
     expect(routes[2].headers).toEqual([{ key: "Referrer-Policy", value: "no-referrer" }])
+    expect(routes[3].headers).toEqual([{ key: "Cache-Control", value: "private, no-store, max-age=0" }])
   })
 
   it("emits X-Content-Type-Options nosniff, Referrer-Policy, and Permissions-Policy", async () => {

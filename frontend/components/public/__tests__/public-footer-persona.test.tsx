@@ -118,14 +118,11 @@ describe("PublicFooter CONTROL — the operator door is still open", () => {
       "href",
       "/auth/signin"
     )
-    expect(screen.getByRole("link", { name: /business model guide/i })).toHaveAttribute(
-      "href",
-      "/business-model-guide"
-    )
-    expect(screen.getByRole("link", { name: /how we compare/i })).toHaveAttribute(
-      "href",
-      "/competitive"
-    )
+    // SW-CLR-05 (swarm epic #964): the two internal strategy pages are no longer
+    // linked from the footer. They cite repo file paths and are noindexed; the
+    // pages themselves still exist and are still operator surfaces (below).
+    expect(screen.queryByRole("link", { name: /business model guide/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /how we compare/i })).not.toBeInTheDocument()
   })
 
   it("anonymous visitor still gets the guest 'Track order' lookup", async () => {
@@ -178,8 +175,9 @@ describe("PublicFooter CONTROL — the operator door is still open", () => {
 
 /**
  * Server-side crawlability. The footer is the second inbound link to
- * /for-operators and the only one to /business-model-guide (backlog #5), so the
- * gate must not cost the link graph. The session resolves asynchronously and is
+ * /for-operators, so the gate must not cost the link graph. (It used to be the
+ * only one to /business-model-guide, backlog #5; SW-CLR-05 removed that link
+ * deliberately, and the strategy pages are noindexed.) The session resolves asynchronously and is
  * null on the first render — which is exactly the render a crawler receives —
  * so the operator links are present in the initial output. Asserted rather than
  * assumed, because "SEO is fine" is the kind of claim that is never checked.
@@ -191,8 +189,9 @@ describe("PublicFooter link graph is intact on first paint (SEO)", () => {
     const { container } = render(<PublicFooter />)
 
     expect(container.querySelector('a[href="/for-operators"]')).toBeInTheDocument()
-    expect(container.querySelector('a[href="/business-model-guide"]')).toBeInTheDocument()
-    expect(container.querySelector('a[href="/competitive"]')).toBeInTheDocument()
     expect(container.querySelector('a[href="/track"]')).toBeInTheDocument()
+    // SW-CLR-05: absent from the first render too, which is the one a crawler reads.
+    expect(container.querySelector('a[href="/business-model-guide"]')).toBeNull()
+    expect(container.querySelector('a[href="/competitive"]')).toBeNull()
   })
 })

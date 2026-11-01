@@ -87,6 +87,18 @@ const nextConfig = {
         source: '/pay/:path*',
         headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
       },
+      // My Orders (SW-PRY-06, T-31.1-102). The page server-renders the customer's own allergy note
+      // into the HTML and RSC payload, so the document says no-store ITSELF. Before this it was
+      // uncacheable only because the root layout sets force-dynamic for the CSP nonce, which is a
+      // different concern that could be narrowed with nothing failing. The value matches the WR-04
+      // precedent (app/api/vendor-auth/logout-url/route.ts). No Vary here: measured on `next start`,
+      // Next replaces a page's Vary with its own RSC list, while this Cache-Control is what it sends.
+      // Exact path: a shop's own pages and /track keep the default. __tests__/header-snapshot.test.ts
+      // asserts it.
+      {
+        source: '/shop/orders',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }],
+      },
     ]
   },
 };

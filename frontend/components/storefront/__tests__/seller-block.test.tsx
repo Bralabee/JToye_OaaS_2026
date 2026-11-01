@@ -156,7 +156,10 @@ describe("SellerBlock: no seller details on file", () => {
     const region = block()
     expect(within(region).getByText(MISSING_LITERAL)).toBeInTheDocument()
     const contact = within(region).getByRole("link", { name: "J'Toye's legal and contact details" })
-    expect(contact).toHaveAttribute("href", "/legal")
+    // /contact, not /legal (PR 1080 round 1): /legal publishes company identity and the
+    // data-protection address only, and this link exists for the case where a shopper
+    // needs to reach the platform.
+    expect(contact).toHaveAttribute("href", "/contact")
     expect(within(region).queryAllByRole("term")).toHaveLength(0)
     // "the seller named here" would be false: nobody is named
     expect(within(region).queryByText(PLATFORM_LITERAL)).not.toBeInTheDocument()

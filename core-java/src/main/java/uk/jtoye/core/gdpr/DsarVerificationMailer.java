@@ -112,12 +112,16 @@ public class DsarVerificationMailer {
 
         // The token is unpadded base64url (A-Z a-z 0-9 - _), which URL encoding leaves unchanged;
         // the encoding stays so that a future token alphabet cannot break the fragment silently.
-        String link = verifyBaseUrl + "#token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
+        // SW-SAM-08: the request type rides beside the token in the fragment, AFTER it, so the confirm
+        // page can say which request a press confirms. It is display only: the press posts the token
+        // alone, and the server acts on the type it stored, never on this one.
+        String link = verifyBaseUrl + "#token=" + URLEncoder.encode(token, StandardCharsets.UTF_8)
+                + "&type=" + (requestType == DsarRequest.RequestType.ERASURE ? "erasure" : "access");
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
         message.setTo(recipientEmail);
-        message.setSubject("Confirm your data request");
+        message.setSubject(subject(requestType));
         message.setText("""
                 Somebody asked us to %s the personal data held for this email address.
 
@@ -139,6 +143,13 @@ public class DsarVerificationMailer {
         } catch (MailException e) {
             log.error("event=dsar_verification_send_failed type={}: {}", requestType, e.getMessage());
         }
+    }
+
+    /** SW-SAM-08 (swarm epic #964): an inbox tells a copy request from an erasure before it is opened. */
+    static String subject(DsarRequest.RequestType requestType) {
+        return requestType == DsarRequest.RequestType.ERASURE
+                ? "Confirm your request to erase your data"
+                : "Confirm your request for a copy of your data";
     }
 
     private static String describe(DsarRequest.RequestType requestType) {

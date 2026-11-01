@@ -15,7 +15,7 @@ import { Menu, LogOut, Moon, Sun } from "lucide-react"
 // Do NOT re-declare it here — both bars must never drift (see 19-UI-SPEC Surface D).
 import {
   navigation,
-  useIsKnownGroupAdmin,
+  useNavAccess,
   visibleNavigation,
 } from "@/components/dashboard/sidebar"
 import { useTheme } from "@/hooks/use-theme"
@@ -75,9 +75,9 @@ export function MobileTabBar({ className }: { className?: string }) {
   // first. `available` is false while DARK_THEME_AVAILABLE is false (owner
   // ruling 2026-10-16): the control is withheld from the More sheet.
   const { dark, available, toggle } = useTheme()
-  // The same staff/me gate the sidebar applies (37-46): an admin-only item is listed only on the
-  // server's word, so a shop manager's "More" sheet never offers Developers.
-  const moreItems = visibleNavigation(moreNavigation, useIsKnownGroupAdmin())
+  // The same staff/me gate the sidebar applies (37-46, SW-TND-05): a gated item is listed only on
+  // the server's word, so a STAFF member's "More" sheet never offers an owner page that refuses them.
+  const moreItems = visibleNavigation(moreNavigation, useNavAccess())
   // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
   // notice sits ABOVE it rather than under it. This bar is `md:hidden` rather
   // than conditionally rendered, so the ref is always attached and the height

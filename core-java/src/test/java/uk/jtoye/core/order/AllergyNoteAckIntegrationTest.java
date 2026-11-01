@@ -18,6 +18,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -29,6 +30,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.gdpr.DsarCipher;
 import uk.jtoye.core.gdpr.DsarFanoutWorker;
 import uk.jtoye.core.gdpr.DsarSubjectDigest;
+import uk.jtoye.core.security.CustomerJwtVerifier;
+import uk.jtoye.core.security.CustomerRealmTestTokens;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
@@ -99,6 +102,17 @@ class AllergyNoteAckIntegrationTest {
 
     /** 31.1-11 (D-03): the account-deletion step answers "no account"; DsarAccountDeletionIntegrationTest owns it. */
     @MockitoBean CustomerAccountDeletionService accountDeletion;
+
+    /**
+     * SW-PRY-06: the PRODUCTION verifier class and decoder shape, trusting a local customers-realm key
+     * instead of the realm's JWKS endpoint (CustomerRealmTestTokens). Not a mock: a staff-realm token,
+     * a wrong issuer and email_verified=false are refused by the code that refuses them in production.
+     */
+    @TestBean CustomerJwtVerifier customerJwtVerifier;
+
+    static CustomerJwtVerifier customerJwtVerifier() {
+        return CustomerRealmTestTokens.customersRealmVerifier();
+    }
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000311131");
@@ -371,6 +385,153 @@ class AllergyNoteAckIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // SW-PRY-06 (swarm epic #964) under T-31.1-46: the customer's OWN note text is on the signed-in
+    // history (/public/orders/mine, a customers-realm token proving the address) and nowhere else. The
+    // same order, read by number + email and by ?verify= history, still never carries it (C1).
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("SW-PRY-06 C1: /mine carries the note text for a contact-verified order; tracking and ?verify= history of the SAME order still never do")
+    void myOrders_carriesTheNoteText_trackingAndVerifyHistoryNever() throws Exception {
+        UUID bread = seedProduct("SKU-31113-MINE", "Sourdough", GLUTEN);
+        String email = "mine-" + UUID.randomUUID() + "@example.com";
+        String token = CustomerRealmTestTokens.customerToken(email);
+        String orderNumber = placeVerifiedStorefrontOrder(token, email, bread, DELIVERY_NOTE, NOTE);
+        assertThat(contactVerified(orderNumber)).as("PRECONDITION: placed with a verified token").isTrue();
+
+        MvcResult mine = mockMvc.perform(get(MINE_URL).header("X-Customer-Token", token)).andReturn();
+        String mineText = responseText(mine);
+        JsonNode entry = entryFor(json(mine, 200).path("content"), orderNumber, mineText);
+        assertThat(field(entry, "allergyNote", mineText).asString())
+                .as("the signed-in customer reads back the note they wrote").isEqualTo(NOTE);
+        assertThat(field(entry, "allergyNoteProvided", mineText).asBoolean()).isTrue();
+        assertThat(mine.getResponse().getHeader("Cache-Control"))
+                .as("C5: no cache keeps the note beyond the request").contains("no-store");
+
+        MvcResult tracked = mockMvc.perform(get(trackUrl(orderNumber)).param("email", email)).andReturn();
+        assertThat(json(tracked, 200).path("orderNumber").asString()).isEqualTo(orderNumber);
+        assertThat(tracked.getResponse().getContentAsString())
+                .as("T-31.1-46: tracking never carries the note, even for a verified order")
+                .doesNotContain("peanuts").doesNotContain("allergyNote\"");
+
+        MvcResult history = mockMvc.perform(get("/api/v1/public/orders")
+                .param("email", email).param("verify", orderNumber).param("size", "20")).andReturn();
+        String historyText = responseText(history);
+        entryFor(json(history, 200).path("content"), orderNumber, historyText);
+        assertThat(history.getResponse().getContentAsString())
+                .as("T-31.1-46: the ?verify= history never carries the note, even for a verified order")
+                .doesNotContain("peanuts").doesNotContain("allergyNote\"");
+    }
+
+    @Test
+    @DisplayName("SW-PRY-06: customer B's token lists only B's orders on /mine; A's order and note text are absent")
+    void myOrders_anotherCustomersToken_neverListsTheNote() throws Exception {
+        UUID bread = seedProduct("SKU-31113-MINE-B", "Sourdough", GLUTEN);
+        String emailA = "mine-a-" + UUID.randomUUID() + "@example.com";
+        String emailB = "mine-b-" + UUID.randomUUID() + "@example.com";
+        String orderA = placeVerifiedStorefrontOrder(
+                CustomerRealmTestTokens.customerToken(emailA), emailA, bread, null, NOTE);
+        String tokenB = CustomerRealmTestTokens.customerToken(emailB);
+        String orderB = placeVerifiedStorefrontOrder(tokenB, emailB, bread, null, null);
+
+        MvcResult mine = mockMvc.perform(get(MINE_URL).header("X-Customer-Token", tokenB)).andReturn();
+        String text = responseText(mine);
+        JsonNode content = json(mine, 200).path("content");
+        assertThat(content.size()).as("B sees exactly their own order: " + text).isEqualTo(1);
+        JsonNode own = entryFor(content, orderB, text);
+        assertThat(field(own, "allergyNote", text).isNull()).as("B sent no note: " + text).isTrue();
+        assertThat(mine.getResponse().getContentAsString())
+                .as("A's order and A's note never reach B")
+                .doesNotContain(orderA).doesNotContain("peanuts");
+    }
+
+    @Test
+    @DisplayName("SW-PRY-06: /mine refuses 401 a staff-realm token, a customers-realm token with email_verified=false, and no token, and the note is in none of the refusals")
+    void myOrders_refusesStaffRealmAndUnverifiedTokens() throws Exception {
+        UUID bread = seedProduct("SKU-31113-MINE-401", "Sourdough", GLUTEN);
+        String email = "mine-401-" + UUID.randomUUID() + "@example.com";
+        String token = CustomerRealmTestTokens.customerToken(email);
+        placeVerifiedStorefrontOrder(token, email, bread, null, NOTE);
+        // Control: the same address with a valid customers-realm token is admitted.
+        assertThat(mockMvc.perform(get(MINE_URL).header("X-Customer-Token", token)).andReturn()
+                .getResponse().getStatus()).as("control: a verified customers-realm token is admitted").isEqualTo(200);
+
+        Map<String, String> refused = new LinkedHashMap<>();
+        refused.put("staff realm", CustomerRealmTestTokens.staffRealmToken(email));
+        refused.put("email_verified=false", CustomerRealmTestTokens.unverifiedCustomerToken(email));
+        for (Map.Entry<String, String> arm : refused.entrySet()) {
+            MvcResult result = mockMvc.perform(get(MINE_URL).header("X-Customer-Token", arm.getValue())).andReturn();
+            assertThat(result.getResponse().getStatus()).as(arm.getKey() + ": " + responseText(result)).isEqualTo(401);
+            assertThat(result.getResponse().getContentAsString()).as(arm.getKey()).doesNotContain("peanuts");
+        }
+        MvcResult none = mockMvc.perform(get(MINE_URL)).andReturn();
+        assertThat(none.getResponse().getStatus()).as("no token: " + responseText(none)).isEqualTo(401);
+    }
+
+    // ------------------------------------------------------------------
+    // SW-PRY-06 C3: the note is returned only where contact_verified is TRUE. A guest order (false) may
+    // carry a mistyped address; a vendor or pre-V81 order (NULL) recorded nothing. Neither may hand a
+    // health note to whoever later signs in with that address.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("SW-PRY-06 C3: /mine withholds the note on an order whose contact_verified is false or NULL, and still says a note was sent")
+    void myOrders_withholdsTheNote_whenTheContactWasNotVerified() throws Exception {
+        UUID bread = seedProduct("SKU-31113-MINE-C3", "Sourdough", GLUTEN);
+        String email = "mine-c3-" + UUID.randomUUID() + "@example.com";
+        String token = CustomerRealmTestTokens.customerToken(email);
+        String guestOrder = placeStorefrontOrder(email, bread, null, NOTE);
+        String legacyOrder = placeVerifiedStorefrontOrder(token, email, bread, null, NOTE);
+        int nulled = inTenant(() -> jdbcTemplate.update(
+                "UPDATE orders SET contact_verified = NULL WHERE tenant_id = ? AND order_number = ?",
+                TENANT_ID, legacyOrder));
+        assertThat(nulled).as("PRECONDITION: one order made NOT RECORDED").isEqualTo(1);
+        assertThat(contactVerified(guestOrder)).as("PRECONDITION: a guest order is unverified").isFalse();
+        assertThat(contactVerified(legacyOrder)).as("PRECONDITION: not recorded").isNull();
+
+        MvcResult mine = mockMvc.perform(get(MINE_URL).header("X-Customer-Token", token)).andReturn();
+        String text = responseText(mine);
+        JsonNode content = json(mine, 200).path("content");
+        for (String orderNumber : List.of(guestOrder, legacyOrder)) {
+            JsonNode entry = entryFor(content, orderNumber, text);
+            assertThat(field(entry, "allergyNote", text).isNull()).as(orderNumber + ": " + text).isTrue();
+            assertThat(field(entry, "allergyNoteProvided", text).asBoolean())
+                    .as("the flag still says a note was sent").isTrue();
+        }
+        assertThat(mine.getResponse().getContentAsString()).doesNotContain("peanuts");
+    }
+
+    // ------------------------------------------------------------------
+    // SW-PRY-06 C4 + T-31.1-47: after a verified DSAR erasure /mine carries no note for the order.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("SW-PRY-06 C4: after a DSAR erasure /mine returns no note for the erased order")
+    void myOrders_afterErasure_carriesNoNote() throws Exception {
+        UUID bread = seedProduct("SKU-31113-MINE-C4", "Sourdough", GLUTEN);
+        String email = "mine-c4-" + UUID.randomUUID() + "@example.com";
+        String token = CustomerRealmTestTokens.customerToken(email);
+        String orderNumber = placeVerifiedStorefrontOrder(token, email, bread, null, NOTE);
+        MvcResult before = mockMvc.perform(get(MINE_URL).header("X-Customer-Token", token)).andReturn();
+        String beforeText = responseText(before);
+        assertThat(field(entryFor(json(before, 200).path("content"), orderNumber, beforeText), "allergyNote", beforeText)
+                .asString()).as("PRECONDITION: the note is on /mine before the erasure").isEqualTo(NOTE);
+
+        jdbcTemplate.update("DELETE FROM dsar_request");
+        insertVerifiedErasure(DsarSubjectDigest.of(email));
+        dsarWorker.executeLodgedRequests();
+        assertThat(allergyNoteColumn(orderNumber)).as("PRECONDITION: the erasure nulled the column").isNull();
+
+        MvcResult after = mockMvc.perform(get(MINE_URL).header("X-Customer-Token", token)).andReturn();
+        String afterText = responseText(after);
+        JsonNode content = json(after, 200).path("content");
+        for (JsonNode entry : content) {
+            if (orderNumber.equals(entry.path("orderNumber").asString())) {
+                assertThat(field(entry, "allergyNote", afterText).isNull()).as(afterText).isTrue();
+            }
+        }
+        assertThat(after.getResponse().getContentAsString())
+                .as("Article 17: the erased note is on no signed-in response").doesNotContain("peanuts");
+    }
+
+    // ------------------------------------------------------------------
     // T-31.1-47 (Article 9 + 17): a verified DSAR erasure (31.1-02's guest path, through the real
     // fan-out worker) nulls the note on the order AND on every orders_aud revision. Who/when of the
     // acknowledgement are staff records and stay.
@@ -447,6 +608,20 @@ class AllergyNoteAckIntegrationTest {
         return json(created, 201).path("orderNumber").asString();
     }
 
+    /** D-18: placed with a customers-realm token for the same address, so contact_verified is TRUE. */
+    private String placeVerifiedStorefrontOrder(String token, String email, UUID product, String notes,
+                                                String allergyNote) throws Exception {
+        MvcResult created = perform(post(ordersUrl()).header("X-Customer-Token", token),
+                body(email, product, notes, allergyNote));
+        return json(created, 201).path("orderNumber").asString();
+    }
+
+    private Boolean contactVerified(String orderNumber) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT contact_verified FROM orders WHERE tenant_id = ? AND order_number = ?",
+                Boolean.class, TENANT_ID, orderNumber));
+    }
+
     /**
      * 37-27 (D-18): the cash-order caps count OPEN orders per email AND per phone at a shop (three each),
      * and the shop and its orders persist across this class's arms, so every arm needs its own contact
@@ -518,6 +693,8 @@ class AllergyNoteAckIntegrationTest {
     private static String ackUrl(UUID orderId) {
         return "/api/v1/orders/" + orderId + "/allergy-note/acknowledgement";
     }
+
+    private static final String MINE_URL = "/api/v1/public/orders/mine";
 
     private static String trackUrl(String orderNumber) {
         return "/api/v1/public/orders/" + orderNumber;
