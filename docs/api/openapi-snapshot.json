@@ -2307,6 +2307,137 @@
         },
         "type" : "object"
       },
+      "CustomerOrderStatus" : {
+        "properties" : {
+          "acknowledgedAllergenMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. 0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no acknowledgement was recorded: the shop entered the order (placedVia VENDOR) or it predates the acknowledgement.",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "acknowledgedAllergens" : {
+            "description" : "The names of acknowledgedAllergenMask, in AllergenCatalog bit order. [] when the mask is 0; null when no acknowledgement was recorded.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "allergyNote" : {
+            "description" : "The allergy or dietary note the customer sent with this order, as stored (trimmed). Returned only on the signed-in customer's own order history, and only for an order whose contact was verified when it was placed (contactVerified true). Null when no note was sent, when the contact was not verified, or after an erasure. Never returned on the tracking response or the email-verified history.",
+            "maxLength" : 500,
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "allergyNoteAcknowledgedAt" : {
+            "description" : "When someone in the shop acknowledged reading the allergy note; null until they have (or when no note was sent).",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergyNoteProvided" : {
+            "description" : "Whether the customer sent an allergy or dietary note with this order. The note's text is never returned here.",
+            "type" : "boolean"
+          },
+          "balanceDuePennies" : {
+            "description" : "Remaining balance due in pennies for a split-deposit catering order (V87 / GAP-GTM-04).",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "deliveryFeePennies" : {
+            "description" : "The delivery fee charged on this order, in pennies. 0 means no fee was charged (a collection order, or a delivery that cleared the free-delivery threshold). totalAmountPennies = subtotalPennies + deliveryFeePennies.",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "depositAmountPennies" : {
+            "description" : "Upfront deposit amount in pennies for a split-deposit catering order (V87 / GAP-GTM-04).",
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fulfilmentType" : {
+            "description" : "How the order is fulfilled: DELIVERY or COLLECTION.",
+            "enum" : [
+              "DELIVERY",
+              "COLLECTION"
+            ],
+            "type" : "string"
+          },
+          "itemCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "orderNumber" : {
+            "type" : "string"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "placedVia" : {
+            "description" : "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen set) or VENDOR (the shop entered it; no customer acknowledgement was recorded). Null when the order predates the channel being recorded.",
+            "enum" : [
+              "STOREFRONT",
+              "VENDOR"
+            ],
+            "type" : "string"
+          },
+          "recordedAllergenFlags" : {
+            "description" : "ADVISORY reconciliation lines, separate from and never merged into recordedAllergens. [] when nothing was flagged; null when not recorded. Tracking response only, like recordedAllergens.",
+            "items" : {
+              "$ref" : "#/components/schemas/OrderAllergenFlagDto"
+            },
+            "type" : "array"
+          },
+          "recordedAllergens" : {
+            "description" : "The allergens the order's lines DECLARED when it was placed (the order-line snapshot union), in AllergenCatalog bit order. [] when the lines declared none; null when the lines carry no snapshot (not recorded). Populated on the single-order tracking response only: always null on the order-history list, which does not load order lines.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "scheduledForDate" : {
+            "description" : "Target calendar date for a scheduled batch/pre-order (V87 / GAP-GTM-02).",
+            "format" : "date",
+            "type" : "string"
+          },
+          "scheduledWindowLabel" : {
+            "description" : "Human-readable fulfilment window label captured at checkout (V87 / GAP-GTM-02).",
+            "type" : "string"
+          },
+          "shopName" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "subtotalPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalAmountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "unitCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "vatAmountPennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "vatRate" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "DataExportResponse" : {
         "properties" : {
           "customer" : {
@@ -4135,6 +4266,52 @@
           "content" : {
             "items" : {
               "$ref" : "#/components/schemas/CustomerDto"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageCustomerOrderStatus" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CustomerOrderStatus"
             },
             "type" : "array"
           },
@@ -13766,7 +13943,7 @@
     },
     "/api/v1/public/orders/mine" : {
       "get" : {
-        "description" : "Paginated orders for the logged-in customer, most recent first. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the customer email is taken from the verified token, never from a parameter.",
+        "description" : "Paginated orders for the logged-in customer, most recent first. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the customer email is taken from the verified token, never from a parameter. Each entry carries the customer's own allergyNote, only for an order whose contact was verified when it was placed.",
         "operationId" : "getMyOrders",
         "parameters" : [
           {
@@ -13791,7 +13968,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PagePublicOrderStatus"
+                  "$ref" : "#/components/schemas/PageCustomerOrderStatus"
                 }
               }
             },
@@ -17172,7 +17349,7 @@
     },
     "/public/orders/mine" : {
       "get" : {
-        "description" : "Paginated orders for the logged-in customer, most recent first. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the customer email is taken from the verified token, never from a parameter.",
+        "description" : "Paginated orders for the logged-in customer, most recent first. Requires a valid jtoye-customers realm access token in the X-Customer-Token header; the customer email is taken from the verified token, never from a parameter. Each entry carries the customer's own allergyNote, only for an order whose contact was verified when it was placed.",
         "operationId" : "getMyOrders_1",
         "parameters" : [
           {
@@ -17197,7 +17374,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/PagePublicOrderStatus"
+                  "$ref" : "#/components/schemas/PageCustomerOrderStatus"
                 }
               }
             },
