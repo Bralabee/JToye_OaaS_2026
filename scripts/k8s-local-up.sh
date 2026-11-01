@@ -401,6 +401,16 @@ BA_SLA_DAYS="${NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS:-$(compose_default NEXT_PU
 # core-java, and the same string as the k8s ConfigMap key platform.registered-office
 # that this cluster's core-java reads for the email footer (RegisteredOfficeParityTest).
 BA_REGISTERED_OFFICE="${NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE:-$(compose_default NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE)}"
+# SW-CLR-04 (swarm epic #964): the controller and general contact routes the
+# legal pages and /contact print, plus the Stripe publishable key (#957). Each
+# has a Dockerfile ARG, and compose bakes them, but this script never passed
+# them, so a minikube image baked "" where compose baked the .env value.
+# k8s/scripts/check-env-contract.sh (b2) now fails any ARG NEXT_PUBLIC_* that
+# this list or the ci-cd.yaml build-args block omits.
+BA_DATA_PROTECTION_EMAIL="${NEXT_PUBLIC_DATA_PROTECTION_EMAIL:-$(compose_default NEXT_PUBLIC_DATA_PROTECTION_EMAIL)}"
+BA_CONTACT_EMAIL="${NEXT_PUBLIC_CONTACT_EMAIL:-$(compose_default NEXT_PUBLIC_CONTACT_EMAIL)}"
+BA_CONTACT_PHONE="${NEXT_PUBLIC_CONTACT_PHONE:-$(compose_default NEXT_PUBLIC_CONTACT_PHONE)}"
+BA_STRIPE_PK="${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-$(compose_default NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)}"
 
 if [ "$SKIP_BUILD" -eq 1 ]; then
   for ref in "$IMG_CORE" "$IMG_EDGE" "$IMG_FRONT" "$IMG_BACKUP"; do
@@ -421,6 +431,10 @@ else
     --build-arg "NEXT_PUBLIC_SUPPORT_URL=${BA_SUPPORT_URL}" \
     --build-arg "NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${BA_SLA_DAYS}" \
     --build-arg "NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${BA_REGISTERED_OFFICE}" \
+    --build-arg "NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${BA_DATA_PROTECTION_EMAIL}" \
+    --build-arg "NEXT_PUBLIC_CONTACT_EMAIL=${BA_CONTACT_EMAIL}" \
+    --build-arg "NEXT_PUBLIC_CONTACT_PHONE=${BA_CONTACT_PHONE}" \
+    --build-arg "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${BA_STRIPE_PK}" \
     "$REPO_ROOT/frontend"
   echo "building ${IMG_BACKUP}"
   docker build -t "$IMG_BACKUP" "$REPO_ROOT/infra/backups"
