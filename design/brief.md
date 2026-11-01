@@ -2,6 +2,8 @@
 
 **Status: CONFIRMED by Sanmi, 2026-11-01 (design-run step 0).** The imagery source is still open (below).
 
+Elevate or redesign: elevate (Sanmi, 2026-11-01) — keep the current landing, replace emoji with real food pictures, remove the tells, palette from the brand (round 2 verdict; go-ahead "2").
+
 Surface type: **page** (read and scrolled). Scope for rulings and checks: `page`.
 
 ## Subject
