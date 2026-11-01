@@ -59,3 +59,30 @@ Reproduced locally (Stripe CLI 1.54.0, the CI sandbox key via env, forward targe
 Cause: Stripe CLI 1.5x `listen` no longer forwards every event by default. Fix: `--all-snapshot` (the v1 snapshot
 payloads core-java parses), plus the skip-budget gate skipped rather than VOID when the Stripe run did not run.
 Fix pushed to the PR branch as a fast-forward from a detached scratch checkout (commit and second run: below).
+
+### Fix 1 and the runs that followed (branch head moved 0ebfaf66 -> f061f0a0 -> 3fbc86ab (30-24 merge of #1066) -> 5c4c8b45 -> a033dfdc (30-24 merge of #1072))
+
+f061f0a0: `stripe listen --all-snapshot`; the skip-budget step gates report.json alone when stripe-run was skipped,
+both reports otherwise (a missing Stripe report stays VOID). 5c4c8b45: the Stripe recreate pins core-java to :9090
+(compose publishes 9090-9091 and a plain recreate alternated to :9091, reproduced locally).
+
+Run 41291041531 (3fbc86ab): forwarder READY; failed at the recreate (core-java came back on :9091); the skip-budget
+step gated Phase 1 alone, 4/4 (finding 9 fixed as observed).
+Run 41293948964 (a033dfdc): steps 1-22 success (Phase 1: 434 tests, 0 failed, 4 skipped; recreate UP on :9090 in 36 s);
+step 23 "Assert the Stripe report" FAILED (1 test, 1 failed: the order never reached CAPTURED; core-java logged
+receiving payment_intent.succeeded and nothing after); step 25 skip budget success (435 tests, 4/4 skipped,
+all stomp-relay.spec.ts 2x2; report-stripe.json 0 skipped; digest a66e064b matches the tree); step 27 cart identity
+FAILED (C4 "placing an order still empties the basket": locator.waitFor 45 s timeout after the order POST).
+
+Cause of step 23, measured 2026-11-01 ~10:30Z:
+    CI sandbox /v1/events: payment_intent.succeeded (pi_3UWvcED29H13ktT517xlBdrC, env=ci-nightly) api_version=2026-07-29.dahlia
+    staging sandbox events (CLI login): api_version=2026-07-29.dahlia
+    stripe-java 34.0.0 (core-java/build.gradle.kts:333): Stripe.API_VERSION = 2026-09-30.endive
+    staging webhook endpoints (stripe webhook_endpoints list): both api_version=2026-09-30.endive
+    Stripe changelog newest: 2026-10-28.endive (same major as the SDK)
+`stripe listen` forwards in the account's DEFAULT version (dahlia) unless --latest; stripe-java's typed
+deserializer (PaymentService.handlePaymentIntentSucceeded: getDataObjectDeserializer().getObject().orElseThrow)
+returns empty across majors, the IllegalStateException becomes a silent 400, and the event is never applied.
+Staging never saw it because its endpoints are pinned on endive. Fix 2: `stripe listen --latest --all-snapshot`.
+Cause of step 27: the gate ran after core-java was recreated with the Stripe key (18/18 on the run where it was not).
+Fix 3: the gate moves before the recreate. Fix 4 (H-3): HANDOFF.md on the branch updated. Third run: below.
