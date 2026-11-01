@@ -29,6 +29,7 @@ import uk.jtoye.core.security.access.StaffInviteService;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
 import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -540,10 +541,9 @@ public class EmailNotificationService {
         return b.toString();
     }
 
-    /** "£12.50": pennies as a UK customer reads a price. */
+    /** "£12.50": pennies as a UK customer reads a price, the same BigDecimal rendering as FinanceCsvExporter. */
     static String pounds(long pennies) {
-        long abs = Math.abs(pennies);
-        return (pennies < 0 ? "-" : "") + "\u00a3" + (abs / 100) + "." + String.format(Locale.UK, "%02d", abs % 100);
+        return "\u00a3" + BigDecimal.valueOf(pennies, 2).toPlainString();
     }
 
     /** D-08: three statements, never merged; null is never rendered as "none". */
