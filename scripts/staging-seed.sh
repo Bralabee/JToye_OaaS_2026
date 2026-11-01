@@ -23,7 +23,7 @@
 #   scripts/staging-seed.sh --context NAME --stage stripe-get --path /v1/<object>/<id>
 #                           [--account acct_…] [--dry-run]
 #   scripts/staging-seed.sh --context NAME --stage pay-link --link-out FILE [--dry-run]
-#   scripts/staging-seed.sh --context NAME --stage billing [--dry-run]
+#   scripts/staging-seed.sh --context NAME --stage billing|billing-sync-check [--dry-run]
 #   scripts/staging-seed.sh --list-kv-objects
 #   scripts/staging-seed.sh --selftest
 #
@@ -114,6 +114,14 @@
 #                        livemode=false at=<ISO>; FAIL unless quantity equals the
 #                        locations (D-04 all-shops) and amount_paid equals
 #                        3900 x quantity.
+#     --stage billing-sync-check
+#                        D-04 (plan 30-26): with an ACTIVE subscription
+#                        (else REFUSED [no-subscription], no shop written), a
+#                        probe shop is created, Stripe's quantity polled to n+1,
+#                        the probe deleted, the quantity polled back to n (every
+#                        read printed, deadline 90 s each). Ends on BILLING-SYNC
+#                        before=n after-add=n+1 after-remove=n livemode=false; the
+#                        probe is deleted on EVERY exit path.
 #     --selftest         one line per arm, PASS <arm> or FAIL <arm> <reason>;
 #                        STAGING_SEED_SELFTEST_FORMAT=tap renders TAP 13.
 #
@@ -185,6 +193,12 @@ OP_CREATED=0
 cleanup() {
   local rc=$?
   set +e
+  # The billing-sync-check probe shop (plan 30-26, T-30-102) never outlives the run.
+  if [ -n "${PROBE_SHOP_ID:-}" ]; then
+    if ! delete_probe_shop; then
+      [ "$rc" -ne 0 ] || rc=1
+    fi
+  fi
   if [ "$OP_CREATED" -eq 1 ]; then
     if ! delete_operator; then
       [ "$rc" -ne 0 ] || rc=1
@@ -289,7 +303,7 @@ run_guards() {
 print_plan() {
   case "$STAGE" in vendor|all) print_vendor_plan ;; esac
   case "$STAGE" in order|all) print_order_plan ;; esac
-  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing) print_tool_plan ;; esac
+  case "$STAGE" in list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) print_tool_plan ;; esac
 }
 print_tool_plan() {
   echo "PLAN --stage ${STAGE} (dry-run: nothing below is called)"
@@ -329,6 +343,14 @@ print_tool_plan() {
       echo "  08 GET        ${STRIPE_API}/v1/invoices/{latest_invoice}   livemode false; amount_paid, status"
       echo "  09 GET        /api/v1/shops?size=100   locations under the D-04 ${BILLING_LOCATION_RULE} rule"
       echo "  10 print      BILLING sub=… quantity=… locations=… invoice=… amount_paid=… status=paid livemode=false at=… (FAIL unless quantity == locations and amount_paid == ${BILLING_UNIT_PENNIES} x quantity)" ;;
+    billing-sync-check)
+      echo "  03 az_read    ${STRIPE_KV_OBJECT} (refused unless sk_test_; never printed, never argv)"
+      echo "  04 GET        /api/v1/billing/subscription   REFUSED [no-subscription] unless ACTIVE with a subscription id (no shop written)"
+      echo "  05 GET        ${STRIPE_API}/v1/subscriptions/{id}   quantity n; livemode false (rule ${BILLING_LOCATION_RULE}; published-shops: not-runnable, exit 0)"
+      echo "  06 POST       /api/v1/shops   {name: Staging Billing Probe <UTC>}; its id registered for the EXIT-path DELETE"
+      echo "  07 GET        ${STRIPE_API}/v1/subscriptions/{id}   every ${POLL_SECONDS}s until quantity n+1 (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s), each read printed"
+      echo "  08 DELETE     /api/v1/shops/{probe}   then poll until quantity n (deadline ${BILLING_SYNC_DEADLINE_SECONDS}s)"
+      echo "  09 print      BILLING-SYNC before=n after-add=n+1 after-remove=n livemode=false" ;;
     order-transition)
       echo "  03 GET        /api/v1/orders/status/{DRAFT,PENDING,CONFIRMED}   the id of ${ORDERS}"
       echo "  04 POST       /api/v1/orders/{id}/${EVENT}   exactly the named order"
@@ -1860,6 +1882,105 @@ billing_stage() {
   echo "BILLING sub=$sub quantity=$SUB_QTY locations=$LOC_COUNT invoice=$inv amount_paid=$paid status=$ist livemode=false at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
+# ===========================================================================
+# --stage billing-sync-check — plan 30-26 (D-04, T-30-102). The after-commit
+# quantity sync (30-25 BillingLocationSync) watched happening on staging, under
+# the owner's D-04 rule:
+#   all-shops: read the subscription quantity n from Stripe; create one probe
+#     shop "Staging Billing Probe <UTC>" through POST /api/v1/shops (its id is
+#     registered for the EXIT-path delete the moment it is known); poll Stripe
+#     until the quantity reads n+1; DELETE the probe; poll until it reads n.
+#     Every read is printed; each wait has a deadline
+#     (STAGING_SEED_BILLING_SYNC_DEADLINE_SECONDS, default 90). Ends on
+#     BILLING-SYNC before=n after-add=n+1 after-remove=n livemode=false.
+#   published-shops: not runnable today (a second shop cannot be published: only
+#     the onboarding shop goes live), so it prints
+#     BILLING-SYNC not-runnable reason=no-second-publishable-shop and exits 0,
+#     a recorded limitation and NOT a pass of the sync.
+# No ACTIVE subscription: REFUSED [no-subscription] before any shop is written.
+# The probe never outlives the run: cleanup() deletes it on every exit path, and
+# a delete that fails turns the run into a failure that names the shop.
+BILLING_SYNC_DEADLINE_SECONDS="${STAGING_SEED_BILLING_SYNC_DEADLINE_SECONDS:-90}"
+PROBE_SHOP_ID=""
+
+# delete_probe_shop — called by the stage and from the EXIT trap. Never exits;
+# returns 1 when the probe may still exist.
+delete_probe_shop() {
+  local code
+  code=$(api vendor DELETE "/api/v1/shops/$PROBE_SHOP_ID" "$WORKDIR/probe-delete.json")
+  rm -f "$WORKDIR/probe-delete.json"
+  case "$code" in
+    204|404) echo "PROBE-SHOP-DELETED: $PROBE_SHOP_ID HTTP $code"; PROBE_SHOP_ID=""; return 0 ;;
+    *) echo "FAIL: the probe shop $PROBE_SHOP_ID was NOT deleted (HTTP $code); it is a billable location: delete it by hand now (DELETE /api/v1/shops/$PROBE_SHOP_ID as $VENDOR_USERNAME)" >&2; return 1 ;;
+  esac
+}
+
+# probe_lookup NAME — when the create's answer gave no id, the shop may exist
+# anyway: find it by its unique name so the EXIT path can delete it.
+probe_lookup() {
+  local code hits
+  code=$(api vendor GET "/api/v1/shops?size=100" "$WORKDIR/probe-find.json")
+  if [ "$code" = 200 ]; then
+    hits=$(jq -r --arg n "$1" '[.content[]? | select(.name == $n) | .id] | if length == 1 then .[0] else "" end' "$WORKDIR/probe-find.json" 2>/dev/null || true)
+    [[ "$hits" =~ ^[0-9a-f-]{36}$ ]] && PROBE_SHOP_ID="$hits"
+  fi
+  rm -f "$WORKDIR/probe-find.json"
+  [ -n "$PROBE_SHOP_ID" ] || echo "FAIL: a probe shop named '$1' may exist and could not be found (HTTP $code); delete it by hand" >&2
+}
+
+# wait_quantity PHASE WANT — poll the subscription until its quantity is WANT.
+wait_quantity() {
+  local phase="$1" want="$2" start=$SECONDS
+  while :; do
+    read_stripe_subscription "$BL_SUB"
+    echo "BILLING-SYNC-READ phase=$phase quantity=$SUB_QTY want=$want elapsed=$((SECONDS - start))s"
+    [ "$SUB_QTY" != "$want" ] || return 0
+    if [ $((SECONDS - start)) -ge "$BILLING_SYNC_DEADLINE_SECONDS" ]; then
+      echo "FAIL: Stripe's subscription $BL_SUB quantity did not reach $want within ${BILLING_SYNC_DEADLINE_SECONDS}s ($phase; last read $SUB_QTY)" >&2
+      exit 1
+    fi
+    sleep "$POLL_SECONDS"
+  done
+}
+
+billing_sync_check_stage() {
+  local n name code
+  case "$BILLING_LOCATION_RULE" in all-shops|published-shops) ;; *) void "BILLING_LOCATION_RULE '$BILLING_LOCATION_RULE' is not a D-04 rule" ;; esac
+  vendor_login
+  read_stripe_key
+  read_billing_state
+  if ! { [ "$BL_STATUS" = ACTIVE ] && [[ "$BL_SUB" =~ ^sub_[A-Za-z0-9]+$ ]]; }; then
+    refuse no-subscription "the tenant has no ACTIVE subscription (status ${BL_STATUS:-none}); run --stage billing first. No shop was written"
+  fi
+  read_stripe_subscription "$BL_SUB"
+  n="$SUB_QTY"
+  echo "BILLING-SYNC-READ phase=before quantity=$n at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [ "$BILLING_LOCATION_RULE" = published-shops ]; then
+    echo "BILLING-SYNC not-runnable reason=no-second-publishable-shop"
+    return 0
+  fi
+
+  name="Staging Billing Probe $(date -u +%Y%m%dT%H%M%SZ)"
+  jq -n --arg n "$name" '{name: $n}' | body "$WORKDIR/probe.json"
+  code=$(api vendor POST /api/v1/shops "$WORKDIR/probe-out.json" "$WORKDIR/probe.json")
+  rm -f "$WORKDIR/probe.json"
+  PROBE_SHOP_ID=$(jq -r '.id // empty' "$WORKDIR/probe-out.json" 2>/dev/null || true)
+  if ! [[ "$PROBE_SHOP_ID" =~ ^[0-9a-f-]{36}$ ]]; then
+    # A 4xx wrote nothing; a 201 without an id, a 5xx or no answer may have.
+    PROBE_SHOP_ID=""
+    case "$code" in 4??) ;; *) probe_lookup "$name" ;; esac
+  fi
+  [ "$code" = 201 ] || fail_http "POST /api/v1/shops (the probe location)" "$code" "$WORKDIR/probe-out.json"
+  rm -f "$WORKDIR/probe-out.json"
+  [ -n "$PROBE_SHOP_ID" ] || { echo "FAIL: the probe create answered 201 without an id" >&2; exit 1; }
+  echo "OK: probe shop $PROBE_SHOP_ID created ('$name'); deleted on every exit path"
+
+  wait_quantity after-add $((n + 1))
+  delete_probe_shop || exit 1
+  wait_quantity after-remove "$n"
+  echo "BILLING-SYNC before=$n after-add=$((n + 1)) after-remove=$n livemode=false"
+}
+
 # --selftest
 # ===========================================================================
 _ST_RESULTS=()
@@ -3218,7 +3339,7 @@ IDF
 
   # --- dry-run-tools: the new stages' plans; guards run, nothing is called ------
   why=""
-  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing; do
+  for sub in list-drafts vendor-order order-transition cancel-drafts list-orphan-intents cancel-orphan-intents stripe-get pay-link billing billing-sync-check; do
     case "$sub" in
       order-transition) set -- --orders ORD-STUB-D001 --event submit ;;
       cancel-drafts)    set -- --orders ORD-STUB-D001,ORD-STUB-D002 ;;
@@ -3236,7 +3357,7 @@ IDF
     [ -z "$why" ] || break
   done
   set --
-  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=9 az_calls=0 curl_calls=0"
+  if [ -z "$why" ]; then _st_result "PASS dry-run-tools rc=0 stages=10 az_calls=0 curl_calls=0"
   else _st_result "FAIL dry-run-tools $why"; fails=$((fails + 1)); fi
 
   _st_render
@@ -3289,9 +3410,9 @@ case "$ACTION" in
 esac
 
 case "$STAGE" in
-  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing) ;;
-  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing)" ;;
-  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link or billing" ;;
+  vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check) ;;
+  "") usage_error "--stage is required (vendor|order|all|list-drafts|vendor-order|order-transition|cancel-drafts|list-orphan-intents|cancel-orphan-intents|stripe-get|pay-link|billing|billing-sync-check)" ;;
+  *) usage_error "--stage must be vendor, order, all, list-drafts, vendor-order, order-transition, cancel-drafts, list-orphan-intents, cancel-orphan-intents, stripe-get, pay-link, billing or billing-sync-check" ;;
 esac
 if [ "$STAGE" != cancel-orphan-intents ]; then
   [ -z "$INTENTS" ] || usage_error "--intents is taken by --stage cancel-orphan-intents only"
@@ -3382,6 +3503,7 @@ case "$STAGE" in
   stripe-get)       stripe_get_stage ;;
   pay-link)         pay_link_stage ;;
   billing)          billing_stage ;;
+  billing-sync-check) billing_sync_check_stage ;;
   all)
     vendor_stage
     # The realm-admin operator exists only for the vendor stage: deleted here,
