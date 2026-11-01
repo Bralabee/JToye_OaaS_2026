@@ -5,6 +5,7 @@ import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import apiClient from "@/lib/api-client"
+import { fetchAcceptedAssetOutcome } from "@/lib/media-api"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
@@ -1260,6 +1261,10 @@ export default function ProductsPage() {
                 <ImageUploader
                   currentImageUrl={editingProduct.imageUrl}
                   uploadUrl={`/api/v1/products/${editingProduct.id}/image`}
+                  // SW-ADE-02 (swarm epic #964): leave "Processing…" once the server settles the asset.
+                  resolveAcceptedAsset={(assetId) =>
+                    fetchAcceptedAssetOutcome(editingProduct.id, assetId)
+                  }
                   onUploadComplete={(url) => {
                     setEditingProduct({ ...editingProduct, imageUrl: url })
                     fetchProducts()
