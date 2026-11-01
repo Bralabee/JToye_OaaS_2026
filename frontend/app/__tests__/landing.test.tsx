@@ -377,3 +377,64 @@ describe("Landing copy no longer promises go-live in a day (SW-CLR-03)", () => {
     expect(String(homeMetadata.description)).toMatch(/assisted setup/i)
   })
 })
+
+/**
+ * D14 (design/decisions.md, owner rulings 2026-11-01): the elevated landing.
+ * Each assertion here was shown failing against the page as it was before the
+ * elevate (design/runs/2026-11-01-landing-elevate/README.md records the run).
+ */
+describe("Landing elevate (D14)", () => {
+  // Emoji ranges the old page used (food, flags), not every symbol.
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}]/u
+
+  it("Track live promises only status changes, in the owner's accepted words", async () => {
+    render(await Home())
+    expect(
+      screen.getByText(
+        "See your order's status change as the kitchen confirms it, prepares it and gets it ready."
+      )
+    ).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/to your door in real time/i)
+  })
+
+  it("has no eyebrow above the h1 and no emoji anywhere in main", async () => {
+    render(await Home())
+    const main = screen.getByRole("main")
+    // Control: the matcher finds an emoji when one is there.
+    expect(EMOJI.test("🍚 Jollof")).toBe(true)
+    expect(EMOJI.test(main.textContent ?? "")).toBe(false)
+    expect(main.textContent).not.toMatch(/Independent UK kitchens/i)
+    const h1 = screen.getByRole("heading", { level: 1 })
+    expect(h1.previousElementSibling).toBeNull()
+  })
+
+  it("has no radial wash: the heat-wash hook and every gradient class are gone from main", async () => {
+    const { container } = render(await Home())
+    const main = screen.getByRole("main")
+    expect(container.querySelectorAll("[data-hero-heatwash]")).toHaveLength(0)
+    const gradients = Array.from(main.querySelectorAll<HTMLElement>("*")).filter((el) =>
+      /\bbg-(gradient|\[radial-gradient)/.test(el.getAttribute("class") ?? "")
+    )
+    expect(gradients.map((el) => el.getAttribute("class"))).toEqual([])
+    // Control: the hero section the wash sat in is still there.
+    expect(container.querySelector("[data-hero-section]")).not.toBeNull()
+  })
+
+  it("shows dish photographs: one per chip, the order door's strip, and the credit line", async () => {
+    render(await Home())
+    for (const label of ["Grill", "Jollof", "Caribbean", "South Asian", "Vegan", "Desserts"]) {
+      const chip = screen.getByRole("link", { name: label })
+      expect(chip.getAttribute("href")).toMatch(/^\/shop\?q=/)
+      expect(chip.querySelector("img")?.getAttribute("src")).toMatch(/marketing%2Flanding|marketing\/landing/)
+    }
+    const door = screen.getByRole("link", { name: /Order food near you/ })
+    expect(door.querySelector("img")?.getAttribute("alt")).toBe("A plate of jollof rice with fried plantain")
+    expect(screen.getByText(/Photographs: Segun Famisa/)).toBeTruthy()
+  })
+
+  it("keeps the kitchen card's example-photo caption in D13's words", async () => {
+    render(await Home())
+    // FIXTURE_SHOP is tagged "Nigerian, Jollof" with no banner.
+    expect(screen.getByText("Nigerian — example photo")).toBeTruthy()
+  })
+})

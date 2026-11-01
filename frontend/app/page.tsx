@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Image from "next/image"
 import Link from "next/link"
 import {
   UtensilsCrossed,
@@ -16,6 +17,7 @@ import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
 import { NearYouRow } from "@/components/marketing/near-you-row"
+import { PHOTOS, PHOTO_CREDIT_LINE, type LandingPhoto } from "@/components/marketing/landing-photos"
 import { loadShopList } from "@/lib/storefront-server"
 import { headers } from "next/headers"
 import { resolvePublicOrigin } from "@/lib/public-origin"
@@ -50,7 +52,15 @@ export const metadata: Metadata = {
 const steps = [
   { icon: Search, title: "Browse", body: "Find independent kitchens near you and explore their menus." },
   { icon: ShoppingBag, title: "Order & pay", body: "Add to your basket and check out securely — delivery or collection." },
-  { icon: MapPin, title: "Track live", body: "Follow your order from the kitchen to your door in real time." },
+  // D14 (owner, 2026-11-01): the platform has no courier tracking — /track polls
+  // the order's status (PENDING → CONFIRMED → PREPARING → READY → COMPLETED), so
+  // the step promises exactly that and no longer "from the kitchen to your door
+  // in real time".
+  {
+    icon: MapPin,
+    title: "Track live",
+    body: "See your order's status change as the kitchen confirms it, prepares it and gets it ready.",
+  },
 ]
 
 const trustMarkers = [
@@ -62,29 +72,37 @@ const trustMarkers = [
 // Discovery chips (sketch 004 variant C). Each is a real crawlable link that
 // runs the query it advertises (`/shop?q=…`) rather than dumping you on the
 // unfiltered index, so the marketplace reads as alive from the first screen.
-const categories = [
-  { emoji: "🍗", label: "Grill", q: "grill" },
-  { emoji: "🍚", label: "Jollof", q: "jollof" },
-  { emoji: "🥘", label: "Caribbean", q: "caribbean" },
-  { emoji: "🍛", label: "South Asian", q: "south asian" },
-  { emoji: "🥗", label: "Vegan", q: "vegan" },
-  { emoji: "🍰", label: "Desserts", q: "dessert" },
+// D14: each carries a round dish thumbnail in place of its emoji. The picture is
+// decorative (`alt=""`): the label is the link's name.
+const categories: Array<{ photo: LandingPhoto; label: string; q: string }> = [
+  { photo: PHOTOS.suya, label: "Grill", q: "grill" },
+  { photo: PHOTOS.jollofVeg, label: "Jollof", q: "jollof" },
+  { photo: PHOTOS.riceAndPeas, label: "Caribbean", q: "caribbean" },
+  { photo: PHOTOS.biryani, label: "South Asian", q: "south asian" },
+  { photo: PHOTOS.chana, label: "Vegan", q: "vegan" },
+  { photo: PHOTOS.puffPuff, label: "Desserts", q: "dessert" },
 ]
 
-const heroTiles = [
-  { emoji: "🍜", grad: "from-white to-[#fbe9d4]", extra: "-rotate-2" },
-  { emoji: "🥘", grad: "from-white to-[#f6dcd8]", extra: "rotate-2 mt-6" },
-  { emoji: "🥗", grad: "from-white to-[#e7f3ea]", extra: "rotate-2" },
-  { emoji: "🍰", grad: "from-white to-[#fdeecb]", extra: "-rotate-2 -mt-2" },
+// The desktop collage (A): four dish photographs in place of the four gradient
+// emoji tiles (D9, D14). The small tilts are static, kept from the old tiles.
+const heroTiles: Array<{ photo: LandingPhoto; extra: string }> = [
+  { photo: PHOTOS.egusi, extra: "-rotate-2" },
+  { photo: PHOTOS.suya, extra: "rotate-2 mt-6" },
+  { photo: PHOTOS.jollofVeg, extra: "rotate-2" },
+  { photo: PHOTOS.puffPuff, extra: "-rotate-2 -mt-2" },
 ]
 
 /**
- * Public landing page (Surface A, UIX-01) — sketch 004 winner D (A+C hybrid).
+ * Public landing page (Surface A, UIX-01) — sketch 004 winner D (A+C hybrid),
+ * ELEVATED 2026-11-01 (design D14: runs/2026-11-01-landing-elevate).
  *
- * Brand thread matched to the parent site jtoyedigital.co.uk: oxblood (#3A0B0D)
- * anchor + Work Sans, with amber/orange as the appetite accent. A's warm
- * appetite hero + food collage + "cooking near you" dish row, plus C's search +
- * category chips for immediate discovery.
+ * The structure is the old page's, kept on purpose (rubric R11: elevate, do not
+ * redesign): A's hero + food collage + kitchen row, plus C's search + category
+ * chips. The identity is D14's: the oxblood ramp (brand-900 = the parent site's
+ * #3A0B0D), gold as the one action colour, a warm-stone neutral ground, Work
+ * Sans. Credited dish photographs replace every emoji; the radial wash, the
+ * gradient door and tiles, the eyebrow, resting shadows and 1px rules are gone,
+ * and surfaces are separated by a tone step (white against warm-100).
  *
  * Server Component (no client directive) so the root layout's force-dynamic CSP
  * nonce cascades through (the #89 failure mode). All `data-hero-*` hooks are
@@ -110,7 +128,8 @@ const heroTiles = [
  * `loadShopList`. Every good the old row carried is accounted for here, because a
  * green suite over a row that quietly lost its affordance is still a regression:
  *
- *   PRESERVED  DishScroller wrapper — edge fade, proximity snap, fine-pointer arrows
+ *   PRESERVED  DishScroller wrapper — proximity snap, fine-pointer arrows. The
+ *              edge fade became a CARD PEEK on phones (D14, gradient ban)
  *   PRESERVED  the label "Dishes cooking near you", BYTE-IDENTICAL. It is an
  *              aria-label on a scroll region (not a heading, so the location
  *              criterion does not reach it) and it is the selector at
@@ -123,7 +142,11 @@ const heroTiles = [
  *   REPLACED   /shop?q=… deep link -> /shop/{slug}: a real shop page instead of a
  *              search that might match nothing
  *   REPLACED   emoji + gradient -> the shop's real logoUrl through SafeImage with
- *              EXPLICIT width and height, so the box is reserved (CLS)
+ *              EXPLICIT width and height, so the box is reserved (CLS).
+ *              Since D13/D14 the card shows the shop's own BANNER when it has
+ *              one, else a credited example photo of its cuisine captioned
+ *              "<Cuisine> — example photo"; no placeholder logo (D12). The box
+ *              is still reserved by explicit width and height.
  *   REMOVED    hardcoded rating, FHRS badge and dish price — none exists on
  *              PublicShop, and attributing an invented rating to a REAL named
  *              business is worse than the fiction it replaces
@@ -189,12 +212,9 @@ export default async function Home() {
       )}
       <HeroScene>
         {/* ── Split-persona hero ─────────────────────────────────────────── */}
-        <section data-hero-section className="relative overflow-hidden bg-cream">
-          <div
-            data-hero-heatwash
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_85%_-10%,#fde7c8_0%,transparent_55%)]"
-          />
+        {/* D14: a flat warm-100 field. The radial wash that sat here (and the
+            GSAP parallax that moved it) is gone under the gradient ban. */}
+        <section data-hero-section className="relative overflow-hidden bg-warm-100">
           {/* ── THE LANDING CONTENT BAND, EXPLAINED ONCE ────────────────────
 
               This band — and the three below it — is deliberately EQUAL to the
@@ -232,22 +252,23 @@ export default async function Home() {
             className={cn(
               "relative mx-auto",
               WIDTH_TIER_CLASS.marketing,
-              "px-4 sm:px-6 lg:px-8 py-14 md:py-20"
+              "px-4 sm:px-6 lg:px-8 pt-10 pb-14 md:pt-[72px] md:pb-[88px]"
             )}
           >
-            <div className="grid items-center gap-10 lg:grid-cols-2">
+            <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
               {/* Left column — copy, search, doors */}
               <div>
-                <span className="text-xs font-bold uppercase tracking-[0.16em] text-oxblood-600">
-                  🇬🇧 Independent UK kitchens
-                </span>
+                {/* The tracked-caps eyebrow "Independent UK kitchens" is gone
+                    (D14): "independent" is in the sentence below, and "UK" is in
+                    the trust strip. Three lines at every width is the owner's
+                    ruled exception to taste-skill's two-line rule (D14 item 2). */}
                 <h1
                   data-hero-headline
-                  className="mt-3 text-4xl sm:text-5xl md:text-6xl font-black leading-[1.03] tracking-tight text-oxblood"
+                  className="text-[34px] font-extrabold leading-[1.04] tracking-[-0.03em] text-brand-900 [text-wrap:balance] sm:text-5xl lg:text-[56px]"
                 >
                   Order from local kitchens. Or run yours.
                 </h1>
-                <p className="mt-4 max-w-xl text-lg text-slate-600">
+                <p className="mt-4 max-w-xl text-base text-warm-900 md:text-xl md:leading-normal">
                   J&apos;Toye connects hungry customers with independent food
                   businesses — order in minutes, or apply to take your kitchen
                   online with an assisted setup.
@@ -257,63 +278,96 @@ export default async function Home() {
                     against /shop?q= — the chips stay crawlable <a href> so the
                     category pages are reachable without JS. */}
                 <HeroSearch />
-                <div className="mt-3.5 flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-wrap gap-2">
                   {categories.map((c) => (
                     <Link
                       key={c.label}
                       href={`/shop?q=${encodeURIComponent(c.q)}`}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-cream-100 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-amber-300 hover:text-oxblood"
+                      className="inline-flex items-center gap-2 rounded-full bg-white py-1 pl-1 pr-3.5 text-sm font-medium text-warm-900 transition-colors duration-150 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
                     >
-                      <span aria-hidden>{c.emoji}</span> {c.label}
+                      <Image
+                        src={c.photo.src}
+                        width={32}
+                        height={32}
+                        sizes="32px"
+                        alt=""
+                        className="h-8 w-8 rounded-full object-cover"
+                      />
+                      {c.label}
                     </Link>
                   ))}
                 </div>
 
-                {/* Two persona doors (motion-hooked) */}
-                <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {/* Two persona doors (motion-hooked). D14: two FLAT fields, gold
+                    for ordering (the action accent) and oxblood for operators;
+                    no gradient, no resting shadow, no hover lift. Press is a
+                    0.98 scale; hover is one ramp step, gated on a fine pointer. */}
+                <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <Link
                     href="/shop"
                     data-hero-door
-                    className="group flex flex-col rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 p-6 text-amber-ink shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2"
+                    className="group flex flex-col overflow-hidden rounded-2xl bg-gold-400 text-brand-900 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:hover:bg-gold-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
                   >
-                    <UtensilsCrossed className="h-8 w-8" />
-                    <span className="mt-4 text-lg font-bold">Order food near you</span>
-                    <span className="mt-1 text-sm text-amber-ink/75">
-                      Browse independent kitchens and order in minutes.
-                    </span>
-                    <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold">
-                      Browse shops
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    {/* Food in the phone's first screen: the tiles are
+                        desktop-only, this strip is not. Eager and high
+                        priority — on a phone it is the first picture seen. */}
+                    <Image
+                      src={PHOTOS.jollofDodo.src}
+                      width={PHOTOS.jollofDodo.width}
+                      height={PHOTOS.jollofDodo.height}
+                      sizes="(min-width: 1024px) 300px, (min-width: 640px) 45vw, 92vw"
+                      alt={PHOTOS.jollofDodo.alt}
+                      loading="eager"
+                      fetchPriority="high"
+                      className="h-[120px] w-full object-cover"
+                    />
+                    <span className="flex flex-1 flex-col px-6 pb-6 pt-5">
+                      <UtensilsCrossed aria-hidden className="mb-3 h-7 w-7" />
+                      <span className="text-xl font-bold leading-tight">Order food near you</span>
+                      <span className="mt-1.5 text-base leading-snug">
+                        Browse independent kitchens and order in minutes.
+                      </span>
+                      <span className="mt-auto inline-flex items-center gap-1.5 pt-4 text-sm font-bold">
+                        Browse shops
+                        <ArrowRight className="h-4 w-4 transition-transform duration-150 [@media(hover:hover)_and_(pointer:fine)]:group-hover:translate-x-[3px]" />
+                      </span>
                     </span>
                   </Link>
 
                   <Link
                     href="/for-operators"
                     data-hero-door
-                    className="group flex flex-col rounded-2xl bg-oxblood p-6 text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oxblood-600 focus-visible:ring-offset-2"
+                    className="group flex flex-col overflow-hidden rounded-2xl bg-brand-900 text-white transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:hover:bg-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
                   >
-                    <Store className="h-8 w-8 text-gold" />
-                    <span className="mt-4 text-lg font-bold">Run your food business</span>
-                    <span className="mt-1 text-sm text-cream/80">
-                      Take orders and manage your kitchen. A person reviews every application.
-                    </span>
-                    <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-gold">
-                      Learn more
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    <span className="flex flex-1 flex-col px-6 pb-6 pt-5">
+                      <Store aria-hidden className="mb-3 h-7 w-7 text-gold" />
+                      <span className="text-xl font-bold leading-tight">Run your food business</span>
+                      <span className="mt-1.5 text-base leading-snug text-brand-100">
+                        Take orders and manage your kitchen. A person reviews every application.
+                      </span>
+                      <span className="mt-auto inline-flex items-center gap-1.5 pt-4 text-sm font-bold text-gold">
+                        Learn more
+                        <ArrowRight className="h-4 w-4 transition-transform duration-150 [@media(hover:hover)_and_(pointer:fine)]:group-hover:translate-x-[3px]" />
+                      </span>
                     </span>
                   </Link>
                 </div>
               </div>
 
-              {/* Right column — food-tile collage (A) */}
+              {/* Right column — dish photo collage (A), desktop only as before.
+                  Decorative beside the doors, so the grid stays aria-hidden and
+                  the pictures carry empty alt text. */}
               <div aria-hidden className="hidden grid-cols-2 gap-4 lg:grid">
-                {heroTiles.map((t, i) => (
-                  <div
-                    key={i}
-                    className={`grid h-40 place-items-center rounded-2xl bg-gradient-to-br ${t.grad} text-6xl shadow-md ${t.extra}`}
-                  >
-                    {t.emoji}
-                  </div>
+                {heroTiles.map((t) => (
+                  <Image
+                    key={t.photo.src}
+                    src={t.photo.src}
+                    width={t.photo.width}
+                    height={t.photo.height}
+                    sizes="(min-width: 1024px) 300px, 1px"
+                    alt=""
+                    className={`h-[200px] w-full rounded-2xl object-cover ${t.extra}`}
+                  />
                 ))}
               </div>
             </div>
@@ -322,10 +376,10 @@ export default async function Home() {
 
         {/* ── The kitchen row — REAL published shops (#544, #460) ─────────── */}
         {shops.length > 0 && (
-          <section className="border-t border-cream-100 bg-white">
+          <section className="bg-white">
             <div
               data-width-tier="marketing"
-              className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 py-12")}
+              className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 pt-14 pb-16")}
             >
               {/* The row's heading, its scroller and its cards now live in a
                   client island so that a visitor who GRANTS location gets the
@@ -341,36 +395,44 @@ export default async function Home() {
         )}
 
         {/* ── How it works (motion-hooked) ────────────────────────────────── */}
-        <section className="bg-cream py-16">
+        <section className="bg-warm-100 pb-[72px] pt-16 md:pb-24 md:pt-[88px]">
           <div
             data-width-tier="marketing"
             className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8")}
           >
-            <h2 data-hero-howtitle className="text-3xl font-bold leading-tight text-oxblood">
+            <h2
+              data-hero-howtitle
+              className="text-2xl font-bold leading-tight tracking-[-0.015em] text-brand-900 md:text-[28px]"
+            >
               How it works
             </h2>
-            <div data-hero-steps className="relative mt-10 grid grid-cols-1 gap-8 sm:grid-cols-3">
+            <div data-hero-steps className="relative mt-9 grid grid-cols-1 gap-8 sm:grid-cols-3">
+              {/* The rail: a 2px warm-300 track, decoration only, and the
+                  brand-700 fill GSAP scrubs across it. */}
               <div
                 aria-hidden
-                className="pointer-events-none absolute left-[16%] right-[16%] top-6 hidden h-0.5 rounded bg-cream-100 sm:block"
+                className="pointer-events-none absolute left-[16%] right-[16%] top-6 hidden h-0.5 bg-warm-300 sm:block"
               >
-                <div data-hero-railfill className="absolute inset-0 origin-left rounded bg-amber-500" />
+                <div data-hero-railfill className="absolute inset-0 origin-left bg-brand-700" />
               </div>
               {steps.map((step) => (
                 <div key={step.title} data-hero-step className="group relative flex flex-col">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white text-oxblood-600 shadow-sm ring-4 ring-cream transition-colors group-data-[step-active=true]:bg-oxblood group-data-[step-active=true]:text-white">
-                    <step.icon className="h-6 w-6" />
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-brand-900 text-white">
+                    <step.icon aria-hidden className="h-[22px] w-[22px]" />
                   </span>
-                  <h3 className="mt-4 text-lg font-semibold text-slate-900">{step.title}</h3>
-                  <p className="mt-2 text-sm text-slate-600">{step.body}</p>
+                  <h3 className="mt-4 text-xl font-bold leading-tight text-warm-900">{step.title}</h3>
+                  <p className="mt-1.5 max-w-[30em] text-base text-warm-700">{step.body}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* ── Trust strip (motion-hooked chips) ───────────────────────────── */}
-        <section className="border-t border-cream-100 bg-white py-12">
+        {/* ── Trust strip (motion-hooked chips) and the photo credits ─────── */}
+        {/* The credit line shares the last band rather than adding a fifth: the
+            band count is pinned in landing.test.tsx. It names every creator and
+            licence; credits.json beside the files is the per-picture record. */}
+        <section className="bg-white pb-8 pt-12">
           <div
             data-width-tier="marketing"
             className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8")}
@@ -380,13 +442,14 @@ export default async function Home() {
                 <span
                   key={marker}
                   data-hero-chip
-                  className="inline-flex items-center gap-2 rounded-full bg-cream px-4 py-2 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-cream-100"
+                  className="inline-flex items-center gap-2 rounded-full bg-warm-100 px-4 py-2 text-sm font-medium text-warm-900"
                 >
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  <CheckCircle2 aria-hidden className="h-4 w-4 text-emerald-700" />
                   {marker}
                 </span>
               ))}
             </Reveal>
+            <p className="mt-8 max-w-[70ch] text-sm text-warm-700">{PHOTO_CREDIT_LINE}</p>
           </div>
         </section>
       </HeroScene>

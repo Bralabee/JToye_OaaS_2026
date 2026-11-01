@@ -114,20 +114,51 @@ describe("ShopCard", () => {
     expect(getByText(/(?<!£)\b[0-5]\.\d\b(?!\d)/)).toBeTruthy()
   })
 
-  it("reserves the logo box with explicit width and height (CLS)", () => {
+  // D13/D14: the card shows the shop's own banner when it has one, else a
+  // credited example photo of its cuisine, captioned as an example. The seeded
+  // placeholder logo is no longer shown (D12).
+  it("reserves the picture box with explicit width and height (CLS)", () => {
     const { container } = render(<ShopCard shop={makeShop()} />)
     const img = container.querySelector("img")
     expect(img).toBeTruthy()
-    // Without these the browser cannot reserve space and the emoji-to-real-image
-    // swap shifts everything below it — the exact risk the landing CWV budget
-    // in e2e/landing-webperf.spec.ts exists to catch.
-    expect(img!.getAttribute("width")).toBe("220")
-    expect(img!.getAttribute("height")).toBe("132")
+    // Without these the browser cannot reserve space and the picture's arrival
+    // shifts everything below it — the exact risk the landing CWV budget in
+    // e2e/landing-webperf.spec.ts exists to catch. "Jollof" is the first tag,
+    // so the picture is the jollof-and-plantain plate at its real 800x532.
+    expect(img!.getAttribute("width")).toBe("800")
+    expect(img!.getAttribute("height")).toBe("532")
+    expect(img!.getAttribute("src")).toContain("jollof-rice-and-dodo.webp")
+    expect(screen.getByText("Jollof — example photo")).toBeTruthy()
   })
 
-  it("falls back rather than breaking when the shop has no logo", () => {
-    const { container } = render(<ShopCard shop={makeShop({ logoUrl: null })} />)
-    // SafeImage renders a placeholder div, not a broken <img>.
+  it("shows the shop's OWN banner when it has one, and calls nothing an example", () => {
+    const { container } = render(<ShopCard shop={makeShop({ bannerUrl: "/media/peckham-banner.webp" })} />)
+    const img = container.querySelector("img")
+    expect(img!.getAttribute("src")).toBe("/media/peckham-banner.webp")
+    expect(img!.getAttribute("alt")).toBe("Peckham Jollof Co. banner")
+    expect(img!.getAttribute("width")).toBe("640")
+    expect(img!.getAttribute("height")).toBe("352")
+    expect(screen.queryByText(/example photo/)).toBeNull()
+  })
+
+  it("never shows the placeholder logo (D12)", () => {
+    const { container } = render(<ShopCard shop={makeShop()} />)
+    const srcs = Array.from(container.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "")
+    // Control: there IS a picture, so the absence below is about the logo.
+    expect(srcs.length).toBe(1)
+    expect(srcs.filter((src) => src.includes("logo"))).toEqual([])
+  })
+
+  it("a kitchen whose tags name no known cuisine gets no picture rather than a guess", () => {
+    const { container } = render(<ShopCard shop={makeShop({ tags: "Halal, Family run" })} />)
+    expect(container.querySelector("img")).toBeNull()
+    expect(screen.queryByText(/example photo/)).toBeNull()
+    expect(screen.getByRole("link", { name: /Peckham Jollof Co\./i })).toBeTruthy()
+  })
+
+  it("falls back rather than breaking when the shop's banner is missing", () => {
+    // A null banner with no matching cuisine renders the reserved box, never a broken <img>.
+    const { container } = render(<ShopCard shop={makeShop({ logoUrl: null, tags: null })} />)
     expect(container.querySelector("img")).toBeNull()
     expect(screen.getByRole("link", { name: /Peckham Jollof Co\./i })).toBeTruthy()
   })
@@ -240,11 +271,12 @@ describe("ShopCard — what the card says about delivery (37-G)", () => {
   })
 
   // Captured from the unfixed tree (Incremental Betterment): a shop taking both, and a payload with no
-  // flags (an older backend), render the price row exactly as before.
+  // flags (an older backend), render the price row exactly as before. The TEXT and the element shape
+  // are the 37-G capture; the classes are D14's restyle (16px, brand-900, warm-700 secondary).
   const BEFORE_FEE =
-    '<div class="mt-2 text-sm font-semibold text-oxblood">£3.50 delivery<span class="font-normal text-slate-600"> · min £10.00</span></div>'
+    '<div class="mt-2 font-semibold text-brand-900">£3.50 delivery<span class="font-normal text-warm-700"> · min £10.00</span></div>'
   const BEFORE_FREE =
-    '<div class="mt-2 text-sm font-semibold text-oxblood">Free delivery<span class="font-normal text-slate-600"> · min £10.00</span></div>'
+    '<div class="mt-2 font-semibold text-brand-900">Free delivery<span class="font-normal text-warm-700"> · min £10.00</span></div>'
 
   it("CONTROL: a shop offering both renders byte-identically to before the fix", () => {
     const { container } = render(<ShopCard shop={BOTH} />)

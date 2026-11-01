@@ -1,6 +1,8 @@
 import { useId } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { SafeImage } from "@/components/ui/safe-image"
+import { assignExamplePhotos, type ExamplePhoto } from "@/components/marketing/landing-photos"
 import { formatMiles } from "@/lib/distance"
 import { cardBadgeLabel, readShopAvailability } from "@/lib/shop-availability"
 import { ONLY_CHIP_COPY, onlyOfferedType } from "@/lib/fulfilment-offered"
@@ -37,8 +39,14 @@ import type { PublicShop } from "@/types/storefront"
  *             minimum-order figures below are real and shop-level.
  */
 
-const LOGO_WIDTH = 220
-const LOGO_HEIGHT = 132
+// The kitchen's own banner, when it has one (D13). Explicit width and height so
+// the browser reserves the box before the picture arrives (CLS).
+const BANNER_WIDTH = 640
+const BANNER_HEIGHT = 352
+
+// next/image `sizes`: 80% of a phone (the card peek, D14), a 260-320px card above.
+// At a 390px phone this resolves to the 640w candidate, under 750px.
+const CARD_IMAGE_SIZES = "(min-width: 640px) 320px, 80vw"
 
 function pounds(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -73,7 +81,21 @@ function firstTags(tags: string | null, limit = 3): string[] {
     .slice(0, limit)
 }
 
-export function ShopCard({ shop }: { shop: PublicShop }) {
+export function ShopCard({
+  shop,
+  examplePhoto,
+}: {
+  shop: PublicShop
+  /**
+   * The credited cuisine picture this card shows when the shop has no banner
+   * (D13). `NearYouRow` assigns these across the whole row so two kitchens of
+   * one cuisine get two dishes; a card rendered alone works it out for itself.
+   * `null` means "no example photo" (no banner and no recognised cuisine).
+   */
+  examplePhoto?: ExamplePhoto | null
+}) {
+  const example =
+    examplePhoto === undefined ? (assignExamplePhotos([shop]).get(shop.slug) ?? null) : examplePhoto
   const tags = firstTags(shop.tags)
   // 37-22 (UI-SPEC K3, theme 2): an open-state badge is printed ONLY when the server sent its
   // answer (openNow and the pause). This card used to make no openness claim at all, because the
@@ -102,75 +124,93 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
   return (
     <article
       data-shop-name={shop.name}
-      // `grow basis-[220px]` with a matching `min-w` is what lets THREE cards
+      // CARD PEEK (D14, owner ruling 2026-11-01): on a phone each card is 80% of
+      // the row, so the next card shows at the edge — that peek is the scroll
+      // affordance now, in place of the gradient edge fade. From 640px the old
+      // rule returns: `grow` with a matching basis and min-w lets THREE cards
       // fill the container instead of huddling left as if two were missing,
-      // while a longer list still overflows and scrolls. Do not swap this for a
-      // fixed width to "fix" the three-card case — that is what makes it look
-      // broken.
+      // while a longer list still overflows and scrolls. Do not swap that for a
+      // fixed width — that is what makes it look broken.
       //
-      // Hover is gated on a fine pointer in the written-out form. Tailwind's
-      // `future.hoverOnlyWhenSupported` is unset, so a bare `hover:` latches on
-      // tap and leaves the card stuck lifted after a finger lifts.
-      className="group relative grow basis-[220px] min-w-[220px] overflow-hidden rounded-xl border border-cream-100 bg-white shadow-sm transition-[box-shadow,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] [@media(hover:hover)_and_(pointer:fine)]:hover:shadow-md"
+      // Flat: a tone step (warm-100 card on the white section), no border and no
+      // resting shadow. Hover is gated on a fine pointer in the written-out form,
+      // which is narrower than `future.hoverOnlyWhenSupported`.
+      className="group relative shrink-0 basis-[80%] overflow-hidden rounded-xl bg-warm-100 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] sm:shrink sm:grow sm:basis-[260px] sm:min-w-[260px] [@media(hover:hover)_and_(pointer:fine)]:hover:bg-warm-200"
     >
-      {/* Explicit width + height so the browser reserves the box before the
-          logo arrives. Phase 24's D-07 precedent, and the landing route's CLS
-          budget in e2e/landing-webperf.spec.ts depends on it — the emoji-to-
-          real-image swap is exactly where layout shift enters. */}
-      <div className="relative h-28 w-full overflow-hidden bg-cream">
-        <SafeImage
-          src={shop.logoUrl}
-          alt={`${shop.name} logo`}
-          width={LOGO_WIDTH}
-          height={LOGO_HEIGHT}
-          className="h-28 w-full object-cover"
-        />
-        {/* The distance pill is ABSOLUTELY POSITIONED, and that is a CLS
-            decision rather than a styling one. 33-07 swaps this row's contents
-            after a permission grant; a distance rendered in the flow would add
-            a line to every card and push everything below the row down. Out of
-            flow, the located and unlocated cards are byte-identical in height,
-            so the upgrade cannot shift the page at all. Switching the unit to
-            miles changed the STRING only — the element, its positioning and its
-            reserved space are untouched, so the post-grant vertical-shift budget
-            in e2e/landing-webperf.spec.ts still holds for the same reason. */}
-        {/* Top-LEFT, out of flow, for the same CLS reason as the distance pill opposite: a card
-            with a badge and one without are the same height. */}
-        {badge && (
-          <span
-            id={badgeId}
-            data-testid="shop-availability-badge"
-            className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-xs font-bold shadow-sm ${
-              availability.kind === "open" ? "bg-emerald-700 text-white" : "bg-slate-900/80 text-white"
-            }`}
-          >
-            {badge}
-          </span>
+      {/* The picture box is a fixed h-44 whichever picture fills it, so a card
+          with a banner, with an example photo and with neither are the same
+          height (CLS, and an even row). */}
+      <figure className="m-0">
+        <div className="relative h-44 w-full overflow-hidden bg-warm-200">
+          {shop.bannerUrl ? (
+            <SafeImage
+              src={shop.bannerUrl}
+              alt={`${shop.name} banner`}
+              width={BANNER_WIDTH}
+              height={BANNER_HEIGHT}
+              className="h-44 w-full object-cover"
+            />
+          ) : example ? (
+            <Image
+              src={example.photo.src}
+              alt={`${example.photo.alt} (example photo)`}
+              width={example.photo.width}
+              height={example.photo.height}
+              sizes={CARD_IMAGE_SIZES}
+              className="h-44 w-full object-cover"
+            />
+          ) : null}
+          {/* The badge and the distance pill are ABSOLUTELY POSITIONED, and that
+              is a CLS decision rather than a styling one. 33-07 swaps this row's
+              contents after a permission grant; a distance rendered in the flow
+              would add a line to every card and push everything below the row
+              down. Out of flow, the located and unlocated cards are
+              byte-identical in height, so the upgrade cannot shift the page. */}
+          {badge && (
+            <span
+              id={badgeId}
+              data-testid="shop-availability-badge"
+              className={`absolute left-2.5 top-2.5 rounded-full px-2.5 py-0.5 text-sm font-bold ${
+                availability.kind === "open"
+                  ? "bg-emerald-700 text-white"
+                  : availability.kind === "paused"
+                    ? "bg-gold-200 text-brand-900"
+                    : "bg-warm-700 text-white"
+              }`}
+            >
+              {badge}
+            </span>
+          )}
+          {shop.distanceKm != null && (
+            <span id={distanceId} className="absolute right-2.5 top-2.5 rounded-full bg-white px-2.5 py-0.5 text-sm font-bold text-brand-900">
+              {formatMiles(shop.distanceKm)}
+              {/* Spelled out rather than abbreviated: a screen reader pronounces a
+                  two-letter unit as a word, and "point two my away" is not a
+                  distance. The pill has room for it at 375px. */}
+              <span className="sr-only"> away</span>
+            </span>
+          )}
+        </div>
+        {!shop.bannerUrl && example && (
+          <figcaption className="px-4 pt-2 text-sm text-warm-700">
+            {example.cuisine} — example photo
+          </figcaption>
         )}
-        {shop.distanceKm != null && (
-          <span id={distanceId} className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
-            {formatMiles(shop.distanceKm)}
-            {/* Spelled out rather than abbreviated: a screen reader pronounces a
-                two-letter unit as a word, and "point two my away" is not a
-                distance. The pill has room for it at 375px. */}
-            <span className="sr-only"> away</span>
-          </span>
-        )}
-      </div>
+      </figure>
 
-      <div className="p-3.5">
-        <div className="font-bold text-slate-900">
+      <div className="px-4 pb-4 pt-1.5">
+        <div className="font-bold text-warm-900">
           <Link
             href={`/shop/${shop.slug}`}
             aria-describedby={describedBy || undefined}
-            className="focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-amber-500"
+            className="focus-visible:outline-hidden after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-brand-700"
           >
             {shop.name}
           </Link>
         </div>
 
         {tags.length > 0 && (
-          <div className="mt-0.5 truncate text-xs text-slate-600">{tags.join(" · ")}</div>
+          <div className="mt-0.5 truncate text-sm text-warm-700">{tags.join(" · ")}</div>
         )}
 
         {/* Review WR-04: both figures are nullable ON THE WIRE (nullable Longs,
@@ -181,7 +221,7 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
             minimum is a KNOWN "no minimum" and also renders nothing, matching
             the discovery listing. The separator belongs to the pair, so it
             only prints when the fee line before it exists. */}
-        <div className="mt-2 text-sm font-semibold text-oxblood">
+        <div className="mt-2 font-semibold text-brand-900">
           {/* 37-G (UXT-023): a shop that does not deliver says "Collection only" (the shop header's
               own words) in place of the fee, with no fall-through to "Free delivery". A shop taking
               both, or a flag-less payload, renders this row exactly as before. */}
@@ -193,7 +233,7 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
             )
           )}
           {shop.minimumOrderPennies != null && shop.minimumOrderPennies > 0 && (
-            <span className="font-normal text-slate-600">
+            <span className="font-normal text-warm-700">
               {leadShown && " · "}min {pounds(shop.minimumOrderPennies)}
             </span>
           )}
