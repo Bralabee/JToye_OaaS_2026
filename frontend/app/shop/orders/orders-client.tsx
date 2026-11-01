@@ -336,7 +336,8 @@ export function OrdersClient({
   /** One fetch path, shared by mount-renewal, poll and retry. */
   const fetchOrders = useCallback(async (): Promise<OrdersLoad> => {
     try {
-      const res = await fetch(`/api/customer-orders?size=${ORDERS_FETCH_SIZE}`, {
+      // include=allergyNote: this page is the one caller the proxy hands the note text to (SW-PRY-06).
+      const res = await fetch(`/api/customer-orders?size=${ORDERS_FETCH_SIZE}&include=allergyNote`, {
         credentials: "include",
         cache: "no-store",
       })
