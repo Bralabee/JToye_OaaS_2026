@@ -19,6 +19,18 @@ Seven findings from the 2026-10-19 staging persona swarm, each re-checked on mai
 - **SW-PRY-06: SKIPPED.** Showing the allergy note's text on the public order status would reverse the closed mitigation T-31.1-46 (data minimisation of special-category data). `AllergyNoteAckIntegrationTest` asserts that mitigation. This is an owner and tenancy-security decision.
 - **SW-CLR-10:** `GET /` now returns a 302 with a relative `Location: /swagger-ui.html`. The old `RedirectView` let Tomcat build an absolute URL from its own http scheme, so behind TLS the redirect pointed at http. A test on a real Tomcat proves the fix. The OpenAPI snapshot documents the 302, and the 15 Spring-internal schemas `RedirectView` pulled in are gone. Whether to publish the docs on staging is still the owner's call.
 
+### Terms and Contact Routes, Landing Copy Aligned to the Pilot, Strategy Pages Unlinked and Noindexed, Absolute Metadata (swarm epic #964) (#1080) — 2026-11-01
+
+Frontend only: six findings from the 2026-10-19 staging persona swarm, each re-checked on main first. No API, migration or core-java change.
+
+- **SW-SAM-12: `/legal/terms`, new.** Rendered through the existing `PolicyPage` shell and linked from the `/legal` hub and the footer. Every section restates copy the site already publishes. The seller, cancellation and no-VAT statements are imported from the checkout's own modules, and the operator figures come from `lib/pricing.ts`. No governing-law, liability, indemnity or arbitration wording, and a test asserts its absence. The page body needs the owner's wording sign-off.
+- **SW-CLR-04: `/contact`, new.** Uses the `/legal` hub layout: company facts from `lib/company.ts`, plus `NEXT_PUBLIC_CONTACT_EMAIL` / `NEXT_PUBLIC_CONTACT_PHONE` through `resolvePublicContact()`, each rendered only when set and never defaulted. Linked from the footer and beside both application CTAs on `/for-operators`. Wired like `NEXT_PUBLIC_DATA_PROTECTION_EMAIL` (Dockerfile ARG/ENV, compose build arg with an empty default, optional in `env-validation.ts`, both example files).
+- **SW-CLR-06 (remainder):** the `/for-operators` pricing footnote links the terms. The VAT basis and the card-fee figure are recorded for the owner, not invented.
+- **SW-CLR-03 (partial):** "go live in a day" is removed from the landing hero, the operator door and both descriptions, replaced with the `/for-operators` wording. The "Independent UK kitchens" positioning is kept per `design/brief.md`; UK-wide versus the London pilot is an open owner decision.
+- **SW-CLR-05:** `/business-model-guide` and `/competitive` are unlinked from the footer and declare `robots: { index: false, follow: false }`. The pages are unchanged. Their sitemap entry belongs to Phase 30 and is a follow-up.
+- **SW-CLR-08 (partial):** the root layout sets `metadataBase` from `resolvePublicOrigin()`, so canonical and og:url resolve absolute. No og:image: `frontend/public` holds no J'Toye brand image.
+- Gates: `/legal/terms` and `/contact` are declared STATIC in `scripts/gates/ssr-routes.conf`, and one residue-allowlist line number moved with its `.env.example` line.
+
 ### Design-Run Project Layer and design-run Agent Targets (#1078) — 2026-11-01
 
 Docs and agent text only. No code, API, migration or runtime change.

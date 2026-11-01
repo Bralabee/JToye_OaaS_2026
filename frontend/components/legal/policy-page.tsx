@@ -40,6 +40,21 @@ import {
  * compile, which is the only enforcement that actually holds.
  */
 
+/**
+ * The legal surface's link styles, defined once (PR 1080 round 1, comment
+ * 4436097726). They were re-typed in this file, the /legal hub, /contact and
+ * /legal/terms, so a focus-ring or colour ruling would be applied in some
+ * copies and missed in another.
+ *
+ * LEGAL_LINK_CLASS is the standalone link (this shell's back link, the hub, the
+ * contact page). LEGAL_PROSE_LINK_CLASS is the same link underlined, for a link
+ * inside running prose, where colour alone must not be the only cue.
+ */
+export const LEGAL_LINK_CLASS =
+  "font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+export const LEGAL_PROSE_LINK_CLASS =
+  "font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+
 export interface PolicyPageProps {
   /** The document title, rendered as the page's single h1. */
   title: string
@@ -190,7 +205,7 @@ export function PolicyPage({
         <p className="mt-16 max-w-[68ch] text-base">
           <Link
             href="/legal"
-            className="inline-flex min-h-11 items-center font-semibold text-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className={`inline-flex min-h-11 items-center ${LEGAL_LINK_CLASS}`}
           >
             ← All legal &amp; policy documents
           </Link>

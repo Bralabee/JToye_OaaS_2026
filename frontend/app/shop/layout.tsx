@@ -3,7 +3,6 @@ import Link from "next/link"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
 import { PublicFooter } from "@/components/public/public-footer"
-import { resolvePublicOrigin } from "@/lib/public-origin"
 
 /**
  * Storefront-wide metadata DEFAULTS.
@@ -15,18 +14,15 @@ import { resolvePublicOrigin } from "@/lib/public-origin"
  * fallback for the storefront's utility routes (cart, checkout, sign-in, OIDC
  * callback) — none of which is indexable anyway (`app/robots.ts`).
  *
- * `metadataBase` is set HERE rather than repeated per page so every relative
- * canonical and OG URL under /shop resolves against one injected origin. It is a
- * function, not a constant, so the value is read per request at RUNTIME:
- * `NEXTAUTH_URL` is a plain server env that each environment sets correctly,
- * unlike a `NEXT_PUBLIC_*` which Next inlines at build time. `undefined` is a
- * deliberate outcome, not a failure — Next then emits root-relative URLs, which
- * are correct on whatever host served the page, and no hostname is guessed.
+ * `metadataBase` is NOT set here. app/layout.tsx owns it for the whole app
+ * (SW-CLR-08, PR 1080), and nested metadata inherits it, so every relative
+ * canonical and OG URL under /shop resolves against that one injected origin.
+ * This layout used to set an identical copy; two owners of one value drift, and
+ * a change to one would have given the storefront and the marketing pages
+ * different canonical origins.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const origin = resolvePublicOrigin()
   return {
-    metadataBase: origin ? new URL(origin) : undefined,
     title: "J'Toye — Discover Local Vendors",
     description: "Browse and order from independent food vendors near you",
   }

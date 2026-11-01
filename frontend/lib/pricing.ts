@@ -35,3 +35,21 @@ export const PRICING = {
   usageLabel: formatRate(BASE.usageRate),
   paygLabel: formatRate(BASE.paygRate),
 } as const
+
+/**
+ * The two pricing footnotes /for-operators prints under its plan table, moved
+ * here (SW-SAM-12, swarm epic #964) so /legal/terms can quote them instead of
+ * retyping them. operator-pitch.tsx is a client module, and a server component
+ * that imports a constant from a "use client" file receives a client reference,
+ * not the string — so the shared copy has to live in a plain module.
+ */
+//
+// The setup line is a FUNCTION of the pricing object, not a precomputed string:
+// operator-pitch-pricing.test.tsx proves the page reads PRICING by mocking it
+// with substitute figures, and a string built here at module load would carry
+// the real £ figure past that mock. Callers pass the PRICING they imported.
+export function formatSetupLine(pricing: { setupFrom: number } = PRICING): string {
+  return `Assisted setup from £${pricing.setupFrom}, scoped to the work agreed.`
+}
+export const PRICING_CARD_FEE_LINE =
+  "Stripe card fees are charged on your own Stripe account, because you are the merchant of record."

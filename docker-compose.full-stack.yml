@@ -570,6 +570,12 @@ services:
         # above: it is a dedicated address rather than the shared support queue,
         # because a data-subject request carries a one-month statutory clock.
         NEXT_PUBLIC_DATA_PROTECTION_EMAIL: ${NEXT_PUBLIC_DATA_PROTECTION_EMAIL:-privacy@olajay.co.uk}
+        # SW-CLR-04 (swarm epic #964): the general contact route on /contact. NO
+        # default, unlike the pair above: no general contact address or phone has
+        # been ruled, so an unset value renders "not yet published" rather than a
+        # guessed address. Set both in .env once the owner has chosen them.
+        NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-}
+        NEXT_PUBLIC_CONTACT_PHONE: ${NEXT_PUBLIC_CONTACT_PHONE:-}
         # Issue #957 / #814: the Stripe publishable key is NEXT_PUBLIC_*, so it must be
         # baked HERE at build time. It used to sit only under `environment:` below, where
         # it was dead config — a runtime value never reaches the browser bundle, so local

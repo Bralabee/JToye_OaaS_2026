@@ -16,6 +16,7 @@ import { metadata as homeMetadata } from "@/app/page"
 import { metadata as operatorsMetadata } from "@/app/for-operators/page"
 import { metadata as guideMetadata } from "@/app/business-model-guide/page"
 import { metadata as trackMetadata } from "@/app/track/layout"
+import { metadata as competitiveMetadata } from "@/app/competitive/page"
 import type { Metadata } from "next"
 
 function canonicalOf(m: Metadata): string | undefined {
@@ -71,6 +72,27 @@ describe("/track has a real title and is consistently non-indexed (FE-6)", () =>
 
   it("declares robots.index=false, matching its robots.txt disallow", () => {
     const robots = trackMetadata.robots as { index?: boolean; follow?: boolean } | undefined
+    expect(robots?.index).toBe(false)
+    expect(robots?.follow).toBe(false)
+  })
+})
+
+/**
+ * SW-CLR-05 (swarm epic #964): /business-model-guide and /competitive are
+ * internal strategy documents (the teardown cites repo file paths as evidence).
+ * They stay published at their URLs but are no longer linked from the footer and
+ * must not be indexed. Both flags, because `follow: true` would still hand their
+ * outbound links to a crawler. Their sitemap entry is Phase 30's file and is a
+ * recorded follow-up, not changed here.
+ */
+describe("strategy pages are noindexed (SW-CLR-05)", () => {
+  it.each([
+    ["/business-model-guide", guideMetadata],
+    ["/competitive", competitiveMetadata],
+  ])("%s declares robots index=false, follow=false", (_label, meta) => {
+    // Control: this is the page's real metadata, not an empty object.
+    expect(String(meta.title).length).toBeGreaterThan(0)
+    const robots = meta.robots as { index?: boolean; follow?: boolean } | undefined
     expect(robots?.index).toBe(false)
     expect(robots?.follow).toBe(false)
   })

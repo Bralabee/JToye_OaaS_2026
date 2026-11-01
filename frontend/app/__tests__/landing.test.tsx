@@ -13,7 +13,7 @@
 import fs from "fs"
 import path from "path"
 import { render, screen, within } from "@testing-library/react"
-import Home from "@/app/page"
+import Home, { metadata as homeMetadata } from "@/app/page"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import type { PublicShop } from "@/types/storefront"
 
@@ -113,15 +113,18 @@ describe("Public landing page (/)", () => {
     expect(headerLink.getAttribute("href")).toBe("/for-operators")
   })
 
-  it("renders the shared public footer (allergen note + guide link)", async () => {
+  it("renders the shared public footer (allergen note + vendor link)", async () => {
     render(await Home())
     expect(
       screen.getByText(/allergen info available on all products/i)
     ).toBeTruthy()
-    const guideLink = screen.getByRole("link", {
-      name: /business model guide/i,
+    // Was the business-model-guide link, which SW-CLR-05 (swarm epic #964)
+    // removed from the footer; "Become a vendor" is footer-only copy, so it
+    // still proves the footer rendered.
+    const vendorLink = screen.getByRole("link", {
+      name: /become a vendor/i,
     })
-    expect(guideLink.getAttribute("href")).toBe("/business-model-guide")
+    expect(vendorLink.getAttribute("href")).toBe("/for-operators")
   })
 
   it("renders REAL shops in the kitchen row, and none of the invented vendors (#544)", async () => {
@@ -330,5 +333,47 @@ describe("Landing content bands declare the Marketing tier (ORCH-04)", () => {
       .getByRole("heading", { level: 1 })
       .closest(`[data-width-tier="marketing"]`)
     expect(heroBand?.parentElement).toBe(heroSection)
+  })
+})
+
+/**
+ * SW-CLR-03 (swarm epic #964). The landing page promised "go live in a day"
+ * while /for-operators — the page the operator door leads to — says a person
+ * reviews every application and the setup is assisted. Two pages on one site
+ * making incompatible offers is the finding. The promise is removed here, in the
+ * rendered page and in both descriptions, and replaced with /for-operators'
+ * own wording.
+ *
+ * DELIBERATELY NOT CHANGED: the "Independent UK kitchens" positioning. The
+ * swarm also flagged it against the pilot's West African, London scope, but
+ * design/brief.md (confirmed by the owner 2026-11-01) describes the subject as
+ * independent UK food businesses. Which one is right is an owner decision, so
+ * this file does not pin either way.
+ *
+ * The overclaim is asserted ABSENT, after a control that the hero rendered.
+ */
+describe("Landing copy no longer promises go-live in a day (SW-CLR-03)", () => {
+  it("the rendered page no longer says go live in a day", async () => {
+    const { container } = render(await Home())
+    // Control: the hero rendered.
+    expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/go live in a day/i)
+  })
+
+  it("the metadata no longer says go live in a day", () => {
+    const og = homeMetadata.openGraph as { description?: string } | undefined
+    // Control: both descriptions exist.
+    expect(String(homeMetadata.description).length).toBeGreaterThan(0)
+    expect(String(og?.description).length).toBeGreaterThan(0)
+    expect(String(homeMetadata.description)).not.toMatch(/go live in a day/i)
+    expect(String(og?.description)).not.toMatch(/go live in a day/i)
+  })
+
+  it("says what /for-operators says instead: an assisted setup and a reviewed application", async () => {
+    const { container } = render(await Home())
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/assisted setup/i)
+    expect(text).toMatch(/a person reviews every application/i)
+    expect(String(homeMetadata.description)).toMatch(/assisted setup/i)
   })
 })

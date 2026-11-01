@@ -316,3 +316,34 @@ describe("OperatorPitch", () => {
     expect(headline.hasAttribute("data-width-tier")).toBe(false)
   })
 })
+
+/**
+ * SW-CLR-04 and SW-CLR-06 (the 2026-10-19 persona swarm epic). The persona swarm found that the
+ * only next step on this page was "Start your application", which ends at a
+ * sign-in — no way to ask a question first — and that the pricing section
+ * linked no terms. Each CTA now has a contact link beside it, and the pricing
+ * footnote links the terms page.
+ */
+describe("OperatorPitch contact and terms routes (persona swarm, SW-CLR-04 and SW-CLR-06)", () => {
+  it("offers a contact link beside each application CTA", () => {
+    const { container } = render(<OperatorPitch />)
+    const ctas = screen.getAllByRole("link", { name: /start your application/i })
+    // Control: both CTAs are still there.
+    expect(ctas).toHaveLength(2)
+    for (const cta of ctas) {
+      const group = cta.parentElement
+      expect(group).not.toBeNull()
+      expect(group?.querySelector('a[href="/contact"]')).not.toBeNull()
+    }
+    expect(container.querySelectorAll('a[href="/contact"]')).toHaveLength(2)
+  })
+
+  it("links the terms of use from the pricing section", () => {
+    const { container } = render(<OperatorPitch />)
+    const pricing = container.querySelector("#pricing")
+    expect(pricing).not.toBeNull()
+    const terms = pricing?.querySelector('a[href="/legal/terms"]')
+    expect(terms).not.toBeNull()
+    expect(terms).toHaveTextContent(/terms of use/i)
+  })
+})
